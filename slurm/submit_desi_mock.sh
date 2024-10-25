@@ -18,7 +18,7 @@ export OMP_PLACES=threads
 export OMP_PROC_BIND=spread
 
 # Ensure the environment is loaded
-source /global/cfs/cdirs/desi/software/desi_environment.sh 23.1
+source /global/cfs/cdirs/desi/software/desi_environment.sh main
 
 # Set default values for variables if they are not provided
 QSOCAT="${QSOCAT:-/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits}"
