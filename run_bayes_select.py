@@ -152,8 +152,8 @@ def process_single_spectrum(
     # Check if any DLA detection is made
     if argmaxind >= 0:
         # Filter out NaNs in the MAP values
-        MAP_z_dla = MAP_z_dla[:argmaxind]
-        MAP_log_nhi = MAP_log_nhi[:argmaxind]
+        MAP_z_dla = MAP_z_dla[argmaxind, :argmaxind]
+        MAP_log_nhi = MAP_log_nhi[argmaxind, :argmaxind]
 
         # Compute 1-sigma errors using the fast method (Gaussian approximation)
         z_dla_errs, log_nhi_errs = compute_1sigma_errors_fast(
