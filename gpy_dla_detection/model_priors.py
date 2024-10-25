@@ -2,6 +2,7 @@
 model_priors.py : model priors are handled by a prior_catalog,
 so we build a class to control the catalog.
 """
+
 from typing import Tuple
 
 import numpy as np
@@ -148,6 +149,10 @@ class PriorCatalog:
         :param z_qso: the quasar redshift to be conditioned on.
         :return: (this_num_dlas, this_num_quasars)
         """
+        # TODO: Temporary fix to avoid zQSO below the minimum zQSO in the catalog (zQSO = 2.15 originally but Allyson has zQSO = 2.0)
+        if z_qso < self.z_qsos.min():
+            z_qso = self.z_qsos.min()
+
         # use QSOs with z < (z_QSO + x) for prior
         less_ind = self.z_qsos < (z_qso + self.params.prior_z_qso_increase)
 
