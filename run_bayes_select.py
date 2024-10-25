@@ -345,9 +345,7 @@ class DLAHolder:
         bayes = BayesModelSelect([0, 1, self.max_dlas], 2)
 
         # Log the processing of the spectrum
-        log.info(
-            f"Processing spectrum {idx + 1}/{len(self.num_spectra)} (ID: {target_id})"
-        )
+        log.info(f"Processing spectrum {idx + 1}/{self.num_spectra} (ID: {target_id})")
         # Process single spectrum
         process_single_spectrum(
             idx,
@@ -378,7 +376,7 @@ class DLAHolder:
 
         toc = time.time()
         print(
-            f"Processed spectrum {idx + 1}/{len(self.num_spectra)} (ID: {target_id}), time spent: {(toc - tic) // 60:.0f}m {(toc - tic) % 60:.0f}s"
+            f"Processed spectrum {idx + 1}/{self.num_spectra} (ID: {target_id}), time spent: {(toc - tic) // 60:.0f}m {(toc - tic) % 60:.0f}s"
         )
 
     def save_results(self, output_file: str):
