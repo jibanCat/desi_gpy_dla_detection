@@ -12,10 +12,10 @@
 #SBATCH --time=00:30:00                   # Time limit for the debug job (30 minutes)
 #SBATCH --ntasks=32                       # Total number of tasks (32 CPUs for debug)
 
-# OpenMP settings for efficient parallel execution
-export OMP_NUM_THREADS=1
-export OMP_PLACES=threads
-export OMP_PROC_BIND=spread
+# # OpenMP settings for efficient parallel execution
+# export OMP_NUM_THREADS=1
+# export OMP_PLACES=threads
+# export OMP_PROC_BIND=spread
 
 # Ensure the environment is loaded
 source /global/cfs/cdirs/desi/software/desi_environment.sh 23.1
@@ -55,7 +55,7 @@ LEVEL2_START="${LEVEL2_START:-0}"
 LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 
 # Run the Python script with srun
-srun --export=ALL -N 1 -n 32 python desi-DLAGP.py \
+python desi-DLAGP.py \
     --qsocat "$QSOCAT" \
     --release "$RELEASE" \
     --program "$PROGRAM" \
