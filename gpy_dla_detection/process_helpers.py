@@ -51,6 +51,7 @@ def initialize_results(num_spectra: int, max_dlas: int) -> dict:
     """
 
     results = {
+        "target_ids": np.full((num_spectra,), np.nan),  # Target IDs for each spectrum
         "z_qsos": np.full(
             (num_spectra,), np.nan
         ),  # Redshifts of the Quasi-Stellar Objects (QSOs)
