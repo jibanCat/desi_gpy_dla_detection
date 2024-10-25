@@ -179,10 +179,11 @@ def process_single_spectrum(
     log.info(
         f"Results for spectrum {idx + 1}/{len(results['z_qsos'])} (ID: {target_id})"
     )
-    log.info(f" ...     MAP z_DLA: {MAP_z_dla}")
-    log.info(f" ...     z_DLA errors: {z_dla_errs}")
-    log.info(f" ...     MAP log N_HI: {MAP_log_nhi}")
-    log.info(f" ...     log N_HI errors: {log_nhi_errs}")
+    if argmaxind >= 0:
+        log.info(f" ...     MAP z_DLA: {MAP_z_dla}")
+        log.info(f" ...     z_DLA errors: {z_dla_errs}")
+        log.info(f" ...     MAP log N_HI: {MAP_log_nhi}")
+        log.info(f" ...     log N_HI errors: {log_nhi_errs}")
     # log.info(f" ...     Model posteriors: {model_posteriors}")
     log.info(f" ...     p(DLA): {bayes.p_dla:.3f}")
     log.info(f" ...     p(no DLAs): {bayes.p_no_dla:.3f}")
