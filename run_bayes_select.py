@@ -179,7 +179,7 @@ def process_single_spectrum(
     log.info(
         f"Results for spectrum {idx + 1}/{len(results['z_qsos'])} (ID: {target_id})"
     )
-    if argmaxind >= 0:
+    if argmaxind > 0:
         log.info(f" ...     MAP z_DLA: {MAP_z_dla}")
         log.info(f" ...     z_DLA errors: {z_dla_errs}")
         log.info(f" ...     MAP log N_HI: {MAP_log_nhi}")
