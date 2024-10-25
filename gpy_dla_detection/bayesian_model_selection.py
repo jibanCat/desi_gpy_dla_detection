@@ -103,9 +103,10 @@ class BayesModelSelect:
                 )
                 log_likelihoods.append(log_likelihoods_dla)
                 # Log likelihood check
-                log.info(
-                    f" ...     log p(D | z_QSO, {num_dlas} DLAs) : {log_likelihoods_dla:.3f}"
-                )
+                for j in range(num_dlas):
+                    log.info(
+                        f" ...     log p(D | z_QSO, {j + 1} DLAs) : {log_likelihoods_dla[j]:.3f}"
+                    )
 
         # Flatten the log likelihoods and compute the posteriors
         log_likelihoods = np.array(list(chain(*log_likelihoods)))
