@@ -12,7 +12,6 @@
 #SBATCH --time=03:00:00             # Time limit for the job
 #SBATCH --ntasks=8                  # 8 tasks total (each running one instance of the Python script)
 #SBATCH --cpus-per-task=32          # Each task uses 32 CPUs
-#SBATCH --exclusive                 # Ensures the entire node is reserved for this job
 
 # Ensure the environment is loaded
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
