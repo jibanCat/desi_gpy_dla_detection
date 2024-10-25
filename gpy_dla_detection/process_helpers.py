@@ -32,6 +32,7 @@ def initialize_results(num_spectra: int, max_dlas: int) -> dict:
 
     Keys:
     -----
+    z_qsos : Redshifts of the Quasi-Stellar Objects (QSOs).
     min_z_dlas : Minimum redshift of the DLAs detected for each spectrum.
     max_z_dlas : Maximum redshift of the DLAs detected for each spectrum.
     log_priors_no_dla : Log prior probabilities for the no-DLA model.
@@ -50,6 +51,9 @@ def initialize_results(num_spectra: int, max_dlas: int) -> dict:
     """
 
     results = {
+        "z_qsos": np.full(
+            (num_spectra,), np.nan
+        ),  # Redshifts of the Quasi-Stellar Objects (QSOs)
         "min_z_dlas": np.full(
             (num_spectra,), np.nan
         ),  # Minimum DLA redshift for each spectrum
