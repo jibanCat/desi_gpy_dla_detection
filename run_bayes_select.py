@@ -53,6 +53,7 @@ def process_single_spectrum(
     plot_figures: bool,
     max_workers: int,
     batch_size: int,
+    figure_dir: str,
 ):
     """
     Process a single spectrum using pre-initialized Null, DLA, and SubDLA models.
@@ -105,6 +106,8 @@ def process_single_spectrum(
         Number of workers for parallel processing.
     batch_size : int
         Batch size for parallel model evidence computation.
+    figure_dir : str
+        Directory to save the figures.
     """
     # Set data for the Null, DLA, and Sub-DLA models
     for model, name in zip([gp, dla_gp, subdla_gp], ["Null", "DLA", "Sub-DLA"]):
@@ -193,7 +196,7 @@ def process_single_spectrum(
         title = f"Spectrum {target_id}; zQSO: {z_qso:.2f}"
         out_filename = f"spec-{str(idx).zfill(6)}"
         plot_samples_vs_this_mu(
-            dla_gp, bayes, filename=out_filename, sub_dir="images", title=title
+            dla_gp, bayes, filename=out_filename, sub_dir=figure_dir, title=title
         )
         plt.clf()
         plt.close()
@@ -256,6 +259,7 @@ class DLAHolder:
         plot_figures: bool = False,
         max_workers: int = None,
         batch_size: int = 100,
+        figure_dir: str = "figures/",
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -284,6 +288,8 @@ class DLAHolder:
             self.params, self.prior, sub_dla_samples_file
         )
         # self.bayes = BayesModelSelect([0, 1, max_dlas], 2)
+
+        self.figure_dir = figure_dir
 
     def initialize_results(self, num_spectra: int):
         """
@@ -346,7 +352,9 @@ class DLAHolder:
         bayes = BayesModelSelect([0, 1, self.max_dlas], 2)
 
         # Log the processing of the spectrum
-        log.info(f"Processing spectrum {idx + 1}/{self.num_spectra} (ID: {target_id})")
+        log.info(
+            f"Processing spectrum {idx + 1}/{self.num_spectra} (ID: {target_id}) zQSO: {z_qso:.2f}"
+        )
         # Process single spectrum
         process_single_spectrum(
             idx,
@@ -372,11 +380,12 @@ class DLAHolder:
             self.plot_figures,
             self.max_workers,
             self.batch_size,
+            self.figure_dir,
         )
         del null_gp, dla_gp, subdla_gp
 
         toc = time.time()
-        print(
+        log.info(
             f"Processed spectrum {idx + 1}/{self.num_spectra} (ID: {target_id}), time spent: {(toc - tic) // 60:.0f}m {(toc - tic) % 60:.0f}s"
         )
 

@@ -84,6 +84,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             plot_figures=model_params["plot_figures"],
             max_workers=model_params["max_workers"],
             batch_size=model_params["batch_size"],
+            figure_dir=model_params["figure_dir"],
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
@@ -182,6 +183,7 @@ def dlasearch_mock(specfile, catalog, model_params):
             plot_figures=model_params["plot_figures"],
             max_workers=model_params["max_workers"],
             batch_size=model_params["batch_size"],
+            figure_dir=model_params["figure_dir"],
         )
 
         fitresults = process_spectra_group(specfile, catalog, model)

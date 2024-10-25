@@ -163,6 +163,13 @@ def parse(options=None):
         default=0,
         help="Set to 1 to generate plots, 0 otherwise.",
     )
+    # figure directory
+    parser.add_argument(
+        "--figure_dir",
+        type=str,
+        default="figures",
+        help="Directory to save figures.",
+    )
     parser.add_argument(
         "--max_workers",
         type=int,
@@ -326,12 +333,13 @@ def main(args=None):
 
         # running in between mock level2 folders: level2_start - level2_end
         log.info(
-            "running in between mock level2 folders {} - {}; Total: {}".format(
+            "running in between mock level2 folders {} - {}; Total level2: {}".format(
                 args.level2_start, args.level2_end, all_level2[-1]
             )
         )
         ind = (all_level2 >= args.level2_start) & (all_level2 < args.level2_end)
         speclist = speclist[ind]
+        log.info(f"Specfiles to process: {"\n".join(speclist)}")
 
         catalog = read_mock_catalog(args.qsocat, args.balmask, args.mockdir)
     else:
@@ -375,6 +383,7 @@ def main(args=None):
         "plot_figures": bool(args.plot_figures),
         "max_workers": args.max_workers,
         "batch_size": args.batch_size,
+        "figure_dir": args.figure_dir,
     }
 
     # Set up for nested multiprocessing
