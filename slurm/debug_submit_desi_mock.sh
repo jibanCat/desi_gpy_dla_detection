@@ -54,6 +54,8 @@ MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 LEVEL2_START="${LEVEL2_START:-0}"
 LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 
+FIGURE_DIR="${FIGURE_DIR:-figures/}"
+
 # Run the Python script with srun
 python desi-DLAGP.py \
     --qsocat "$QSOCAT" \
@@ -87,4 +89,5 @@ python desi-DLAGP.py \
     --k "$K" \
     --max_noise_variance "$MAX_NOISE_VARIANCE" \
     --level2_start "$LEVEL2_START" \
-    --level2_end "$LEVEL2_END"
+    --level2_end "$LEVEL2_END" \
+    --figure_dir "$FIGURE_DIR"
