@@ -289,7 +289,8 @@ class DLAHolder:
         Initialize the results dictionary
         """
         self.results = initialize_results(
-            num_spectra, self.max_dlas, self.params.num_dla_samples
+            num_spectra,
+            self.max_dlas,
         )
         self.num_spectra = num_spectra
 
