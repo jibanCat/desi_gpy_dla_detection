@@ -27,7 +27,6 @@ PROGRAM="${PROGRAM:-dark}"
 SURVEY="${SURVEY:-main}"
 MOCKDIR="${MOCKDIR:-/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/}"
 OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-mock-gpdla/}"
-NPROC="${NPROC:-256}"
 BALMASK="${BALMASK:-false}"
 
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
@@ -65,7 +64,6 @@ srun -N 1 -n 256 python desi-DLAGP.py \
     --mockdir "$MOCKDIR" \
     $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
     --outdir "$OUTDIR" \
-    --nproc "$NPROC" \
     --learned_file "$LEARNED_FILE" \
     --catalog_name "$CATALOG_NAME" \
     --los_catalog "$LOS_CATALOG" \

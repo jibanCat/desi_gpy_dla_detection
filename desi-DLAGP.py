@@ -109,15 +109,6 @@ def parse(options=None):
         help="output directory for DLA catalog",
     )
 
-    parser.add_argument(
-        "-n",
-        "--nproc",
-        type=int,
-        default=64,
-        required=False,
-        help="number of multiprocressing processes to use, default is 64",
-    )
-
     ###======== GP-DLA specific arguments =========###
     parser.add_argument(
         "--learned_file",
@@ -387,7 +378,9 @@ def main(args=None):
     }
 
     # Set up for nested multiprocessing
-    nproc_futures = int(os.cpu_count() / args.nproc)
+    nproc_futures = int(os.cpu_count() / args.max_workers)
+    log.info(f"using {nproc_futures} high-level processes")
+
     # Create a high-level executor
     with ProcessPoolExecutor(max_workers=nproc_futures) as high_level_executor:
 
@@ -404,7 +397,6 @@ def main(args=None):
                         datapath,
                         catalog[catalog["HPXPIXEL"] == hpx],
                         model_params,  # Pass the model parameters dictionary here
-                        args.nproc,  # Pass the number of processors
                     )
                     for hpx in np.unique(this_hpxs)
                 ]
@@ -418,7 +410,6 @@ def main(args=None):
                         "datapath": datapath,
                         "hpxcat": catalog[catalog["HPXPIXEL"] == hpx],
                         "model_params": model_params,
-                        "nproc": args.nproc,  # Pass the number of processors
                     }
                     for hpx in np.unique(this_hpxs)
                 ]
@@ -439,7 +430,6 @@ def main(args=None):
                         "specfile": specfile,
                         "catalog": catalog,
                         "model_params": model_params,
-                        "nproc": nproc_futures,
                     }
                     for specfile in speclist
                 ]

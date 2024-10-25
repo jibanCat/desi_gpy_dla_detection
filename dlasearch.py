@@ -41,7 +41,7 @@ warnings.simplefilter("error", OptimizeWarning)
 ##########################
 
 
-def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params, nproc):
+def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     """
     Find the best fitting DLA profile(s) for spectra in hpx catalog.
 
@@ -53,7 +53,6 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params, npro
     datapath (str): path to coadd files
     hpxcat (table): collection of spectra to search for DLAs, all belonging to a single healpix
     model_params (dict): dictionary of parameters for the DLAHolder model
-    nproc (int): number of processors to use for nested parallelism
 
     Returns
     -------
@@ -87,9 +86,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params, npro
             batch_size=model_params["batch_size"],
         )
 
-        # Create a nested executor
-        with ProcessPoolExecutor(max_workers=nproc) as nested_executor:
-            fitresults = process_spectra_group(coadd, hpxcat, model, nested_executor)
+        fitresults = process_spectra_group(coadd, hpxcat, model)
 
     else:
         log.error(f"could not locate coadd file for healpix {healpix}")
@@ -143,7 +140,7 @@ def dlasearch_tile(tileid, datapath, tilecat, model, nproc):
     )
 
 
-def dlasearch_mock(specfile, catalog, model_params, nproc):
+def dlasearch_mock(specfile, catalog, model_params):
     """
     Find the best fitting DLA profile(s) for spectra in the mock catalog.
 
@@ -152,7 +149,6 @@ def dlasearch_mock(specfile, catalog, model_params, nproc):
     specfile (str): Path to the mock spectra file.
     catalog (table): Catalog of spectra to search for DLAs.
     model_params (dict): Dictionary containing parameters for the DLAHolder model.
-    nproc (int): Number of processors for parallel processing.
 
     Returns
     -------
@@ -188,11 +184,7 @@ def dlasearch_mock(specfile, catalog, model_params, nproc):
             batch_size=model_params["batch_size"],
         )
 
-        # Create a nested executor
-        with ProcessPoolExecutor(max_workers=nproc) as nested_executor:
-            fitresults = process_spectra_group(
-                specfile, catalog, model, nested_executor
-            )
+        fitresults = process_spectra_group(specfile, catalog, model)
     else:
         log.error(f"could not locate coadd file for {specfile}")
         return ()
@@ -206,7 +198,7 @@ def dlasearch_mock(specfile, catalog, model_params, nproc):
     return fitresults
 
 
-def process_spectra_group(coaddpath, catalog, model: DLAHolder, executor=None):
+def process_spectra_group(coaddpath, catalog, model: DLAHolder):
     """
     pre-process group of spectra in same file and run DLA searching tools
 
@@ -215,7 +207,6 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder, executor=None):
     coaddpath (str) : path to file containing spectra
     catalog (table) : collection of spectra in file to search for DLAs
     model (DLAHolder) : DLA model object
-    executor : shared mp pool
 
     Returns
     -------
@@ -371,7 +362,6 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder, executor=None):
             noise_variance=noise_variance,
             pixel_mask=pixel_mask,
             z_qso=zqso,
-            executor=executor,
         )
 
         # Get zerr and nhierr from GPDLA
