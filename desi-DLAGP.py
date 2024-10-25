@@ -337,9 +337,13 @@ def main(args=None):
                 args.level2_start, args.level2_end, all_level2[-1]
             )
         )
-        ind = (all_level2 >= args.level2_start) & (all_level2 < args.level2_end)
-        speclist = speclist[ind]
+        # TODO: So all_level2 is discontinuous, so it might make more sense to just indexing the speclist
+        # ind = (all_level2 >= args.level2_start) & (all_level2 < args.level2_end)
+        all_level2 = all_level2[args.level2_start : args.level2_end]
+        speclist = speclist[args.level2_start : args.level2_end]
+
         log.info(f"Specfiles to process: {' '.join(speclist)}")
+        log.info(f"level2 from {all_level2[0]} to {all_level2[-1]}")
 
         catalog = read_mock_catalog(args.qsocat, args.balmask, args.mockdir)
     else:
