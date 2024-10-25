@@ -418,7 +418,7 @@ def main(args=None):
     elif args.mocks:
         if nproc_futures == 1:
             results = [
-                dlasearch.dlasearch_mock(specfile, catalog, model_params, nproc_futures)
+                dlasearch.dlasearch_mock(specfile, catalog, model_params)
                 for specfile in speclist
             ]
         else:
