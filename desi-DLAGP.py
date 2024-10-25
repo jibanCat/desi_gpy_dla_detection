@@ -378,61 +378,60 @@ def main(args=None):
     }
 
     # Set up for nested multiprocessing
-    nproc_futures = int(os.cpu_count() / args.max_workers)
+    # nproc_futures = int(os.cpu_count() / args.max_workers)
+    nproc_futures = 1
     log.info(f"using {nproc_futures} high-level processes")
 
-    # Create a high-level executor
-    with ProcessPoolExecutor(max_workers=nproc_futures) as high_level_executor:
+    if not (args.tilebased) and not (args.mocks):
+        datapath = f"/global/cfs/cdirs/desi/spectro/redux/{args.release}/healpix/{args.survey}/{args.program}"
+        this_hpxs = all_hpxs[ind]
 
-        if not (args.tilebased) and not (args.mocks):
-            datapath = f"/global/cfs/cdirs/desi/spectro/redux/{args.release}/healpix/{args.survey}/{args.program}"
-            this_hpxs = all_hpxs[ind]
+        if nproc_futures == 1:
+            results = [
+                dlasearch.dlasearch_hpx(
+                    hpx,
+                    args.survey,
+                    args.program,
+                    datapath,
+                    catalog[catalog["HPXPIXEL"] == hpx],
+                    model_params,  # Pass the model parameters dictionary here
+                )
+                for hpx in np.unique(this_hpxs)
+            ]
 
-            if nproc_futures == 1:
-                results = [
-                    dlasearch.dlasearch_hpx(
-                        hpx,
-                        args.survey,
-                        args.program,
-                        datapath,
-                        catalog[catalog["HPXPIXEL"] == hpx],
-                        model_params,  # Pass the model parameters dictionary here
-                    )
-                    for hpx in np.unique(this_hpxs)
-                ]
-
-            else:
-                arguments = [
-                    {
-                        "healpix": hpx,
-                        "survey": args.survey,
-                        "program": args.program,
-                        "datapath": datapath,
-                        "hpxcat": catalog[catalog["HPXPIXEL"] == hpx],
-                        "model_params": model_params,
-                    }
-                    for hpx in np.unique(this_hpxs)
-                ]
-
+        else:
+            arguments = [
+                {
+                    "healpix": hpx,
+                    "survey": args.survey,
+                    "program": args.program,
+                    "datapath": datapath,
+                    "hpxcat": catalog[catalog["HPXPIXEL"] == hpx],
+                    "model_params": model_params,
+                }
+                for hpx in np.unique(this_hpxs)
+            ]
+            # Create a high-level executor
+            with ProcessPoolExecutor(max_workers=nproc_futures) as high_level_executor:
                 results = list(high_level_executor.map(_dlasearchhpx, arguments))
 
-        elif args.mocks:
-            if nproc_futures == 1:
-                results = [
-                    dlasearch.dlasearch_mock(
-                        specfile, catalog, model_params, nproc_futures
-                    )
-                    for specfile in speclist
-                ]
-            else:
-                arguments = [
-                    {
-                        "specfile": specfile,
-                        "catalog": catalog,
-                        "model_params": model_params,
-                    }
-                    for specfile in speclist
-                ]
+    elif args.mocks:
+        if nproc_futures == 1:
+            results = [
+                dlasearch.dlasearch_mock(specfile, catalog, model_params, nproc_futures)
+                for specfile in speclist
+            ]
+        else:
+            arguments = [
+                {
+                    "specfile": specfile,
+                    "catalog": catalog,
+                    "model_params": model_params,
+                }
+                for specfile in speclist
+            ]
+            # Create a high-level executor
+            with ProcessPoolExecutor(max_workers=nproc_futures) as high_level_executor:
                 results = list(high_level_executor.map(_dlasearchmock, arguments))
 
         results = vstack(results)
