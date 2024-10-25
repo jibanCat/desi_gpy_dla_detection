@@ -9,7 +9,7 @@
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=02:00:00             # Time limit for the job
+#SBATCH --time=03:00:00             # Time limit for the job
 #SBATCH --ntasks=8                  # 8 tasks total (each running one instance of the Python script)
 #SBATCH --cpus-per-task=32          # Each task uses 32 CPUs
 #SBATCH --exclusive                 # Ensures the entire node is reserved for this job
@@ -102,3 +102,16 @@ done
 
 # Wait for all background jobs to finish
 wait
+
+# Example usage:
+# - Run the script with default values:
+# sbatch --export=ALL,QSOCAT="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits",\
+# MOCKDIR="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/",\
+# OUTDIR="/pscratch/sd/j/jibancat/desi-mock-gpdla/",\
+# MAX_DLAS=3,\
+# PLOT_FIGURES=0,\
+# BATCH_SIZE=313,\
+# MAX_WORKERS=32,\
+# START_INDEX=0,\
+# END_INDEX=14,\
+# STEP=2 slurm/submit_desi_mock.sh
