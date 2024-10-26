@@ -8,6 +8,10 @@ and `prev_tau_0`, following a Monte Carlo approach.
 """
 import numpy as np
 import h5py
+import concurrent.futures
+from concurrent.futures import as_completed
+from desiutil.log import log
+
 from .set_parameters import Parameters
 from .model_priors import PriorCatalog
 
@@ -63,7 +67,7 @@ class NullMFGP(NullGP):
 
         # Interpolate noise parameters
         this_log_omega = self.log_omega_interpolator(x)
-        this_omega2 = np.exp(2 * this_log_omega)
+        _this_omega2 = np.exp(2 * this_log_omega)
 
         # Compute scaling factor for absorption noise
         lya_optical_depth = effective_optical_depth(
@@ -76,7 +80,7 @@ class NullMFGP(NullGP):
         scaling_factor = (
             1 - np.exp(-np.sum(lya_optical_depth, axis=1)) + np.exp(self.log_c_0)
         )
-        self.this_omega2 = this_omega2 * scaling_factor**2
+        _this_omega2 = _this_omega2 * scaling_factor**2
 
         # Precompute `this_mu` and `this_M` for each sample
         for i in range(num_dla_samples):
@@ -96,7 +100,7 @@ class NullMFGP(NullGP):
             # re-adjust (K + Ω) to the level of μ .* exp( -optical_depth ) = μ .* a_lya
             # now the null model likelihood is:
             # p(y | λ, zqso, v, ω, M_nodla) = N(y; μ .* a_lya, A_lya (K + Ω) A_lya + V)
-            this_omega2 = this_omega2 * lya_absorption**2
+            this_omega2 = _this_omega2 * lya_absorption**2
 
             # Cache results
             self.precomputed_mu[i, :] = this_mu
@@ -136,6 +140,95 @@ class NullMFGP(NullGP):
 
         return log_likelihood_no_dla
 
+    def log_likelihood_batch(self, batch_indices):
+        """
+        Computes log likelihood for a batch of indices.
+
+        Args:
+            batch_indices (list): List of indices for samples in the batch.
+
+        Returns:
+            list: Log likelihoods for each sample in the batch.
+        """
+        batch_log_likelihoods = []
+        for i in batch_indices:
+            this_mu = self.precomputed_mu[i, :]
+            this_M = self.precomputed_M[i, :, :]
+            this_omega2 = self.precomputed_omega2[i, :]
+
+            # Calculate log likelihood for this sample
+            log_likelihood = self.log_mvnpdf_low_rank(
+                self.y, this_mu, this_M, this_omega2 + self.v
+            )
+            batch_log_likelihoods.append(log_likelihood)
+        return batch_log_likelihoods
+
+    def parallel_log_model_evidence(
+        self,
+        max_workers: int = 32,
+        batch_size: int = 938,
+        executor=None,
+    ) -> float:
+        """
+        Parallelized and batched version of the log model evidence computation using
+        Monte Carlo marginalization over `prev_tau_0` and `prev_beta`.
+
+        This method computes the log likelihoods for each sample of `prev_tau_0` and `prev_beta`
+        in parallel using `ProcessPoolExecutor`, and averages the results for the final log evidence.
+
+        Args:
+            max_workers (int, optional): Maximum number of workers to use. Defaults to 32.
+            batch_size (int, optional): Number of samples per batch. Defaults to 938.
+            executor (ProcessPoolExecutor, optional): An existing executor to reuse; if not provided, a new one is created.
+
+        Returns:
+            float: The Monte Carlo-averaged log model evidence.
+        """
+        num_dla_samples = self.prev_beta.shape[0]
+        log_likelihoods = np.zeros(num_dla_samples)
+
+        # Create batches of indices
+        indices = list(range(num_dla_samples))
+        batches = [
+            indices[i : i + batch_size] for i in range(0, num_dla_samples, batch_size)
+        ]
+
+        # Use provided executor or create a new one
+        local_executor = False
+        if executor is None:
+            executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+            local_executor = True
+
+        try:
+            # Submit each batch to the executor
+            futures = {
+                executor.submit(self.log_likelihood_batch, batch): batch
+                for batch in batches
+            }
+
+            for future in as_completed(futures):
+                batch_indices = futures[future]
+                try:
+                    batch_results = future.result()
+                    for i, result in zip(batch_indices, batch_results):
+                        log_likelihoods[i] = result
+                except Exception as e:
+                    log.error(f"Error processing batch {batch_indices}: {e}")
+
+        finally:
+            # Shutdown the executor if it was created locally
+            if local_executor:
+                executor.shutdown()
+
+        # Monte Carlo averaging over samples
+        max_log_likelihood = np.nanmax(log_likelihoods)
+        sample_probabilities = np.exp(log_likelihoods - max_log_likelihood)
+        log_likelihood_no_dla = max_log_likelihood + np.log(
+            np.nanmean(sample_probabilities)
+        )
+
+        return log_likelihood_no_dla
+
 
 class NullMFGPMAT(NullMFGP):
     """
@@ -162,10 +255,15 @@ class NullMFGPMAT(NullMFGP):
             log_tau_0 = learned["log_tau_0"][0, 0]
             log_beta = learned["log_beta"][0, 0]
 
-        # Load `prev_tau_0` and `prev_beta` arrays for marginalization
-        with h5py.File(tau_beta_file, "r") as tau_beta_data:
-            prev_tau_0 = tau_beta_data["tau_0_samples"][:]
-            prev_beta = tau_beta_data["beta_samples"][:]
+        # Error handling in file loading
+        try:
+            with h5py.File(tau_beta_file, "r") as tau_beta_data:
+                prev_tau_0 = tau_beta_data["tau_0_samples"][:]
+                prev_beta = tau_beta_data["beta_samples"][:]
+        except (OSError, KeyError) as e:
+            raise RuntimeError(
+                f"Error loading tau/beta samples from {tau_beta_file}: {e}"
+            )
 
         # Validate shape of `prev_tau_0` and `prev_beta` to ensure consistency
         if prev_tau_0.shape != prev_beta.shape:
