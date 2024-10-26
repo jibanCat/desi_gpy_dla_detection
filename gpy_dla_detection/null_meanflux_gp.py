@@ -35,6 +35,7 @@ class NullMFGP(NullGP):
         # Placeholder for cached `this_mu` and `this_M` based on `prev_beta` and `prev_tau_0` values
         self.precomputed_mu = None
         self.precomputed_M = None
+        self.precomputed_omega2 = None
 
     def get_interp(
         self, x: np.ndarray, y: np.ndarray, wavelengths: np.ndarray, z_qso: float
@@ -55,26 +56,10 @@ class NullMFGP(NullGP):
         # Prepare arrays to store precomputed values
         self.precomputed_mu = np.zeros((num_dla_samples, x.shape[0]))
         self.precomputed_M = np.zeros((num_dla_samples, x.shape[0], self.params.k))
+        self.precomputed_omega2 = np.zeros((num_dla_samples, x.shape[0]))
 
-        # Precompute `this_mu` and `this_M` for each sample
-        for i in range(num_dla_samples):
-            # Compute effective optical depth based on sampled `prev_tau_0` and `prev_beta`
-            total_optical_depth = effective_optical_depth(
-                wavelengths,
-                self.prev_beta[i],
-                self.prev_tau_0[i],
-                z_qso,
-                self.params.num_forest_lines,
-            )
-            lya_absorption = np.exp(-np.sum(total_optical_depth, axis=1))
-
-            # Interpolate mean vector and covariance decomposition
-            this_mu = self.mu_interpolator(x) * lya_absorption
-            this_M = self.M_interpolator(x) * lya_absorption[:, None]
-
-            # Cache results
-            self.precomputed_mu[i, :] = this_mu
-            self.precomputed_M[i, :, :] = this_M
+        _this_mu = self.mu_interpolator(x)
+        _this_M = self.M_interpolator(x)
 
         # Interpolate noise parameters
         this_log_omega = self.log_omega_interpolator(x)
@@ -93,6 +78,31 @@ class NullMFGP(NullGP):
         )
         self.this_omega2 = this_omega2 * scaling_factor**2
 
+        # Precompute `this_mu` and `this_M` for each sample
+        for i in range(num_dla_samples):
+            # Compute effective optical depth based on sampled `prev_tau_0` and `prev_beta`
+            total_optical_depth = effective_optical_depth(
+                wavelengths,
+                self.prev_beta[i],
+                self.prev_tau_0[i],
+                z_qso,
+                self.params.num_forest_lines,
+            )
+            lya_absorption = np.exp(-np.sum(total_optical_depth, axis=1))
+
+            # Interpolate mean vector and covariance decomposition
+            this_mu = _this_mu * lya_absorption
+            this_M = _this_M * lya_absorption[:, None]
+            # re-adjust (K + Ω) to the level of μ .* exp( -optical_depth ) = μ .* a_lya
+            # now the null model likelihood is:
+            # p(y | λ, zqso, v, ω, M_nodla) = N(y; μ .* a_lya, A_lya (K + Ω) A_lya + V)
+            this_omega2 = this_omega2 * lya_absorption**2
+
+            # Cache results
+            self.precomputed_mu[i, :] = this_mu
+            self.precomputed_M[i, :, :] = this_M
+            self.precomputed_omega2[i, :] = this_omega2
+
     def log_model_evidence(self) -> float:
         """
         Compute log model evidence by marginalizing over `prev_beta` and `prev_tau_0`
@@ -109,14 +119,20 @@ class NullMFGP(NullGP):
             # Extract precomputed values
             this_mu = self.precomputed_mu[i, :]
             this_M = self.precomputed_M[i, :, :]
+            this_omega2 = self.precomputed_omega2[i, :]
 
             # Calculate log-likelihood for this sample
             log_likelihoods[i] = self.log_mvnpdf_low_rank(
-                self.y, this_mu, this_M, self.this_omega2 + self.v
+                self.y, this_mu, this_M, this_omega2 + self.v
             )
 
         # Monte Carlo average to get final log model evidence
-        log_likelihood_no_dla = np.log(np.mean(np.exp(log_likelihoods)))
+        # Perform the log-sum-exp trick to avoid numerical instability
+        max_log_likelihood = np.nanmax(log_likelihoods)
+        sample_probabilities = np.exp(log_likelihoods - max_log_likelihood)
+        log_likelihood_no_dla = max_log_likelihood + np.log(
+            np.nanmean(sample_probabilities)
+        )
 
         return log_likelihood_no_dla
 
