@@ -46,7 +46,8 @@ class NullMFGP(NullGP):
     ) -> None:
         """
         Precompute and cache `this_mu` and `this_M` for each pair of `prev_beta` and `prev_tau_0`
-        to enable efficient marginalization in log model evidence calculation.
+        to enable efficient marginalization in log model evidence calculation. If precomputed values
+        are already available, it skips the calculation.
 
         Args:
             x: Emission wavelengths of the observed data.
@@ -54,10 +55,19 @@ class NullMFGP(NullGP):
             wavelengths: Observed wavelengths, derived from x and z_qso.
             z_qso: Redshift of the quasar.
         """
-        # Assume `self.prev_beta` and `self.prev_tau_0` are arrays of shape (num_dla_samples,)
+        # Check if precomputed arrays are already present
+        if (
+            self.precomputed_mu is not None
+            and self.precomputed_M is not None
+            and self.precomputed_omega2 is not None
+        ):
+            log.info("Using precomputed `mu`, `M`, and `omega2` values.")
+            return  # Skip further computation
+
+        # If precomputed arrays are not present, proceed with computation
         num_dla_samples = self.prev_beta.shape[0]
 
-        # Prepare arrays to store precomputed values
+        # Initialize arrays for caching
         self.precomputed_mu = np.zeros((num_dla_samples, x.shape[0]))
         self.precomputed_M = np.zeros((num_dla_samples, x.shape[0], self.params.k))
         self.precomputed_omega2 = np.zeros((num_dla_samples, x.shape[0]))
@@ -94,7 +104,7 @@ class NullMFGP(NullGP):
             )
             lya_absorption = np.exp(-np.sum(total_optical_depth, axis=1))
 
-            # Interpolate mean vector and covariance decomposition
+            # Compute and cache mean vector and covariance decomposition
             this_mu = _this_mu * lya_absorption
             this_M = _this_M * lya_absorption[:, None]
             # re-adjust (K + Ω) to the level of μ .* exp( -optical_depth ) = μ .* a_lya
@@ -102,7 +112,7 @@ class NullMFGP(NullGP):
             # p(y | λ, zqso, v, ω, M_nodla) = N(y; μ .* a_lya, A_lya (K + Ω) A_lya + V)
             this_omega2 = _this_omega2 * lya_absorption**2
 
-            # Cache results
+            # Store precomputed results
             self.precomputed_mu[i, :] = this_mu
             self.precomputed_M[i, :, :] = this_M
             self.precomputed_omega2[i, :] = this_omega2
@@ -244,6 +254,8 @@ class NullMFGPMAT(NullMFGP):
         prior: PriorCatalog,
         learned_file: str = "learned_qso_model_lyseries_variance_kim_dr9q_minus_concordance.mat",
         tau_beta_file: str = "data/dr12q/processed/tau_0_samples_30000.mat",
+        prev_tau_0: float = 0.0023,  # Not used
+        prev_beta: float = 3.65,  # Not used
     ):
         # Load the main learned GP parameters
         with h5py.File(learned_file, "r") as learned:
