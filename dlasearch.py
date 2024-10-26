@@ -459,7 +459,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             "TARGETID",
             "RA",
             "DEC",
-            "Z",
+            "Z_QSO",  # QSO redshift: 2024-10-25 changed from Z, so remember to update the old dlacat files
             "SNR",
             "DLAID",
             "Z_DLA",
