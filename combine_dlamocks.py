@@ -61,7 +61,13 @@ def main():
         # Check if the file exists before reading
         if os.path.isfile(filename):
             print(f"Reading {filename}...")
-            tables.append(Table.read(filename))
+            table = Table.read(filename)
+
+            # Rename column 'Z' to 'Z_QSO' if it exists
+            if "Z" in table.colnames and "Z_QSO" not in table.colnames:
+                table.rename_column("Z", "Z_QSO")
+
+            tables.append(table)
         else:
             print(f"File {filename} not found. Skipping...")
 
