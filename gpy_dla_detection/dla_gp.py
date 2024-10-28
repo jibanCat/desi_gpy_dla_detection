@@ -647,9 +647,9 @@ class DLAGP(NullGP):
         )
 
         for num_dlas, maxind in enumerate(maxinds):
-            # break if this column is all NaNs
-            if valid_columns[num_dlas] == False:
-                break
+            # skip if maxind is NaN
+            if np.isnan(maxind):
+                continue
 
             # store k MAP estimates for DLA(k) model
             if num_dlas > 0:
