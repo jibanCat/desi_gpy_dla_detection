@@ -6,7 +6,7 @@ STEP=320
 
 # Loop over the healpix start indices and calculate corresponding end indices
 for (( HPX_START_INDEX=0; HPX_START_INDEX<MAX_HPX_INDEX; HPX_START_INDEX+=STEP )); do
-    HPX_END_INDEX=$((HPX_START_INDEX + STEP))
+    HPX_END_INDEX=$((HPX_START_INDEX + 280))
 
     # Print the command to be executed for reference
     echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits\",\
