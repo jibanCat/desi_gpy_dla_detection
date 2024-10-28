@@ -618,7 +618,21 @@ class DLAGP(NullGP):
             the 0 dimension is for DLA(k) model and the 1 dimension is for
             the MAP estimates.
         """
-        maxinds = np.nanargmax(self.sample_log_likelihoods, axis=0)
+        # maxinds = np.nanargmax(self.sample_log_likelihoods, axis=0)
+        # Example array for demonstration; replace this with your actual array
+        sample_log_likelihoods = self.sample_log_likelihoods
+
+        # Identify columns that are not all NaNs
+        valid_columns = ~np.isnan(sample_log_likelihoods).all(axis=0)
+
+        # Apply np.nanargmax only on columns that are not all NaNs
+        maxinds = np.full(
+            sample_log_likelihoods.shape[1], np.nan
+        )  # Default to None for all-NaN columns
+        if valid_columns.any():  # Ensure there are valid columns to process
+            maxinds[valid_columns] = np.nanargmax(
+                sample_log_likelihoods[:, valid_columns], axis=0
+            )
 
         max_dlas = self.sample_log_likelihoods.shape[1]
 
@@ -633,6 +647,10 @@ class DLAGP(NullGP):
         )
 
         for num_dlas, maxind in enumerate(maxinds):
+            # break if this column is all NaNs
+            if valid_columns[num_dlas] == False:
+                break
+
             # store k MAP estimates for DLA(k) model
             if num_dlas > 0:
                 # all_z_dlas : (num_dlas, num_dla_samples)
