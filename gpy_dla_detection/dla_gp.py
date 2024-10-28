@@ -627,7 +627,7 @@ class DLAGP(NullGP):
 
         # Apply np.nanargmax only on columns that are not all NaNs
         maxinds = np.full(
-            sample_log_likelihoods.shape[1], np.nan
+            sample_log_likelihoods.shape[1], None
         )  # Default to None for all-NaN columns
         if valid_columns.any():  # Ensure there are valid columns to process
             maxinds[valid_columns] = np.nanargmax(
@@ -648,7 +648,7 @@ class DLAGP(NullGP):
 
         for num_dlas, maxind in enumerate(maxinds):
             # skip if maxind is NaN
-            if np.isnan(maxind):
+            if maxind is None:
                 continue
 
             # store k MAP estimates for DLA(k) model
