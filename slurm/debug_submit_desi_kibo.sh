@@ -86,6 +86,21 @@ python desi-DLAGP.py \
     --dlambda "$DLAMBDA" \
     --k "$K" \
     --max_noise_variance "$MAX_NOISE_VARIANCE" \
-    --hpx_start "$LEVEL2_START" \
-    --hpx_end "$LEVEL2_END" \
+    --hpx_start "$HPX_START" \
+    --hpx_end "$HPX_END" \
     --figure_dir "$FIGURE_DIR"
+
+
+# sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits",\
+# OUTDIR="/pscratch/sd/j/jibancat/desi-kibo-gpdla/",\
+# RELEASE="kibo",\
+# PROGRAM="dark",\
+# SURVEY="main",\
+# BALMASK=false,\
+# MAX_DLAS=3,\
+# PLOT_FIGURES=1,\
+# BATCH_SIZE=313,\
+# MAX_WORKERS=32,\
+# HPX_START=0,\
+# HPX_END=1,\
+# FIGURE_DIR="debug_hpx0" slurm/debug_submit_desi_kibo.sh
