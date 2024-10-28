@@ -34,6 +34,6 @@ for filename in os.listdir(log_dir):
 # Write the identified ranges to the output file
 with open(output_file, "w") as f_out:
     for hpx_start, hpx_end in error_ranges:
-        f_out.write(f"{hpx_start}-{hpx_end}\n")
+        f_out.write(f"{hpx_start} {hpx_end}\n")
 
 print(f"Error ranges saved to {output_file}")
