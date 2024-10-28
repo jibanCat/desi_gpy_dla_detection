@@ -150,7 +150,7 @@ def process_single_spectrum(
 
     # Identify the most probable model
     model_posteriors = bayes.model_posteriors[:]
-    argmaxind = np.argmax(model_posteriors) - 1
+    argmaxind = np.nanargmax(model_posteriors) - 1
 
     # Check if any DLA detection is made
     if argmaxind > 0:
