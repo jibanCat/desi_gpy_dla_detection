@@ -449,36 +449,36 @@ def main(args=None):
             with ProcessPoolExecutor(max_workers=nproc_futures) as high_level_executor:
                 results = list(high_level_executor.map(_dlasearchmock, arguments))
 
-    results = vstack(results)
-    results.meta["EXTNAME"] = "DLACAT"
+        results = vstack(results)
+        results.meta["EXTNAME"] = "DLACAT"
 
-    # remove extra column from hpx with no detections
-    if "col0" in results.columns:
-        results.remove_column("col0")
+        # remove extra column from hpx with no detections
+        if "col0" in results.columns:
+            results.remove_column("col0")
 
-    # filename for output include release, survey, program and healpix range
-    if not (args.tilebased) and not (args.mocks):
-        outfile = os.path.join(
-            args.outdir,
-            f"dlacat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits",
-        )
-        if os.path.isfile(outfile):
-            log.warning(
-                f"dlacat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits already exists in {args.outdir}, overwriting"
+        # filename for output include release, survey, program and healpix range
+        if not (args.tilebased) and not (args.mocks):
+            outfile = os.path.join(
+                args.outdir,
+                f"dlacat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits",
             )
-        results.write(outfile, overwrite=True)
+            if os.path.isfile(outfile):
+                log.warning(
+                    f"dlacat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits already exists in {args.outdir}, overwriting"
+                )
+            results.write(outfile, overwrite=True)
 
-    elif args.mocks:
-        # filename for output include release, survey, program and folder range
-        outfile = os.path.join(
-            args.outdir,
-            f"dlacat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits",
-        )
-        if os.path.isfile(outfile):
-            log.warning(
-                f"dlacat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits already exists in {args.outdir}, overwriting"
+        elif args.mocks:
+            # filename for output include release, survey, program and folder range
+            outfile = os.path.join(
+                args.outdir,
+                f"dlacat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits",
             )
-        results.write(outfile, overwrite=True)
+            if os.path.isfile(outfile):
+                log.warning(
+                    f"dlacat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits already exists in {args.outdir}, overwriting"
+                )
+            results.write(outfile, overwrite=True)
 
     tfin = time.time()
     total_time = tfin - tini
