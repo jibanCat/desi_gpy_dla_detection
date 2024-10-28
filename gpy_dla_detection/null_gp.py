@@ -7,7 +7,6 @@ import h5py
 import scipy
 from scipy import interpolate
 from scipy.linalg import lapack
-from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 from .set_parameters import Parameters
 from .model_priors import PriorCatalog
@@ -315,9 +314,9 @@ class NullGP:
         scipy_lapack: bool = True,
     ) -> float:
         """
-        Efficiently computes
+        efficiently computes
 
-        log N(y; mu, MM' + diag(d))
+           log N(y; mu, MM' + diag(d))
 
         :param y: this_flux, (n_points, )
         :param mu: this_mu, the mean vector of GP, (n_points, )
@@ -339,25 +338,19 @@ class NullGP:
         # then
         #   K^-1 = D^-1 - D^-1 M B^-1 M' D^-1
         B = np.matmul(M.T, D_inv_M)  # (k, n_points) * (n_points, k) -> (k, k)
-
-        # Add the identity matrix with indexing and a small jitter if necessary
-        B.ravel()[0 :: (k + 1)] += 1
-        jitter = 1e-6  # Initial jitter to help ensure positive definiteness
-
-        # Attempt Cholesky factorization with jitter added if needed
-        try:
-            L, lower = cho_factor(B, lower=True)
-        except np.linalg.LinAlgError:
-            B.ravel()[0 :: (k + 1)] += jitter
-            L, lower = cho_factor(B, lower=True)
-
+        # add the identity matrix with magic indicing
+        B.ravel()[0 :: (k + 1)] = B.ravel()[0 :: (k + 1)] + 1
+        # numpy cholesky returns lower triangle, different than MATLAB's upper triangle
+        L = np.linalg.cholesky(B)
         # C = B^-1 M' D^-1
         if scipy_lapack:
             tmp = np.matmul(lapack.dtrtri(np.asfortranarray(L), lower=1)[0], D_inv_M.T)
             C = np.matmul(lapack.dtrtri(np.asfortranarray(L.T), lower=0)[0], tmp)
         else:
-            tmp = solve_triangular(L, D_inv_M.T, lower=True)  # (k, n_points)
-            C = solve_triangular(L.T, tmp, lower=False)  # (k, n_points)
+            tmp = scipy.linalg.solve_triangular(
+                L, D_inv_M.T, lower=True
+            )  # (k, n_points)
+            C = scipy.linalg.solve_triangular(L.T, tmp, lower=False)  # (k, n_points)
 
         K_inv_y = D_inv_y - np.matmul(D_inv_M, np.matmul(C, y))  # (n_points, 1)
 
