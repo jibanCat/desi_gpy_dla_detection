@@ -19,8 +19,8 @@ HPX_START_INDEX=$HPX_START_INDEX,\
 HPX_END_INDEX=$HPX_END_INDEX slurm/submit_desi_kibo.sh"
 
     # Submit the job using sbatch
-    sbatch --export=ALL,QSOCAT=\"/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits\",\
-OUTDIR=\"/pscratch/sd/j/jibancat/desi-kibo-gpdla/\",\
+    sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits",\
+OUTDIR="/pscratch/sd/j/jibancat/desi-kibo-gpdla/",\
 MAX_DLAS=3,\
 PLOT_FIGURES=0,\
 BATCH_SIZE=313,\
