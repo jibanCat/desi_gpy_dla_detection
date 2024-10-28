@@ -343,6 +343,9 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         noise_variance[:] = np.nan
         noise_variance[~ind] = 1 / ivar[~ind]
 
+        # Append ivar=0 to pixel mask
+        pixel_mask[ind] = True
+
         # This part set by Allyson, leave it as it is to match the final catalog filtering
         # only searching to rest frame 900 A (TODO: make this match GPDLA search range)
         fitmask = wave_rf > constants.search_minlam
