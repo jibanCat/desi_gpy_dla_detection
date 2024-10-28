@@ -350,13 +350,16 @@ def main(args=None):
         # running in between healpix pixels: hpx_start - hpx_end
         catalog = read_catalog(args.qsocat, args.balmask, args.tilebased)
 
-        all_hpxs = catalog["HPXPIXEL"]
+        all_hpxs = np.unique(catalog["HPXPIXEL"])
         log.info(
             "running in between healpix pixels {} - {}; Total {}".format(
                 args.hpx_start, args.hpx_end, all_hpxs[-1]
             )
         )
-        ind = (all_hpxs >= args.hpx_start) & (all_hpxs < args.hpx_end)
+
+        # TODO: So hxps are ALSO discontinuous, so it might make more sense to just indexing the catalog
+        # ind = (all_hpxs >= args.hpx_start) & (all_hpxs < args.hpx_end)
+        this_hpxs = all_hpxs.data[args.hpx_start : args.hpx_end]
 
     # Convert Parameters to a dictionary
     params_dict = {
@@ -397,7 +400,6 @@ def main(args=None):
 
     if not (args.tilebased) and not (args.mocks):
         datapath = f"/global/cfs/cdirs/desi/spectro/redux/{args.release}/healpix/{args.survey}/{args.program}"
-        this_hpxs = all_hpxs[ind]
 
         if nproc_futures == 1:
             results = [
@@ -409,7 +411,7 @@ def main(args=None):
                     catalog[catalog["HPXPIXEL"] == hpx],
                     model_params,  # Pass the model parameters dictionary here
                 )
-                for hpx in np.unique(this_hpxs)
+                for hpx in this_hpxs
             ]
 
         else:
@@ -422,7 +424,7 @@ def main(args=None):
                     "hpxcat": catalog[catalog["HPXPIXEL"] == hpx],
                     "model_params": model_params,
                 }
-                for hpx in np.unique(this_hpxs)
+                for hpx in this_hpxs
             ]
             # Create a high-level executor
             with ProcessPoolExecutor(max_workers=nproc_futures) as high_level_executor:
