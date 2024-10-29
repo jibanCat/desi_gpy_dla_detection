@@ -81,14 +81,24 @@ echo 'export LD_LIBRARY_PATH=$HOME/.local/usr/local/lib64:$LD_LIBRARY_PATH' >> ~
 
 ## Run GP DLA finder for DESI like .fits file
 
-We provide a simple Python script, `run_bayes_select.py` , to reproduce the MATLAB code `multi_dlas/process_qsos_multiple_dlas_meanflux.m` and create a HDF5 catalogue in the end with the posterior probability of having DLAs in a given spectrum.
+We provide a simple Python script, `desi-DLAGP.py` , to reproduce the DLA catalog used in DESI BAO analysis.
 
 To run this Python script, do:
 
 ```bash
-# Set default arguments if not provided
-SPECTRA_FILENAME="${SPECTRA_FILENAME:-/path/to/spectra.fits}"
-ZBEST_FILENAME="${ZBEST_FILENAME:-/path/to/zbest.fits}"
+
+# Ensure the environment is loaded
+source /global/cfs/cdirs/desi/software/desi_environment.sh main
+
+# Set default values for variables if they are not provided
+QSOCAT="${QSOCAT:-/path/to/quasar/catalog/zcat.fits}"
+RELEASE="${RELEASE:-v5.9.5}"
+PROGRAM="${PROGRAM:-dark}"
+SURVEY="${SURVEY:-main}"
+MOCKDIR="${MOCKDIR:-path/to/mock}"
+OUTDIR="${OUTDIR:-/path/to/savedir}"
+BALMASK="${BALMASK:-false}"
+
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
 CATALOG_NAME="${CATALOG_NAME:-data/dr12q/processed/catalog.mat}"
 LOS_CATALOG="${LOS_CATALOG:-data/dla_catalogs/dr9q_concordance/processed/los_catalog}"
@@ -99,9 +109,9 @@ MIN_Z_SEPARATION="${MIN_Z_SEPARATION:-3000.0}"
 PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
 MAX_DLAS="${MAX_DLAS:-3}"
-PLOT_FIGURES="${PLOT_FIGURES:-0}"
-MAX_WORKERS="${MAX_WORKERS:-32}"
-BATCH_SIZE="${BATCH_SIZE:-313}"
+PLOT_FIGURES="${PLOT_FIGURES:-1}"
+MAX_WORKERS="${MAX_WORKERS:-32}"               # Reduced for debug
+BATCH_SIZE="${BATCH_SIZE:-313}"               # Smaller batch size for debug
 LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
@@ -111,37 +121,47 @@ MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
+LEVEL2_START="${LEVEL2_START:-0}"
+LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 
-# in shell, to make predictions on two QSO spectra.
-python run_bayes_select.py \
---spectra_filename "${SPECTRA_FILENAME}" \
---zbest_filename "${ZBEST_FILENAME}" \
---learned_file "${LEARNED_FILE}" \
---catalog_name "${CATALOG_NAME}" \
---los_catalog "${LOS_CATALOG}" \
---dla_catalog "${DLA_CATALOG}" \
---dla_samples_file "${DLA_SAMPLES_FILE}" \
---sub_dla_samples_file "${SUB_DLA_SAMPLES_FILE}" \
---min_z_separation "${MIN_Z_SEPARATION}" \
---prev_tau_0 "${PREV_TAU_0}" \
---prev_beta "${PREV_BETA}" \
---max_dlas "${MAX_DLAS}" \
---plot_figures "${PLOT_FIGURES}" \
---max_workers "${MAX_WORKERS}" \
---batch_size "${BATCH_SIZE}" \
---loading_min_lambda "${LOADING_MIN_LAMBDA}" \
---loading_max_lambda "${LOADING_MAX_LAMBDA}" \
---normalization_min_lambda "${NORMALIZATION_MIN_LAMBDA}" \
---normalization_max_lambda "${NORMALIZATION_MAX_LAMBDA}" \
---min_lambda "${MIN_LAMBDA}" \
---max_lambda "${MAX_LAMBDA}" \
---dlambda "${DLAMBDA}" \
---k "${K}" \
---max_noise_variance "${MAX_NOISE_VARIANCE}"
+FIGURE_DIR="${FIGURE_DIR:-figures/}"
+
+# Run the Python script with srun
+python desi-DLAGP.py \
+--qsocat "$QSOCAT" \
+--release "$RELEASE" \
+--program "$PROGRAM" \
+--survey "$SURVEY" \
+--mocks \
+--mockdir "$MOCKDIR" \
+$(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
+--outdir "$OUTDIR" \
+--learned_file "$LEARNED_FILE" \
+--catalog_name "$CATALOG_NAME" \
+--los_catalog "$LOS_CATALOG" \
+--dla_catalog "$DLA_CATALOG" \
+--dla_samples_file "$DLA_SAMPLES_FILE" \
+--sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
+--min_z_separation "$MIN_Z_SEPARATION" \
+--prev_tau_0 "$PREV_TAU_0" \
+--prev_beta "$PREV_BETA" \
+--max_dlas "$MAX_DLAS" \
+--plot_figures "$PLOT_FIGURES" \
+--max_workers "$MAX_WORKERS" \
+--batch_size "$BATCH_SIZE" \
+--loading_min_lambda "$LOADING_MIN_LAMBDA" \
+--loading_max_lambda "$LOADING_MAX_LAMBDA" \
+--normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
+--normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
+--min_lambda "$MIN_LAMBDA" \
+--max_lambda "$MAX_LAMBDA" \
+--dlambda "$DLAMBDA" \
+--k "$K" \
+--max_noise_variance "$MAX_NOISE_VARIANCE" \
+--level2_start "$LEVEL2_START" \
+--level2_end "$LEVEL2_END" \
+--figure_dir "$FIGURE_DIR"
 ```
-
-Each DESI `.fits` file has multiple spectra. The output of this script is a DLA catalog for all spectra in that `.fits` file.
-You probably can re-design the whole pipeline for multiple `.fits` file, but I am not that familiar with DESI data structure at the moment.
 
 ## For developers
 
