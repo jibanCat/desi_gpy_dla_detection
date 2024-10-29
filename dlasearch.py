@@ -358,16 +358,40 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             log.warning(f"Targetid {tid} skipped - SEARCH WINDOW >80% MASKED")
             continue
 
-        # resample model to observed wave grid
-        model.process_qso(
-            entry,
-            tid,
-            wavelengths=wave,
-            flux=flux,
-            noise_variance=noise_variance,
-            pixel_mask=pixel_mask,
-            z_qso=zqso,
-        )
+        # Allyson's code to get fitwarning
+        # TODO: replace this specific to GP
+        fitwarn = np.full(3, 0)
+
+        try:
+            # Process each QSO, resampling model to observed wavelength grid
+            model.process_qso(
+                entry,
+                tid,
+                wavelengths=wave,
+                flux=flux,
+                noise_variance=noise_variance,
+                pixel_mask=pixel_mask,
+                z_qso=zqso,
+            )
+
+        except np.linalg.LinAlgError:
+            # Catch any LinAlgError and set a flag
+            print(f"Warning: LinAlgError for target ID {tid}. Setting error flag.")
+            # error_flags[tid] = "non_pos_def_matrix"
+            fitwarn |= DLAFLAG.BAD_ZFIT  # TODO: Placeholder - change to GPDLA flag
+
+        except ValueError as e:
+            if "All-NaN slice encountered" in str(e):
+                print(
+                    f"Warning: All-NaN slice encountered for target ID {tid}. Setting error flag."
+                )
+                # error_flags[tid] = "all_nan_slice"
+                fitwarn |= (
+                    DLAFLAG.BAD_NHIFIT
+                )  # TODO: Placeholder - change to GPDLA flag
+            else:
+                # If it's an unexpected ValueError, re-raise it
+                raise
 
         # Get zerr and nhierr from GPDLA
         # TODO: check the robustness of zerr and nhierr
@@ -388,10 +412,6 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         zerr[np.isnan(zerr)] = -1
         nhi[np.isnan(nhi)] = -1
         nhierr[np.isnan(nhierr)] = -1
-
-        # Allyson's code to get fitwarning
-        # TODO: replace this specific to GP
-        fitwarn = np.full(3, 0)
 
         # check for potential BAL contamination in solution
         # false positive should only come from Lya and NV - all other lines too weak
