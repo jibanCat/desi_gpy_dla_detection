@@ -2,7 +2,7 @@ import os
 import re
 
 # Set the path where the log files are located and the output file name
-log_dir = "./logs_kibo"  # Update with the actual path to your log files
+log_dir = "./logs_kibo_2nd"  # Update with the actual path to your log files
 output_file = "error_file_list.txt"
 
 # Error messages to look for
