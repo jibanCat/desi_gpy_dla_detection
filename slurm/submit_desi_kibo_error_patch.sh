@@ -47,18 +47,69 @@ DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 
-# Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
-HPX_STEP=40
-HPX_START_INDEX="${HPX_START_INDEX:-0}"
-HPX_END_INDEX="${HPX_END_INDEX:-280}"  # 40 healpix pixels * 8 tasks = 320 total healpix pixels
+# Path to the error list file
+ERROR_LIST_FILE="${ERROR_LIST_FILE:-error_file_list.txt}"
 
-# Loop over each healpix range and start 8 concurrent jobs
-for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
-    HPX_START=$i
-    HPX_END=$(( i + HPX_STEP ))
+# Check if the error list file exists
+if [[ ! -f "$ERROR_LIST_FILE" ]]; then
+    echo "Error: Error list file $ERROR_LIST_FILE not found!"
+    exit 1
+fi
 
+# Read error list into an array
+error_list=()
+while read -r hpx_start hpx_end; do
+    error_list+=("$hpx_start $hpx_end")
+done < "$ERROR_LIST_FILE"
+
+# Set starting index for this job (useful for splitting into multiple jobs if needed)
+START_INDEX=${START_INDEX:-0}
+
+# Process only a batch of 8 pairs for this SLURM job
+for (( j = 0; j < 8 && (START_INDEX + j) < ${#error_list[@]}; j++ )); do
+    # Get the hpx_start and hpx_end for each task in this batch
+    hpx_pair=(${error_list[START_INDEX + j]})
+    HPX_START="${hpx_pair[0]}"
+    HPX_END="${hpx_pair[1]}"
+
+    echo "---"
+    echo "Current index: $((START_INDEX + j))"
     echo "Running for healpix ${HPX_START} <= HPX < ${HPX_END}"
 
+    echo "srun -N 1 -n 1 -c 32 --output="kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+--qsocat "$QSOCAT" \
+--release "$RELEASE" \
+--program "$PROGRAM" \
+--survey "$SURVEY" \
+$(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
+--outdir "$OUTDIR" \
+--learned_file "$LEARNED_FILE" \
+--catalog_name "$CATALOG_NAME" \
+--los_catalog "$LOS_CATALOG" \
+--dla_catalog "$DLA_CATALOG" \
+--dla_samples_file "$DLA_SAMPLES_FILE" \
+--sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
+--min_z_separation "$MIN_Z_SEPARATION" \
+--prev_tau_0 "$PREV_TAU_0" \
+--prev_beta "$PREV_BETA" \
+--max_dlas "$MAX_DLAS" \
+--plot_figures "$PLOT_FIGURES" \
+--max_workers "$MAX_WORKERS" \
+--batch_size "$BATCH_SIZE" \
+--loading_min_lambda "$LOADING_MIN_LAMBDA" \
+--loading_max_lambda "$LOADING_MAX_LAMBDA" \
+--normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
+--normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
+--min_lambda "$MIN_LAMBDA" \
+--max_lambda "$MAX_LAMBDA" \
+--dlambda "$DLAMBDA" \
+--k "$K" \
+--max_noise_variance "$MAX_NOISE_VARIANCE" \
+--figure_dir "figures/healpix_${HPX_START}_${HPX_END}" \
+--hpx_start "$HPX_START" \
+--hpx_end "$HPX_END" &"
+
+    Run each job as an individual srun command with 32 CPUs
     srun -N 1 -n 1 -c 32 --output="kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
         --qsocat "$QSOCAT" \
         --release "$RELEASE" \
@@ -93,5 +144,5 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --hpx_end "$HPX_END" &
 done
 
-# Wait for all background jobs to finish
+# Wait for all background jobs in this batch to finish
 wait
