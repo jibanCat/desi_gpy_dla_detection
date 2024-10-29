@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set the path to your SLURM script
-SLURM_SCRIPT="submit_desi_kibo_error_patch.sh"
+SLURM_SCRIPT="slurm/submit_desi_kibo_error_patch.sh"
 
 # Loop over START_INDEX values from 0 to 40, incrementing by 8
 for START_INDEX in $(seq 0 8 40); do
