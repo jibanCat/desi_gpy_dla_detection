@@ -109,39 +109,39 @@ $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
 --hpx_start "$HPX_START" \
 --hpx_end "$HPX_END" &"
 
-    Run each job as an individual srun command with 32 CPUs
-    srun -N 1 -n 1 -c 32 --output="kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
-        --qsocat "$QSOCAT" \
-        --release "$RELEASE" \
-        --program "$PROGRAM" \
-        --survey "$SURVEY" \
-        $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
-        --outdir "$OUTDIR" \
-        --learned_file "$LEARNED_FILE" \
-        --catalog_name "$CATALOG_NAME" \
-        --los_catalog "$LOS_CATALOG" \
-        --dla_catalog "$DLA_CATALOG" \
-        --dla_samples_file "$DLA_SAMPLES_FILE" \
-        --sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
-        --min_z_separation "$MIN_Z_SEPARATION" \
-        --prev_tau_0 "$PREV_TAU_0" \
-        --prev_beta "$PREV_BETA" \
-        --max_dlas "$MAX_DLAS" \
-        --plot_figures "$PLOT_FIGURES" \
-        --max_workers "$MAX_WORKERS" \
-        --batch_size "$BATCH_SIZE" \
-        --loading_min_lambda "$LOADING_MIN_LAMBDA" \
-        --loading_max_lambda "$LOADING_MAX_LAMBDA" \
-        --normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
-        --normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
-        --min_lambda "$MIN_LAMBDA" \
-        --max_lambda "$MAX_LAMBDA" \
-        --dlambda "$DLAMBDA" \
-        --k "$K" \
-        --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "figures/healpix_${HPX_START}_${HPX_END}" \
-        --hpx_start "$HPX_START" \
-        --hpx_end "$HPX_END" &
+    # Run each job as an individual srun command with 32 CPUs
+    # srun -N 1 -n 1 -c 32 --output="kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+    #     --qsocat "$QSOCAT" \
+    #     --release "$RELEASE" \
+    #     --program "$PROGRAM" \
+    #     --survey "$SURVEY" \
+    #     $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
+    #     --outdir "$OUTDIR" \
+    #     --learned_file "$LEARNED_FILE" \
+    #     --catalog_name "$CATALOG_NAME" \
+    #     --los_catalog "$LOS_CATALOG" \
+    #     --dla_catalog "$DLA_CATALOG" \
+    #     --dla_samples_file "$DLA_SAMPLES_FILE" \
+    #     --sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
+    #     --min_z_separation "$MIN_Z_SEPARATION" \
+    #     --prev_tau_0 "$PREV_TAU_0" \
+    #     --prev_beta "$PREV_BETA" \
+    #     --max_dlas "$MAX_DLAS" \
+    #     --plot_figures "$PLOT_FIGURES" \
+    #     --max_workers "$MAX_WORKERS" \
+    #     --batch_size "$BATCH_SIZE" \
+    #     --loading_min_lambda "$LOADING_MIN_LAMBDA" \
+    #     --loading_max_lambda "$LOADING_MAX_LAMBDA" \
+    #     --normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
+    #     --normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
+    #     --min_lambda "$MIN_LAMBDA" \
+    #     --max_lambda "$MAX_LAMBDA" \
+    #     --dlambda "$DLAMBDA" \
+    #     --k "$K" \
+    #     --max_noise_variance "$MAX_NOISE_VARIANCE" \
+    #     --figure_dir "figures/healpix_${HPX_START}_${HPX_END}" \
+    #     --hpx_start "$HPX_START" \
+    #     --hpx_end "$HPX_END" &
 done
 
 # Wait for all background jobs in this batch to finish
