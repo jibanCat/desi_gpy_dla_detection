@@ -154,34 +154,34 @@ def read_mock_catalog(qsocat, balmask, mockpath):
     catalog = catalog[zmask]
 
     if balmask:
-        try:
-            # open bal catalog
-            balcat = os.path.join(mockpath, "bal_cat.fits")
-            cols = ["TARGETID", "AI_CIV", "NCIV_450", "VMIN_CIV_450", "VMAX_CIV_450"]
-            balcat = Table(fitsio.read(balcat, ext=1, columns=cols))
+        # try:
+        # open bal catalog
+        balcat = os.path.join(mockpath, "bal_cat.fits")
+        cols = ["TARGETID", "AI_CIV", "NCIV_450", "VMIN_CIV_450", "VMAX_CIV_450"]
+        balcat = Table(fitsio.read(balcat, ext=1, columns=cols))
 
-            # add columns to catalog
-            ai = np.full(len(catalog), 0.0)
-            nciv = np.full(len(catalog), 0)
-            vmin = np.full((len(catalog), balcat["VMIN_CIV_450"].shape[1]), -1.0)
-            vmax = np.full((len(catalog), balcat["VMIN_CIV_450"].shape[1]), -1.0)
+        # add columns to catalog
+        ai = np.full(len(catalog), 0.0)
+        nciv = np.full(len(catalog), 0)
+        vmin = np.full((len(catalog), balcat["VMIN_CIV_450"].shape[1]), -1.0)
+        vmax = np.full((len(catalog), balcat["VMIN_CIV_450"].shape[1]), -1.0)
 
-            for i, tid in enumerate(catalog["TARGETID"]):
-                if np.any(tid == balcat["TARGETID"]):
-                    match = balcat[balcat["TARGETID"] == tid]
-                    ai[i] = match["AI_CIV"]
-                    nciv[i] = match["NCIV_450"]
-                    vmin[i] = match["VMIN_CIV_450"]
-                    vmax[i] = match["VMAX_CIV_450"]
+        for i, tid in enumerate(catalog["TARGETID"]):
+            if np.any(tid == balcat["TARGETID"]):
+                match = balcat[balcat["TARGETID"] == tid]
+                ai[i] = match["AI_CIV"]
+                nciv[i] = match["NCIV_450"]
+                vmin[i] = match["VMIN_CIV_450"]
+                vmax[i] = match["VMAX_CIV_450"]
 
-            catalog.add_columns(
-                [ai, nciv, vmin, vmax],
-                names=["AI_CIV", "NCIV_450", "VMIN_CIV_450", "VMAX_CIV_450"],
-            )
+        catalog.add_columns(
+            [ai, nciv, vmin, vmax],
+            names=["AI_CIV", "NCIV_450", "VMIN_CIV_450", "VMAX_CIV_450"],
+        )
 
-        except:
-            log.error(f"cannot find mock bal_cat.fits in {mockpath}")
-            exit(1)
+        # except:
+        #     log.error(f"cannot find mock bal_cat.fits in {mockpath}")
+        #     exit(1)
 
     return catalog
 
