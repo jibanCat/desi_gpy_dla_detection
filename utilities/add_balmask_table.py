@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import os
 import argparse
 import numpy as np
 from astropy.table import Table
@@ -263,11 +263,11 @@ if __name__ == "__main__":
     main()
 
 # python utilities/add_balmask_table.py \
-#     --dlacat ../desi-mock-gpdla/dlacat-v5.9.5-mockcat.fits \
-#     -q /global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits \
-#     --mocks \
-#     --mockdir /global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/ \
-#     --output dlacat-v5.9.5-mockcat-balflag.fits
+# --dlacat ../desi-mock-gpdla/dlacat-v5.9.5-mockcat.fits \
+# -q /global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits \
+# --mocks \
+# --mockdir /global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/ \
+# --output dlacat-v5.9.5-mockcat-balflag.fits
 
 
 # python utilities/add_balmask_table.py \
