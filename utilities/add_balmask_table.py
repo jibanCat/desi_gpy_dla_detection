@@ -48,15 +48,6 @@ def parse_args():
     )
 
     parser.add_argument(
-        "-o",
-        "--outdir",
-        type=str,
-        default=None,
-        required=True,
-        help="output directory for DLA catalog",
-    )
-
-    parser.add_argument(
         "--output",
         type=str,
         required=True,
@@ -255,6 +246,9 @@ def main():
             for window in bal_locs:
                 balflag = (lam_center_dla < window[0]) & (lam_center_dla > window[1])
                 if balflag:
+                    log.info(
+                        f"Potential BAL contamination in DLA {i} in target {dlacat['TARGETID'][i]}"
+                    )
                     fitwarn |= DLAFLAG.POTENTIAL_BAL
 
         # Update the DLA catalog with the updated flag
@@ -262,8 +256,21 @@ def main():
 
     # Save the updated DLA catalog
     dlacat.write(args.output, overwrite=True)
-    print(f"Updated DLA catalog saved to {args.output}")
+    log.info(f"Updated DLA catalog saved to {args.output}")
 
 
 if __name__ == "__main__":
     main()
+
+# python utilities/add_balmask_table.py \
+#     --dlacat ../desi-mock-gpdla/dlacat-v5.9.5-mockcat.fits \
+#     -q /global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits \
+#     --mocks \
+#     --mockdir /global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/ \
+#     --output dlacat-v5.9.5-mockcat-balflag.fits
+
+
+# python utilities/add_balmask_table.py \
+#     --dlacat ../desi-kibo-gpdla/dlacat-kibo-main-dark.fits \
+#     -q /global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits \
+#     --output dlacat-kibo-main-dark-balflag.fits
