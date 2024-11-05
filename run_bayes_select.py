@@ -194,7 +194,7 @@ def process_single_spectrum(
     # Generate plots if enabled
     if plot_figures:
         title = f"Spectrum {target_id}; zQSO: {z_qso:.2f}"
-        out_filename = f"spec-{str(idx).zfill(6)}"
+        out_filename = f"spec-{target_id}-zqso-{z_qso:.2f}.png"
         plot_samples_vs_this_mu(
             dla_gp, bayes, filename=out_filename, sub_dir=figure_dir, title=title
         )
