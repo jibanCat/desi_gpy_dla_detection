@@ -162,6 +162,7 @@ def plot_real_spectrum_space(gp, lya_gp, nth_lya, title=""):
 
     # Get the absorption profile for the DLA model
     lya_mu, _, _ = lya_gp.this_dla_gp(map_z_dlas, 10**map_log_nhis)
+    absorption = lya_mu / lya_gp.this_mu
 
     # Plotting the real spectrum space and the GP models
     plt.figure(figsize=(16, 5))
@@ -180,9 +181,10 @@ def plot_real_spectrum_space(gp, lya_gp, nth_lya, title=""):
     )
 
     # Plot the GP null model's continuum (mu)
+    _this_mu = gp.mu_interpolator(gp.X)
     plt.plot(
-        gp.rest_wavelengths,
-        gp.mu,
+        gp.X,
+        _this_mu * absorption,
         label="GP null model (mu = continuum)",
         color="C3",
         ls="--",
@@ -191,7 +193,7 @@ def plot_real_spectrum_space(gp, lya_gp, nth_lya, title=""):
     # Plot the Lyman-alpha GP model's mean function (absorption)
     plt.plot(
         gp.X,
-        lya_mu,
+        gp.this_mu,
         label="GP Lya model (mu = meanflux)",
         color="red",
     )
@@ -228,7 +230,7 @@ def plot_samples_vs_this_mu(dla_gp, bayes, filename, sub_dir="images", title="")
 
     # Ensure the output directory exists
     os.makedirs(sub_dir, exist_ok=True)
-    file_path = os.path.join(sub_dir, f"{filename}.png")
+    # file_path = os.path.join(sub_dir, f"{filename}.png")
 
     # Determine the number of absorbers to plot based on the posterior probability
     nth_lya = 1 + bayes.model_posteriors[2:].argmax() if bayes.p_dla > 0.9 else 0
@@ -307,11 +309,13 @@ def plot_samples_vs_this_mu(dla_gp, bayes, filename, sub_dir="images", title="")
     ax[1].set_ylabel(r"$log N_{HI}$")
 
     # Save the plot to the specified directory
+    file_path = os.path.join(sub_dir, f"{filename}-samples.png")
     plt.tight_layout()
     plt.savefig(file_path)
     plt.close()
 
     # Plot and save the real spectrum space plot
+    file_path = os.path.join(sub_dir, f"{filename}.png")
     plot_real_spectrum_space(dla_gp, dla_gp, nth_lya, title=title)
     plt.savefig(file_path)
     plt.close()
