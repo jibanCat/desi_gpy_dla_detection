@@ -360,7 +360,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
 
         # Allyson's code to get fitwarning
         # TODO: replace this specific to GP
-        fitwarn = np.full(3, 0)
+        fitwarn = np.full(model.max_dlas, 0)
 
         try:
             # Process each QSO, resampling model to observed wavelength grid
