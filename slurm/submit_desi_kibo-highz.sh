@@ -48,9 +48,9 @@ K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
-HPX_STEP=2074
+HPX_STEP=744
 HPX_START_INDEX="${HPX_START_INDEX:-0}"
-HPX_END_INDEX="${HPX_END_INDEX:-14518}"  # 2074 healpix pixels * 8 tasks = 16592 total healpix pixels (max is 16586)
+HPX_END_INDEX="${HPX_END_INDEX:-5208}"  # 744 healpix pixels * 8 tasks = 5952 total healpix pixels (max is 5945)
 
 # Loop over each healpix range and start 8 concurrent jobs
 for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do

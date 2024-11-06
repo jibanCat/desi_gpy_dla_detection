@@ -5,7 +5,7 @@ set constant values used in DLA finder
 from scipy.constants import speed_of_light
 
 # set redshift window for quasars
-zmin_qso = 4.25
+zmin_qso = 4.00
 zmax_qso = 7.00
 # set the wave window for DLA search
 # rest-frame angstroms
