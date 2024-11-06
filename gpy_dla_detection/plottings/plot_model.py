@@ -207,7 +207,7 @@ def plot_real_spectrum_space(gp, lya_gp, nth_lya, title=""):
 
     # Show the plot
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
 
 def plot_samples_vs_this_mu(dla_gp, bayes, filename, sub_dir="images", title=""):
@@ -288,6 +288,7 @@ def plot_samples_vs_this_mu(dla_gp, bayes, filename, sub_dir="images", title="")
         alpha=0.3,
     )
     ax[0].set_xlim(sample_z_dlas.min(), dla_gp.z_qso)
+    ax[0].set_ylim(-1, 5)
     ax[0].legend()
     ax[0].set_title(title)
 
