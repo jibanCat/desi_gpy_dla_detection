@@ -268,7 +268,15 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
     wave = specobj.wave["brz"]
 
     # lists shared with Allyson's finder
-    tidlist, ralist, declist, zqsolist, snrlist, dlaidlist = [], [], [], [], [], []
+    tidlist, ralist, declist, zqsolist, bluesnrlist, redsnrlist, dlaidlist = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
     zlist, nhilist, zerrlist, nhierrlist, fitwarnlist = (
         [],
         [],
@@ -421,6 +429,27 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
                 balflag = (lam_center_dla < window[0]) & (lam_center_dla > window[1])
                 fitwarn[balflag] |= DLAFLAG.POTENTIAL_BAL
 
+        # average signal to noise computation
+        mask = np.logical_and(
+            ivar != 0,
+            np.ma.masked_inside(
+                wave_rf, constants.bluesnr_min, constants.bluesnr_max
+            ).mask,
+        )
+        bluesnr = np.mean((flux[mask] * np.sqrt(ivar[mask])))
+        mask = np.logical_and(
+            ivar != 0,
+            np.ma.masked_inside(
+                wave_rf, constants.redsnr_min, constants.redsnr_max
+            ).mask,
+        )
+        redsnr = np.mean((flux[mask] * np.sqrt(ivar[mask])))
+        # save SNR values
+        model.results["snrs"][entry] = redsnr
+        model.results["snrs_blue"][entry] = bluesnr
+        # save detection flag
+        model.results["detection_flags"][entry] = np.sum(fitwarn) > 0
+
         ndla = np.sum(zdla != -1)
         for n in range(ndla):
             tidlist.append(tid)
@@ -436,12 +465,9 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             nhilist.append(nhi[n])
             nhierrlist.append(nhierr[n])
             fitwarnlist.append(fitwarn[n])
-            # average signal to noise in search region of unmasked pixels
-            mask = ivar[fitmask][searchmask] != 0
-            snr = np.mean(
-                (flux[fitmask][searchmask] * np.sqrt(ivar[fitmask][searchmask]))[mask]
-            )
-            snrlist.append(snr)
+
+            bluesnrlist.append(bluesnr)
+            redsnrlist.append(redsnr)
 
             # GP-DLA results
             pdlalist.append(p_dla)
@@ -455,7 +481,13 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         return ()
 
     # TODO: Intermediate results saving for debugging - this is the same format as Roman's code
-    # model.save_results(output_file=None)
+    processed_filename = coaddpath.split("/")[-1].replace("coadd-", "processed-")
+    if os.path.exists(os.path.join(model.figure_dir, "processed")) is False:
+        os.makedirs(os.path.join(model.figure_dir, "processed"), exist_ok=True)
+    processed_filename = os.path.join(
+        model.figure_dir, "processed", processed_filename.replace(".fits", ".h5")
+    )
+    model.save_results(output_file=processed_filename)
 
     # DLACAT create table of fit results
     fitresults = Table(
@@ -464,7 +496,8 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             ralist,
             declist,
             zqsolist,
-            snrlist,
+            bluesnrlist,
+            redsnrlist,
             dlaidlist,
             zlist,
             zerrlist,
@@ -483,7 +516,8 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             "RA",
             "DEC",
             "Z_QSO",  # QSO redshift: 2024-10-25 changed from Z, so remember to update the old dlacat files
-            "SNR",
+            "SNR_FOREST",
+            "SNR_REDSIDE",
             "DLAID",
             "Z_DLA",
             "Z_DLA_ERR",
@@ -498,6 +532,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         ],
         dtype=(
             "int",
+            "float64",
             "float64",
             "float64",
             "float64",

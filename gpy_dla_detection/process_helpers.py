@@ -9,7 +9,7 @@ import h5py
 from typing import List
 
 
-def initialize_results(num_spectra: int, max_dlas: int) -> dict:
+def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int) -> dict:
     """
     Initialize the results dictionary to store outputs for all spectra.
 
@@ -79,13 +79,13 @@ def initialize_results(num_spectra: int, max_dlas: int) -> dict:
         "log_posteriors_dla": np.full(
             (num_spectra, max_dlas), np.nan
         ),  # Log posteriors for DLA models
-        # "sample_log_likelihoods_dla": np.full(
-        #     (num_spectra, num_dla_samples, max_dlas), np.nan
-        # ),  # Sampled log likelihoods for DLA models
+        "sample_log_likelihoods_dla": np.full(
+            (num_spectra, num_dla_samples, max_dlas), np.nan
+        ),  # Sampled log likelihoods for DLA models
         # Correct shape for base_sample_inds: (num_spectra, max_dlas - 1, num_dla_samples)
-        # "base_sample_inds": np.zeros(
-        #     (num_spectra, max_dlas - 1, num_dla_samples), dtype=np.int32
-        # ),  # Indices for base samples
+        "base_sample_inds": np.zeros(
+            (num_spectra, max_dlas - 1, num_dla_samples), dtype=np.int32
+        ),  # Indices for base samples
         "MAP_z_dlas": np.full(
             (num_spectra, max_dlas), np.nan
         ),  # MAP redshift estimates for DLAs
@@ -107,6 +107,15 @@ def initialize_results(num_spectra: int, max_dlas: int) -> dict:
         "p_no_dlas": np.full(
             (num_spectra,), np.nan
         ),  # Posterior probability for no-DLA model
+        "snrs": np.full(
+            (num_spectra,), np.nan
+        ),  # Signal-to-noise ratios for each spectrum
+        "snrs_blue": np.full(
+            (num_spectra,), np.nan
+        ),  # Blue-side signal-to-noise ratios
+        "detection_flags": np.full(
+            (num_spectra,), 0
+        ),  # Detection flags for each spectrum
         # "sample_z_dlas": np.full(
         #     (num_spectra, num_dla_samples), np.nan
         # ),  # Sampled redshifts for DLAs

@@ -498,9 +498,11 @@ def read_catalog(qsocat, balmask, bytile):
 
     Returns
     -------
-    table of relevant attributes for z>2 quasars
+    table of relevant attributes for quasars defined in constants.py
 
     """
+    if constants.no_bal:
+        balmask = True
 
     if balmask:
         try:
@@ -515,6 +517,8 @@ def read_catalog(qsocat, balmask, bytile):
                 "NCIV_450",
                 "VMIN_CIV_450",
                 "VMAX_CIV_450",
+                "SPECTYPE",
+                "ZWARN",
             ]
             if bytile:
                 cols = [
@@ -528,6 +532,8 @@ def read_catalog(qsocat, balmask, bytile):
                     "NCIV_450",
                     "VMIN_CIV_450",
                     "VMAX_CIV_450",
+                    "SPECTYPE",
+                    "ZWARN",
                 ]
             catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
         except:
@@ -535,9 +541,26 @@ def read_catalog(qsocat, balmask, bytile):
             exit(1)
     else:
         # read the following columns from qsocat
-        cols = ["TARGETID", "TARGET_RA", "TARGET_DEC", "Z", "HPXPIXEL"]
+        cols = [
+            "TARGETID",
+            "TARGET_RA",
+            "TARGET_DEC",
+            "Z",
+            "HPXPIXEL",
+            "SPECTYPE",
+            "ZWARN",
+        ]
         if bytile:
-            cols = ["TARGETID", "TARGET_RA", "TARGET_DEC", "Z", "TILEID", "PETAL_LOC"]
+            cols = [
+                "TARGETID",
+                "TARGET_RA",
+                "TARGET_DEC",
+                "Z",
+                "TILEID",
+                "PETAL_LOC",
+                "SPECTYPE",
+                "ZWARN",
+            ]
         catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
 
     log.info(f"Successfully read quasar catalog: {qsocat}")
@@ -548,6 +571,22 @@ def read_catalog(qsocat, balmask, bytile):
     log.info(
         f"restricting to {constants.zmin_qso} < z < {constants.zmax_qso}: {np.sum(zmask)} objects remain"
     )
+
+    # Apply bal mask
+    if constants.no_bal:
+        balind = catalog["NCIV_450"] > 0
+        zmask = zmask & ~balind
+        log.info(f"objects in catalog without BAL: {np.sum(zmask)}")
+
+    # Apply zwarning mask
+    if constants.zwarning:
+        zmask = zmask & (catalog["ZWARN"] == 0)
+        log.info(f"objects in catalog without ZWARN: {np.sum(zmask)}")
+
+    # Apply spectype mask
+    if constants.is_qso:
+        zmask = zmask & (catalog["SPECTYPE"] == "QSO")
+        log.info(f"objects in catalog with SPECTYPE QSO: {np.sum(zmask)}")
 
     catalog = catalog[zmask]
 

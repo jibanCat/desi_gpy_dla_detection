@@ -54,6 +54,8 @@ def process_single_spectrum(
     max_workers: int,
     batch_size: int,
     figure_dir: str,
+    snr_blue: float = None,
+    snr_red: float = None,
 ):
     """
     Process a single spectrum using pre-initialized Null, DLA, and SubDLA models.
@@ -135,8 +137,9 @@ def process_single_spectrum(
     results["log_posteriors_no_dla"][idx] = bayes.log_posteriors[0]
     results["log_posteriors_dla"][idx, :] = bayes.log_posteriors[-max_dlas:]
 
-    # # Store base sample indices (ensure this is set correctly in dla_gp)
-    # results["base_sample_inds"][idx, :, :] = dla_gp.base_sample_inds
+    # Store base sample indices (ensure this is set correctly in dla_gp)
+    results["base_sample_inds"][idx, :, :] = dla_gp.base_sample_inds
+    results["sample_log_likelihoods_dla"][idx, :, :] = dla_gp.sample_log_likelihoods
 
     # Save the DLA samples
     sample_z_dlas = dla_gp.dla_samples.sample_z_dlas(
@@ -298,6 +301,7 @@ class DLAHolder:
         self.results = initialize_results(
             num_spectra,
             self.max_dlas,
+            self.params.num_dla_samples,
         )
         self.num_spectra = num_spectra
 
