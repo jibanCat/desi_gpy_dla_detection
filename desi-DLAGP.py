@@ -353,7 +353,7 @@ def main(args=None):
         all_hpxs = np.unique(catalog["HPXPIXEL"])
         log.info(
             "running in between healpix pixels {} - {}; Total {}".format(
-                args.hpx_start, args.hpx_end, all_hpxs[-1]
+                args.hpx_start, args.hpx_end, len(all_hpxs)
             )
         )
 
