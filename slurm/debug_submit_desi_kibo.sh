@@ -104,6 +104,8 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --hpx_end "$HPX_END" &
 done
 
+# Wait for all background jobs to finish
+wait
 
 #     # Submit the job using sbatch
 #     sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits",\
