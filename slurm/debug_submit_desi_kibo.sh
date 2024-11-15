@@ -10,12 +10,13 @@
 #SBATCH --mail-type=ALL                   # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                           # Account name to use on NERSC systems
 #SBATCH --time=00:30:00                   # Time limit for the debug job (30 minutes)
-#SBATCH --ntasks=32                       # Total number of tasks (32 CPUs for debug)
+#SBATCH --ntasks=64                       # 64 tasks total (each running one instance of the Python script)
+#SBATCH --cpus-per-task=4                 # Each task uses 4 CPUs
 
 # # OpenMP settings for efficient parallel execution
-# export OMP_NUM_THREADS=1
-# export OMP_PLACES=threads
-# export OMP_PROC_BIND=spread
+export OMP_NUM_THREADS=1
+export OMP_PLACES=threads
+export OMP_PROC_BIND=spread
 
 # Ensure the environment is loaded
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
@@ -26,8 +27,8 @@ RELEASE="${RELEASE:-kibo}"
 PROGRAM="${PROGRAM:-dark}"
 SURVEY="${SURVEY:-main}"
 # MOCKDIR="${MOCKDIR:-/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/}"
-OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla/}"
-BALMASK="${BALMASK:-false}"
+OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/}"
+BALMASK="${BALMASK:-true}"
 
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
 CATALOG_NAME="${CATALOG_NAME:-data/dr12q/processed/catalog.mat}"
@@ -40,8 +41,8 @@ PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
 MAX_DLAS="${MAX_DLAS:-3}"
 PLOT_FIGURES="${PLOT_FIGURES:-1}"
-MAX_WORKERS="${MAX_WORKERS:-32}"               # Reduced for debug
-BATCH_SIZE="${BATCH_SIZE:-313}"               # Smaller batch size for debug
+MAX_WORKERS="${MAX_WORKERS:-4}"               # Reduced for debug
+BATCH_SIZE="${BATCH_SIZE:-2500}"               # Smaller batch size for debug
 LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
@@ -54,53 +55,62 @@ MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 HPX_START="${HPX_START:-0}"
 HPX_END="${HPX_END:-40}"                 # Reduced range for quick debug
 
-FIGURE_DIR="${FIGURE_DIR:-figures/}"
-
-# Run the Python script with srun
-python desi-DLAGP.py \
-    --qsocat "$QSOCAT" \
-    --release "$RELEASE" \
-    --program "$PROGRAM" \
-    --survey "$SURVEY" \
-    $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
-    --outdir "$OUTDIR" \
-    --learned_file "$LEARNED_FILE" \
-    --catalog_name "$CATALOG_NAME" \
-    --los_catalog "$LOS_CATALOG" \
-    --dla_catalog "$DLA_CATALOG" \
-    --dla_samples_file "$DLA_SAMPLES_FILE" \
-    --sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
-    --min_z_separation "$MIN_Z_SEPARATION" \
-    --prev_tau_0 "$PREV_TAU_0" \
-    --prev_beta "$PREV_BETA" \
-    --max_dlas "$MAX_DLAS" \
-    --plot_figures "$PLOT_FIGURES" \
-    --max_workers "$MAX_WORKERS" \
-    --batch_size "$BATCH_SIZE" \
-    --loading_min_lambda "$LOADING_MIN_LAMBDA" \
-    --loading_max_lambda "$LOADING_MAX_LAMBDA" \
-    --normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
-    --normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
-    --min_lambda "$MIN_LAMBDA" \
-    --max_lambda "$MAX_LAMBDA" \
-    --dlambda "$DLAMBDA" \
-    --k "$K" \
-    --max_noise_variance "$MAX_NOISE_VARIANCE" \
-    --hpx_start "$HPX_START" \
-    --hpx_end "$HPX_END" \
-    --figure_dir "$FIGURE_DIR"
+FIGURE_DIR="${FIGURE_DIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/figures/}"
 
 
-# sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits",\
-# OUTDIR="/pscratch/sd/j/jibancat/desi-kibo-gpdla/",\
-# RELEASE="kibo",\
-# PROGRAM="dark",\
-# SURVEY="main",\
-# BALMASK=false,\
+# Define start and end healpix index ranges for 64 tasks, with each task processing 5 healpix pixels
+HPX_STEP=5
+HPX_START_INDEX="${HPX_START_INDEX:-0}"
+HPX_END_INDEX="${HPX_END_INDEX:-315}"  # 5 healpix pixels * 64 tasks = 320 total healpix pixels
+
+# Loop over each healpix range and start 8 concurrent jobs
+for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
+    HPX_START=$i
+    HPX_END=$(( i + HPX_STEP ))
+
+    echo "Running for healpix ${HPX_START} <= HPX < ${HPX_END}"
+
+    srun -N 1 -n 1 -c 4 --output="debug_kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+        --qsocat "$QSOCAT" \
+        --release "$RELEASE" \
+        --program "$PROGRAM" \
+        --survey "$SURVEY" \
+        $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
+        --outdir "$OUTDIR" \
+        --learned_file "$LEARNED_FILE" \
+        --catalog_name "$CATALOG_NAME" \
+        --los_catalog "$LOS_CATALOG" \
+        --dla_catalog "$DLA_CATALOG" \
+        --dla_samples_file "$DLA_SAMPLES_FILE" \
+        --sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
+        --min_z_separation "$MIN_Z_SEPARATION" \
+        --prev_tau_0 "$PREV_TAU_0" \
+        --prev_beta "$PREV_BETA" \
+        --max_dlas "$MAX_DLAS" \
+        --plot_figures "$PLOT_FIGURES" \
+        --max_workers "$MAX_WORKERS" \
+        --batch_size "$BATCH_SIZE" \
+        --loading_min_lambda "$LOADING_MIN_LAMBDA" \
+        --loading_max_lambda "$LOADING_MAX_LAMBDA" \
+        --normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
+        --normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
+        --min_lambda "$MIN_LAMBDA" \
+        --max_lambda "$MAX_LAMBDA" \
+        --dlambda "$DLAMBDA" \
+        --k "$K" \
+        --max_noise_variance "$MAX_NOISE_VARIANCE" \
+        --figure_dir "/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/figures/healpix_${HPX_START}_${HPX_END}" \
+        --hpx_start "$HPX_START" \
+        --hpx_end "$HPX_END" &
+done
+
+
+#     # Submit the job using sbatch
+#     sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits",\
+# OUTDIR="/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/",\
 # MAX_DLAS=3,\
 # PLOT_FIGURES=1,\
-# BATCH_SIZE=313,\
-# MAX_WORKERS=32,\
-# HPX_START=0,\
-# HPX_END=1,\
-# FIGURE_DIR="debug_hpx0" slurm/debug_submit_desi_kibo.sh
+# BATCH_SIZE=2500,\
+# MAX_WORKERS=4,\
+# HPX_START_INDEX=$HPX_START_INDEX,\
+# HPX_END_INDEX=$HPX_END_INDEX slurm/submit_desi_kibo.sh
