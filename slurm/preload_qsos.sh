@@ -17,7 +17,7 @@ source /global/cfs/cdirs/desi/software/desi_environment.sh main
 mkdir -p logs
 
 # Parameters
-BATCH_SIZE=64        # Number of healpix pixels per batch
+BATCH_SIZE=65        # Number of healpix pixels per batch
 NUM_BATCHES=256      # Total number of batches to process (update as needed)
 OUTPUT_DIR="temp_batches"  # Output directory for temporary files
 PYTHON_SCRIPT="preload_qsos.py"
@@ -27,7 +27,7 @@ for TASK_ID in $(seq 0 $((SLURM_NTASKS-1))); do
     (
         LOG_FILE="logs/preload_${TASK_ID}.log"
         ERR_FILE="logs/preload_${TASK_ID}.err"
-        
+
         srun -n 1 --exclusive python $PYTHON_SCRIPT $TASK_ID $BATCH_SIZE > $LOG_FILE 2> $ERR_FILE &
     )
 done
