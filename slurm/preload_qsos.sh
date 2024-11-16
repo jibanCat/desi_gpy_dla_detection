@@ -30,11 +30,11 @@ PROGRAM="dark"
 RELEASE="kibo"
 
 # Run the script
-srun -n 256 python $PYTHON_SCRIPT \
-    --catalog_path $CATALOG_PATH \
-    --spectra_dir $SPECTRA_DIR \
-    --output_file $OUTPUT_FILE \
-    --survey $SURVEY \
-    --program $PROGRAM \
-    --release $RELEASE \
-    --n_workers 256
+srun -n 256 python $PYTHON_SCRIPT # \
+    # --catalog_path $CATALOG_PATH \
+    # --spectra_dir $SPECTRA_DIR \
+    # --output_file $OUTPUT_FILE \
+    # --survey $SURVEY \
+    # --program $PROGRAM \
+    # --release $RELEASE \
+    # --n_workers 256
