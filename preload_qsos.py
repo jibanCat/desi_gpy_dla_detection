@@ -240,7 +240,7 @@ def preload_qsos(catalog_path, spectra_dir, output_file, survey, program, releas
             wave = specobj.wave["brz"]
             flux = specobj.flux["brz"][spec_idx]
             ivar = specobj.ivar["brz"][spec_idx]
-            mask = specobj.mask["brz"][idx].astype(np.bool_)
+            mask = specobj.mask["brz"][spec_idx].astype(np.bool_)
 
             # Convert inverse variance to variance
             noise_variance = np.zeros(ivar.shape)
