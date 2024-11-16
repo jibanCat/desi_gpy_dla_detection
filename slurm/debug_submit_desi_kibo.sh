@@ -10,8 +10,8 @@
 #SBATCH --mail-type=ALL                   # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                           # Account name to use on NERSC systems
 #SBATCH --time=00:30:00                   # Time limit for the debug job (30 minutes)
-#SBATCH --ntasks=64                       # 64 tasks total (each running one instance of the Python script)
-#SBATCH --cpus-per-task=4                 # Each task uses 4 CPUs
+#SBATCH --ntasks=32                       # 64 tasks total (each running one instance of the Python script)
+#SBATCH --cpus-per-task=8                 # Each task uses 4 CPUs
 
 # # OpenMP settings for efficient parallel execution
 # export OMP_NUM_THREADS=1
@@ -41,8 +41,8 @@ PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
 MAX_DLAS="${MAX_DLAS:-3}"
 PLOT_FIGURES="${PLOT_FIGURES:-1}"
-MAX_WORKERS="${MAX_WORKERS:-4}"               # Reduced for debug
-BATCH_SIZE="${BATCH_SIZE:-2500}"               # Smaller batch size for debug
+MAX_WORKERS="${MAX_WORKERS:-8}"               # Reduced for debug
+BATCH_SIZE="${BATCH_SIZE:-1250}"               # Smaller batch size for debug
 LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
@@ -70,7 +70,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
 
     echo "Running for healpix ${HPX_START} <= HPX < ${HPX_END}"
 
-    srun -N 1 -n 1 -c 4 --output="debug_kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+    srun -N 1 -n 1 -c 8 --output="debug_kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
         --qsocat "$QSOCAT" \
         --release "$RELEASE" \
         --program "$PROGRAM" \

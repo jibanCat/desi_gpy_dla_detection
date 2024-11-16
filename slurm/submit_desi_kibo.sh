@@ -9,9 +9,9 @@
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=03:00:00             # Time limit for the job
-#SBATCH --ntasks=8                  # 8 tasks total (each running one instance of the Python script)
-#SBATCH --cpus-per-task=32          # Each task uses 32 CPUs
+#SBATCH --time=08:00:00             # Time limit for the job
+#SBATCH --ntasks=32                 # 32 tasks total (each running one instance of the Python script)
+#SBATCH --cpus-per-task=8           # Each task uses 8 CPUs
 
 # Load the environment
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
@@ -21,8 +21,8 @@ QSOCAT="${QSOCAT:-/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat
 RELEASE="${RELEASE:-kibo}"
 PROGRAM="${PROGRAM:-dark}"
 SURVEY="${SURVEY:-main}"
-OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla/}"
-BALMASK="${BALMASK:-false}"
+OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/}"
+BALMASK="${BALMASK:-true}"
 
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
 CATALOG_NAME="${CATALOG_NAME:-data/dr12q/processed/catalog.mat}"
@@ -35,8 +35,8 @@ PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
 MAX_DLAS="${MAX_DLAS:-3}"
 PLOT_FIGURES="${PLOT_FIGURES:-0}"
-MAX_WORKERS="${MAX_WORKERS:-32}"
-BATCH_SIZE="${BATCH_SIZE:-313}"
+MAX_WORKERS="${MAX_WORKERS:-8}"
+BATCH_SIZE="${BATCH_SIZE:-1250}"
 LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
@@ -48,9 +48,9 @@ K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
-HPX_STEP=40
+HPX_STEP=52
 HPX_START_INDEX="${HPX_START_INDEX:-0}"
-HPX_END_INDEX="${HPX_END_INDEX:-280}"  # 40 healpix pixels * 8 tasks = 320 total healpix pixels
+HPX_END_INDEX="${HPX_END_INDEX:-1612}"  # 52 healpix pixels * 32 tasks = 1664 healpix pixels
 
 # Loop over each healpix range and start 8 concurrent jobs
 for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
@@ -59,7 +59,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
 
     echo "Running for healpix ${HPX_START} <= HPX < ${HPX_END}"
 
-    srun -N 1 -n 1 -c 32 --output="kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+    srun -N 1 -n 1 -c 8 --output="kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
         --qsocat "$QSOCAT" \
         --release "$RELEASE" \
         --program "$PROGRAM" \
@@ -88,7 +88,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --dlambda "$DLAMBDA" \
         --k "$K" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "figures/healpix_${HPX_START}_${HPX_END}" \
+        --figure_dir "/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/" \
         --hpx_start "$HPX_START" \
         --hpx_end "$HPX_END" &
 done
