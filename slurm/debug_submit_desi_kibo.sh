@@ -10,8 +10,8 @@
 #SBATCH --mail-type=ALL                   # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                           # Account name to use on NERSC systems
 #SBATCH --time=00:30:00                   # Time limit for the debug job (30 minutes)
-#SBATCH --ntasks=32                       # 64 tasks total (each running one instance of the Python script)
-#SBATCH --cpus-per-task=8                 # Each task uses 4 CPUs
+#SBATCH --ntasks=64                       # 64 tasks total (each running one instance of the Python script)
+#SBATCH --cpus-per-task=4                 # Each task uses 4 CPUs
 
 # # OpenMP settings for efficient parallel execution
 # export OMP_NUM_THREADS=1
@@ -58,10 +58,10 @@ HPX_END="${HPX_END:-40}"                 # Reduced range for quick debug
 FIGURE_DIR="${FIGURE_DIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/figures/}"
 
 
-# Define start and end healpix index ranges for 64 tasks, with each task processing 5 healpix pixels
+# Define start and end healpix index ranges for 32 tasks, with each task processing 5 healpix pixels
 HPX_STEP=5
 HPX_START_INDEX="${HPX_START_INDEX:-0}"
-HPX_END_INDEX="${HPX_END_INDEX:-155}"  # 5 healpix pixels * 32 tasks = 160 total healpix pixels
+HPX_END_INDEX="${HPX_END_INDEX:-315}"  # 5 healpix pixels * 32 tasks = 160 total healpix pixels
 
 # Loop over each healpix range and start 8 concurrent jobs
 for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
@@ -70,7 +70,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
 
     echo "Running for healpix ${HPX_START} <= HPX < ${HPX_END}"
 
-    srun -N 1 -n 1 -c 8 --output="debug_kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+    srun -N 1 -n 1 -c 4 --output="debug_kibo_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_kibo_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
         --qsocat "$QSOCAT" \
         --release "$RELEASE" \
         --program "$PROGRAM" \
