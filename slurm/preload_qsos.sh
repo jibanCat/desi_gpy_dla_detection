@@ -4,11 +4,11 @@
 #SBATCH --error=logs/batch_%A_%a.err    # Standard error log
 #SBATCH --time=00:30:00                 # Debug queue time limit
 #SBATCH --nodes=1                       # Single node
-#SBATCH --ntasks=256                    # Total number of tasks
-#SBATCH --cpus-per-task=1               # Each task uses 1 CPU
-#SBATCH -C cpu                      # CPU type (use 'cpu' for regular CPUs)
-#SBATCH -q debug                    # Queue (debug queue for short runs/testing)
-#SBATCH -A desi                           # Account name to use on NERSC systems
+#SBATCH --ntasks=64                    # Total number of tasks
+#SBATCH --cpus-per-task=4               # Each task uses 2 CPU
+#SBATCH -C cpu                          # CPU type
+#SBATCH -q debug                        # Debug queue
+#SBATCH -A desi                         # Account name
 
 # Load required modules
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
@@ -17,22 +17,21 @@ source /global/cfs/cdirs/desi/software/desi_environment.sh main
 mkdir -p logs
 
 # Parameters
-BATCH_SIZE=65        # Number of healpix pixels per batch
-NUM_BATCHES=256      # Total number of batches to process (update as needed)
+BATCH_SIZE=258        # Number of healpix pixels per batch
+NUM_BATCHES=64      # Total number of batches to process
 OUTPUT_DIR="temp_batches"  # Output directory for temporary files
 PYTHON_SCRIPT="preload_qsos.py"
 
-# Calculate the batch index for each task
-for TASK_ID in $(seq 0 $((SLURM_NTASKS-1))); do
-    (
-        LOG_FILE="logs/preload_${TASK_ID}.log"
-        ERR_FILE="logs/preload_${TASK_ID}.err"
+# Submit tasks
+for TASK_ID in $(seq 0 $((NUM_BATCHES-1))); do
+    LOG_FILE="logs/preload_${TASK_ID}.log"
+    ERR_FILE="logs/preload_${TASK_ID}.err"
 
-        srun -n 1 --exclusive python $PYTHON_SCRIPT $TASK_ID $BATCH_SIZE > $LOG_FILE 2> $ERR_FILE &
-    )
+    echo "Submitting task $TASK_ID with batch size $BATCH_SIZE"
+    srun -N 1 -n 1 -c 4 python $PYTHON_SCRIPT $TASK_ID $BATCH_SIZE > $LOG_FILE 2> $ERR_FILE &
 done
 
-# Wait for all background processes to finish
+# Wait for all tasks to complete
 wait
 
 echo "All batch processes completed."
