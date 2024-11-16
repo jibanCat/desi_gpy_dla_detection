@@ -294,6 +294,129 @@ def process_healpix(healpix, catalog, datapath, survey, program, temp_file):
         h5f.attrs["min_num_pixels"] = min_num_pixels
 
 
+def process_healpix_batch(healpix_batch, catalog, datapath, survey, program, temp_file):
+    """
+    Process a batch of healpix pixels and save results to a temporary HDF5 file.
+
+    Args:
+        healpix_batch (list): List of healpix pixel numbers.
+        catalog (Table): Catalog of quasars.
+        datapath (str): Path to coadded spectra.
+        survey (str): Survey name.
+        program (str): Program name.
+        temp_file (str): Path to the temporary HDF5 file for results.
+
+    Returns:
+        None
+    """
+    log.info(f"Processing healpix batch: {healpix_batch}...")
+
+    # Containers for batch results
+    wavelengths, fluxes, noise_variances, pixel_masks = [], [], [], []
+    normalizers, target_ids, zqsos, flags = [], [], [], []
+
+    for healpix in healpix_batch:
+        specobj = read_coadded_spectrum(datapath, healpix, survey, program)
+        if specobj is None:
+            log.warning(f"Skipping healpix {healpix} due to missing spectrum file.")
+            continue
+
+        hpx_indices = np.where(catalog["HPXPIXEL"] == healpix)[0]
+        for idx in hpx_indices:
+            tid = catalog["TARGETID"][idx]
+            z_qso = catalog["Z"][idx]
+
+            try:
+                spec_idx = np.nonzero(specobj.fibermap["TARGETID"] == tid)[0][0]
+            except IndexError:
+                log.error(f"Targetid {tid} not found in healpix {healpix}. Skipping.")
+                continue
+
+            wave = specobj.wave["brz"]
+            flux = specobj.flux["brz"][spec_idx]
+            ivar = specobj.ivar["brz"][spec_idx]
+            mask = specobj.mask["brz"][spec_idx].astype(np.bool_)
+
+            # Convert inverse variance to variance
+            noise_variance = np.zeros(ivar.shape)
+            ind = ivar == 0
+            noise_variance[:] = np.nan
+            noise_variance[~ind] = 1 / ivar[~ind]
+            mask[ind] = True
+
+            wave_rf = wave / (1 + z_qso)
+
+            # Normalize flux
+            norm_mask = (
+                (wave_rf >= normalization_min_lambda)
+                & (wave_rf <= normalization_max_lambda)
+                & (~mask)
+            )
+
+            if not np.any(norm_mask):
+                flags.append(1 << 2)  # Bit 2: cannot normalize
+                continue
+
+            median_flux = np.nanmedian(flux[norm_mask])
+            if np.isnan(median_flux):
+                flags.append(1 << 2)
+                continue
+
+            sampling_mask = (
+                (wave_rf >= lyman_limit) & (wave_rf <= lya_wavelength) & (~mask)
+            )
+
+            if np.sum(sampling_mask) < min_num_pixels:
+                flags.append(1 << 3)  # Bit 3: not enough pixels
+                continue
+
+            flux /= median_flux
+            noise_variance /= median_flux**2
+
+            loading_mask = (wave_rf >= loading_min_lambda) & (
+                wave_rf <= loading_max_lambda
+            )
+
+            wavelengths.append(wave[loading_mask])
+            fluxes.append(flux[loading_mask])
+            noise_variances.append(noise_variance[loading_mask])
+            pixel_masks.append(mask[loading_mask])
+            normalizers.append(median_flux)
+            target_ids.append(tid)
+            zqsos.append(z_qso)
+            flags.append(0)
+
+    # Save results for the entire batch
+    if len(wavelengths) > 0:
+        log.info(f"Saving results for healpix batch to {temp_file}.")
+        with h5py.File(temp_file, "w") as h5f:
+            vlen_dtype = h5py.vlen_dtype(np.float64)  # Variable-length float arrays
+            h5f.create_dataset("all_wavelengths", data=wavelengths, dtype=vlen_dtype)
+            h5f.create_dataset("all_flux", data=fluxes, dtype=vlen_dtype)
+            h5f.create_dataset(
+                "all_noise_variance", data=noise_variances, dtype=vlen_dtype
+            )
+            h5f.create_dataset(
+                "all_pixel_mask", data=pixel_masks, dtype=h5py.vlen_dtype(np.bool_)
+            )
+            h5f.create_dataset("all_normalizers", data=np.array(normalizers))
+            h5f.create_dataset("all_target_ids", data=np.array(target_ids))
+            h5f.create_dataset("all_zqsos", data=np.array(zqsos))
+            h5f.create_dataset("filter_flags", data=np.array(flags))
+
+            # Save metadata
+            h5f.attrs["healpix_batch"] = healpix_batch
+            h5f.attrs["loading_min_lambda"] = loading_min_lambda
+            h5f.attrs["loading_max_lambda"] = loading_max_lambda
+            h5f.attrs["normalization_min_lambda"] = normalization_min_lambda
+            h5f.attrs["normalization_max_lambda"] = normalization_max_lambda
+            h5f.attrs["min_num_pixels"] = min_num_pixels
+    else:
+        log.warning(
+            f"No valid data for healpix batch: {healpix_batch}. Skipping writing."
+        )
+
+
 def combine_hdf5_files(temp_files, output_file, release, survey, program):
     """
     Combine temporary HDF5 files into a single HDF5 file while preserving attributes.
@@ -337,10 +460,17 @@ def combine_hdf5_files(temp_files, output_file, release, survey, program):
 
 
 def parallel_preload_qsos(
-    catalog_path, spectra_dir, output_file, survey, program, release, n_workers=16
+    catalog_path,
+    spectra_dir,
+    output_file,
+    survey,
+    program,
+    release,
+    n_workers=256,
+    batch_size=65,
 ):
     """
-    Parallel preload of QSO spectra using healpix-based division.
+    Parallel preload of QSO spectra using healpix-based division in batches.
 
     Args:
         catalog_path (str): Path to the QSO catalog.
@@ -350,6 +480,7 @@ def parallel_preload_qsos(
         program (str): Program name.
         release (str): Data release version.
         n_workers (int): Number of parallel workers.
+        batch_size (int): Number of healpix pixels per batch.
 
     Returns:
         None
@@ -358,22 +489,29 @@ def parallel_preload_qsos(
     datapath = os.path.join(spectra_dir, release, "healpix", survey, program)
     unique_hpxpixels = np.unique(catalog["HPXPIXEL"])
 
+    # Divide healpix pixels into batches
+    healpix_batches = [
+        unique_hpxpixels[i : i + batch_size]
+        for i in range(0, len(unique_hpxpixels), batch_size)
+    ]
+
     # Create a folder for temporary files
     if not os.path.exists("temp"):
         os.makedirs("temp", exist_ok=True)
 
     temp_files = [
-        os.path.join("temp", f"temp_hpx_{hpx}.h5") for hpx in unique_hpxpixels
+        os.path.join("temp", f"temp_hpx_batch_{i}.h5")
+        for i in range(len(healpix_batches))
     ]
 
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         executor.map(
-            process_healpix,
-            unique_hpxpixels,
-            [catalog] * len(unique_hpxpixels),
-            [datapath] * len(unique_hpxpixels),
-            [survey] * len(unique_hpxpixels),
-            [program] * len(unique_hpxpixels),
+            process_healpix_batch,
+            healpix_batches,
+            [catalog] * len(healpix_batches),
+            [datapath] * len(healpix_batches),
+            [survey] * len(healpix_batches),
+            [program] * len(healpix_batches),
             temp_files,
         )
 
@@ -391,5 +529,12 @@ if __name__ == "__main__":
     release = "kibo"
 
     parallel_preload_qsos(
-        catalog_path, spectra_dir, output_file, survey, program, release, n_workers=256
+        catalog_path,
+        spectra_dir,
+        output_file,
+        survey,
+        program,
+        release,
+        n_workers=256,
+        batch_size=65,
     )
