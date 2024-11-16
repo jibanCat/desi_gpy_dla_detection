@@ -2,12 +2,12 @@
 #SBATCH --job-name=preload_batches       # Job name
 #SBATCH --output=logs/batch_%A_%a.out   # Standard output log
 #SBATCH --error=logs/batch_%A_%a.err    # Standard error log
-#SBATCH --time=00:30:00                 # Debug queue time limit
+#SBATCH --time=05:00:00                 # Debug queue time limit
 #SBATCH --nodes=1                       # Single node
 #SBATCH --ntasks=64                    # Total number of tasks
 #SBATCH --cpus-per-task=4               # Each task uses 2 CPU
 #SBATCH -C cpu                          # CPU type
-#SBATCH -q debug                        # Debug queue
+#SBATCH -q regular                        # Debug queue
 #SBATCH -A desi                         # Account name
 
 # Load required modules
