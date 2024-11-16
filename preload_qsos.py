@@ -273,12 +273,13 @@ def process_healpix(healpix, catalog, datapath, survey, program, temp_file):
 
     # Save results to temporary HDF5 file
     with h5py.File(temp_file, "w") as h5f:
-        h5f.create_dataset("all_wavelengths", data=np.array(wavelengths, dtype=object))
-        h5f.create_dataset("all_flux", data=np.array(fluxes, dtype=object))
+        vlen_dtype = h5py.vlen_dtype(np.float64)  # Variable-length float arrays
+        h5f.create_dataset("all_wavelengths", data=wavelengths, dtype=vlen_dtype)
+        h5f.create_dataset("all_flux", data=fluxes, dtype=vlen_dtype)
+        h5f.create_dataset("all_noise_variance", data=noise_variances, dtype=vlen_dtype)
         h5f.create_dataset(
-            "all_noise_variance", data=np.array(noise_variances, dtype=object)
+            "all_pixel_mask", data=pixel_masks, dtype=h5py.vlen_dtype(np.bool_)
         )
-        h5f.create_dataset("all_pixel_mask", data=np.array(pixel_masks, dtype=object))
         h5f.create_dataset("all_normalizers", data=np.array(normalizers))
         h5f.create_dataset("all_target_ids", data=np.array(target_ids))
         h5f.create_dataset("all_zqsos", data=np.array(zqsos))
