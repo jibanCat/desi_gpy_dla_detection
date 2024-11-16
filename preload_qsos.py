@@ -288,17 +288,17 @@ def preload_qsos(catalog_path, spectra_dir, output_file, survey, program, releas
                 wave_rf <= loading_max_lambda
             )
 
-            # Extend by one pixel on either side if available
-            available_indices = np.where(~mask)[0]
-            if available_indices.size > 0:
-                first_idx = available_indices[
-                    available_indices > np.where(loading_mask)[0][-1]
-                ][0]
-                last_idx = available_indices[
-                    available_indices < np.where(loading_mask)[0][0]
-                ][-1]
-                loading_mask[first_idx] = True
-                loading_mask[last_idx] = True
+            # # Extend by one pixel on either side if available
+            # available_indices = np.where(~mask)[0]
+            # if available_indices.size > 0:
+            #     first_idx = available_indices[
+            #         available_indices > np.where(loading_mask)[0][-1]
+            #     ][0]
+            #     last_idx = available_indices[
+            #         available_indices < np.where(loading_mask)[0][0]
+            #     ][-1]
+            #     loading_mask[first_idx] = True
+            #     loading_mask[last_idx] = True
 
             # Store the preprocessed data
             all_wavelengths.append(wave[loading_mask])
