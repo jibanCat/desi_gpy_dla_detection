@@ -10,7 +10,7 @@ for (( HPX_START_INDEX=0; HPX_START_INDEX<MAX_HPX_INDEX; HPX_START_INDEX+=STEP )
 
     # Print the command to be executed for reference
     echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits\",\
-OUTDIR=\"/pscratch/sd/j/jibancat/desi-kibo-gpdla/\",\
+OUTDIR=\"/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/\",\
 MAX_DLAS=3,\
 PLOT_FIGURES=0,\
 BATCH_SIZE=1250,\
@@ -20,7 +20,7 @@ HPX_END_INDEX=$HPX_END_INDEX slurm/submit_desi_kibo.sh"
 
     # Submit the job using sbatch
     sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat_kibo_main_dark_healpix_v3-altbal.fits",\
-OUTDIR="/pscratch/sd/j/jibancat/desi-kibo-gpdla/",\
+OUTDIR="/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/",\
 MAX_DLAS=3,\
 PLOT_FIGURES=0,\
 BATCH_SIZE=1250,\
