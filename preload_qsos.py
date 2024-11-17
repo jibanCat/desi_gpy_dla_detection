@@ -336,6 +336,13 @@ if __name__ == "__main__":
 
     temp_file = os.path.join(output_dir, f"temp_batch_{batch_index}.h5")
 
+    # load external missing preloaded list to run only missing healpix
+    if os.path.exists("missing_preloaded_list.txt"):
+        all_batch_indices = np.loadtxt("missing_preloaded_list.txt").astype(int)
+        # here batch_index is the index of the missing batch
+        batch_index = all_batch_indices[batch_index]
+        log.info(f"Processing missing batch index: {batch_index}")
+
     if batch_index < len(healpix_batches):
         process_healpix_batch(
             healpix_batches[batch_index], catalog, datapath, survey, program, temp_file
