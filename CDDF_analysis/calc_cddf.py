@@ -158,7 +158,7 @@ class DLACatalogue(object):
         # First load small arrays
         self._z_min = self.filehandle["min_z_dlas"][:]
         self._z_max = self.filehandle["max_z_dlas"][:]
-        self.z_qso = self.filehandle["z_qsos"][:]
+        self.z_qsos = self.filehandle["z_qsos"][:]
 
         # self.test_ind = self.filehandle["test_ind"][0, :].astype(np.bool)
         # Index of each spectrum in the file containing the flux: raw_file
