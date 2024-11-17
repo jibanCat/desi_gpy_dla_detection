@@ -37,6 +37,7 @@ from scipy.special import logsumexp
 from scipy.stats import poisson
 import matplotlib.pyplot as plt
 from astropy.io import fits
+from astropy.table import Table
 
 from .set_parameters import *
 
@@ -81,25 +82,28 @@ class DLACatalogue(object):
 
     def __init__(
         self,
-        processed_file: str = "processed_qsos_multi_meanflux_dr16q.mat",
+        processed_file: str = "/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/processed-main-dark.h5",
         sample_file: str = "dla_samples_a03.mat",
-        raw_file: str = "preloaded_qsos.mat",
-        snrs_file: str = "snrs_qsos_multi_meanflux_dr16q.mat",
-        catalog_file: str = "catalog.mat",
+        # raw file not needed
+        # raw_file: str = "preloaded_qsos.mat",
+        # no need for snrs files since this is in the processed file
+        # snrs_file: str = "snrs_qsos_multi_meanflux_dr16q.mat",
+        catalog_file: str = "catalog.fits",  # reduced from QSO_cat_kibo_main_dark_healpix_v3-altbal.fits
         snr: int = -2,
         lowzcut: bool = False,
         highzcut: bool = False,
         second: Union[int, bool] = False,
         sub_dla: bool = True,
-        occams_razor: int = 10000,
+        occams_razor: int = 1,
         z_dla_minimum: float = 0.1,
-        raw_distfile: str = "DR16Q_v4.fits",  # DR16Q only
-        zestimate_cut: bool = False,  # DR16Q only; remove zestimate disagreements
-        delta_z_qso: float = 0.1,  # DR16Q only; remove zestimate disagreements
-        is_qso_final_cut: bool = False,  # DR16Q only; only take final QSO samples
-        class_person_cut: bool = False,  # DR16Q only; only take non-BAL samples
-        z_source_cut: bool = False,  # DR16Q only; remove source_z='pipe' and z > 5
+        # raw_distfile: str = "DR16Q_v4.fits",  # DR16Q only
+        # zestimate_cut: bool = False,  # DR16Q only; remove zestimate disagreements
+        # delta_z_qso: float = 0.1,  # DR16Q only; remove zestimate disagreements
+        # is_qso_final_cut: bool = False,  # DR16Q only; only take final QSO samples
+        # class_person_cut: bool = False,  # DR16Q only; only take non-BAL samples
+        # z_source_cut: bool = False,  # DR16Q only; remove source_z='pipe' and z > 5
         z_max_lyb: bool = False,  # Lylimit only: in case you want to shift the maximum search range to lyb peak
+        z_min_lyb: bool = False,  # Lya only: in case you want to shift the minimum search range to lyb peak
         min_obs_wavelength_cut: bool = False,  # Cut out the tail part below certain obs lambda, default 4000 A
         min_obs_wavelength: float = 4000,  # A
     ):
@@ -138,11 +142,13 @@ class DLACatalogue(object):
         self.tail_zone = 0.1
         # Exclude spectra between lymanbeta to lymanalpha
         self.z_max_lyb = z_max_lyb
+        # Exclude spectra between lymanlimit to lymanbeta
+        self.z_min_lyb = z_min_lyb  # TODO implement it
         # Exclude the dubious part of the obs wavelengths
         self.min_obs_wavelength_cut = min_obs_wavelength_cut
         self.min_obs_wavelength = min_obs_wavelength  # A
 
-        self.raw_file = raw_file
+        # self.raw_file = raw_file
         self.processed_file = processed_file
         self.catalog_file = catalog_file
         self.tophat_prior = False
@@ -150,48 +156,29 @@ class DLACatalogue(object):
         # Load data from the file
         self.filehandle = h5py.File(processed_file, "r")
         # First load small arrays
-        self._z_min = self.filehandle["min_z_dlas"][0]
-        self._z_max = self.filehandle["max_z_dlas"][0]
+        self._z_min = self.filehandle["min_z_dlas"][:]
+        self._z_max = self.filehandle["max_z_dlas"][:]
+        self._z_qso = self.filehandle["z_qsos"][:]
 
-        self.test_ind = self.filehandle["test_ind"][0, :].astype(np.bool)
+        # self.test_ind = self.filehandle["test_ind"][0, :].astype(np.bool)
         # Index of each spectrum in the file containing the flux: raw_file
         # It's the indices we selected from `preloaded_qsos.mat` based on our `test_ind`
-        self.real_index = np.where(self.filehandle["test_ind"][0] != 0)[0]
 
-        # [partial file] if we are reading a partial processed file trim down
-        # the test_ind
-        if self._z_min.shape[0] != np.sum(self.test_ind):
-            print("[Warning] You have less samples in processed file than test_ind,")
-            print(
-                "          you are reading a partial file, otherwise, check your test_ind."
-            )
-            size = self._z_min.shape[0]
-            self.test_ind[self.real_index[size:]] = False
-            self.real_index = np.nonzero(self.test_ind)[0]
-            assert self.real_index.shape[0] == self._z_min.shape[0]
-            print("[Info] Reading first {} spectra.".format(size))
+        # Target IDs of the spectra
+        self.target_ids = self.filehandle["target_ids"][:]
 
-        # # [max zDLA bug fix] replace the max lambda to zQSO. Assgin max lambda in below
-        # self.max_z_dla_fix = max_z_dla_fix
-        # if max_z_dla_fix:
-        #     z_max = (1 / (self.max_z_dla_fix / lya_wavelength)) * (
-        #         1 + self._z_max + kms_to_z(3000)
-        #     ) - 1 - kms_to_z(3000)
-        #     self._z_max = z_max
+        # BAL catalog file : the reference file for processing DLAs
+        # Find the corresponding index in the BAL catalog
+        catalog = Table.read(catalog_file)
+        target_ids_catalog = catalog["TARGETID"].data.astype(int)
 
-        # #Get z_qsos by adding `max_z_cut` back to `max_z_dlas`
-        # # .. note:: defined in `set_parameters.m`, max_z_dla := z_qso - max_z_cut
-        # #   where max_z_cut := kms_to_z(3000)
-        # self.z_qsos = self._z_max + kms_to_z(3000)
+        # Step 1: Create a mapping of target_ids to their positions in the reference order
+        order_mapping = {val: idx for idx, val in enumerate(target_ids_catalog)}
 
-        # [max_z_dlas] it is safer to get zQSO directly from the catalog
-        catalog = h5py.File(catalog_file, "r")
-        z_qsos = catalog["z_qsos"][0, :]
-        self.z_qsos = z_qsos[self.test_ind]
-        assert self.z_qsos.shape[0] == self._z_max.shape[0]
-        # assert np.abs(self.z_qsos - (self._z_max + kms_to_z(3000))) < 1e-3
-        # the bug fix: could be removed in the future
-        self._z_max = self.z_qsos - kms_to_z(3000)
+        # Step 2: Generate sorting indices for target_ids_to_sort
+        real_index = np.array([order_mapping[val] for val in self.target_ids])
+
+        self.real_index = real_index
 
         # number of bins of dNdX or Omega_DLA to plot per unit z interval
         self.bins_per_z = 6
@@ -200,74 +187,16 @@ class DLACatalogue(object):
         self.noise_thresh = 0.5**2
 
         # Check if the `.mat` file was saved from MATLAB format matrix
-        ff = h5py.File(snrs_file, "r")
-        try:
-            self.snrs = np.array(ff["snrs"][0, :])
-        except IndexError as e:
-            print(
-                "Not a MATLAB matrix file, switch to use 1-D array format to load the file ..."
-            )
-            print(e)
-            self.snrs = np.array(ff["snrs"])
-        # [partial processed file but snrs not partial]
-        if self.snrs.shape[0] != self.real_index.shape[0]:
-            assert np.sum(self.filehandle["test_ind"]) == np.shape(self.snrs)[0]
-            print(
-                "[Warning] Reading only first {} snrs.".format(self.real_index.shape[0])
-            )
-            self.snrs = self.snrs[: self.real_index.shape[0]]
+        # DESI Y3: snrs are saved in the processed file
+        self.snrs = self.filehandle["snrs"][:]
 
         if self.filter_noisy_pixels:
-            self.pixel_noise = np.array(
-                ff["pixel_noise"]
-            )  # it is in the saved file from `compute_all_snrs`
-        ff.close()
+            self.pixel_noise = self.snrs  # TODO: placeholder
 
         self.set_snr(snr)
         self.do_resample = False
         # This allows us to filter by quasar redshift later
         self.condition = np.ones_like(self._z_min, dtype=np.bool)
-
-        # [zestimate_cut] filter out spectra with redshift measurement
-        # disagreements. Only look at "Z", "Z_PCA", "Z_VI", "Z_PIPE"
-        # Note: -1 means no measurements, we should not include those values.
-        self.hdu = fits.open(raw_distfile)
-        if zestimate_cut:
-            # delta_z_qso = 1
-
-            # the best redshift measurement column, only in DR16Q
-            z_best = self.hdu[1].data["Z"][self.test_ind]
-
-            z_pca = self.hdu[1].data["Z_PCA"][self.test_ind]
-            z_pipe = self.hdu[1].data["Z_PIPE"][self.test_ind]
-            z_vi = self.hdu[1].data["Z_VI"][self.test_ind]
-
-            # make sure the distfile is the same as the one we used for catalog.mat
-            assert np.all(np.abs(z_pca - self.z_qsos) < 1e-3)
-
-            all_z_methods = [z_pca, z_pipe, z_vi]
-            z_condition = np.ones_like(z_pca, dtype=np.bool)
-            for z_method in all_z_methods:
-                ind = np.abs(z_pca - z_method) < delta_z_qso
-
-                ignore_ind = z_method == -1
-                ind[ignore_ind] = True
-
-                z_condition = ind * z_condition
-
-            print(
-                "[Info] {} -> {} after filtering out uncertain z measures.".format(
-                    np.sum(self.test_ind), np.sum(z_condition)
-                )
-            )
-            self.z_condition = z_condition
-            self.condition = self.condition * z_condition
-
-        # [DR16Q cuts] remove questionable QSOs, visual BAL QSOs
-        self.eBOSS_cut(is_qso_final_cut, class_person_cut, z_source_cut)
-        self.is_qso_final_cut = is_qso_final_cut
-        self.class_person_cut = class_person_cut
-        self.z_source_cut = z_source_cut
 
         # [Occam's razor] set up model_posteriors attr and put an additional occam's razor
         self.renormalise_occams_razor(occams_razor=self.occams_razor)
@@ -288,68 +217,6 @@ class DLACatalogue(object):
         self.lnhi_vals = samplefilehandle["log_nhi_samples"][:, 0]
         samplefilehandle.close()
 
-    def eBOSS_cut(
-        self,
-        is_qso_final_cut: bool,
-        class_person_cut: bool,
-        z_source_cut: bool,
-    ):
-        """
-        Apply some cuts defined in the eBOSS paper but did not implemented in build_catalog.mat
-        """
-
-        # the best redshift measurement column, only in DR16Q
-        z_pca = self.hdu[1].data["Z_PCA"][self.test_ind]
-        # make sure the distfile is the same as the one we used for catalog.mat
-        assert np.all(np.abs(z_pca - self.z_qsos) < 1e-3)
-
-        if is_qso_final_cut:
-            is_qso_final = self.hdu[1].data["IS_QSO_FINAL"][self.test_ind]
-            # IS_QSO_FINAL: -2 ~ 2
-            # QSO: 1; Questionable QSO: 2
-            # non QSO: -2 ~ 0
-            # Details see 3.6 section of eBOSS DR16Q paper
-            is_qso_condition = is_qso_final == 1
-
-            print(
-                "[Info] {} -> {} after setting IS_QSO_FINAL == 1.".format(
-                    np.sum(self.condition), np.sum(is_qso_condition * self.condition)
-                )
-            )
-            self.condition = self.condition * is_qso_condition
-
-        if class_person_cut:
-            class_person = self.hdu[1].data["CLASS_PERSON"][self.test_ind]
-            # visual inspection classification of BAL
-            # 0: no inspected; 1: star; 3: Quasar; 4: Galaxy
-            # 30: BAL Quasar; 50: Blazar (?)
-            # Details see Table 2 and Section 3.5 in DR16Q
-            #
-            # We aim to avoid BAL Quasars but keep those non-inspected
-            human_qso_condition = ~((class_person != 3) & (class_person != 0))
-            assert np.sum(human_qso_condition) == (
-                np.sum(class_person == 3) + np.sum(class_person == 0)
-            )
-
-            print(
-                "[Info] {} -> {} after setting class_person == 3 or 0.".format(
-                    np.sum(self.condition), np.sum(human_qso_condition * self.condition)
-                )
-            )
-            self.condition = self.condition * human_qso_condition
-
-        if z_source_cut:
-            source_z = self.hdu[1].data["SOURCE_Z"][self.test_ind]
-            # Section 3.4: Z > 5 and source_z == "pipe" should be considered suspect
-            z_source_condition = ~((source_z == "PIPE") & (z_pca > 5))
-
-            print(
-                "[Info] {} -> {} after filtering out SOURCE_Z: PIPE and Z > 5".format(
-                    np.sum(self.condition), np.sum(z_source_condition * self.condition)
-                )
-            )
-            self.condition = self.condition * z_source_condition
-
     # [Occam's razor] an additional occam's razor to penalise the DLA/subDLA detections
     def renormalise_occams_razor(self, occams_razor=10000):
         """
@@ -364,7 +231,7 @@ class DLACatalogue(object):
                 =  sample_log_likelihoods_dla -
                 ( log_likelihoods_dla + log(num_dla_samples) )
         """
-        self.model_posteriors = self.filehandle["model_posteriors"][()].T
+        self.model_posteriors = self.filehandle["model_posteriors"][()]
         self.model_posteriors = self._occams_model_posteriors(
             self.model_posteriors, occams_razor
         )
@@ -420,12 +287,14 @@ class DLACatalogue(object):
         self.log_norm_like_cache = {}
         dla_ind = self.filter_dla_spectra(second=False)
         if len(np.shape(self.filehandle["sample_log_likelihoods_dla"])) > 2:
-            log_norm_like = self.filehandle["sample_log_likelihoods_dla"][0, :, :]
+            log_norm_like = self.filehandle["sample_log_likelihoods_dla"][
+                :, :, 0
+            ].T  # DESI: (num_qsos, num_samples, k)
         else:
-            log_norm_like = self.filehandle["sample_log_likelihoods_dla"]
+            log_norm_like = self.filehandle["sample_log_likelihoods_dla"][:].T
         # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
         # Each DLA in a spectrum is a different column
-        log_dla_like = self.filehandle["log_likelihoods_dla"][0]
+        log_dla_like = self.filehandle["log_likelihoods_dla"][:]
         # log_norm_like -= (log_dla_like + np.log(np.shape(self.log_norm_like)[0]))
         for spec in dla_ind[0]:
             # prevent IndexError while using a small test set for sample_log_likelihoods
@@ -469,7 +338,9 @@ class DLACatalogue(object):
         dla_ind_k = self.filter_dla_spectra(second=k - 1)
         # First the log_likelihood of DLA(k)
         log_norm_like_k_cache = {}
-        log_norm_like_k = self.filehandle["sample_log_likelihoods_dla"][k - 1, :, :]
+        log_norm_like_k = self.filehandle["sample_log_likelihoods_dla"][
+            :, :, k - 1
+        ].T  # DESI: (num_qsos, num_samples, k)
         for spec in dla_ind_k[0]:
             log_norm_like_k_cache[spec] = self._do_norm_log_norm_like_k(
                 log_norm_like_k[:, spec], spec, k - 1
@@ -480,10 +351,12 @@ class DLACatalogue(object):
         # mitigate the memory consumption by not loading the full matrix
         try:
             # if max_dlas > 2, the `base_sample_inds` file will have one additional axis
-            base_sample_inds_k = self.filehandle["base_sample_inds"][k - 2, :, :]
+            base_sample_inds_k = self.filehandle["base_sample_inds"][
+                :, k - 2, :
+            ].T  # DESI: (num_qsos, k, num_samples)
         except TypeError as e:
             print(e)
-            base_sample_inds_k = np.array(self.filehandle["base_sample_inds"])
+            base_sample_inds_k = np.array(self.filehandle["base_sample_inds"][:].T)
 
         base_sample_inds_k_cache = {}
         for spec in dla_ind_k[0]:
@@ -648,16 +521,16 @@ class DLACatalogue(object):
             try:
                 # if max_dlas > 2, the base_sample_inds file will have one additional axis
                 getattr(self, "base_sample_inds_{}_cache".format(k))[spec] = (
-                    np.array(self.filehandle["base_sample_inds"][k - 2, :, spec]) - 1
-                )
+                    np.array(self.filehandle["base_sample_inds"][spec, k - 2, :]) - 1
+                )  # DESI: (num_qsos, k, num_samples)
 
             except IndexError as e:
                 print("max_dlas < 3")
                 print(e)
                 assert k == 2  # this situation happened only if max_dlas == 2
                 getattr(self, "base_sample_inds_{}_cache".format(k))[spec] = (
-                    np.array(self.filehandle["base_sample_inds"][:, spec]) - 1
-                )
+                    np.array(self.filehandle["base_sample_inds"][spec, :]) - 1
+                )  # DESI: (num_qsos, k, num_samples)
 
             return getattr(self, "base_sample_inds_{}_cache".format(k))[spec]
 
@@ -672,15 +545,17 @@ class DLACatalogue(object):
             except KeyError:
                 if len(np.shape(self.filehandle["sample_log_likelihoods_dla"])) > 2:
                     log_norm_like = self.filehandle["sample_log_likelihoods_dla"][
-                        0, :, spec
-                    ]
+                        spec,
+                        :,
+                        0,
+                    ]  # DESI: (num_qsos, num_samples, k)
                 else:
                     log_norm_like = self.filehandle["sample_log_likelihoods_dla"][
-                        :, spec
-                    ]
+                        spec, :
+                    ]  # DESI: (num_qsos, num_samples, k)
                 # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
                 # Each DLA in a spectrum is a different column
-                log_dla_like = self.filehandle["log_likelihoods_dla"][0, spec]
+                log_dla_like = self.filehandle["log_likelihoods_dla"][spec, 0]
                 log_norm_like -= log_dla_like + np.log(np.shape(log_norm_like)[0])
                 self.log_norm_like_cache[spec] = log_norm_like
                 assert 0.95 < np.sum(np.exp(log_norm_like)) < 1.05
@@ -707,8 +582,10 @@ class DLACatalogue(object):
             # so that we can sum(axis=0) to eliminate the 0th axis.
             # log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][1:np.int(second) + 1, :, spec]
             log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][
-                np.int(second), :, spec
-            ]
+                spec,
+                :,
+                np.int(second),
+            ]  # DESI: (num_qsos, num_samples, k)
             getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[spec] = (
                 self._do_norm_log_norm_like_k(log_nhi_like_k, spec, np.int(second))
             )
@@ -728,7 +605,9 @@ class DLACatalogue(object):
         """
         log_nhi_like_k[np.isnan(log_nhi_like_k)] = -1e30
         # log_norm_like_k = np.sum( log_nhi_like_k, axis=0 ) + self._log_norm_like(spec, second=False)
-        log_dla_like_k = self.filehandle["log_likelihoods_dla"][second, spec]
+        log_dla_like_k = self.filehandle["log_likelihoods_dla"][
+            spec, second
+        ]  # DESI: shape (num_qsos, k)
         log_norm_like_k = log_nhi_like_k - (
             log_dla_like_k + np.log(np.shape(log_nhi_like_k)[0]) * (second + 1)
         )
@@ -851,6 +730,13 @@ class DLACatalogue(object):
             print("[Info] testing on the range lyinf-lybeta")
             max_z_dlas = np.max(
                 [np.min([max_z_dlas, self.lymanbeta(max_z_dlas)], axis=0), min_z_dlas],
+                axis=0,
+            )
+        # remove the lyman beta fprest region to test lybeta-lya detections
+        if self.z_min_lyb:
+            print("[Info] testing on the range lybeta-lya")
+            min_z_dlas = np.min(
+                [np.max([min_z_dlas, self.lymanbeta(min_z_dlas)], axis=0), max_z_dlas],
                 axis=0,
             )
         # Increase the minimum redshift to remove spectra contaminated by the lyman beta forest.
@@ -1486,6 +1372,10 @@ class DLACatalogue(object):
             if self.z_max_lyb:
                 assert self.lowzcut == False
                 upper_z = np.min([self.lymanbeta(self.z_max(spec)), ured])
+            # test lybeta - lyalpha only
+            if self.z_min_lyb:
+                assert self.highzcut == False
+                lower_z = np.max([self.lymanbeta(self.z_min(spec)), lred])
             # The low cutoff redshift.
             if self.lowzcut:
                 upper_z = np.min([self.proximity(self.z_max(spec)), ured])
