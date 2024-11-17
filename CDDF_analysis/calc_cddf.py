@@ -294,7 +294,9 @@ class DLACatalogue(object):
             log_norm_like = self.filehandle["sample_log_likelihoods_dla"][:].T
         # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
         # Each DLA in a spectrum is a different column
-        log_dla_like = self.filehandle["log_likelihoods_dla"][:]
+        log_dla_like = self.filehandle["log_likelihoods_dla"][
+            :, 0
+        ]  # DESI: shape (num_qsos, k)
         # log_norm_like -= (log_dla_like + np.log(np.shape(self.log_norm_like)[0]))
         for spec in dla_ind[0]:
             # prevent IndexError while using a small test set for sample_log_likelihoods
