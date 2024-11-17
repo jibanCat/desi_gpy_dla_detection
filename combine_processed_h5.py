@@ -6,6 +6,7 @@ import os
 import numpy as np
 import h5py
 from preload_qsos import read_catalog
+from desiutil.log import log
 
 
 # Default paths and arguments
@@ -67,11 +68,11 @@ def combine_processed_files(processed_dir, healpix_list, output_file):
         filepath = construct_filename(processed_dir, healpix)
 
         if not os.path.exists(filepath):
-            print(f"File not found: {filepath}. Skipping...")
+            log.info(f"File not found: {filepath}. Skipping...")
             continue
 
         processed_files.append(filepath)
-        print(f"Reading file: {filepath}")
+        log.info(f"Reading processed file: {filepath}")
 
         with h5py.File(filepath, "r") as f:
             for key in f.keys():
@@ -82,26 +83,26 @@ def combine_processed_files(processed_dir, healpix_list, output_file):
                     combined_results[key].append(data)
 
     if not processed_files:
-        print("No processed files were found. Exiting.")
+        log.info("No processed files were found. Exiting.")
         return
 
     # Combine arrays for each key
     for key in combined_results.keys():
-        print(f"Combining key: {key}")
+        log.info(f"Combining key: {key}")
         try:
             combined_results[key] = np.concatenate(combined_results[key], axis=0)
         except ValueError:
-            print(f"Warning: Could not concatenate key '{key}'. Keeping as list.")
+            log.info(f"Warning: Could not concatenate key '{key}'. Keeping as list.")
 
     # Save combined results to a single HDF5 file
-    print(f"Writing combined results to {output_file}")
+    log.info(f"Writing combined results to {output_file}")
     with h5py.File(output_file, "w") as f:
         for key, data in combined_results.items():
             f.create_dataset(key, data=data)
         f.attrs["combined_files"] = len(processed_files)
         f.attrs["healpix_combined"] = list(healpix_list)
 
-    print(f"Combined results saved to {output_file}")
+    log.info(f"Combined results saved to {output_file}")
 
 
 def main():
@@ -110,9 +111,9 @@ def main():
     processed_dir = DEFAULT_PROCESSED_DIR
     output_file = DEFAULT_OUTPUT_FILE
 
-    print(f"Using catalog: {catalog_path}")
-    print(f"Reading processed files from: {processed_dir}")
-    print(f"Saving combined results to: {output_file}")
+    log.info(f"Using catalog: {catalog_path}")
+    log.info(f"Reading processed files from: {processed_dir}")
+    log.info(f"Saving combined results to: {output_file}")
 
     # Load unique healpix pixels from the catalog
     healpix_list = load_healpix_from_catalog(catalog_path)
