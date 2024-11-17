@@ -260,6 +260,14 @@ def parse(options=None):
         help="end level2 folder",
     )
 
+    # external healpix list
+    parser.add_argument(
+        "--external_hpx_list",
+        type=str,
+        default=None,
+        help="external healpix list",
+    )
+
     if options is None:
         args = parser.parse_args()
     else:
@@ -350,16 +358,28 @@ def main(args=None):
         # running in between healpix pixels: hpx_start - hpx_end
         catalog = read_catalog(args.qsocat, args.balmask, args.tilebased)
 
-        all_hpxs = np.unique(catalog["HPXPIXEL"])
-        log.info(
-            "running in between healpix pixels {} - {}; Total {}".format(
-                args.hpx_start, args.hpx_end, len(all_hpxs)
-            )
-        )
+        if args.external_hpx_list:
+            # read in healpix list
+            all_hpxs = np.loadtxt(args.external_hpx_list).astype(int)
 
-        # TODO: So hxps are ALSO discontinuous, so it might make more sense to just indexing the catalog
-        # ind = (all_hpxs >= args.hpx_start) & (all_hpxs < args.hpx_end)
-        this_hpxs = all_hpxs.data[args.hpx_start : args.hpx_end]
+            log.info(
+                f"running in between external healpix list: {args.external_hpx_list}; Total {len(all_hpxs)} pixels"
+            )
+            this_hpxs = all_hpxs[args.hpx_start : args.hpx_end]
+            log.info(
+                f"healpix pixels to process: from {this_hpxs[0]} to {this_hpxs[-1]}"
+            )
+        else:
+            all_hpxs = np.unique(catalog["HPXPIXEL"])
+            log.info(
+                "running in between healpix pixels {} - {}; Total {}".format(
+                    args.hpx_start, args.hpx_end, len(all_hpxs)
+                )
+            )
+
+            # TODO: So hxps are ALSO discontinuous, so it might make more sense to just indexing the catalog
+            # ind = (all_hpxs >= args.hpx_start) & (all_hpxs < args.hpx_end)
+            this_hpxs = all_hpxs.data[args.hpx_start : args.hpx_end]
 
     # Convert Parameters to a dictionary
     params_dict = {

@@ -476,10 +476,6 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             logpnulllist.append(log_posteriors_no_dla)
             modelplist.append(model_posteriors[2 + n])
 
-    if len(tidlist) == 0:
-        # avoid vstack error for empty tables
-        return ()
-
     # TODO: Intermediate results saving for debugging - this is the same format as Roman's code
     processed_filename = coaddpath.split("/")[-1].replace("coadd-", "processed-")
     if os.path.exists(os.path.join(model.figure_dir, "processed")) is False:
@@ -488,6 +484,10 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         model.figure_dir, "processed", processed_filename.replace(".fits", ".h5")
     )
     model.save_results(output_file=processed_filename)
+
+    if len(tidlist) == 0:
+        # avoid vstack error for empty tables
+        return ()
 
     # DLACAT create table of fit results
     fitresults = Table(
