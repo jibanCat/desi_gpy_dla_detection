@@ -2,14 +2,14 @@
 
 #SBATCH -N 1                        # Number of nodes (1 node requested)
 #SBATCH -C cpu                      # CPU type (use 'cpu' for regular CPUs)
-#SBATCH -q regular                  # Queue (regular for longer runs)
+#SBATCH -q debug                  # Queue (regular for longer runs)
 #SBATCH --job-name=dla_detection    # Job name for identification in the queue
 #SBATCH --output=gpdla_kibo_%j.log  # Standard output log (%j is replaced by the job ID)
 #SBATCH --error=error_kibo_%j.log   # Standard error log (%j is replaced by the job ID)
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=06:00:00             # Time limit for the job
+#SBATCH --time=00:30:00             # Time limit for the job
 #SBATCH --ntasks=32                 # 32 tasks total (each running one instance of the Python script)
 #SBATCH --cpus-per-task=8           # Each task uses 8 CPUs
 
@@ -91,6 +91,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --figure_dir "/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/" \
         --hpx_start "$HPX_START" \
         --hpx_end "$HPX_END" \
+        --use_external_hpx_list \
         --external_hpx_list "missing_hpx_list.txt" & 
 done
 

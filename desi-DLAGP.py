@@ -262,6 +262,13 @@ def parse(options=None):
 
     # external healpix list
     parser.add_argument(
+        "--use_external_hpx_list",
+        default=False,
+        required=False,
+        action="store_true",
+        help="use external healpix list",
+    )
+    parser.add_argument(
         "--external_hpx_list",
         type=str,
         default=None,
@@ -358,7 +365,7 @@ def main(args=None):
         # running in between healpix pixels: hpx_start - hpx_end
         catalog = read_catalog(args.qsocat, args.balmask, args.tilebased)
 
-        if args.external_hpx_list:
+        if args.use_external_hpx_list:
             # read in healpix list
             all_hpxs = np.loadtxt(args.external_hpx_list).astype(int)
 
