@@ -8,6 +8,7 @@ Physical constants are handled as class attrs
 Pipeline parameters are handled as instance attrs
 Lambda functions are handled as instance methods
 """
+
 import numpy as np
 
 
@@ -135,7 +136,7 @@ class Parameters:
         return np.min(
             [
                 (np.max(wavelengths[ind]) / self.lya_wavelength - 1) - self.max_z_cut,
-                z_qso                                                - self.max_z_cut
+                z_qso - self.max_z_cut,
             ]
         )
 
@@ -151,7 +152,7 @@ class Parameters:
         )
         return np.max(
             [
-                np.min(wavelengths[ind]) / self.lya_wavelength - 1,
+                np.min(wavelengths[ind]) / self.lya_wavelength - 1 + self.min_z_cut,
                 self.observed_wavelengths(self.lyman_limit, z_qso) / self.lya_wavelength
                 - 1
                 + self.min_z_cut,
