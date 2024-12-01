@@ -46,7 +46,7 @@ MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_Z_CUT="${MAX_Z_CUT:-4500.0}" # Maximum redshift cut for the DLA samples
-MIN_Z_CUT="${MIN_Z_CUT:-45000.0}" # Minimum redshift cut for the DLA samples
+MIN_Z_CUT="${MIN_Z_CUT:-30000.0}" # Minimum redshift cut for the DLA samples
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
