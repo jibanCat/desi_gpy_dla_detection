@@ -45,6 +45,8 @@ MIN_LAMBDA="${MIN_LAMBDA:-850.75}"
 MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
+MAX_Z_CUT="${MAX_Z_CUT:-4500.0}" # Maximum redshift cut for the DLA samples
+MIN_Z_CUT="${MIN_Z_CUT:-45000.0}" # Minimum redshift cut for the DLA samples
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
@@ -87,6 +89,8 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --max_lambda "$MAX_LAMBDA" \
         --dlambda "$DLAMBDA" \
         --k "$K" \
+        --max_z_cut "$MAX_Z_CUT" \
+        --min_z_cut "$MIN_Z_CUT" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
         --figure_dir "/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/" \
         --hpx_start "$HPX_START" \

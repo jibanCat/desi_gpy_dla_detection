@@ -167,6 +167,12 @@ def dlasearch_mock(specfile, catalog, model_params):
         # Reconstruct the Parameters instance from the dictionary
         params = Parameters(**model_params["params_dict"])
 
+        # Log the parameters
+        log.info(f"Parameters: ---")
+        for key, value in model_params["params_dict"].items():
+            log.info(f"{key}: {value}")
+            log.info(f"---")
+
         # Reconstruct the DLAHolder instance using the reconstructed Parameters
         model = DLAHolder(
             learned_file=model_params["learned_file"],

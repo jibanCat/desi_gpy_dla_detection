@@ -233,6 +233,18 @@ def parse(options=None):
         default=9,
         help="Maximum pixel noise allowed during model training.",
     )
+    parser.add_argument(
+        "--max_z_cut",
+        type=float,
+        default=4500,
+        help="Maximum redshift cut for DLA models.",
+    )
+    parser.add_argument(
+        "--min_z_cut",
+        type=float,
+        default=45000,
+        help="Minimum redshift cut for DLA models.",
+    )
 
     # process range
     parser.add_argument(
@@ -399,6 +411,8 @@ def main(args=None):
         "dlambda": args.dlambda,
         "k": args.k,
         "max_noise_variance": args.max_noise_variance,
+        "max_z_cut": args.max_z_cut,
+        "min_z_cut": args.min_z_cut,
     }
 
     # Convert DLAHolder to a dictionary
