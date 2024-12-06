@@ -100,7 +100,9 @@ def combine_processed_files(processed_dir, healpix_list, output_file):
         for key, data in combined_results.items():
             f.create_dataset(key, data=data)
         f.attrs["combined_files"] = len(processed_files)
-        f.attrs["healpix_combined"] = list(healpix_list)
+
+        # save healpix array as a dataset
+        f.create_dataset("healpix_combined", data=np.array(healpix_list))
 
     log.info(f"Combined results saved to {output_file}")
 
