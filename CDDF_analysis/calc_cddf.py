@@ -183,6 +183,8 @@ class DLACatalogue(object):
 
         # Step 1: Create a mapping of target_ids to their positions in the reference order
         order_mapping = {val: idx for idx, val in enumerate(target_ids_catalog)}
+        # Prevent situation where the run fails, which returns -1
+        order_mapping[-1] = -1  # TODO: Make sure those -1 are not valid data
 
         # Step 2: Generate sorting indices for target_ids_to_sort
         real_index = np.array([order_mapping[val] for val in self.target_ids])
@@ -206,6 +208,8 @@ class DLACatalogue(object):
         self.do_resample = False
         # This allows us to filter by quasar redshift later
         self.condition = np.ones_like(self._z_min, dtype=np.bool)
+        # filter out those detection with target_ids not in the DLA catalog
+        self.condition = self.condition * (self.real_index != -1)
 
         # [Occam's razor] set up model_posteriors attr and put an additional occam's razor
         self.renormalise_occams_razor(occams_razor=self.occams_razor)
