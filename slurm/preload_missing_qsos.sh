@@ -4,8 +4,8 @@
 #SBATCH --error=logs_patch/batch_%A_%a.err    # Standard error log
 #SBATCH --time=05:00:00                       # Debug queue time limit
 #SBATCH --nodes=1                             # Single node
-#SBATCH --ntasks=24                           # Total number of tasks
-#SBATCH --cpus-per-task=10                    # Each task uses 2 CPU
+#SBATCH --ntasks=16                           # Total number of tasks
+#SBATCH --cpus-per-task=16                    # Each task uses 2 CPU
 #SBATCH -C cpu                                # CPU type
 #SBATCH -q regular                            # Debug queue
 #SBATCH -A desi                               # Account name
@@ -18,7 +18,7 @@ mkdir -p logs_patch
 
 # Parameters
 BATCH_SIZE=258        # Number of healpix pixels per batch
-NUM_BATCHES=24      # Total number of batches to process
+NUM_BATCHES=16      # Total number of batches to process
 OUTPUT_DIR="temp_batches"  # Output directory for temporary files
 PYTHON_SCRIPT="preload_qsos.py"
 
@@ -28,7 +28,7 @@ for TASK_ID in $(seq 0 $((NUM_BATCHES-1))); do
     ERR_FILE="logs_patch/preload_${TASK_ID}.err"
 
     echo "Submitting task $TASK_ID with batch size $BATCH_SIZE"
-    srun -N 1 -n 1 -c 4 python $PYTHON_SCRIPT $TASK_ID $BATCH_SIZE > $LOG_FILE 2> $ERR_FILE &
+    srun -N 1 -n 1 -c 16 python $PYTHON_SCRIPT $TASK_ID $BATCH_SIZE > $LOG_FILE 2> $ERR_FILE &
 done
 
 # Wait for all tasks to complete
