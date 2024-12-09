@@ -46,6 +46,11 @@ import matplotlib
 
 matplotlib.use("pdf")
 
+# TODO: remove samples with nhi > 22.5 : [requrie re-calculate the model_posteriors]
+# TODO: remove samples with min_z_dlas < min_z_dlas + 0.1 : [requrie re-calculate the model_posteriors]
+# TODO: higher SNR thresh tests
+# TODO: zQSO split tests : make sure avoid the assert error
+
 
 class DLACatalogue(object):
     """Class to contain the DLA catalogue and hold the files containing the data.
@@ -90,8 +95,8 @@ class DLACatalogue(object):
         # snrs_file: str = "snrs_qsos_multi_meanflux_dr16q.mat",
         catalog_file: str = "catalog.fits",  # reduced from QSO_cat_kibo_main_dark_healpix_v3-altbal.fits
         snr: int = -2,
-        lowzcut: bool = False,
-        highzcut: bool = False,
+        lowzcut: bool = True,
+        highzcut: bool = True,
         second: Union[int, bool] = False,
         sub_dla: bool = True,
         occams_razor: int = 1,
@@ -106,6 +111,7 @@ class DLACatalogue(object):
         z_min_lyb: bool = False,  # Lya only: in case you want to shift the minimum search range to lyb peak
         min_obs_wavelength_cut: bool = False,  # Cut out the tail part below certain obs lambda, default 4000 A
         min_obs_wavelength: float = 4000,  # A
+        high_nhi_cut: bool = True,  # Cut out the high NHI samples
     ):
         # Should we include the second DLA?
         self.second_dla = (
@@ -136,10 +142,10 @@ class DLACatalogue(object):
         self.p_switch = 0.25
         # Exclude spectra closer to the DLA than this, which has fewer DLAs than average.
         self.lowzcut = lowzcut
-        self.proximity_zone = 0.1
+        self.proximity_zone = 0.1  # 30000 km/s
         # Exclude spectra closer to the tail of the spectrum, which has more dubious DLAs than average.
         self.highzcut = highzcut
-        self.tail_zone = 0.1
+        self.tail_zone = 0.2  # 60000 km/s
         # Exclude spectra between lymanbeta to lymanalpha
         self.z_max_lyb = z_max_lyb
         # Exclude spectra between lymanlimit to lymanbeta
@@ -147,6 +153,9 @@ class DLACatalogue(object):
         # Exclude the dubious part of the obs wavelengths
         self.min_obs_wavelength_cut = min_obs_wavelength_cut
         self.min_obs_wavelength = min_obs_wavelength  # A
+        # Exclude the high NHI samples
+        self.high_nhi_cut = high_nhi_cut
+        self.high_nhi_cut_value = 22.5  # log10(cm^-2)
 
         # self.raw_file = raw_file
         self.processed_file = processed_file
@@ -231,6 +240,7 @@ class DLACatalogue(object):
                 =  sample_log_likelihoods_dla -
                 ( log_likelihoods_dla + log(num_dla_samples) )
         """
+        # TODO: it's assumed to be re-calculated for the filtered samples
         self.model_posteriors = self.filehandle["model_posteriors"][()]
         self.model_posteriors = self._occams_model_posteriors(
             self.model_posteriors, occams_razor
@@ -1387,6 +1397,10 @@ class DLACatalogue(object):
                 # obs lambda to z sampling -> obs lambda / (1 + zQSO)
                 z_obs_min = self.min_obs_wavelength / (lya_wavelength) - 1
                 lower_z = np.max([z_obs_min, lred])
+
+            # [DESI] The high cutoff nhi : too many failed modeling large DLAs due to GP is not trained on DESI spectra
+            if self.high_nhi_cut:
+                lnhi_max = self.high_nhi_cut_value
 
             # Select only samples with a DLA value, within the redshift we want.
             desired_samples = (
