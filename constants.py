@@ -5,8 +5,8 @@ set constant values used in DLA finder
 from scipy.constants import speed_of_light
 
 # set redshift window for quasars
-zmin_qso = 2.15
-zmax_qso = 7.00
+zmin_qso = 2.0
+zmax_qso = 4.25
 # set the wave window for DLA search
 # rest-frame angstroms
 search_minlam = 900.0
@@ -19,13 +19,13 @@ bluesnr_min = 1040
 bluesnr_max = 1205
 
 # Broad absorption line (BAL) fliters
-no_bal = True
+no_bal = False
 
 # ZWARNING flag filter ?
-zwarning = True
+zwarning = False
 
 # Spectype filter: QSO ?
-is_qso = True
+is_qso = False
 
 # set the log10 column density search range
 # for DLAs, units of (cm^-2)
