@@ -152,7 +152,7 @@ class Parameters:
         )
         return np.max(
             [
-                np.min(wavelengths[ind]) / self.lya_wavelength - 1 + self.min_z_cut,
+                np.min(wavelengths[ind]) / self.lya_wavelength - 1,
                 self.observed_wavelengths(self.lyman_limit, z_qso) / self.lya_wavelength
                 - 1
                 + self.min_z_cut,
