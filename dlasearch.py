@@ -483,7 +483,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             modelplist.append(model_posteriors[2 + n])
 
     # TODO: Intermediate results saving for debugging - this is the same format as Roman's code
-    processed_filename = coaddpath.split("/")[-1].replace("coadd-", "processed-")
+    processed_filename = "processed-" + coaddpath.split("/")[-1].replace("coadd-", "")
     if os.path.exists(os.path.join(model.figure_dir, "processed")) is False:
         os.makedirs(os.path.join(model.figure_dir, "processed"), exist_ok=True)
     processed_filename = os.path.join(
