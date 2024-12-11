@@ -9,7 +9,7 @@
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=03:00:00             # Time limit for the job
+#SBATCH --time=04:00:00             # Time limit for the job
 #SBATCH --ntasks=32                  # 8 tasks total (each running one instance of the Python script)
 #SBATCH --cpus-per-task=8          # Each task uses 8 CPUs
 
@@ -94,7 +94,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --dlambda "$DLAMBDA" \
         --k "$K" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "$FIGURE_DIR" \
+        --figure_dir "/pscratch/sd/j/jibancat/desi-mock-gpdla-20241211/" \
         --level2_start "$LEVEL2_START" \
         --level2_end "$LEVEL2_END" &
 done

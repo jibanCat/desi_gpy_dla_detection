@@ -21,8 +21,8 @@ QSOCAT="${QSOCAT:-/global/cfs/cdirs/desi/users/martini/bal-catalogs/kibo/QSO_cat
 RELEASE="${RELEASE:-kibo}"
 PROGRAM="${PROGRAM:-dark}"
 SURVEY="${SURVEY:-main}"
-OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/}"
-BALMASK="${BALMASK:-true}"
+OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-kibo-gpdla-20241211/}"
+BALMASK="${BALMASK:-false}"
 
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
 CATALOG_NAME="${CATALOG_NAME:-data/dr12q/processed/catalog.mat}"
@@ -37,16 +37,16 @@ MAX_DLAS="${MAX_DLAS:-3}"
 PLOT_FIGURES="${PLOT_FIGURES:-0}"
 MAX_WORKERS="${MAX_WORKERS:-8}"
 BATCH_SIZE="${BATCH_SIZE:-1250}"
-LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
+LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-910}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
 NORMALIZATION_MAX_LAMBDA="${NORMALIZATION_MAX_LAMBDA:-1475}"
-MIN_LAMBDA="${MIN_LAMBDA:-850.75}"
-MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
+MIN_LAMBDA="${MIN_LAMBDA:-911.75}"
+MAX_LAMBDA="${MAX_LAMBDA:-1216.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
-MAX_Z_CUT="${MAX_Z_CUT:-4500.0}" # Maximum redshift cut for the DLA samples
-MIN_Z_CUT="${MIN_Z_CUT:-30000.0}" # Minimum redshift cut for the DLA samples
+MAX_Z_CUT="${MAX_Z_CUT:-3000.0}" # Maximum redshift cut for the DLA samples
+MIN_Z_CUT="${MIN_Z_CUT:-3000.0}" # Minimum redshift cut for the DLA samples
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
@@ -92,7 +92,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --max_z_cut "$MAX_Z_CUT" \
         --min_z_cut "$MIN_Z_CUT" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "/pscratch/sd/j/jibancat/desi-kibo-gpdla-nobal-2_15-7-nozwarn/" \
+        --figure_dir "/pscratch/sd/j/jibancat/desi-kibo-gpdla-20241211/" \
         --hpx_start "$HPX_START" \
         --hpx_end "$HPX_END" &
 done
