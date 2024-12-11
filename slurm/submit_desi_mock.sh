@@ -10,8 +10,8 @@
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
 #SBATCH --time=03:00:00             # Time limit for the job
-#SBATCH --ntasks=8                  # 8 tasks total (each running one instance of the Python script)
-#SBATCH --cpus-per-task=32          # Each task uses 32 CPUs
+#SBATCH --ntasks=32                  # 8 tasks total (each running one instance of the Python script)
+#SBATCH --cpus-per-task=8          # Each task uses 8 CPUs
 
 # Ensure the environment is loaded
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
@@ -22,7 +22,7 @@ RELEASE="${RELEASE:-v5.9.5}"
 PROGRAM="${PROGRAM:-dark}"
 SURVEY="${SURVEY:-main}"
 MOCKDIR="${MOCKDIR:-/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/}"
-OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-mock-gpdla/}"
+OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-mock-gpdla-20241211/}"
 BALMASK="${BALMASK:-false}"
 
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
@@ -36,14 +36,14 @@ PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
 MAX_DLAS="${MAX_DLAS:-3}"
 PLOT_FIGURES="${PLOT_FIGURES:-0}"
-MAX_WORKERS="${MAX_WORKERS:-32}"               # Reduced for debug
-BATCH_SIZE="${BATCH_SIZE:-313}"               # Smaller batch size for debug
-LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
+MAX_WORKERS="${MAX_WORKERS:-8}"               # Reduced for debug
+BATCH_SIZE="${BATCH_SIZE:-1250}"               # Smaller batch size for debug
+LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-910}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
 NORMALIZATION_MAX_LAMBDA="${NORMALIZATION_MAX_LAMBDA:-1475}"
-MIN_LAMBDA="${MIN_LAMBDA:-850.75}"
-MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
+MIN_LAMBDA="${MIN_LAMBDA:-911.75}"
+MAX_LAMBDA="${MAX_LAMBDA:-1216.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
@@ -54,7 +54,7 @@ FIGURE_DIR="${FIGURE_DIR:-figures/}"
 
 # Start and end range variables for controlling the loop
 START_INDEX="${START_INDEX:-0}"
-END_INDEX="${END_INDEX:-14}"
+END_INDEX="${END_INDEX:-62}"
 STEP="${STEP:-2}"
 
 # Loop over the specified range, incrementing by the specified step
@@ -63,7 +63,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
     LEVEL2_END=$((i + 2))
     echo "Running for ${LEVEL2_START} <= LEVEL2 < ${LEVEL2_END}"
 
-    srun -N 1 -n 1 -c 32 --output="mock_run_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" --error="error_mock_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" python desi-DLAGP.py \
+    srun -N 1 -n 1 -c 8 --output="mock_run_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" --error="error_mock_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" python desi-DLAGP.py \
         --qsocat "$QSOCAT" \
         --release "$RELEASE" \
         --program "$PROGRAM" \
