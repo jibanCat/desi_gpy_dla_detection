@@ -188,7 +188,7 @@ def parse(options=None):
     parser.add_argument(
         "--loading_min_lambda",
         type=float,
-        default=800,
+        default=910,
         help="Range of rest wavelengths to load (Å).",
     )
     parser.add_argument(
@@ -212,13 +212,13 @@ def parse(options=None):
     parser.add_argument(
         "--min_lambda",
         type=float,
-        default=850.75,
+        default=911.75,
         help="Range of rest wavelengths to model (Å).",
     )
     parser.add_argument(
         "--max_lambda",
         type=float,
-        default=1420.75,
+        default=1216.75,
         help="Range of rest wavelengths to model (Å).",
     )
     parser.add_argument(
@@ -236,13 +236,13 @@ def parse(options=None):
     parser.add_argument(
         "--max_z_cut",
         type=float,
-        default=4500,
+        default=3000,
         help="Maximum redshift cut for DLA models.",
     )
     parser.add_argument(
         "--min_z_cut",
         type=float,
-        default=45000,
+        default=3000,
         help="Minimum redshift cut for DLA models.",
     )
 
