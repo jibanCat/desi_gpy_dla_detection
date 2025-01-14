@@ -651,7 +651,14 @@ def read_mock_catalog(qsocat, balmask, mockpath):
     """
     # read the following columns from qsocat
     cols = ["TARGETID", "RA", "DEC", "Z"]
-    catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
+    try:
+        catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
+    except:
+        print("[Warning] cannot find TARGETID, RA, DEC, Z in quasar catalog")
+        print("... using Saclay cols instead.")
+        cols = ['TARGETID', 'TARGET_RA', 'TARGET_DEC', 'Z']
+        catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
+
     log.info(f"Successfully read mock quasar catalog: {qsocat}")
 
     # Apply redshift cuts
