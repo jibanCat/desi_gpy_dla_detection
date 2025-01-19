@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the maximum range for start and end indices
-MAX_START_INDEX=1150
+MAX_START_INDEX=1127
 STEP=64
 
 # Loop over the start indices and calculate corresponding end indices
