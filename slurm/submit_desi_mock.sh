@@ -94,7 +94,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --dlambda "$DLAMBDA" \
         --k "$K" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "/pscratch/sd/j/jibancat/desi-mock-gpdla-20241211/" \
+        --figure_dir "$OUTDIR" \
         --level2_start "$LEVEL2_START" \
         --level2_end "$LEVEL2_END" &
 done
