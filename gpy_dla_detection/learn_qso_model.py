@@ -5,12 +5,13 @@ import numpy as np
 import h5py
 from scipy.interpolate import interp1d
 from sklearn.decomposition import PCA
-import h5py
-import numpy as np
+from .effective_optical_depth import effective_optical_depth
+from .objective import spectrum_loss, objective
+from .voigt import transition_wavelengths, oscillator_strengths
 
 class DataLoader:
-    """Loads QSO spectra from HDF5 files, filtering by redshift and SNR."""
-
+    """Loads QSO spectra, applies redshift & SNR filtering, and returns clean data."""
+    
     def __init__(self, catalog_file, preloaded_file, z_range=(3.0, 4.25), min_snr=2.0, max_spectra=1000):
         self.catalog_file = catalog_file
         self.preloaded_file = preloaded_file
@@ -18,15 +19,10 @@ class DataLoader:
         self.min_snr = min_snr
         self.max_spectra = max_spectra
 
-        self.fluxes = []
-        self.wavelengths = []
-        self.noise_variances = []
-        self.z_qsos = []
-
     def load_data(self):
         """Loads spectra and applies redshift & SNR filtering."""
         with h5py.File(self.catalog_file, 'r') as f:
-            z_qsos = f['z_qsos'][:].flatten()  # Convert to 1D
+            z_qsos = f['z_qsos'][:].flatten()
 
         with h5py.File(self.preloaded_file, "r") as f:
             total_spectra = len(f["all_flux"][0])
@@ -36,175 +32,127 @@ class DataLoader:
             wavelength_refs = f["all_wavelengths"][0]
             noise_refs = f["all_noise_variance"][0]
 
-            snr_values = []
+            snr_values, fluxes, wavelengths, noise_variances, selected_z_qsos = [], [], [], [], []
 
-            # Iterate through all spectra and filter based on conditions
             for i in range(total_spectra):
                 flux = np.array(f[flux_refs[i]])
-                wavelengths = np.array(f[wavelength_refs[i]])
-                noise_variance = np.array(f[noise_refs[i]])
+                wave = np.array(f[wavelength_refs[i]])
+                noise = np.array(f[noise_refs[i]])
                 z_qso = z_qsos[i]
 
-                # Skip empty or zero-only spectra
-                if np.all(flux == 0):
-                    continue
-
-                # Apply redshift filter
-                if not (self.z_range[0] <= z_qso <= self.z_range[1]):
-                    continue
-
-                # Compute SNR (median flux / sqrt(noise))
-                snr = np.median(flux / np.sqrt(noise_variance))
+                # Apply redshift and SNR filtering
+                if np.all(flux == 0) or not (self.z_range[0] <= z_qso <= self.z_range[1]):
+                    continue  
+                
+                # Compute SNR and apply threshold
+                snr = np.median(flux / np.sqrt(noise))
                 if np.isnan(snr) or np.isinf(snr) or snr < self.min_snr:
-                    continue  # Skip spectra below SNR threshold
+                    continue  
 
-                # Store valid spectra
-                self.fluxes.append(flux)
-                self.wavelengths.append(wavelengths)
-                self.noise_variances.append(noise_variance)
-                self.z_qsos.append(z_qso)
+                fluxes.append(flux)
+                wavelengths.append(wave)
+                noise_variances.append(noise)
+                selected_z_qsos.append(z_qso)
                 snr_values.append(snr)
 
-        # Select top 1000 highest SNR spectra
+        # Sort spectra by SNR and keep only the top `max_spectra` spectra
         if len(snr_values) > self.max_spectra:
-            sorted_indices = np.argsort(snr_values)[::-1]  # Sort descending
-            self.fluxes = [self.fluxes[i] for i in sorted_indices[:self.max_spectra]]
-            self.wavelengths = [self.wavelengths[i] for i in sorted_indices[:self.max_spectra]]
-            self.noise_variances = [self.noise_variances[i] for i in sorted_indices[:self.max_spectra]]
-            self.z_qsos = [self.z_qsos[i] for i in sorted_indices[:self.max_spectra]]
+            top_indices = np.argsort(snr_values)[::-1][:self.max_spectra]
+            fluxes = [fluxes[i] for i in top_indices]
+            wavelengths = [wavelengths[i] for i in top_indices]
+            noise_variances = [noise_variances[i] for i in top_indices]
+            selected_z_qsos = [selected_z_qsos[i] for i in top_indices]
 
-        print(f"Loaded {len(self.fluxes)} spectra with SNR > {self.min_snr} in z = [{self.z_range[0]}, {self.z_range[1]}]")
+        return fluxes, wavelengths, noise_variances, selected_z_qsos
 
-    def get_data(self):
-        """Returns the processed spectra."""
-        return self.fluxes, self.wavelengths, self.noise_variances, self.z_qsos
 
 class SpectrumProcessor:
-    """Preprocesses spectra by normalizing and interpolating onto a fixed grid."""
+    """Preprocesses spectra: normalizes, interpolates, and de-forests them."""
 
     def __init__(self, min_lambda=911, max_lambda=1216, num_pixels=200,
                  norm_min_lambda=1425, norm_max_lambda=1475):
-        """Initialize wavelength grid and normalization range."""
         self.rest_wavelengths = np.linspace(min_lambda, max_lambda, num_pixels)
         self.norm_min_lambda = norm_min_lambda
         self.norm_max_lambda = norm_max_lambda
 
     def normalize_spectra(self, wavelengths, fluxes, noise_variances):
-        """Normalizes spectra using the median flux in the range [1425Å, 1475Å]."""
-        norm_fluxes = []
-        norm_noise_variances = []
+        """Normalizes spectra using median flux in [1425Å, 1475Å]."""
+        norm_fluxes, norm_noise_variances = [], []
 
-        for wave, flux, noise_var in zip(wavelengths, fluxes, noise_variances):
-            # Select the region for normalization
+        # Interpolate spectra to the common rest-frame wavelength grid
+        for wave, flux, noise in zip(wavelengths, fluxes, noise_variances):
             norm_mask = (wave >= self.norm_min_lambda) & (wave <= self.norm_max_lambda)
-            
             if not np.any(norm_mask):
-                continue  # Skip if no valid pixels in normalization range
+                continue  
 
             median_flux = np.median(flux[norm_mask])
             if median_flux == 0:
-                continue  # Avoid division by zero
+                continue  
 
             norm_fluxes.append(flux / median_flux)
-            norm_noise_variances.append(noise_var / (median_flux**2))
+            norm_noise_variances.append(noise / (median_flux**2))
 
-        return norm_fluxes, norm_noise_variances
+        return np.array(norm_fluxes), np.array(norm_noise_variances)
 
-    def interpolate_spectra(self, wavelengths, fluxes, noise_variances):
-        """Interpolates spectra onto the fixed rest-frame grid."""
-        interpolated_fluxes = []
-        interpolated_noise_variances = []
+    def de_forest_spectra(self, wavelengths, fluxes, noise_variances, z_qsos, tau_0=0.00554, beta=3.182):
+        """Removes effective Lyα forest absorption using `effective_optical_depth()`."""
+        de_forest_fluxes, de_forest_noise = [], []
 
-        for wave, flux, noise_var in zip(wavelengths, fluxes, noise_variances):
-            flux_interp = np.interp(self.rest_wavelengths, wave, flux, left=np.nan, right=np.nan)
-            noise_var_interp = np.interp(self.rest_wavelengths, wave, noise_var, left=np.nan, right=np.nan)
+        for wave, flux, noise, z_qso in zip(wavelengths, fluxes, noise_variances, z_qsos):
+            optical_depth = effective_optical_depth(wave, beta, tau_0, z_qso, num_forest_lines=10)
+            lya_absorption = np.exp(-np.sum(optical_depth, axis=1))
 
-            interpolated_fluxes.append(flux_interp)
-            interpolated_noise_variances.append(noise_var_interp)
+            # Interpolate the effective optical depth to the observed wavelength grid
+            de_forest_fluxes.append(flux / lya_absorption)
+            de_forest_noise.append(noise / (lya_absorption**2))
 
-        return np.array(interpolated_fluxes), np.array(interpolated_noise_variances)
+        return np.array(de_forest_fluxes), np.array(de_forest_noise)
+
+
+def compute_pca(centered_fluxes, num_components=10):
+    """Computes PCA eigenspectra for GP initialization."""
+    pca = PCA(n_components=num_components)
+    pca.fit(centered_fluxes)
+    return pca.components_.T
+
 
 class GaussianProcessModel(nn.Module):
-    """Implements the Gaussian Process model for QSO flux modeling."""
+    """Gaussian Process model with PCA eigenspectra initialization.
+    """
 
-    def __init__(self, num_rest_pixels, k, external_pca=None):
+    def __init__(self, num_pixels, k, pca_eigenspectra):
         super().__init__()
-        self.num_rest_pixels = num_rest_pixels
+        self.num_pixels = num_pixels
         self.k = k
 
-        if external_pca is not None:
-            assert external_pca.shape == (num_rest_pixels, k), "PCA eigenspectra dimensions do not match"
-            self.M = nn.Parameter(torch.tensor(external_pca, dtype=torch.float32))
-        else:
-            self.M = nn.Parameter(torch.randn(num_rest_pixels, k))
-
-        self.log_omega = nn.Parameter(torch.zeros(num_rest_pixels))
+        # Initialize model parameters
+        self.M = nn.Parameter(torch.tensor(pca_eigenspectra, dtype=torch.float32))
+        self.log_omega = nn.Parameter(torch.zeros(num_pixels))
         self.log_c_0 = nn.Parameter(torch.tensor(0.0))
         self.log_tau_0 = nn.Parameter(torch.tensor(0.0))
         self.log_beta = nn.Parameter(torch.tensor(0.0))
 
     def forward(self):
         """Returns model parameters in exponential space."""
-        omega2 = torch.exp(2 * self.log_omega)
-        c_0 = torch.exp(self.log_c_0)
-        tau_0 = torch.exp(self.log_tau_0)
-        beta = torch.exp(self.log_beta)
-        return self.M, omega2, c_0, tau_0, beta
+        return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
 
-def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta):
-    """
-    Computes the negative log-likelihood for the spectrum.
-
-    The covariance model follows:
-        K = MM^T + diag(σ² + (ω (c₀ + a(1 + z)))²),
-    where:
-        - a(1 + z) = 1 - exp(-τ₀ (1 + z)ᵝ)
-    """
-
-    # Compute Lyα optical depth and absorption
-    lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)
-    lya_absorption = torch.exp(-lya_optical_depth)
-
-    # Compute additional noise contribution due to absorption
-    scaling_factor = 1 - lya_absorption + c_0
-    absorption_noise = omega2 * torch.square(scaling_factor)
-
-    # Total noise variance
-    d = noise_variance + absorption_noise
-    d_inv = 1 / d
-
-    # Compute inverse covariance using Woodbury identity
-    D_inv_y = d_inv * y
-    D_inv_M = d_inv[:, None] * M
-
-    B = M.T @ D_inv_M  # Shape (k, k)
-    B.diagonal().add_(1.0)  # I + M^T D^{-1} M
-
-    # Compute Cholesky decomposition
-    L = torch.linalg.cholesky(B)  # Lower triangular (k, k)
-
-    # Solve for C using numerically stable triangular solver
-    C = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)
-    C = torch.linalg.solve_triangular(L.T, C, upper=True)
-
-    # Compute inverse covariance matrix
-    K_inv_y = D_inv_y - D_inv_M @ (C @ y)
-
-    log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diag(L)))
-
-    return 0.5 * (y @ K_inv_y + log_det_K + len(y) * torch.log(torch.tensor(2 * np.pi)))
+import torch
+import torch.optim as optim
 
 class Trainer:
-    """Trainer for optimizing the GP model with either L-BFGS or Adam."""
+    """
+    Trainer for optimizing the Gaussian Process model with PyTorch autograd support.
+    Allows switching between Adam and L-BFGS optimization.
+    """
 
     def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01):
         """
-        Initialize the trainer with the chosen optimizer.
-        
+        Initialize the trainer.
+
         Parameters:
-        - gp_model: The Gaussian Process Model.
-        - optimizer_type: "adam" or "lbfgs".
-        - learning_rate: Learning rate for the optimizer.
+        - gp_model: GaussianProcessModel instance
+        - optimizer_type: "adam" or "lbfgs"
+        - learning_rate: Step size for optimizer
         """
         self.model = gp_model
         self.optimizer_type = optimizer_type.lower()
@@ -219,33 +167,29 @@ class Trainer:
         else:
             raise ValueError("Optimizer type must be either 'adam' or 'lbfgs'")
 
-    def spectrum_loss_with_priors(self, fluxes, noise_variances, lya_1pzs):
-        """Computes the total loss including priors on τ₀ and β."""
-        M, omega2, c_0, tau_0, beta = self.model()
-        loss = 0.0
+    def train(self, fluxes, lya_1pzs, noise_variances, z_qsos, num_forest_lines,
+              all_transition_wavelengths, all_oscillator_strengths, max_epochs=500):
+        """
+        Trains the GP model using either Adam or L-BFGS.
+        """
 
-        for i in range(len(fluxes)):
-            valid_idx = ~np.isnan(fluxes[i])
-            y = torch.tensor(fluxes[i][valid_idx], dtype=torch.float32)
-            noise_var = torch.tensor(noise_variances[i][valid_idx], dtype=torch.float32)
-            lya_1pz = torch.tensor(lya_1pzs[i][valid_idx], dtype=torch.float32)
+        def closure():
+            """
+            Closure function for L-BFGS optimization.
+            """
+            self.optimizer.zero_grad()
+            loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+                             all_transition_wavelengths, all_oscillator_strengths, z_qsos)
+            loss.backward()
+            self.loss_history.append(loss.item())
+            return loss
 
-            loss += spectrum_loss(y, lya_1pz, noise_var, M[valid_idx], omega2[valid_idx], c_0, tau_0, beta)
-
-        # Add Gaussian priors for τ₀ and β
-        prior_tau_0 = 0.5 * ((tau_0 - 0.00554) / 0.00064) ** 2
-        prior_beta = 0.5 * ((beta - 3.182) / 0.074) ** 2
-        total_loss = loss + prior_tau_0 + prior_beta
-
-        return total_loss
-
-    def train(self, fluxes, noise_variances, lya_1pzs, max_epochs=500):
-        """Trains the GP model using either Adam or L-BFGS."""
         if self.optimizer_type == "adam":
-            # Adam Optimization
+            # Adam optimization
             for epoch in range(max_epochs):
                 self.optimizer.zero_grad()
-                loss = self.spectrum_loss_with_priors(fluxes, noise_variances, lya_1pzs)
+                loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+                                 all_transition_wavelengths, all_oscillator_strengths, z_qsos)
                 loss.backward()
                 self.optimizer.step()
                 self.loss_history.append(loss.item())
@@ -254,15 +198,23 @@ class Trainer:
                     print(f"Epoch {epoch}: Loss = {loss.item()}")
 
         elif self.optimizer_type == "lbfgs":
-            # L-BFGS Optimization
-            def closure():
-                self.optimizer.zero_grad()
-                loss = self.spectrum_loss_with_priors(fluxes, noise_variances, lya_1pzs)
-                loss.backward()
-                self.loss_history.append(loss.item())
-                return loss
-
+            # L-BFGS optimization (uses closure)
             for _ in range(max_epochs):
                 self.optimizer.step(closure)
 
-            print(f"Final Loss: {self.loss_history[-1]}")
+        print(f"Final Loss: {self.loss_history[-1]}")
+
+if __name__ == "__main__":
+
+    # 🚀 Training Steps
+    fluxes, wavelengths, noise_variances, z_qsos = DataLoader("catalog.h5", "preloaded.h5").load_data()
+    processor = SpectrumProcessor()
+    norm_fluxes, norm_noise = processor.normalize_spectra(wavelengths, fluxes, noise_variances)
+    de_forest_fluxes, de_forest_noise = processor.de_forest_spectra(wavelengths, norm_fluxes, norm_noise, z_qsos)
+
+    centered_fluxes = de_forest_fluxes - np.mean(de_forest_fluxes, axis=0)
+    pca_eigenspectra = compute_pca(centered_fluxes)
+
+    gp_model = GaussianProcessModel(200, 10, pca_eigenspectra)
+    trainer = Trainer(gp_model, optimizer="adam")
+    trainer.train(de_forest_fluxes, de_forest_noise)
