@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from .voigt import transition_wavelengths, oscillator_strengths
 
 def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines, 
@@ -39,11 +40,11 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
         zqso_1pz = z_qsos[i] + 1
 
         # Compute per-spectrum likelihood via spectrum_loss()
-        this_loss = spectrum_loss(y, lya_1pz, noise_var, M[valid_idx], omega2[valid_idx], 
-                                  c_0, tau_0, beta, num_forest_lines, 
-                                  all_transition_wavelengths, all_oscillator_strengths, zqso_1pz)
+        this_loss = spectrum_loss(y, lya_1pz, noise_var, M[valid_idx], omega2[valid_idx],
+                                c_0, tau_0, beta, num_forest_lines,
+                                all_transition_wavelengths, all_oscillator_strengths, zqso_1pz)
 
-        loss += this_loss  # Accumulate over all quasars
+        loss += this_loss  # Ensure `this_loss` is a single tensor
 
     # Apply priors for τ₀ and β (Kamble et al. 2019, BOSS DR12Q)
     tau_0_mu, tau_0_sigma = 0.00554, 0.00064
@@ -57,27 +58,33 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     return total_loss
 
 
-def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta, 
+def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
                   num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, zqso_1pz):
+    """
+    Computes the negative log-likelihood of a single spectrum.
 
-    # Compute Lyman absorption effects (same as above)
+    PyTorch automatically tracks gradients, so we do NOT need to compute them manually.
+    """
+
+    # Compute Lyman absorption effects
     lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)
-    
+
     for i in range(1, num_forest_lines):
         lyman_1pz = (all_transition_wavelengths[0] * lya_1pz) / all_transition_wavelengths[i]
         indicator = (lyman_1pz <= zqso_1pz).float()
-        
+
         tau = (tau_0 * all_transition_wavelengths[i] * all_oscillator_strengths[i]) / \
               (all_transition_wavelengths[0] * all_oscillator_strengths[0])
-        
+
         lya_optical_depth += tau * torch.pow(lyman_1pz, beta) * indicator
 
     lya_absorption = torch.exp(-lya_optical_depth)
-    
+
     # Compute absorption noise
     scaling_factor = 1 - lya_absorption + c_0
     absorption_noise = omega2 * torch.square(scaling_factor)
 
+    # Compute total noise variance
     d = noise_variance + absorption_noise
     d_inv = 1 / d
 
@@ -85,7 +92,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     D_inv_y = d_inv * y
     D_inv_M = d_inv[:, None] * M
 
-    B = M.T @ D_inv_M  
+    B = M.T @ D_inv_M
     B.diagonal().add_(1.0)
 
     # Cholesky decomposition
@@ -98,24 +105,24 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     K_inv_y = D_inv_y - D_inv_M @ (C @ y)
     log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diag(L)))
 
-    # Negative log-likelihood
+    # Negative log-likelihood (final loss)
     nlog_p = 0.5 * (y @ K_inv_y + log_det_K + len(y) * torch.log(torch.tensor(2 * np.pi)))
 
-    # Compute gradients
-    K_inv_M = D_inv_M - D_inv_M @ (C @ M)
-    dM = -(K_inv_y[:, None] * (K_inv_y[None, :] @ M) - K_inv_M)
+    # # Compute gradients
+    # K_inv_M = D_inv_M - D_inv_M @ (C @ M)
+    # dM = -(K_inv_y[:, None] * (K_inv_y[None, :] @ M) - K_inv_M)
 
-    diag_K_inv = d_inv - torch.sum(C * D_inv_M.T, dim=1)
+    # diag_K_inv = d_inv - torch.sum(C.T * D_inv_M, dim=1)
 
-    dlog_omega = -(absorption_noise * (K_inv_y**2 - diag_K_inv))
+    # dlog_omega = -(absorption_noise * (K_inv_y**2 - diag_K_inv))
 
-    da = c_0 * omega2 * scaling_factor
-    dlog_c_0 = -torch.sum(K_inv_y * da * K_inv_y) + torch.sum(diag_K_inv * da)
+    # da = c_0 * omega2 * scaling_factor
+    # dlog_c_0 = -torch.sum(K_inv_y * da * K_inv_y) + torch.sum(diag_K_inv * da)
 
-    da = omega2 * scaling_factor * lya_optical_depth * lya_absorption
-    dlog_tau_0 = -torch.sum(K_inv_y * da * K_inv_y) + torch.sum(diag_K_inv * da)
+    # da = omega2 * scaling_factor * lya_optical_depth * lya_absorption
+    # dlog_tau_0 = -torch.sum(K_inv_y * da * K_inv_y) + torch.sum(diag_K_inv * da)
 
-    da = da * torch.log(lya_1pz) * beta
-    dlog_beta = -torch.sum(K_inv_y * da * K_inv_y) + torch.sum(diag_K_inv * da)
+    # da = da * torch.log(lya_1pz) * beta
+    # dlog_beta = -torch.sum(K_inv_y * da * K_inv_y) + torch.sum(diag_K_inv * da)
 
-    return nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta
+    return nlog_p  # Ensure it does NOT return gradients
