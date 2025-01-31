@@ -76,7 +76,6 @@ class GaussianProcessModel(nn.Module):
         beta = torch.exp(self.log_beta)
         return self.M, omega2, c_0, tau_0, beta
 
-
 def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta):
     """
     Computes the negative log-likelihood for the spectrum.
@@ -103,16 +102,22 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta):
     D_inv_y = d_inv * y
     D_inv_M = d_inv[:, None] * M
 
-    B = M.T @ D_inv_M
-    B.diagonal().add_(1.0)
-    L = torch.linalg.cholesky(B)
-    C = torch.cholesky_solve(D_inv_M, L)
+    B = M.T @ D_inv_M  # Shape (k, k)
+    B.diagonal().add_(1.0)  # I + M^T D^{-1} M
 
+    # Compute Cholesky decomposition
+    L = torch.linalg.cholesky(B)  # Lower triangular (k, k)
+
+    # Solve for C using numerically stable triangular solver
+    C = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)
+    C = torch.linalg.solve_triangular(L.T, C, upper=True)
+
+    # Compute inverse covariance matrix
     K_inv_y = D_inv_y - D_inv_M @ (C @ y)
+
     log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diag(L)))
 
     return 0.5 * (y @ K_inv_y + log_det_K + len(y) * torch.log(torch.tensor(2 * np.pi)))
-
 
 class Trainer:
     """Trainer for optimizing the GP model using L-BFGS."""
