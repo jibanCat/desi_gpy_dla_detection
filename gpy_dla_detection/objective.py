@@ -2,32 +2,18 @@ import torch
 import numpy as np
 from .voigt import transition_wavelengths, oscillator_strengths
 
-def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines, 
+def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
               all_transition_wavelengths, all_oscillator_strengths, z_qsos):
     """
     Computes the negative log-likelihood for the entire training dataset.
-    
+
     Equivalent to MATLAB's `objective.m`, with automatic gradient tracking via PyTorch autograd.
-    
-    Parameters:
-    - model: GaussianProcessModel instance
-    - fluxes: List of tensors containing flux data
-    - lya_1pzs: List of tensors containing Lyα redshift factors
-    - noise_variances: List of tensors containing noise variances
-    - num_forest_lines: Number of Lyman-series lines to consider
-    - all_transition_wavelengths: Tensor of transition wavelengths
-    - all_oscillator_strengths: Tensor of oscillator strengths
-    - z_qsos: List of quasar redshifts
-
-    Returns:
-    - loss: Total negative log likelihood for the dataset
     """
-
     # Extract learnable parameters from the model
     M, omega2, c_0, tau_0, beta = model()
 
     # Initialize total loss
-    loss = torch.tensor(0.0, dtype=torch.float32, requires_grad=True)
+    loss = torch.tensor(0.0, dtype=torch.float32, device=M.device)  # ✅ Fix: No requires_grad=True
 
     # Iterate over all quasars in training set
     for i in range(len(fluxes)):
@@ -35,28 +21,16 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
         y = fluxes[i][valid_idx]
         noise_var = noise_variances[i][valid_idx]
         lya_1pz = lya_1pzs[i][valid_idx]
+        zqso_1pz = z_qsos[i] + 1  # Redshift factor for Lyα absorbers
 
-        # Redshift factor for Lyα absorbers
-        zqso_1pz = z_qsos[i] + 1
-
-        # Compute per-spectrum likelihood via spectrum_loss()
+        # Compute per-spectrum likelihood
         this_loss = spectrum_loss(y, lya_1pz, noise_var, M[valid_idx], omega2[valid_idx],
-                                c_0, tau_0, beta, num_forest_lines,
-                                all_transition_wavelengths, all_oscillator_strengths, zqso_1pz)
+                                  c_0, tau_0, beta, num_forest_lines,
+                                  all_transition_wavelengths, all_oscillator_strengths, zqso_1pz)
 
-        loss += this_loss  # Ensure `this_loss` is a single tensor
+        loss = loss + this_loss  # ✅ Fix: No in-place operation
 
-    # Apply priors for τ₀ and β (Kamble et al. 2019, BOSS DR12Q)
-    tau_0_mu, tau_0_sigma = 0.00554, 0.00064
-    beta_mu, beta_sigma = 3.182, 0.074
-
-    prior_tau_0 = 0.5 * ((tau_0 - tau_0_mu) / tau_0_sigma) ** 2
-    prior_beta = 0.5 * ((beta - beta_mu) / beta_sigma) ** 2
-
-    total_loss = loss + prior_tau_0 + prior_beta  # Include priors in final loss
-
-    return total_loss
-
+    return loss  # ✅ Return the accumulated loss tensor
 
 def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
                   num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, zqso_1pz):

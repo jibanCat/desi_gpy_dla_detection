@@ -5,11 +5,17 @@ import numpy as np
 import h5py
 from scipy.interpolate import interp1d
 from sklearn.decomposition import PCA
+import torch
+import torch.optim as optim
+import torch
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
+
 from .effective_optical_depth import effective_optical_depth
 from .objective import spectrum_loss, objective
 from .voigt import transition_wavelengths, oscillator_strengths
 
-class DataLoader:
+class QSOLoader:
     """Loads QSO spectra, applies redshift & SNR filtering, and returns clean data."""
     
     def __init__(self, catalog_file, preloaded_file, z_range=(3.0, 4.25), min_snr=2.0, max_spectra=1000):
@@ -126,7 +132,7 @@ class GaussianProcessModel(nn.Module):
         self.k = k
 
         # Initialize model parameters
-        self.M = nn.Parameter(torch.tensor(pca_eigenspectra, dtype=torch.float32))
+        self.M = nn.Parameter(torch.tensor(pca_eigenspectra, dtype=torch.float32).clone().detach())
         self.log_omega = nn.Parameter(torch.zeros(num_pixels))
         self.log_c_0 = nn.Parameter(torch.tensor(0.0))
         self.log_tau_0 = nn.Parameter(torch.tensor(0.0))
@@ -136,16 +142,14 @@ class GaussianProcessModel(nn.Module):
         """Returns model parameters in exponential space."""
         return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
 
-import torch
-import torch.optim as optim
 
 class Trainer:
     """
     Trainer for optimizing the Gaussian Process model with PyTorch autograd support.
-    Allows switching between Adam and L-BFGS optimization.
+    Uses Mini-Batch Training.
     """
 
-    def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01):
+    def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01, batch_size=32):
         """
         Initialize the trainer.
 
@@ -153,10 +157,12 @@ class Trainer:
         - gp_model: GaussianProcessModel instance
         - optimizer_type: "adam" or "lbfgs"
         - learning_rate: Step size for optimizer
+        - batch_size: Number of samples per mini-batch
         """
         self.model = gp_model
         self.optimizer_type = optimizer_type.lower()
         self.learning_rate = learning_rate
+        self.batch_size = batch_size
         self.loss_history = []
 
         # Choose optimizer
@@ -170,8 +176,12 @@ class Trainer:
     def train(self, fluxes, lya_1pzs, noise_variances, z_qsos, num_forest_lines,
               all_transition_wavelengths, all_oscillator_strengths, max_epochs=500):
         """
-        Trains the GP model using either Adam or L-BFGS.
+        Trains the GP model using either Adam or L-BFGS with mini-batches.
         """
+
+        # Create PyTorch DataLoader for mini-batches
+        dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
+        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
         def closure():
             """
@@ -181,26 +191,33 @@ class Trainer:
             loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
                              all_transition_wavelengths, all_oscillator_strengths, z_qsos)
             loss.backward()
-            self.loss_history.append(loss.item())
+            self.loss_history.append(loss.item())  # 👈 This is where loss should be stored
             return loss
 
         if self.optimizer_type == "adam":
-            # Adam optimization
             for epoch in range(max_epochs):
-                self.optimizer.zero_grad()
-                loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
-                                 all_transition_wavelengths, all_oscillator_strengths, z_qsos)
-                loss.backward()
-                self.optimizer.step()
-                self.loss_history.append(loss.item())
+                total_loss = 0.0
 
-                if epoch % 50 == 0:
-                    print(f"Epoch {epoch}: Loss = {loss.item()}")
+                for batch in dataloader:
+                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = batch
 
-        elif self.optimizer_type == "lbfgs":
-            # L-BFGS optimization (uses closure)
-            for _ in range(max_epochs):
-                self.optimizer.step(closure)
+                    self.optimizer.zero_grad()
+                    loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                                    num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+
+                    loss.backward()
+                    self.optimizer.step()
+                    
+                    total_loss += loss.item()
+                    self.loss_history.append(loss.item())  # 👈 Append loss here!
+
+                if epoch % 10 == 0:
+                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader)}")
+                        
+                elif self.optimizer_type == "lbfgs":
+                    # L-BFGS optimization (uses closure)
+                    for _ in range(max_epochs):
+                        self.optimizer.step(closure)
 
         print(f"Final Loss: {self.loss_history[-1]}")
 
