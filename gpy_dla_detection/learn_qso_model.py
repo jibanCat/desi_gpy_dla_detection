@@ -121,15 +121,16 @@ def compute_pca(centered_fluxes, num_components=10):
     pca.fit(centered_fluxes)
     return pca.components_.T
 
-
 class GaussianProcessModel(nn.Module):
-    """Gaussian Process model with PCA eigenspectra initialization.
-    """
+    """Gaussian Process model with PCA eigenspectra initialization."""
 
-    def __init__(self, num_pixels, k, pca_eigenspectra):
+    def __init__(self, num_pixels, k, pca_eigenspectra, min_lambda=911, max_lambda=1216):
         super().__init__()
         self.num_pixels = num_pixels
         self.k = k
+
+        # Define a consistent rest-wavelength grid
+        self.rest_wavelengths = torch.linspace(min_lambda, max_lambda, num_pixels, dtype=torch.float32)
 
         # Initialize model parameters
         self.M = nn.Parameter(torch.tensor(pca_eigenspectra, dtype=torch.float32).clone().detach())
@@ -141,7 +142,6 @@ class GaussianProcessModel(nn.Module):
     def forward(self):
         """Returns model parameters in exponential space."""
         return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
-
 
 class Trainer:
     """
