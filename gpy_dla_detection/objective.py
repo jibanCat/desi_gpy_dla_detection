@@ -18,13 +18,14 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     # Iterate over all quasars in training set
     for i in range(len(fluxes)):
         valid_idx = ~torch.isnan(fluxes[i])  # Remove NaNs
-        y = fluxes[i][valid_idx]
-        noise_var = noise_variances[i][valid_idx]
-        lya_1pz = lya_1pzs[i][valid_idx]
+        y = fluxes[i, valid_idx]
+        noise_var = noise_variances[i, valid_idx]
+        lya_1pz = lya_1pzs[i, valid_idx]
         zqso_1pz = z_qsos[i] + 1  # Redshift factor for Lyα absorbers
+        M_valid = M[valid_idx, :]  # Fix: Correct 2D selection
 
         # Compute per-spectrum likelihood
-        this_loss = spectrum_loss(y, lya_1pz, noise_var, M[valid_idx], omega2[valid_idx],
+        this_loss = spectrum_loss(y, lya_1pz, noise_var, M_valid, omega2[valid_idx],
                                   c_0, tau_0, beta, num_forest_lines,
                                   all_transition_wavelengths, all_oscillator_strengths, zqso_1pz)
 

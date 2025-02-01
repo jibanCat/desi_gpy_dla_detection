@@ -10,6 +10,7 @@ import torch.optim as optim
 import torch
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
+from scipy.interpolate import interp1d
 
 from .effective_optical_depth import effective_optical_depth
 from .objective import spectrum_loss, objective
@@ -82,10 +83,9 @@ class SpectrumProcessor:
         self.norm_max_lambda = norm_max_lambda
 
     def normalize_spectra(self, wavelengths, fluxes, noise_variances):
-        """Normalizes spectra using median flux in [1425Å, 1475Å]."""
+        """Normalizes spectra using median flux in [norm_min_lambda, norm_max_lambda]."""
         norm_fluxes, norm_noise_variances = [], []
 
-        # Interpolate spectra to the common rest-frame wavelength grid
         for wave, flux, noise in zip(wavelengths, fluxes, noise_variances):
             norm_mask = (wave >= self.norm_min_lambda) & (wave <= self.norm_max_lambda)
             if not np.any(norm_mask):
@@ -100,6 +100,19 @@ class SpectrumProcessor:
 
         return np.array(norm_fluxes), np.array(norm_noise_variances)
 
+    def interpolate_spectra(self, wavelengths, fluxes, noise_variances):
+        """Interpolates fluxes and noise variances onto `rest_wavelengths`."""
+        interp_fluxes, interp_noise_variances = [], []
+
+        for wave, flux, noise in zip(wavelengths, fluxes, noise_variances):
+            interp_flux = interp1d(wave, flux, bounds_error=False, fill_value="extrapolate")
+            interp_noise = interp1d(wave, noise, bounds_error=False, fill_value="extrapolate")
+
+            interp_fluxes.append(interp_flux(self.rest_wavelengths))
+            interp_noise_variances.append(interp_noise(self.rest_wavelengths))
+
+        return np.array(interp_fluxes), np.array(interp_noise_variances)
+
     def de_forest_spectra(self, wavelengths, fluxes, noise_variances, z_qsos, tau_0=0.00554, beta=3.182):
         """Removes effective Lyα forest absorption using `effective_optical_depth()`."""
         de_forest_fluxes, de_forest_noise = [], []
@@ -113,7 +126,6 @@ class SpectrumProcessor:
             de_forest_noise.append(noise / (lya_absorption**2))
 
         return np.array(de_forest_fluxes), np.array(de_forest_noise)
-
 
 def compute_pca(centered_fluxes, num_components=10):
     """Computes PCA eigenspectra for GP initialization."""
