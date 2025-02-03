@@ -17,13 +17,14 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 
 import qsopreload
-import constants
 
 from desiutil.log import log
 
 # include the path to the gpy_dla_detection module
 import sys
 sys.path.append("..")
+
+import constants
 
 # GP-DLA imports
 from run_bayes_select import DLAHolder

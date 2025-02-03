@@ -24,10 +24,6 @@ from desispec.interpolation import resample_flux
 from desispec.coaddition import coadd_cameras, resample_spectra_lin_or_log
 from desiutil.log import log
 
-import constants
-
-# import dlaprofile
-from fitwarning import DLAFLAG
 
 import warnings
 from scipy.optimize import OptimizeWarning
@@ -35,6 +31,11 @@ from scipy.optimize import OptimizeWarning
 # include the .. to import from the parent directory
 import sys
 sys.path.append("..")
+
+# import dlaprofile
+from fitwarning import DLAFLAG
+
+import constants
 
 from run_bayes_select import DLAHolder
 from gpy_dla_detection.set_parameters import Parameters
