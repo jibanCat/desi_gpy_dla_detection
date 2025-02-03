@@ -5,6 +5,11 @@ desi-preload.py
 
 Script to load DESI quasar spectra
 """
+# include the path to the gpy_dla_detection module
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from astropy.table import Table, vstack
 import numpy as np
@@ -19,10 +24,6 @@ from concurrent.futures import ProcessPoolExecutor
 import qsopreload
 
 from desiutil.log import log
-
-# include the path to the gpy_dla_detection module
-import sys
-sys.path.append("..")
 
 import constants
 

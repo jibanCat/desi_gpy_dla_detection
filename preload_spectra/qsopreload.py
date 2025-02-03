@@ -5,6 +5,12 @@ dlasearch.py
 
 Search for DLAs in spectra from a given catalog.
 """
+# include the .. to import from the parent directory
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 
 import h5py
 import numpy as np
@@ -28,9 +34,6 @@ from desiutil.log import log
 import warnings
 from scipy.optimize import OptimizeWarning
 
-# include the .. to import from the parent directory
-import sys
-sys.path.append("..")
 
 # import dlaprofile
 from fitwarning import DLAFLAG
