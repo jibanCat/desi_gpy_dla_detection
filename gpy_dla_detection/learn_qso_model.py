@@ -8,7 +8,8 @@ from sklearn.decomposition import PCA
 import torch
 import torch.optim as optim
 import torch
-import torch.optim as optim
+import torch.optim.lr_scheduler as lr_scheduler
+
 from torch.utils.data import TensorDataset, DataLoader
 from scipy.interpolate import interp1d
 
@@ -322,10 +323,11 @@ class GaussianProcessModel(nn.Module):
 class Trainer:
     """
     Trainer for optimizing the Gaussian Process model with PyTorch autograd support.
-    Uses Mini-Batch Training.
+    Uses Mini-Batch Training with optional learning rate scheduling.
     """
 
-    def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01, batch_size=32):
+    def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01, batch_size=32,
+                 scheduler_type="cosine", scheduler_params=None):
         """
         Initialize the trainer.
 
@@ -334,6 +336,8 @@ class Trainer:
         - optimizer_type: "adam" or "lbfgs"
         - learning_rate: Step size for optimizer
         - batch_size: Number of samples per mini-batch
+        - scheduler_type: Type of learning rate scheduler ("cosine", "step", "reduce_on_plateau", None)
+        - scheduler_params: Dictionary of parameters for the chosen scheduler
         """
         self.model = gp_model
         self.optimizer_type = optimizer_type.lower()
@@ -349,6 +353,19 @@ class Trainer:
         else:
             raise ValueError("Optimizer type must be either 'adam' or 'lbfgs'")
 
+        # Default scheduler parameters if none provided
+        if scheduler_params is None:
+            scheduler_params = {}
+
+        # Choose learning rate scheduler
+        self.scheduler = None
+        if scheduler_type == "cosine":
+            self.scheduler = lr_scheduler.CosineAnnealingLR(self.optimizer, **scheduler_params)
+        elif scheduler_type == "step":
+            self.scheduler = lr_scheduler.StepLR(self.optimizer, **scheduler_params)
+        elif scheduler_type == "reduce_on_plateau":
+            self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', **scheduler_params)
+
     def train(self, fluxes, lya_1pzs, noise_variances, z_qsos, num_forest_lines,
               all_transition_wavelengths, all_oscillator_strengths, max_epochs=500):
         """
@@ -360,14 +377,12 @@ class Trainer:
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
         def closure():
-            """
-            Closure function for L-BFGS optimization.
-            """
+            """Closure function for L-BFGS optimization."""
             self.optimizer.zero_grad()
             loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
                              all_transition_wavelengths, all_oscillator_strengths, z_qsos)
             loss.backward()
-            self.loss_history.append(loss.item())  # 👈 This is where loss should be stored
+            self.loss_history.append(loss.item())  
             return loss
 
         if self.optimizer_type == "adam":
@@ -379,22 +394,29 @@ class Trainer:
 
                     self.optimizer.zero_grad()
                     loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                                    num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+                                     num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
 
                     loss.backward()
                     self.optimizer.step()
-                    
                     total_loss += loss.item()
-                    self.loss_history.append(loss.item())  # 👈 Append loss here!
+                    self.loss_history.append(loss.item())
 
+                # Step the scheduler
+                if self.scheduler:
+                    if isinstance(self.scheduler, lr_scheduler.ReduceLROnPlateau):
+                        self.scheduler.step(total_loss / len(dataloader))  # ReduceLROnPlateau needs loss as input
+                    else:
+                        self.scheduler.step()
+
+                # Print progress
                 if epoch % 10 == 0:
-                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader)}")
+                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader)}, Learning Rate = {self.optimizer.param_groups[0]['lr']:.6f}")
                     print(f"Epoch {epoch}: log_beta = {self.model.log_beta.item()}, log_tau_0 = {self.model.log_tau_0.item()}")
 
-                elif self.optimizer_type == "lbfgs":
-                    # L-BFGS optimization (uses closure)
-                    for _ in range(max_epochs):
-                        self.optimizer.step(closure)
+        elif self.optimizer_type == "lbfgs":
+            # L-BFGS optimization (uses closure)
+            for _ in range(max_epochs):
+                self.optimizer.step(closure)
 
         print(f"Final Loss: {self.loss_history[-1]}")
 
