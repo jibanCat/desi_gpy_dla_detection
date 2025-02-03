@@ -18,7 +18,7 @@ BATCH_SIZE=1250,\
 MAX_WORKERS=8,\
 START_INDEX=$START_INDEX,\
 END_INDEX=$END_INDEX,\
-STEP=2 slurm/submit_desi_mock.sh"
+STEP=2 slurm_preload/submit_desi_mock.sh"
 
     # Submit the job using sbatch
     sbatch --export=ALL,QSOCAT="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits",\
@@ -30,7 +30,7 @@ BATCH_SIZE=1250,\
 MAX_WORKERS=8,\
 START_INDEX=$START_INDEX,\
 END_INDEX=$END_INDEX,\
-STEP=2 slurm/submit_desi_mock.sh
+STEP=2 slurm_preload/submit_desi_mock.sh
 
     # Sleep for 1 minute before the next sbatch
     sleep 1m

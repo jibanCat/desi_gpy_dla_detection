@@ -16,7 +16,7 @@ PLOT_FIGURES=0,\
 BATCH_SIZE=1250,\
 MAX_WORKERS=8,\
 HPX_START_INDEX=$HPX_START_INDEX,\
-HPX_END_INDEX=$HPX_END_INDEX slurm/submit_desi_loa.sh"
+HPX_END_INDEX=$HPX_END_INDEX slurm_preload/submit_desi_loa.sh"
 
     # Submit the job using sbatch
     sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits",\
@@ -26,7 +26,7 @@ PLOT_FIGURES=0,\
 BATCH_SIZE=1250,\
 MAX_WORKERS=8,\
 HPX_START_INDEX=$HPX_START_INDEX,\
-HPX_END_INDEX=$HPX_END_INDEX slurm/submit_desi_loa.sh
+HPX_END_INDEX=$HPX_END_INDEX slurm_preload/submit_desi_loa.sh
 
     # Sleep for 1 minute before the next sbatch
     sleep 1m
