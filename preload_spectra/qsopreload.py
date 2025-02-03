@@ -387,12 +387,17 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         # TODO: replace this specific to GP
         fitwarn = np.full(model.max_dlas, 0)
 
+        # Initialize the NullGPMAT object, and then set the data
         gp = NullGPMAT(
             model.params,
             model.prior,
             learned_file=model.learned_file,
             prev_tau_0=model.prev_tau_0,
             prev_beta=model.prev_beta,
+        )
+        rest_wavelengths = model.params.emitted_wavelengths(wave, zqso)
+        gp.set_data(
+            rest_wavelengths, flux, noise_variance, pixel_mask, zqso, build_model=True
         )
         # Save the quasar data to the lists
         # here use the data from the GPDLA model, which is already preprocessed with normalization
@@ -445,6 +450,19 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         f.create_dataset("noise_variance_list", data=noise_variance_list, dtype=vlen_dtype)
         vlen_dtype = h5py.vlen_dtype(np.bool_)  # Variable-length float arrays
         f.create_dataset("pixel_mask_list", data=pixel_mask_list, dtype=vlen_dtype)
+        # save the targetids, ra, dec, zqso, bluesnr, redsnr
+        f.create_dataset("tidlist", data=np.array(tidlist, dtype=np.int64))
+        f.create_dataset("zqsolist", data=np.array(zqsolist, dtype=np.float64))
+        f.create_dataset("bluesnrlist", data=np.array(bluesnrlist, dtype=np.float64))
+        f.create_dataset("redsnrlist", data=np.array(redsnrlist, dtype=np.float64))
+
+        # save the metadata
+        f.attrs["min_lambda"] = model.params.min_lambda
+        f.attrs["max_lambda"] = model.params.max_lambda
+        f.attrs["normalization_min_lambda"] = model.params.normalization_min_lambda
+        f.attrs["normalization_max_lambda"] = model.params.normalization_max_lambda
+        f.attrs["min_num_pixels"] = model.params.min_num_pixels
+
 
     if len(tidlist) == 0:
         # avoid vstack error for empty tables
