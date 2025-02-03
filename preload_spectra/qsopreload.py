@@ -448,8 +448,6 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         f.create_dataset("rest_wavelength_list", data=rest_wavelength_list, dtype=vlen_dtype)
         f.create_dataset("flux_list", data=flux_list, dtype=vlen_dtype)
         f.create_dataset("noise_variance_list", data=noise_variance_list, dtype=vlen_dtype)
-        vlen_dtype = h5py.vlen_dtype(np.bool_)  # Variable-length float arrays
-        f.create_dataset("pixel_mask_list", data=pixel_mask_list, dtype=vlen_dtype)
         # save the targetids, ra, dec, zqso, bluesnr, redsnr
         f.create_dataset("tidlist", data=np.array(tidlist, dtype=np.int64))
         f.create_dataset("zqsolist", data=np.array(zqsolist, dtype=np.float64))
