@@ -429,7 +429,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         zqsolist.append(zqso)
 
         # DLA parameters
-        fitwarnlist.append(fitwarn[n])
+        fitwarnlist.append(fitwarn)
 
         bluesnrlist.append(bluesnr)
         redsnrlist.append(redsnr)
