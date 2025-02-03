@@ -95,13 +95,6 @@ class SpectrumProcessor:
 
     def __init__(self, min_lambda=911, max_lambda=1216, num_pixels=200,
                  norm_min_lambda=1425, norm_max_lambda=1475, max_noise_variance=9.0):
-        """
-        Initializes the spectrum processor.
-        - min_lambda, max_lambda: Rest-frame wavelength range
-        - num_pixels: Number of grid points for interpolation
-        - norm_min_lambda, norm_max_lambda: Wavelength range used for flux normalization
-        - max_noise_variance: Threshold to mask high-noise pixels before interpolation
-        """
         self.rest_wavelengths = np.linspace(min_lambda, max_lambda, num_pixels)
         self.norm_min_lambda = norm_min_lambda
         self.norm_max_lambda = norm_max_lambda
@@ -111,10 +104,9 @@ class SpectrumProcessor:
         """Masks pixels with noise variance above a threshold."""
         less_noisy_fluxes, less_noisy_variances = [], []
         for flux, noise in zip(fluxes, noise_variances):
-            # Mask pixels where noise is too high
             mask = noise > self.max_noise_variance
-            flux[mask] = np.nan
-            noise[mask] = np.nan
+            flux = np.where(mask, np.nan, flux)  # Use np.where to avoid modifying input in-place
+            noise = np.where(mask, np.nan, noise)
             less_noisy_fluxes.append(flux)
             less_noisy_variances.append(noise)
         return less_noisy_fluxes, less_noisy_variances
@@ -124,7 +116,6 @@ class SpectrumProcessor:
         norm_fluxes, norm_noise_variances, all_wave = [], [], []
 
         for i, (wave, flux, noise) in enumerate(zip(wavelengths, fluxes, noise_variances)):
-            # Apply redshift to wavelengths
             if z_qsos is not None:
                 wave = wave / (1 + z_qsos[i])
 
@@ -143,30 +134,43 @@ class SpectrumProcessor:
         return norm_fluxes, norm_noise_variances, all_wave
 
     def interpolate_spectra(self, wavelengths, fluxes, noise_variances):
-        """Interpolates fluxes and noise variances onto `rest_wavelengths` while avoiding NaN spreading."""
+        """Interpolates fluxes and noise variances onto `rest_wavelengths` while handling NaNs properly."""
         interp_fluxes, interp_noise_variances = [], []
         all_wave = []
 
         for wave, flux, noise in zip(wavelengths, fluxes, noise_variances):
-            valid = ~np.isnan(flux)  # Ignore NaNs during interpolation
+            valid = np.isfinite(wave) & np.isfinite(flux)
+
+            all_wave.append(self.rest_wavelengths)
+
             if np.sum(valid) < 2:  # Skip if too few valid points
                 interp_fluxes.append(np.full_like(self.rest_wavelengths, np.nan))
                 interp_noise_variances.append(np.full_like(self.rest_wavelengths, np.nan))
                 continue  
 
-            # Interpolation functions with nearest-neighbor extrapolation
-            flux_interp = interp1d(wave[valid], flux[valid], kind="linear", bounds_error=False, fill_value="extrapolate")
-            noise_interp = interp1d(wave[valid], noise[valid], kind="linear", bounds_error=False, fill_value="extrapolate")
+            try:
+                flux_interp = interp1d(wave[valid], flux[valid], kind="linear",
+                                       bounds_error=False, fill_value=np.nan)
+                noise_interp = interp1d(wave[valid], noise[valid], kind="linear",
+                                        bounds_error=False, fill_value=np.nan)
 
-            # Interpolate onto rest wavelengths
-            interp_fluxes.append(flux_interp(self.rest_wavelengths))
-            interp_noise_variances.append(noise_interp(self.rest_wavelengths))
-            all_wave.append(self.rest_wavelengths)
+                interp_flux = flux_interp(self.rest_wavelengths)
+                interp_noise = noise_interp(self.rest_wavelengths)
+
+                interp_flux[~np.isfinite(interp_flux)] = np.nan
+                interp_noise[~np.isfinite(interp_noise)] = np.nan
+
+                interp_fluxes.append(interp_flux)
+                interp_noise_variances.append(interp_noise)
+            except Exception as e:
+                print(f"Interpolation failed for spectrum: {e}")
+                interp_fluxes.append(np.full_like(self.rest_wavelengths, np.nan))
+                interp_noise_variances.append(np.full_like(self.rest_wavelengths, np.nan))
 
         return np.array(interp_fluxes), np.array(interp_noise_variances), np.array(all_wave)
 
     def de_forest_spectra(self, wavelengths, fluxes, noise_variances, z_qsos, tau_0=0.00554, beta=3.182):
-        """Removes effective Lyα forest absorption using `effective_optical_depth()`."""
+        """Removes effective Lyα forest absorption using effective_optical_depth()."""
         de_forest_fluxes, de_forest_noise = [], []
 
         for wave, flux, noise, z_qso in zip(wavelengths, fluxes, noise_variances, z_qsos):
@@ -184,17 +188,32 @@ class SpectrumProcessor:
 
     def center_fluxes(self, fluxes, noise_variances):
         """Centers fluxes by subtracting the inverse-variance weighted mean."""
-        ivar = 1 / np.array(noise_variances)
+        ivar = np.where(noise_variances > 0, 1 / noise_variances, 0)  # Avoid division by zero
         mean_flux = np.nansum(fluxes * ivar, axis=0) / np.nansum(ivar, axis=0)
+        mean_flux[np.isnan(mean_flux)] = np.nanmedian(mean_flux)  # Ensure mean_flux has no NaNs
+
         centered_fluxes = fluxes - mean_flux
         return centered_fluxes, mean_flux
 
     def fill_nan_with_median(self, fluxes):
         """Fills NaN values in fluxes with the dataset-wide median."""
-        for i in range(len(fluxes)):
-            nan_mask = np.isnan(fluxes[i])
-            fluxes[i][nan_mask] = np.nanmedian(fluxes)  # Fill with median of all fluxes
+        for flux in fluxes:
+            flux[np.isnan(flux)] = np.nanmedian(flux)
         return fluxes
+    
+    def remove_nan_spectra(self, fluxes, noise_variances, wavelengths, z_qsos):
+        """Removes entire spectra if they contain NaN values in flux, noise variance, or wavelength."""
+        cleaned_fluxes, cleaned_noises, cleaned_waves, cleaned_z_qsos = [], [], [], []
+        
+        for flux, noise, wave, z_qso in zip(fluxes, noise_variances, wavelengths, z_qsos):
+            if np.isnan(flux).any() or np.isnan(noise).any() or np.isnan(wave).any():
+                continue  # Skip spectra with any NaN values
+            cleaned_fluxes.append(flux)
+            cleaned_noises.append(noise)
+            cleaned_waves.append(wave)
+            cleaned_z_qsos.append(z_qso)
+
+        return np.array(cleaned_fluxes), np.array(cleaned_noises), np.array(cleaned_waves), np.array(cleaned_z_qsos)
 
 def compute_pca(centered_fluxes, num_components=10):
     """Computes PCA eigenspectra for GP initialization."""
@@ -235,6 +254,70 @@ class GaussianProcessModel(nn.Module):
     def forward(self):
         """Returns model parameters in exponential space."""
         return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
+
+    def predict_flux(self, observed_wavelengths, observed_fluxes, noise_variances, new_wavelengths, all_transition_wavelengths, all_oscillator_strengths, z_qso):
+        """
+        Predict fluxes and variances at new wavelengths given observed spectra using GP regression.
+
+        Args:
+        - observed_wavelengths (torch.Tensor): (N, num_pixels) Original wavelength grid.
+        - observed_fluxes (torch.Tensor): (N, num_pixels) Observed flux values.
+        - noise_variances (torch.Tensor): (N, num_pixels) Noise variances of the observed flux.
+        - new_wavelengths (torch.Tensor): (N, num_new_pixels) New wavelengths to predict.
+        - all_transition_wavelengths (torch.Tensor): Transition wavelengths for Lyα absorption.
+        - all_oscillator_strengths (torch.Tensor): Oscillator strengths for absorption.
+        - z_qso (torch.Tensor): Redshift of the quasar.
+
+        Returns:
+        - pred_fluxes (torch.Tensor): (N, num_new_pixels) GP mean predictions.
+        - pred_variances (torch.Tensor): (N, num_new_pixels) GP variance predictions.
+        """
+
+        # Extract learned GP parameters
+        M, omega2, c_0, tau_0, beta = self()
+        kernel_noise = noise_variances + 1e-6  # Add numerical stability
+
+        # Compute Lyman absorption effects for observed wavelengths
+        lya_1pz = 1 + (observed_wavelengths - all_transition_wavelengths[0]) / all_transition_wavelengths[0]
+        lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)
+
+        for i in range(1, len(all_transition_wavelengths)):
+            lyman_1pz = (all_transition_wavelengths[0] * lya_1pz) / all_transition_wavelengths[i]
+            indicator = (lyman_1pz <= (z_qso + 1)).float()
+            tau = (tau_0 * all_transition_wavelengths[i] * all_oscillator_strengths[i]) / \
+                  (all_transition_wavelengths[0] * all_oscillator_strengths[0])
+            lya_optical_depth += tau * torch.pow(lyman_1pz, beta) * indicator
+
+        lya_absorption = torch.exp(-lya_optical_depth)
+        scaling_factor = 1 - lya_absorption + c_0
+        absorption_noise = omega2 * torch.square(scaling_factor)
+
+        # Compute total noise variance for observed wavelengths
+        D = kernel_noise + absorption_noise
+        D_inv = 1 / D
+
+        # Compute inverse covariance
+        D_inv_y = D_inv * observed_fluxes
+        D_inv_M = D_inv[:, None].expand(-1, M.shape[1]) * M  # ✅ Fix broadcasting issue
+    
+        B = M.T @ D_inv_M
+        B.diagonal().add_(1.0)
+
+        # Cholesky decomposition
+        L = torch.linalg.cholesky(B)
+
+        # Compute C matrix
+        C = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)
+        C = torch.linalg.solve_triangular(L.T, C, upper=True)
+
+        # Compute predictive mean
+        K_inv_y = D_inv_y - D_inv_M @ (C @ observed_fluxes)
+        pred_fluxes = new_wavelengths @ (M.T @ K_inv_y)
+
+        # Compute predictive variance
+        pred_variances = omega2 - (new_wavelengths @ (C @ new_wavelengths.T)).diag()
+
+        return pred_fluxes, pred_variances
 
 class Trainer:
     """
