@@ -256,69 +256,76 @@ class GaussianProcessModel(nn.Module):
         """Returns model parameters in exponential space."""
         return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
 
-    def predict_flux(self, observed_wavelengths, observed_fluxes, noise_variances, new_wavelengths, all_transition_wavelengths, all_oscillator_strengths, z_qso):
+    def predict_flux(self, observed_wavelengths, observed_fluxes, noise_variances, 
+                    new_wavelengths, all_transition_wavelengths, all_oscillator_strengths, z_qso):
         """
-        Predict fluxes and variances at new wavelengths given observed spectra using GP regression.
+        Computes the GP conditional prediction for new wavelengths.
 
-        Args:
-        - observed_wavelengths (torch.Tensor): (N, num_pixels) Original wavelength grid.
-        - observed_fluxes (torch.Tensor): (N, num_pixels) Observed flux values.
-        - noise_variances (torch.Tensor): (N, num_pixels) Noise variances of the observed flux.
-        - new_wavelengths (torch.Tensor): (N, num_new_pixels) New wavelengths to predict.
-        - all_transition_wavelengths (torch.Tensor): Transition wavelengths for Lyα absorption.
-        - all_oscillator_strengths (torch.Tensor): Oscillator strengths for absorption.
-        - z_qso (torch.Tensor): Redshift of the quasar.
+        Parameters:
+        - observed_wavelengths: (num_pixels) Tensor of observed wavelengths
+        - observed_fluxes: (num_pixels) Tensor of observed fluxes
+        - noise_variances: (num_pixels) Tensor of noise variances
+        - new_wavelengths: (num_new_pixels) Tensor of new wavelengths for prediction
+        - all_transition_wavelengths: (31,) Tensor of Lyman series transition wavelengths
+        - all_oscillator_strengths: (31,) Tensor of oscillator strengths
+        - z_qso: Scalar tensor for quasar redshift
 
         Returns:
-        - pred_fluxes (torch.Tensor): (N, num_new_pixels) GP mean predictions.
-        - pred_variances (torch.Tensor): (N, num_new_pixels) GP variance predictions.
+        - pred_flux: (num_new_pixels) Predicted mean flux at `new_wavelengths`
+        - pred_var: (num_new_pixels) Predictive variance at `new_wavelengths`
         """
 
-        # Extract learned GP parameters
+        # Retrieve model parameters (exponential transformation ensures positivity)
         M, omega2, c_0, tau_0, beta = self()
-        kernel_noise = noise_variances + 1e-6  # Add numerical stability
 
-        # Compute Lyman absorption effects for observed wavelengths
-        lya_1pz = 1 + (observed_wavelengths - all_transition_wavelengths[0]) / all_transition_wavelengths[0]
+        # ---------------------- Step 1: Compute Lyα Optical Depth ---------------------- #
+        lya_1pz = 1 + ((1 + z_qso) * observed_wavelengths - all_transition_wavelengths[0]) / all_transition_wavelengths[0]
         lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)
 
         for i in range(1, len(all_transition_wavelengths)):
             lyman_1pz = (all_transition_wavelengths[0] * lya_1pz) / all_transition_wavelengths[i]
-            indicator = (lyman_1pz <= (z_qso + 1)).float()
+            indicator = (lyman_1pz <= (1 + z_qso)).float()
+
             tau = (tau_0 * all_transition_wavelengths[i] * all_oscillator_strengths[i]) / \
-                  (all_transition_wavelengths[0] * all_oscillator_strengths[0])
+                (all_transition_wavelengths[0] * all_oscillator_strengths[0])
+
             lya_optical_depth += tau * torch.pow(lyman_1pz, beta) * indicator
 
         lya_absorption = torch.exp(-lya_optical_depth)
+
+        # ---------------------- Step 2: Compute Total Noise Variance ---------------------- #
         scaling_factor = 1 - lya_absorption + c_0
         absorption_noise = omega2 * torch.square(scaling_factor)
 
-        # Compute total noise variance for observed wavelengths
-        D = kernel_noise + absorption_noise
-        D_inv = 1 / D
+        D = noise_variances + absorption_noise  # Total noise
+        D_inv = 1 / D  # Element-wise inverse
 
-        # Compute inverse covariance
-        D_inv_y = D_inv * observed_fluxes
-        D_inv_M = D_inv[:, None].expand(-1, M.shape[1]) * M  # ✅ Fix broadcasting issue
-    
-        B = M.T @ D_inv_M
-        B.diagonal().add_(1.0)
+        # Ensure correct shape for broadcasting
+        D_inv = D_inv.unsqueeze(-1)  # Shape: (num_pixels, 1)
 
-        # Cholesky decomposition
+        # ---------------------- Step 3: Compute Low-Rank GP Covariance ---------------------- #
+        D_inv_M = D_inv * M  # Shape: (num_pixels, num_pca_components)
+
+        B = M.T @ D_inv_M  # Shape: (num_pca_components, num_pca_components)
+        B.diagonal().add_(1.0)  # Add identity for numerical stability
+
+        # Cholesky decomposition for numerical stability
         L = torch.linalg.cholesky(B)
 
-        # Compute C matrix
-        C = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)
-        C = torch.linalg.solve_triangular(L.T, C, upper=True)
+        # Compute K⁻¹ using Woodbury identity
+        K_inv_y = D_inv.squeeze(-1) * observed_fluxes - D_inv_M @ torch.cholesky_solve(D_inv_M.T @ observed_fluxes, L)
 
-        # Compute predictive mean
-        K_inv_y = D_inv_y - D_inv_M @ (C @ observed_fluxes)
-        pred_fluxes = new_wavelengths @ (M.T @ K_inv_y)
+        # ---------------------- Step 4: Compute Conditional Mean Prediction ---------------------- #
+        # Interpolate new wavelengths onto PCA basis
+        phi_new = self._compute_phi(new_wavelengths)  # (num_new_pixels, num_pca_components)
+        
+        pred_flux = phi_new @ K_inv_y  # Mean prediction
 
-        # Compute predictive variance
-        pred_variances = omega2 - (new_wavelengths @ (C @ new_wavelengths.T)).diag()
+        # ---------------------- Step 5: Compute Conditional Variance Prediction ---------------------- #
+        phi_new_B_inv = torch.cholesky_solve(phi_new.T, L)
+        pred_variance = torch.sum(phi_new_B_inv * phi_new.T, dim=0)  # Extract diagonal elements
 
-        return pred_fluxes, pred_variances
+        return pred_flux, pred_variance
 
 class Trainer:
     """
@@ -344,6 +351,13 @@ class Trainer:
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.loss_history = []
+
+        # Lists to save the parameter values
+        # self.log_omega_values = []
+        self.log_c_0_values = []
+        self.log_tau_0_values = []
+        self.log_beta_values = []
+
 
         # Choose optimizer
         if self.optimizer_type == "adam":
@@ -383,6 +397,13 @@ class Trainer:
                              all_transition_wavelengths, all_oscillator_strengths, z_qsos)
             loss.backward()
             self.loss_history.append(loss.item())  
+
+            # Save parameter values
+            # self.log_omega_values.append(self.model.log_omega.item())
+            self.log_c_0_values.append(self.model.log_c_0.item())
+            self.log_tau_0_values.append(self.model.log_tau_0.item())
+            self.log_beta_values.append(self.model.log_beta.item())
+
             return loss
 
         if self.optimizer_type == "adam":
@@ -400,6 +421,13 @@ class Trainer:
                     self.optimizer.step()
                     total_loss += loss.item()
                     self.loss_history.append(loss.item())
+
+                    # Save parameter values
+                    # self.log_omega_values.append(self.model.log_omega.item())
+                    self.log_c_0_values.append(self.model.log_c_0.item())
+                    self.log_tau_0_values.append(self.model.log_tau_0.item())
+                    self.log_beta_values.append(self.model.log_beta.item())
+
 
                 # Step the scheduler
                 if self.scheduler:
