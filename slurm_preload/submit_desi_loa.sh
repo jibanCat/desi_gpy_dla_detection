@@ -9,7 +9,7 @@
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=08:00:00             # Time limit for the job
+#SBATCH --time=00:30:00             # Time limit for the job
 #SBATCH --ntasks=32                 # 32 tasks total (each running one instance of the Python script)
 #SBATCH --cpus-per-task=8           # Each task uses 8 CPUs
 
@@ -41,8 +41,8 @@ LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-910}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
 NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
 NORMALIZATION_MAX_LAMBDA="${NORMALIZATION_MAX_LAMBDA:-1475}"
-MIN_LAMBDA="${MIN_LAMBDA:-911.75}"
-MAX_LAMBDA="${MAX_LAMBDA:-1216.75}"
+MIN_LAMBDA="${MIN_LAMBDA:-850.75}"
+MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_Z_CUT="${MAX_Z_CUT:-3000.0}" # Maximum redshift cut for the DLA samples
