@@ -1,3 +1,8 @@
+"""
+Learning script for the Gaussian Process model with Lyα forest absorption.
+
+ DESI: power-law of the form τ(z)=τ0(1+z)γ to our measurements and find τ0=(2.46±0.14)×10−3 and γ=3.62±0.04
+"""
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -170,7 +175,7 @@ class SpectrumProcessor:
 
         return np.array(interp_fluxes), np.array(interp_noise_variances), np.array(all_wave)
 
-    def de_forest_spectra(self, wavelengths, fluxes, noise_variances, z_qsos, tau_0=0.00554, beta=3.182):
+    def de_forest_spectra(self, wavelengths, fluxes, noise_variances, z_qsos, tau_0=0.00246, beta=3.62):
         """Removes effective Lyα forest absorption using effective_optical_depth()."""
         de_forest_fluxes, de_forest_noise = [], []
 
@@ -249,17 +254,17 @@ class GaussianProcessModel(nn.Module):
         initial_log_omega = np.log(np.nanstd(centered_rest_fluxes, axis=0))  # Standard deviation per wavelength pixel
         self.log_omega = nn.Parameter(torch.tensor(initial_log_omega, dtype=torch.float32).clone().detach())
         self.log_c_0 = nn.Parameter(torch.tensor(np.log(0.1)))
-        self.log_tau_0 = nn.Parameter(torch.tensor(np.log(0.00554)))
-        self.log_beta = nn.Parameter(torch.tensor(np.log(3.182)))
+        self.log_tau_0 = nn.Parameter(torch.tensor(np.log(0.00246)))
+        self.log_beta = nn.Parameter(torch.tensor(np.log(3.62)))
 
     def forward(self):
         """Returns model parameters in exponential space."""
         return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
-
+    
     def predict_flux(self, observed_wavelengths, observed_fluxes, noise_variances, 
                     new_wavelengths, all_transition_wavelengths, all_oscillator_strengths, z_qso):
         """
-        Computes the GP conditional prediction for new wavelengths.
+        Computes the GP conditional prediction for missing pixels.
 
         Parameters:
         - observed_wavelengths: (num_pixels) Tensor of observed wavelengths
@@ -300,32 +305,35 @@ class GaussianProcessModel(nn.Module):
         D = noise_variances + absorption_noise  # Total noise
         D_inv = 1 / D  # Element-wise inverse
 
-        # Ensure correct shape for broadcasting
-        D_inv = D_inv.unsqueeze(-1)  # Shape: (num_pixels, 1)
-
         # ---------------------- Step 3: Compute Low-Rank GP Covariance ---------------------- #
-        D_inv_M = D_inv * M  # Shape: (num_pixels, num_pca_components)
+        # Split `M` into observed (M2) and missing (M1) wavelengths
+        M2 = M[observed_wavelengths]
+        M1 = M[new_wavelengths]
 
-        B = M.T @ D_inv_M  # Shape: (num_pca_components, num_pca_components)
-        B.diagonal().add_(1.0)  # Add identity for numerical stability
+        D2_inv = D_inv[observed_wavelengths].unsqueeze(-1)  # Shape: (num_pixels, 1)
+
+        D2_inv_M2 = D2_inv * M2  # Shape: (num_pixels, num_pca_components)
+
+        B2 = M2.T @ D2_inv_M2  # Shape: (num_pca_components, num_pca_components)
+        B2.diagonal().add_(1.0)  # Add identity for numerical stability
 
         # Cholesky decomposition for numerical stability
-        L = torch.linalg.cholesky(B)
+        L2 = torch.linalg.cholesky(B2)
 
-        # Compute K⁻¹ using Woodbury identity
-        K_inv_y = D_inv.squeeze(-1) * observed_fluxes - D_inv_M @ torch.cholesky_solve(D_inv_M.T @ observed_fluxes, L)
+        # Compute inverse using Woodbury identity
+        C2 = torch.cholesky_solve(D2_inv_M2.T, L2)  # Shape: (num_pca_components, num_pixels)
+
+        K22_inv_y2 = D2_inv.squeeze(-1) * observed_fluxes - D2_inv_M2 @ (C2 @ observed_fluxes)
 
         # ---------------------- Step 4: Compute Conditional Mean Prediction ---------------------- #
-        # Interpolate new wavelengths onto PCA basis
-        phi_new = self._compute_phi(new_wavelengths)  # (num_new_pixels, num_pca_components)
-        
-        pred_flux = phi_new @ K_inv_y  # Mean prediction
+        Sigma12 = M1 @ M2.T  # Shape: (num_new_pixels, num_pixels)
+        pred_flux = M1 @ (C2 @ observed_fluxes)  # Shape: (num_new_pixels)
 
         # ---------------------- Step 5: Compute Conditional Variance Prediction ---------------------- #
-        phi_new_B_inv = torch.cholesky_solve(phi_new.T, L)
-        pred_variance = torch.sum(phi_new_B_inv * phi_new.T, dim=0)  # Extract diagonal elements
+        K22_inv_Sigma21 = D2_inv * Sigma12.T - D2_inv_M2 @ (C2 @ Sigma12.T)
+        pred_var = torch.diag(M1 @ M1.T) - torch.diag(Sigma12 @ K22_inv_Sigma21)
 
-        return pred_flux, pred_variance
+        return pred_flux, pred_var
 
 class Trainer:
     """
