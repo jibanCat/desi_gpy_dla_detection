@@ -23,6 +23,10 @@ from .objective import spectrum_loss, objective
 from .voigt import transition_wavelengths, oscillator_strengths
 from tqdm import tqdm  # For progress bar
 
+# Select device (CUDA if available, otherwise CPU)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 class QSOLoader:
     """Loads QSO spectra, applies redshift & SNR filtering, and returns clean data efficiently."""
 
@@ -100,11 +104,13 @@ class SpectrumProcessor:
     """Preprocesses spectra: masks noisy pixels, interpolates, normalizes, and de-forests them."""
 
     def __init__(self, min_lambda=911, max_lambda=1216, num_pixels=200,
-                 norm_min_lambda=1425, norm_max_lambda=1475, max_noise_variance=9.0):
+                 norm_min_lambda=1425, norm_max_lambda=1475, max_noise_variance=9.0, min_num_pixels=200):
         self.rest_wavelengths = np.linspace(min_lambda, max_lambda, num_pixels)
         self.norm_min_lambda = norm_min_lambda
         self.norm_max_lambda = norm_max_lambda
         self.max_noise_variance = max_noise_variance  # Threshold for masking high-noise pixels
+
+        self.min_num_pixels = min_num_pixels
 
     def mask_noisy_pixels(self, fluxes, noise_variances):
         """Masks pixels with noise variance above a threshold."""
@@ -127,7 +133,7 @@ class SpectrumProcessor:
 
             norm_mask = (wave >= self.norm_min_lambda) & (wave <= self.norm_max_lambda)
             if np.sum(norm_mask) < 2:
-                continue  
+                continue
 
             median_flux = np.nanmedian(flux[norm_mask])
             if median_flux == 0 or np.isnan(median_flux):
@@ -149,7 +155,7 @@ class SpectrumProcessor:
 
             all_wave.append(self.rest_wavelengths)
 
-            if np.sum(valid) < 2:  # Skip if too few valid points
+            if np.sum(valid) < self.min_num_pixels:  # Skip if too few valid points
                 interp_fluxes.append(np.full_like(self.rest_wavelengths, np.nan))
                 interp_noise_variances.append(np.full_like(self.rest_wavelengths, np.nan))
                 continue  
@@ -168,6 +174,7 @@ class SpectrumProcessor:
 
                 interp_fluxes.append(interp_flux)
                 interp_noise_variances.append(interp_noise)
+
             except Exception as e:
                 print(f"Interpolation failed for spectrum: {e}")
                 interp_fluxes.append(np.full_like(self.rest_wavelengths, np.nan))
@@ -393,6 +400,10 @@ class Trainer:
         """
         Trains the GP model using either Adam or L-BFGS with mini-batches.
         """
+        # Move data to device
+        fluxes, lya_1pzs, noise_variances, z_qsos = (
+            fluxes.to(device), lya_1pzs.to(device), noise_variances.to(device), z_qsos.to(device)
+        )
 
         # Create PyTorch DataLoader for mini-batches
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
@@ -420,6 +431,14 @@ class Trainer:
 
                 for batch in dataloader:
                     batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = batch
+
+                    # Move data to device
+                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
+                        batch_fluxes.to(device),
+                        batch_lya_1pzs.to(device),
+                        batch_noise_variances.to(device),
+                        batch_z_qsos.to(device),
+                    )
 
                     self.optimizer.zero_grad()
                     loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
