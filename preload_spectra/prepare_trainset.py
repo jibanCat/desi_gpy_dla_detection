@@ -79,14 +79,18 @@ class GPTrainingSetPreparer:
 
         for i, this_file in enumerate(filelist):
             print(f"Processing file: {i+1}/{len(filelist)} {this_file}")
-            with h5py.File(this_file, "r") as f:
-                tidlist = f["tidlist"][:]
-                this_rest_wavelengths = f["rest_wavelength_list"][:]
-                this_fluxes = f["flux_list"][:]
-                this_noise_variance = f["noise_variance_list"][:]
-                this_zqso = f["zqsolist"][:]
-                this_redsnr = f["redsnrlist"][:]
-                this_bluesnr = f["bluesnrlist"][:]
+            try:
+                with h5py.File(this_file, "r") as f:
+                    tidlist = f["tidlist"][:]
+                    this_rest_wavelengths = f["rest_wavelength_list"][:]
+                    this_fluxes = f["flux_list"][:]
+                    this_noise_variance = f["noise_variance_list"][:]
+                    this_zqso = f["zqsolist"][:]
+                    this_redsnr = f["redsnrlist"][:]
+                    this_bluesnr = f["bluesnrlist"][:]
+            except KeyError as e:
+                print(f"[Warning] Likely an empty preloaded file: {e}")
+                continue
 
             # Mask noisy pixels
             masked_fluxes, masked_noise_variances = spectrum_processor.mask_noisy_pixels(
