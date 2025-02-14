@@ -3,6 +3,14 @@ import glob
 import h5py
 import argparse
 import numpy as np
+
+# include the path to the gpy_dla_detection module
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
 from gpy_dla_detection.learn_qso_model import SpectrumProcessor
 
 class GPTrainingSetPreparer:
