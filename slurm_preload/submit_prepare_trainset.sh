@@ -39,7 +39,7 @@ echo "Normalization Max Lambda: $NORM_MAX_LAMBDA"
 echo "Max Noise Variance: $MAX_NOISE_VARIANCE"
 
 # Run the Python script
-python gp_training_prep.py \
+python preload_spectra/prepare_trainset.py \
     --input_dir "$INPUT_DIR" \
     --output_file "$OUTPUT_FILE" \
     --min_lambda "$MIN_LAMBDA" \
