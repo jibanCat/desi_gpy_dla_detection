@@ -168,17 +168,23 @@ class GPTrainingSetLoader:
 
             # Select only max_spectra
             if final_mask.sum() > self.max_spectra:
-                top_snr_indices = np.argsort(redsnrs[final_mask])[::-1][:self.max_spectra]
+                print(f"More than max_spectra ({self.max_spectra}), selecting highest SNR.")
+
+                # Get absolute indices of valid spectra
+                valid_indices = np.where(final_mask)[0]
+
+                # Sort valid spectra by SNR and select the highest `max_spectra`
+                top_snr_indices = valid_indices[np.argsort(redsnrs[final_mask])[::-1][:self.max_spectra]]
+
+                # Create a new mask and apply it
                 final_mask = np.zeros_like(final_mask, dtype=bool)
-                final_mask[top_snr_indices] = True  # Keep only top `max_spectra`
+                final_mask[top_snr_indices] = True  # Correctly keep only `max_spectra`
 
             # Apply the final mask to filter the data
             selected_fluxes = fluxes[final_mask]
             selected_wavelengths = rest_wavelengths[final_mask]
             selected_noise = noise_variances[final_mask]
             selected_z_qsos = z_qsos[final_mask]
-
-            print(f"Loaded {len(selected_fluxes)} high-SNR spectra.")
 
             print(f"Loaded {len(selected_fluxes)} high-SNR spectra.")
             return selected_fluxes, selected_wavelengths, selected_noise, selected_z_qsos
