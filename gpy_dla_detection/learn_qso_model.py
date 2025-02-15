@@ -3,16 +3,15 @@ Learning script for the Gaussian Process model with Lyα forest absorption.
 
  DESI: power-law of the form τ(z)=τ0(1+z)γ to our measurements and find τ0=(2.46±0.14)×10−3 and γ=3.62±0.04
 """
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import h5py
+from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 from sklearn.decomposition import PCA
-import torch
-import torch.optim as optim
-import torch
 import torch.optim.lr_scheduler as lr_scheduler
 
 from torch.utils.data import TensorDataset, DataLoader
@@ -99,6 +98,81 @@ class QSOLoader:
 
         print(f"Loaded {len(fluxes)} high-SNR spectra.")
         return fluxes, wavelengths, noise_variances, selected_z_qsos
+
+class GPTrainingSetLoader:
+    """
+    Loads processed QSO spectra from the output of GPTrainingSetPreparer.
+    Provides filtering based on redshift and SNR to efficiently return clean spectral data.
+    """
+    
+    def __init__(self, gp_trainset_file, z_range=(2.15, 4.25), min_snr=0.0, max_spectra=509412):
+        """
+        Initializes the loader with filtering parameters.
+        
+        :param gp_trainset_file: Path to the HDF5 file containing the prepared GP training set
+        :param z_range: Tuple specifying the minimum and maximum redshift range to filter spectra
+        :param min_snr: Minimum signal-to-noise ratio (SNR) threshold for selecting spectra
+        :param max_spectra: Maximum number of spectra to load
+        """
+        self.gp_trainset_file = gp_trainset_file
+        self.z_range = z_range
+        self.min_snr = min_snr
+        self.max_spectra = max_spectra
+
+    def load_data(self):
+        """
+        Loads and filters QSO spectra based on redshift and SNR.
+        Returns fluxes, wavelengths, noise variances, and redshift values.
+        """
+        with h5py.File(self.gp_trainset_file, "r") as f:
+            tids = f["tidlist"][:]
+            rest_wavelengths = f["rest_wavelength_list"][:]
+            fluxes = f["flux_list"][:]
+            noise_variances = f["noise_variance_list"][:]
+            z_qsos = f["zqsolist"][:]
+            redsnrs = f["redsnrlist"][:]
+
+            print(f"Total available spectra: {len(fluxes)}")
+
+            selected_fluxes, selected_wavelengths, selected_noise, selected_z_qsos = [], [], [], []
+            snr_values = []
+
+            # Use tqdm progress bar for loading
+            for i in tqdm(range(len(fluxes)), desc="Loading spectra", unit="spec"):
+                if len(selected_fluxes) >= self.max_spectra:
+                    break  # Stop if max_spectra reached
+                
+                flux = fluxes[i]
+                wave = rest_wavelengths[i]
+                noise = noise_variances[i]
+                z_qso = z_qsos[i]
+
+                # Apply redshift filtering
+                if not (self.z_range[0] <= z_qso <= self.z_range[1]):
+                    continue  
+                
+                # Compute SNR and apply threshold
+                snr = redsnrs[i]
+                if np.isnan(snr) or np.isinf(snr) or snr < self.min_snr:
+                    continue  
+                
+                # Store selected spectra
+                selected_fluxes.append(flux)
+                selected_wavelengths.append(wave)
+                selected_noise.append(noise)
+                selected_z_qsos.append(z_qso)
+                snr_values.append(snr)
+
+            # Sort by SNR and keep only top `max_spectra`
+            if len(snr_values) > self.max_spectra:
+                top_indices = np.argsort(snr_values)[::-1][:self.max_spectra]
+                selected_fluxes = [selected_fluxes[i] for i in top_indices]
+                selected_wavelengths = [selected_wavelengths[i] for i in top_indices]
+                selected_noise = [selected_noise[i] for i in top_indices]
+                selected_z_qsos = [selected_z_qsos[i] for i in top_indices]
+
+            print(f"Loaded {len(selected_fluxes)} high-SNR spectra.")
+            return selected_fluxes, selected_wavelengths, selected_noise, selected_z_qsos
 
 class SpectrumProcessor:
     """Preprocesses spectra: masks noisy pixels, interpolates, normalizes, and de-forests them."""
@@ -241,10 +315,11 @@ def compute_pca(centered_fluxes, num_components=10):
 class GaussianProcessModel(nn.Module):
     """Gaussian Process model with PCA eigenspectra initialization."""
 
-    def __init__(self, num_pixels, k, centered_rest_fluxes, initial_M=None, min_lambda=911, max_lambda=1216):
+    def __init__(self, num_pixels, k, centered_rest_fluxes, initial_M=None, min_lambda=911, max_lambda=1216, mu=None):
         super().__init__()
         self.num_pixels = num_pixels
         self.k = k
+        self.mu = mu
 
         # Define a consistent rest-wavelength grid
         self.rest_wavelengths = torch.linspace(min_lambda, max_lambda, num_pixels, dtype=torch.float32)
@@ -254,6 +329,7 @@ class GaussianProcessModel(nn.Module):
         # initial_tau_0 = 0.00554;                      % initial guess for τ₀
         # initial_beta  = 3.182;                        % initial guess for β
         if initial_M is None:
+            print("Use PCA for initialization...")
             coefficients, latent = compute_pca(centered_rest_fluxes, k)
             # Compute initial M using PCA coefficients and square root of eigenvalues
             initial_M = coefficients[:, :k] * np.sqrt(latent[:k])  # Broadcasting happens automatically
@@ -263,6 +339,12 @@ class GaussianProcessModel(nn.Module):
         self.log_c_0 = nn.Parameter(torch.tensor(np.log(0.1)))
         self.log_tau_0 = nn.Parameter(torch.tensor(np.log(0.00246)))
         self.log_beta = nn.Parameter(torch.tensor(np.log(3.62)))
+
+        self.initial_M = initial_M
+        self.initial_log_omega = initial_log_omega
+        self.initial_log_c_0 = np.log(0.1)
+        self.initial_log_tau_0 = np.log(0.00246)
+        self.initial_beta = np.log(3.62)
 
     def forward(self):
         """Returns model parameters in exponential space."""
@@ -349,7 +431,7 @@ class Trainer:
     """
 
     def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01, batch_size=32,
-                 scheduler_type="cosine", scheduler_params=None):
+                 scheduler_type="cosine", scheduler_params=None, output_dir="learnlogs"):
         """
         Initialize the trainer.
 
@@ -366,6 +448,10 @@ class Trainer:
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.loss_history = []
+
+        # Create output directory if it doesn't exist
+        self.output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
 
         # Lists to save the parameter values
         # self.log_omega_values = []
@@ -468,12 +554,89 @@ class Trainer:
                     print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader)}, Learning Rate = {self.optimizer.param_groups[0]['lr']:.6f}")
                     print(f"Epoch {epoch}: log_beta = {self.model.log_beta.item()}, log_tau_0 = {self.model.log_tau_0.item()}")
 
+                # Plot loss and covariance every 100 epochs
+                if epoch % 100 == 0:
+                    self.visualize_covariance(self.model, epoch)
+                    self.plot_loss(self.loss_history)
+                
+                # Save model every 1000 epochs
+                if epoch % 1000 == 0:
+                    save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
+                    self.save_model(save_path)
+                    h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
+                    self.save_h5_file(h5_save_path)
+
         elif self.optimizer_type == "lbfgs":
             # L-BFGS optimization (uses closure)
             for _ in range(max_epochs):
                 self.optimizer.step(closure)
 
         print(f"Final Loss: {self.loss_history[-1]}")
+        print(r"Saving the model...")
+        save_path = os.path.join(self.output_dir, "model_final.pt")
+        self.save_model(save_path)
+        h5_save_path = os.path.join(self.output_dir, "model_final.h5")
+        self.save_h5_file(h5_save_path)
+
+
+    def visualize_covariance(self, model, epoch):
+        """Saves the covariance matrix visualization every few epochs."""
+        M = model.M.detach().cpu().numpy()
+        K = np.dot(M, M.T)
+        C = K / np.sqrt(np.outer(np.diag(K), np.diag(K)))
+        plt.figure(figsize=(8, 6))
+        plt.imshow(C, cmap="viridis")
+        plt.colorbar()
+        plt.title(f"Correlation Matrix of Eigenspectra (Epoch {epoch})")
+        plt.xlabel("Eigenspectrum Index")
+        plt.ylabel("Eigenspectrum Index")
+        save_path = os.path.join(self.output_dir, f"covariance_epoch_{epoch}.png")
+        plt.savefig(save_path)
+        plt.close()
+
+    def plot_loss(self, loss_history):
+        """Plots and saves the loss history."""
+        plt.figure(figsize=(6, 4))
+        plt.plot(loss_history, label="Training Loss", color="C0")
+        plt.xlabel("Epoch")
+        plt.ylabel("Negative Log Likelihood")
+        plt.title("GP Training Loss Convergence")
+        plt.legend()
+        save_path = os.path.join(self.output_dir, "training_loss.png")
+        plt.savefig(save_path)
+        plt.close()
+
+    def save_model(self, save_path):
+        """Saves the model parameters to a file."""
+        torch.save(self.model.state_dict(), save_path)
+
+    def save_h5_file(self, save_path):
+        """
+        Saves the model parameters to a file.
+        <KeysViewHDF5 ['#refs#', 'M', 'initial_M', 'initial_beta', 'initial_log_c_0', 
+        'initial_log_omega', 'initial_tau_0', 'log_beta', 'log_c_0', 'log_likelihood',
+        'log_omega', 'log_tau_0', 'max_noise_variance', 'minFunc_options', 'minFunc_output', 
+        'mu', 'rest_wavelengths', 'train_ind', 'training_release']>
+        """
+
+        with h5py.File(save_path, "w") as f:
+            f.create_dataset("M", data=self.model.M.detach().cpu().numpy())
+            f.create_dataset("log_omega", data=self.model.log_omega.detach().cpu().numpy())
+            f.create_dataset("log_c_0", data=self.model.log_c_0.detach().cpu().numpy())
+            f.create_dataset("log_tau_0", data=self.model.log_tau_0.detach().cpu().numpy())
+            f.create_dataset("log_beta", data=self.model.log_beta.detach().cpu().numpy())
+            f.create_dataset("loss_history", data=np.array(self.loss_history))
+            f.create_dataset("log_c_0_history", data=self.log_c_0_values)
+            f.create_dataset("log_tau_0_history", data=self.log_tau_0_values)
+            f.create_dataset("log_beta_history", data=self.log_beta_values)
+            f.create_dataset("initial_M", data=self.model.initial_M)
+            f.create_dataset("initial_log_omega", data=self.model.initial_log_omega)
+            f.create_dataset("initial_log_c_0", data=self.model.initial_log_c_0)
+            f.create_dataset("initial_log_tau_0", data=self.model.initial_log_tau_0)
+            f.create_dataset("initial_beta", data=self.model.initial_beta)
+            f.create_dataset("rest_wavelengths", data=self.model.rest_wavelengths.numpy())
+            f.create_dataset("max_noise_variance", data=self.model.max_noise_variance)
+            f.create_dataset("mu", data=self.model.mu)
 
 if __name__ == "__main__":
 
