@@ -155,7 +155,7 @@ class GPTrainingSetLoader:
 
             # Vectorized filtering: find valid target indices
             valid_idx = np.isin(tids, list(valid_tids))  # Vectorized check
-            print("Total valid spectra in catalog:", len(valid_idx))
+            print("Total valid spectra in catalog:", valid_idx.sum())
 
             # Apply redshift and SNR filtering
             redshift_mask = (z_qsos >= self.z_range[0]) & (z_qsos <= self.z_range[1])

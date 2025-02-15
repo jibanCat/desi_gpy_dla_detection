@@ -23,10 +23,11 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
 
     # Initialize total loss
     loss = torch.tensor(0.0, dtype=torch.float32, device=M.device)  # ✅ Fix: No requires_grad=True
+    device = M.device
 
     # Iterate over all quasars in training set
     for i in range(len(fluxes)):
-        valid_idx = ~torch.isnan(fluxes[i])  # Remove NaNs
+        valid_idx = ~torch.isnan(fluxes[i]).to(device)  # Remove NaNs
         y = fluxes[i, valid_idx]
         noise_var = noise_variances[i, valid_idx]
         lya_1pz = lya_1pzs[i, valid_idx]
