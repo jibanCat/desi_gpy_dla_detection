@@ -185,7 +185,7 @@ class GPModelTrainer:
             temp_wave = 10**temp_model["LOGLAM"] # rest-frame wavelength
 
             # model rest-frame wavelength
-            model_wave = all_rest_wavelengths[0].numpy()
+            model_wave = all_rest_wavelengths[0].cpu().numpy()
 
             # interpolate PCA components
             temp_pca_interp = np.zeros((temp_pca.shape[0], len(model_wave)))
@@ -204,7 +204,7 @@ class GPModelTrainer:
 
         ####### Initialize the GP model #######
         self.model = GaussianProcessModel(
-            fluxes_tensor.shape[1], self.num_pca_components, fluxes_tensor.numpy(), initial_M=initial_M,
+            fluxes_tensor.shape[1], self.num_pca_components, fluxes_tensor.cpu().numpy(), initial_M=initial_M,
             min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
         ).to(self.device)
 
@@ -221,10 +221,10 @@ class GPModelTrainer:
         # Compute Lyα redshift grid for training
         all_transition_wavelengths = torch.tensor(
             all_transition_wavelengths, dtype=torch.float32
-        )
+        ).to(self.device)
         all_oscillator_strengths = torch.tensor(
             all_oscillator_strengths, dtype=torch.float32
-        )
+        ).to(self.device)
 
         lya_wavelength = all_transition_wavelengths[0] * 1e8  # Angstroms
         lya_1pz = (

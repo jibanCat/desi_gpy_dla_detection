@@ -654,7 +654,7 @@ class Trainer:
             f.create_dataset("initial_log_c_0", data=self.model.initial_log_c_0)
             f.create_dataset("initial_log_tau_0", data=self.model.initial_log_tau_0)
             f.create_dataset("initial_beta", data=self.model.initial_beta)
-            f.create_dataset("rest_wavelengths", data=self.model.rest_wavelengths.numpy())
+            f.create_dataset("rest_wavelengths", data=self.model.rest_wavelengths.cpu().numpy())
             f.create_dataset("max_noise_variance", data=self.model.max_noise_variance)
             f.create_dataset("mu", data=self.model.mu)
 

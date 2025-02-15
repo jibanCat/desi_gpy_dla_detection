@@ -27,15 +27,17 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
 
     # Iterate over all quasars in training set
     for i in range(len(fluxes)):
-        valid_idx = ~torch.isnan(fluxes[i]).to(device)  # Remove NaNs
-        y = fluxes[i, valid_idx]
-        noise_var = noise_variances[i, valid_idx]
-        lya_1pz = lya_1pzs[i, valid_idx]
-        zqso_1pz = z_qsos[i] + 1  # Redshift factor for Lyα absorbers
-        M_valid = M[valid_idx, :]  # Fix: Correct 2D selection
+        valid_idx = ~torch.isnan(fluxes[i])  # Remove NaNs
+        valid_idx = valid_idx.to(device)  # ✅ Move mask to correct device
+
+        y = fluxes[i, valid_idx].to(device)  # ✅ Move indexed tensor to the same device
+        noise_var = noise_variances[i, valid_idx].to(device)
+        lya_1pz = lya_1pzs[i, valid_idx].to(device)  # ✅ Fix indexing device mismatch
+        zqso_1pz = z_qsos[i].to(device) + 1  # ✅ Move `z_qsos` to device
+        M_valid = M[valid_idx, :].to(device)  # ✅ Fix: Correct 2D selection
 
         # Compute per-spectrum likelihood
-        this_loss = spectrum_loss(y, lya_1pz, noise_var, M_valid, omega2[valid_idx],
+        this_loss = spectrum_loss(y, lya_1pz, noise_var, M_valid, omega2[valid_idx].to(device),
                                   c_0, tau_0, beta, num_forest_lines,
                                   all_transition_wavelengths, all_oscillator_strengths, zqso_1pz)
 
