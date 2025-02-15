@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-from scipy.interpolate import interp1d
 import h5py
 import matplotlib.pyplot as plt
 import argparse
@@ -82,7 +81,7 @@ class GPModelTrainer:
 
     def prepare_data(self):
         """Loads and preprocesses the QSO spectra for training."""
-        fluxes, wavelengths, noise_variances, z_qsos = self.qso_loader.load_data()
+        fluxes, all_rest_wavelengths, noise_variances, z_qsos = self.qso_loader.load_data()
 
         # --- Step 2: Normalize Spectra ---
         # (
@@ -157,8 +156,9 @@ class GPModelTrainer:
         if if_use_template:
             # TODO : understand if I can use these as init points
             print("Using template model ...")
-
-            temp_model = np.load("data/temp_model/QSO-HIZv1.1_RR.npz") # hard-coded path
+            temp_model_path = "data/temp_model/QSO-HIZv1.1_RR.npz"
+            assert os.path.exists(temp_model_path)
+            temp_model = np.load(temp_model_path) # hard-coded path
             temp_pca = temp_model["PCA_COMP"] # normalized PCA components, centered 0
             temp_wave = 10**temp_model["LOGLAM"] # rest-frame wavelength
 
@@ -248,7 +248,7 @@ class GPModelTrainer:
             max_epochs=self.num_epochs,
         )
 
-        return model, loss_history
+        return model, trainer.loss_history
 
 
 if __name__ == "__main__":
