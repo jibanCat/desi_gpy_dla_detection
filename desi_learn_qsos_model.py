@@ -228,13 +228,8 @@ class GPModelTrainer:
 
         lya_wavelength = all_transition_wavelengths[0] * 1e8  # Angstroms
         lya_1pz = (
-            1
-            + (
-                ((1 + z_qsos_tensor) * self.model.rest_wavelengths.unsqueeze(0))
-                - lya_wavelength
-            )
-            / lya_wavelength
-        )
+            1 + (((1 + z_qsos_tensor.to(self.device)) * self.model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        ).to(self.device)
 
         print("Before calling objective:")
         print(
@@ -245,17 +240,8 @@ class GPModelTrainer:
         )  # Should also be (31,)
 
         # Compute initial loss
-        initial_loss = objective(
-            self.model,
-            fluxes_tensor,
-            lya_1pz,
-            noise_variances_tensor,
-            10,
-            all_transition_wavelengths,
-            all_oscillator_strengths,
-            z_qsos_tensor,
-        ).item()
-
+        initial_loss = objective(self.model, fluxes_tensor, lya_1pz, noise_variances_tensor, ...).detach()
+        print("Initial loss:", initial_loss)
         print("After calling objective:")
         print("all_transition_wavelengths shape:", all_transition_wavelengths.shape)
         print("all_oscillator_strengths shape:", all_oscillator_strengths.shape)
