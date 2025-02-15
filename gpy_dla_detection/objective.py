@@ -1,3 +1,12 @@
+"""
+Objective function for the GP-DLA model.
+
+Effective optical depth for DESI Y1 (https://arxiv.org/abs/2405.06743):
+ τ(z)=τ0(1+z)^γ t
+ τ0=(2.46±0.14)×10−3
+ γ=3.62±0.04
+"""
+
 import torch
 import numpy as np
 from .voigt import transition_wavelengths, oscillator_strengths
@@ -40,6 +49,8 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
 
     PyTorch automatically tracks gradients, so we do NOT need to compute them manually.
     """
+    # Ensure positive values
+    omega2 = torch.clamp(omega2, min=1e-6)
 
     # Compute Lyman absorption effects
     lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)
@@ -70,8 +81,17 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     B = M.T @ D_inv_M
     B.diagonal().add_(1.0)
 
+    # 🔹 Add Jitter (Fixes Not Positive Definite Issues)
+    B.diagonal().add_(1e-6)
+
     # Cholesky decomposition
-    L = torch.linalg.cholesky(B)
+    try:
+        L = torch.linalg.cholesky(B)
+    except RuntimeError as e:
+        print(f"Cholesky failed: {e}")
+        print(f"Min eigenvalue of B: {torch.min(torch.linalg.eigvalsh(B))}")  # Check if any are negative
+        print(f"Max eigenvalue of B: {torch.max(torch.linalg.eigvalsh(B))}")
+        raise
 
     # Compute C matrix
     C = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)
@@ -82,6 +102,17 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
 
     # Negative log-likelihood (final loss)
     nlog_p = 0.5 * (y @ K_inv_y + log_det_K + len(y) * torch.log(torch.tensor(2 * np.pi)))
+
+    # A log Gaussian prior around the effective optical depth
+    # τ(z)=τ0(1+z)^γ t
+    # τ0=(2.46±0.14)×10−3
+    # γ=3.62±0.04
+    tau_0_mu = 0.00246
+    tau_0_sigma = 0.14
+    beta_mu = 3.62
+    beta_sigma = 0.04
+    
+    nlog_p += 0.5 * ((tau_0 - tau_0_mu) ** 2 / tau_0_sigma ** 2 + (beta - beta_mu) ** 2 / beta_sigma ** 2)
 
     # # Compute gradients
     # K_inv_M = D_inv_M - D_inv_M @ (C @ M)
