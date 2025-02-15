@@ -149,45 +149,36 @@ class GPTrainingSetLoader:
 
             print(f"Total available spectra: {len(fluxes)}")
 
-            selected_fluxes, selected_wavelengths, selected_noise, selected_z_qsos = [], [], [], []
-            snr_values = []
+            # Convert TARGETID to a set for fast lookup
+            valid_tids = set(self.gp_catalog["TARGETID"])
 
-            # Use tqdm progress bar for loading
-            for i in tqdm(range(len(fluxes)), desc="Loading spectra", unit="spec"):
-                # Check if the tid is in the catalog
-                if tids[i] not in self.gp_catalog["TARGETID"]:
-                    continue
-                if len(selected_fluxes) >= self.max_spectra:
-                    break  # Stop if max_spectra reached
-                
-                flux = fluxes[i]
-                wave = rest_wavelengths[i]
-                noise = noise_variances[i]
-                z_qso = z_qsos[i]
 
-                # Apply redshift filtering
-                if not (self.z_range[0] <= z_qso <= self.z_range[1]):
-                    continue  
-                
-                # Compute SNR and apply threshold
-                snr = redsnrs[i]
-                if np.isnan(snr) or np.isinf(snr) or snr < self.min_snr:
-                    continue  
-                
-                # Store selected spectra
-                selected_fluxes.append(flux)
-                selected_wavelengths.append(wave)
-                selected_noise.append(noise)
-                selected_z_qsos.append(z_qso)
-                snr_values.append(snr)
+            # Vectorized filtering: find valid target indices
+            valid_idx = np.isin(tids, list(valid_tids))  # Vectorized check
+            print("Total valid spectra in catalog:", len(valid_idx))
 
-            # Sort by SNR and keep only top `max_spectra`
-            if len(snr_values) > self.max_spectra:
-                top_indices = np.argsort(snr_values)[::-1][:self.max_spectra]
-                selected_fluxes = [selected_fluxes[i] for i in top_indices]
-                selected_wavelengths = [selected_wavelengths[i] for i in top_indices]
-                selected_noise = [selected_noise[i] for i in top_indices]
-                selected_z_qsos = [selected_z_qsos[i] for i in top_indices]
+            # Apply redshift and SNR filtering
+            redshift_mask = (z_qsos >= self.z_range[0]) & (z_qsos <= self.z_range[1])
+            snr_mask = (redsnrs >= self.min_snr) & np.isfinite(redsnrs)
+            print(f"Total valid spectra within redshift and SNR range: {(redshift_mask & snr_mask).sum()}")
+
+            # Combine masks
+            final_mask = valid_idx & redshift_mask & snr_mask
+            print(f"Total valid spectra: {final_mask.sum()}")
+
+            # Select only max_spectra
+            if final_mask.sum() > self.max_spectra:
+                top_snr_indices = np.argsort(redsnrs[final_mask])[::-1][:self.max_spectra]
+                final_mask = np.zeros_like(final_mask, dtype=bool)
+                final_mask[top_snr_indices] = True  # Keep only top `max_spectra`
+
+            # Apply the final mask to filter the data
+            selected_fluxes = fluxes[final_mask]
+            selected_wavelengths = rest_wavelengths[final_mask]
+            selected_noise = noise_variances[final_mask]
+            selected_z_qsos = z_qsos[final_mask]
+
+            print(f"Loaded {len(selected_fluxes)} high-SNR spectra.")
 
             print(f"Loaded {len(selected_fluxes)} high-SNR spectra.")
             return selected_fluxes, selected_wavelengths, selected_noise, selected_z_qsos
