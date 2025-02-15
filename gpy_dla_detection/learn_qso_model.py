@@ -517,20 +517,39 @@ class Trainer:
             fluxes.to(device), lya_1pzs.to(device), noise_variances.to(device), z_qsos.to(device)
         )
 
+        # Move static tensors to device
+        all_transition_wavelengths = all_transition_wavelengths.to(device)
+        all_oscillator_strengths = all_oscillator_strengths.to(device)
+
         # Create PyTorch DataLoader for mini-batches
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        dataloader = DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=True,
+            num_workers=8,  # Use multiple CPU workers
+            pin_memory=True,  # Faster CPU-GPU transfer
+        )
+
+        # Initialize AMP GradScaler
+        scaler = torch.cuda.amp.GradScaler()
 
         def closure():
             """Closure function for L-BFGS optimization."""
             self.optimizer.zero_grad()
-            loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
-                             all_transition_wavelengths, all_oscillator_strengths, z_qsos)
-            loss.backward()
-            self.loss_history.append(loss.item())  
 
-            # Save parameter values
-            # self.log_omega_values.append(self.model.log_omega.item())
+            # Sample a small batch for L-BFGS
+            batch_indices = torch.randint(0, fluxes.shape[0], (self.batch_size,))
+            batch_fluxes = fluxes[batch_indices].to(device)
+            batch_lya_1pzs = lya_1pzs[batch_indices].to(device)
+            batch_noise_variances = noise_variances[batch_indices].to(device)
+            batch_z_qsos = z_qsos[batch_indices].to(device)
+
+            with torch.cuda.amp.autocast():
+                loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                                num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+
+            scaler.scale(loss).backward()
+            self.loss_history.append(loss.item())
+
             self.log_c_0_values.append(self.model.log_c_0.item())
             self.log_tau_0_values.append(self.model.log_tau_0.item())
             self.log_beta_values.append(self.model.log_beta.item())
@@ -553,20 +572,21 @@ class Trainer:
                     )
 
                     self.optimizer.zero_grad()
-                    loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                                     num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+                    with torch.cuda.amp.autocast():  # Enable FP16 training
+                        loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                                            num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
 
-                    loss.backward()
-                    self.optimizer.step()
+                    scaler.scale(loss).backward()
+                    scaler.step(self.optimizer)
+                    scaler.update()
+
                     total_loss += loss.item()
                     self.loss_history.append(loss.item())
 
                     # Save parameter values
-                    # self.log_omega_values.append(self.model.log_omega.item())
                     self.log_c_0_values.append(self.model.log_c_0.item())
                     self.log_tau_0_values.append(self.model.log_tau_0.item())
                     self.log_beta_values.append(self.model.log_beta.item())
-
 
                 # Step the scheduler
                 if self.scheduler:
