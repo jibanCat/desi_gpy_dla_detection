@@ -125,12 +125,23 @@ class GPTrainingSetLoader:
         Returns fluxes, wavelengths, noise variances, and redshift values.
         """
         with h5py.File(self.gp_trainset_file, "r") as f:
-            tids = f["tidlist"][:]
-            rest_wavelengths = f["rest_wavelength_list"][:]
-            fluxes = f["flux_list"][:]
-            noise_variances = f["noise_variance_list"][:]
-            z_qsos = f["zqsolist"][:]
-            redsnrs = f["redsnrlist"][:]
+            try:
+                tids = f["tidlist"][:]
+                rest_wavelengths = f["rest_wavelength_list"][:]
+                fluxes = f["flux_list"][:]
+                noise_variances = f["noise_variance_list"][:]
+                z_qsos = f["zqsolist"][:]
+                redsnrs = f["redsnrlist"][:]
+            except KeyError as e:
+                print(f"[Warning] Likely not correct keys preloaded file: {e}")
+                # ['bluesnr', 'fluxes', 'noise_variance', 'redsnr', 'rest_wavelengths', 'tids', 'zqso']
+                tids = f["tids"][:]
+                rest_wavelengths = f["rest_wavelengths"][:]
+                fluxes = f["fluxes"][:]
+                noise_variances = f["noise_variance"][:]
+                z_qsos = f["zqso"][:]
+                redsnrs = f["redsnr"][:]
+                
 
             print(f"Total available spectra: {len(fluxes)}")
 
@@ -282,10 +293,15 @@ class SpectrumProcessor:
         centered_fluxes = fluxes - mean_flux
         return centered_fluxes, mean_flux
 
-    def fill_nan_with_median(self, fluxes):
+    @staticmethod
+    def fill_nan_with_median(fluxes):
         """Fills NaN values in fluxes with the dataset-wide median."""
-        for flux in fluxes:
-            flux[np.isnan(flux)] = np.nanmedian(flux)
+        for i,flux in enumerate(fluxes):
+            if np.isnan(flux).all():
+                # fill with nan
+                fluxes[i, :] = np.nan
+            else:
+                fluxes[i, np.isnan(flux)] = np.nanmedian(flux)
         return fluxes
     
     def remove_nan_spectra(self, fluxes, noise_variances, wavelengths, z_qsos):
@@ -293,8 +309,10 @@ class SpectrumProcessor:
         cleaned_fluxes, cleaned_noises, cleaned_waves, cleaned_z_qsos = [], [], [], []
         
         for flux, noise, wave, z_qso in zip(fluxes, noise_variances, wavelengths, z_qsos):
-            if np.isnan(flux).any() or np.isnan(noise).any() or np.isnan(wave).any():
-                continue  # Skip spectra with any NaN values
+            # number of valid pixels
+            num_valid_pixels = np.sum(np.isfinite(flux))
+            if num_valid_pixels < self.min_num_pixels:
+                continue
             cleaned_fluxes.append(flux)
             cleaned_noises.append(noise)
             cleaned_waves.append(wave)
@@ -315,11 +333,14 @@ def compute_pca(centered_fluxes, num_components=10):
 class GaussianProcessModel(nn.Module):
     """Gaussian Process model with PCA eigenspectra initialization."""
 
-    def __init__(self, num_pixels, k, centered_rest_fluxes, initial_M=None, min_lambda=911, max_lambda=1216, mu=None):
+    def __init__(self, num_pixels, k, centered_rest_fluxes, initial_M=None, min_lambda=911, max_lambda=1216, mu=None, max_noise_variance=None):
         super().__init__()
         self.num_pixels = num_pixels
+
+        # save for later save into h5 file
         self.k = k
         self.mu = mu
+        self.max_noise_variance = max_noise_variance
 
         # Define a consistent rest-wavelength grid
         self.rest_wavelengths = torch.linspace(min_lambda, max_lambda, num_pixels, dtype=torch.float32)
@@ -330,7 +351,8 @@ class GaussianProcessModel(nn.Module):
         # initial_beta  = 3.182;                        % initial guess for β
         if initial_M is None:
             print("Use PCA for initialization...")
-            coefficients, latent = compute_pca(centered_rest_fluxes, k)
+            pca_fluxes = SpectrumProcessor.fill_nan_with_median(centered_rest_fluxes.copy())
+            coefficients, latent = compute_pca(pca_fluxes, k)
             # Compute initial M using PCA coefficients and square root of eigenvalues
             initial_M = coefficients[:, :k] * np.sqrt(latent[:k])  # Broadcasting happens automatically
         self.M = nn.Parameter(torch.tensor(initial_M, dtype=torch.float32).clone().detach())
