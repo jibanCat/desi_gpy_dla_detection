@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import h5py
+from astropy.table import Table
 from matplotlib import pyplot as plt
 from scipy.interpolate import interp1d
 from sklearn.decomposition import PCA
@@ -105,7 +106,7 @@ class GPTrainingSetLoader:
     Provides filtering based on redshift and SNR to efficiently return clean spectral data.
     """
     
-    def __init__(self, gp_trainset_file, z_range=(2.15, 4.25), min_snr=0.0, max_spectra=509412):
+    def __init__(self, gp_catalog_file, gp_trainset_file, z_range=(2.15, 4.25), min_snr=0.0, max_spectra=509412):
         """
         Initializes the loader with filtering parameters.
         
@@ -114,6 +115,9 @@ class GPTrainingSetLoader:
         :param min_snr: Minimum signal-to-noise ratio (SNR) threshold for selecting spectra
         :param max_spectra: Maximum number of spectra to load
         """
+        self.gp_catalog = Table.read(gp_catalog_file)
+        print(f"Loaded {len(self.gp_catalog)} nonBAL-nonDLA etc QSOs from {gp_catalog_file}")
+
         self.gp_trainset_file = gp_trainset_file
         self.z_range = z_range
         self.min_snr = min_snr
@@ -150,6 +154,9 @@ class GPTrainingSetLoader:
 
             # Use tqdm progress bar for loading
             for i in tqdm(range(len(fluxes)), desc="Loading spectra", unit="spec"):
+                # Check if the tid is in the catalog
+                if tids[i] not in self.gp_catalog["TARGETID"]:
+                    continue
                 if len(selected_fluxes) >= self.max_spectra:
                     break  # Stop if max_spectra reached
                 
