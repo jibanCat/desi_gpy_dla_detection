@@ -11,11 +11,14 @@
 #SBATCH -A desi                     # Account name to use on NERSC systems
 #SBATCH --time=0:30:00              # Time limit for the job
 
+# Debugging flags
+export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
+export PYTHONUNBUFFERED=1      # Forces immediate output
 
 # Load the environment
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
 
-python desi_learn_qsos_model.py \
+python -u desi_learn_qsos_model.py \
     --catalog_file "/pscratch/sd/j/jibancat/desi_gpy_dla_detection/data/loa/gp_trainset_loa.fits" \
     --preloaded_file "/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/gp_interp_trainset.h5" \
     --z_min 2.5 \
