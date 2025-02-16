@@ -166,6 +166,7 @@ class GPModelTrainer:
             torch.tensor(z_qsos, dtype=torch.float32, device=self.device).unsqueeze(-1),
             # wavelength tensor
             torch.tensor(all_rest_wavelengths, dtype=torch.float32, device=self.device),
+            centered_fluxes,
         )
 
     def train_model(self, if_use_template=False, initial_M=None):
@@ -173,7 +174,7 @@ class GPModelTrainer:
         from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
         from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
 
-        fluxes_tensor, noise_variances_tensor, z_qsos_tensor, all_rest_wavelengths = self.prepare_data()
+        fluxes_tensor, noise_variances_tensor, z_qsos_tensor, all_rest_wavelengths, centered_fluxes = self.prepare_data()
 
         if if_use_template:
             # TODO : understand if I can use these as init points
@@ -203,11 +204,24 @@ class GPModelTrainer:
             initial_M[:, -temp_pca_interp.shape[0]:] = temp_pca_interp.T
 
         ####### Initialize the GP model #######
-        centered_fluxes = fluxes_tensor.cpu().numpy().copy()
         self.model = GaussianProcessModel(
             fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes, initial_M=initial_M,
             min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
         ).to(self.device)
+
+        # Compute Lyα redshift grid for training
+        all_transition_wavelengths = torch.tensor(
+            all_transition_wavelengths, dtype=torch.float32
+        ).to(self.device)
+        all_oscillator_strengths = torch.tensor(
+            all_oscillator_strengths, dtype=torch.float32
+        ).to(self.device)
+
+        lya_wavelength = all_transition_wavelengths[0] * 1e8  # Angstroms
+
+        lya_1pz = (
+            1 + (((1 + z_qsos_tensor.to(self.device)) * self.model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        )
 
         trainer = Trainer(
             self.model,
@@ -219,18 +233,6 @@ class GPModelTrainer:
             output_dir=self.output_dir,
         )
 
-        # Compute Lyα redshift grid for training
-        all_transition_wavelengths = torch.tensor(
-            all_transition_wavelengths, dtype=torch.float32
-        ).to(self.device)
-        all_oscillator_strengths = torch.tensor(
-            all_oscillator_strengths, dtype=torch.float32
-        ).to(self.device)
-
-        lya_wavelength = all_transition_wavelengths[0] * 1e8  # Angstroms
-        lya_1pz = (
-            1 + (((1 + z_qsos_tensor.to(self.device)) * self.model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
-        ).to(self.device)
 
         print("Before calling objective:")
         print(

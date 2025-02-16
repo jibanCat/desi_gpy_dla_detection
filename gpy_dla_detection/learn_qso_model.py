@@ -541,26 +541,25 @@ class Trainer:
         Trains the GP model using either Adam or L-BFGS with mini-batches.
         """
 
-        # ✅ Move static tensors to device **once** before training starts
+        # ✅ Move static tensors to device **before training starts**
         device = self.device
         fluxes, lya_1pzs, noise_variances, z_qsos = (
-            fluxes.to(device, non_blocking=True), 
-            lya_1pzs.to(device, non_blocking=True), 
-            noise_variances.to(device, non_blocking=True), 
-            z_qsos.to(device, non_blocking=True)
+            fluxes.to(device), 
+            lya_1pzs.to(device), 
+            noise_variances.to(device), 
+            z_qsos.to(device)
         )
-        all_transition_wavelengths = all_transition_wavelengths.to(device, non_blocking=True)
-        all_oscillator_strengths = all_oscillator_strengths.to(device, non_blocking=True)
+        all_transition_wavelengths = all_transition_wavelengths.to(device)
+        all_oscillator_strengths = all_oscillator_strengths.to(device)
 
-        # ✅ Optimized DataLoader
-        dataset = GPDataset(fluxes, lya_1pzs, noise_variances, z_qsos, device)
+        # ✅ Simple DataLoader (1 Worker, No Fancy Stuff)
+        dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
-            num_workers=4, # Use multiple workers for faster data loading
-            pin_memory=True,  # Speed up CPU-GPU transfers
-            persistent_workers=True,  # Keep workers alive
-            prefetch_factor=2  # Reduce memory contention
+            # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
+            # pin_memory=False  # ✅ Turn off since we're using 1 worker
         )
+
 
         # ✅ Ensure CUDA is Ready
         if torch.cuda.is_available():
@@ -587,12 +586,7 @@ class Trainer:
                 total_loss = 0.0
 
                 for batch in dataloader:
-                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
-                        batch[0].to(device, non_blocking=True),
-                        batch[1].to(device, non_blocking=True),
-                        batch[2].to(device, non_blocking=True),
-                        batch[3].to(device, non_blocking=True),
-                    )
+                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = batch
 
                     self.optimizer.zero_grad()
                     loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
