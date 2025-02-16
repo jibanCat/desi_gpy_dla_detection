@@ -45,7 +45,7 @@ class GPModelTrainer:
         batch_size,
         num_epochs,
         output_dir,
-        sdss_test=True,
+        sdss_test=False,
     ):
         """
         Initializes the GPModelTrainer with training parameters.
