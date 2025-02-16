@@ -239,12 +239,12 @@ class GPModelTrainer:
             "all_oscillator_strengths shape:", all_oscillator_strengths.shape
         )  # Should also be (31,)
 
-        # Compute initial loss
-        initial_loss = objective(self.model, fluxes_tensor, lya_1pz, noise_variances_tensor, ...).detach()
-        print("Initial loss:", initial_loss)
-        print("After calling objective:")
-        print("all_transition_wavelengths shape:", all_transition_wavelengths.shape)
-        print("all_oscillator_strengths shape:", all_oscillator_strengths.shape)
+        # # Compute initial loss
+        # initial_loss = objective(self.model, fluxes_tensor, lya_1pz, noise_variances_tensor, ...).detach()
+        # print("Initial loss:", initial_loss)
+        # print("After calling objective:")
+        # print("all_transition_wavelengths shape:", all_transition_wavelengths.shape)
+        # print("all_oscillator_strengths shape:", all_oscillator_strengths.shape)
         # Train the model
         trainer.train(
             fluxes_tensor,
