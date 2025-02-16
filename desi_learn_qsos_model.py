@@ -203,8 +203,9 @@ class GPModelTrainer:
             initial_M[:, -temp_pca_interp.shape[0]:] = temp_pca_interp.T
 
         ####### Initialize the GP model #######
+        centered_fluxes = fluxes_tensor.cpu().numpy().copy()
         self.model = GaussianProcessModel(
-            fluxes_tensor.shape[1], self.num_pca_components, fluxes_tensor.cpu().numpy(), initial_M=initial_M,
+            fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes, initial_M=initial_M,
             min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
         ).to(self.device)
 
