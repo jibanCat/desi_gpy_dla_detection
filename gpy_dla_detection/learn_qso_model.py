@@ -527,10 +527,11 @@ class Trainer:
             dataset, batch_size=self.batch_size, shuffle=True,
             num_workers=8,  # Use multiple CPU workers
             pin_memory=True,  # Faster CPU-GPU transfer
+            persistent_workers=True,  # Keep workers alive to prevent reloading
         )
 
         # Initialize AMP GradScaler
-        scaler = torch.cuda.amp.GradScaler()
+        scaler = torch.amp.GradScaler("cuda")
 
         def closure():
             """Closure function for L-BFGS optimization."""
@@ -611,6 +612,7 @@ class Trainer:
                     self.save_model(save_path)
                     h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
                     self.save_h5_file(h5_save_path)
+
 
         elif self.optimizer_type == "lbfgs":
             # L-BFGS optimization (uses closure)
