@@ -611,10 +611,9 @@ class Trainer:
                         self.scheduler.step()
 
                 # ✅ Print progress every 10 epochs
-                if epoch % 10 == 0:
-                    elapsed_time = time.time() - start_time
-                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
-                    print(f"Epoch {epoch}: log_beta = {self.model.log_beta.item()}, log_tau_0 = {self.model.log_tau_0.item()}")
+                elapsed_time = time.time() - start_time
+                print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
+                print(f"Epoch {epoch}: log_beta = {self.model.log_beta.item()}, log_tau_0 = {self.model.log_tau_0.item()}")
 
                 # ✅ Plot loss and covariance every 10 epochs
                 if epoch % 10 == 0:

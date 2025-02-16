@@ -211,17 +211,23 @@ class GPModelTrainer:
 
         # Compute Lyα redshift grid for training
         all_transition_wavelengths = torch.tensor(
-            all_transition_wavelengths, dtype=torch.float32
-        ).to(self.device)
-        all_oscillator_strengths = torch.tensor(
-            all_oscillator_strengths, dtype=torch.float32
-        ).to(self.device)
-
-        lya_wavelength = all_transition_wavelengths[0] * 1e8  # Angstroms
-
-        lya_1pz = (
-            1 + (((1 + z_qsos_tensor.to(self.device)) * self.model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+            all_transition_wavelengths, dtype=torch.float32, device=self.device
         )
+        all_oscillator_strengths = torch.tensor(
+            all_oscillator_strengths, dtype=torch.float32, device=self.device
+        )
+
+        lya_wavelength = all_transition_wavelengths[0] * 1e8  # Ensure this is on self.device
+        z_qsos_tensor = z_qsos_tensor.to(self.device)  # ✅ Ensure it's on self.device
+        self.model.rest_wavelengths = self.model.rest_wavelengths.to(self.device)  # ✅ Ensure this is also on self.device
+
+        # Ensure the operation is performed on the same device
+        lya_1pz = (
+            1 + (((1 + z_qsos_tensor) * self.model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        )
+        print("z_qsos_tensor device:", z_qsos_tensor.device)
+        print("self.model.rest_wavelengths device:", self.model.rest_wavelengths.device)
+        print("lya_wavelength device:", lya_wavelength.device)
 
         trainer = Trainer(
             self.model,
