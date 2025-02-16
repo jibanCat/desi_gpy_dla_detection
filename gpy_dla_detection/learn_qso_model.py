@@ -597,11 +597,33 @@ class Trainer:
                     total_loss += loss.item()
                     self.loss_history.append(loss.item())
 
-                    # ✅ Log parameters efficiently using `torch.no_grad()`
-                    with torch.no_grad():
-                        self.log_c_0_values.append(self.model.log_c_0.item())
-                        self.log_tau_0_values.append(self.model.log_tau_0.item())
-                        self.log_beta_values.append(self.model.log_beta.item())
+                # ✅ Log parameters efficiently using `torch.no_grad()`
+                with torch.no_grad():
+                    if torch.cuda.device_count() > 1:
+                        model = self.model.module
+                    else:
+                        model = self.model
+
+                    self.log_c_0_values.append(model.log_c_0.item())
+                    self.log_tau_0_values.append(model.log_tau_0.item())
+                    self.log_beta_values.append(model.log_beta.item())
+
+                    # ✅ Print progress every 10 epochs
+                    elapsed_time = time.time() - start_time
+                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
+                    print(f"Epoch {epoch}: log_beta = {model.log_beta.item()}, log_tau_0 = {model.log_tau_0.item()}")
+
+                    # ✅ Plot loss and covariance every 10 epochs
+                    if epoch % 10 == 0:
+                        self.visualize_covariance(model, epoch)
+                        self.plot_loss(self.loss_history)
+
+                    # ✅ Save model every 10 epochs
+                    if epoch % 10 == 0:
+                        save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
+                        self.save_model(save_path)
+                        h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
+                        self.save_h5_file(h5_save_path)
 
                 # ✅ Scheduler Update (Only when needed)
                 if self.scheduler:
@@ -610,22 +632,6 @@ class Trainer:
                     else:
                         self.scheduler.step()
 
-                # ✅ Print progress every 10 epochs
-                elapsed_time = time.time() - start_time
-                print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
-                print(f"Epoch {epoch}: log_beta = {self.model.log_beta.item()}, log_tau_0 = {self.model.log_tau_0.item()}")
-
-                # ✅ Plot loss and covariance every 10 epochs
-                if epoch % 10 == 0:
-                    self.visualize_covariance(self.model, epoch)
-                    self.plot_loss(self.loss_history)
-
-                # ✅ Save model every 10 epochs
-                if epoch % 10 == 0:
-                    save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
-                    self.save_model(save_path)
-                    h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
-                    self.save_h5_file(h5_save_path)
 
         elif self.optimizer_type == "lbfgs":
             # L-BFGS optimization (uses closure)
