@@ -29,6 +29,26 @@ from tqdm import tqdm  # For progress bar
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
+class GPDataset(torch.utils.data.Dataset):
+    """Custom Dataset to load spectra efficiently on GPU."""
+
+    def __init__(self, fluxes, lya_1pzs, noise_variances, z_qsos, device):
+        self.fluxes = fluxes
+        self.lya_1pzs = lya_1pzs
+        self.noise_variances = noise_variances
+        self.z_qsos = z_qsos
+        self.device = device  # Store device for loading in __getitem__
+
+    def __len__(self):
+        return len(self.fluxes)
+
+    def __getitem__(self, idx):
+        # ✅ Move tensors to GPU *inside* the worker process
+        return (self.fluxes[idx].to(self.device, non_blocking=True),
+                self.lya_1pzs[idx].to(self.device, non_blocking=True),
+                self.noise_variances[idx].to(self.device, non_blocking=True),
+                self.z_qsos[idx].to(self.device, non_blocking=True))
+
 class QSOLoader:
     """Loads QSO spectra, applies redshift & SNR filtering, and returns clean data efficiently."""
 
@@ -510,31 +530,36 @@ class Trainer:
             self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', **scheduler_params)
 
     def train(self, fluxes, lya_1pzs, noise_variances, z_qsos, num_forest_lines,
-              all_transition_wavelengths, all_oscillator_strengths, max_epochs=500):
+            all_transition_wavelengths, all_oscillator_strengths, max_epochs=500):
         """
         Trains the GP model using either Adam or L-BFGS with mini-batches.
         """
 
-        # Move static tensors to device **once** before training starts
+        # ✅ Move static tensors to device **once** before training starts
+        device = self.device
         fluxes, lya_1pzs, noise_variances, z_qsos = (
             fluxes.to(device, non_blocking=True), 
             lya_1pzs.to(device, non_blocking=True), 
             noise_variances.to(device, non_blocking=True), 
             z_qsos.to(device, non_blocking=True)
         )
-
         all_transition_wavelengths = all_transition_wavelengths.to(device, non_blocking=True)
         all_oscillator_strengths = all_oscillator_strengths.to(device, non_blocking=True)
 
-        # ✅ Optimize DataLoader: Use multiple workers & prefetch
-        dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
+        # ✅ Optimized DataLoader
+        dataset = GPDataset(fluxes, lya_1pzs, noise_variances, z_qsos, device)
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
-            num_workers=8,  # Parallelize data loading
-            pin_memory=True,  # Faster CPU-to-GPU transfers
-            persistent_workers=True,  # Keep workers alive for efficiency
-            prefetch_factor=4  # Preload data for smooth training
+            num_workers=4, # Use multiple workers for faster data loading
+            pin_memory=True,  # Speed up CPU-GPU transfers
+            persistent_workers=True,  # Keep workers alive
+            prefetch_factor=2  # Reduce memory contention
         )
+
+        # ✅ Ensure CUDA is Ready
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
 
         def closure():
             """Closure function for L-BFGS optimization."""
@@ -549,12 +574,13 @@ class Trainer:
             return loss
 
         if self.optimizer_type == "adam":
+
+            # ✅ Training Loop
             for epoch in range(max_epochs):
-                start_time = time.time()  # ✅ Track epoch time
+                start_time = time.time()
                 total_loss = 0.0
 
                 for batch in dataloader:
-                    # ✅ Move batch to device **before training starts**
                     batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
                         batch[0].to(device, non_blocking=True),
                         batch[1].to(device, non_blocking=True),
@@ -571,32 +597,32 @@ class Trainer:
                     total_loss += loss.item()
                     self.loss_history.append(loss.item())
 
-                    # ✅ Use `torch.no_grad()` to prevent extra computation
+                    # ✅ Log parameters efficiently using `torch.no_grad()`
                     with torch.no_grad():
                         self.log_c_0_values.append(self.model.log_c_0.item())
                         self.log_tau_0_values.append(self.model.log_tau_0.item())
                         self.log_beta_values.append(self.model.log_beta.item())
 
-                # ✅ Scheduler update outside DataLoader loop for efficiency
+                # ✅ Scheduler Update (Only when needed)
                 if self.scheduler:
-                    if isinstance(self.scheduler, lr_scheduler.ReduceLROnPlateau):
-                        self.scheduler.step(total_loss / len(dataloader))  # ReduceLROnPlateau needs loss as input
+                    if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        self.scheduler.step(total_loss / len(dataloader))  # Needs loss as input
                     else:
                         self.scheduler.step()
 
                 # ✅ Print progress every 10 epochs
                 if epoch % 10 == 0:
                     elapsed_time = time.time() - start_time
-                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader)}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
+                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
                     print(f"Epoch {epoch}: log_beta = {self.model.log_beta.item()}, log_tau_0 = {self.model.log_tau_0.item()}")
 
-                # ✅ Plot loss and covariance every 100 epochs
-                if epoch % 100 == 0:
+                # ✅ Plot loss and covariance every 10 epochs
+                if epoch % 10 == 0:
                     self.visualize_covariance(self.model, epoch)
                     self.plot_loss(self.loss_history)
 
-                # ✅ Save model every 1000 epochs
-                if epoch % 1000 == 0:
+                # ✅ Save model every 10 epochs
+                if epoch % 10 == 0:
                     save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
                     self.save_model(save_path)
                     h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
