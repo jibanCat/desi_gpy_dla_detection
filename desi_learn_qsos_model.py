@@ -209,6 +209,8 @@ class GPModelTrainer:
             min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
         ).to(self.device)
 
+        self.model.rest_wavelengths = self.model.rest_wavelengths.to(self.device)
+
         # Compute Lyα redshift grid for training
         all_transition_wavelengths = torch.tensor(
             all_transition_wavelengths, dtype=torch.float32, device=self.device
@@ -219,12 +221,20 @@ class GPModelTrainer:
 
         lya_wavelength = all_transition_wavelengths[0] * 1e8  # Ensure this is on self.device
         z_qsos_tensor = z_qsos_tensor.to(self.device)  # ✅ Ensure it's on self.device
-        self.model.rest_wavelengths = self.model.rest_wavelengths.to(self.device)  # ✅ Ensure this is also on self.device
+
+        if torch.cuda.device_count() > 1:
+            print(f"Using {torch.cuda.device_count()} GPUs!")
+            model = torch.nn.DataParallel(model)
+            # Move model to GPU
+            model = model.to(self.device)
+
+            lya_1pz = 1 + (((1 + z_qsos_tensor) * model.module.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        else:
+            lya_1pz = 1 + (((1 + z_qsos_tensor) * model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+
 
         # Ensure the operation is performed on the same device
-        lya_1pz = (
-            1 + (((1 + z_qsos_tensor) * self.model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
-        )
+        print("lya_1pz device:", lya_1pz.device)
         print("z_qsos_tensor device:", z_qsos_tensor.device)
         print("self.model.rest_wavelengths device:", self.model.rest_wavelengths.device)
         print("lya_wavelength device:", lya_wavelength.device)
