@@ -204,12 +204,12 @@ class GPModelTrainer:
             initial_M[:, -temp_pca_interp.shape[0]:] = temp_pca_interp.T
 
         ####### Initialize the GP model #######
-        self.model = GaussianProcessModel(
+        model = GaussianProcessModel(
             fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes, initial_M=initial_M,
             min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
         ).to(self.device)
 
-        self.model.rest_wavelengths = self.model.rest_wavelengths.to(self.device)
+        model.rest_wavelengths = model.rest_wavelengths.to(self.device)
 
         # Compute Lyα redshift grid for training
         all_transition_wavelengths = torch.tensor(
@@ -236,11 +236,13 @@ class GPModelTrainer:
         # Ensure the operation is performed on the same device
         print("lya_1pz device:", lya_1pz.device)
         print("z_qsos_tensor device:", z_qsos_tensor.device)
-        print("self.model.rest_wavelengths device:", self.model.rest_wavelengths.device)
+        print("model.rest_wavelengths device:", model.rest_wavelengths.device)
         print("lya_wavelength device:", lya_wavelength.device)
 
+        self.model = model
+
         trainer = Trainer(
-            self.model,
+            model,
             optimizer_type="adam",
             learning_rate=self.learning_rate,
             batch_size=self.batch_size,
