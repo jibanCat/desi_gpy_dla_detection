@@ -50,16 +50,16 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     """
     Computes the negative log-likelihood of a single spectrum.
     """
-    # Ensure num_forest_lines does not exceed available transitions
-    num_forest_lines = min(num_forest_lines, len(all_transition_wavelengths))
+    # ✅ Ensure `num_forest_lines` is valid
+    num_forest_lines = max(2, min(num_forest_lines, len(all_transition_wavelengths)))
 
     # Compute the initial optical depth for Lyα
     lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)
 
-    # Compute Lyman series transitions in vectorized form
+    # ✅ Vectorized Lyman Series Computation
     lyman_1pz = (all_transition_wavelengths[0] * lya_1pz[:, None]) / all_transition_wavelengths[1:num_forest_lines]
 
-    # Ensure no NaN due to division by zero
+    # Prevent division errors
     lyman_1pz = torch.where(all_transition_wavelengths[1:num_forest_lines] == 0, 
                             torch.tensor(1.0, dtype=lya_1pz.dtype, device=lya_1pz.device), 
                             lyman_1pz)
@@ -67,9 +67,12 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     # Compute the indicator function for valid absorbers
     indicator = (lyman_1pz <= zqso_1pz[:, None]).float()
 
-    # Compute the optical depth scaling factors for different Lyman transitions
-    tau = (tau_0 * all_transition_wavelengths[1:num_forest_lines].clone() * all_oscillator_strengths[1:num_forest_lines].clone()) / \
-        (all_transition_wavelengths[0] * all_oscillator_strengths[0])
+    # ✅ Ensure `tau` is properly defined
+    if num_forest_lines > 1:
+        tau = (tau_0 * all_transition_wavelengths[1:num_forest_lines] * all_oscillator_strengths[1:num_forest_lines]) / \
+              (all_transition_wavelengths[0] * all_oscillator_strengths[0])
+    else:
+        tau = torch.tensor([0.0], dtype=lya_1pz.dtype, device=lya_1pz.device)
 
     # Compute the final optical depth in a single vectorized operation
     lya_optical_depth += torch.sum(tau * torch.pow(lyman_1pz, beta) * indicator, dim=1)    
@@ -79,7 +82,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     scaling_factor = 1 - lya_absorption + c_0
     absorption_noise = omega2 * torch.square(scaling_factor)
 
-    # ✅ Prevent division errors
+    # Prevent division errors
     d = noise_variance + absorption_noise + 1e-6
     d_inv = 1 / d
 
@@ -106,15 +109,11 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     K_inv_y = D_inv_y - D_inv_M @ (C @ y)
     log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diag(L)))
 
-    # ✅ Negative log-likelihood
-    nlog_p = 0.5 * (y @ K_inv_y + log_det_K + len(y) * torch.log(torch.tensor(2 * np.pi, dtype=torch.float32)))
+    # ✅ Ensure `nlog_p` has correct shape
+    nlog_p = 0.5 * ((y @ K_inv_y).view(-1) + log_det_K + len(y) * torch.log(torch.tensor(2 * np.pi, dtype=torch.float32)))
 
-    # ✅ Gaussian prior for optical depth
-    tau_0_mu = 0.00246
-    tau_0_sigma = 0.14
-    beta_mu = 3.62
-    beta_sigma = 0.04
-    
-    nlog_p += 0.5 * ((tau_0 - tau_0_mu) ** 2 / tau_0_sigma ** 2 + (beta - beta_mu) ** 2 / beta_sigma ** 2)
+    # ✅ Ensure Gaussian prior is batch-compatible
+    prior_loss = 0.5 * ((tau_0 - 0.00246) ** 2 / 0.14 ** 2 + (beta - 3.62) ** 2 / 0.04 ** 2)
+    nlog_p = nlog_p + prior_loss.view(-1)
 
-    return nlog_p
+    return nlog_p  # ✅ Ensures correct shape for DataParallel
