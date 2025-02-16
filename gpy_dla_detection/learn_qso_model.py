@@ -384,9 +384,9 @@ class GaussianProcessModel(nn.Module):
         self.M = nn.Parameter(torch.tensor(initial_M, dtype=torch.float32).clone().detach())
         initial_log_omega = np.log(np.nanstd(centered_rest_fluxes, axis=0))  # Standard deviation per wavelength pixel
         self.log_omega = nn.Parameter(torch.tensor(initial_log_omega, dtype=torch.float32).clone().detach())
-        self.log_c_0 = nn.Parameter(torch.tensor(np.log(0.1)))
-        self.log_tau_0 = nn.Parameter(torch.tensor(np.log(0.00246)))
-        self.log_beta = nn.Parameter(torch.tensor(np.log(3.62)))
+        self.log_c_0 = nn.Parameter(torch.tensor(np.log(0.1), dtype=torch.float32))
+        self.log_tau_0 = nn.Parameter(torch.tensor(np.log(0.00246), dtype=torch.float32))
+        self.log_beta = nn.Parameter(torch.tensor(np.log(3.62), dtype=torch.float32))
 
         self.initial_M = initial_M
         self.initial_log_omega = initial_log_omega
