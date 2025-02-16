@@ -479,7 +479,7 @@ class Trainer:
     """
 
     def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01, batch_size=32,
-                 scheduler_type="cosine", scheduler_params=None, output_dir="learnlogs"):
+                 scheduler_type="cosine", scheduler_params=None, output_dir="learnlogs", device=None):
         """
         Initialize the trainer.
 
@@ -491,11 +491,17 @@ class Trainer:
         - scheduler_type: Type of learning rate scheduler ("cosine", "step", "reduce_on_plateau", None)
         - scheduler_params: Dictionary of parameters for the chosen scheduler
         """
+        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")  # ✅ Fix: Set self.device
+
         self.model = gp_model
+        # ✅ Move model to the correct device
+        self.model.to(self.device)
+
         self.optimizer_type = optimizer_type.lower()
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.loss_history = []
+
 
         # Create output directory if it doesn't exist
         self.output_dir = output_dir
