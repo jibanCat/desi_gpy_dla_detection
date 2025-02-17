@@ -210,6 +210,8 @@ class GPModelTrainer:
         ) #.to(self.device)
 
         # model.rest_wavelengths = model.rest_wavelengths.to(self.device)
+        # Ensure `model.rest_wavelengths` remains on CPU
+        model.rest_wavelengths = model.rest_wavelengths.cpu()  # ✅ Explicitly ensure it's on CPU
 
         # Compute Lyα redshift grid for training
         all_transition_wavelengths = torch.tensor(
@@ -221,6 +223,9 @@ class GPModelTrainer:
 
         lya_wavelength = all_transition_wavelengths[0] * 1e8  # Ensure this is on self.device
         # z_qsos_tensor = z_qsos_tensor.to(self.device)  # ✅ Ensure it's on self.device
+
+        # Ensure `z_qsos_tensor` is on CPU
+        z_qsos_tensor = z_qsos_tensor.cpu()
 
         # if torch.cuda.device_count() > 1:
         #     print(f"Using {torch.cuda.device_count()} GPUs!")
