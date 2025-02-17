@@ -563,7 +563,7 @@ class Trainer:
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
             # num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
-            num_workers=0, pin_memory=False  # ✅ Avoids race conditions
+            num_workers=4, pin_memory=True  # ✅ Avoids race conditions
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
         )

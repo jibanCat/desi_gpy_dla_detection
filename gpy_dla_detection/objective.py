@@ -26,17 +26,17 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     """
     # ✅ Ensure `model.module` is used inside DataParallel
     if isinstance(model, torch.nn.DataParallel):
-        model = model.module  # ✅ Extract model for parameter access
+        model = model.module  # Extract actual model
 
-    # ✅ Extract learnable parameters correctly
-    M = model.M.to(fluxes.device)  # Move to correct device
-    omega2 = torch.exp(2 * model.log_omega).to(fluxes.device)
-    c_0 = torch.exp(model.log_c_0).to(fluxes.device)
-    tau_0 = torch.exp(model.log_tau_0).to(fluxes.device)
-    beta = torch.exp(model.log_beta).to(fluxes.device)
+    # ✅ Ensure model parameters move to the correct device dynamically
+    device = fluxes.device  # Each batch is scattered to a different GPU
+    M = model.M.to(device)  # Move to the same device as the batch
+    omega2 = torch.exp(2 * model.log_omega).to(device)
+    c_0 = torch.exp(model.log_c_0).to(device)
+    tau_0 = torch.exp(model.log_tau_0).to(device)
+    beta = torch.exp(model.log_beta).to(device)
 
-    # ✅ Ensure all tensors are on the correct GPU
-    device = fluxes.device
+    # ✅ Ensure all input tensors are also on the same GPU
     all_transition_wavelengths = all_transition_wavelengths.to(device)
     all_oscillator_strengths = all_oscillator_strengths.to(device)
 
