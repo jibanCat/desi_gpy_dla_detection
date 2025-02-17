@@ -560,7 +560,7 @@ class Trainer:
         device = torch.device(f"cuda:{rank}")
         torch.cuda.set_device(device)
 
-        # ✅ Ensure DistributedSampler is set
+        # ✅ Ensure DistributedSampler is used
         if not isinstance(dataloader.sampler, torch.utils.data.distributed.DistributedSampler):
             raise RuntimeError("DataLoader must use DistributedSampler for proper data distribution in DDP.")
 
@@ -568,7 +568,7 @@ class Trainer:
             start_time = time.time()
             total_loss = torch.tensor(0.0, device=device)
 
-            # ✅ Set sampler epoch for correct shuffling
+            # ✅ Ensure each process has different data
             dataloader.sampler.set_epoch(epoch)
 
             for batch_idx, batch in enumerate(dataloader):
@@ -587,13 +587,13 @@ class Trainer:
 
                 # ✅ Forward pass
                 loss = self.model(batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                                self.num_forest_lines, self.all_transition_wavelengths,
-                                self.all_oscillator_strengths, batch_z_qsos)
+                                  self.num_forest_lines, self.all_transition_wavelengths,
+                                  self.all_oscillator_strengths, batch_z_qsos)
 
                 loss.backward()
                 self.optimizer.step()
 
-                # ✅ Aggregate loss across all GPUs
+                # ✅ Aggregate loss across GPUs
                 dist.all_reduce(loss, op=dist.ReduceOp.SUM)
                 total_loss += loss / world_size  # ✅ Average loss over GPUs
 
@@ -605,22 +605,22 @@ class Trainer:
 
             elapsed_time = time.time() - start_time
 
-            # ✅ Print only on rank 0 to avoid duplicate logs
+            # ✅ Print only on rank 0
             if rank == 0:
                 print(f"Epoch {epoch}: Avg Loss = {total_loss.item() / len(dataloader):.6f}, Time = {elapsed_time:.2f}s")
 
-            # ✅ Ensure all GPUs synchronize before next epoch
+            # ✅ Sync all processes before next epoch
             dist.barrier()
 
             # ✅ Save model & logs (Only on Rank 0)
             if rank == 0:
                 with torch.no_grad():
-                    model = self.model.module  # Extract the model
+                    model = self.model.module  # Extract model
                     self.log_c_0_values.append(model.log_c_0.item())
                     self.log_tau_0_values.append(model.log_tau_0.item())
                     self.log_beta_values.append(model.log_beta.item())
 
-                    # ✅ Save model every 10 epochs
+                    # ✅ Save model every 3 epochs
                     if epoch % 3 == 0:
                         save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
                         self.save_model(model, save_path)
@@ -629,10 +629,7 @@ class Trainer:
 
             # ✅ Scheduler update (Only Rank 0)
             if rank == 0 and self.scheduler:
-                if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    self.scheduler.step(total_loss.item() / len(dataloader))  # Needs loss as input
-                else:
-                    self.scheduler.step()
+                self.scheduler.step()
 
         # def closure():
         #     """Closure function for L-BFGS optimization."""

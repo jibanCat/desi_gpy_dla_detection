@@ -24,6 +24,74 @@ from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wav
 from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
 from gpy_dla_detection.learn_qso_model import compute_pca
 
+def main_worker(rank, world_size, self):
+    """
+    Worker function for Distributed Data Parallel (DDP) training.
+
+    - `rank`: Process ID (GPU ID)
+    - `world_size`: Total number of GPUs
+    """
+
+    # ✅ Set up Distributed Environment
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = "29500"
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+
+    # ✅ Assign correct GPU
+    torch.cuda.set_device(rank)
+    device = torch.device(f"cuda:{rank}")
+
+    torch.backends.cudnn.benchmark = True  # Optimize GPU performance
+    torch.cuda.empty_cache()  # Clear any memory fragmentation
+
+    # ✅ Load Data
+    from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
+    from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
+
+    fluxes_tensor, noise_variances_tensor, z_qsos_tensor, all_rest_wavelengths, centered_fluxes = self.prepare_data()
+
+    # ✅ Initialize Model
+    model = GaussianProcessModel(
+        fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes,
+        min_lambda=self.min_lambda, max_lambda=self.max_lambda,
+        mu=self.mu, max_noise_variance=self.max_noise_variance
+    )
+    model.to(device)
+
+    # ✅ Wrap Model in DistributedDataParallel (DDP)
+    model = DDP(model, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+
+    # ✅ Convert constants to tensors
+    all_transition_wavelengths = torch.tensor(all_transition_wavelengths, dtype=torch.float32, device=device)
+    all_oscillator_strengths = torch.tensor(all_oscillator_strengths, dtype=torch.float32, device=device)
+
+    # ✅ Compute Lyman-alpha redshift grid
+    lya_wavelength = all_transition_wavelengths[0] * 1e8
+    lya_1pz = 1 + (((1 + z_qsos_tensor) * all_rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+
+    # ✅ Use DistributedSampler to split data
+    dataset = TensorDataset(fluxes_tensor, lya_1pz, noise_variances_tensor, z_qsos_tensor)
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=self.batch_size, sampler=sampler, num_workers=4, pin_memory=True)
+
+    # ✅ Initialize Optimizer (FIXED: Ensure optimizer is properly set up)
+    optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+
+    # ✅ Initialize Trainer
+    trainer = Trainer(model, "adam", self.batch_size,
+                    scheduler_type="cosine",
+                    scheduler_params={"T_max": 50, "eta_min": 1e-5},
+                    output_dir=self.output_dir,
+                    num_forest_lines=10,
+                    all_transition_wavelengths=all_transition_wavelengths,
+                    all_oscillator_strengths=all_oscillator_strengths)
+
+    # ✅ Start Training
+    trainer.train(dataloader, rank, world_size, self.num_epochs)
+
+    # ✅ Clean up
+    dist.destroy_process_group()
+
 
 class GPModelTrainer:
     """
@@ -175,81 +243,12 @@ class GPModelTrainer:
             centered_fluxes,
         )
 
-
-    def main_worker(self, rank, world_size):
-        """
-        Worker function for Distributed Data Parallel (DDP) training.
-
-        - `rank`: The ID of the current process (GPU ID)
-        - `world_size`: Total number of GPUs
-        """
-
-        # ✅ Set up the distributed environment
-        os.environ["MASTER_ADDR"] = "127.0.0.1"
-        os.environ["MASTER_PORT"] = "29500"
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
-
-        # ✅ Assign correct GPU
-        torch.cuda.set_device(rank)
-        device = torch.device(f"cuda:{rank}")
-
-        torch.backends.cudnn.benchmark = True  # Enable optimized GPU usage
-        torch.cuda.empty_cache()  # Clear fragmented memory
-
-
-        # ✅ Load Data
-        from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
-        from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
-
-        fluxes_tensor, noise_variances_tensor, z_qsos_tensor, all_rest_wavelengths, centered_fluxes = self.prepare_data()
-
-        # ✅ Initialize model
-        model = GaussianProcessModel(
-            fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes,
-            min_lambda=self.min_lambda, max_lambda=self.max_lambda,
-            mu=self.mu, max_noise_variance=self.max_noise_variance
-        )
-        model.to(device)
-
-        # ✅ Wrap model in DistributedDataParallel (DDP)
-        model = DDP(model, device_ids=[rank], output_device=rank)
-
-        # ✅ Convert transition wavelengths to tensors
-        all_transition_wavelengths = torch.tensor(all_transition_wavelengths, dtype=torch.float32, device=device)
-        all_oscillator_strengths = torch.tensor(all_oscillator_strengths, dtype=torch.float32, device=device)
-
-        # ✅ Compute Lyman-alpha redshift grid
-        lya_wavelength = all_transition_wavelengths[0] * 1e8
-        lya_1pz = 1 + (((1 + z_qsos_tensor) * all_rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
-
-        # ✅ Use DistributedSampler to split data
-        dataset = TensorDataset(fluxes_tensor, lya_1pz, noise_variances_tensor, z_qsos_tensor)
-        sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
-        dataloader = DataLoader(dataset, batch_size=self.batch_size // world_size, sampler=sampler, num_workers=4, pin_memory=True)
-
-        # ✅ Initialize Trainer
-        trainer = Trainer(model, "adam", self.learning_rate,
-                          self.batch_size,
-                          scheduler_type="cosine",
-                          scheduler_params={"T_max": 50, "eta_min": 1e-5},
-                          output_dir=self.output_dir,
-                          num_forest_lines=10,  # Replace with correct value
-                          all_transition_wavelengths=all_transition_wavelengths,
-                          all_oscillator_strengths=all_oscillator_strengths)
-
-
-        # ✅ Start training
-        trainer.train(dataloader, rank, world_size, self.num_epochs)
-
-        # ✅ Clean up
-        dist.destroy_process_group()
-
     def train_model(self):
         """
         Entry point for launching multi-GPU training.
         """
-        world_size = self.world_size  # Number of available GPUs
-        mp.spawn(self.main_worker, args=(world_size,), nprocs=world_size, join=True)
+        world_size = torch.cuda.device_count()  # Auto-detect available GPUs
+        mp.spawn(main_worker, args=(world_size, self), nprocs=world_size, join=True)
 
     # def train_model(self, if_use_template=False, initial_M=None):
     #     """Trains the Gaussian Process model using the prepared spectra."""
