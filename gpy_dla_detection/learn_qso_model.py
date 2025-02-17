@@ -554,6 +554,7 @@ class Trainer:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
         if torch.cuda.device_count() > 1:
+            print(f"Using {torch.cuda.device_count()} GPUs for training.")
             self.model = torch.nn.DataParallel(self.model)
         self.model = self.model.to(device)
 
