@@ -207,38 +207,39 @@ class GPModelTrainer:
         model = GaussianProcessModel(
             fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes, initial_M=initial_M,
             min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
-        ).to(self.device)
+        ) #.to(self.device)
 
-        model.rest_wavelengths = model.rest_wavelengths.to(self.device)
+        # model.rest_wavelengths = model.rest_wavelengths.to(self.device)
 
         # Compute Lyα redshift grid for training
         all_transition_wavelengths = torch.tensor(
-            all_transition_wavelengths, dtype=torch.float32, device=self.device
+            all_transition_wavelengths, dtype=torch.float32, #device=self.device
         )
         all_oscillator_strengths = torch.tensor(
-            all_oscillator_strengths, dtype=torch.float32, device=self.device
+            all_oscillator_strengths, dtype=torch.float32, #device=self.device
         )
 
         lya_wavelength = all_transition_wavelengths[0] * 1e8  # Ensure this is on self.device
-        z_qsos_tensor = z_qsos_tensor.to(self.device)  # ✅ Ensure it's on self.device
+        # z_qsos_tensor = z_qsos_tensor.to(self.device)  # ✅ Ensure it's on self.device
 
-        if torch.cuda.device_count() > 1:
-            print(f"Using {torch.cuda.device_count()} GPUs!")
-            model = torch.nn.DataParallel(model)
-            # Move model to GPU
-            model = model.to(self.device)
+        # if torch.cuda.device_count() > 1:
+        #     print(f"Using {torch.cuda.device_count()} GPUs!")
+        #     model = torch.nn.DataParallel(model)
+        #     # Move model to GPU
+        #     model = model.to(self.device)
 
-            lya_1pz = 1 + (((1 + z_qsos_tensor) * model.module.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
-            print("model.rest_wavelengths device:", model.module.rest_wavelengths.device)
-        else:
-            lya_1pz = 1 + (((1 + z_qsos_tensor) * model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
-            print("model.rest_wavelengths device:", model.rest_wavelengths.device)
+        #     lya_1pz = 1 + (((1 + z_qsos_tensor) * model.module.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        #     print("model.rest_wavelengths device:", model.module.rest_wavelengths.device)
+        # else:
+        #     lya_1pz = 1 + (((1 + z_qsos_tensor) * model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        #     print("model.rest_wavelengths device:", model.rest_wavelengths.device)
 
+        lya_1pz = 1 + (((1 + z_qsos_tensor) * model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
 
-        # Ensure the operation is performed on the same device
-        print("lya_1pz device:", lya_1pz.device)
-        print("z_qsos_tensor device:", z_qsos_tensor.device)
-        print("lya_wavelength device:", lya_wavelength.device)
+        # # Ensure the operation is performed on the same device
+        # print("lya_1pz device:", lya_1pz.device)
+        # print("z_qsos_tensor device:", z_qsos_tensor.device)
+        # print("lya_wavelength device:", lya_wavelength.device)
 
         self.model = model
 

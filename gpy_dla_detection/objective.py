@@ -29,6 +29,8 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     all_transition_wavelengths = all_transition_wavelengths.to(device)
     all_oscillator_strengths = all_oscillator_strengths.to(device)
 
+    print("Device M:", device)
+
     # ✅ Vectorized filtering: Get valid indices (NaN removal)
     valid_masks = ~torch.isnan(fluxes)
 
