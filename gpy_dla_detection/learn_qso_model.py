@@ -622,9 +622,9 @@ class Trainer:
                     # ✅ Save model every 10 epochs
                     if epoch % 10 == 0:
                         save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
-                        self.save_model(save_path)
+                        self.save_model(model, save_path)
                         h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
-                        self.save_h5_file(h5_save_path)
+                        self.save_h5_file(model, h5_save_path)
 
                 # ✅ Scheduler Update (Only when needed)
                 if self.scheduler:
@@ -674,11 +674,11 @@ class Trainer:
         plt.savefig(save_path)
         plt.close()
 
-    def save_model(self, save_path):
+    def save_model(self, model, save_path):
         """Saves the model parameters to a file."""
-        torch.save(self.model.state_dict(), save_path)
+        torch.save(model.state_dict(), save_path)
 
-    def save_h5_file(self, save_path):
+    def save_h5_file(self, model, save_path):
         """
         Saves the model parameters to a file.
         <KeysViewHDF5 ['#refs#', 'M', 'initial_M', 'initial_beta', 'initial_log_c_0', 
@@ -688,23 +688,23 @@ class Trainer:
         """
 
         with h5py.File(save_path, "w") as f:
-            f.create_dataset("M", data=self.model.M.detach().cpu().numpy())
-            f.create_dataset("log_omega", data=self.model.log_omega.detach().cpu().numpy())
-            f.create_dataset("log_c_0", data=self.model.log_c_0.detach().cpu().numpy())
-            f.create_dataset("log_tau_0", data=self.model.log_tau_0.detach().cpu().numpy())
-            f.create_dataset("log_beta", data=self.model.log_beta.detach().cpu().numpy())
+            f.create_dataset("M", data=model.M.detach().cpu().numpy())
+            f.create_dataset("log_omega", data=model.log_omega.detach().cpu().numpy())
+            f.create_dataset("log_c_0", data=model.log_c_0.detach().cpu().numpy())
+            f.create_dataset("log_tau_0", data=model.log_tau_0.detach().cpu().numpy())
+            f.create_dataset("log_beta", data=model.log_beta.detach().cpu().numpy())
             f.create_dataset("loss_history", data=np.array(self.loss_history))
             f.create_dataset("log_c_0_history", data=self.log_c_0_values)
             f.create_dataset("log_tau_0_history", data=self.log_tau_0_values)
             f.create_dataset("log_beta_history", data=self.log_beta_values)
-            f.create_dataset("initial_M", data=self.model.initial_M)
-            f.create_dataset("initial_log_omega", data=self.model.initial_log_omega)
-            f.create_dataset("initial_log_c_0", data=self.model.initial_log_c_0)
-            f.create_dataset("initial_log_tau_0", data=self.model.initial_log_tau_0)
-            f.create_dataset("initial_beta", data=self.model.initial_beta)
-            f.create_dataset("rest_wavelengths", data=self.model.rest_wavelengths.cpu().numpy())
-            f.create_dataset("max_noise_variance", data=self.model.max_noise_variance)
-            f.create_dataset("mu", data=self.model.mu)
+            f.create_dataset("initial_M", data=model.initial_M)
+            f.create_dataset("initial_log_omega", data=model.initial_log_omega)
+            f.create_dataset("initial_log_c_0", data=model.initial_log_c_0)
+            f.create_dataset("initial_log_tau_0", data=model.initial_log_tau_0)
+            f.create_dataset("initial_beta", data=model.initial_beta)
+            f.create_dataset("rest_wavelengths", data=model.rest_wavelengths.cpu().numpy())
+            f.create_dataset("max_noise_variance", data=model.max_noise_variance)
+            f.create_dataset("mu", data=model.mu)
 
 if __name__ == "__main__":
 
