@@ -540,29 +540,27 @@ class Trainer:
         """
         Trains the GP model using either Adam or L-BFGS with mini-batches.
         """
-        torch.set_num_threads(8)  # Reduce CPU overhead
-        torch.backends.cudnn.benchmark = True
+        torch.set_num_threads(4)  # Reduce CPU overhead
+        torch.backends.cudnn.benchmark = True  # Optimize GPU performance
 
-        # ✅ Move static tensors to device **before training starts**
-        device = self.device
-        fluxes, lya_1pzs, noise_variances, z_qsos = (
-            fluxes.to(device), 
-            lya_1pzs.to(device), 
-            noise_variances.to(device), 
-            z_qsos.to(device)
-        )
-        all_transition_wavelengths = all_transition_wavelengths.to(device)
-        all_oscillator_strengths = all_oscillator_strengths.to(device)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
+        if torch.cuda.device_count() > 1:
+            self.model = torch.nn.DataParallel(self.model)
+        self.model = self.model.to(device)
 
         # ✅ Simple DataLoader (1 Worker, No Fancy Stuff)
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True,
+            dataset, batch_size=self.batch_size, shuffle=True, pin_memory=True,
+            num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
             # num_workers=4, pin_memory=True,
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
         )
 
+        # all_transition_wavelengths = all_transition_wavelengths.to(device)
+        # all_oscillator_strengths = all_oscillator_strengths.to(device)
 
         # ✅ Ensure CUDA is Ready
         if torch.cuda.is_available():
@@ -572,7 +570,13 @@ class Trainer:
         def closure():
             """Closure function for L-BFGS optimization."""
             self.optimizer.zero_grad()
-            loss = objective(self.model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+            # ✅ Handle DataParallel models
+            if isinstance(self.model, torch.nn.DataParallel):
+                model = self.model.module
+            else:
+                model = self.model
+
+            loss = objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
                             all_transition_wavelengths, all_oscillator_strengths, z_qsos)
             loss.backward()
             self.loss_history.append(loss.item())  
@@ -589,10 +593,17 @@ class Trainer:
                 total_loss = 0.0
 
                 for batch in dataloader:
-                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = batch
+                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
+                        batch[0].to(device, non_blocking=True),
+                        batch[1].to(device, non_blocking=True),
+                        batch[2].to(device, non_blocking=True),
+                        batch[3].to(device, non_blocking=True),
+                    )
+                    # ✅ Extract model for DataParallel
+                    model = self.model.module if torch.cuda.device_count() > 1 else self.model
 
                     self.optimizer.zero_grad()
-                    loss = objective(self.model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                    loss = objective(model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
                                     num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
 
                     loss.backward()
@@ -602,10 +613,7 @@ class Trainer:
 
                 # ✅ Log parameters efficiently using `torch.no_grad()`
                 with torch.no_grad():
-                    if torch.cuda.device_count() > 1:
-                        model = self.model.module
-                    else:
-                        model = self.model
+                    model = self.model.module if torch.cuda.device_count() > 1 else self.model
 
                     self.log_c_0_values.append(model.log_c_0.item())
                     self.log_tau_0_values.append(model.log_tau_0.item())
