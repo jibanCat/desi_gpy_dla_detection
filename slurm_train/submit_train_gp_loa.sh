@@ -36,5 +36,5 @@ python -u desi_learn_qsos_model.py \
     --output_dir "learnlogs/" \
     --num_epochs 5000 \
     --learning_rate 0.1 \
-    --batch_size 8192  # Updated batch size
+    --batch_size 32768  # Updated batch size
 
