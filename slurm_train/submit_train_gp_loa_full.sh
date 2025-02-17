@@ -2,14 +2,14 @@
 
 #SBATCH -N 1                        # Number of nodes (1 node requested)
 #SBATCH -C gpu                      # GPU type
-#SBATCH -q debug                    # Queue (regular for longer runs)
+#SBATCH -q regular                  # Queue (regular for longer runs)
 #SBATCH --job-name=train_gp         # Job name for identification in the queue
 #SBATCH --output=train_gp_%j.log    # Standard output log (%j is replaced by the job ID)
 #SBATCH --error=error_train_gp_%j.log   # Standard error log (%j is replaced by the job ID)
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=0:30:00              # Time limit for the job
+#SBATCH --time=48:00:00              # Time limit for the job
 
 # Debugging flags
 export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
@@ -33,7 +33,7 @@ python -u desi_learn_qsos_model.py \
     --norm_min_lambda 900 \
     --norm_max_lambda 1200 \
     --max_noise_variance 9.0 \
-    --output_dir "learnlogs/" \
+    --output_dir "learnlogs/20250216/" \
     --num_epochs 100 \
     --learning_rate 0.1 \
     --batch_size 8192  # Updated batch size
