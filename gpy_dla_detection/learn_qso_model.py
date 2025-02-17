@@ -394,9 +394,17 @@ class GaussianProcessModel(nn.Module):
         self.initial_log_tau_0 = np.log(0.00246)
         self.initial_beta = np.log(3.62)
 
-    def forward(self):
-        """Returns model parameters in exponential space."""
-        return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
+    def forward(self, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+                all_transition_wavelengths, all_oscillator_strengths, z_qsos):
+        """
+        Forward pass now calls `objective()`, allowing DataParallel to split batches across GPUs.
+        """
+        return objective(self, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+                         all_transition_wavelengths, all_oscillator_strengths, z_qsos)
+
+    # def forward(self):
+    #     """Returns model parameters in exponential space."""
+    #     return self.M, torch.exp(2 * self.log_omega), torch.exp(self.log_c_0), torch.exp(self.log_tau_0), torch.exp(self.log_beta)
     
     def predict_flux(self, observed_wavelengths, observed_fluxes, noise_variances, 
                     new_wavelengths, all_transition_wavelengths, all_oscillator_strengths, z_qso):
@@ -603,8 +611,13 @@ class Trainer:
                     model = self.model.module if torch.cuda.device_count() > 1 else self.model
 
                     self.optimizer.zero_grad()
-                    loss = objective(model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                                    num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+
+                    # Forward pass ensure DataParallel compatibility
+                    loss = model(batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                                num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+
+                    # loss = objective(model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                    #                 num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
 
                     loss.backward()
                     self.optimizer.step()

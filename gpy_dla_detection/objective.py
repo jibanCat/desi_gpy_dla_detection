@@ -16,12 +16,17 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     """
     Computes the negative log-likelihood for the entire training dataset.
 
-    Equivalent to MATLAB's `objective.m`, with automatic gradient tracking via PyTorch autograd.
+    Automatically supports multi-GPU through `DataParallel`, assuming model is already wrapped.
     """
-    # Extract learnable parameters from the model
-    M, omega2, c_0, tau_0, beta = model()
 
-    # ✅ Ensure data is on the correct GPU
+    # ✅ Extract learnable parameters correctly from model
+    M = model.M  # Eigenbasis
+    omega2 = torch.exp(2 * model.log_omega)  # Noise variance
+    c_0 = torch.exp(model.log_c_0)  # Damping constant
+    tau_0 = torch.exp(model.log_tau_0)  # Optical depth coefficient
+    beta = torch.exp(model.log_beta)  # Power-law index
+
+    # ✅ Ensure all tensors are on the same device
     device = M.device
     fluxes, lya_1pzs, noise_variances, z_qsos = (
         fluxes.to(device), lya_1pzs.to(device), noise_variances.to(device), z_qsos.to(device)
@@ -29,12 +34,12 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     all_transition_wavelengths = all_transition_wavelengths.to(device)
     all_oscillator_strengths = all_oscillator_strengths.to(device)
 
-    print("Device M:", device)
+    print(f"Device: {device}, M: {M.device}, omega2: {omega2.device}, c_0: {c_0.device}, tau_0: {tau_0.device}, beta: {beta.device}")
 
     # ✅ Vectorized filtering: Get valid indices (NaN removal)
     valid_masks = ~torch.isnan(fluxes)
 
-    # ✅ Compute loss in parallel for all quasars (instead of a for-loop)
+    # ✅ Compute loss for all quasars in parallel
     losses = torch.stack([
         spectrum_loss(fluxes[i, valid_masks[i]], lya_1pzs[i, valid_masks[i]], noise_variances[i, valid_masks[i]], 
                       M[valid_masks[i], :], omega2[valid_masks[i]], c_0, tau_0, beta, 
