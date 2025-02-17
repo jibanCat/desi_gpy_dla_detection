@@ -556,6 +556,7 @@ class Trainer:
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
+            num_workers=4, pin_memory=True,
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
         )
