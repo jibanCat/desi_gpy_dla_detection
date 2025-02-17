@@ -558,6 +558,12 @@ class Trainer:
             self.model = torch.nn.DataParallel(self.model)
         self.model = self.model.to(device)
 
+        # ✅ Ensure CUDA is Ready
+        if torch.cuda.is_available():
+            torch.cuda.init()  # ✅ Force initialize CUDA before DataLoader workers
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
         # ✅ Simple DataLoader (1 Worker, No Fancy Stuff)
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
@@ -571,10 +577,6 @@ class Trainer:
         # all_transition_wavelengths = all_transition_wavelengths.to(device)
         # all_oscillator_strengths = all_oscillator_strengths.to(device)
 
-        # ✅ Ensure CUDA is Ready
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
 
         def closure():
             """Closure function for L-BFGS optimization."""
