@@ -14,6 +14,11 @@ from gpy_dla_detection.learn_qso_model import (
     GaussianProcessModel,
     Trainer,
 )
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, DistributedSampler
+
 from gpy_dla_detection.objective import objective
 from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
 from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
@@ -52,6 +57,7 @@ class GPModelTrainer:
         """
         # Set device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.world_size = torch.cuda.device_count()  # Number of GPUs available
 
         # Initialize data loaders and processors
         if sdss_test:
@@ -169,105 +175,177 @@ class GPModelTrainer:
             centered_fluxes,
         )
 
-    def train_model(self, if_use_template=False, initial_M=None):
-        """Trains the Gaussian Process model using the prepared spectra."""
+
+    def main_worker(self, rank, world_size):
+        """
+        Worker function for Distributed Data Parallel (DDP) training.
+
+        - `rank`: The ID of the current process (GPU ID)
+        - `world_size`: Total number of GPUs
+        """
+
+        # ✅ Set up the distributed environment
+        os.environ["MASTER_ADDR"] = "127.0.0.1"
+        os.environ["MASTER_PORT"] = "29500"
+        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+
+        # ✅ Assign correct GPU
+        torch.cuda.set_device(rank)
+        device = torch.device(f"cuda:{rank}")
+
+        # ✅ Load Data
         from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
         from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
 
         fluxes_tensor, noise_variances_tensor, z_qsos_tensor, all_rest_wavelengths, centered_fluxes = self.prepare_data()
 
-        if if_use_template:
-            # TODO : understand if I can use these as init points
-            print("Using template model ...")
-            temp_model_path = "data/temp_model/QSO-HIZv1.1_RR.npz"
-            assert os.path.exists(temp_model_path)
-            temp_model = np.load(temp_model_path) # hard-coded path
-            temp_pca = temp_model["PCA_COMP"] # normalized PCA components, centered 0
-            temp_wave = 10**temp_model["LOGLAM"] # rest-frame wavelength
-
-            # model rest-frame wavelength
-            model_wave = all_rest_wavelengths[0].cpu().numpy()
-
-            # interpolate PCA components
-            temp_pca_interp = np.zeros((temp_pca.shape[0], len(model_wave)))
-
-            for i in range(temp_pca.shape[0]):
-                f = interp1d(temp_wave, temp_pca[i], kind="linear", fill_value="extrapolate")
-                temp_pca_interp[i, :] = f(model_wave)
-
-            # Replace the last few PCA components with the template PCA components
-            coefficients, latent = compute_pca(fluxes_tensor, self.num_pca_components)
-            # Compute initial M using PCA coefficients and square root of eigenvalues
-            k = self.num_pca_components
-            # Shape of coefficients: (num_pixels, num_pca_components)
-            initial_M = coefficients[:, :k] * np.sqrt(latent[:k])  # Broadcasting happens automatically
-            initial_M[:, -temp_pca_interp.shape[0]:] = temp_pca_interp.T
-
-        ####### Initialize the GP model #######
+        # ✅ Initialize model
         model = GaussianProcessModel(
-            fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes, initial_M=initial_M,
-            min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
-        ) 
-
-        # Ensure `model.rest_wavelengths` remains on CPU
-        model.rest_wavelengths = model.rest_wavelengths.cpu()  # ✅ Explicitly ensure it's on CPU
-
-        # Compute Lyα redshift grid for training
-        all_transition_wavelengths = torch.tensor(
-            all_transition_wavelengths, dtype=torch.float32, 
+            fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes,
+            min_lambda=self.min_lambda, max_lambda=self.max_lambda,
+            mu=self.mu, max_noise_variance=self.max_noise_variance
         )
-        all_oscillator_strengths = torch.tensor(
-            all_oscillator_strengths, dtype=torch.float32, 
-        )
+        model.to(device)
 
-        lya_wavelength = all_transition_wavelengths[0] * 1e8 
+        # ✅ Wrap model in DistributedDataParallel (DDP)
+        model = DDP(model, device_ids=[rank], output_device=rank)
 
-        # Ensure `z_qsos_tensor` is on CPU
-        z_qsos_tensor = z_qsos_tensor.cpu()
+        # ✅ Convert transition wavelengths to tensors
+        all_transition_wavelengths = torch.tensor(all_transition_wavelengths, dtype=torch.float32, device=device)
+        all_oscillator_strengths = torch.tensor(all_oscillator_strengths, dtype=torch.float32, device=device)
 
-        lya_1pz = 1 + (((1 + z_qsos_tensor) * model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+        # ✅ Compute Lyman-alpha redshift grid
+        lya_wavelength = all_transition_wavelengths[0] * 1e8
+        lya_1pz = 1 + (((1 + z_qsos_tensor) * all_rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
+
+        # ✅ Use DistributedSampler to split data
+        dataset = TensorDataset(fluxes_tensor, lya_1pz, noise_variances_tensor, z_qsos_tensor)
+        sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
+        dataloader = DataLoader(dataset, batch_size=self.batch_size, sampler=sampler, num_workers=4, pin_memory=True)
+
+        # ✅ Initialize Trainer
+        trainer = Trainer(model, "adam", self.learning_rate,
+                          self.batch_size,
+                          scheduler_type="cosine",
+                          scheduler_params={"T_max": 50, "eta_min": 1e-5},
+                          output_dir=self.output_dir,
+                          num_forest_lines=10,  # Replace with correct value
+                          all_transition_wavelengths=all_transition_wavelengths,
+                          all_oscillator_strengths=all_oscillator_strengths)
 
 
-        self.model = model
+        # ✅ Start training
+        trainer.train(dataloader, rank, world_size, self.num_epochs)
 
-        trainer = Trainer(
-            model,
-            optimizer_type="adam",
-            learning_rate=self.learning_rate,
-            batch_size=self.batch_size,
-            scheduler_type="cosine",
-            scheduler_params={"T_max": 50, "eta_min": 1e-5},
-            output_dir=self.output_dir,
-        )
+        # ✅ Clean up
+        dist.destroy_process_group()
+
+    def train_model(self):
+        """
+        Entry point for launching multi-GPU training.
+        """
+        world_size = self.world_size  # Number of available GPUs
+        mp.spawn(self.main_worker, args=(world_size,), nprocs=world_size, join=True)
+
+    # def train_model(self, if_use_template=False, initial_M=None):
+    #     """Trains the Gaussian Process model using the prepared spectra."""
+    #     from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
+    #     from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
+
+    #     fluxes_tensor, noise_variances_tensor, z_qsos_tensor, all_rest_wavelengths, centered_fluxes = self.prepare_data()
+
+    #     if if_use_template:
+    #         # TODO : understand if I can use these as init points
+    #         print("Using template model ...")
+    #         temp_model_path = "data/temp_model/QSO-HIZv1.1_RR.npz"
+    #         assert os.path.exists(temp_model_path)
+    #         temp_model = np.load(temp_model_path) # hard-coded path
+    #         temp_pca = temp_model["PCA_COMP"] # normalized PCA components, centered 0
+    #         temp_wave = 10**temp_model["LOGLAM"] # rest-frame wavelength
+
+    #         # model rest-frame wavelength
+    #         model_wave = all_rest_wavelengths[0].cpu().numpy()
+
+    #         # interpolate PCA components
+    #         temp_pca_interp = np.zeros((temp_pca.shape[0], len(model_wave)))
+
+    #         for i in range(temp_pca.shape[0]):
+    #             f = interp1d(temp_wave, temp_pca[i], kind="linear", fill_value="extrapolate")
+    #             temp_pca_interp[i, :] = f(model_wave)
+
+    #         # Replace the last few PCA components with the template PCA components
+    #         coefficients, latent = compute_pca(fluxes_tensor, self.num_pca_components)
+    #         # Compute initial M using PCA coefficients and square root of eigenvalues
+    #         k = self.num_pca_components
+    #         # Shape of coefficients: (num_pixels, num_pca_components)
+    #         initial_M = coefficients[:, :k] * np.sqrt(latent[:k])  # Broadcasting happens automatically
+    #         initial_M[:, -temp_pca_interp.shape[0]:] = temp_pca_interp.T
+
+    #     ####### Initialize the GP model #######
+    #     model = GaussianProcessModel(
+    #         fluxes_tensor.shape[1], self.num_pca_components, centered_fluxes, initial_M=initial_M,
+    #         min_lambda=self.min_lambda, max_lambda=self.max_lambda, mu=self.mu, max_noise_variance=self.max_noise_variance,
+    #     ) 
+
+    #     # Ensure `model.rest_wavelengths` remains on CPU
+    #     model.rest_wavelengths = model.rest_wavelengths.cpu()  # ✅ Explicitly ensure it's on CPU
+
+    #     # Compute Lyα redshift grid for training
+    #     all_transition_wavelengths = torch.tensor(
+    #         all_transition_wavelengths, dtype=torch.float32, 
+    #     )
+    #     all_oscillator_strengths = torch.tensor(
+    #         all_oscillator_strengths, dtype=torch.float32, 
+    #     )
+
+    #     lya_wavelength = all_transition_wavelengths[0] * 1e8 
+
+    #     # Ensure `z_qsos_tensor` is on CPU
+    #     z_qsos_tensor = z_qsos_tensor.cpu()
+
+    #     lya_1pz = 1 + (((1 + z_qsos_tensor) * model.rest_wavelengths.unsqueeze(0)) - lya_wavelength) / lya_wavelength
 
 
-        print("Before calling objective:")
-        print(
-            "all_transition_wavelengths shape:", all_transition_wavelengths.shape
-        )  # Should be (31,)
-        print(
-            "all_oscillator_strengths shape:", all_oscillator_strengths.shape
-        )  # Should also be (31,)
+    #     self.model = model
 
-        # # Compute initial loss
-        # initial_loss = objective(self.model, fluxes_tensor, lya_1pz, noise_variances_tensor, ...).detach()
-        # print("Initial loss:", initial_loss)
-        # print("After calling objective:")
-        # print("all_transition_wavelengths shape:", all_transition_wavelengths.shape)
-        # print("all_oscillator_strengths shape:", all_oscillator_strengths.shape)
-        # Train the model
-        trainer.train(
-            fluxes_tensor,
-            lya_1pz,
-            noise_variances_tensor,
-            z_qsos_tensor,
-            10,
-            all_transition_wavelengths,
-            all_oscillator_strengths,
-            max_epochs=self.num_epochs,
-        )
+    #     trainer = Trainer(
+    #         model,
+    #         optimizer_type="adam",
+    #         learning_rate=self.learning_rate,
+    #         batch_size=self.batch_size,
+    #         scheduler_type="cosine",
+    #         scheduler_params={"T_max": 50, "eta_min": 1e-5},
+    #         output_dir=self.output_dir,
+    #     )
 
-        return self.model, trainer.loss_history
+
+    #     print("Before calling objective:")
+    #     print(
+    #         "all_transition_wavelengths shape:", all_transition_wavelengths.shape
+    #     )  # Should be (31,)
+    #     print(
+    #         "all_oscillator_strengths shape:", all_oscillator_strengths.shape
+    #     )  # Should also be (31,)
+
+    #     # # Compute initial loss
+    #     # initial_loss = objective(self.model, fluxes_tensor, lya_1pz, noise_variances_tensor, ...).detach()
+    #     # print("Initial loss:", initial_loss)
+    #     # print("After calling objective:")
+    #     # print("all_transition_wavelengths shape:", all_transition_wavelengths.shape)
+    #     # print("all_oscillator_strengths shape:", all_oscillator_strengths.shape)
+    #     # Train the model
+    #     trainer.train(
+    #         fluxes_tensor,
+    #         lya_1pz,
+    #         noise_variances_tensor,
+    #         z_qsos_tensor,
+    #         10,
+    #         all_transition_wavelengths,
+    #         all_oscillator_strengths,
+    #         max_epochs=self.num_epochs,
+    #     )
+
+    #     return self.model, trainer.loss_history
 
 
 if __name__ == "__main__":

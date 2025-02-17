@@ -7,6 +7,9 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 import time
 
 import numpy as np
@@ -487,7 +490,8 @@ class Trainer:
     """
 
     def __init__(self, gp_model, optimizer_type="adam", learning_rate=0.01, batch_size=32,
-                 scheduler_type="cosine", scheduler_params=None, output_dir="learnlogs", device=None):
+                 scheduler_type="cosine", scheduler_params=None, output_dir="learnlogs", device=None,
+                 num_forest_lines=10, all_transition_wavelengths=transition_wavelengths, all_oscillator_strengths=oscillator_strengths):
         """
         Initialize the trainer.
 
@@ -521,6 +525,10 @@ class Trainer:
         self.log_tau_0_values = []
         self.log_beta_values = []
 
+        # ✅ Store the missing parameters
+        self.num_forest_lines = num_forest_lines
+        self.all_transition_wavelengths = all_transition_wavelengths
+        self.all_oscillator_strengths = all_oscillator_strengths
 
         # Choose optimizer
         if self.optimizer_type == "adam":
@@ -543,136 +551,111 @@ class Trainer:
         elif scheduler_type == "reduce_on_plateau":
             self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', **scheduler_params)
 
-    def train(self, fluxes, lya_1pzs, noise_variances, z_qsos, num_forest_lines,
-            all_transition_wavelengths, all_oscillator_strengths, max_epochs=500):
+    def train(self, dataloader, rank, world_size, max_epochs=500):
         """
-        Trains the GP model using either Adam or L-BFGS with mini-batches.
+        Trains the GP model using Distributed Data Parallel (DDP).
         """
-        torch.set_num_threads(4)  # Reduce CPU overhead
-        torch.backends.cudnn.benchmark = True  # Optimize GPU performance
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.device = device
-        # if torch.cuda.device_count() > 1:
-        #     print(f"Using {torch.cuda.device_count()} GPUs for training.")
-        #     self.model = torch.nn.DataParallel(self.model)
-        # self.model = self.model.to(device)
+        # ✅ Ensure correct device
+        device = torch.device(f"cuda:{rank}")
+        torch.cuda.set_device(device)
 
-        # ✅ Ensure CUDA is Ready
-        if torch.cuda.is_available():
-            torch.cuda.init()  # ✅ Force initialize CUDA before DataLoader workers
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        # ✅ Ensure DistributedSampler is set
+        if not isinstance(dataloader.sampler, torch.utils.data.distributed.DistributedSampler):
+            raise RuntimeError("DataLoader must use DistributedSampler for proper data distribution in DDP.")
 
-        # ✅ Simple DataLoader (1 Worker, No Fancy Stuff)
-        dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
-        dataloader = DataLoader(
-            dataset, batch_size=self.batch_size, shuffle=True,
-            # num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
-            num_workers=4, pin_memory=True  # ✅ Avoids race conditions
-            # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
-            # pin_memory=False  # ✅ Turn off since we're using 1 worker
-        )
+        for epoch in range(max_epochs):
+            start_time = time.time()
+            total_loss = torch.tensor(0.0, device=device)
 
-        # all_transition_wavelengths = all_transition_wavelengths.to(device)
-        # all_oscillator_strengths = all_oscillator_strengths.to(device)
+            # ✅ Set sampler epoch for correct shuffling
+            dataloader.sampler.set_epoch(epoch)
 
+            for batch_idx, batch in enumerate(dataloader):
+                batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
+                    batch[0].to(device, non_blocking=True),
+                    batch[1].to(device, non_blocking=True),
+                    batch[2].to(device, non_blocking=True),
+                    batch[3].to(device, non_blocking=True),
+                )
 
-        def closure():
-            """Closure function for L-BFGS optimization."""
-            self.optimizer.zero_grad()
-            # ✅ Handle DataParallel models
-            if isinstance(self.model, torch.nn.DataParallel):
-                model = self.model.module
-            else:
-                model = self.model
-
-            loss = objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
-                            all_transition_wavelengths, all_oscillator_strengths, z_qsos)
-            loss.backward()
-            self.loss_history.append(loss.item())  
-            self.log_c_0_values.append(self.model.log_c_0.item())
-            self.log_tau_0_values.append(self.model.log_tau_0.item())
-            self.log_beta_values.append(self.model.log_beta.item())
-            return loss
-
-        if self.optimizer_type == "adam":
-
-            # ✅ Training Loop
-            for epoch in range(max_epochs):
-                start_time = time.time()
-                total_loss = 0.0
-
-                for batch_idx, batch in enumerate(dataloader):
-                    batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
-                        batch[0].to(device, non_blocking=True),
-                        batch[1].to(device, non_blocking=True),
-                        batch[2].to(device, non_blocking=True),
-                        batch[3].to(device, non_blocking=True),
-                    )
-                    # ✅ Print GPU memory before forward pass
+                # ✅ Print GPU memory usage (Only Rank 0)
+                if rank == 0:
                     print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - Before Forward Pass")
 
-                    # ✅ Wrap model in DataParallel **ONLY here** before calling `self.model()`
-                    model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
+                self.optimizer.zero_grad()
 
-                    # model = self.model.module if torch.cuda.device_count() > 1 else self.model
+                # ✅ Forward pass
+                loss = self.model(batch_fluxes, batch_lya_1pzs, batch_noise_variances,
+                                self.num_forest_lines, self.all_transition_wavelengths,
+                                self.all_oscillator_strengths, batch_z_qsos)
 
-                    self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
-                    # Forward pass ensure DataParallel compatibility
-                    loss = model(batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                                num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+                # ✅ Aggregate loss across all GPUs
+                dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                total_loss += loss / world_size  # ✅ Average loss over GPUs
 
-                    # loss = objective(model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                    #                 num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
-
-                    loss.backward()
-                    self.optimizer.step()
-
-                    # ✅ Print GPU memory after backprop
+                # ✅ Print GPU memory usage (Only Rank 0)
+                if rank == 0:
                     print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - After Backpropagation")
 
-                    total_loss += loss.item()
-                    self.loss_history.append(loss.item())
+                self.loss_history.append(loss.item())
 
-                # ✅ Log parameters efficiently using `torch.no_grad()`
+            elapsed_time = time.time() - start_time
+
+            # ✅ Print only on rank 0 to avoid duplicate logs
+            if rank == 0:
+                print(f"Epoch {epoch}: Avg Loss = {total_loss.item() / len(dataloader):.6f}, Time = {elapsed_time:.2f}s")
+
+            # ✅ Ensure all GPUs synchronize before next epoch
+            dist.barrier()
+
+            # ✅ Save model & logs (Only on Rank 0)
+            if rank == 0:
                 with torch.no_grad():
-                    model = self.model.module if torch.cuda.device_count() > 1 else self.model
-
+                    model = self.model.module  # Extract the model
                     self.log_c_0_values.append(model.log_c_0.item())
                     self.log_tau_0_values.append(model.log_tau_0.item())
                     self.log_beta_values.append(model.log_beta.item())
 
-                    # ✅ Print progress every 10 epochs
-                    elapsed_time = time.time() - start_time
-                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
-                    print(f"Epoch {epoch}: log_beta = {model.log_beta.item()}, log_tau_0 = {model.log_tau_0.item()}")
-
-                    # ✅ Plot loss and covariance every 10 epochs
-                    if epoch % 10 == 0:
-                        self.visualize_covariance(model, epoch)
-                        self.plot_loss(self.loss_history)
-
                     # ✅ Save model every 10 epochs
-                    if epoch % 10 == 0:
+                    if epoch % 3 == 0:
                         save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
                         self.save_model(model, save_path)
                         h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
                         self.save_h5_file(model, h5_save_path)
 
-                # ✅ Scheduler Update (Only when needed)
-                if self.scheduler:
-                    if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                        self.scheduler.step(total_loss / len(dataloader))  # Needs loss as input
-                    else:
-                        self.scheduler.step()
+            # ✅ Scheduler update (Only Rank 0)
+            if rank == 0 and self.scheduler:
+                if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    self.scheduler.step(total_loss.item() / len(dataloader))  # Needs loss as input
+                else:
+                    self.scheduler.step()
 
+        # def closure():
+        #     """Closure function for L-BFGS optimization."""
+        #     self.optimizer.zero_grad()
+        #     # ✅ Handle DataParallel models
+        #     if isinstance(self.model, torch.nn.DataParallel):
+        #         model = self.model.module
+        #     else:
+        #         model = self.model
 
-        elif self.optimizer_type == "lbfgs":
-            # L-BFGS optimization (uses closure)
-            for _ in range(max_epochs):
-                self.optimizer.step(closure)
+        #     loss = objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+        #                     all_transition_wavelengths, all_oscillator_strengths, z_qsos)
+        #     loss.backward()
+        #     self.loss_history.append(loss.item())  
+        #     self.log_c_0_values.append(self.model.log_c_0.item())
+        #     self.log_tau_0_values.append(self.model.log_tau_0.item())
+        #     self.log_beta_values.append(self.model.log_beta.item())
+        #     return loss
+
+        # elif self.optimizer_type == "lbfgs":
+        #     # L-BFGS optimization (uses closure)
+        #     for _ in range(max_epochs):
+        #         self.optimizer.step(closure)
 
         print(f"Final Loss: {self.loss_history[-1]}")
         print(r"Saving the model...")
