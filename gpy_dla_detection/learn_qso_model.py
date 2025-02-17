@@ -540,6 +540,8 @@ class Trainer:
         """
         Trains the GP model using either Adam or L-BFGS with mini-batches.
         """
+        torch.set_num_threads(8)  # Reduce CPU overhead
+        torch.backends.cudnn.benchmark = True
 
         # ✅ Move static tensors to device **before training starts**
         device = self.device
