@@ -29,6 +29,7 @@ export WORLD_SIZE=$SLURM_NTASKS  # Number of processes
 
 # Ensure GPUs are correctly set
 export CUDA_VISIBLE_DEVICES=$(echo $SLURM_JOB_GPUS | tr ',' ' ')
+export TORCH_USE_CUDA_DSA=1
 
 # Run the training script with `torchrun`
 torchrun --nnodes=1 --nproc_per_node=4 desi_learn_qsos_model.py \
@@ -49,4 +50,4 @@ torchrun --nnodes=1 --nproc_per_node=4 desi_learn_qsos_model.py \
     --output_dir "learnlogs/" \
     --num_epochs 100 \
     --learning_rate 0.1 \
-    --batch_size 5150  # Updated batch size
+    --batch_size 2048  # Updated batch size

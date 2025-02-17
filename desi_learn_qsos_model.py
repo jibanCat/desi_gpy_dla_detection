@@ -193,6 +193,10 @@ class GPModelTrainer:
         torch.cuda.set_device(rank)
         device = torch.device(f"cuda:{rank}")
 
+        torch.backends.cudnn.benchmark = True  # Enable optimized GPU usage
+        torch.cuda.empty_cache()  # Clear fragmented memory
+
+
         # ✅ Load Data
         from gpy_dla_detection.voigt import transition_wavelengths as all_transition_wavelengths
         from gpy_dla_detection.voigt import oscillator_strengths as all_oscillator_strengths
@@ -221,7 +225,7 @@ class GPModelTrainer:
         # ✅ Use DistributedSampler to split data
         dataset = TensorDataset(fluxes_tensor, lya_1pz, noise_variances_tensor, z_qsos_tensor)
         sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, sampler=sampler, num_workers=4, pin_memory=True)
+        dataloader = DataLoader(dataset, batch_size=self.batch_size // world_size, sampler=sampler, num_workers=4, pin_memory=True)
 
         # ✅ Initialize Trainer
         trainer = Trainer(model, "adam", self.learning_rate,
