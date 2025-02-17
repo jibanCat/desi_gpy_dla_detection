@@ -11,6 +11,12 @@ import torch
 import numpy as np
 from .voigt import transition_wavelengths, oscillator_strengths
 
+def print_gpu_memory(prefix=""):
+    device = torch.cuda.current_device()
+    allocated = torch.cuda.memory_allocated(device) / 1024**2  # Convert to MB
+    reserved = torch.cuda.memory_reserved(device) / 1024**2  # Convert to MB
+    print(f"{prefix} | GPU {device}: Allocated {allocated:.2f} MB, Reserved {reserved:.2f} MB")
+
 def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
               all_transition_wavelengths, all_oscillator_strengths, z_qsos):
     """
@@ -39,6 +45,9 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     # ✅ Vectorized filtering: Get valid indices (NaN removal)
     valid_masks = ~torch.isnan(fluxes)
 
+    # Print memory usage before computing loss
+    print_gpu_memory("Before Loss Computation")
+
     # ✅ Compute loss for all quasars in parallel
     losses = torch.stack([
         spectrum_loss(fluxes[i, valid_masks[i]], lya_1pzs[i, valid_masks[i]], noise_variances[i, valid_masks[i]], 
@@ -46,6 +55,9 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
                       num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i])
         for i in range(len(fluxes))  # ✅ Vectorized computation per quasar
     ])
+
+    # Print memory usage after unpacking model parameters
+    print_gpu_memory("After Loss Computation")
 
     # ✅ Sum losses across the batch
     loss = losses.sum().to(device)  # ✅ Ensure it’s on GPU

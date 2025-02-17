@@ -21,7 +21,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from scipy.interpolate import interp1d
 
 from .effective_optical_depth import effective_optical_depth
-from .objective import spectrum_loss, objective
+from .objective import spectrum_loss, objective, print_gpu_memory
 from .voigt import transition_wavelengths, oscillator_strengths
 from tqdm import tqdm  # For progress bar
 
@@ -601,13 +601,16 @@ class Trainer:
                 start_time = time.time()
                 total_loss = 0.0
 
-                for batch in dataloader:
+                for batch_idx, batch in enumerate(dataloader):
                     batch_fluxes, batch_lya_1pzs, batch_noise_variances, batch_z_qsos = (
                         batch[0].to(device, non_blocking=True),
                         batch[1].to(device, non_blocking=True),
                         batch[2].to(device, non_blocking=True),
                         batch[3].to(device, non_blocking=True),
                     )
+                    # ✅ Print GPU memory before forward pass
+                    print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - Before Forward Pass")
+
                     # ✅ Extract model for DataParallel
                     model = self.model.module if torch.cuda.device_count() > 1 else self.model
 
@@ -622,6 +625,10 @@ class Trainer:
 
                     loss.backward()
                     self.optimizer.step()
+
+                    # ✅ Print GPU memory after backprop
+                    print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - After Backpropagation")
+
                     total_loss += loss.item()
                     self.loss_history.append(loss.item())
 
