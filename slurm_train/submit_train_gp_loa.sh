@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH -N 1                        # Number of nodes (1 node requested)
-#SBATCH --gres=gpu:4                 # Explicitly request 4 GPUs
+#SBATCH -C gpu                      # GPU type
 #SBATCH -q debug                     # Queue (use 'regular' for longer runs)
 #SBATCH --job-name=train_gp          # Job name for identification in the queue
 #SBATCH --output=train_gp_%j.log     # Standard output log (%j is replaced by the job ID)
