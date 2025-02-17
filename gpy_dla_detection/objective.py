@@ -116,4 +116,4 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     prior_loss = 0.5 * ((tau_0 - 0.00246) ** 2 / 0.14 ** 2 + (beta - 3.62) ** 2 / 0.04 ** 2)
     nlog_p = nlog_p + prior_loss.view(-1)
 
-    return nlog_p  # ✅ Ensures correct shape for DataParallel
+    return nlog_p.view(-1)  # ✅ Fix shape mismatch issue for DataParallel
