@@ -41,6 +41,7 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     all_oscillator_strengths = all_oscillator_strengths.to(device)
 
     print(f"Device: {device}, M: {M.device}, omega2: {omega2.device}, c_0: {c_0.device}, tau_0: {tau_0.device}, beta: {beta.device}")
+    print("Fluxes Shapes: ", fluxes.shape)
 
     # ✅ Vectorized filtering: Get valid indices (NaN removal)
     valid_masks = ~torch.isnan(fluxes)
