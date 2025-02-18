@@ -24,21 +24,23 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
 
     Automatically supports multi-GPU through `DataParallel`, assuming model is already wrapped.
     """
-    # ✅ Ensure `model.module` is used inside DataParallel
-    if isinstance(model, torch.nn.DataParallel):
-        model = model.module  # Extract actual model
+    # # ✅ Ensure `model.module` is used inside DataParallel
+    # if isinstance(model, torch.nn.DataParallel):
+    #     model = model.module  # Extract actual model
 
-    # ✅ Ensure model parameters move to the correct device dynamically
-    device = fluxes.device  # Each batch is scattered to a different GPU
-    M = model.M.to(device)  # Move to the same device as the batch
-    omega2 = torch.exp(2 * model.log_omega).to(device)
-    c_0 = torch.exp(model.log_c_0).to(device)
-    tau_0 = torch.exp(model.log_tau_0).to(device)
-    beta = torch.exp(model.log_beta).to(device)
+    # ✅ Ensure model parameters are already on the correct device
+    device = fluxes.device
 
-    # ✅ Ensure all input tensors are also on the same GPU
-    all_transition_wavelengths = all_transition_wavelengths.to(device)
-    all_oscillator_strengths = all_oscillator_strengths.to(device)
+    # ✅ Move all tensors to device ONCE (Avoid multiple `.to(device)` calls)
+    all_transition_wavelengths = all_transition_wavelengths.to(device, non_blocking=True)
+    all_oscillator_strengths = all_oscillator_strengths.to(device, non_blocking=True)
+
+    # ✅ Move model parameters to GPU (Avoid repeated `.to(device)` calls)
+    M = model.M.to(device, non_blocking=True)
+    omega2 = torch.exp(2 * model.log_omega).to(device, non_blocking=True)
+    c_0 = torch.exp(model.log_c_0).to(device, non_blocking=True)
+    tau_0 = torch.exp(model.log_tau_0).to(device, non_blocking=True)
+    beta = torch.exp(model.log_beta).to(device, non_blocking=True)
 
     print(f"Device: {device}, M: {M.device}, omega2: {omega2.device}, c_0: {c_0.device}, tau_0: {tau_0.device}, beta: {beta.device}")
     print("Fluxes Shapes: ", fluxes.shape)
@@ -46,22 +48,20 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     # ✅ Vectorized filtering: Get valid indices (NaN removal)
     valid_masks = ~torch.isnan(fluxes)
 
-    # Print memory usage before computing loss
-    print_gpu_memory("Before Loss Computation")
+    # ✅ Batch-processing to avoid looping over each quasar
+    batch_losses = torch.zeros(len(fluxes), device=device)  # Pre-allocate GPU memory
 
-    # ✅ Compute loss for all quasars in parallel
-    losses = torch.stack([
-        spectrum_loss(fluxes[i, valid_masks[i]], lya_1pzs[i, valid_masks[i]], noise_variances[i, valid_masks[i]], 
-                      M[valid_masks[i], :], omega2[valid_masks[i]], c_0, tau_0, beta, 
-                      num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i])
-        for i in range(len(fluxes))  # ✅ Vectorized computation per quasar
-    ])
+    for i in range(len(fluxes)):  # Still a loop, but now avoids stack overhead
+        valid_mask = valid_masks[i]
 
-    # Print memory usage after unpacking model parameters
-    print_gpu_memory("After Loss Computation")
+        batch_losses[i] = spectrum_loss(
+            fluxes[i, valid_mask], lya_1pzs[i, valid_mask], noise_variances[i, valid_mask], 
+            M[valid_mask, :], omega2[valid_mask], c_0, tau_0, beta, 
+            num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i]
+        )
 
-    # ✅ Sum losses across the batch
-    loss = losses.sum().to(device)  # ✅ Ensure it’s on GPU
+    # ✅ Compute total loss as a sum (Avoid unnecessary `.to(device)`)
+    loss = batch_losses.sum()
 
     return loss
 

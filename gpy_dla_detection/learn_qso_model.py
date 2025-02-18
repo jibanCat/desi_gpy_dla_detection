@@ -553,23 +553,32 @@ class Trainer:
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
-        # if torch.cuda.device_count() > 1:
-        #     print(f"Using {torch.cuda.device_count()} GPUs for training.")
-        #     self.model = torch.nn.DataParallel(self.model)
-        # self.model = self.model.to(device)
+        if torch.cuda.device_count() > 1:
+            print(f"Using {torch.cuda.device_count()} GPUs for training.")
+            self.model = torch.nn.DataParallel(self.model)
+        self.model = self.model.to(device)
 
         # ✅ Ensure CUDA is Ready
         if torch.cuda.is_available():
-            torch.cuda.init()  # ✅ Force initialize CUDA before DataLoader workers
+            # torch.cuda.init()  # ✅ Force initialize CUDA before DataLoader workers
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
 
+
+        # ✅ Move constants ONCE
+        all_transition_wavelengths = all_transition_wavelengths.to(device)
+        all_oscillator_strengths = all_oscillator_strengths.to(device)
+
         # ✅ Simple DataLoader (1 Worker, No Fancy Stuff)
+        # ✅ Efficient DataLoader Setup
+        num_workers = min(4, os.cpu_count() // 2)  # ✅ Dynamically set workers
+        pin_memory = self.batch_size < 5000  # ✅ Only pin memory for small batches
+
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
             # num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
-            num_workers=4, pin_memory=True  # ✅ Avoids race conditions
+            num_workers=num_workers, pin_memory=pin_memory  # ✅ Avoids race conditions
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
         )
@@ -611,12 +620,14 @@ class Trainer:
                         batch[3].to(device, non_blocking=True),
                     )
                     # ✅ Print GPU memory before forward pass
-                    print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - Before Forward Pass")
+                    if batch_idx % 10 == 0:  # ✅ Print every 10 batches
+                        print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - Before Forward Pass")
 
                     # ✅ Wrap model in DataParallel **ONLY here** before calling `self.model()`
-                    model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
+                    # model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
 
                     # model = self.model.module if torch.cuda.device_count() > 1 else self.model
+                    model = self.model
 
                     self.optimizer.zero_grad()
 
@@ -630,11 +641,19 @@ class Trainer:
                     loss.backward()
                     self.optimizer.step()
 
-                    # ✅ Print GPU memory after backprop
-                    print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - After Backpropagation")
+                    # # ✅ Print GPU memory after backprop
+                    # print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - After Backpropagation")
 
-                    total_loss += loss.item()
-                    self.loss_history.append(loss.item())
+                    total_loss += loss.detach()  # ✅ Reduce CPU sync overhead
+                    self.loss_history.append(loss.detach().cpu().item())  # ✅ Move to CPU after batch
+
+                elapsed_time = time.time() - start_time
+
+                # ✅ Only move to CPU once per epoch
+                # ✅ Only move to CPU once per epoch
+                avg_loss = total_loss.cpu().item() / len(dataloader)
+                print(f"Epoch {epoch}: Loss = {avg_loss:.6f}, Time = {elapsed_time:.2f}s")
+
 
                 # ✅ Log parameters efficiently using `torch.no_grad()`
                 with torch.no_grad():
