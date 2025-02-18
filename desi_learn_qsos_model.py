@@ -261,7 +261,7 @@ class GPModelTrainer:
             lya_1pz,
             noise_variances_tensor,
             z_qsos_tensor,
-            10,
+            3,
             all_transition_wavelengths,
             all_oscillator_strengths,
             max_epochs=self.num_epochs,

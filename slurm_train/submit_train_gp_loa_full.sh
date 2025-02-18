@@ -23,7 +23,7 @@ python -u desi_learn_qsos_model.py \
     --preloaded_file "/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/gp_interp_trainset.h5" \
     --z_min 2.5 \
     --z_max 4.25 \
-    --num_pca_components 20 \
+    --num_pca_components 30 \
     --max_spectra 300000 \
     --num_pixels 3798 \
     --min_num_pixels 400 \
@@ -33,8 +33,8 @@ python -u desi_learn_qsos_model.py \
     --norm_min_lambda 900 \
     --norm_max_lambda 1200 \
     --max_noise_variance 9.0 \
-    --output_dir "learnlogs/20250216/" \
+    --output_dir "learnlogs/" \
     --num_epochs 100 \
-    --learning_rate 0.1 \
-    --batch_size 16384  # Updated batch size
+    --learning_rate 0.01 \
+    --batch_size 2048  # Updated batch size
 
