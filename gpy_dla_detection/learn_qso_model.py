@@ -637,7 +637,7 @@ class Trainer:
             pin_memory=pin_memory,  # ✅ Avoids race conditions
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
-            prefetch_factor=1,
+            # prefetch_factor=1,
         )
 
         # ✅ Load checkpoint if available
