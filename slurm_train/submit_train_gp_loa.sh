@@ -18,7 +18,7 @@ export PYTHONUNBUFFERED=1      # Forces immediate output
 # Load the environment
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
 
-torchrun --nnodes=1 --nproc_per_node=4 -u desi_learn_qsos_model.py \
+torchrun --nnodes=1 --nproc_per_node=4 desi_learn_qsos_model.py \
     --catalog_file "/pscratch/sd/j/jibancat/desi_gpy_dla_detection/data/loa/gp_trainset_loa.fits" \
     --preloaded_file "/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/gp_interp_trainset.h5" \
     --z_min 2.5 \
