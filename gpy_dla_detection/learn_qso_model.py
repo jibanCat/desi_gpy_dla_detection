@@ -663,7 +663,7 @@ class Trainer:
         if self.optimizer_type == "adam":
 
             # ✅ Training Loop
-            for epoch in range(max_epochs):
+            for epoch in range(start_epoch, max_epochs):  # ✅ Start from `start_epoch`
                 start_time = time.time()
                 total_loss = 0.0
 
