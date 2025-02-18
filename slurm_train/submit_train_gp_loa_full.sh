@@ -9,7 +9,7 @@
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=48:00:00              # Time limit for the job
+#SBATCH --time=24:00:00              # Time limit for the job
 
 # Debugging flags
 export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
