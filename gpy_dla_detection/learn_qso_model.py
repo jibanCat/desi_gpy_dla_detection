@@ -608,7 +608,9 @@ class Trainer:
         self.device = device
         if torch.cuda.device_count() > 1:
             print(f"Using {torch.cuda.device_count()} GPUs for training.")
-            self.model = torch.nn.DataParallel(self.model)
+            device_ids = [0, 1, 2, 3]  # Use all GPUs
+            self.model = torch.nn.DataParallel(self.model, device_ids=device_ids)
+            # self.model = torch.nn.DataParallel(self.model)
         self.model = self.model.to(device)
 
         # ✅ Ensure CUDA is Ready
@@ -681,8 +683,8 @@ class Trainer:
                     # ✅ Wrap model in DataParallel **ONLY here** before calling `self.model()`
                     # model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
 
-                    model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
-                    # model = self.model
+                    # model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
+                    model = self.model
 
                     self.optimizer.zero_grad()
 
