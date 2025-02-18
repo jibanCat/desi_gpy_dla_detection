@@ -626,8 +626,8 @@ class Trainer:
                     # ✅ Wrap model in DataParallel **ONLY here** before calling `self.model()`
                     # model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
 
-                    # model = self.model.module if torch.cuda.device_count() > 1 else self.model
-                    model = self.model
+                    model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
+                    # model = self.model
 
                     self.optimizer.zero_grad()
 
