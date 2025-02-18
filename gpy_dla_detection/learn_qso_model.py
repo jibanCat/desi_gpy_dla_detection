@@ -726,16 +726,16 @@ class Trainer:
                     print(f"Epoch {epoch}: log_beta = {model.log_beta.item()}, log_tau_0 = {model.log_tau_0.item()}")
 
                     # ✅ Plot loss and covariance every 10 epochs
-                    if epoch % 10 == 0:
-                        self.visualize_covariance(model, epoch)
-                        self.plot_loss(self.loss_history)
+                    # if epoch % 10 == 0:
+                    self.visualize_covariance(model, epoch)
+                    self.plot_loss(self.loss_history)
 
                     # ✅ Save model every 10 epochs
-                    if epoch % 10 == 0:
-                        save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
-                        self.save_model(model, save_path)
-                        h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
-                        self.save_h5_file(model, h5_save_path)
+                    # if epoch % 10 == 0:
+                    save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
+                    self.save_model(model, save_path)
+                    h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
+                    self.save_h5_file(model, h5_save_path)
 
                 # ✅ Scheduler Update (Only when needed)
                 if self.scheduler:
