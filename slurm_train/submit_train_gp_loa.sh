@@ -14,6 +14,8 @@
 # Debugging flags
 export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
 export PYTHONUNBUFFERED=1      # Forces immediate output
+export NCCL_DEBUG=INFO
+export NCCL_P2P_DISABLE=1  # ✅ Disables peer-to-peer, forcing explicit communication
 
 # Load the environment
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
@@ -36,4 +38,4 @@ torchrun --nnodes=1 --nproc_per_node=4 desi_learn_qsos_model.py \
     --output_dir "learnlogs/" \
     --num_epochs 100 \
     --learning_rate 0.01 \
-    --batch_size 2048  # Updated batch size
+    --batch_size 512  # Updated batch size
