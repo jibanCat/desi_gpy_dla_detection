@@ -697,7 +697,8 @@ class Trainer:
                     # loss = objective(model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
                     #                 num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
 
-                    loss.backward()
+                    # If backpropagation is needed, otherwise use analytical gradients
+                    # loss.backward()
                     self.optimizer.step()
 
                     # # ✅ Print GPU memory after backprop

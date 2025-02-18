@@ -49,22 +49,40 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     valid_masks = ~torch.isnan(fluxes)
 
     # ✅ Batch-processing to avoid looping over each quasar
-    batch_losses = torch.zeros(len(fluxes), device=device)  # Pre-allocate GPU memory
+    batch_losses = torch.zeros(len(fluxes), device=device)
+    dM_accum = torch.zeros_like(M, device=device)
+    dlog_omega_accum = torch.zeros_like(model.log_omega, device=device)
+    dlog_c_0_accum = torch.zeros_like(model.log_c_0, device=device)
+    dlog_tau_0_accum = torch.zeros_like(model.log_tau_0, device=device)
+    dlog_beta_accum = torch.zeros_like(model.log_beta, device=device)
 
-    for i in range(len(fluxes)):  # Still a loop, but now avoids stack overhead
+    for i in range(len(fluxes)):  
         valid_mask = valid_masks[i]
 
-        if valid_mask.sum() == 0:  # Extra check in case of edge cases
-            continue  # Skip this spectrum
+        if valid_mask.sum() == 0:
+            continue  # ✅ Skip fully NaN spectra
 
-        batch_losses[i] = spectrum_loss(
+        nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta = spectrum_loss(
             fluxes[i, valid_mask], lya_1pzs[i, valid_mask], noise_variances[i, valid_mask], 
             M[valid_mask, :], omega2[valid_mask], c_0, tau_0, beta, 
             num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i]
         )
 
-    # ✅ Compute total loss as a sum (Avoid unnecessary `.to(device)`)
+        batch_losses[i] = nlog_p
+        dM_accum[valid_mask, :] += dM
+        dlog_omega_accum += dlog_omega
+        dlog_c_0_accum += dlog_c_0
+        dlog_tau_0_accum += dlog_tau_0
+        dlog_beta_accum += dlog_beta
+
     loss = batch_losses.sum()
+
+    # ✅ Apply gradients manually
+    model.M.grad = dM_accum
+    model.log_omega.grad = dlog_omega_accum
+    model.log_c_0.grad = dlog_c_0_accum
+    model.log_tau_0.grad = dlog_tau_0_accum
+    model.log_beta.grad = dlog_beta_accum
 
     return loss
 
@@ -127,4 +145,28 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     prior_loss = 0.5 * ((tau_0 - 0.00246) ** 2 / 0.14 ** 2 + (beta - 3.62) ** 2 / 0.04 ** 2)
     nlog_p = nlog_p + prior_loss.view(-1)
 
-    return nlog_p.view(-1)  # ✅ Fix shape mismatch issue for DataParallel
+    # ✅ Analytical Gradients
+
+    # Gradient w.r.t. M
+    K_inv_M = D_inv_M - D_inv_M @ (C @ M)
+    dM = -(K_inv_y[:, None] @ (K_inv_y[None, :] @ M) - K_inv_M)
+
+    # Compute diag(K⁻¹) efficiently
+    diag_K_inv = d_inv - torch.sum(C * D_inv_M.T, dim=0)
+
+    # Gradient w.r.t. log ω
+    dlog_omega = -(absorption_noise * (K_inv_y**2 - diag_K_inv))
+
+    # Gradient w.r.t. log c₀
+    da_c0 = c_0 * omega2 * scaling_factor
+    dlog_c_0 = -(K_inv_y @ da_c0 - diag_K_inv @ da_c0)
+
+    # Gradient w.r.t. log τ₀
+    da_tau0 = omega2 * scaling_factor * lya_optical_depth * lya_absorption
+    dlog_tau_0 = -(K_inv_y @ da_tau0 - diag_K_inv @ da_tau0)
+
+    # Gradient w.r.t. log β
+    da_beta = da_tau0 * torch.log(lya_1pz + 1e-6) * indicator
+    dlog_beta = -(K_inv_y @ da_beta - diag_K_inv @ da_beta)
+
+    return nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta
