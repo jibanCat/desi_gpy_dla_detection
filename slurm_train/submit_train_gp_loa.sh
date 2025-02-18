@@ -17,6 +17,11 @@ export PYTHONUNBUFFERED=1      # Forces immediate output
 export NCCL_DEBUG=INFO
 export NCCL_P2P_DISABLE=1  # ✅ Disables peer-to-peer, forcing explicit communication
 
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+export NCCL_BLOCKING_WAIT=1
+export NCCL_ASYNC_ERROR_HANDLING=1
+export NCCL_SOCKET_IFNAME=hsn0
+
 # Load the environment
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
 

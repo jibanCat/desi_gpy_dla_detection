@@ -609,7 +609,7 @@ class Trainer:
         if torch.cuda.device_count() > 1:
             print(f"Using {torch.cuda.device_count()} GPUs for training.")
             device_ids = [0, 1, 2, 3]  # Use all GPUs
-            self.model = torch.nn.DataParallel(self.model, device_ids=device_ids)
+            self.model = torch.nn.DataParallel(self.model, device_ids=device_ids, output_device=0)
             # self.model = torch.nn.DataParallel(self.model)
         self.model = self.model.to(device)
 
@@ -633,11 +633,11 @@ class Trainer:
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
             # num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
-            num_workers=2,
+            num_workers=0,
             pin_memory=pin_memory,  # ✅ Avoids race conditions
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
-            prefetch_factor=2,
+            prefetch_factor=1,
         )
 
         # ✅ Load checkpoint if available
