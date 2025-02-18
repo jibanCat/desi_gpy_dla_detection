@@ -29,6 +29,43 @@ from tqdm import tqdm  # For progress bar
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
+def save_checkpoint(model, optimizer, epoch, loss_history, output_dir):
+    """Save model, optimizer, and training state."""
+    checkpoint_path = os.path.join(output_dir, "model_checkpoint_latest.pt")
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss_history': loss_history,
+    }, checkpoint_path)
+
+    # Save every 10 epochs
+    if epoch % 10 == 0:
+        epoch_path = os.path.join(output_dir, f"model_checkpoint_epoch_{epoch}.pt")
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss_history': loss_history,
+        }, epoch_path)
+
+    print(f"✅ Checkpoint saved at {checkpoint_path}")
+
+def load_checkpoint(model, optimizer, output_dir):
+    """Load model & optimizer state if a checkpoint exists."""
+    checkpoint_path = os.path.join(output_dir, "model_checkpoint_latest.pt")
+    if os.path.exists(checkpoint_path):
+        print(f"🔄 Resuming training from checkpoint: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1  # Resume from next epoch
+        loss_history = checkpoint['loss_history']
+        return model, optimizer, start_epoch, loss_history
+    else:
+        print("🚀 No checkpoint found. Starting training from scratch.")
+        return model, optimizer, 0, []  # Start from epoch 0
+
 class GPDataset(torch.utils.data.Dataset):
     """Custom Dataset to load spectra efficiently on GPU."""
 
@@ -301,7 +338,7 @@ class SpectrumProcessor:
             # Apply redshift to wavelengths
             obs_wave = wave * (1 + z_qso)
             # Compute effective optical depth
-            optical_depth = effective_optical_depth(obs_wave, beta, tau_0, z_qso, num_forest_lines=10)
+            optical_depth = effective_optical_depth(obs_wave, beta, tau_0, z_qso, num_forest_lines=3)
             lya_absorption = np.exp(-np.sum(optical_depth, axis=1))
 
             # Remove Lyα forest absorption
@@ -583,8 +620,10 @@ class Trainer:
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
         )
 
-        # all_transition_wavelengths = all_transition_wavelengths.to(device)
-        # all_oscillator_strengths = all_oscillator_strengths.to(device)
+        # ✅ Load checkpoint if available
+        self.model, self.optimizer, start_epoch, self.loss_history = load_checkpoint(
+            self.model, self.optimizer, self.output_dir
+        )
 
 
         def closure():
@@ -654,6 +693,8 @@ class Trainer:
                 avg_loss = total_loss.cpu().item() / len(dataloader)
                 print(f"Epoch {epoch}: Loss = {avg_loss:.6f}, Time = {elapsed_time:.2f}s")
 
+                # ✅ Save model checkpoint every epoch
+                save_checkpoint(self.model, self.optimizer, epoch, self.loss_history, self.output_dir)
 
                 # ✅ Log parameters efficiently using `torch.no_grad()`
                 with torch.no_grad():
