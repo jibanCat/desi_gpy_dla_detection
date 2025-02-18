@@ -49,5 +49,5 @@ torchrun --nnodes=1 --nproc_per_node=4 desi_learn_qsos_model.py \
     --max_noise_variance 9.0 \
     --output_dir "learnlogs/" \
     --num_epochs 100 \
-    --learning_rate 0.1 \
-    --batch_size 2048  # Updated batch size
+    --learning_rate 0.01 \
+    --batch_size 512  # Updated batch size
