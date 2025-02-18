@@ -54,6 +54,9 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     for i in range(len(fluxes)):  # Still a loop, but now avoids stack overhead
         valid_mask = valid_masks[i]
 
+        if valid_mask.sum() == 0:  # Extra check in case of edge cases
+            continue  # Skip this spectrum
+
         batch_losses[i] = spectrum_loss(
             fluxes[i, valid_mask], lya_1pzs[i, valid_mask], noise_variances[i, valid_mask], 
             M[valid_mask, :], omega2[valid_mask], c_0, tau_0, beta, 
