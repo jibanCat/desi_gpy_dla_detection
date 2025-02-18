@@ -632,8 +632,8 @@ class Trainer:
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
-            # num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
-            num_workers=0,
+            num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
+            # num_workers=0,
             pin_memory=pin_memory,  # ✅ Avoids race conditions
             # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
             # pin_memory=False  # ✅ Turn off since we're using 1 worker
@@ -685,8 +685,8 @@ class Trainer:
                     # ✅ Wrap model in DataParallel **ONLY here** before calling `self.model()`
                     # model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
 
-                    # model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
-                    model = self.model
+                    model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
+                    # model = self.model
 
                     self.optimizer.zero_grad()
 
