@@ -32,19 +32,23 @@ print(f"Using device: {device}")
 def save_checkpoint(model, optimizer, epoch, loss_history, output_dir):
     """Save model, optimizer, and training state."""
     checkpoint_path = os.path.join(output_dir, "model_checkpoint_latest.pt")
+
+    # ✅ Ensure we always save the raw model (without DataParallel wrapper)
+    model_state = model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict()
+
     torch.save({
         'epoch': epoch,
-        'model_state_dict': model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
+        'model_state_dict': model_state,  # ✅ Save without DataParallel wrapper
         'optimizer_state_dict': optimizer.state_dict(),
         'loss_history': loss_history,
     }, checkpoint_path)
 
-    # Save every 10 epochs
+    # ✅ Save every 10 epochs
     if epoch % 10 == 0:
         epoch_path = os.path.join(output_dir, f"model_checkpoint_epoch_{epoch}.pt")
         torch.save({
             'epoch': epoch,
-            'model_state_dict': model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict(),
+            'model_state_dict': model_state,
             'optimizer_state_dict': optimizer.state_dict(),
             'loss_history': loss_history,
         }, epoch_path)
@@ -56,8 +60,20 @@ def load_checkpoint(model, optimizer, output_dir):
     checkpoint_path = os.path.join(output_dir, "model_checkpoint_latest.pt")
     if os.path.exists(checkpoint_path):
         print(f"🔄 Resuming training from checkpoint: {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        
+        checkpoint = torch.load(checkpoint_path, map_location="cuda")
+
+        # ✅ Adjust state_dict keys if model is wrapped with DataParallel
+        state_dict = checkpoint['model_state_dict']
+        if isinstance(model, torch.nn.DataParallel):
+            # ✅ Convert keys from non-DataParallel format -> DataParallel format
+            state_dict = {"module." + k: v for k, v in state_dict.items()}
+        else:
+            # ✅ Remove `module.` prefix if previously saved with DataParallel
+            state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+
+        model.load_state_dict(state_dict)
+
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1  # Resume from next epoch
         loss_history = checkpoint['loss_history']
