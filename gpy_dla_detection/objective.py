@@ -83,7 +83,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     """
     Computes the negative log-likelihood and gradients for a single spectrum.
 
-    This function follows the mathematical formulation from MATLAB.
+    This function follows the exact formulation from MATLAB.
     """
 
     log_2pi = 1.83787706640934534  # log(2π)
@@ -119,32 +119,33 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     d_inv = 1.0 / d
 
     # ✅ Compute inverse terms
-    D_inv_y = d_inv * y
-    D_inv_M = d_inv[:, None] * M  # Broadcasting
+    D_inv_y = d_inv * y  # Shape (n,)
+    D_inv_M = d_inv[:, None] * M  # Shape (n, k)
 
     # ✅ Compute covariance matrix using Woodbury identity
-    B = M.T @ D_inv_M
+    B = M.T @ D_inv_M  # Shape (k, k)
     B.diagonal().add_(1.0)  # Equivalent to B(1:(k + 1):end) = B(1:(k + 1):end) + 1;
 
     # ✅ Perform Cholesky decomposition for numerical stability
     L = torch.linalg.cholesky(B)
 
     # ✅ Compute inverse of B using Cholesky
-    C = torch.cholesky_solve(D_inv_M.T, L).T
+    C = torch.cholesky_solve(D_inv_M.T, L).T  # Shape (k, n)
 
-    # ✅ Compute K⁻¹ y using the Woodbury identity
-    K_inv_y = D_inv_y - D_inv_M @ (C @ y)
+    # ✅ Fix shape issue in matrix multiplication
+    C_y = C @ y.unsqueeze(-1)  # Ensures (k, 1)
+    K_inv_y = D_inv_y - (D_inv_M @ C_y).squeeze(-1)  # Shape (n,)
 
     # ✅ Compute log determinant of K
     log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diagonal(L)))
 
-    # ✅ Compute negative log-likelihood (Gaussian log-likelihood term)
+    # ✅ Compute negative log-likelihood
     nlog_p = 0.5 * (y @ K_inv_y + log_det_K + n * log_2pi)
 
     # ✅ Compute gradients analytically
 
     # Compute inverse covariance terms
-    K_inv_M = D_inv_M - D_inv_M @ (C @ M)
+    K_inv_M = D_inv_M - (D_inv_M @ C @ M)
 
     # Gradient wrt M
     dM = -(K_inv_y[:, None] @ (K_inv_y[None, :] @ M) - K_inv_M)
