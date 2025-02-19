@@ -128,7 +128,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     L = torch.linalg.cholesky(B)  # (k, k)
 
     # ✅ Compute inverse of B using Cholesky
-    C = torch.cholesky_solve(D_inv_M.T, L).T  # (k, n)
+    C = torch.cholesky_solve(D_inv_M.T, L) # (k, n)
 
     # 🔴 ERROR LIKELY HERE: Shape Mismatch
     print(f"Shapes -> C: {C.shape}, y: {y.shape}")  # Debugging print statement
