@@ -26,57 +26,55 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     """
     device = fluxes.device
 
-    # ✅ Move all tensors to device ONCE (Avoid multiple `.to(device)` calls)
-    all_transition_wavelengths = all_transition_wavelengths.to(device, non_blocking=True)
-    all_oscillator_strengths = all_oscillator_strengths.to(device, non_blocking=True)
+    # ✅ Move model parameters to the correct device
+    M = model.M.to(device, non_blocking=True)  # (num_pixels, k)
+    omega2 = torch.exp(2 * model.log_omega).to(device, non_blocking=True)  # (num_pixels,)
+    c_0 = torch.exp(model.log_c_0).to(device, non_blocking=True)  # (scalar)
+    tau_0 = torch.exp(model.log_tau_0).to(device, non_blocking=True)  # (scalar)
+    beta = torch.exp(model.log_beta).to(device, non_blocking=True)  # (scalar)
 
-    # ✅ Move model parameters to GPU (Avoid repeated `.to(device)` calls)
-    M = model.M.to(device, non_blocking=True)
-    omega2 = torch.exp(2 * model.log_omega).to(device, non_blocking=True)
-    c_0 = torch.exp(model.log_c_0).to(device, non_blocking=True)
-    tau_0 = torch.exp(model.log_tau_0).to(device, non_blocking=True)
-    beta = torch.exp(model.log_beta).to(device, non_blocking=True)
+    # ✅ Initialize accumulators (matching MATLAB structure)
+    total_loss = torch.tensor(0.0, device=device)
+    dM_accum = torch.zeros_like(M, device=device)  # (num_pixels, k)
+    dlog_omega_accum = torch.zeros_like(model.log_omega, device=device)  # (num_pixels,)
+    dlog_c_0_accum = torch.tensor(0.0, device=device)
+    dlog_tau_0_accum = torch.tensor(0.0, device=device)
+    dlog_beta_accum = torch.tensor(0.0, device=device)
 
-    # ✅ Vectorized filtering: Get valid indices (NaN removal)
-    valid_masks = ~torch.isnan(fluxes)
-
-    # ✅ Batch-processing to avoid looping over each quasar
-    batch_losses = torch.zeros(len(fluxes), device=device)
-    dM_accum = torch.zeros_like(M, device=device)
-    dlog_omega_accum = torch.zeros_like(model.log_omega, device=device)
-    dlog_c_0_accum = torch.zeros_like(model.log_c_0, device=device)
-    dlog_tau_0_accum = torch.zeros_like(model.log_tau_0, device=device)
-    dlog_beta_accum = torch.zeros_like(model.log_beta, device=device)
+    # ✅ Loop over each spectrum (vectorized NaN handling)
+    valid_masks = ~torch.isnan(fluxes)  # (batch_size, num_pixels)
 
     for i in range(len(fluxes)):  
         valid_mask = valid_masks[i]
 
         if valid_mask.sum() == 0:
-            continue  # ✅ Skip fully NaN spectra
+            continue  # Skip spectra that are completely NaN
 
+        # ✅ Call spectrum_loss on valid pixels only
         nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta = spectrum_loss(
             fluxes[i, valid_mask], lya_1pzs[i, valid_mask], noise_variances[i, valid_mask], 
             M[valid_mask, :], omega2[valid_mask], c_0, tau_0, beta, 
             num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i]
         )
 
-        batch_losses[i] = nlog_p
-        dM_accum[valid_mask, :] += dM
-        dlog_omega_accum += dlog_omega
-        dlog_c_0_accum += dlog_c_0
-        dlog_tau_0_accum += dlog_tau_0
-        dlog_beta_accum += dlog_beta
+        # ✅ Accumulate results correctly (matching MATLAB)
+        total_loss += nlog_p  # (scalar)
+        dM_accum[valid_mask, :] += dM  # (num_valid_pixels, k) → (num_pixels, k)
+        dlog_omega_accum[valid_mask] += dlog_omega  # (num_valid_pixels,) → (num_pixels,)
+        dlog_c_0_accum += dlog_c_0  # (scalar)
+        dlog_tau_0_accum += dlog_tau_0  # (scalar)
+        dlog_beta_accum += dlog_beta  # (scalar)
 
-    loss = batch_losses.sum()
+    print(f"dlog_omega shape: {dlog_omega.shape}, dlog_omega_accum shape: {dlog_omega_accum.shape}")
 
-    # ✅ Apply gradients manually
+    # ✅ Apply accumulated gradients to the model
     model.M.grad = dM_accum
     model.log_omega.grad = dlog_omega_accum
     model.log_c_0.grad = dlog_c_0_accum
     model.log_tau_0.grad = dlog_tau_0_accum
     model.log_beta.grad = dlog_beta_accum
 
-    return loss
+    return total_loss
 
 def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
                   num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, zqso_1pz):
