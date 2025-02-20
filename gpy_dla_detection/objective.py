@@ -58,12 +58,12 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
         )
 
         # ✅ Accumulate results correctly (matching MATLAB)
-        total_loss += nlog_p  # (scalar)
-        dM_accum[valid_mask, :] += dM  # (num_valid_pixels, k) → (num_pixels, k)
-        dlog_omega_accum[valid_mask] += dlog_omega  # (num_valid_pixels,) → (num_pixels,)
-        dlog_c_0_accum += dlog_c_0  # (scalar)
-        dlog_tau_0_accum += dlog_tau_0  # (scalar)
-        dlog_beta_accum += dlog_beta  # (scalar)
+        total_loss += nlog_p.detach()  # (scalar)
+        dM_accum[valid_mask, :] += dM.detach()
+        dlog_omega_accum[valid_mask] += dlog_omega.detach()
+        dlog_c_0_accum += dlog_c_0.detach()
+        dlog_tau_0_accum += dlog_tau_0.detach()
+        dlog_beta_accum += dlog_beta.detach()
 
     print(f"dlog_omega shape: {dlog_omega.shape}, dlog_omega_accum shape: {dlog_omega_accum.shape}")
 
@@ -74,6 +74,7 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     model.log_tau_0.grad = dlog_tau_0_accum
     model.log_beta.grad = dlog_beta_accum
 
+    del dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta
     return total_loss
 
 def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
@@ -128,12 +129,9 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     # ✅ Compute inverse of B using Cholesky
     C = torch.cholesky_solve(D_inv_M.T, L) # (k, n)
 
-    # 🔴 ERROR LIKELY HERE: Shape Mismatch
-    print(f"Shapes -> C: {C.shape}, y: {y.shape}")  # Debugging print statement
-    
     # ✅ Compute K⁻¹ y
     C_y = C @ y.unsqueeze(-1)  # (k, n) @ (n, 1) → should result in (k, 1)
-    K_inv_y = D_inv_y - (D_inv_M @ C_y).squeeze(-1)  # (n,) - ((n, k) @ (k, 1)).squeeze(-1) → (n,)
+    K_inv_y = D_inv_y - torch.matmul(D_inv_M, C_y).view(-1)  # (n,) - ((n, k) @ (k, 1)).squeeze(-1) → (n,)
 
     # ✅ Compute log determinant of K
     log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diagonal(L)))  # (scalar)
@@ -142,9 +140,12 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     nlog_p = 0.5 * (y @ K_inv_y + log_det_K + n * log_2pi)  # (scalar)
 
     # ✅ Compute gradients analytically
+    # Compute inverse covariance terms    
+    print(f"D_inv_M shape: {D_inv_M.shape}, C shape: {C.shape}, M shape: {M.shape}")
 
-    # Compute inverse covariance terms
-    K_inv_M = D_inv_M - (D_inv_M @ C @ M)  # (n, k)
+    tmp = C @ M  # (k, k)
+    K_inv_M = D_inv_M - torch.matmul(D_inv_M, tmp)  # Explicit torch.matmul
+    del tmp  # Free memory immediately    # K_inv_M = D_inv_M - (D_inv_M @ C @ M)  # (n, k)
 
     # Gradient wrt M
     dM = -(K_inv_y[:, None] @ (K_inv_y[None, :] @ M) - K_inv_M)  # (n, k)

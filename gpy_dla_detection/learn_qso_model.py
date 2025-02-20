@@ -703,9 +703,12 @@ class Trainer:
 
                     # # ✅ Print GPU memory after backprop
                     # print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - After Backpropagation")
-
                     total_loss += loss.detach()  # ✅ Reduce CPU sync overhead
                     self.loss_history.append(loss.detach().cpu().item())  # ✅ Move to CPU after batch
+
+                    # Free memory
+                    if batch_idx % 10 == 0:
+                        torch.cuda.empty_cache()
 
                 elapsed_time = time.time() - start_time
 
