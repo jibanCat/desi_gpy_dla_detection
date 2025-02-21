@@ -17,12 +17,14 @@ def print_gpu_memory(prefix=""):
     reserved = torch.cuda.memory_reserved(device) / 1024**2  # Convert to MB
     print(f"{prefix} | GPU {device}: Allocated {allocated:.2f} MB, Reserved {reserved:.2f} MB")
 
+import torch
+import numpy as np
+from .voigt import transition_wavelengths, oscillator_strengths
+
 def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
               all_transition_wavelengths, all_oscillator_strengths, z_qsos):
     """
     Computes the negative log-likelihood for the entire training dataset.
-
-    Automatically supports multi-GPU through `DataParallel`, assuming model is already wrapped.
     """
     device = fluxes.device
 
@@ -33,48 +35,57 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
     tau_0 = torch.exp(model.log_tau_0).to(device, non_blocking=True)  # (scalar)
     beta = torch.exp(model.log_beta).to(device, non_blocking=True)  # (scalar)
 
-    # ✅ Initialize accumulators (matching MATLAB structure)
+    # ✅ Initialize accumulators
     total_loss = torch.tensor(0.0, device=device)
-    dM_accum = torch.zeros_like(M, device=device)  # (num_pixels, k)
-    dlog_omega_accum = torch.zeros_like(model.log_omega, device=device)  # (num_pixels,)
+    dM_accum = torch.zeros_like(M, device=device)
+    dlog_omega_accum = torch.zeros_like(model.log_omega, device=device)
     dlog_c_0_accum = torch.tensor(0.0, device=device)
     dlog_tau_0_accum = torch.tensor(0.0, device=device)
     dlog_beta_accum = torch.tensor(0.0, device=device)
 
-    # ✅ Loop over each spectrum (vectorized NaN handling)
-    valid_masks = ~torch.isnan(fluxes)  # (batch_size, num_pixels)
+    valid_masks = ~torch.isnan(fluxes)
 
     for i in range(len(fluxes)):  
         valid_mask = valid_masks[i]
-
         if valid_mask.sum() == 0:
-            continue  # Skip spectra that are completely NaN
+            continue
 
-        # ✅ Call spectrum_loss on valid pixels only
+        # ✅ Compute spectrum loss per sample
         nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta = spectrum_loss(
             fluxes[i, valid_mask], lya_1pzs[i, valid_mask], noise_variances[i, valid_mask], 
             M[valid_mask, :], omega2[valid_mask], c_0, tau_0, beta, 
             num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i]
         )
 
-        # ✅ Accumulate results correctly (matching MATLAB)
-        total_loss += nlog_p.detach()  # (scalar)
+        total_loss += nlog_p.detach()
         dM_accum[valid_mask, :] += dM.detach()
         dlog_omega_accum[valid_mask] += dlog_omega.detach()
         dlog_c_0_accum += dlog_c_0.detach()
         dlog_tau_0_accum += dlog_tau_0.detach()
         dlog_beta_accum += dlog_beta.detach()
 
-    # print(f"dlog_omega shape: {dlog_omega.shape}, dlog_omega_accum shape: {dlog_omega_accum.shape}")
+    # ✅ Apply accumulated gradients
+    if model.M.grad is None:
+        model.M.grad = dM_accum
+    else:
+        model.M.grad += dM_accum
+    if model.log_omega.grad is None:
+        model.log_omega.grad = dlog_omega_accum
+    else:
+        model.log_omega.grad += dlog_omega_accum
+    if model.log_c_0.grad is None:
+        model.log_c_0.grad = dlog_c_0_accum
+    else:
+        model.log_c_0.grad += dlog_c_0_accum
+    if model.log_tau_0.grad is None:    
+        model.log_tau_0.grad = dlog_tau_0_accum
+    else:
+        model.log_tau_0.grad += dlog_tau_0_accum
+    if model.log_beta.grad is None:
+        model.log_beta.grad = dlog_beta_accum
+    else:
+        model.log_beta.grad += dlog_beta_accum
 
-    # ✅ Apply accumulated gradients to the model
-    model.M.grad = dM_accum
-    model.log_omega.grad = dlog_omega_accum
-    model.log_c_0.grad = dlog_c_0_accum
-    model.log_tau_0.grad = dlog_tau_0_accum
-    model.log_beta.grad = dlog_beta_accum
-
-    del dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta
     return total_loss
 
 def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
@@ -112,7 +123,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     absorption_noise = omega2 * scaling_factor ** 2  # (n,)
 
     # ✅ Compute total variance (including instrumental noise)
-    d = noise_variance + absorption_noise + 1e-6  # (n,)
+    d = noise_variance + absorption_noise #+ 1e-6  # (n,)
     d_inv = 1.0 / d  # (n,)
 
     # ✅ Compute inverse terms
@@ -158,7 +169,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
 
     # Gradient wrt log c₀
     da_c0 = c_0 * omega2 * scaling_factor  # (n,)
-    dlog_c_0 = -(K_inv_y @ da_c0 - diag_K_inv @ da_c0)  # (scalar)
+    dlog_c_0 = -((K_inv_y @ da_c0) @ K_inv_y - diag_K_inv @ da_c0)  # (scalar)
 
     # Gradient wrt log τ₀
     da_tau0 = omega2 * scaling_factor * lya_optical_depth * lya_absorption  # (n,)
