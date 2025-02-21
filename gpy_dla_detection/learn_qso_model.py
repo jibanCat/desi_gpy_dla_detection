@@ -606,38 +606,31 @@ class Trainer:
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
+
+        # ✅ Handle Multi-GPU
         if torch.cuda.device_count() > 1:
             print(f"Using {torch.cuda.device_count()} GPUs for training.")
-            device_ids = [0, 1, 2, 3]  # Use all GPUs
-            self.model = torch.nn.DataParallel(self.model, device_ids=device_ids, output_device=0)
-            # self.model = torch.nn.DataParallel(self.model)
-        self.model = self.model.to(device)
+            self.model = torch.nn.DataParallel(self.model).to(device)
+        else:
+            self.model = self.model.to(device)
 
-        # ✅ Ensure CUDA is Ready
+        # ✅ Clear CUDA Cache
         if torch.cuda.is_available():
-            # torch.cuda.init()  # ✅ Force initialize CUDA before DataLoader workers
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-
 
         # ✅ Move constants ONCE
         all_transition_wavelengths = all_transition_wavelengths.to(device)
         all_oscillator_strengths = all_oscillator_strengths.to(device)
 
-        # ✅ Simple DataLoader (1 Worker, No Fancy Stuff)
         # ✅ Efficient DataLoader Setup
-        num_workers = min(4, os.cpu_count() // 2)  # ✅ Dynamically set workers
-        pin_memory = self.batch_size < 5000  # ✅ Only pin memory for small batches
+        num_workers = min(4, os.cpu_count() // 2)  # Dynamically set workers
+        pin_memory = self.batch_size < 5000  # Only pin memory for small batches
 
         dataset = TensorDataset(fluxes, lya_1pzs, noise_variances, z_qsos)
         dataloader = DataLoader(
             dataset, batch_size=self.batch_size, shuffle=True,
-            num_workers=min(4, os.cpu_count() // 2),  # ✅ Dynamic CPU usage
-            # num_workers=0,
-            pin_memory=pin_memory,  # ✅ Avoids race conditions
-            # num_workers=0,  # ✅ Single worker to avoid multiprocessing errors
-            # pin_memory=False  # ✅ Turn off since we're using 1 worker
-            # prefetch_factor=1,
+            num_workers=num_workers, pin_memory=pin_memory
         )
 
         # ✅ Load checkpoint if available
@@ -645,29 +638,17 @@ class Trainer:
             self.model, self.optimizer, self.output_dir
         )
 
-
+        # ✅ L-BFGS Closure Function
         def closure():
-            """Closure function for L-BFGS optimization."""
             self.optimizer.zero_grad()
-            # ✅ Handle DataParallel models
-            if isinstance(self.model, torch.nn.DataParallel):
-                model = self.model.module
-            else:
-                model = self.model
-
+            model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
             loss = objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
                             all_transition_wavelengths, all_oscillator_strengths, z_qsos)
-            loss.backward()
-            self.loss_history.append(loss.item())  
-            self.log_c_0_values.append(self.model.log_c_0.item())
-            self.log_tau_0_values.append(self.model.log_tau_0.item())
-            self.log_beta_values.append(self.model.log_beta.item())
             return loss
 
         if self.optimizer_type == "adam":
-
             # ✅ Training Loop
-            for epoch in range(start_epoch, max_epochs):  # ✅ Start from `start_epoch`
+            for epoch in range(start_epoch, max_epochs):
                 start_time = time.time()
                 total_loss = 0.0
 
@@ -678,88 +659,87 @@ class Trainer:
                         batch[2].to(device, non_blocking=True),
                         batch[3].to(device, non_blocking=True),
                     )
-                    # ✅ Print GPU memory before forward pass
-                    if batch_idx % 10 == 0:  # ✅ Print every 10 batches
+
+                    # ✅ Print GPU memory usage every 10 batches
+                    if batch_idx % 10 == 0:
                         print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - Before Forward Pass")
 
-                    # ✅ Wrap model in DataParallel **ONLY here** before calling `self.model()`
-                    # model = torch.nn.DataParallel(self.model) if torch.cuda.device_count() > 1 else self.model
-
                     model = self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
-                    # model = self.model
-
                     self.optimizer.zero_grad()
 
-                    # Forward pass ensure DataParallel compatibility
+                    # ✅ Forward pass (Handles DataParallel)
                     loss = model(batch_fluxes, batch_lya_1pzs, batch_noise_variances,
                                 num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
 
-                    # loss = objective(model, batch_fluxes, batch_lya_1pzs, batch_noise_variances,
-                    #                 num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, batch_z_qsos)
+                    # ✅ Manually set gradients
+                    total_loss += loss.detach()  # Avoid CPU sync issues
+                    self.loss_history.append(loss.detach().cpu().item())  # Move to CPU after batch
 
-                    # If backpropagation is needed, otherwise use analytical gradients
-                    # loss.backward()
+                    # ✅ Ensure optimizer sees correct gradients
                     self.optimizer.step()
 
-                    # # ✅ Print GPU memory after backprop
-                    # print_gpu_memory(f"Epoch {epoch}, Batch {batch_idx} - After Backpropagation")
-                    total_loss += loss.detach()  # ✅ Reduce CPU sync overhead
-                    self.loss_history.append(loss.detach().cpu().item())  # ✅ Move to CPU after batch
-
-                    # Free memory
                     if batch_idx % 10 == 0:
                         torch.cuda.empty_cache()
 
                 elapsed_time = time.time() - start_time
-
-                # ✅ Only move to CPU once per epoch
-                # ✅ Only move to CPU once per epoch
                 avg_loss = total_loss.cpu().item() / len(dataloader)
                 print(f"Epoch {epoch}: Loss = {avg_loss:.6f}, Time = {elapsed_time:.2f}s")
 
-                # ✅ Save model checkpoint every epoch
+                # ✅ Save checkpoint every epoch
                 save_checkpoint(self.model, self.optimizer, epoch, self.loss_history, self.output_dir)
 
-                # ✅ Log parameters efficiently using `torch.no_grad()`
+                # ✅ Log model parameters
                 with torch.no_grad():
                     model = self.model.module if torch.cuda.device_count() > 1 else self.model
-
                     self.log_c_0_values.append(model.log_c_0.item())
                     self.log_tau_0_values.append(model.log_tau_0.item())
                     self.log_beta_values.append(model.log_beta.item())
 
-                    # ✅ Print progress every 10 epochs
-                    elapsed_time = time.time() - start_time
-                    print(f"Epoch {epoch}: Loss = {total_loss / len(dataloader):.6f}, Time = {elapsed_time:.2f}s, LR = {self.optimizer.param_groups[0]['lr']:.6f}")
-                    print(f"Epoch {epoch}: log_beta = {model.log_beta.item()}, log_tau_0 = {model.log_tau_0.item()}")
+                # ✅ Print progress
+                print(f"Epoch {epoch}: log_beta = {model.log_beta.item()}, log_tau_0 = {model.log_tau_0.item()}")
 
-                    # ✅ Plot loss and covariance every 10 epochs
-                    # if epoch % 10 == 0:
-                    self.visualize_covariance(model, epoch)
-                    self.plot_loss(self.loss_history)
-
-                    # ✅ Save model every 10 epochs
-                    # if epoch % 10 == 0:
+                # ✅ Save model every 10 epochs
+                if epoch % 10 == 0:
                     save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
                     self.save_model(model, save_path)
+
                     h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
                     self.save_h5_file(model, h5_save_path)
 
-                # ✅ Scheduler Update (Only when needed)
+                # ✅ Scheduler Update
                 if self.scheduler:
-                    if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                        self.scheduler.step(total_loss / len(dataloader))  # Needs loss as input
-                    else:
-                        self.scheduler.step()
-
+                    self.scheduler.step()
 
         elif self.optimizer_type == "lbfgs":
-            # L-BFGS optimization (uses closure)
-            for _ in range(max_epochs):
-                self.optimizer.step(closure)
+            # ✅ L-BFGS optimization with proper iterations
+            for epoch in range(start_epoch, max_epochs):
+                start_time = time.time()
+                loss = self.optimizer.step(closure)  # Runs multiple evaluations internally
+
+                with torch.no_grad():
+                    model = self.model.module if torch.cuda.device_count() > 1 else self.model
+                    self.loss_history.append(loss.item())  # Append latest loss
+                    self.log_c_0_values.append(model.log_c_0.item())
+                    self.log_tau_0_values.append(model.log_tau_0.item())
+                    self.log_beta_values.append(model.log_beta.item())
+
+                elapsed_time = time.time() - start_time
+                print(f"Epoch {epoch}: Loss = {self.loss_history[-1]:.6f}, Time = {elapsed_time:.2f}s")
+
+                # ✅ Save model periodically
+                if epoch % 10 == 0:
+                    save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.pt")
+                    self.save_model(model, save_path)
+
+                    h5_save_path = os.path.join(self.output_dir, f"model_epoch_{epoch}.h5")
+                    self.save_h5_file(model, h5_save_path)
+
+                # ✅ Scheduler Update
+                if self.scheduler:
+                    self.scheduler.step()
 
         print(f"Final Loss: {self.loss_history[-1]}")
-        print(r"Saving the model...")
+        print("Saving the final model...")
         save_path = os.path.join(self.output_dir, "model_final.pt")
         self.save_model(save_path)
         h5_save_path = os.path.join(self.output_dir, "model_final.h5")
