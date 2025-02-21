@@ -65,7 +65,7 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
         dlog_tau_0_accum += dlog_tau_0.detach()
         dlog_beta_accum += dlog_beta.detach()
 
-    print(f"dlog_omega shape: {dlog_omega.shape}, dlog_omega_accum shape: {dlog_omega_accum.shape}")
+    # print(f"dlog_omega shape: {dlog_omega.shape}, dlog_omega_accum shape: {dlog_omega_accum.shape}")
 
     # ✅ Apply accumulated gradients to the model
     model.M.grad = dM_accum
@@ -141,7 +141,7 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
 
     # ✅ Compute gradients analytically
     # Compute inverse covariance terms    
-    print(f"D_inv_M shape: {D_inv_M.shape}, C shape: {C.shape}, M shape: {M.shape}")
+    # print(f"D_inv_M shape: {D_inv_M.shape}, C shape: {C.shape}, M shape: {M.shape}")
 
     tmp = C @ M  # (k, k)
     K_inv_M = D_inv_M - torch.matmul(D_inv_M, tmp)  # Explicit torch.matmul
