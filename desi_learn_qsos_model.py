@@ -232,7 +232,7 @@ class GPModelTrainer:
 
         trainer = Trainer(
             model,
-            optimizer_type="lbfgs",
+            optimizer_type="adam",
             learning_rate=self.learning_rate,
             batch_size=self.batch_size,
             scheduler_type="cosine",
