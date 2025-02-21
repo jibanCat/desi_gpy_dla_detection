@@ -17,10 +17,6 @@ def print_gpu_memory(prefix=""):
     reserved = torch.cuda.memory_reserved(device) / 1024**2  # Convert to MB
     print(f"{prefix} | GPU {device}: Allocated {allocated:.2f} MB, Reserved {reserved:.2f} MB")
 
-import torch
-import numpy as np
-from .voigt import transition_wavelengths, oscillator_strengths
-
 def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
               all_transition_wavelengths, all_oscillator_strengths, z_qsos):
     """
@@ -63,6 +59,16 @@ def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
         dlog_c_0_accum += dlog_c_0.detach()
         dlog_tau_0_accum += dlog_tau_0.detach()
         dlog_beta_accum += dlog_beta.detach()
+
+    # ✅ Apply **DESI Y1 Prior** for log_tau_0 and log_beta
+    tau_0_mu = 0.00246  # DESI Y1 Mean τ₀
+    tau_0_sigma = 0.00014  # DESI Y1 Std τ₀
+    beta_mu = 3.62  # DESI Y1 Mean β
+    beta_sigma = 0.04  # DESI Y1 Std β
+
+    # ✅ Correct prior application in log-space
+    dlog_tau_0_accum += (tau_0 - tau_0_mu) / tau_0_sigma**2 * tau_0  # Chain rule
+    dlog_beta_accum += (beta - beta_mu) / beta_sigma**2 * beta  # Chain rule
 
     # ✅ Apply accumulated gradients
     if model.M.grad is None:
@@ -169,7 +175,8 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
 
     # Gradient wrt log c₀
     da_c0 = c_0 * omega2 * scaling_factor  # (n,)
-    dlog_c_0 = -((K_inv_y @ da_c0) @ K_inv_y - diag_K_inv @ da_c0)  # (scalar)
+    # ✅ Correct MATLAB translation:
+    dlog_c_0 = -(torch.dot(K_inv_y * da_c0, K_inv_y) - torch.dot(diag_K_inv, da_c0))  # (scalar)
 
     # Gradient wrt log τ₀
     da_tau0 = omega2 * scaling_factor * lya_optical_depth * lya_absorption  # (n,)
