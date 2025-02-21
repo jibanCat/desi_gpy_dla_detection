@@ -675,11 +675,11 @@ class Trainer:
                     total_loss += loss.detach()  # Avoid CPU sync issues
                     self.loss_history.append(loss.detach().cpu().item())  # Move to CPU after batch
 
-                    # ✅ Adjust Learning Rate for log_omega to Avoid Instability
-                    for param_group in self.optimizer.param_groups:
-                        for param in param_group["params"]:
-                            if param is model.log_omega:
-                                param_group["lr"] *= 0.1  # Reduce step size for log_omega
+                    # # ✅ Adjust Learning Rate for log_omega to Avoid Instability
+                    # for param_group in self.optimizer.param_groups:
+                    #     for param in param_group["params"]:
+                    #         if param is model.log_omega:
+                    #             param_group["lr"] *= 0.1  # Reduce step size for log_omega
 
                     # ✅ Ensure optimizer sees correct gradients
                     self.optimizer.step()

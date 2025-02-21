@@ -42,5 +42,5 @@ python -u desi_learn_qsos_model.py \
     --max_noise_variance 9.0 \
     --output_dir "learnlogs/" \
     --num_epochs 100 \
-    --learning_rate 0.01 \
-    --batch_size 102758  # Updated batch size
+    --learning_rate 0.1 \
+    --batch_size 205516  # Updated batch size
