@@ -103,7 +103,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --max_z_cut "$MAX_Z_CUT" \
         --min_z_cut "$MIN_Z_CUT" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "/pscratch/sd/j/jibancat/desi-loa-gpdla-20241211/figures/healpix_${HPX_START}_${HPX_END}" \
+        --figure_dir "figures/healpix_${HPX_START}_${HPX_END}" \
         --hpx_start "$HPX_START" \
         --hpx_end "$HPX_END" &
 done
