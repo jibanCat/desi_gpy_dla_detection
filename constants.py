@@ -6,7 +6,7 @@ from scipy.constants import speed_of_light
 
 # set redshift window for quasars
 zmin_qso = 2.0
-zmax_qso = 4.25
+zmax_qso = 7.0 #4.25 :: 942946 -> 945968, 926122 -> 926122
 # set the wave window for DLA search
 # rest-frame angstroms
 search_minlam = 900.0
