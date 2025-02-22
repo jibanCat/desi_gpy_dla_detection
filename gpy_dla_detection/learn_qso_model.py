@@ -680,6 +680,7 @@ class Trainer:
                     #     for param in param_group["params"]:
                     #         if param is model.log_omega:
                     #             param_group["lr"] *= 0.1  # Reduce step size for log_omega
+                    print(f"Max gradient norm: {torch.norm(torch.cat([p.grad.flatten() for p in model.parameters()]))}")
 
                     # ✅ Ensure optimizer sees correct gradients
                     self.optimizer.step()

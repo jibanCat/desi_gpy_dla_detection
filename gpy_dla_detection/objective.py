@@ -143,8 +143,9 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
     # ✅ Perform Cholesky decomposition for numerical stability
     L = torch.linalg.cholesky(B)  # (k, k)
 
-    # ✅ Compute inverse of B using Cholesky
-    C = torch.cholesky_solve(D_inv_M.T, L) # (k, n)
+    # ✅ Solve for C using two triangular solves (MATLAB equivalent)
+    X = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)  # Forward substitution
+    C = torch.linalg.solve_triangular(L.T, X, upper=True)  # Backward substitution
 
     # ✅ Compute K⁻¹ y
     C_y = C @ y.unsqueeze(-1)  # (k, n) @ (n, 1) → should result in (k, 1)
@@ -180,10 +181,11 @@ def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
 
     # Gradient wrt log τ₀
     da_tau0 = omega2 * scaling_factor * lya_optical_depth * lya_absorption  # (n,)
-    dlog_tau_0 = -(K_inv_y @ da_tau0 - diag_K_inv @ da_tau0)  # (scalar)
+    # ✅ Perform dot product like MATLAB's `(...)' * K_inv_y`
+    dlog_tau_0 = -torch.dot(K_inv_y * da_tau0, K_inv_y) + torch.dot(diag_K_inv, da_tau0)  # (scalar)
 
     # Gradient wrt log β
-    da_beta = da_tau0 * torch.log(lya_1pz + 1e-6) * indicator  # (n,)
-    dlog_beta = -(K_inv_y @ da_beta - diag_K_inv @ da_beta)  # (scalar)
+    da_beta = da_tau0 * torch.log(lya_1pz) * beta * indicator  # (n,)
+    dlog_beta = -torch.dot(K_inv_y * da_beta, K_inv_y) + torch.dot(diag_K_inv, da_beta)  # (scalar)
 
     return nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta
