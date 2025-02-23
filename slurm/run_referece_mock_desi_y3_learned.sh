@@ -11,8 +11,8 @@ for (( START_INDEX=0; START_INDEX<=MAX_START_INDEX; START_INDEX+=STEP )); do
     # Print the command to be executed for reference
     echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits\",\
 MOCKDIR=\"/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/\",\
-OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-gpdla-20250222-desi-learned/\",\
-LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_95.h5\",\
+OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-gpdla-20250223-mock-learned/\",\
+LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs_london/model_epoch_86.h5\",\
 PREV_TAU_0=0.00246,\
 PREV_BETA=3.62,\
 DLAMBDA=0.15,\
@@ -28,8 +28,8 @@ STEP=2 slurm/submit_desi_mock.sh"
     # Submit the job using sbatch
     sbatch --export=ALL,QSOCAT="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits",\
 MOCKDIR="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/",\
-OUTDIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250222-desi-learned/",\
-LEARNED_FILE="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_95.h5",\
+OUTDIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250223-mock-learned/",\
+LEARNED_FILE="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs_london/model_epoch_86.h5",\
 PREV_TAU_0=0.00246,\
 PREV_BETA=3.62,\
 DLAMBDA=0.15,\
