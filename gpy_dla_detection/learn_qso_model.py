@@ -750,10 +750,11 @@ class Trainer:
 
         print(f"Final Loss: {self.loss_history[-1]}")
         print("Saving the final model...")
+        model = self.model.module if torch.cuda.device_count() > 1 else self.model
         save_path = os.path.join(self.output_dir, "model_final.pt")
-        self.save_model(save_path)
+        self.save_model(model, save_path)
         h5_save_path = os.path.join(self.output_dir, "model_final.h5")
-        self.save_h5_file(h5_save_path)
+        self.save_h5_file(model, h5_save_path)
 
 
     def visualize_covariance(self, model, epoch):
