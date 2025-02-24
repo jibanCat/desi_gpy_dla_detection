@@ -47,6 +47,11 @@ MAX_LAMBDA="${MAX_LAMBDA:-1216.75}"
 DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
+# num_forest_lines
+NUM_FOEST_LINES="${NUM_FOREST_LINES:-31}"
+# num_lines
+NUM_LINES="${NUM_LINES:-3}"
+
 LEVEL2_START="${LEVEL2_START:-0}"
 LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 
@@ -94,6 +99,8 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --dlambda "$DLAMBDA" \
         --k "$K" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
+        --num_forest_lines "$NUM_FOEST_LINES" \
+        --num_lines "$NUM_LINES" \
         --figure_dir "$OUTDIR" \
         --level2_start "$LEVEL2_START" \
         --level2_end "$LEVEL2_END" &

@@ -48,6 +48,10 @@ K="${K:-20}"
 MAX_Z_CUT="${MAX_Z_CUT:-3000.0}" # Maximum redshift cut for the DLA samples
 MIN_Z_CUT="${MIN_Z_CUT:-3000.0}" # Minimum redshift cut for the DLA samples
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
+# num_forest_lines
+NUM_FOEST_LINES="${NUM_FOREST_LINES:-31}"
+# num_lines
+NUM_LINES="${NUM_LINES:-3}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
 HPX_STEP=52
@@ -92,7 +96,9 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --max_z_cut "$MAX_Z_CUT" \
         --min_z_cut "$MIN_Z_CUT" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "/pscratch/sd/j/jibancat/desi-loa-gpdla-20241211/" \
+        --num_forest_lines "$NUM_FOEST_LINES" \
+        --num_lines "$NUM_LINES" \
+        --figure_dir "$OUTDIR" \
         --hpx_start "$HPX_START" \
         --hpx_end "$HPX_END" &
 done

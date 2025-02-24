@@ -245,6 +245,19 @@ def parse(options=None):
         default=3000,
         help="Minimum redshift cut for DLA models.",
     )
+    # Additional parameters for the DLA model
+    parser.add_argument(
+        "--num_forest_lines",
+        type=int,
+        default=31,
+        help="Number of forest lines to model.",
+    )
+    parser.add_argument(
+        "--num_lines",
+        type=int,
+        default=3,
+        help="Number of members of the Lyman series to use.",
+    )
 
     # process range
     parser.add_argument(
@@ -413,6 +426,8 @@ def main(args=None):
         "max_noise_variance": args.max_noise_variance,
         "max_z_cut": args.max_z_cut,
         "min_z_cut": args.min_z_cut,
+        "num_forest_lines" : args.num_forest_lines, # 3, # Number of forest lines to model
+        "num_lines": args.num_lines, # 3,  # number of members of the Lyman series to use
     }
 
     # Convert DLAHolder to a dictionary
