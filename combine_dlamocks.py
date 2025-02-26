@@ -70,7 +70,11 @@ def main():
             tables.append(table)
         else:
             print(f"File {filename} not found. Skipping...")
-            missing_indices.append(start)
+            # Write all index within the range to the missing indices list
+            for index in range(start, end_range):
+                print(f"Index {index} is missing.")
+                missing_indices.append(index)
+
 
     # Save missing indices to a text file if there are any
     if missing_indices:
