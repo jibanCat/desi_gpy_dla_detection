@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import h5py
 from astropy.table import Table
-from preload_qsos import read_catalog
+from utilities.read_catalogs import read_catalog
 from desiutil.log import log
 
 def construct_filename(processed_dir, survey, program, healpix):
