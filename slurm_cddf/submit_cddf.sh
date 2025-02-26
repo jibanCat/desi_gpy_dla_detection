@@ -11,9 +11,8 @@
 # Load the required environment
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
 
-# Ensure the logs directory exists (parameterized)
-LOG_DIR=${LOG_DIR:-logs}
-mkdir -p "$LOG_DIR"
+# Ensure the logs directory exists
+mkdir -p logs
 
 # Define input files (can be overridden at submission)
 PROCESSED_FILE=${PROCESSED_FILE:-"/pscratch/sd/j/jibancat/desi-loa-gpdla-20250222-desi-learned/processed-main-dark.h5"}
@@ -25,8 +24,13 @@ SNR=${SNR:--2}  # Default to -2 if unset
 SECOND=${SECOND:-1}  # Default to 1 if unset
 OCCAMS_RAZOR=${OCCAMS_RAZOR:-1}  # Default to 1 if unset
 OUTPUT_PREFIX=${OUTPUT_PREFIX:-"/pscratch/sd/j/jibancat/dla_cddf"}
-HIGH_Z_QSO=${HIGH_Z_QSO:-6}  # Default to 2.1 if unset
-LOW_Z_QSO=${LOW_Z_QSO:-2.1}  # Default to 6 if unset
+HIGH_Z_QSO=${HIGH_Z_QSO:-6}  # Default to 6 if unset
+LOW_Z_QSO=${LOW_Z_QSO:-2.1}  # Default to 2.1 if unset
+
+# Optional flags (only included if set)
+EXTRA_FLAGS=""
+[ "${SUB_DLA:-0}" -eq 1 ] && EXTRA_FLAGS+=" --sub_dla"
+[ "${HIGH_NHI_CUT:-0}" -eq 1 ] && EXTRA_FLAGS+=" --high_nhi_cut"
 
 # Run the Python script with parameters
 python desi_cddf.py \
@@ -39,7 +43,6 @@ python desi_cddf.py \
     --occams_razor "$OCCAMS_RAZOR" \
     --high_z_qso "$HIGH_Z_QSO" \
     --low_z_qso "$LOW_Z_QSO" \
-    --sub_dla \
+    $EXTRA_FLAGS \
     --min_obs_wavelength_cut \
-    --min_obs_wavelength 3700 \
-
+    --min_obs_wavelength 3700
