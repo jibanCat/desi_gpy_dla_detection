@@ -25,6 +25,8 @@ SNR=${SNR:--2}  # Default to -2 if unset
 SECOND=${SECOND:-1}  # Default to 1 if unset
 OCCAMS_RAZOR=${OCCAMS_RAZOR:-1}  # Default to 1 if unset
 OUTPUT_PREFIX=${OUTPUT_PREFIX:-"/pscratch/sd/j/jibancat/dla_cddf"}
+HIGH_Z_QSO=${HIGH_Z_QSO:-6}  # Default to 2.1 if unset
+LOW_Z_QSO=${LOW_Z_QSO:-2.1}  # Default to 6 if unset
 
 # Run the Python script with parameters
 python desi_cddf.py \
@@ -34,4 +36,10 @@ python desi_cddf.py \
     --snr "$SNR" \
     --second "$SECOND" \
     --output_prefix "$OUTPUT_PREFIX" \
-    --occams_razor "$OCCAMS_RAZOR"
+    --occams_razor "$OCCAMS_RAZOR" \
+    --high_z_qso "$HIGH_Z_QSO" \
+    --low_z_qso "$LOW_Z_QSO" \
+    --sub_dla \
+    --min_obs_wavelength_cut \
+    --min_obs_wavelength 3700 \
+
