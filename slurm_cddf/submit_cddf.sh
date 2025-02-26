@@ -31,6 +31,8 @@ LOW_Z_QSO=${LOW_Z_QSO:-2.1}  # Default to 2.1 if unset
 EXTRA_FLAGS=""
 [ "${SUB_DLA:-0}" -eq 1 ] && EXTRA_FLAGS+=" --sub_dla"
 [ "${HIGH_NHI_CUT:-0}" -eq 1 ] && EXTRA_FLAGS+=" --high_nhi_cut"
+[ "${LOWZCUT:-0}" -eq 1 ] && EXTRA_FLAGS+=" --lowzcut"
+[ "${HIGHZCUT:-0}" -eq 1 ] && EXTRA_FLAGS+=" --highzcut"
 
 # Run the Python script with parameters
 python desi_cddf.py \

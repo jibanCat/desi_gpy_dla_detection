@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--min_obs_wavelength_cut", action="store_true", help="Apply minimum observed wavelength cut.")
     parser.add_argument("--min_obs_wavelength", type=float, default=4000, help="Minimum observed wavelength in Angstroms.")
     parser.add_argument("--second", type=int, default=1, help="Allow up to `second + 1` DLAs per QSO.")
+    parser.add_argument("--high_nhi_cut", action="store_true", help="Apply high NHI cut.")
 
     args = parser.parse_args()
 
@@ -42,6 +43,7 @@ def main():
         f"{'_highzcut' if args.highzcut else ''}"
         f"{'_zmaxlyb' if args.z_max_lyb else ''}"
         f"{'_zminlyb' if args.z_min_lyb else ''}"
+        f"{'_highnhi' if args.high_nhi_cut else ''}"
         f"{'_minobswave' if args.min_obs_wavelength_cut else ''}_{args.min_obs_wavelength}/"
     )
 
@@ -63,6 +65,7 @@ def main():
         z_min_lyb=args.z_min_lyb,
         min_obs_wavelength_cut=args.min_obs_wavelength_cut,
         min_obs_wavelength=args.min_obs_wavelength,
+        high_nhi_cut=args.high_nhi_cut,
     )
 
     # Generate DLA statistics plots
