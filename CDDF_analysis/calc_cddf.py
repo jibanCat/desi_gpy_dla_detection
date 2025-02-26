@@ -145,7 +145,7 @@ class DLACatalogue(object):
         self.proximity_zone = 0.1  # 30000 km/s
         # Exclude spectra closer to the tail of the spectrum, which has more dubious DLAs than average.
         self.highzcut = highzcut
-        self.tail_zone = 0.2  # 60000 km/s
+        self.tail_zone = 0.1  # 30000 km/s
         # Exclude spectra between lymanbeta to lymanalpha
         self.z_max_lyb = z_max_lyb
         # Exclude spectra between lymanlimit to lymanbeta
