@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=combine_processed_h5     # Job name
-#SBATCH --output=%x_%j.out                  # Standard output log (%j expands to job ID)
-#SBATCH --error=%x_%j.err                   # Standard error log
+#SBATCH --job-name=cddf                      # Job name
+#SBATCH --output=cddf_%j.out                 # Standard output log (%j expands to job ID)
+#SBATCH --error=cddf_%j.err                  # Standard error log
 #SBATCH --time=00:30:00                      # Time limit
 #SBATCH --nodes=1                            # Use one node
 #SBATCH -C cpu                               # Use CPU node
