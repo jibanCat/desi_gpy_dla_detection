@@ -16,7 +16,7 @@ def main():
                         help="Prefix for the output directory (default: 'CDDF_analysis').")
 
     # Plotting and analysis parameters
-    parser.add_argument("--z_dla_max", type=float, default=5, help="Maximum DLA redshift.")
+    parser.add_argument("--z_dla_max", type=float, default=5.5, help="Maximum DLA redshift.")
     parser.add_argument("--high_z_qso", type=float, default=7, help="Upper limit for QSO redshift.")
     parser.add_argument("--low_z_qso", type=float, default=2, help="Lower limit for QSO redshift.")
     parser.add_argument("--occams_razor", type=float, default=1, help="Occam's razor penalty.")
