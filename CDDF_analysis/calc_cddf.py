@@ -112,6 +112,7 @@ class DLACatalogue(object):
         min_obs_wavelength_cut: bool = False,  # Cut out the tail part below certain obs lambda, default 4000 A
         min_obs_wavelength: float = 4000,  # A
         high_nhi_cut: bool = True,  # Cut out the high NHI samples
+        high_nhi_cut_value: float = 22.0,  # log10(cm^-2)
     ):
         # Should we include the second DLA?
         self.second_dla = (
@@ -155,7 +156,7 @@ class DLACatalogue(object):
         self.min_obs_wavelength = min_obs_wavelength  # A
         # Exclude the high NHI samples
         self.high_nhi_cut = high_nhi_cut
-        self.high_nhi_cut_value = 22.0  # log10(cm^-2)
+        self.high_nhi_cut_value = high_nhi_cut_value  # log10(cm^-2)
 
         # self.raw_file = raw_file
         self.processed_file = processed_file

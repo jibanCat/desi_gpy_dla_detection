@@ -34,6 +34,12 @@ EXTRA_FLAGS=""
 [ "${LOWZCUT:-0}" -eq 1 ] && EXTRA_FLAGS+=" --lowzcut"
 [ "${HIGHZCUT:-0}" -eq 1 ] && EXTRA_FLAGS+=" --highzcut"
 
+# extra for z_min_lyb
+[ "${Z_MIN_LYB:-0}" -eq 1 ] && EXTRA_FLAGS+=" --z_min_lyb"
+
+# high_nhi_cut_value
+HIGH_NHI_CUT_VALUE=${HIGH_NHI_CUT_VALUE:-22.0}
+
 # Run the Python script with parameters
 python desi_cddf.py \
     --processed_file "$PROCESSED_FILE" \
@@ -47,4 +53,5 @@ python desi_cddf.py \
     --low_z_qso "$LOW_Z_QSO" \
     $EXTRA_FLAGS \
     --min_obs_wavelength_cut \
-    --min_obs_wavelength 3700
+    --min_obs_wavelength 3700 \
+    --high_nhi_cut_value $HIGH_NHI_CUT_VALUE

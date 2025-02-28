@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--min_obs_wavelength", type=float, default=4000, help="Minimum observed wavelength in Angstroms.")
     parser.add_argument("--second", type=int, default=1, help="Allow up to `second + 1` DLAs per QSO.")
     parser.add_argument("--high_nhi_cut", action="store_true", help="Apply high NHI cut.")
+    parser.add_argument("--high_nhi_cut_value", type=float, default=22.0, help="High NHI cut value.")
 
     args = parser.parse_args()
 
@@ -43,7 +44,7 @@ def main():
         f"{'_highzcut' if args.highzcut else ''}"
         f"{'_zmaxlyb' if args.z_max_lyb else ''}"
         f"{'_zminlyb' if args.z_min_lyb else ''}"
-        f"{'_highnhi' if args.high_nhi_cut else ''}"
+        f"{'_highnhi' if args.high_nhi_cut else ''}_{args.high_nhi_cut_value}"
         f"{'_minobswave' if args.min_obs_wavelength_cut else ''}_{args.min_obs_wavelength}/"
     )
 
