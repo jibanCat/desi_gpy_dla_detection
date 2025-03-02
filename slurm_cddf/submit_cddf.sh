@@ -40,6 +40,9 @@ EXTRA_FLAGS=""
 # high_nhi_cut_value
 HIGH_NHI_CUT_VALUE=${HIGH_NHI_CUT_VALUE:-22.0}
 
+# Bins per z
+BINS_PER_Z=${BINS_PER_Z:-6}
+
 # Run the Python script with parameters
 python desi_cddf.py \
     --processed_file "$PROCESSED_FILE" \
@@ -54,4 +57,5 @@ python desi_cddf.py \
     $EXTRA_FLAGS \
     --min_obs_wavelength_cut \
     --min_obs_wavelength 3700 \
-    --high_nhi_cut_value $HIGH_NHI_CUT_VALUE
+    --high_nhi_cut_value $HIGH_NHI_CUT_VALUE \
+    --bins_per_z $BINS_PER_Z

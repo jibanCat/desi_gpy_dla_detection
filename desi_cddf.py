@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--second", type=int, default=1, help="Allow up to `second + 1` DLAs per QSO.")
     parser.add_argument("--high_nhi_cut", action="store_true", help="Apply high NHI cut.")
     parser.add_argument("--high_nhi_cut_value", type=float, default=22.0, help="High NHI cut value.")
+    parser.add_argument("--bins_per_z", type=int, default=6, help="Number of bins per redshift.")
 
     args = parser.parse_args()
 
@@ -45,7 +46,8 @@ def main():
         f"{'_zmaxlyb' if args.z_max_lyb else ''}"
         f"{'_zminlyb' if args.z_min_lyb else ''}"
         f"{'_highnhi' if args.high_nhi_cut else ''}_{args.high_nhi_cut_value}"
-        f"{'_minobswave' if args.min_obs_wavelength_cut else ''}_{args.min_obs_wavelength}/"
+        f"{'_minobswave' if args.min_obs_wavelength_cut else ''}_{args.min_obs_wavelength}"
+        f"_bins_{args.bins_per_z}"
     )
 
     os.makedirs(subdir, exist_ok=True)
@@ -67,6 +69,7 @@ def main():
         min_obs_wavelength_cut=args.min_obs_wavelength_cut,
         min_obs_wavelength=args.min_obs_wavelength,
         high_nhi_cut=args.high_nhi_cut,
+        bins_per_z=args.bins_per_z,
     )
 
     # Generate DLA statistics plots

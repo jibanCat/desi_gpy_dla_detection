@@ -113,6 +113,7 @@ class DLACatalogue(object):
         min_obs_wavelength: float = 4000,  # A
         high_nhi_cut: bool = True,  # Cut out the high NHI samples
         high_nhi_cut_value: float = 22.0,  # log10(cm^-2)
+        bins_per_z: int = 6, # number of bins of dNdX or Omega_DLA to plot per unit z interval
     ):
         # Should we include the second DLA?
         self.second_dla = (
@@ -1021,7 +1022,8 @@ class DLACatalogue(object):
         xerrs = np.empty_like(omega_dla_68)
         z_cent = np.array([])
         conversion = protonmass / light * h100 / rho_crit(hubble)
-        lnhi_bins = np.linspace(20.3, 23, num=lnhi_nbins + 1)
+        # Get the NHI bins
+        lnhi_bins = np.linspace(20.3, self.high_nhi_cut_value, num=lnhi_nbins + 1)
         for zz in range(nbins):
             dX = self.path_length(z_bins[zz], z_bins[zz + 1])
             if dX == 0.0:
