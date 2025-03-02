@@ -194,7 +194,7 @@ class DLACatalogue(object):
         self.real_index = real_index
 
         # number of bins of dNdX or Omega_DLA to plot per unit z interval
-        self.bins_per_z = 6
+        self.bins_per_z = bins_per_z
         # Exclude things which have a low SNR. This is tested to be converged on DR7.
         self.filter_noisy_pixels = False
         self.noise_thresh = 0.5**2
