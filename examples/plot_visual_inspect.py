@@ -28,6 +28,12 @@ import fitsio
 from collections import namedtuple
 from scipy.interpolate import interp1d
 
+# include .. in the path
+import sys
+import os
+
+sys.path.insert(0, "..")
+
 # DESI-related imports
 import desispec.io
 from desispec.interpolation import resample_flux
