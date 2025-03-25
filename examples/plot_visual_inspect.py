@@ -28,11 +28,11 @@ import fitsio
 from collections import namedtuple
 from scipy.interpolate import interp1d
 
-# include .. in the path
-import sys
 import os
+import sys
 
-sys.path.insert(0, "..")
+# Add parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # DESI-related imports
 import desispec.io
