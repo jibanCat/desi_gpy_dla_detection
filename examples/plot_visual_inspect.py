@@ -649,10 +649,10 @@ def process_target(tid, catalog, release, survey, program, output_dir,
     nhi_cnn = mollycat[ind]["NHI_CNN"]
     nhi_cnn = nhi_cnn.value.data[_ind_nan]
     # TEMP results
-    z_dla_temp = mollycat[ind]["Z_DLA_TEMP"]
+    z_dla_temp = mollycat[ind]["Z_DLA_TMP"]
     _ind_nan = ~np.isnan(z_dla_temp.value.data)
     z_dla_temp = z_dla_temp.value.data[_ind_nan]
-    nhi_temp = mollycat[ind]["NHI_TEMP"]
+    nhi_temp = mollycat[ind]["NHI_TMP"]
     nhi_temp = nhi_temp.value.data[_ind_nan]
 
     # ----- eBOSS Trained Model -----
