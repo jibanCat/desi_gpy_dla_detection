@@ -14,7 +14,7 @@
 # ========= Set the TARGETID =========
 # You can override this from the command line with:
 # sbatch --export=tid=12345678901234567 this_script.sh
-tid=${tid:-39627666508219798}  # Default value if not set
+# tid=${tid:-39627666508219798}  # Default value if not set
 
 # ========= Debugging flags =========
 # export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
@@ -38,5 +38,4 @@ python -u examples/plot_visual_inspect.py \
   --los_catalog data/dla_catalogs/dr9q_concordance/processed/los_catalog \
   --dla_catalog data/dla_catalogs/dr9q_concordance/processed/dla_catalog \
   --dla_samples_file data/dr12q/processed/dla_samples_a03.mat \
-  --sub_dla_samples_file data/dr12q/processed/subdla_samples.mat \
-  --tid_list ${tid}
+  --sub_dla_samples_file data/dr12q/processed/subdla_samples.mat
