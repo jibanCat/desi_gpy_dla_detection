@@ -586,10 +586,14 @@ def plot_added_finder(ax, lya_gp, map_z_dlas, map_log_nhis, z_qso, num_lines=2,
     this_rest_wavelengths = this_rest_wavelengths[ind]
     lya_mu = lya_mu[ind]
     ax[0].plot((this_rest_wavelengths * (1 + z_qso)) / lya_gp.params.lya_wavelength - 1,
-               lya_mu,
-               label=(f"{label}({nth_lya}); z_dlas = ({', '.join(f'{z:.3g}' for z in map_z_dlas)}); "
-                      f"lognhi = ({', '.join(f'{n:.3g}' for n in map_log_nhis)})"),
-               color=color)
+                lya_mu,
+                label=label
+                + r"({n}); ".format(n=nth_lya)
+                + "z_dlas = ({}); ".format(",".join("{:.3g}".format(z) for z in map_z_dlas))
+                + "lognhi = ({})".format(
+                    ",".join("{:.3g}".format(n) for n in map_log_nhis)
+                ),
+                color=color)
     ax[1].scatter(map_z_dlas, map_log_nhis, marker=marker, s=100, color=color)
     return ax
 
@@ -735,11 +739,13 @@ def process_target(tid, catalog, release, survey, program, output_dir,
     ax_desi[1].scatter(map_z_dlas, map_log_nhis, marker="o", s=100, color="black", alpha=0.8)
     ax_desi[0].plot((this_rest_wavelengths * (1 + z_qso)) / processor_desi.dla_gp.params.lya_wavelength - 1,
                     lya_mu,
-                    label=(r"$\mathcal{M}$ eBOSS HCD({n}); z_dlas = ({}); lognhi = ({})"
-                           .format(nth_lya,
-                                   ",".join("{:.3g}".format(z) for z in map_z_dlas),
-                                   ",".join("{:.3g}".format(n) for n in map_log_nhis))),
-                    color="black", ls="--")
+                    label=r"$\mathcal{M}$"
+                        + r"eBOSS HCD({n}); ".format(n=nth_lya)
+                        + "z_dlas = ({}); ".format(",".join("{:.3g}".format(z) for z in map_z_dlas))
+                        + "lognhi = ({})".format(
+                            ",".join("{:.3g}".format(n) for n in map_log_nhis)
+                        ),
+                        color="black", ls="--")
     ax_desi[0].legend()
     desi_plot_path = os.path.join(target_dir, f"plot_tid_{tid}_DESI.pdf")
     save_plot(fig_desi, desi_plot_path)
