@@ -509,10 +509,12 @@ class SpectrumProcessor:
                    lya_gp.this_mu[ind], color="red", ls="--", label="GP meanflux")
         ax[0].plot((this_rest_wavelengths * (1 + z_qso)) / lya_gp.params.lya_wavelength - 1,
                    lya_mu,
-                   label=(r"$\mathcal{M}$" + " HCD({n}); z_dlas = ({}); lognhi = ({})"
-                          .format(nth_lya,
-                                  ",".join("{:.3g}".format(z) for z in map_z_dlas),
-                                  ",".join("{:.3g}".format(n) for n in map_log_nhis))),
+                    label=r"$\mathcal{M}$"
+                    + r" HCD({n}); ".format(n=nth_lya)
+                    + "z_dlas = ({}); ".format(",".join("{:.3g}".format(z) for z in map_z_dlas))
+                    + "lognhi = ({})".format(
+                        ",".join("{:.3g}".format(n) for n in map_log_nhis)
+                    ),
                    color="red")
         ax[0].fill_between((this_rest_wavelengths * (1 + z_qso)) / lya_gp.params.lya_wavelength - 1,
                            gp.Y[ind] - 2*np.sqrt(gp.v[ind]),
