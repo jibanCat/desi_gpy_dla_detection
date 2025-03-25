@@ -1,15 +1,15 @@
 #!/bin/bash
 
 #SBATCH -N 1                              # Number of nodes (1 node requested)
-#SBATCH -C gpu                            # GPU type
-#SBATCH -q regular                        # Queue (regular for longer runs)
+#SBATCH -C cpu                            # CPU type
+#SBATCH -q debug                          # Queue (regular for longer runs)
 #SBATCH --job-name=train_gp               # Job name for identification in the queue
 #SBATCH --output=train_gp_%j.log          # Standard output log (%j is replaced by the job ID)
 #SBATCH --error=error_train_gp_%j.log     # Standard error log (%j is replaced by the job ID)
 #SBATCH --mail-user=mfho@umich.edu        # Your email for notifications
 #SBATCH --mail-type=ALL                   # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                           # Account name to use on NERSC systems
-#SBATCH --time=12:00:00                   # Time limit for the job
+#SBATCH --time=0:30:00                    # Time limit for the job
 
 # ========= Set the TARGETID =========
 # You can override this from the command line with:
@@ -17,7 +17,7 @@
 tid=${tid:-39627666508219798}  # Default value if not set
 
 # ========= Debugging flags =========
-export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
+# export CUDA_LAUNCH_BLOCKING=1  # Helps debug CUDA issues
 export PYTHONUNBUFFERED=1      # Forces immediate output
 
 # ========= Load the environment =========
