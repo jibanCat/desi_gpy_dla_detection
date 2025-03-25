@@ -130,7 +130,7 @@ def read_catalog(qsocat, balmask, bytile):
     return catalog[zmask]
 
 
-def load_cnn_temp_results():
+def load_cnn_temp_results(no_gp=False):
     """
     Load the CNN/TEMP DLA finder catalogs and apply SNR, BAL, and NHI cuts.
 
@@ -146,8 +146,12 @@ def load_cnn_temp_results():
     # Hard-coded paths; adjust if necessary
     mollycat_path = "/global/cfs/cdirs/desi/users/mwolfson/DLA_cat/loa_combined_cat_raw.fits"
     mollycat_gp_path = "/global/cfs/cdirs/desi/users/mwolfson/DLA_cat/loa_dla_cat_close_gp_bal_col.fits"
+    mollycat_not_gp = "/global/cfs/cdirs/desi/users/mwolfson/DLA_cat/loa_dla_cat_not_gp_snr_15_bal_col_gt_910.fits"
     mollycat = Table.read(mollycat_path)
     mollycat_gp = Table.read(mollycat_gp_path)
+    if no_gp:
+        mollycat_gp = Table.read(mollycat_not_gp) # DLAs not in GP catalog
+    # mollycat_not_gp = Table.read(mollycat_not_gp) 
 
     # Apply cuts for a cleaner plot
     snr = mollycat_gp["SNR_REDSIDE"]
@@ -505,7 +509,7 @@ class SpectrumProcessor:
                    lya_gp.this_mu[ind], color="red", ls="--", label="GP meanflux")
         ax[0].plot((this_rest_wavelengths * (1 + z_qso)) / lya_gp.params.lya_wavelength - 1,
                    lya_mu,
-                   label=(r"$\mathcal{M}$ HCD({n}); z_dlas = ({}); lognhi = ({})"
+                   label=(r"$\mathcal{M}$" + " HCD({n}); z_dlas = ({}); lognhi = ({})"
                           .format(nth_lya,
                                   ",".join("{:.3g}".format(z) for z in map_z_dlas),
                                   ",".join("{:.3g}".format(n) for n in map_log_nhis))),
@@ -834,6 +838,8 @@ def main():
     parser.add_argument("--sub_dla_samples_file", type=str,
                         default="../data/dr12q/processed/subdla_samples.mat",
                         help="Path to the sub-DLA samples file.")
+    parser.add_argument("--no_gp", action="store_true", default=False,
+                        help="Run the DLAs not found by the GP (default: False).")
 
     args = parser.parse_args()
 
@@ -844,7 +850,7 @@ def main():
     catalog = read_catalog(args.catalog, args.balmask, args.tilebased)
 
     # Load CNN/TEMP results to get the default list of TARGETIDs
-    _, _, cnn_temp_tids = load_cnn_temp_results()
+    _, _, cnn_temp_tids = load_cnn_temp_results(no_gp=args.no_gp)
     if args.tid_list:
         # Parse comma-separated list of TARGETIDs
         tid_list = [int(t.strip()) for t in args.tid_list.split(",")]
