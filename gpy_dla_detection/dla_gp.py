@@ -354,6 +354,7 @@ class DLAGP(NullGP):
         max_workers: int = 32,
         batch_size: int = 313,
         executor=None,
+        null_evidence: Optional[float] = None,
     ) -> np.ndarray:
         """
         Parallelized version of the log model evidences computation using process-based parallelization.
@@ -367,6 +368,8 @@ class DLAGP(NullGP):
             max_workers (int, optional): Maximum number of workers to use. Defaults to number of CPU cores * 2.
             batch_size (int, optional): Number of samples per batch. Defaults to 100.
             executor (ProcessPoolExecutor, optional): An existing executor to reuse; if not provided, a new one is created.
+            null_evidence (float, optional): The log likelihood of the null model.
+            If provided, it will be used to stop the computation early if the null model likelihood is higher.
 
         Returns:
             np.ndarray: Array containing the computed log likelihoods for 1 to `max_dlas` DLAs.
@@ -462,6 +465,15 @@ class DLAGP(NullGP):
                     log_likelihoods_dla[num_dlas]
                 ):
                     break
+
+                # If null_evidence is provided and the current log likelihood is less than it,
+                # stop further computation
+                if null_evidence is not None:
+                    if log_likelihoods_dla[num_dlas] < null_evidence:
+                        log.info(
+                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the null model evidence {null_evidence}."
+                        )
+                        break
 
                 # Resampling logic to update base sample indices
                 nanind = np.isnan(sample_probabilities)
