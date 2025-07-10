@@ -2,10 +2,10 @@
 #SBATCH --job-name=cddf                      # Job name
 #SBATCH --output=logs/cddf_%j.out            # Standard output log (%j expands to job ID)
 #SBATCH --error=logs/cddf_%j.err             # Standard error log
-#SBATCH --time=00:30:00                      # Time limit
+#SBATCH --time=01:30:00                      # Time limit
 #SBATCH --nodes=1                            # Use one node
 #SBATCH -C cpu                               # Use CPU node
-#SBATCH -q debug                             # Use debug queue (change if needed)
+#SBATCH -q regular                             # Use debug queue (change if needed)
 #SBATCH -A desi                              # Account name
 
 # Load the required environment

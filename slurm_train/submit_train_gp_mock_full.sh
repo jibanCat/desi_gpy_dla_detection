@@ -41,6 +41,6 @@ python -u desi_learn_qsos_model.py \
     --norm_max_lambda 1200 \
     --max_noise_variance 9.0 \
     --output_dir "learnlogs_london/" \
-    --num_epochs 100 \
-    --learning_rate 0.1 \
+    --num_epochs 200 \
+    --learning_rate 0.01 \
     --batch_size 233787  # Updated batch size

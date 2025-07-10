@@ -2,7 +2,7 @@
 #SBATCH --job-name=combine_processed_h5     # Job name
 #SBATCH --output=logs/combine_%j.out       # Standard output log (%j expands to job ID)
 #SBATCH --error=logs/combine_%j.err        # Standard error log (%j expands to job ID)
-#SBATCH --time=03:00:00                    # Time limit
+#SBATCH --time=00:30:00                    # Time limit
 #SBATCH --nodes=1                          # Use one node
 #SBATCH -C cpu                             # Use CPU node
 #SBATCH -q debug                         # Use regular queue

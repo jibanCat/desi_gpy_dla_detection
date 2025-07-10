@@ -8,7 +8,7 @@
 #SBATCH --mail-user=mfho@umich.edu          # Email for notifications
 #SBATCH --mail-type=ALL                     # Notification options
 #SBATCH -A desi                             # NERSC account
-#SBATCH --time=00:30:00                     # Time limit
+#SBATCH --time=05:00:00                     # Time limit
 #SBATCH --ntasks=32                         # Number of tasks
 #SBATCH --export=ALL                        # Export all environment variables
 
