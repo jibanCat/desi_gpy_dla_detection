@@ -95,20 +95,36 @@ class BayesModelSelect:
                     f" ...     log p(D | z_QSO, no DLA)     : {log_likelihood_no_dla:.3f}"
                 )
             else:
-                log_likelihoods_dla = model_list[i].parallel_log_model_evidences(
-                    num_dlas,
-                    max_workers=max_workers,
-                    batch_size=batch_size,
-                    executor=executor,
-                )
-                log_likelihoods.append(log_likelihoods_dla)
                 # Log likelihood check
+                # ============= subDLA =============
+                # separate sub DLA and DLA because the samples could be different
                 if i == self.dla_model_ind - 1:
+                    # Set the batch size for subDLA samples directly from num of samples to avoid redundant
+                    num_subdla_samples = model_list[i].params.num_dla_samples
+                    batch_subdla_size = int(num_subdla_samples // max_workers)
+                    if batch_subdla_size * max_workers < num_subdla_samples:
+                        batch_subdla_size += 1
+                    log_likelihoods_dla = model_list[i].parallel_log_model_evidences(
+                        num_dlas,
+                        max_workers=max_workers,
+                        batch_size=batch_subdla_size,
+                        executor=executor,
+                    )
+                    log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):
                         log.info(
                             f" ...     log p(D | z_QSO, {j + 1} subDLAs) : {log_likelihoods_dla[j]:.3f}"
                         )
+                # ============= DLA =============
+                # For DLA models, use the default batch size
                 elif i == self.dla_model_ind:
+                    log_likelihoods_dla = model_list[i].parallel_log_model_evidences(
+                        num_dlas,
+                        max_workers=max_workers,
+                        batch_size=batch_size,
+                        executor=executor,
+                    )
+                    log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):
                         log.info(
                             f" ...     log p(D | z_QSO, {j + 1} DLAs) : {log_likelihoods_dla[j]:.3f}"

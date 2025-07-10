@@ -67,6 +67,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     if os.path.exists(coadd):
         # Reconstruct the Parameters instance from the dictionary
         params = Parameters(**model_params["params_dict"])
+        params_subdla = Parameters(**model_params["params_subdla_dict"])
 
         # Reconstruct the DLAHolder instance using the reconstructed Parameters
         model = DLAHolder(
@@ -85,6 +86,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             max_workers=model_params["max_workers"],
             batch_size=model_params["batch_size"],
             figure_dir=model_params["figure_dir"],
+            params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
@@ -166,6 +168,7 @@ def dlasearch_mock(specfile, catalog, model_params):
 
         # Reconstruct the Parameters instance from the dictionary
         params = Parameters(**model_params["params_dict"])
+        params_subdla = Parameters(**model_params["params_subdla_dict"])
 
         # Log the parameters
         log.info(f"Parameters: ---")
@@ -190,6 +193,7 @@ def dlasearch_mock(specfile, catalog, model_params):
             max_workers=model_params["max_workers"],
             batch_size=model_params["batch_size"],
             figure_dir=model_params["figure_dir"],
+            params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
         )
 
         fitresults = process_spectra_group(specfile, catalog, model)

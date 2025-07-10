@@ -263,6 +263,7 @@ class DLAHolder:
         max_workers: int = None,
         batch_size: int = 100,
         figure_dir: str = "figures/",
+        params_subdla=None,
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -283,12 +284,15 @@ class DLAHolder:
         self.max_workers = max_workers
         self.batch_size = batch_size
         self.params = params  # Pass in the Parameters object here
+        if params_subdla is None:
+            params_subdla = params.copy() # Use the same parameters for Sub-DLA
+        self.params_subdla = params_subdla
 
         # Initialize prior catalog and Bayesian model selection
         self.prior = PriorCatalog(self.params, catalog_name, los_catalog, dla_catalog)
         self.dla_samples = DLASamplesMAT(self.params, self.prior, dla_samples_file)
         self.subdla_samples = SubDLASamplesMAT(
-            self.params, self.prior, sub_dla_samples_file
+            self.params_subdla, self.prior, sub_dla_samples_file
         )
         # self.bayes = BayesModelSelect([0, 1, max_dlas], 2)
 
@@ -344,7 +348,7 @@ class DLAHolder:
             prev_beta=self.prev_beta,
         )
         subdla_gp = SubDLAGPMAT(
-            self.params,
+            self.params_subdla,
             self.prior,
             self.subdla_samples,
             min_z_separation=self.min_z_separation,
