@@ -461,17 +461,28 @@ class DLAGP(NullGP):
                     - np.log(self.params.num_dla_samples) * num_dlas
                 )
 
+                # ========= Early stopping logic =========
                 if (num_dlas + 1) == max_dlas or np.isnan(
                     log_likelihoods_dla[num_dlas]
                 ):
                     break
-
                 # If null_evidence is provided and the current log likelihood is less than it,
                 # stop further computation
                 if null_evidence is not None:
                     if log_likelihoods_dla[num_dlas] < null_evidence:
                         log.info(
                             f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the null model evidence {null_evidence}."
+                        )
+                        break
+                # If log likelihood is smaller than the previous one by 100 times,
+                # stop further computation
+                if num_dlas > 0:
+                    if (
+                        log_likelihoods_dla[num_dlas]
+                        < log_likelihoods_dla[num_dlas - 1] - 4.6052
+                    ):
+                        log.info(
+                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the previous one by 100 times."
                         )
                         break
 

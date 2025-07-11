@@ -123,6 +123,7 @@ class BayesModelSelect:
                         max_workers=max_workers,
                         batch_size=batch_size,
                         executor=executor,
+                        null_evidence=log_likelihood_no_dla,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):
