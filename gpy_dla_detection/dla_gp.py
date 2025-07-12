@@ -437,7 +437,7 @@ class DLAGP(NullGP):
         # Check if an executor is passed; if not, create one locally
         local_executor = False
         if executor is None:
-            executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
             local_executor = True
 
         try:
