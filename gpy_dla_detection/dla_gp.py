@@ -53,7 +53,7 @@ def process_sample(
     i: int,
     num_dlas: int,
     sample_z_dlas: np.ndarray,
-    base_sample_inds: np.ndarray,
+    base_sample_inds_T: np.ndarray,
     dla_samples: DLASamplesMAT,
     params: Parameters,
     sample_log_likelihood_k_dlas: Callable[[np.ndarray, np.ndarray], float],
@@ -70,7 +70,8 @@ def process_sample(
         i (int): Index of the current sample.
         num_dlas (int): Number of DLAs in the model for this sample.
         sample_z_dlas (np.ndarray): Array of sampled redshift values for DLAs.
-        base_sample_inds (np.ndarray): Base indices to be resampled according to the prior.
+        base_sample_inds_T (np.ndarray): "The transpose" of Base indices to be resampled according to the prior.
+            Transpose is faster for indexing.
         dla_samples ('DLASamplesMAT'): Object containing the DLA sample catalog.
         params ('Parameters'): Model parameters object.
         sample_log_likelihood_k_dlas (Callable): Function to compute the log likelihood of k-DLA model.
@@ -87,7 +88,8 @@ def process_sample(
 
     # Query the 2:k DLA parameters {z_dla, logNHI}_{i=2}^k_dlas
     if num_dlas > 0:
-        base_ind = base_sample_inds[:num_dlas, i]
+        # use transpose of base_sample_inds to speed up indexing
+        base_ind = base_sample_inds_T[i, :num_dlas] #base_sample_inds[:num_dlas, i]
         z_dlas_2_k = sample_z_dlas[base_ind]
         log_nhis_2_k = dla_samples.log_nhi_samples[base_ind]
         nhis_2_k = dla_samples.nhi_samples[base_ind]
@@ -138,13 +140,15 @@ def process_batch(
 
     # vectorize the loop
     batch_results = np.empty(len(batch_indices), dtype=np.float64)
+    base_sample_inds_T = base_sample_inds.T  # Transpose for faster indexing
+
     for j, i in enumerate(batch_indices):
         # Process each sample using the same logic as process_sample
         batch_results[j] = process_sample(
             i,
             num_dlas,
             sample_z_dlas,
-            base_sample_inds,
+            base_sample_inds_T,
             dla_samples,
             params,
             sample_log_likelihood_k_dlas,
