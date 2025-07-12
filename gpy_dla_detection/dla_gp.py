@@ -136,10 +136,11 @@ def process_batch(
     """
     batch_results = []  # This will store the results for the entire batch
 
-    # Loop through each sample index in the batch and process it
-    for i in batch_indices:
+    # vectorize the loop
+    batch_results = np.empty(len(batch_indices), dtype=np.float64)
+    for j, i in enumerate(batch_indices):
         # Process each sample using the same logic as process_sample
-        result = process_sample(
+        batch_results[j] = process_sample(
             i,
             num_dlas,
             sample_z_dlas,
@@ -149,7 +150,6 @@ def process_batch(
             sample_log_likelihood_k_dlas,
             min_z_separation,  # Pass the missing argument
         )
-        batch_results.append(result)  # Store the result in the batch result list
 
     return batch_results  # Return the list of results for the batch
 
@@ -253,10 +253,15 @@ class DLAGP(NullGP):
         sample_log_likelihoods = np.empty((self.params.num_dla_samples, max_dlas))
         sample_log_likelihoods[:] = np.nan
 
+        # preallocate sample probabilities
+        sample_probabilities = np.empty(self.params.num_dla_samples)
+
         # prepare z_dla samples
         sample_z_dlas = self.dla_samples.sample_z_dlas(
             self.this_wavelengths, self.z_qso
         )
+        # move this to the top of the function to avoid re-computation
+        lognorm = np.log(self.params.num_dla_samples)
 
         # compute probabilities under DLA model for each of the sampled
         # (normalized offset, log(N HI)) pairs
@@ -321,7 +326,7 @@ class DLAGP(NullGP):
             log_likelihoods_dla[num_dlas] = (
                 max_log_likelihood
                 + np.log(np.nanmean(sample_probabilities))
-                - np.log(self.params.num_dla_samples) * num_dlas
+                - lognorm * num_dlas
             )  # occams razor for more DLA parameters
 
             # no needs for re-sample the QMC samples for the last run
@@ -408,6 +413,12 @@ class DLAGP(NullGP):
         sample_log_likelihoods = np.empty((self.params.num_dla_samples, max_dlas))
         sample_log_likelihoods[:] = np.nan
 
+        # Preallocate sample probabilities
+        sample_probabilities = np.empty(self.params.num_dla_samples)
+
+        # precomputed log normalization factor
+        lognorm = np.log(self.params.num_dla_samples)
+
         # Prepare z_dla samples
         sample_z_dlas = self.dla_samples.sample_z_dlas(
             self.this_wavelengths, self.z_qso
@@ -469,13 +480,13 @@ class DLAGP(NullGP):
 
                 # Compute the log likelihood for each number of DLAs
                 max_log_likelihood = np.nanmax(sample_log_likelihoods[:, num_dlas])
-                sample_probabilities = np.exp(
+                sample_probabilities[:] = np.exp(
                     sample_log_likelihoods[:, num_dlas] - max_log_likelihood
                 )
                 log_likelihoods_dla[num_dlas] = (
                     max_log_likelihood
                     + np.log(np.nanmean(sample_probabilities))
-                    - np.log(self.params.num_dla_samples) * num_dlas
+                    - lognorm * num_dlas
                 )
 
                 # ========= Early stopping logic =========
@@ -496,10 +507,10 @@ class DLAGP(NullGP):
                 if num_dlas > 0:
                     if (
                         log_likelihoods_dla[num_dlas]
-                        < log_likelihoods_dla[num_dlas - 1] - 2.302585092994046 # log(10)
+                        < log_likelihoods_dla[num_dlas - 1] #- 2.302585092994046 # log(10)
                     ):
                         log.info(
-                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the previous one by 10 times."
+                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the previous one."
                         )
                         break
 
