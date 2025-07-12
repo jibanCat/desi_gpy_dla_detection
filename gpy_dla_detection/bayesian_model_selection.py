@@ -120,7 +120,7 @@ class BayesModelSelect:
                     log_likelihoods.append(log_likelihoods_dla)
 
                     # adding subDLA to null evidence for stopping criteria
-                    log_likelihoods_subdla = log_likelihoods_dla
+                    log_likelihoods_subdla = log_likelihoods_dla[0]
                     log_likelihoods_subdla = log_likelihoods_subdla + log_priors[1] - log_prior_dla
                     null_evidence = logsumexp([null_evidence, log_likelihoods_subdla])
 
