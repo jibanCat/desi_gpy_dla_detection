@@ -77,11 +77,13 @@ class BayesModelSelect:
         log_priors = np.array(list(chain(*log_priors)))
         log_priors[0] = np.log(1 - np.exp(logsumexp(log_priors[1:])))
 
+        log_prior_dla = logsumexp(log_priors[2:])
+
         # Log prior check
         log.info(f" ...     p( no DLA | z_QSO)     : {np.exp(log_priors[0]):.3f}")
         log.info(f" ...     p( subDLA | z_QSO)     : {np.exp(log_priors[1]):.3f}")
         log.info(
-            f" ...     p(   DLA | z_QSO)        : {np.sum(np.exp(log_priors[2:])):.3f}"
+            f" ...     p(   DLA | z_QSO)        : {log_prior_dla:.3f}"
         )
 
         # Calculate model evidences (log likelihoods)
@@ -89,6 +91,11 @@ class BayesModelSelect:
             if num_dlas == 0:
                 log_likelihood_no_dla = model_list[i].log_model_evidence()
                 log_likelihoods.append([log_likelihood_no_dla])
+
+                # stopping criteria for DLA model
+                # make it ratio of priors: dla evidence * prior < no DLA evidence * prior
+                # ==> null_evidence = log_likelihood_no_dla + log_priors[0] / log_priors[2]
+                null_evidence = log_likelihood_no_dla + log_priors[0] - log_prior_dla
 
                 # Log likelihood check
                 log.info(
@@ -111,6 +118,12 @@ class BayesModelSelect:
                         executor=executor,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
+
+                    # adding subDLA to null evidence for stopping criteria
+                    log_likelihoods_subdla = log_likelihoods_dla
+                    log_likelihoods_subdla = log_likelihoods_subdla + log_priors[1] - log_prior_dla
+                    null_evidence = logsumexp([null_evidence, log_likelihoods_subdla])
+
                     for j in range(num_dlas):
                         log.info(
                             f" ...     log p(D | z_QSO, {j + 1} subDLAs) : {log_likelihoods_dla[j]:.3f}"
@@ -123,7 +136,7 @@ class BayesModelSelect:
                         max_workers=max_workers,
                         batch_size=batch_size,
                         executor=executor,
-                        null_evidence=log_likelihood_no_dla,
+                        null_evidence=null_evidence,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):
