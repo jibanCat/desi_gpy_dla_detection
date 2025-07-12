@@ -3,6 +3,7 @@ dla_gp.py
 
 A GP class for having multiple DLAs intervening in a given slightline. 
 """
+import time
 
 from typing import Tuple, Optional, Callable, List
 import os
@@ -142,6 +143,8 @@ def process_batch(
     batch_results = np.empty(len(batch_indices), dtype=np.float64)
     base_sample_inds_T = base_sample_inds.T  # Transpose for faster indexing
 
+    t0 = time.time()
+
     for j, i in enumerate(batch_indices):
         # Process each sample using the same logic as process_sample
         batch_results[j] = process_sample(
@@ -154,6 +157,7 @@ def process_batch(
             sample_log_likelihood_k_dlas,
             min_z_separation,  # Pass the missing argument
         )
+    print(f"Batch {batch_indices[0]}-{batch_indices[-1]} took {time.time() - t0:.3f} sec")
 
     return batch_results  # Return the list of results for the batch
 
@@ -437,7 +441,7 @@ class DLAGP(NullGP):
         # Check if an executor is passed; if not, create one locally
         local_executor = False
         if executor is None:
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+            executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
             local_executor = True
 
         try:
@@ -523,12 +527,17 @@ class DLAGP(NullGP):
                 W = sample_probabilities
                 W[nanind] = 0.0
 
-                base_sample_inds[num_dlas, :] = np.random.choice(
-                    np.arange(self.params.num_dla_samples).astype(np.int32),
-                    size=self.params.num_dla_samples,
-                    replace=True,
-                    p=W / W.sum(),
+                # resample the base sample indices using searchsorted method
+                base_sample_inds[num_dlas, :] = searchsorted_method(
+                    W,
+                    self.params.num_dla_samples,
                 )
+                # base_sample_inds[num_dlas, :] = np.random.choice(
+                #     np.arange(self.params.num_dla_samples).astype(np.int32),
+                #     size=self.params.num_dla_samples,
+                #     replace=True,
+                #     p=W / W.sum(),
+                # )
 
         finally:
             # Only shut down the executor if it was created locally
