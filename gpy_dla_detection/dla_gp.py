@@ -37,6 +37,17 @@ from .dla_samples import DLASamplesMAT
 # Limit the number of workers to the number of CPU cores
 # max_workers = os.cpu_count() * 2
 
+# fast searchsorted method for resampling
+def searchsorted_method(W, N):
+    """
+    Fast searchsorted method for resampling indices based on weights.
+    equivalent to MATLAB's randsample with replacement.
+    """
+    W = W / np.sum(W)
+    cumsum = np.cumsum(W)
+    u = np.random.rand(N)
+    return np.searchsorted(cumsum, u)
+
 
 def process_sample(
     i: int,
@@ -334,12 +345,18 @@ class DLAGP(NullGP):
             W = sample_probabilities
             W[nanind] = 0.0
 
-            base_sample_inds[num_dlas, :] = np.random.choice(
-                np.arange(self.params.num_dla_samples).astype(np.int32),
-                size=self.params.num_dla_samples,
-                replace=True,
-                p=W / W.sum(),
+            # resample the base sample indices using searchsorted method
+            base_sample_inds[num_dlas, :] = searchsorted_method(
+                W,
+                self.params.num_dla_samples,
             )
+
+            # base_sample_inds[num_dlas, :] = np.random.choice(
+            #     np.arange(self.params.num_dla_samples).astype(np.int32),
+            #     size=self.params.num_dla_samples,
+            #     replace=True,
+            #     p=W / W.sum(),
+            # )
 
         # store sample likelihoods for MAP value calculation
         # this could cause troubles for parallelization in the future
@@ -474,15 +491,15 @@ class DLAGP(NullGP):
                             f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the null model evidence {null_evidence}."
                         )
                         break
-                # If log likelihood is smaller than the previous one by 100 times,
+                # If log likelihood is smaller than the previous one by 10 times,
                 # stop further computation
                 if num_dlas > 0:
                     if (
                         log_likelihoods_dla[num_dlas]
-                        < log_likelihoods_dla[num_dlas - 1] - 4.6052
+                        < log_likelihoods_dla[num_dlas - 1] - 2.302585092994046 # log(10)
                     ):
                         log.info(
-                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the previous one by 100 times."
+                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the previous one by 10 times."
                         )
                         break
 
