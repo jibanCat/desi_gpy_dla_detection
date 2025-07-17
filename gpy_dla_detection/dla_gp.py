@@ -143,7 +143,7 @@ def process_batch(
     batch_results = np.empty(len(batch_indices), dtype=np.float64)
     base_sample_inds_T = base_sample_inds.T  # Transpose for faster indexing
 
-    t0 = time.time()
+    # t0 = time.time()
 
     for j, i in enumerate(batch_indices):
         # Process each sample using the same logic as process_sample
@@ -157,7 +157,7 @@ def process_batch(
             sample_log_likelihood_k_dlas,
             min_z_separation,  # Pass the missing argument
         )
-    print(f"Batch {batch_indices[0]}-{batch_indices[-1]} took {time.time() - t0:.3f} sec")
+    # print(f"Batch {batch_indices[0]}-{batch_indices[-1]} took {time.time() - t0:.3f} sec")
 
     return batch_results  # Return the list of results for the batch
 
