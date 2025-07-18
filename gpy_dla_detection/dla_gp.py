@@ -38,6 +38,63 @@ from .dla_samples import DLASamplesMAT
 # Limit the number of workers to the number of CPU cores
 # max_workers = os.cpu_count() * 2
 
+# fast search method for adapative truncated sampling
+def select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.02, logL_null=None):
+    """
+    Selects a mask for z_all entries that are within `z_tol` of any high-likelihood z values from an initial scan.
+
+    This function efficiently identifies entries in `z_all` whose values lie within a tolerance
+    range (`z_tol`) of any `initial_z` sample whose corresponding log-likelihood exceeds a given threshold.
+
+    This is useful in truncated likelihood integration schemes where the parameter space
+    (e.g., z_DLA) is multi-modal and one wants to restrict evaluation to promising subregions.
+
+    Parameters
+    ----------
+    initial_z : np.ndarray of shape (N_scan,)
+        The redshift samples from the initial low-resolution scan.
+    initial_logL : np.ndarray of shape (N_scan,)
+        The corresponding log-likelihood values of `initial_z`.
+    z_all : np.ndarray of shape (N_total,)
+        The full set of redshift values (e.g., from dense QMC samples) to be filtered.
+    z_tol : float, optional
+        The redshift tolerance window. A point in `z_all` is kept if it lies within
+        ±`z_tol` of any high-likelihood `initial_z`. Default is 0.02.
+    logL_null : float or None, optional
+        The log-likelihood threshold to define "high-likelihood" points. If None, the maximum
+        value of `initial_logL` is used.
+
+    Returns
+    -------
+    mask : np.ndarray of shape (N_total,)
+        A boolean array indicating which entries in `z_all` fall near any high-likelihood
+        `initial_z` within the specified tolerance.
+
+    Notes
+    -----
+    Internally, this uses `np.searchsorted` on the sorted array of `z_good` for efficient
+    vectorized interval checks, avoiding nested loops.
+
+    Examples
+    --------
+    >>> mask = select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.01)
+    >>> filtered_z = z_all[mask]
+    """
+    if logL_null is None:
+        logL_null = np.max(initial_logL)
+
+    z_good = initial_z[initial_logL > logL_null]
+    if len(z_good) == 0:
+        return np.array([], dtype=int)  # no valid points
+
+    z_good_sorted = np.sort(z_good)
+    left = np.searchsorted(z_good_sorted, z_all - z_tol, side='left')
+    right = np.searchsorted(z_good_sorted, z_all + z_tol, side='right')
+
+    # Valid if at least one good z is within [z - z_tol, z + z_tol]
+    mask = (right > left)
+    return mask    
+
 # fast searchsorted method for resampling
 def searchsorted_method(W, N):
     """
@@ -423,6 +480,7 @@ class DLAGP(NullGP):
 
         # Preallocate sample probabilities
         sample_probabilities = np.empty(self.params.num_dla_samples)
+        sample_probabilities[:] = np.nan
 
         # precomputed log normalization factor
         lognorm = np.log(self.params.num_dla_samples)
@@ -432,19 +490,124 @@ class DLAGP(NullGP):
             self.this_wavelengths, self.z_qso
         )
 
-        # Create batches of indices
-        indices = list(range(self.params.num_dla_samples))
-        batches = [
-            indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
-        ]
-
         # Check if an executor is passed; if not, create one locally
         local_executor = False
         if executor is None:
             executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
             local_executor = True
 
+        # ========= Adative truncated sampling =========
+        # Your first 5000 samples scan is to find the regions of high likelihood,
+        # and then you only sample the regions of high likelihood
+        # 
+        # Step 1: only use a small subset of QMC samples for the initial scan
+        n_initial = 5000  # only scan the first 5000 samples
+        initial_logL = np.empty(n_initial)
+        initial_logL[:] = np.nan
+        # # Select slice of samples for initial scan
+        # z_dla_subset = sample_z_dlas[:n_initial]
+        # log_nhi_subset = self.dla_samples.log_nhi_samples[:n_initial]
+        # get the new batch_size based on the n_workers
+        batch_size_subset = int(n_initial / max_workers)
+        if batch_size_subset * max_workers < n_initial:
+            batch_size_subset += 1
+
+        # Build initial batches
+        initial_indices = list(range(n_initial))
+        initial_batches = [
+            initial_indices[i : i + batch_size_subset]
+            for i in range(0, n_initial, batch_size_subset)
+        ]
+
         try:
+            if null_evidence is not None:
+                # ========= Initial scan on the 5000 subset =========
+                # Step 2: Run scan on the 5000 subset
+                init_num_dla = 0  # num_dlas = 0 for initial scan
+                futures = {
+                    executor.submit(
+                        process_batch,
+                        batch,
+                        init_num_dla,  # num_dlas = 0 for initial scan
+                        sample_z_dlas,
+                        base_sample_inds,
+                        self.dla_samples,
+                        self.params,
+                        self.sample_log_likelihood_k_dlas,
+                        self.min_z_separation,
+                    ): batch
+                    for batch in initial_batches
+                }
+                for future in as_completed(futures):
+                    batch = futures[future]
+                    try:
+                        results = future.result()
+                        for i, res in zip(batch, results):
+                            initial_logL[i] = res
+                            sample_log_likelihoods[i, init_num_dla] = result
+                    except Exception as e:
+                        log.error(f"Initial scan error: {e}")
+                # Step 3: define the log likelihood "zDLA" mask for the initial scan
+                z_tol = 0.02 # TODO: find the best value
+                # These are the indices of the z_dlas that are within z_tol of the high likelihood regions
+                # in the initial scan. You can think of this as nested sampling
+                # in general it reduces samples by a factor of ~100 (100000 to ~2000; 5000 to ~100)
+                valid_mask = select_region_indices_searchsorted(
+                    z_all=sample_z_dlas,                 # full 100000
+                    initial_logL=initial_logL,           # only 5000
+                    initial_z=sample_z_dlas[:n_initial], # only 5000
+                    z_tol=z_tol,
+                    logL_null=null_evidence,
+                ) # this is boolean mask of the full 100000 samples
+
+                # ========== Early stopping if initial scan returns no valid regions ==========
+                if np.sum(valid_mask) == 0:
+                    log.warning(
+                        "No valid regions found in the initial scan. Returning NaN for all log likelihoods."
+                    )
+                    # Save the approximated log likelihoods for 1 DLA model
+                    max_log_likelihood = np.nanmax(sample_log_likelihoods[:, init_num_dla])
+                    sample_probabilities[:] = np.exp(
+                        sample_log_likelihoods[:, init_num_dla] - max_log_likelihood
+                    )
+                    log_likelihoods_dla[init_num_dla] = (
+                        max_log_likelihood
+                        + np.log(np.nanmean(sample_probabilities))
+                        - lognorm * init_num_dla
+                    )
+                    log.info(
+                        f"Stopping early at {init_num_dla + 1} DLAs because the log likelihood {log_likelihoods_dla[init_num_dla]} is less than the null model evidence {null_evidence}."
+                    )
+                    # break the try block to avoid further processing
+                    # Store results for future use
+                    self.sample_log_likelihoods = sample_log_likelihoods
+                    self.base_sample_inds = base_sample_inds
+
+                    return log_likelihoods_dla
+
+                # Step 4: Filter the batch indices based on the valid mask,
+                #         so this is filtered both lognhi and z_dla
+                # 
+                # Exclude the initial 5000 samples from the valid mask
+                valid_mask[:n_initial] = False  # Exclude the initial scan samples
+                indices = np.where(valid_mask)[0]
+                batch_size = int(len(indices) / max_workers)
+                if batch_size * max_workers < len(indices):
+                    batch_size += 1
+                batches = [
+                    indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
+                ]
+
+            # ========= Not adaptive truncated sampling =========
+            # this is a safegard for the case we want the original sampling
+            else:
+                indices = list(range(self.params.num_dla_samples))
+                batches = [
+                    indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
+                ]
+
+
+            # ========= Select regions of high likelihood =========
             for num_dlas in range(max_dlas):  # Iterate from 0 to max_dlas - 1
                 # Submit the tasks for each batch to the executor
                 futures = {
