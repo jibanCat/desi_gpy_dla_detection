@@ -607,7 +607,7 @@ class DLAGP(NullGP):
                 # If few values, fallback to minimum or null_evidence
                 below_null = initial_logL[initial_logL < null_evidence]
                 if below_null.size > 5:
-                    log_initial_logL = np.nanmean(below_null)
+                    log_initial_logL = null_evidence #np.nanmean(below_null)
                 else:
                     log.warning(f"Only {below_null.size} samples in low-likelihood region; correction may be unreliable.")                    
                     log_initial_logL = null_evidence 
