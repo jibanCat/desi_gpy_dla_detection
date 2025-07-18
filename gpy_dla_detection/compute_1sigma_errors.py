@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.stats import gaussian_kde
 
+from desiutil.log import log
+
 
 def compute_1sigma_errors(
     MAP_z_dlas,
@@ -107,6 +109,7 @@ def compute_1sigma_errors(
     return sigma_z_dlas, sigma_log_nhi
 
 
+
 def compute_1sigma_errors_fast(
     MAP_z_dlas,
     MAP_log_nhi,
@@ -115,7 +118,8 @@ def compute_1sigma_errors_fast(
     sample_log_likelihoods,
 ):
     """
-    Compute the 1-sigma errors for MAP estimates of z_dlas and log_nhi using a Gaussian approximation.
+    Compute the 1-sigma errors for MAP estimates of z_dlas and log_nhi using a Gaussian approximation,
+    ignoring NaNs in the sample arrays or likelihoods.
 
     Parameters
     ----------
@@ -124,11 +128,11 @@ def compute_1sigma_errors_fast(
     MAP_log_nhi : np.ndarray
         The MAP estimates of log_nhi (shape: (number of detected DLAs,))
     sample_z_dlas : np.ndarray
-        Samples of z_dlas (shape: (10000,))
+        Samples of z_dlas (shape: (100000,))
     sample_log_nhi_samples : np.ndarray
-        Samples of log_nhi (shape: (10000,))
+        Samples of log_nhi (shape: (100000,))
     sample_log_likelihoods : np.ndarray
-        Log likelihoods for the samples (shape: (10000,))
+        Log likelihoods for the samples (shape: (100000,))
 
     Returns
     -------
@@ -138,46 +142,50 @@ def compute_1sigma_errors_fast(
         1-sigma errors for log_nhi (shape: (number of detected DLAs,))
     """
 
-    # Convert log-likelihoods to probabilities
+    # Mask out samples where any relevant entry is NaN
+    valid_mask = (
+        ~np.isnan(sample_z_dlas)
+        & ~np.isnan(sample_log_nhi_samples)
+        & ~np.isnan(sample_log_likelihoods)
+    )
+    sample_z_dlas = sample_z_dlas[valid_mask]
+    sample_log_nhi_samples = sample_log_nhi_samples[valid_mask]
+    sample_log_likelihoods = sample_log_likelihoods[valid_mask]
+
+    # Convert log-likelihoods to normalized probabilities
     sample_probabilities = np.exp(
         sample_log_likelihoods - np.max(sample_log_likelihoods)
     )
+    sample_probabilities /= np.sum(sample_probabilities)
 
     # Define arrays to store the 1-sigma errors
-    sigma_z_dlas = np.zeros_like(MAP_z_dlas)
-    sigma_log_nhi = np.zeros_like(MAP_log_nhi)
+    sigma_z_dlas = np.full_like(MAP_z_dlas, np.nan)
+    sigma_log_nhi = np.full_like(MAP_log_nhi, np.nan)
 
-    # Iterate over each detected DLA to compute the 1-sigma error for each parameter
     for i, (map_z, map_log_nhi) in enumerate(zip(MAP_z_dlas, MAP_log_nhi)):
-        # Mask samples based on the current detected DLA
-        z_mask = np.abs(sample_z_dlas - map_z) < 0.1  # Narrow window around MAP_z
-        nhi_mask = (
-            np.abs(sample_log_nhi_samples - map_log_nhi) < 0.5
-        )  # Narrow window around MAP_log_nhi
-
-        # Get the intersection of z and nhi masks for this detected DLA
+        z_mask = np.abs(sample_z_dlas - map_z) < 0.1
+        nhi_mask = np.abs(sample_log_nhi_samples - map_log_nhi) < 0.5
         combined_mask = z_mask & nhi_mask
 
-        # Filter samples and probabilities for the current DLA
+        if np.sum(combined_mask) == 0:
+            log.warning(f"No valid samples near MAP values for DLA {i}. Setting σ=NaN.")
+            continue
+
         z_samples_filtered = sample_z_dlas[combined_mask]
         log_nhi_samples_filtered = sample_log_nhi_samples[combined_mask]
-
         probabilities_filtered = sample_probabilities[combined_mask]
 
-        # Normalize the probabilities
+        if np.sum(probabilities_filtered) <= 0.0:
+            log.warning(f"Zero total weight for DLA {i}. Setting σ=NaN.")
+            continue
+
         probabilities_filtered /= np.sum(probabilities_filtered)
 
-        # Estimate the 1-sigma errors by fitting Gaussian distributions
         sigma_z_dlas[i] = np.sqrt(
-            np.average(
-                (z_samples_filtered - map_z) ** 2, weights=probabilities_filtered
-            )
+            np.average((z_samples_filtered - map_z) ** 2, weights=probabilities_filtered)
         )
         sigma_log_nhi[i] = np.sqrt(
-            np.average(
-                (log_nhi_samples_filtered - map_log_nhi) ** 2,
-                weights=probabilities_filtered,
-            )
+            np.average((log_nhi_samples_filtered - map_log_nhi) ** 2, weights=probabilities_filtered)
         )
 
     return sigma_z_dlas, sigma_log_nhi
