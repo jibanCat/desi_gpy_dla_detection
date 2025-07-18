@@ -16,6 +16,8 @@ from desiutil.log import log
 import numpy as np
 import scipy.stats as stats
 from scipy.integrate import quad
+from scipy.special import logsumexp
+
 import h5py
 
 from .set_parameters import Parameters
@@ -450,6 +452,10 @@ class DLAGP(NullGP):
         The process is repeated for each number of DLAs (up to `max_dlas`), and the results are stored
         in an array.
 
+        If `null_evidence` is provided, the method performs an initial scan to
+        identify high-likelihood regions and estimates the marginal likelihood
+        with a truncated sampling correction (weighted by prior volume).
+
         Args:
             max_dlas (int): The maximum number of DLAs to be considered in the model.
             max_workers (int, optional): Maximum number of workers to use. Defaults to number of CPU cores * 2.
@@ -588,7 +594,7 @@ class DLAGP(NullGP):
                 # Step 4: Filter the batch indices based on the valid mask,
                 #         so this is filtered both lognhi and z_dla
                 # 
-                # Exclude the initial 5000 samples from the valid mask
+                # Avoid using initial scan samples again for refined sampling
                 valid_mask[:n_initial] = False  # Exclude the initial scan samples
                 indices = np.where(valid_mask)[0]
                 batch_size = int(len(indices) / max_workers)
@@ -597,6 +603,14 @@ class DLAGP(NullGP):
                 batches = [
                     indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
                 ]
+                # Estimate average log-likelihood in the rejected region (logL < null_evidence)
+                # If few values, fallback to minimum or null_evidence
+                below_null = initial_logL[initial_logL < null_evidence]
+                if below_null.size > 5:
+                    log_initial_logL = np.nanmean(below_null)
+                else:
+                    log.warning(f"Only {below_null.size} samples in low-likelihood region; correction may be unreliable.")                    
+                    log_initial_logL = null_evidence 
 
             # ========= Not adaptive truncated sampling =========
             # this is a safegard for the case we want the original sampling
@@ -654,11 +668,46 @@ class DLAGP(NullGP):
                 sample_probabilities[:] = np.exp(
                     sample_log_likelihoods[:, num_dlas] - max_log_likelihood
                 )
-                log_likelihoods_dla[num_dlas] = (
-                    max_log_likelihood
-                    + np.log(np.nanmean(sample_probabilities))
-                    - lognorm * num_dlas
-                )
+                if null_evidence is not None:
+                    # ===== Bias correction for truncated region using initial scan =====
+                    # We are approximating the model evidence (log Z) by partitioning the sample space
+                    # into two regions:
+                    #   - Region A: retained samples with logL > null_evidence (fraction w)
+                    #   - Region B: rejected samples with logL <= null_evidence (fraction 1 - w)
+                    #
+                    # The total marginal likelihood is:
+                    #   Z ≈ w * Z_A + (1 - w) * Z_B
+                    #     = w * mean(exp(logL_A)) + (1 - w) * mean(exp(logL_B))
+                    #
+                    # Taking log:
+                    #   log Z ≈ log( w * exp(log_Z_A) + (1 - w) * exp(log_Z_B) )
+                    #
+                    # log_Z_A is estimated from the retained high-likelihood region:
+                    log_Z_trunc = np.log(np.nanmean(sample_probabilities)) + max_log_likelihood
+                    
+                    # log_Z_B is approximated from the mean log-likelihood of the *rejected* region
+                    # (e.g. those from the initial scan with logL < null_evidence), stored as log_initial_logL
+
+                    # Compute total log evidence as a weighted log-sum-exp over A and B
+                    eps = 1e-10
+                    w = np.clip(valid_mask.mean(), eps, 1 - eps)
+                    log.info(
+                        f"Fraction of prior retained: {w:.4f} for {num_dlas + 1} DLAs."
+                    )
+                    log_likelihoods_dla[num_dlas] = (
+                        logsumexp([
+                            np.log(w) + log_Z_trunc,
+                            np.log(1 - w) + log_initial_logL
+                        ])
+                        - lognorm * num_dlas
+                    )
+                else:
+                    # No truncation: standard marginal likelihood estimate from unweighted average
+                    log_likelihoods_dla[num_dlas] = (
+                        max_log_likelihood
+                        + np.log(np.nanmean(sample_probabilities))
+                        - lognorm * num_dlas
+                    )
 
                 # ========= Early stopping logic =========
                 if (num_dlas + 1) == max_dlas or np.isnan(
