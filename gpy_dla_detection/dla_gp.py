@@ -595,6 +595,7 @@ class DLAGP(NullGP):
                 #         so this is filtered both lognhi and z_dla
                 # 
                 # Avoid using initial scan samples again for refined sampling
+                valid_mask_mean = valid_mask.mean()
                 valid_mask[:n_initial] = False  # Exclude the initial scan samples
                 indices = np.where(valid_mask)[0]
                 batch_size = int(len(indices) / max_workers)
@@ -697,7 +698,7 @@ class DLAGP(NullGP):
 
                     # Compute total log evidence as a weighted log-sum-exp over A and B
                     eps = 1e-10
-                    w = np.clip(valid_mask.mean(), eps, 1 - eps)
+                    w = np.clip(valid_mask_mean, eps, 1 - eps)
                     log.info(
                         f"Fraction of prior retained: {w:.4f} for {num_dlas + 1} DLAs."
                     )
