@@ -544,7 +544,7 @@ class DLAGP(NullGP):
                         results = future.result()
                         for i, res in zip(batch, results):
                             initial_logL[i] = res
-                            sample_log_likelihoods[i, init_num_dla] = result
+                            sample_log_likelihoods[i, init_num_dla] = res
                     except Exception as e:
                         log.error(f"Initial scan error: {e}")
                 # Step 3: define the log likelihood "zDLA" mask for the initial scan
