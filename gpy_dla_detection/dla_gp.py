@@ -595,7 +595,7 @@ class DLAGP(NullGP):
                 #         so this is filtered both lognhi and z_dla
                 # 
                 # Avoid using initial scan samples again for refined sampling
-                valid_mask_mean = valid_mask.mean()
+                _valid_mask = valid_mask.copy() # retain the original mask
                 valid_mask[:n_initial] = False  # Exclude the initial scan samples
                 indices = np.where(valid_mask)[0]
                 batch_size = int(len(indices) / max_workers)
@@ -606,7 +606,11 @@ class DLAGP(NullGP):
                 ]
                 # Estimate average log-likelihood in the rejected region (logL < null_evidence)
                 # If few values, fallback to minimum or null_evidence
-                below_null = initial_logL[initial_logL < null_evidence]
+                # below_null = initial_logL[initial_logL < null_evidence]
+                # 
+                # this should be the samples out side of the valid mask
+                below_null = initial_logL[~_valid_mask[:n_initial]]
+
                 if below_null.size > 5:
                     max_log_below_null = np.nanmax(below_null)
                     probabilities_below_null = np.exp(
@@ -691,21 +695,22 @@ class DLAGP(NullGP):
                     #   log Z ≈ log( w * exp(log_Z_A) + (1 - w) * exp(log_Z_B) )
                     #
                     # log_Z_A is estimated from the retained high-likelihood region:
-                    log_Z_trunc = np.log(np.nanmean(sample_probabilities)) + max_log_likelihood
-                    
+                    log_Z_trunc = np.log(np.nanmean(sample_probabilities[_valid_mask])) + max_log_likelihood
+
                     # log_Z_B is approximated from the mean log-likelihood of the *rejected* region
                     # (e.g. those from the initial scan with logL < null_evidence), stored as log_initial_logL
 
                     # Compute total log evidence as a weighted log-sum-exp over A and B
                     eps = 1e-10
-                    w = np.clip(valid_mask_mean, eps, 1 - eps)
+                    w = np.clip(_valid_mask.mean(), eps, 1 - eps)
                     log.info(
                         f"Fraction of prior retained: {w:.4f} for {num_dlas + 1} DLAs."
                     )
+                    log_ratio = np.log(self.params.num_dla_samples) - np.log(n_initial)
                     log_likelihoods_dla[num_dlas] = (
                         logsumexp([
-                            np.log(w) + log_Z_trunc,
-                            np.log(1 - w) + log_initial_logL
+                            log_Z_trunc - log_ratio + np.log(w),
+                            log_initial_logL + np.log(1 - w),
                         ])
                         - lognorm * num_dlas
                     )
