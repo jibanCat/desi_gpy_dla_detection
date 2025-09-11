@@ -444,6 +444,7 @@ class DLAGP(NullGP):
         batch_size: int = 313,
         executor=None,
         null_evidence: Optional[float] = None,
+        filter_low_likelihood: bool = False,
     ) -> np.ndarray:
         """
         Parallelized version of the log model evidences computation using process-based parallelization.
@@ -463,6 +464,7 @@ class DLAGP(NullGP):
             executor (ProcessPoolExecutor, optional): An existing executor to reuse; if not provided, a new one is created.
             null_evidence (float, optional): The log likelihood of the null model.
             If provided, it will be used to stop the computation early if the null model likelihood is higher.
+            filter_low_likelihood (bool, optional): Whether to filter out low-likelihood samples based on initial scan. Defaults to True.
 
         Returns:
             np.ndarray: Array containing the computed log likelihoods for 1 to `max_dlas` DLAs.
@@ -526,7 +528,7 @@ class DLAGP(NullGP):
         ]
 
         try:
-            if null_evidence is not None:
+            if filter_low_likelihood and (null_evidence is not None):
                 # ========= Initial scan on the 5000 subset =========
                 # Step 2: Run scan on the 5000 subset
                 init_num_dla = 0  # num_dlas = 0 for initial scan
@@ -680,7 +682,7 @@ class DLAGP(NullGP):
                 sample_probabilities[:] = np.exp(
                     sample_log_likelihoods[:, num_dlas] - max_log_likelihood
                 )
-                if null_evidence is not None:
+                if filter_low_likelihood and (null_evidence is not None):
                     # ===== Bias correction for truncated region using initial scan =====
                     # We are approximating the model evidence (log Z) by partitioning the sample space
                     # into two regions:
