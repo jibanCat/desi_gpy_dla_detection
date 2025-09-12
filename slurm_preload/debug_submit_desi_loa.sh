@@ -3,9 +3,9 @@
 #SBATCH -N 1                        # Number of nodes (1 node requested)
 #SBATCH -C cpu                      # CPU type (use 'cpu' for regular CPUs)
 #SBATCH -q debug                    # Queue (debug queue for short runs/testing)
-#SBATCH --job-name=dla_detection_debug    # Job name for identification in the queue
-#SBATCH --output=gpdla_debug_%j.log       # Standard output log (%j is replaced by the job ID)
-#SBATCH --error=error_debug_%j.log        # Standard error log (%j is replaced by the job ID)
+#SBATCH --job-name=preload_loa_debug    # Job name for identification in the queue
+#SBATCH --output=preload_loa_debug_%j.log       # Standard output log (%j is replaced by the job ID)
+#SBATCH --error=error_loa_debug_%j.log        # Standard error log (%j is replaced by the job ID)
 #SBATCH --mail-user=mfho@umich.edu        # Your email for notifications
 #SBATCH --mail-type=ALL                   # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                           # Account name to use on NERSC systems
@@ -27,7 +27,7 @@ RELEASE="${RELEASE:-loa}"
 PROGRAM="${PROGRAM:-dark}"
 SURVEY="${SURVEY:-main}"
 # MOCKDIR="${MOCKDIR:-/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/}"
-OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/desi-loa-gpdla-20241211/}"
+OUTDIR="${OUTDIR:-/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/}"
 BALMASK="${BALMASK:-false}"
 
 LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
@@ -57,7 +57,7 @@ MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 HPX_START="${HPX_START:-0}"
 HPX_END="${HPX_END:-40}"                 # Reduced range for quick debug
 
-FIGURE_DIR="${FIGURE_DIR:-/pscratch/sd/j/jibancat/desi-loa-gpdla-20241211/figures/}"
+FIGURE_DIR="${FIGURE_DIR:-/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/figures/}"
 
 
 # Define start and end healpix index ranges for 32 tasks, with each task processing 5 healpix pixels
@@ -72,7 +72,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
 
     echo "Running for healpix ${HPX_START} <= HPX < ${HPX_END}"
 
-    srun -N 1 -n 1 -c 8 --output="debug_loa_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_loa_${HPX_START}-${HPX_END}_%j_%t.log" python desi-DLAGP.py \
+    srun -N 1 -n 1 -c 8 --output="debug_loa_run_${HPX_START}-${HPX_END}_%j_%t.log" --error="debug_error_loa_${HPX_START}-${HPX_END}_%j_%t.log" python preload_spectra/desi-preload.py \
         --qsocat "$QSOCAT" \
         --release "$RELEASE" \
         --program "$PROGRAM" \
@@ -103,7 +103,7 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --max_z_cut "$MAX_Z_CUT" \
         --min_z_cut "$MIN_Z_CUT" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --figure_dir "figures/healpix_${HPX_START}_${HPX_END}" \
+        --figure_dir "/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/" \
         --hpx_start "$HPX_START" \
         --hpx_end "$HPX_END" &
 done

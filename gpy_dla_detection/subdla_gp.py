@@ -147,13 +147,29 @@ class SubDLAGPMAT(SubDLAGP):
     ):
         # Load the learned model from the .mat file
         with h5py.File(learned_file, "r") as learned:
-            rest_wavelengths = learned["rest_wavelengths"][:, 0]
-            mu = learned["mu"][:, 0]
-            M = learned["M"][()].T
-            log_omega = learned["log_omega"][:, 0]
-            log_c_0 = learned["log_c_0"][0, 0]
-            log_tau_0 = learned["log_tau_0"][0, 0]
-            log_beta = learned["log_beta"][0, 0]
+            # Check if the learned model is DESI or not
+            if learned["log_tau_0"].ndim == 0:
+                print("DESI SubDLA model detected.")
+                is_desi = True
+            else:
+                is_desi = False
+
+            if is_desi is True:
+                rest_wavelengths = learned["rest_wavelengths"][:]
+                mu = learned["mu"][:]
+                M = learned["M"][:]
+                log_omega = learned["log_omega"][:]
+                log_c_0 = learned["log_c_0"][()]
+                log_tau_0 = learned["log_tau_0"][()]
+                log_beta = learned["log_beta"][()]
+            else:
+                rest_wavelengths = learned["rest_wavelengths"][:, 0]
+                mu = learned["mu"][:, 0]
+                M = learned["M"][()].T
+                log_omega = learned["log_omega"][:, 0]
+                log_c_0 = learned["log_c_0"][0, 0]
+                log_tau_0 = learned["log_tau_0"][0, 0]
+                log_beta = learned["log_beta"][0, 0]
 
         # Initialize the SubDLAGP class explicitly with all parameters
         super().__init__(

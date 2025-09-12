@@ -112,6 +112,8 @@ class DLACatalogue(object):
         min_obs_wavelength_cut: bool = False,  # Cut out the tail part below certain obs lambda, default 4000 A
         min_obs_wavelength: float = 4000,  # A
         high_nhi_cut: bool = True,  # Cut out the high NHI samples
+        high_nhi_cut_value: float = 22.0,  # log10(cm^-2)
+        bins_per_z: int = 6, # number of bins of dNdX or Omega_DLA to plot per unit z interval
     ):
         # Should we include the second DLA?
         self.second_dla = (
@@ -145,7 +147,7 @@ class DLACatalogue(object):
         self.proximity_zone = 0.1  # 30000 km/s
         # Exclude spectra closer to the tail of the spectrum, which has more dubious DLAs than average.
         self.highzcut = highzcut
-        self.tail_zone = 0.2  # 60000 km/s
+        self.tail_zone = 0.1  # 30000 km/s
         # Exclude spectra between lymanbeta to lymanalpha
         self.z_max_lyb = z_max_lyb
         # Exclude spectra between lymanlimit to lymanbeta
@@ -155,7 +157,7 @@ class DLACatalogue(object):
         self.min_obs_wavelength = min_obs_wavelength  # A
         # Exclude the high NHI samples
         self.high_nhi_cut = high_nhi_cut
-        self.high_nhi_cut_value = 22.5  # log10(cm^-2)
+        self.high_nhi_cut_value = high_nhi_cut_value  # log10(cm^-2)
 
         # self.raw_file = raw_file
         self.processed_file = processed_file
@@ -192,7 +194,7 @@ class DLACatalogue(object):
         self.real_index = real_index
 
         # number of bins of dNdX or Omega_DLA to plot per unit z interval
-        self.bins_per_z = 6
+        self.bins_per_z = bins_per_z
         # Exclude things which have a low SNR. This is tested to be converged on DR7.
         self.filter_noisy_pixels = False
         self.noise_thresh = 0.5**2
@@ -1020,7 +1022,8 @@ class DLACatalogue(object):
         xerrs = np.empty_like(omega_dla_68)
         z_cent = np.array([])
         conversion = protonmass / light * h100 / rho_crit(hubble)
-        lnhi_bins = np.linspace(20.3, 23, num=lnhi_nbins + 1)
+        # Get the NHI bins
+        lnhi_bins = np.linspace(20.3, self.high_nhi_cut_value, num=lnhi_nbins + 1)
         for zz in range(nbins):
             dX = self.path_length(z_bins[zz], z_bins[zz + 1])
             if dX == 0.0:

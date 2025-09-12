@@ -77,11 +77,13 @@ class BayesModelSelect:
         log_priors = np.array(list(chain(*log_priors)))
         log_priors[0] = np.log(1 - np.exp(logsumexp(log_priors[1:])))
 
+        log_prior_dla = logsumexp(log_priors[2:])
+
         # Log prior check
         log.info(f" ...     p( no DLA | z_QSO)     : {np.exp(log_priors[0]):.3f}")
         log.info(f" ...     p( subDLA | z_QSO)     : {np.exp(log_priors[1]):.3f}")
         log.info(
-            f" ...     p(   DLA | z_QSO)        : {np.sum(np.exp(log_priors[2:])):.3f}"
+            f" ...     p(   DLA | z_QSO)        : {log_prior_dla:.3f}"
         )
 
         # Calculate model evidences (log likelihoods)
@@ -90,25 +92,53 @@ class BayesModelSelect:
                 log_likelihood_no_dla = model_list[i].log_model_evidence()
                 log_likelihoods.append([log_likelihood_no_dla])
 
+                # stopping criteria for DLA model
+                # make it ratio of priors: dla evidence * prior < no DLA evidence * prior
+                # ==> null_evidence = log_likelihood_no_dla + log_priors[0] / log_priors[2]
+                null_evidence = log_likelihood_no_dla + log_priors[0] - log_prior_dla
+
                 # Log likelihood check
                 log.info(
                     f" ...     log p(D | z_QSO, no DLA)     : {log_likelihood_no_dla:.3f}"
                 )
             else:
-                log_likelihoods_dla = model_list[i].parallel_log_model_evidences(
-                    num_dlas,
-                    max_workers=max_workers,
-                    batch_size=batch_size,
-                    executor=executor,
-                )
-                log_likelihoods.append(log_likelihoods_dla)
                 # Log likelihood check
+                # ============= subDLA =============
+                # separate sub DLA and DLA because the samples could be different
                 if i == self.dla_model_ind - 1:
+                    # Set the batch size for subDLA samples directly from num of samples to avoid redundant
+                    num_subdla_samples = model_list[i].params.num_dla_samples
+                    batch_subdla_size = int(num_subdla_samples // max_workers)
+                    if batch_subdla_size * max_workers < num_subdla_samples:
+                        batch_subdla_size += 1
+                    log_likelihoods_dla = model_list[i].parallel_log_model_evidences(
+                        num_dlas,
+                        max_workers=max_workers,
+                        batch_size=batch_subdla_size,
+                        executor=executor,
+                    )
+                    log_likelihoods.append(log_likelihoods_dla)
+
+                    # adding subDLA to null evidence for stopping criteria
+                    log_likelihoods_subdla = log_likelihoods_dla[0]
+                    log_likelihoods_subdla = log_likelihoods_subdla + log_priors[1] - log_prior_dla
+                    null_evidence = logsumexp([null_evidence, log_likelihoods_subdla])
+
                     for j in range(num_dlas):
                         log.info(
                             f" ...     log p(D | z_QSO, {j + 1} subDLAs) : {log_likelihoods_dla[j]:.3f}"
                         )
+                # ============= DLA =============
+                # For DLA models, use the default batch size
                 elif i == self.dla_model_ind:
+                    log_likelihoods_dla = model_list[i].parallel_log_model_evidences(
+                        num_dlas,
+                        max_workers=max_workers,
+                        batch_size=batch_size,
+                        executor=executor,
+                        null_evidence=null_evidence,
+                    )
+                    log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):
                         log.info(
                             f" ...     log p(D | z_QSO, {j + 1} DLAs) : {log_likelihoods_dla[j]:.3f}"

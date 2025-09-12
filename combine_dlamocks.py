@@ -4,7 +4,6 @@ import os
 import argparse
 from astropy.table import Table, vstack
 
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Combine individual DLA catalog files into one FITS file."
@@ -41,15 +40,16 @@ def parse_args():
     )
     return parser.parse_args()
 
-
 def main():
     args = parse_args()
 
     # Define the output filename for the combined table
     combined_filename = os.path.join(args.outdir, f"dlacat-{args.release}-mockcat.fits")
+    missing_indices_file = os.path.join(args.outdir, f"missing_indices-{args.release}.txt")
 
-    # Initialize an empty list to store individual tables
+    # Initialize lists to store individual tables and missing indices
     tables = []
+    missing_indices = []
 
     # Generate filenames based on the range and step size, and read each file
     for start in range(args.initial, args.end + 1, args.step):
@@ -70,6 +70,19 @@ def main():
             tables.append(table)
         else:
             print(f"File {filename} not found. Skipping...")
+            # Write all index within the range to the missing indices list
+            for index in range(start, end_range):
+                print(f"Index {index} is missing.")
+                missing_indices.append(index)
+
+
+    # Save missing indices to a text file if there are any
+    if missing_indices:
+        with open(missing_indices_file, "w") as f:
+            for index in missing_indices:
+                f.write(f"{index}\n")
+
+        print(f"Missing indices saved to {missing_indices_file}.")
 
     # Combine all tables into one if any were loaded
     if tables:
@@ -83,7 +96,6 @@ def main():
         print("Combination complete.")
     else:
         print("No files were loaded. Check the file paths or parameters.")
-
 
 if __name__ == "__main__":
     main()

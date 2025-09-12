@@ -5,7 +5,14 @@ dlasearch.py
 
 Search for DLAs in spectra from a given catalog.
 """
+# include the .. to import from the parent directory
+import sys
+import os
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
+import h5py
 import numpy as np
 import os
 import fitsio
@@ -23,16 +30,19 @@ from desispec.interpolation import resample_flux
 from desispec.coaddition import coadd_cameras, resample_spectra_lin_or_log
 from desiutil.log import log
 
-import constants
-
-# import dlaprofile
-from fitwarning import DLAFLAG
 
 import warnings
 from scipy.optimize import OptimizeWarning
 
+
+# import dlaprofile
+from fitwarning import DLAFLAG
+
+import constants
+
 from run_bayes_select import DLAHolder
 from gpy_dla_detection.set_parameters import Parameters
+from gpy_dla_detection.null_gp import NullGPMAT
 
 warnings.simplefilter("error", OptimizeWarning)
 
@@ -67,7 +77,6 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     if os.path.exists(coadd):
         # Reconstruct the Parameters instance from the dictionary
         params = Parameters(**model_params["params_dict"])
-        params_subdla = Parameters(**model_params["params_subdla_dict"])
 
         # Reconstruct the DLAHolder instance using the reconstructed Parameters
         model = DLAHolder(
@@ -86,7 +95,6 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             max_workers=model_params["max_workers"],
             batch_size=model_params["batch_size"],
             figure_dir=model_params["figure_dir"],
-            params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
@@ -168,7 +176,6 @@ def dlasearch_mock(specfile, catalog, model_params):
 
         # Reconstruct the Parameters instance from the dictionary
         params = Parameters(**model_params["params_dict"])
-        params_subdla = Parameters(**model_params["params_subdla_dict"])
 
         # Log the parameters
         log.info(f"Parameters: ---")
@@ -193,7 +200,6 @@ def dlasearch_mock(specfile, catalog, model_params):
             max_workers=model_params["max_workers"],
             batch_size=model_params["batch_size"],
             figure_dir=model_params["figure_dir"],
-            params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
         )
 
         fitresults = process_spectra_group(specfile, catalog, model)
@@ -294,12 +300,13 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         [],
         [],
     )
-    # lists for GP-DLA results
-    pdlalist = []
-    pnulllist = []
-    logpdlalist = []
-    logpnulllist = []
-    modelplist = []
+    # list of quasar spectra data (wavelengths, fluxes, noise variances, pixel masks)
+    rest_wavelength_list, flux_list, noise_variance_list, pixel_mask_list = (
+        [],
+        [],
+        [],
+        [],
+    )
 
     # set up results dict for GPDLA
     num_spectra = len(catalog)
@@ -380,64 +387,24 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         # TODO: replace this specific to GP
         fitwarn = np.full(model.max_dlas, 0)
 
-        try:
-            # Process each QSO, resampling model to observed wavelength grid
-            model.process_qso(
-                entry,
-                tid,
-                wavelengths=wave,
-                flux=flux,
-                noise_variance=noise_variance,
-                pixel_mask=pixel_mask,
-                z_qso=zqso,
-            )
-
-        except np.linalg.LinAlgError:
-            # Catch any LinAlgError and set a flag
-            print(f"Warning: LinAlgError for target ID {tid}. Setting error flag.")
-            # error_flags[tid] = "non_pos_def_matrix"
-            fitwarn |= DLAFLAG.BAD_ZFIT  # TODO: Placeholder - change to GPDLA flag
-
-        except ValueError as e:
-            if "All-NaN slice encountered" in str(e):
-                print(
-                    f"Warning: All-NaN slice encountered for target ID {tid}. Setting error flag."
-                )
-                # error_flags[tid] = "all_nan_slice"
-                fitwarn |= (
-                    DLAFLAG.BAD_NHIFIT
-                )  # TODO: Placeholder - change to GPDLA flag
-            else:
-                # If it's an unexpected ValueError, re-raise it
-                raise
-
-        # Get zerr and nhierr from GPDLA
-        # TODO: check the robustness of zerr and nhierr
-        # model w/o DLAs
-        log_posteriors_no_dla = model.results["log_posteriors_no_dla"][entry]
-        p_no_dla = model.results["p_no_dlas"][entry]
-
-        zdla = model.results["MAP_z_dlas"][entry]
-        zerr = model.results["z_dla_errs"][entry]
-        nhi = model.results["MAP_log_nhis"][entry]
-        nhierr = model.results["log_nhi_errs"][entry]
-        log_posteriors_dla = model.results["log_posteriors_dla"][entry]
-        p_dla = model.results["p_dlas"][entry]
-        model_posteriors = model.results["model_posteriors"][entry]
-
-        # replace nan with -1 for Allysion's convention
-        zdla[np.isnan(zdla)] = -1
-        zerr[np.isnan(zerr)] = -1
-        nhi[np.isnan(nhi)] = -1
-        nhierr[np.isnan(nhierr)] = -1
-
-        # check for potential BAL contamination in solution
-        # false positive should only come from Lya and NV - all other lines too weak
-        if ("nbal" in locals()) & np.any(zdla != -1):
-            lam_center_dla = constants.Lya_line * (1 + zdla)
-            for window in bal_locs:
-                balflag = (lam_center_dla < window[0]) & (lam_center_dla > window[1])
-                fitwarn[balflag] |= DLAFLAG.POTENTIAL_BAL
+        # Initialize the NullGPMAT object, and then set the data
+        gp = NullGPMAT(
+            model.params,
+            model.prior,
+            learned_file=model.learned_file,
+            prev_tau_0=model.prev_tau_0,
+            prev_beta=model.prev_beta,
+        )
+        rest_wavelengths = model.params.emitted_wavelengths(wave, zqso)
+        gp.set_data(
+            rest_wavelengths, flux, noise_variance, pixel_mask, zqso, build_model=True
+        )
+        # Save the quasar data to the lists
+        # here use the data from the GPDLA model, which is already preprocessed with normalization
+        rest_wavelength_list.append(gp.X)
+        flux_list.append(gp.Y)
+        noise_variance_list.append(gp.v)
+        pixel_mask_list.append(gp.pixel_mask)
 
         # average signal to noise computation
         mask = np.logical_and(
@@ -454,46 +421,46 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             ).mask,
         )
         redsnr = np.mean((flux[mask] * np.sqrt(ivar[mask])))
-        # save SNR values
-        model.results["snrs"][entry] = redsnr
-        model.results["snrs_blue"][entry] = bluesnr
-        # save detection flag
-        model.results["detection_flags"][entry] = np.sum(fitwarn) > 0
 
-        ndla = np.sum(zdla != -1)
-        for n in range(ndla):
-            tidlist.append(tid)
-            dlaid = str(tid) + "00" + str(n)
-            dlaidlist.append(dlaid)
-            ralist.append(ra)
-            declist.append(dec)
-            zqsolist.append(zqso)
+        # save results to lists
+        tidlist.append(tid)
+        ralist.append(ra)
+        declist.append(dec)
+        zqsolist.append(zqso)
 
-            # DLA parameters
-            zlist.append(zdla[n])
-            zerrlist.append(zerr[n])
-            nhilist.append(nhi[n])
-            nhierrlist.append(nhierr[n])
-            fitwarnlist.append(fitwarn[n])
+        # DLA parameters
+        fitwarnlist.append(fitwarn)
 
-            bluesnrlist.append(bluesnr)
-            redsnrlist.append(redsnr)
-
-            # GP-DLA results
-            pdlalist.append(p_dla)
-            pnulllist.append(p_no_dla)
-            logpdlalist.append(log_posteriors_dla[n])
-            logpnulllist.append(log_posteriors_no_dla)
-            modelplist.append(model_posteriors[2 + n])
+        bluesnrlist.append(bluesnr)
+        redsnrlist.append(redsnr)
 
     # TODO: Intermediate results saving for debugging - this is the same format as Roman's code
-    processed_filename = "processed-" + coaddpath.split("/")[-1].replace("coadd-", "")
-    if os.path.exists(os.path.join(model.figure_dir, "processed")) is False:
-        os.makedirs(os.path.join(model.figure_dir, "processed"), exist_ok=True)
+    processed_filename = "preloaded-" + coaddpath.split("/")[-1].replace("coadd-", "")
+    if os.path.exists(os.path.join(model.figure_dir, "preloaded")) is False:
+        os.makedirs(os.path.join(model.figure_dir, "preloaded"), exist_ok=True)
     processed_filename = os.path.join(
-        model.figure_dir, "processed", processed_filename.replace(".fits", ".h5")
+        model.figure_dir, "preloaded", processed_filename.replace(".fits", ".h5")
     )
-    model.save_results(output_file=processed_filename)
+    # Save the preprocessed data
+    # these are various lengths, so save as lists of arrays
+    with h5py.File(processed_filename, "w") as f:
+        vlen_dtype = h5py.vlen_dtype(np.float64)  # Variable-length float arrays
+        f.create_dataset("rest_wavelength_list", data=rest_wavelength_list, dtype=vlen_dtype)
+        f.create_dataset("flux_list", data=flux_list, dtype=vlen_dtype)
+        f.create_dataset("noise_variance_list", data=noise_variance_list, dtype=vlen_dtype)
+        # save the targetids, ra, dec, zqso, bluesnr, redsnr
+        f.create_dataset("tidlist", data=np.array(tidlist, dtype=np.int64))
+        f.create_dataset("zqsolist", data=np.array(zqsolist, dtype=np.float64))
+        f.create_dataset("bluesnrlist", data=np.array(bluesnrlist, dtype=np.float64))
+        f.create_dataset("redsnrlist", data=np.array(redsnrlist, dtype=np.float64))
+
+        # save the metadata
+        f.attrs["min_lambda"] = model.params.min_lambda
+        f.attrs["max_lambda"] = model.params.max_lambda
+        f.attrs["normalization_min_lambda"] = model.params.normalization_min_lambda
+        f.attrs["normalization_max_lambda"] = model.params.normalization_max_lambda
+        f.attrs["min_num_pixels"] = model.params.min_num_pixels
+
 
     if len(tidlist) == 0:
         # avoid vstack error for empty tables
@@ -508,19 +475,8 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             zqsolist,
             bluesnrlist,
             redsnrlist,
-            dlaidlist,
-            zlist,
-            zerrlist,
-            nhilist,
-            nhierrlist,
             fitwarnlist,
-            # GP-DLA results
-            pdlalist,  # posterior probability of DLA model
-            pnulllist,  # posterior probability of no DLA model
-            logpdlalist,  # log posterior probability of DLA model
-            logpnulllist,  # log posterior probability of no DLA model
-            modelplist,  # model posterior probabilities
-        ),
+         ),
         names=[
             "TARGETID",
             "RA",
@@ -528,17 +484,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             "Z_QSO",  # QSO redshift: 2024-10-25 changed from Z, so remember to update the old dlacat files
             "SNR_FOREST",
             "SNR_REDSIDE",
-            "DLAID",
-            "Z_DLA",
-            "Z_DLA_ERR",
-            "NHI",
-            "NHI_ERR",
             "DLAFLAG",
-            "P_DLA",
-            "P_NULL",
-            "LOGP_DLA",
-            "LOGP_NULL",
-            "MODEL_P",
         ],
         dtype=(
             "int",
@@ -547,17 +493,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             "float64",
             "float64",
             "float64",
-            "str",
-            "float64",
-            "float64",
-            "float64",
-            "float64",
             "int",
-            "float64",
-            "float64",
-            "float64",
-            "float64",
-            "float64",
         ),
     )
 

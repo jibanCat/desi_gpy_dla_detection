@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 
 """
-desi-DLAGP.py
+desi-preload.py
 
-Search for DLAs in DESI quasar spectra using Gaussian Processes.
+Script to load DESI quasar spectra
 """
+# include the path to the gpy_dla_detection module
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from astropy.table import Table, vstack
 import numpy as np
@@ -16,10 +21,11 @@ import argparse
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-import dlasearch
-import constants
+import qsopreload
 
 from desiutil.log import log
+
+import constants
 
 # GP-DLA imports
 from run_bayes_select import DLAHolder
@@ -245,32 +251,6 @@ def parse(options=None):
         default=3000,
         help="Minimum redshift cut for DLA models.",
     )
-    # Additional parameters for the DLA model
-    parser.add_argument(
-        "--num_forest_lines",
-        type=int,
-        default=31,
-        help="Number of forest lines to model.",
-    )
-    parser.add_argument(
-        "--num_lines",
-        type=int,
-        default=3,
-        help="Number of members of the Lyman series to use.",
-    )
-    # Number of DLA samples to generate
-    parser.add_argument(
-        "--num_dla_samples",
-        type=int,
-        default=10000,
-        help="Number of DLA samples to generate.",
-    )
-    parser.add_argument(
-        "--num_subdla_samples",
-        type=int,
-        default=10000,
-        help="Number of sub-DLA samples to generate.",
-    )
 
     # process range
     parser.add_argument(
@@ -439,25 +419,6 @@ def main(args=None):
         "max_noise_variance": args.max_noise_variance,
         "max_z_cut": args.max_z_cut,
         "min_z_cut": args.min_z_cut,
-        "num_forest_lines" : args.num_forest_lines, # 3, # Number of forest lines to model
-        "num_lines": args.num_lines, # 3,  # number of members of the Lyman series to use
-        "num_dla_samples": args.num_dla_samples, # 10000,  # Number of DLA samples to generate
-    }
-    params_subdla_dict = {
-        "loading_min_lambda": args.loading_min_lambda,
-        "loading_max_lambda": args.loading_max_lambda,
-        "normalization_min_lambda": args.normalization_min_lambda,
-        "normalization_max_lambda": args.normalization_max_lambda,
-        "min_lambda": args.min_lambda,
-        "max_lambda": args.max_lambda,
-        "dlambda": args.dlambda,
-        "k": args.k,
-        "max_noise_variance": args.max_noise_variance,
-        "max_z_cut": args.max_z_cut,
-        "min_z_cut": args.min_z_cut,
-        "num_forest_lines" : args.num_forest_lines, # 3, # Number of forest lines to model
-        "num_lines": args.num_lines, # 3,  # number of members of the Lyman series to use
-        "num_subdla_samples": args.num_subdla_samples, # 10000,  # Number of DLA samples to generate
     }
 
     # Convert DLAHolder to a dictionary
@@ -469,7 +430,6 @@ def main(args=None):
         "dla_samples_file": args.dla_samples_file,
         "sub_dla_samples_file": args.sub_dla_samples_file,
         "params_dict": params_dict,  # Pass the Parameters dictionary instead of the instance
-        "params_subdla_dict": params_subdla_dict,  # Pass the Sub-DLA Parameters dictionary instead of the instance
         "min_z_separation": args.min_z_separation,
         "prev_tau_0": args.prev_tau_0,
         "prev_beta": args.prev_beta,
@@ -490,7 +450,7 @@ def main(args=None):
 
         if nproc_futures == 1:
             results = [
-                dlasearch.dlasearch_hpx(
+                qsopreload.dlasearch_hpx(
                     hpx,
                     args.survey,
                     args.program,
@@ -520,7 +480,7 @@ def main(args=None):
     elif args.mocks:
         if nproc_futures == 1:
             results = [
-                dlasearch.dlasearch_mock(specfile, catalog, model_params)
+                qsopreload.dlasearch_mock(specfile, catalog, model_params)
                 for specfile in speclist
             ]
         else:
@@ -537,7 +497,7 @@ def main(args=None):
                 results = list(high_level_executor.map(_dlasearchmock, arguments))
 
     results = vstack(results)
-    results.meta["EXTNAME"] = "DLACAT"
+    results.meta["EXTNAME"] = "QSOCAT"
 
     # remove extra column from hpx with no detections
     if "col0" in results.columns:
@@ -547,11 +507,11 @@ def main(args=None):
     if not (args.tilebased) and not (args.mocks):
         outfile = os.path.join(
             args.outdir,
-            f"dlacat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits",
+            f"qsopreloadcat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits",
         )
         if os.path.isfile(outfile):
             log.warning(
-                f"dlacat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits already exists in {args.outdir}, overwriting"
+                f"qsopreloadcat-{args.release}-{args.survey}-{args.program}-hpx-{args.hpx_start}-{args.hpx_end}.fits already exists in {args.outdir}, overwriting"
             )
         results.write(outfile, overwrite=True)
 
@@ -559,11 +519,11 @@ def main(args=None):
         # filename for output include release, survey, program and folder range
         outfile = os.path.join(
             args.outdir,
-            f"dlacat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits",
+            f"qsopreloadcat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits",
         )
         if os.path.isfile(outfile):
             log.warning(
-                f"dlacat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits already exists in {args.outdir}, overwriting"
+                f"qsopreloadcat-{args.release}-mockcat-{args.level2_start}-{args.level2_end}.fits already exists in {args.outdir}, overwriting"
             )
         results.write(outfile, overwrite=True)
 
@@ -751,12 +711,12 @@ def read_mock_catalog(qsocat, balmask, mockpath):
 
 # for parallelization over hpx
 def _dlasearchhpx(arguments):
-    return dlasearch.dlasearch_hpx(**arguments)
+    return qsopreload.dlasearch_hpx(**arguments)
 
 
 # for parallelization over mock spectra files
 def _dlasearchmock(arguments):
-    return dlasearch.dlasearch_mock(**arguments)
+    return qsopreload.dlasearch_mock(**arguments)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ dla_gp.py
 
 A GP class for having multiple DLAs intervening in a given slightline. 
 """
+import time
 
 from typing import Tuple, Optional, Callable, List
 import os
@@ -15,6 +16,8 @@ from desiutil.log import log
 import numpy as np
 import scipy.stats as stats
 from scipy.integrate import quad
+from scipy.special import logsumexp
+
 import h5py
 
 from .set_parameters import Parameters
@@ -37,12 +40,80 @@ from .dla_samples import DLASamplesMAT
 # Limit the number of workers to the number of CPU cores
 # max_workers = os.cpu_count() * 2
 
+# fast search method for adapative truncated sampling
+def select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.02, logL_null=None):
+    """
+    Selects a mask for z_all entries that are within `z_tol` of any high-likelihood z values from an initial scan.
+
+    This function efficiently identifies entries in `z_all` whose values lie within a tolerance
+    range (`z_tol`) of any `initial_z` sample whose corresponding log-likelihood exceeds a given threshold.
+
+    This is useful in truncated likelihood integration schemes where the parameter space
+    (e.g., z_DLA) is multi-modal and one wants to restrict evaluation to promising subregions.
+
+    Parameters
+    ----------
+    initial_z : np.ndarray of shape (N_scan,)
+        The redshift samples from the initial low-resolution scan.
+    initial_logL : np.ndarray of shape (N_scan,)
+        The corresponding log-likelihood values of `initial_z`.
+    z_all : np.ndarray of shape (N_total,)
+        The full set of redshift values (e.g., from dense QMC samples) to be filtered.
+    z_tol : float, optional
+        The redshift tolerance window. A point in `z_all` is kept if it lies within
+        ±`z_tol` of any high-likelihood `initial_z`. Default is 0.02.
+    logL_null : float or None, optional
+        The log-likelihood threshold to define "high-likelihood" points. If None, the maximum
+        value of `initial_logL` is used.
+
+    Returns
+    -------
+    mask : np.ndarray of shape (N_total,)
+        A boolean array indicating which entries in `z_all` fall near any high-likelihood
+        `initial_z` within the specified tolerance.
+
+    Notes
+    -----
+    Internally, this uses `np.searchsorted` on the sorted array of `z_good` for efficient
+    vectorized interval checks, avoiding nested loops.
+
+    Examples
+    --------
+    >>> mask = select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.01)
+    >>> filtered_z = z_all[mask]
+    """
+    if logL_null is None:
+        logL_null = np.max(initial_logL)
+
+    z_good = initial_z[initial_logL > logL_null]
+    if len(z_good) == 0:
+        return np.array([], dtype=int)  # no valid points
+
+    z_good_sorted = np.sort(z_good)
+    left = np.searchsorted(z_good_sorted, z_all - z_tol, side='left')
+    right = np.searchsorted(z_good_sorted, z_all + z_tol, side='right')
+
+    # Valid if at least one good z is within [z - z_tol, z + z_tol]
+    mask = (right > left)
+    return mask    
+
+# fast searchsorted method for resampling
+def searchsorted_method(W, N):
+    """
+    Fast searchsorted method for resampling indices based on weights.
+    equivalent to MATLAB's randsample with replacement.
+    """
+    W = W / np.sum(W)
+    cumsum = np.cumsum(W)
+    u = np.random.rand(N)
+    return np.searchsorted(cumsum, u)
+
 
 def process_sample(
     i: int,
     num_dlas: int,
     sample_z_dlas: np.ndarray,
-    base_sample_inds: np.ndarray,
+    base_sample_inds_T: np.ndarray,
     dla_samples: DLASamplesMAT,
     params: Parameters,
     sample_log_likelihood_k_dlas: Callable[[np.ndarray, np.ndarray], float],
@@ -59,7 +130,8 @@ def process_sample(
         i (int): Index of the current sample.
         num_dlas (int): Number of DLAs in the model for this sample.
         sample_z_dlas (np.ndarray): Array of sampled redshift values for DLAs.
-        base_sample_inds (np.ndarray): Base indices to be resampled according to the prior.
+        base_sample_inds_T (np.ndarray): "The transpose" of Base indices to be resampled according to the prior.
+            Transpose is faster for indexing.
         dla_samples ('DLASamplesMAT'): Object containing the DLA sample catalog.
         params ('Parameters'): Model parameters object.
         sample_log_likelihood_k_dlas (Callable): Function to compute the log likelihood of k-DLA model.
@@ -76,7 +148,8 @@ def process_sample(
 
     # Query the 2:k DLA parameters {z_dla, logNHI}_{i=2}^k_dlas
     if num_dlas > 0:
-        base_ind = base_sample_inds[:num_dlas, i]
+        # use transpose of base_sample_inds to speed up indexing
+        base_ind = base_sample_inds_T[i, :num_dlas] #base_sample_inds[:num_dlas, i]
         z_dlas_2_k = sample_z_dlas[base_ind]
         log_nhis_2_k = dla_samples.log_nhi_samples[base_ind]
         nhis_2_k = dla_samples.nhi_samples[base_ind]
@@ -125,20 +198,25 @@ def process_batch(
     """
     batch_results = []  # This will store the results for the entire batch
 
-    # Loop through each sample index in the batch and process it
-    for i in batch_indices:
+    # vectorize the loop
+    batch_results = np.empty(len(batch_indices), dtype=np.float64)
+    base_sample_inds_T = base_sample_inds.T  # Transpose for faster indexing
+
+    # t0 = time.time()
+
+    for j, i in enumerate(batch_indices):
         # Process each sample using the same logic as process_sample
-        result = process_sample(
+        batch_results[j] = process_sample(
             i,
             num_dlas,
             sample_z_dlas,
-            base_sample_inds,
+            base_sample_inds_T,
             dla_samples,
             params,
             sample_log_likelihood_k_dlas,
             min_z_separation,  # Pass the missing argument
         )
-        batch_results.append(result)  # Store the result in the batch result list
+    # print(f"Batch {batch_indices[0]}-{batch_indices[-1]} took {time.time() - t0:.3f} sec")
 
     return batch_results  # Return the list of results for the batch
 
@@ -242,10 +320,15 @@ class DLAGP(NullGP):
         sample_log_likelihoods = np.empty((self.params.num_dla_samples, max_dlas))
         sample_log_likelihoods[:] = np.nan
 
+        # preallocate sample probabilities
+        sample_probabilities = np.empty(self.params.num_dla_samples)
+
         # prepare z_dla samples
         sample_z_dlas = self.dla_samples.sample_z_dlas(
             self.this_wavelengths, self.z_qso
         )
+        # move this to the top of the function to avoid re-computation
+        lognorm = np.log(self.params.num_dla_samples)
 
         # compute probabilities under DLA model for each of the sampled
         # (normalized offset, log(N HI)) pairs
@@ -310,7 +393,7 @@ class DLAGP(NullGP):
             log_likelihoods_dla[num_dlas] = (
                 max_log_likelihood
                 + np.log(np.nanmean(sample_probabilities))
-                - np.log(self.params.num_dla_samples) * num_dlas
+                - lognorm * num_dlas
             )  # occams razor for more DLA parameters
 
             # no needs for re-sample the QMC samples for the last run
@@ -334,12 +417,18 @@ class DLAGP(NullGP):
             W = sample_probabilities
             W[nanind] = 0.0
 
-            base_sample_inds[num_dlas, :] = np.random.choice(
-                np.arange(self.params.num_dla_samples).astype(np.int32),
-                size=self.params.num_dla_samples,
-                replace=True,
-                p=W / W.sum(),
+            # resample the base sample indices using searchsorted method
+            base_sample_inds[num_dlas, :] = searchsorted_method(
+                W,
+                self.params.num_dla_samples,
             )
+
+            # base_sample_inds[num_dlas, :] = np.random.choice(
+            #     np.arange(self.params.num_dla_samples).astype(np.int32),
+            #     size=self.params.num_dla_samples,
+            #     replace=True,
+            #     p=W / W.sum(),
+            # )
 
         # store sample likelihoods for MAP value calculation
         # this could cause troubles for parallelization in the future
@@ -354,6 +443,8 @@ class DLAGP(NullGP):
         max_workers: int = 32,
         batch_size: int = 313,
         executor=None,
+        null_evidence: Optional[float] = None,
+        filter_low_likelihood: bool = False,
     ) -> np.ndarray:
         """
         Parallelized version of the log model evidences computation using process-based parallelization.
@@ -362,11 +453,18 @@ class DLAGP(NullGP):
         The process is repeated for each number of DLAs (up to `max_dlas`), and the results are stored
         in an array.
 
+        If `null_evidence` is provided, the method performs an initial scan to
+        identify high-likelihood regions and estimates the marginal likelihood
+        with a truncated sampling correction (weighted by prior volume).
+
         Args:
             max_dlas (int): The maximum number of DLAs to be considered in the model.
             max_workers (int, optional): Maximum number of workers to use. Defaults to number of CPU cores * 2.
             batch_size (int, optional): Number of samples per batch. Defaults to 100.
             executor (ProcessPoolExecutor, optional): An existing executor to reuse; if not provided, a new one is created.
+            null_evidence (float, optional): The log likelihood of the null model.
+            If provided, it will be used to stop the computation early if the null model likelihood is higher.
+            filter_low_likelihood (bool, optional): Whether to filter out low-likelihood samples based on initial scan. Defaults to True.
 
         Returns:
             np.ndarray: Array containing the computed log likelihoods for 1 to `max_dlas` DLAs.
@@ -388,16 +486,17 @@ class DLAGP(NullGP):
         sample_log_likelihoods = np.empty((self.params.num_dla_samples, max_dlas))
         sample_log_likelihoods[:] = np.nan
 
+        # Preallocate sample probabilities
+        sample_probabilities = np.empty(self.params.num_dla_samples)
+        sample_probabilities[:] = np.nan
+
+        # precomputed log normalization factor
+        lognorm = np.log(self.params.num_dla_samples)
+
         # Prepare z_dla samples
         sample_z_dlas = self.dla_samples.sample_z_dlas(
             self.this_wavelengths, self.z_qso
         )
-
-        # Create batches of indices
-        indices = list(range(self.params.num_dla_samples))
-        batches = [
-            indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
-        ]
 
         # Check if an executor is passed; if not, create one locally
         local_executor = False
@@ -405,7 +504,138 @@ class DLAGP(NullGP):
             executor = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
             local_executor = True
 
+        # ========= Adative truncated sampling =========
+        # Your first 5000 samples scan is to find the regions of high likelihood,
+        # and then you only sample the regions of high likelihood
+        # 
+        # Step 1: only use a small subset of QMC samples for the initial scan
+        n_initial = 5000  # only scan the first 5000 samples
+        initial_logL = np.empty(n_initial)
+        initial_logL[:] = np.nan
+        # # Select slice of samples for initial scan
+        # z_dla_subset = sample_z_dlas[:n_initial]
+        # log_nhi_subset = self.dla_samples.log_nhi_samples[:n_initial]
+        # get the new batch_size based on the n_workers
+        batch_size_subset = int(n_initial / max_workers)
+        if batch_size_subset * max_workers < n_initial:
+            batch_size_subset += 1
+
+        # Build initial batches
+        initial_indices = list(range(n_initial))
+        initial_batches = [
+            initial_indices[i : i + batch_size_subset]
+            for i in range(0, n_initial, batch_size_subset)
+        ]
+
         try:
+            if filter_low_likelihood and (null_evidence is not None):
+                # ========= Initial scan on the 5000 subset =========
+                # Step 2: Run scan on the 5000 subset
+                init_num_dla = 0  # num_dlas = 0 for initial scan
+                futures = {
+                    executor.submit(
+                        process_batch,
+                        batch,
+                        init_num_dla,  # num_dlas = 0 for initial scan
+                        sample_z_dlas,
+                        base_sample_inds,
+                        self.dla_samples,
+                        self.params,
+                        self.sample_log_likelihood_k_dlas,
+                        self.min_z_separation,
+                    ): batch
+                    for batch in initial_batches
+                }
+                for future in as_completed(futures):
+                    batch = futures[future]
+                    try:
+                        results = future.result()
+                        for i, res in zip(batch, results):
+                            initial_logL[i] = res
+                            sample_log_likelihoods[i, init_num_dla] = res
+                    except Exception as e:
+                        log.error(f"Initial scan error: {e}")
+                # Step 3: define the log likelihood "zDLA" mask for the initial scan
+                z_tol = 0.02 # TODO: find the best value
+                # These are the indices of the z_dlas that are within z_tol of the high likelihood regions
+                # in the initial scan. You can think of this as nested sampling
+                # in general it reduces samples by a factor of ~100 (100000 to ~2000; 5000 to ~100)
+                valid_mask = select_region_indices_searchsorted(
+                    z_all=sample_z_dlas,                 # full 100000
+                    initial_logL=initial_logL,           # only 5000
+                    initial_z=sample_z_dlas[:n_initial], # only 5000
+                    z_tol=z_tol,
+                    logL_null=null_evidence,
+                ) # this is boolean mask of the full 100000 samples
+
+                # ========== Early stopping if initial scan returns no valid regions ==========
+                if np.sum(valid_mask) == 0:
+                    log.warning(
+                        "No valid regions found in the initial scan. Returning NaN for all log likelihoods."
+                    )
+                    # Save the approximated log likelihoods for 1 DLA model
+                    max_log_likelihood = np.nanmax(sample_log_likelihoods[:, init_num_dla])
+                    sample_probabilities[:] = np.exp(
+                        sample_log_likelihoods[:, init_num_dla] - max_log_likelihood
+                    )
+                    log_likelihoods_dla[init_num_dla] = (
+                        max_log_likelihood
+                        + np.log(np.nanmean(sample_probabilities))
+                        - lognorm * init_num_dla
+                    )
+                    log.info(
+                        f"Stopping early at {init_num_dla + 1} DLAs because the log likelihood {log_likelihoods_dla[init_num_dla]} is less than the null model evidence {null_evidence}."
+                    )
+                    # break the try block to avoid further processing
+                    # Store results for future use
+                    self.sample_log_likelihoods = sample_log_likelihoods
+                    self.base_sample_inds = base_sample_inds
+
+                    return log_likelihoods_dla
+
+                # Step 4: Filter the batch indices based on the valid mask,
+                #         so this is filtered both lognhi and z_dla
+                # 
+                # Avoid using initial scan samples again for refined sampling
+                _valid_mask = valid_mask.copy() # retain the original mask
+                valid_mask[:n_initial] = False  # Exclude the initial scan samples
+                indices = np.where(valid_mask)[0]
+                batch_size = int(len(indices) / max_workers)
+                if batch_size * max_workers < len(indices):
+                    batch_size += 1
+                batches = [
+                    indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
+                ]
+                # Estimate average log-likelihood in the rejected region (logL < null_evidence)
+                # If few values, fallback to minimum or null_evidence
+                # below_null = initial_logL[initial_logL < null_evidence]
+                # 
+                # this should be the samples out side of the valid mask
+                below_null = initial_logL[~_valid_mask[:n_initial]]
+
+                if below_null.size > 5:
+                    max_log_below_null = np.nanmax(below_null)
+                    probabilities_below_null = np.exp(
+                        below_null - max_log_below_null
+                    )
+                    log_initial_logL = (
+                        max_log_below_null
+                        + np.log(np.nanmean(probabilities_below_null))
+                    )
+                else:
+                    log.warning(f"Only {below_null.size} samples in low-likelihood region; correction may be unreliable.")                    
+                    log_initial_logL = null_evidence 
+
+            # ========= Not adaptive truncated sampling =========
+            # this is a safegard for the case we want the original sampling
+            else:
+                indices = list(range(self.params.num_dla_samples))
+                batches = [
+                    indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
+                ]
+
+
+            # ========= Select regions of high likelihood =========
             for num_dlas in range(max_dlas):  # Iterate from 0 to max_dlas - 1
                 # Submit the tasks for each batch to the executor
                 futures = {
@@ -449,31 +679,92 @@ class DLAGP(NullGP):
 
                 # Compute the log likelihood for each number of DLAs
                 max_log_likelihood = np.nanmax(sample_log_likelihoods[:, num_dlas])
-                sample_probabilities = np.exp(
+                sample_probabilities[:] = np.exp(
                     sample_log_likelihoods[:, num_dlas] - max_log_likelihood
                 )
-                log_likelihoods_dla[num_dlas] = (
-                    max_log_likelihood
-                    + np.log(np.nanmean(sample_probabilities))
-                    - np.log(self.params.num_dla_samples) * num_dlas
-                )
+                if filter_low_likelihood and (null_evidence is not None):
+                    # ===== Bias correction for truncated region using initial scan =====
+                    # We are approximating the model evidence (log Z) by partitioning the sample space
+                    # into two regions:
+                    #   - Region A: retained samples with logL > null_evidence (fraction w)
+                    #   - Region B: rejected samples with logL <= null_evidence (fraction 1 - w)
+                    #
+                    # The total marginal likelihood is:
+                    #   Z ≈ w * Z_A + (1 - w) * Z_B
+                    #     = w * mean(exp(logL_A)) + (1 - w) * mean(exp(logL_B))
+                    #
+                    # Taking log:
+                    #   log Z ≈ log( w * exp(log_Z_A) + (1 - w) * exp(log_Z_B) )
+                    #
+                    # log_Z_A is estimated from the retained high-likelihood region:
+                    log_Z_trunc = np.log(np.nanmean(sample_probabilities[_valid_mask])) + max_log_likelihood
 
+                    # log_Z_B is approximated from the mean log-likelihood of the *rejected* region
+                    # (e.g. those from the initial scan with logL < null_evidence), stored as log_initial_logL
+
+                    # Compute total log evidence as a weighted log-sum-exp over A and B
+                    eps = 1e-10
+                    w = np.clip(_valid_mask.mean(), eps, 1 - eps)
+                    log.info(
+                        f"Fraction of prior retained: {w:.4f} for {num_dlas + 1} DLAs."
+                    )
+                    log_ratio = np.log(self.params.num_dla_samples) - np.log(n_initial)
+                    log_likelihoods_dla[num_dlas] = (
+                        logsumexp([
+                            log_Z_trunc - log_ratio + np.log(w),
+                            log_initial_logL + np.log(1 - w),
+                        ])
+                        - lognorm * num_dlas
+                    )
+                else:
+                    # No truncation: standard marginal likelihood estimate from unweighted average
+                    log_likelihoods_dla[num_dlas] = (
+                        max_log_likelihood
+                        + np.log(np.nanmean(sample_probabilities))
+                        - lognorm * num_dlas
+                    )
+
+                # ========= Early stopping logic =========
                 if (num_dlas + 1) == max_dlas or np.isnan(
                     log_likelihoods_dla[num_dlas]
                 ):
                     break
+                # If null_evidence is provided and the current log likelihood is less than it,
+                # stop further computation
+                if null_evidence is not None:
+                    if log_likelihoods_dla[num_dlas] < null_evidence:
+                        log.info(
+                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the null model evidence {null_evidence}."
+                        )
+                        break
+                # If log likelihood is smaller than the previous one by 10 times,
+                # stop further computation
+                if num_dlas > 0:
+                    if (
+                        log_likelihoods_dla[num_dlas]
+                        < log_likelihoods_dla[num_dlas - 1] #- 2.302585092994046 # log(10)
+                    ):
+                        log.info(
+                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the previous one."
+                        )
+                        break
 
                 # Resampling logic to update base sample indices
                 nanind = np.isnan(sample_probabilities)
                 W = sample_probabilities
                 W[nanind] = 0.0
 
-                base_sample_inds[num_dlas, :] = np.random.choice(
-                    np.arange(self.params.num_dla_samples).astype(np.int32),
-                    size=self.params.num_dla_samples,
-                    replace=True,
-                    p=W / W.sum(),
+                # resample the base sample indices using searchsorted method
+                base_sample_inds[num_dlas, :] = searchsorted_method(
+                    W,
+                    self.params.num_dla_samples,
                 )
+                # base_sample_inds[num_dlas, :] = np.random.choice(
+                #     np.arange(self.params.num_dla_samples).astype(np.int32),
+                #     size=self.params.num_dla_samples,
+                #     replace=True,
+                #     p=W / W.sum(),
+                # )
 
         finally:
             # Only shut down the executor if it was created locally
@@ -693,13 +984,29 @@ class DLAGPMAT(DLAGP):
     ):
         with h5py.File(learned_file, "r") as learned:
 
-            rest_wavelengths = learned["rest_wavelengths"][:, 0]
-            mu = learned["mu"][:, 0]
-            M = learned["M"][()].T
-            log_omega = learned["log_omega"][:, 0]
-            log_c_0 = learned["log_c_0"][0, 0]
-            log_tau_0 = learned["log_tau_0"][0, 0]
-            log_beta = learned["log_beta"][0, 0]
+            # Check if the learned model is DESI or not
+            if learned["log_tau_0"].ndim == 0:
+                print("DESI DLA model detected.")
+                is_desi = True
+            else:
+                is_desi = False
+
+            if is_desi is True:
+                rest_wavelengths = learned["rest_wavelengths"][:]
+                mu = learned["mu"][:]
+                M = learned["M"][:]
+                log_omega = learned["log_omega"][:]
+                log_c_0 = learned["log_c_0"][()]
+                log_tau_0 = learned["log_tau_0"][()]
+                log_beta = learned["log_beta"][()]
+            else:
+                rest_wavelengths = learned["rest_wavelengths"][:, 0]
+                mu = learned["mu"][:, 0]
+                M = learned["M"][()].T
+                log_omega = learned["log_omega"][:, 0]
+                log_c_0 = learned["log_c_0"][0, 0]
+                log_tau_0 = learned["log_tau_0"][0, 0]
+                log_beta = learned["log_beta"][0, 0]
 
         super().__init__(
             params,

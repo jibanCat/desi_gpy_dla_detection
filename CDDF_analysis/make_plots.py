@@ -183,6 +183,10 @@ def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2):
     save_figure(path.join(subdir, "cddf_gp_snr"))
     plt.clf()
 
+    # [Omega_DLA]
+    dla_data.omegahi_not()
+    dla_data.omegahi_pro()
+    dla_data.crighton_omega()
     cat.set_snr(-2)
     cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="All GP")
     cat.set_snr(2)
@@ -195,6 +199,9 @@ def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2):
     save_figure(path.join(subdir, "omega_gp_snr"))
     plt.clf()
 
+    # [dNdX]
+    dla_data.dndx_not()
+    dla_data.dndx_pro()
     cat.set_snr(-2)
     cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="All GP")
     cat.set_snr(2)
