@@ -457,7 +457,7 @@ def main(args=None):
         "min_z_cut": args.min_z_cut,
         "num_forest_lines" : args.num_forest_lines, # 3, # Number of forest lines to model
         "num_lines": args.num_lines, # 3,  # number of members of the Lyman series to use
-        "num_subdla_samples": args.num_subdla_samples, # 10000,  # Number of DLA samples to generate
+        "num_dla_samples": args.num_subdla_samples, # 10000,  # Number of DLA samples to generate
     }
 
     # Convert DLAHolder to a dictionary
