@@ -9,10 +9,10 @@ for (( START_INDEX=0; START_INDEX<=MAX_START_INDEX; START_INDEX+=STEP )); do
     END_INDEX=$((START_INDEX + 62))
 
     # Print the command to be executed for reference
-    echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits\",\
-MOCKDIR=\"/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/\",\
-OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-gpdla-20250224-y3-learned-epoch320/\",\
-LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_320.h5\",\
+    echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits\",\
+MOCKDIR=\"/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/\",\
+OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-gpdla-20250912-y3-learned-epoch920/\",\
+LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5\",\
 PREV_TAU_0=0.00246,\
 PREV_BETA=3.62,\
 DLAMBDA=0.15,\
@@ -27,10 +27,10 @@ END_INDEX=$END_INDEX,\
 STEP=2 slurm/submit_desi_mock.sh"
 
     # Submit the job using sbatch
-    sbatch --export=ALL,QSOCAT="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits",\
-MOCKDIR="/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124/",\
-OUTDIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250224-y3-learned-epoch320/",\
-LEARNED_FILE="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_320.h5",\
+    sbatch --export=ALL,QSOCAT="/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits",\
+MOCKDIR="/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/",\
+OUTDIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250912-y3-learned-epoch920/",\
+LEARNED_FILE="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5",\
 PREV_TAU_0=0.00246,\
 PREV_BETA=3.62,\
 DLAMBDA=0.15,\
