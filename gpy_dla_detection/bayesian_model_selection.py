@@ -45,6 +45,7 @@ class BayesModelSelect:
         max_workers: int = None,
         batch_size: int = 100,
         executor=None,
+        filter_low_likelihood: bool = False,
     ) -> np.ndarray:
         """
         Perform Bayesian model selection for a list of models.
@@ -116,6 +117,7 @@ class BayesModelSelect:
                         max_workers=max_workers,
                         batch_size=batch_subdla_size,
                         executor=executor,
+                        # filter_low_likelihood=filter_low_likelihood,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
 
@@ -137,6 +139,7 @@ class BayesModelSelect:
                         batch_size=batch_size,
                         executor=executor,
                         null_evidence=null_evidence,
+                        filter_low_likelihood=filter_low_likelihood,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):

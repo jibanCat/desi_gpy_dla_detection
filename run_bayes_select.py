@@ -56,6 +56,7 @@ def process_single_spectrum(
     figure_dir: str,
     snr_blue: float = None,
     snr_red: float = None,
+    filter_low_likelihood: bool = False,
 ):
     """
     Process a single spectrum using pre-initialized Null, DLA, and SubDLA models.
@@ -110,6 +111,8 @@ def process_single_spectrum(
         Batch size for parallel model evidence computation.
     figure_dir : str
         Directory to save the figures.
+    filter_low_likelihood : bool
+        If True, filters out low likelihood samples during model evidence computation.
     """
     # Set data for the Null, DLA, and Sub-DLA models
     for model, name in zip([gp, dla_gp, subdla_gp], ["Null", "DLA", "Sub-DLA"]):
@@ -123,6 +126,7 @@ def process_single_spectrum(
         z_qso,
         max_workers=max_workers,
         batch_size=batch_size,
+        filter_low_likelihood=filter_low_likelihood,
     )
 
     # Store basic results
