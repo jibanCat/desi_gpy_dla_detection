@@ -34,7 +34,7 @@ SUB_DLA_SAMPLES_FILE="${SUB_DLA_SAMPLES_FILE:-data/dr12q/processed/subdla_sample
 MIN_Z_SEPARATION="${MIN_Z_SEPARATION:-3000.0}"
 PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
-MAX_DLAS="${MAX_DLAS:-3}"
+MAX_DLAS="${MAX_DLAS:-4}"
 PLOT_FIGURES="${PLOT_FIGURES:-0}"
 MAX_WORKERS="${MAX_WORKERS:-8}"               # Reduced for debug
 BATCH_SIZE="${BATCH_SIZE:-1250}"               # Smaller batch size for debug
@@ -48,7 +48,7 @@ DLAMBDA="${DLAMBDA:-0.25}"
 K="${K:-20}"
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 # num_forest_lines
-NUM_FOEST_LINES="${NUM_FOREST_LINES:-31}"
+NUM_FOREST_LINES="${NUM_FOREST_LINES:-31}"
 # num_lines
 NUM_LINES="${NUM_LINES:-3}"
 
@@ -56,6 +56,9 @@ LEVEL2_START="${LEVEL2_START:-0}"
 LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 
 FIGURE_DIR="${FIGURE_DIR:-figures/}"
+
+# Filter low likelihood samples during model evidence computation
+FILTER_LOW_LIKELIHOOD="${FILTER_LOW_LIKELIHOOD:-1}"
 
 # Start and end range variables for controlling the loop
 START_INDEX="${START_INDEX:-0}"
@@ -88,6 +91,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --prev_beta "$PREV_BETA" \
         --max_dlas "$MAX_DLAS" \
         --plot_figures "$PLOT_FIGURES" \
+        --filter_low_likelihood "$FILTER_LOW_LIKELIHOOD" \
         --max_workers "$MAX_WORKERS" \
         --batch_size "$BATCH_SIZE" \
         --loading_min_lambda "$LOADING_MIN_LAMBDA" \
@@ -99,7 +103,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --dlambda "$DLAMBDA" \
         --k "$K" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --num_forest_lines "$NUM_FOEST_LINES" \
+        --num_forest_lines "$NUM_FOREST_LINES" \
         --num_lines "$NUM_LINES" \
         --figure_dir "$OUTDIR" \
         --level2_start "$LEVEL2_START" \

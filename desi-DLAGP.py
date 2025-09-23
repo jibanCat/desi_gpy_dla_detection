@@ -183,6 +183,15 @@ def parse(options=None):
         help="Batch size for parallel model evidence computation.",
     )
 
+    # DLA-related arguments
+    parser.add_argument(
+        "--filter_low_likelihood",
+        type=int,
+        default=0,
+        help="Set to 1 to filter out low likelihood samples during model evidence computation, 0 otherwise.",
+        dest="filter_low_likelihood"
+    )
+
     # Parameter-related arguments
     # These are the values used in the trained GP model, don't change them unless you change the trained model
     parser.add_argument(
@@ -478,6 +487,7 @@ def main(args=None):
         "max_workers": args.max_workers,
         "batch_size": args.batch_size,
         "figure_dir": args.figure_dir,
+        "filter_low_likelihood": bool(args.filter_low_likelihood),
     }
 
     # Set up for nested multiprocessing

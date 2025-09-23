@@ -268,6 +268,7 @@ class DLAHolder:
         batch_size: int = 100,
         figure_dir: str = "figures/",
         params_subdla=None,
+        filter_low_likelihood: bool = False,
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -287,6 +288,10 @@ class DLAHolder:
         self.plot_figures = plot_figures
         self.max_workers = max_workers
         self.batch_size = batch_size
+
+        # Filter low likelihood samples
+        self.filter_low_likelihood = filter_low_likelihood
+
         self.params = params  # Pass in the Parameters object here
         if params_subdla is None:
             params_subdla = params.copy() # Use the same parameters for Sub-DLA
@@ -393,6 +398,7 @@ class DLAHolder:
             self.max_workers,
             self.batch_size,
             self.figure_dir,
+            filter_low_likelihood=self.filter_low_likelihood,
         )
         del null_gp, dla_gp, subdla_gp
 

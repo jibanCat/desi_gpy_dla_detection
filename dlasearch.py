@@ -87,6 +87,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             batch_size=model_params["batch_size"],
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
+            filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
