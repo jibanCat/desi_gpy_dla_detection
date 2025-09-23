@@ -40,7 +40,7 @@ PREV_TAU_0="${PREV_TAU_0:-0.00554}"
 PREV_BETA="${PREV_BETA:-3.182}"
 MAX_DLAS="${MAX_DLAS:-4}"
 PLOT_FIGURES="${PLOT_FIGURES:-1}"
-MAX_WORKERS="${MAX_WORKERS:-8}"               # Reduced for debug
+MAX_WORKERS="${MAX_WORKERS:-8}"              # Reduced for debug
 BATCH_SIZE="${BATCH_SIZE:-1250}"               # Smaller batch size for debug
 LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-910}"
 LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
@@ -56,6 +56,8 @@ LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 
 # num_forest_lines
 NUM_FOREST_LINES="${NUM_FOREST_LINES:-31}"
+# num_dla_samples
+NUM_DLA_SAMPLES="${NUM_DLA_SAMPLES:-10000}"
 
 FIGURE_DIR="${FIGURE_DIR:-figures/}"
 
@@ -106,6 +108,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --max_lambda "$MAX_LAMBDA" \
         --dlambda "$DLAMBDA" \
         --k "$K" \
+        --num_dla_samples "$NUM_DLA_SAMPLES" \
         --num_forest_lines "$NUM_FOREST_LINES" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
         --figure_dir "$FIGURE_DIR" \

@@ -51,6 +51,8 @@ MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 NUM_FOREST_LINES="${NUM_FOREST_LINES:-31}"
 # num_lines
 NUM_LINES="${NUM_LINES:-3}"
+# num_dla_samples
+NUM_DLA_SAMPLES="${NUM_DLA_SAMPLES:-10000}"
 
 LEVEL2_START="${LEVEL2_START:-0}"
 LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
@@ -102,6 +104,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --max_lambda "$MAX_LAMBDA" \
         --dlambda "$DLAMBDA" \
         --k "$K" \
+        --num_dla_samples "$NUM_DLA_SAMPLES" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
         --num_forest_lines "$NUM_FOREST_LINES" \
         --num_lines "$NUM_LINES" \
