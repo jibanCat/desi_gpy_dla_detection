@@ -52,7 +52,7 @@ NUM_FOREST_LINES="${NUM_FOREST_LINES:-31}"
 # num_lines
 NUM_LINES="${NUM_LINES:-3}"
 # num_dla_samples
-NUM_DLA_SAMPLES="${NUM_DLA_SAMPLES:-10000}"
+NUM_DLA_SAMPLES="${NUM_DLA_SAMPLES:-100000}"
 
 LEVEL2_START="${LEVEL2_START:-0}"
 LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
