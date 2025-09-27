@@ -223,6 +223,13 @@ static const double gammas[] =                         /* Lorentzian widths     
 /* BOSS spectrograph instrumental broadening */
 /* R = 2000; */                                  /* resolving power          dimensionless */
 
+/* DESI spectrograph instrumental broadening */
+/* Blue: 360 < λ ≤ 555 nm; R = 2,000 − 3,200
+Red: 555 < λ ≤ 656 nm; R = 3,200 − 4,100
+Infrared: 656 < λ ≤ 980 nm, R = 4,100 − 5,000
+Take R = 3000 as a representative value */
+
+
 /* width of instrument broadening in pixels */
 /* pixel_spacing = 1e-4; */
 /* pixel_sigma = 1 / (R * 2 * sqrt(2 * M_LN2) * (pow(10, pixel_spacing) - 1)); */
@@ -242,13 +249,13 @@ static const int width = 3;                      /* width of convolution     dim
 
 static const double instrument_profile[] =
   {
-    2.17460992138080811e-03,
-    4.11623059580451742e-02,
-    2.40309364651846963e-01,
-    4.32707438937454059e-01, /* center pixel */
-    2.40309364651846963e-01,
-    4.11623059580451742e-02,
-    2.17460992138080811e-03
+    4.359382001258239556e-06,
+    3.257925674795976966e-03,
+    1.726040252342891379e-01,
+    6.482673794178271942e-01, /* center pixel */
+    1.726040252342891379e-01,
+    3.257925674795976966e-03,
+    4.359382001258239556e-06
   };
 
 /* Function to compute Voigt profile using libcerf */
