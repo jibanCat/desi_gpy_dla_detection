@@ -119,6 +119,7 @@ class BayesModelSelect:
                         max_workers=max_workers,
                         batch_size=batch_subdla_size,
                         executor=executor,
+                        null_evidence=null_evidence,
                         filter_low_likelihood=filter_low_likelihood,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
