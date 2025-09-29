@@ -509,7 +509,7 @@ class DLAGP(NullGP):
         # and then you only sample the regions of high likelihood
         # 
         # Step 1: only use a small subset of QMC samples for the initial scan
-        n_initial = 10000  # only scan the first 10000 samples
+        n_initial = min(int(self.params.num_dla_samples // 2) , 10000)  # only scan the first 10000 samples
         initial_logL = np.empty(n_initial)
         initial_logL[:] = np.nan
         # # Select slice of samples for initial scan
