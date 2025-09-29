@@ -57,6 +57,7 @@ def process_single_spectrum(
     snr_blue: float = None,
     snr_red: float = None,
     filter_low_likelihood: bool = False,
+    single_absorber_model: bool = False,
 ):
     """
     Process a single spectrum using pre-initialized Null, DLA, and SubDLA models.
@@ -113,21 +114,40 @@ def process_single_spectrum(
         Directory to save the figures.
     filter_low_likelihood : bool
         If True, filters out low likelihood samples during model evidence computation.
+    single_absorber_model : bool
+        If True, uses a single absorber model for DLA detection.
+        That is, the DLA model includes NHI = [10^19.5, 10^22.5] cm^-2.
     """
-    # Set data for the Null, DLA, and Sub-DLA models
-    for model, name in zip([gp, dla_gp, subdla_gp], ["Null", "DLA", "Sub-DLA"]):
-        model.set_data(
-            rest_wavelengths, flux, noise_variance, pixel_mask, z_qso, build_model=True
-        )
+    if single_absorber_model:
+        # Set data for the Null and DLA models
+        for model, name in zip([gp, dla_gp], ["Null", "DLA"]):
+            model.set_data(
+                rest_wavelengths, flux, noise_variance, pixel_mask, z_qso, build_model=True
+            )
 
-    # Run Bayesian model selection with parallelized model evidence computation
-    bayes.model_selection(
-        [gp, subdla_gp, dla_gp],
-        z_qso,
-        max_workers=max_workers,
-        batch_size=batch_size,
-        filter_low_likelihood=filter_low_likelihood,
-    )
+        # Run Bayesian model selection with parallelized model evidence computation
+        bayes.model_selection(
+            [gp, dla_gp],
+            z_qso,
+            max_workers=max_workers,
+            batch_size=batch_size,
+            filter_low_likelihood=filter_low_likelihood,
+        )
+    else:
+        # Set data for the Null, DLA, and Sub-DLA models
+        for model, name in zip([gp, dla_gp, subdla_gp], ["Null", "DLA", "Sub-DLA"]):
+            model.set_data(
+                rest_wavelengths, flux, noise_variance, pixel_mask, z_qso, build_model=True
+            )
+
+        # Run Bayesian model selection with parallelized model evidence computation
+        bayes.model_selection(
+            [gp, subdla_gp, dla_gp],
+            z_qso,
+            max_workers=max_workers,
+            batch_size=batch_size,
+            filter_low_likelihood=filter_low_likelihood,
+        )
 
     # Store basic results
     results["z_qsos"][idx] = z_qso
@@ -157,7 +177,10 @@ def process_single_spectrum(
 
     # Identify the most probable model
     model_posteriors = bayes.model_posteriors[:]
-    argmaxind = np.nanargmax(model_posteriors) - 1
+    if single_absorber_model:
+        argmaxind = np.nanargmax(model_posteriors) # No DLA vs DLA only
+    else:
+        argmaxind = np.nanargmax(model_posteriors) - 1
 
     # Check if any DLA detection is made
     if argmaxind > 0:
@@ -247,6 +270,9 @@ class DLAHolder:
         Maximum number of parallel workers to use for processing (default is None).
     batch_size : int, optional
         Batch size for parallel processing (default is 100).
+    single_absorber_model : bool, optional
+        If True, uses a single absorber model for DLA detection.
+        That is, the DLA model includes NHI = [10^19.5, 10^22.5] cm^-2.
     """
 
     def __init__(
@@ -269,6 +295,7 @@ class DLAHolder:
         figure_dir: str = "figures/",
         params_subdla=None,
         filter_low_likelihood: bool = False,
+        single_absorber_model: bool = False
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -292,6 +319,9 @@ class DLAHolder:
         # Filter low likelihood samples
         self.filter_low_likelihood = filter_low_likelihood
 
+        # Single absorber model flag: No Sub-DLA model, only Null and DLA models
+        self.single_absorber_model = single_absorber_model
+
         self.params = params  # Pass in the Parameters object here
         if params_subdla is None:
             params_subdla = params.copy() # Use the same parameters for Sub-DLA
@@ -300,9 +330,11 @@ class DLAHolder:
         # Initialize prior catalog and Bayesian model selection
         self.prior = PriorCatalog(self.params, catalog_name, los_catalog, dla_catalog)
         self.dla_samples = DLASamplesMAT(self.params, self.prior, dla_samples_file)
-        self.subdla_samples = SubDLASamplesMAT(
-            self.params_subdla, self.prior, sub_dla_samples_file
-        )
+
+        if not self.single_absorber_model:
+            self.subdla_samples = SubDLASamplesMAT(
+                self.params_subdla, self.prior, sub_dla_samples_file
+            )
         # self.bayes = BayesModelSelect([0, 1, max_dlas], 2)
 
         self.figure_dir = figure_dir
@@ -356,17 +388,20 @@ class DLAHolder:
             prev_tau_0=self.prev_tau_0,
             prev_beta=self.prev_beta,
         )
-        subdla_gp = SubDLAGPMAT(
-            self.params_subdla,
-            self.prior,
-            self.subdla_samples,
-            min_z_separation=self.min_z_separation,
-            learned_file=self.learned_file,
-            broadening=self.broadening,
-            prev_tau_0=self.prev_tau_0,
-            prev_beta=self.prev_beta,
-        )
-        bayes = BayesModelSelect([0, 1, self.max_dlas], 2)
+        if self.single_absorber_model:
+            bayes = BayesModelSelect([0, self.max_dlas], 1)
+        else:
+            subdla_gp = SubDLAGPMAT(
+                self.params_subdla,
+                self.prior,
+                self.subdla_samples,
+                min_z_separation=self.min_z_separation,
+                learned_file=self.learned_file,
+                broadening=self.broadening,
+                prev_tau_0=self.prev_tau_0,
+                prev_beta=self.prev_beta,
+            )
+            bayes = BayesModelSelect([0, 1, self.max_dlas], 2)
 
         # Log the processing of the spectrum
         log.info(
@@ -399,8 +434,13 @@ class DLAHolder:
             self.batch_size,
             self.figure_dir,
             filter_low_likelihood=self.filter_low_likelihood,
+            single_absorber_model=self.single_absorber_model,
         )
-        del null_gp, dla_gp, subdla_gp
+        # Clean up to free memory
+        if self.single_absorber_model:
+            del null_gp, dla_gp
+        else:
+            del null_gp, dla_gp, subdla_gp
 
         toc = time.time()
         log.info(

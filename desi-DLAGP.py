@@ -192,6 +192,15 @@ def parse(options=None):
         dest="filter_low_likelihood"
     )
 
+    # single absorber model only
+    parser.add_argument(
+        "--single_absorber_model",
+        type=int,
+        default=0,
+        help="Set to 1 to use only single absorber model (no subDLA), 0 otherwise.",
+        dest="single_absorber_model"
+    )
+
     # Parameter-related arguments
     # These are the values used in the trained GP model, don't change them unless you change the trained model
     parser.add_argument(
@@ -488,6 +497,7 @@ def main(args=None):
         "batch_size": args.batch_size,
         "figure_dir": args.figure_dir,
         "filter_low_likelihood": bool(args.filter_low_likelihood),
+        "single_absorber_model": bool(args.single_absorber_model),  # single absorber model only
     }
 
     # Set up for nested multiprocessing

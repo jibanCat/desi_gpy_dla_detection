@@ -505,11 +505,11 @@ class DLAGP(NullGP):
             local_executor = True
 
         # ========= Adative truncated sampling =========
-        # Your first 5000 samples scan is to find the regions of high likelihood,
+        # Your first 10000 samples scan is to find the regions of high likelihood,
         # and then you only sample the regions of high likelihood
         # 
         # Step 1: only use a small subset of QMC samples for the initial scan
-        n_initial = 5000  # only scan the first 5000 samples
+        n_initial = 10000  # only scan the first 10000 samples
         initial_logL = np.empty(n_initial)
         initial_logL[:] = np.nan
         # # Select slice of samples for initial scan
@@ -529,8 +529,8 @@ class DLAGP(NullGP):
 
         try:
             if filter_low_likelihood and (null_evidence is not None):
-                # ========= Initial scan on the 5000 subset =========
-                # Step 2: Run scan on the 5000 subset
+                # ========= Initial scan on the 10000 subset =========
+                # Step 2: Run scan on the 10000 subset
                 init_num_dla = 0  # num_dlas = 0 for initial scan
                 futures = {
                     executor.submit(

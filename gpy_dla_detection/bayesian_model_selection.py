@@ -82,7 +82,9 @@ class BayesModelSelect:
 
         # Log prior check
         log.info(f" ...     p( no DLA | z_QSO)     : {np.exp(log_priors[0]):.3f}")
-        log.info(f" ...     p( subDLA | z_QSO)     : {np.exp(log_priors[1]):.3f}")
+        # check if subDLA model is included
+        if len(self.all_max_dlas) > 2 and self.all_max_dlas[1] == 1:
+            log.info(f" ...     p( subDLA | z_QSO)     : {np.exp(log_priors[1]):.3f}")
         log.info(
             f" ...     p(   DLA | z_QSO)        : {log_prior_dla:.3f}"
         )
@@ -117,7 +119,7 @@ class BayesModelSelect:
                         max_workers=max_workers,
                         batch_size=batch_subdla_size,
                         executor=executor,
-                        # filter_low_likelihood=filter_low_likelihood,
+                        filter_low_likelihood=filter_low_likelihood,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
 

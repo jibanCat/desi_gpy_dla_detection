@@ -88,6 +88,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
             filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+            single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
@@ -196,6 +197,7 @@ def dlasearch_mock(specfile, catalog, model_params):
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
             filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+            single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
         )
 
         fitresults = process_spectra_group(specfile, catalog, model)
