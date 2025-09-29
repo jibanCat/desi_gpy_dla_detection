@@ -67,8 +67,13 @@ class DLASamplesMAT(DLASamples):
 
         dla_samples = h5py.File(dla_samples_file, "r")
 
-        assert self.alpha == dla_samples["alpha"][0, 0]
-        assert self.uniform_min_log_nhi == dla_samples["uniform_min_log_nhi"][0, 0]
+        # Just raise warning 
+        if  self.alpha != dla_samples["alpha"][0, 0]:
+            print("Warning: alpha value is different from the one in the .mat file.")
+            print(f"Input alpha: {self.alpha}, .mat file alpha: {dla_samples['alpha'][0, 0]}")
+        if self.fit_min_log_nhi != dla_samples["fit_min_log_nhi"][0, 0]:
+            print("Warning: fit_min_log_nhi value is different from the one in the .mat file.")
+            print(f"Input fit_min_log_nhi: {self.fit_min_log_nhi}, .mat file fit_min_log_nhi: {dla_samples['fit_min_log_nhi'][0, 0]}")
 
         self._offset_samples = dla_samples["offset_samples"][:, 0]
         self._log_nhi_samples = dla_samples["log_nhi_samples"][:, 0]
