@@ -347,6 +347,7 @@ class DLAHolder:
             num_spectra,
             self.max_dlas,
             self.params.num_dla_samples,
+            single_absorber_model=self.single_absorber_model,
         )
         self.num_spectra = num_spectra
 

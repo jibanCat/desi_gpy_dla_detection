@@ -9,7 +9,7 @@ import h5py
 from typing import List
 
 
-def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int) -> dict:
+def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int, single_absorber_model: bool = False) -> dict:
     """
     Initialize the results dictionary to store outputs for all spectra.
 
@@ -48,7 +48,16 @@ def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int) ->
     model_posteriors : Posterior probabilities for each model.
     p_dlas : Posterior probability of DLA models.
     p_no_dlas : Posterior probability of the no-DLA model.
+    snrs : Signal-to-noise ratios for each spectrum.
+    snrs_blue : Signal-to-noise ratios on the blue side of each spectrum.
+    detection_flags : Flags indicating detection status for each spectrum.
+    single_absorber_model : If True, only single absorber model is used (no subDLA).
     """
+
+    if single_absorber_model:
+        num_subdla = 0
+    else:
+        num_subdla = 1
 
     results = {
         "target_ids": np.full(
@@ -101,7 +110,7 @@ def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int) ->
             (num_spectra, max_dlas), np.nan
         ),  # 1-sigma errors for log N_HI values
         "model_posteriors": np.full(
-            (num_spectra, 1 + 1 + max_dlas), np.nan
+            (num_spectra, 1 + num_subdla + max_dlas), np.nan
         ),  # Model posterior probabilities
         "p_dlas": np.full(
             (num_spectra,), np.nan
