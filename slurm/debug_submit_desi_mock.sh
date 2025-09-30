@@ -64,6 +64,9 @@ FIGURE_DIR="${FIGURE_DIR:-figures/}"
 # Filter low likelihood samples during model evidence computation
 FILTER_LOW_LIKELIHOOD="${FILTER_LOW_LIKELIHOOD:-1}"
 
+# Single absorber model flag
+SINGLE_ABSORBER_MODEL="${SINGLE_ABSORBER_MODEL:-0}"
+
 # Start and end range variables for controlling the loop
 START_INDEX="${START_INDEX:-0}"
 END_INDEX="${END_INDEX:-62}"
@@ -98,6 +101,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --max_dlas "$MAX_DLAS" \
         --plot_figures "$PLOT_FIGURES" \
         --filter_low_likelihood "$FILTER_LOW_LIKELIHOOD" \
+        --single_absorber_model "$SINGLE_ABSORBER_MODEL" \
         --max_workers "$MAX_WORKERS" \
         --batch_size "$BATCH_SIZE" \
         --loading_min_lambda "$LOADING_MIN_LAMBDA" \
