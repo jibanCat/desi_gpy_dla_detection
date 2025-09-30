@@ -335,6 +335,8 @@ class DLAHolder:
             self.subdla_samples = SubDLASamplesMAT(
                 self.params_subdla, self.prior, sub_dla_samples_file
             )
+        else:
+            self.subdla_samples = None
         # self.bayes = BayesModelSelect([0, 1, max_dlas], 2)
 
         self.figure_dir = figure_dir
@@ -390,6 +392,7 @@ class DLAHolder:
             prev_beta=self.prev_beta,
         )
         if self.single_absorber_model:
+            subdla_gp = None
             bayes = BayesModelSelect([0, self.max_dlas], 1)
         else:
             subdla_gp = SubDLAGPMAT(
