@@ -465,6 +465,13 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         model.results["detection_flags"][entry] = np.sum(fitwarn) > 0
 
         ndla = np.sum(zdla != -1)
+
+        # whether use single model only
+        if model.single_absorber_model:
+            num_subdla = 0
+        else:
+            num_subdla = 1
+
         for n in range(ndla):
             tidlist.append(tid)
             dlaid = str(tid) + "00" + str(n)
@@ -488,7 +495,7 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             pnulllist.append(p_no_dla)
             logpdlalist.append(log_posteriors_dla[n])
             logpnulllist.append(log_posteriors_no_dla)
-            modelplist.append(model_posteriors[2 + n])
+            modelplist.append(model_posteriors[1 + num_subdla + n])
 
     # TODO: Intermediate results saving for debugging - this is the same format as Roman's code
     processed_filename = "processed-" + coaddpath.split("/")[-1].replace("coadd-", "")
