@@ -58,6 +58,8 @@ LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
 NUM_FOREST_LINES="${NUM_FOREST_LINES:-31}"
 # num_dla_samples
 NUM_DLA_SAMPLES="${NUM_DLA_SAMPLES:-10000}"
+# num_subdla_samples
+NUM_SUBDLA_SAMPLES="${NUM_SUBDLA_SAMPLES:-10000}"
 
 FIGURE_DIR="${FIGURE_DIR:-figures/}"
 
@@ -113,6 +115,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
         --dlambda "$DLAMBDA" \
         --k "$K" \
         --num_dla_samples "$NUM_DLA_SAMPLES" \
+        --num_subdla_samples "$NUM_SUBDLA_SAMPLES" \
         --num_forest_lines "$NUM_FOREST_LINES" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
         --figure_dir "$FIGURE_DIR" \
