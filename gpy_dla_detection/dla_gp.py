@@ -556,7 +556,7 @@ class DLAGP(NullGP):
                     except Exception as e:
                         log.error(f"Initial scan error: {e}")
                 # Step 3: define the log likelihood "zDLA" mask for the initial scan
-                z_tol = 0.01 # TODO: find the best value
+                z_tol = 0.02 # TODO: find the best value
                 # These are the indices of the z_dlas that are within z_tol of the high likelihood regions
                 # in the initial scan. You can think of this as nested sampling
                 # in general it reduces samples by a factor of ~100 (100000 to ~2000; 5000 to ~100)
