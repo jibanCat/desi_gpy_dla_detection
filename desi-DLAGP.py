@@ -353,6 +353,15 @@ def main(args=None):
         log.error(f"{args.qsocat} does not exist")
         exit(1)
 
+    # TODO: check if outdir exists, if not create it
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir, exist_ok=True)
+        log.info(f"created output directory: {args.outdir}")
+    # check if figure dir exists, if not create it
+    if not os.path.exists(args.figure_dir):
+        os.makedirs(args.figure_dir, exist_ok=True)
+        log.info(f"created figure directory: {args.figure_dir}")
+
     # if catalog is healpix based, we must have program & survey
     if not (args.tilebased) and not (args.mocks):
         log.info(
