@@ -49,9 +49,20 @@ MAX_Z_CUT="${MAX_Z_CUT:-3000.0}" # Maximum redshift cut for the DLA samples
 MIN_Z_CUT="${MIN_Z_CUT:-3000.0}" # Minimum redshift cut for the DLA samples
 MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
 # num_forest_lines
-NUM_FOEST_LINES="${NUM_FOREST_LINES:-31}"
+NUM_FOREST_LINES="${NUM_FOREST_LINES:-31}"
 # num_lines
 NUM_LINES="${NUM_LINES:-3}"
+
+# num_dla_samples
+NUM_DLA_SAMPLES="${NUM_DLA_SAMPLES:-100000}"
+# num_subdla_samples
+NUM_SUBDLA_SAMPLES="${NUM_SUBDLA_SAMPLES:-10000}"
+
+# Filter low likelihood samples during model evidence computation
+FILTER_LOW_LIKELIHOOD="${FILTER_LOW_LIKELIHOOD:-1}"
+
+# Single absorber model flag
+SINGLE_ABSORBER_MODEL="${SINGLE_ABSORBER_MODEL:-0}"
 
 # Define start and end healpix index ranges for 8 tasks, with each task processing 40 healpix pixels
 HPX_STEP=52
@@ -83,6 +94,8 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --prev_beta "$PREV_BETA" \
         --max_dlas "$MAX_DLAS" \
         --plot_figures "$PLOT_FIGURES" \
+        --filter_low_likelihood "$FILTER_LOW_LIKELIHOOD" \
+        --single_absorber_model "$SINGLE_ABSORBER_MODEL" \
         --max_workers "$MAX_WORKERS" \
         --batch_size "$BATCH_SIZE" \
         --loading_min_lambda "$LOADING_MIN_LAMBDA" \
@@ -93,10 +106,12 @@ for (( i = HPX_START_INDEX; i <= HPX_END_INDEX; i += HPX_STEP )); do
         --max_lambda "$MAX_LAMBDA" \
         --dlambda "$DLAMBDA" \
         --k "$K" \
+        --num_dla_samples "$NUM_DLA_SAMPLES" \
+        --num_subdla_samples "$NUM_SUBDLA_SAMPLES" \
         --max_z_cut "$MAX_Z_CUT" \
         --min_z_cut "$MIN_Z_CUT" \
         --max_noise_variance "$MAX_NOISE_VARIANCE" \
-        --num_forest_lines "$NUM_FOEST_LINES" \
+        --num_forest_lines "$NUM_FOREST_LINES" \
         --num_lines "$NUM_LINES" \
         --figure_dir "$OUTDIR" \
         --hpx_start "$HPX_START" \
