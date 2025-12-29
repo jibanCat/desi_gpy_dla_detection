@@ -9,6 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from ..dla_gp import DLAGP
+from ..bayesian_model_selection import BayesModelSelect
 
 
 def plot_dla_model(
@@ -210,7 +211,7 @@ def plot_real_spectrum_space(gp, lya_gp, nth_lya, title=""):
     # plt.show()
 
 
-def plot_samples_vs_this_mu(dla_gp, bayes, filename, sub_dir="images", title=""):
+def plot_samples_vs_this_mu(dla_gp: DLAGP, bayes: BayesModelSelect, filename, sub_dir="images", title=""):
     """
     Create and save DLA detection plots for a given spectrum.
 
@@ -233,7 +234,7 @@ def plot_samples_vs_this_mu(dla_gp, bayes, filename, sub_dir="images", title="")
     # file_path = os.path.join(sub_dir, f"{filename}.png")
 
     # Determine the number of absorbers to plot based on the posterior probability
-    nth_lya = 1 + bayes.model_posteriors[2:].argmax() if bayes.p_dla > 0.9 else 0
+    nth_lya = 1 + bayes.model_posteriors[bayes.dla_model_ind:].argmax() if bayes.p_dla > 0.9 else 0
 
     # Extract sample z_dlas and sample log likelihoods
     sample_z_dlas = dla_gp.dla_samples.sample_z_dlas(
