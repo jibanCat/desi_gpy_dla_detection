@@ -78,7 +78,7 @@ class BayesModelSelect:
         log_priors = np.array(list(chain(*log_priors)))
         log_priors[0] = np.log(1 - np.exp(logsumexp(log_priors[1:])))
 
-        log_prior_dla = logsumexp(log_priors[2:])
+        log_prior_dla = logsumexp(log_priors[self.dla_model_ind:])
 
         # Log prior check
         log.info(f" ...     p( no DLA | z_QSO)     : {np.exp(log_priors[0]):.3f}")
@@ -156,16 +156,16 @@ class BayesModelSelect:
 
         # Perform the tolerance check
         if (
-            not np.isfinite(log_likelihoods[2])
-            or not np.isfinite(log_priors[2])
-            or not np.isfinite(log_posteriors[2])
+            not np.isfinite(log_likelihoods[self.dla_model_ind])
+            or not np.isfinite(log_priors[self.dla_model_ind])
+            or not np.isfinite(log_posteriors[self.dla_model_ind])
         ):
             warnings.warn(
                 "Invalid values encountered in log likelihoods, priors, or posteriors."
             )
         else:
             difference = np.abs(
-                (log_likelihoods[2] + log_priors[2]) - log_posteriors[2]
+                (log_likelihoods[self.dla_model_ind] + log_priors[self.dla_model_ind]) - log_posteriors[self.dla_model_ind]
             )
             if difference >= 1e-4:
                 warnings.warn(f"Posterior mismatch detected: difference = {difference}")
