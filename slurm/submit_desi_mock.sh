@@ -9,7 +9,7 @@
 #SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
 #SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH -A desi                     # Account name to use on NERSC systems
-#SBATCH --time=04:00:00             # Time limit for the job
+#SBATCH --time=05:00:00             # Time limit for the job
 #SBATCH --ntasks=32                  # 8 tasks total (each running one instance of the Python script)
 #SBATCH --cpus-per-task=8          # Each task uses 8 CPUs
 
