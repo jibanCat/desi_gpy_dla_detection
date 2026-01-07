@@ -914,11 +914,12 @@ class DLACatalogue(object):
         return (l_Ncent, cddf, cddf68, cddf95, xerrs)
 
     def plot_cddf(
-        self, zmin=1.0, zmax=6.0, label="GP", color=None, moment=False, twosigma=True
+        self, zmin=1.0, zmax=6.0, label="GP", color=None, moment=False, twosigma=True,
+        lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0
     ):
         """Plot the column density function"""
         (l_N, cddf, cddf68, cddf95, xerrs) = self.column_density_function(
-            z_min=zmin, z_max=zmax
+            z_min=zmin, z_max=zmax, lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
         )
         if moment:
             cddf *= 10**l_N

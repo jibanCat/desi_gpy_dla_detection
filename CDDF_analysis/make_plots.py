@@ -8,6 +8,7 @@ matplotlib.use("PDF")
 import matplotlib.pyplot as plt
 from . import calc_cddf
 from .dla_data import dla_data
+from .calc_cddf import DLACatalogue
 
 # from save_figure import save_figure
 
@@ -16,52 +17,85 @@ save_figure = lambda filename: plt.savefig(
 )
 
 
-def do_data_plots(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2):
-    """Make a set of plots"""
+def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
+                  lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
+    """Make a set of plots
+    
+    Parameters
+    ----------
+    cat : DLACatalogue
+        The DLA catalogue object containing the data.
+    subdir : str
+        The output subdirectory to save plots.
+    z_dla_max : float, optional
+        Maximum DLA redshift for plots, by default 5
+    z_dla_cddf_min : float, optional
+        Minimum DLA redshift for CDDF plots, by default 1
+    z_dla_dndx_min : float, optional
+        Minimum DLA redshift for dNdX plots, by default 2
+    lnhi_nbins : int, optional
+        Number of bins for ln(NHI) histograms, by default 30
+    lnhi_min : float, optional
+        Minimum value for ln(NHI) histograms, by default 20.0
+    lnhi_max : float, optional
+        Maximum value for ln(NHI) histograms, by default 23.0
+
+    """
     dla_data.noterdaeme_12_data()
     (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(
-        zmin=z_dla_cddf_min, zmax=z_dla_max, color="blue"
+        zmin=z_dla_cddf_min, zmax=z_dla_max, color="blue",
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
     )
     np.savetxt(
         path.join(subdir, "cddf_all.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
-    plt.xlim(1e20, 1e23)
+    # xlim (10**lnhi_min, 10**lnhi_max)
+    plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_gp"))
     plt.clf()
 
     (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(
-        zmin=z_dla_cddf_min, zmax=z_dla_max, color="blue", moment=True
+        zmin=z_dla_cddf_min, zmax=z_dla_max, color="blue", moment=True,
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
     )
-    plt.xlim(1e20, 1e23)
+    plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_moment_gp"))
     plt.clf()
 
     # Evolution with redshift
-    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(4, 5, label="4-5", color="brown")
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(4, 5, label="4-5", color="brown",
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
     np.savetxt(
         path.join(subdir, "cddf_z45.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
-    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(3, 4, label="3-4", color="black")
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(3, 4, label="3-4", color="black",
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
     np.savetxt(
         path.join(subdir, "cddf_z34.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
-    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(2.5, 3, label="2.5-3", color="green")
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(2.5, 3, label="2.5-3", color="green",
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
     np.savetxt(
         path.join(subdir, "cddf_z253.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
-    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(2, 2.5, label="2-2.5", color="blue")
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(2, 2.5, label="2-2.5", color="blue",
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
     np.savetxt(
         path.join(subdir, "cddf_z225.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
-    plt.xlim(1e20, 1e23)
+    plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_zz_gp"))
@@ -165,19 +199,23 @@ def do_pixel_noise_check(cat, subdir, z_dla_max=5):
     cat.filter_noisy_pixels = False
 
 
-def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2):
+def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
+                 lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
     """Check effect of removing spectra with a low SNR."""
     first_snr = cat.snr_thresh
 
     # [CDDF]
     dla_data.noterdaeme_12_data()
     cat.set_snr(-2)
-    cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="ALL GP", color="C0")
+    cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="ALL GP", color="C0",
+                  lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
     cat.set_snr(2)
-    cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="SNR > 2", color="C1")
+    cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="SNR > 2", color="C1",
+                  lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
     cat.set_snr(4)
-    cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="SNR > 4", color="C2")
-    plt.xlim(1e20, 1e23)
+    cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="SNR > 4", color="C2",
+                  lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
+    plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_gp_snr"))
@@ -510,7 +548,8 @@ def do_length_split(cat, subdir, z_dla_max=5):
     cat.condition = oldcond
 
 
-def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5):
+def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5,
+                     lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
     """Plots to compare two cddfs"""
     # Check the effect of the 5km/s split
     # dNdX
@@ -521,9 +560,11 @@ def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5):
     plt.clf()
 
     # Omega_DLA
-    cat7.plot_cddf(zmax=z_dla_max, color="blue")
-    cat7s.plot_cddf(zmax=z_dla_max, color="red", label=label)
-    plt.xlim(1e20, 1e23)
+    cat7.plot_cddf(zmax=z_dla_max, color="blue",
+                   lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
+    cat7s.plot_cddf(zmax=z_dla_max, color="red", label=label,
+                   lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
+    plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_" + label))
@@ -545,10 +586,36 @@ def do_dla_statistics_plots(
     z_dla_max: float = 5.0,
     high_z_qso: float = 7.0,
     low_z_qso: float = 2.0,
+    lnhi_nbins: int = 30,
+    lnhi_min: float = 20.0,
+    lnhi_max: float = 23.0,
 ):
     """
     Do the plotting for CDDF, dN/dX, OmegaDLA,
     including zQSO splitting checks, snr checks, and lowz cut checks.
+
+    Parameters
+    ----------
+    cat12 : calc_cddf.DLACatalogue
+        The DLA catalogue object containing the data.
+    subdir : str
+        The output subdirectory to save plots.
+    z_dla_cddf_min : float, optional
+        Minimum DLA redshift for CDDF plots, by default 1.0
+    z_dla_dndx_min : float, optional
+        Minimum DLA redshift for dNdX plots, by default 2.0
+    z_dla_max : float, optional
+        Maximum DLA redshift for plots, by default 5.0
+    high_z_qso : float, optional
+        Upper limit for quasar redshift split, by default 7.0
+    low_z_qso : float, optional
+        Lower limit for quasar redshift split, by default 2.0
+    lnhi_nbins : int, optional
+        Number of bins for ln(NHI) histograms, by default 30
+    lnhi_min : float, optional
+        Minimum value for ln(NHI) histograms, by default 20.0
+    lnhi_max : float, optional
+        Maximum value for ln(NHI) histograms, by default 23.0
     """
     oldcond = cat12.condition
 
@@ -562,6 +629,9 @@ def do_dla_statistics_plots(
         z_dla_max=z_dla_max,
         z_dla_cddf_min=z_dla_cddf_min,
         z_dla_dndx_min=z_dla_dndx_min,
+        lnhi_nbins=lnhi_nbins,
+        lnhi_min=lnhi_min,
+        lnhi_max=lnhi_max
     )
     do_snr_check(
         cat12,
