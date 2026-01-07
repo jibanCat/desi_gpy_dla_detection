@@ -118,6 +118,7 @@ def combine_processed_files(processed_dir, healpix_list, output_file, survey, pr
                 if mask is None:
                     log.info(f"No matching target IDs found in {filepath}. Skipping...")
                     continue
+                idx = np.nonzero(mask)[0]  # ### NEW: indices for h5py fancy indexing
 
                 # ### CHANGED: do NOT do data_dict = {key: f[key][:] ...}
                 # Instead, slice each dataset on demand and immediately append to output.
@@ -137,7 +138,7 @@ def combine_processed_files(processed_dir, healpix_list, output_file, survey, pr
                             f"expected first dim {target_ids.shape[0]}"
                         )
 
-                    data = d[mask, ...]  # only read selected rows
+                    data = d[idx, ...]   # ### CHANGED: works for 1D and >1D
                     _append_dataset(out_f, key, data, written_counts, compression=None)
 
         # preserve your attr
