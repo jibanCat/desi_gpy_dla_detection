@@ -10,12 +10,35 @@ from . import calc_cddf
 from .dla_data import dla_data
 from .calc_cddf import DLACatalogue
 
-# from save_figure import save_figure
+from scipy.interpolate import PchipInterpolator
+
+############## PW14 CDDF spline ##############
+# From Table 2 (Results for Spline Model — Figure 7)
+logN_nodes = np.array([12.0, 15.0, 17.0, 18.0, 
+                       20.0, 21.0, 21.5, 22.0])
+logf_nodes = np.array([-9.72, -14.41, -17.94, -19.39,
+                       -21.28, -22.82, -23.95, -25.50])
+
+# Paper specifies cubic Hermite spline (Fritsch & Carlson 1980)
+cddf_spline = PchipInterpolator(logN_nodes, logf_nodes)
+
+def log10_f_cddf(logN):
+    """
+    CDDF used in Figure 7 of Prochaska et al. 2014.
+    A cubic Hermite spline defined by Table 2 (Spline Model).
+    """
+    logN = np.asarray(logN)
+    logN_clip = np.clip(logN, logN_nodes[0], logN_nodes[-1])
+    return cddf_spline(logN_clip)
+
+def f_cddf(logN):
+    return 10**log10_f_cddf(logN)
+
+################ End PW14 CDDF spline ##############
 
 save_figure = lambda filename: plt.savefig(
     "{}.pdf".format(filename), format="pdf", dpi=300
 )
-
 
 def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
                   lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
@@ -50,6 +73,11 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
         path.join(subdir, "cddf_all.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
+
+    # Plot the PW14 spline for comparison
+    logN_plot = np.linspace(lnhi_min, lnhi_max, 100)
+    plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
+
     # xlim (10**lnhi_min, 10**lnhi_max)
     plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
@@ -61,6 +89,10 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
         zmin=z_dla_cddf_min, zmax=z_dla_max, color="blue", moment=True,
         lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
     )
+    # Plot the PW14 spline moment for comparison
+    # logN_plot = np.linspace(lnhi_min, lnhi_max, 100)
+    plt.plot(10**logN_plot, 10**logN_plot * f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
+
     plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_moment_gp"))
@@ -95,6 +127,9 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
         path.join(subdir, "cddf_z225.txt"),
         (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
     )
+    # Plot the PW14 spline for comparison
+    plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
+
     plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
@@ -215,6 +250,10 @@ def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
     cat.set_snr(4)
     cat.plot_cddf(zmin=z_dla_cddf_min, zmax=z_dla_max, label="SNR > 4", color="C2",
                   lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
+    # Plot the PW14 spline for comparison
+    logN_plot = np.linspace(lnhi_min, lnhi_max, 100)
+    plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
+
     plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
@@ -564,6 +603,10 @@ def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5,
                    lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
     cat7s.plot_cddf(zmax=z_dla_max, color="red", label=label,
                    lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max)
+    # Plot the PW14 spline for comparison
+    logN_plot = np.linspace(lnhi_min, lnhi_max, 100)
+    plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
+
     plt.xlim(10**lnhi_min, 10**lnhi_max)
     plt.ylim(1e-28, 5e-21)
     plt.legend(loc=0)
@@ -639,6 +682,9 @@ def do_dla_statistics_plots(
         z_dla_max=z_dla_max,
         z_dla_cddf_min=z_dla_cddf_min,
         z_dla_dndx_min=z_dla_dndx_min,
+        lnhi_nbins=lnhi_nbins,
+        lnhi_min=lnhi_min,
+        lnhi_max=lnhi_max
     )
     do_qso_split(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min)
     do_lowzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min)
