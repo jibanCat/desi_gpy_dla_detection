@@ -41,7 +41,7 @@ save_figure = lambda filename: plt.savefig(
 )
 
 def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
-                  lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
+                  lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Make a set of plots
     
     Parameters
@@ -140,7 +140,7 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
     dla_data.dndx_not()
     dla_data.dndx_pro()
     (z_cent, dNdX, dndx68, dndx95) = cat.plot_line_density(
-        zmin=z_dla_dndx_min, zmax=z_dla_max
+        zmin=z_dla_dndx_min, zmax=z_dla_max, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx
     )
     np.savetxt(
         path.join(subdir, "dndx_all.txt"),
@@ -234,8 +234,8 @@ def do_pixel_noise_check(cat, subdir, z_dla_max=5):
     cat.filter_noisy_pixels = False
 
 
-def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
-                 lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
+def do_snr_check(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
+                 lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Check effect of removing spectra with a low SNR."""
     first_snr = cat.snr_thresh
 
@@ -280,11 +280,14 @@ def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
     dla_data.dndx_not()
     dla_data.dndx_pro()
     cat.set_snr(-2)
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="All GP")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="All GP",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.set_snr(2)
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 2")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 2",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.set_snr(4)
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 4")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 4",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     #     cat.set_snr(8)
     #     cat.plot_line_density(zmax=5, label="SNR > 8")
     plt.legend(loc=0)
@@ -293,7 +296,7 @@ def do_snr_check(cat, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla_dndx_min=2,
     cat.set_snr(first_snr)
 
 
-def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2):
+def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Check effect of the low-z cut."""
     lowzcut = cat.lowzcut
     cat.lowzcut = True
@@ -305,9 +308,11 @@ def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2):
     plt.clf()
 
     cat.lowzcut = True
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Cutting")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Cutting",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.lowzcut = False
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not cutting")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not cutting",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     plt.ylim(0, 0.12)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "dndx_gp_lowz"))
@@ -315,7 +320,7 @@ def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2):
     cat.lowzcut = lowzcut
 
 
-def do_highzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2):
+def do_highzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Check effect of the high-z cut."""
     highzcut = cat.highzcut
     cat.highzcut = True
@@ -327,9 +332,11 @@ def do_highzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2):
     plt.clf()
 
     cat.highzcut = True
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Tail cutting")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Tail cutting",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.highzcut = False
-    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not tail cutting")
+    cat.plot_line_density(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not tail cutting",
+                          lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     plt.ylim(0, 0.12)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "dndx_gp_highz"))
@@ -367,7 +374,7 @@ def do_2dla_plots(cat, subdir, z_dla_max=5):
     plt.clf()
 
 
-def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2):
+def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Check the effect of the quasar redshift."""
     # Check z_qso split
     oldcond = cat.condition
@@ -405,6 +412,8 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2):
             + "$",
             zmin=z_dla_dndx_min,
             zmax=z_dla_max,
+            lnhi_min=lnhi_min_dndx,
+            lnhi_max=lnhi_max_dndx,
         )
     plt.ylim(ymin=0, ymax=0.15)
     plt.legend(loc=0)
@@ -451,6 +460,8 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2):
                 + " Cutting",
                 zmin=z_dla_dndx_min,
                 zmax=z_dla_max,
+                lnhi_min=lnhi_min_dndx,
+                lnhi_max=lnhi_max_dndx
             )
         plt.ylim(ymin=0, ymax=0.15)
         plt.legend(loc=0)
@@ -498,6 +509,8 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2):
             + " SNR > 4",
             zmin=z_dla_dndx_min,
             zmax=z_dla_max,
+            lnhi_min=lnhi_min_dndx,
+            lnhi_max=lnhi_max_dndx,
         )
     plt.ylim(ymin=0, ymax=0.15)
     plt.legend(loc=0)
@@ -545,6 +558,8 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2):
                 + "Tail cutting",
                 zmin=z_dla_dndx_min,
                 zmax=z_dla_max,
+                lnhi_min=lnhi_min_dndx,
+                lnhi_max=lnhi_max_dndx,
             )
         plt.ylim(ymin=0, ymax=0.15)
         plt.legend(loc=0)
@@ -558,7 +573,7 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2):
     cat.highzcut = highzcut
 
 
-def do_length_split(cat, subdir, z_dla_max=5):
+def do_length_split(cat, subdir, z_dla_max=5, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Check the effect of the quasar redshift."""
     # Check z_qso split
     oldcond = cat.condition
@@ -578,7 +593,8 @@ def do_length_split(cat, subdir, z_dla_max=5):
     for high_z_qso, z_qso_split in zip(high_z, low_z):
         cat.condition = oldcond * (z_diff < high_z_qso) * (z_diff > z_qso_split)
         cat.plot_line_density(
-            label=str(high_z_qso) + " > zQSO > " + str(z_qso_split), zmax=z_dla_max
+            label=str(high_z_qso) + " > zQSO > " + str(z_qso_split), zmax=z_dla_max,
+            lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx,
         )
     plt.ylim(ymin=0, ymax=0.1)
     plt.legend(loc=0)
@@ -588,12 +604,13 @@ def do_length_split(cat, subdir, z_dla_max=5):
 
 
 def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5,
-                     lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0):
+                     lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0,
+                     lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
     """Plots to compare two cddfs"""
     # Check the effect of the 5km/s split
     # dNdX
-    cat7.plot_line_density(zmax=z_dla_max)
-    cat7s.plot_line_density(zmax=z_dla_max, label=label)
+    cat7.plot_line_density(zmax=z_dla_max, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
+    cat7s.plot_line_density(zmax=z_dla_max, label=label, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "dndx_" + label))
     plt.clf()
@@ -632,6 +649,8 @@ def do_dla_statistics_plots(
     lnhi_nbins: int = 30,
     lnhi_min: float = 20.0,
     lnhi_max: float = 23.0,
+    lnhi_min_dndx: float = 20.3,
+    lnhi_max_dndx: float = 22.5
 ):
     """
     Do the plotting for CDDF, dN/dX, OmegaDLA,
@@ -659,6 +678,10 @@ def do_dla_statistics_plots(
         Minimum value for ln(NHI) histograms, by default 20.0
     lnhi_max : float, optional
         Maximum value for ln(NHI) histograms, by default 23.0
+    lnhi_min_dndx : float, optional
+        Minimum ln(NHI) for dNdX calculations, by default 20.3 (DLA threshold)
+    lnhi_max_dndx : float, optional
+        Maximum ln(NHI) for dNdX calculations, by default 22.5
     """
     oldcond = cat12.condition
 
@@ -674,7 +697,9 @@ def do_dla_statistics_plots(
         z_dla_dndx_min=z_dla_dndx_min,
         lnhi_nbins=lnhi_nbins,
         lnhi_min=lnhi_min,
-        lnhi_max=lnhi_max
+        lnhi_max=lnhi_max,
+        lnhi_min_dndx=lnhi_min_dndx,
+        lnhi_max_dndx=lnhi_max_dndx,
     )
     do_snr_check(
         cat12,
@@ -684,11 +709,13 @@ def do_dla_statistics_plots(
         z_dla_dndx_min=z_dla_dndx_min,
         lnhi_nbins=lnhi_nbins,
         lnhi_min=lnhi_min,
-        lnhi_max=lnhi_max
+        lnhi_max=lnhi_max,
+        lnhi_min_dndx=lnhi_min_dndx,
+        lnhi_max_dndx=lnhi_max_dndx,
     )
-    do_qso_split(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min)
-    do_lowzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min)
-    do_highzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min)
+    do_qso_split(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx)
+    do_lowzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx)
+    do_highzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx)
 
     cat12.condition = oldcond
 
