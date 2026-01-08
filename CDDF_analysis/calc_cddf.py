@@ -962,7 +962,7 @@ class DLACatalogue(object):
         plt.ylabel(r"$f(N_\mathrm{HI})$")
         return (l_N, cddf, cddf68, cddf95)
 
-    def line_density(self, z_min=2, z_max=4):
+    def line_density(self, z_min=2, z_max=4, lnhi_min=20.3, lnhi_max=23):
         """Compute the line density of DLAs as a function of redshift
         Default bins chosen to match Noterdaeme 2012"""
         # Get the redshifts
@@ -970,7 +970,7 @@ class DLACatalogue(object):
         z_bins = np.linspace(z_min, z_max, nbins + 1)
         # Get the mean and variance of the probability distribution of DLAs.
         (maxlike, l68, l95) = self._get_confidence_intervals(
-            q_bins=z_bins, lred=z_min, ured=z_max, lnhi_min=20.3, nhi=False
+            q_bins=z_bins, lred=z_min, ured=z_max, lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=False
         )
         # Check the outputs are reasonably ordered.
         dX = np.array(
@@ -987,10 +987,10 @@ class DLACatalogue(object):
         xerrs = (z_cent[ii] - z_bins[:-1][ii], z_bins[1:][ii] - z_cent[ii])
         return (z_cent[ii], dNdX, dndx68, dndx95, xerrs)
 
-    def plot_line_density(self, zmin=2, zmax=4, label="GP"):
+    def plot_line_density(self, zmin=2, zmax=4, label="GP", lnhi_min=20.3, lnhi_max=23):
         """Plot the line density as a function of redshift"""
         (z_cent, dNdX, dndx68, dndx95, xerrs) = self.line_density(
-            z_min=zmin, z_max=zmax
+            z_min=zmin, z_max=zmax, lnhi_min=lnhi_min, lnhi_max=lnhi_max
         )
         # 2 sigma contours.
         plt.fill_between(z_cent, dndx95[:, 0], dndx95[:, 1], color="grey", alpha=0.5)
@@ -1001,7 +1001,7 @@ class DLACatalogue(object):
         plt.xlim(zmin, zmax)
         return (z_cent, dNdX, dndx68, dndx95)
 
-    def omega_dla_cddf(self, z_min=2, z_max=4, hubble=0.7, lnhi_nbins=30):
+    def omega_dla_cddf(self, z_min=2, z_max=4, hubble=0.7, lnhi_nbins=30, lnhi_min=20.3, lnhi_max=23.0):
         """
         Compute Omega_dla, the sum of the mass in a given absorber,
         divided by the volume of the spectra, divided by the critical density.
@@ -1024,7 +1024,9 @@ class DLACatalogue(object):
         z_cent = np.array([])
         conversion = protonmass / light * h100 / rho_crit(hubble)
         # Get the NHI bins
-        lnhi_bins = np.linspace(20.3, self.high_nhi_cut_value, num=lnhi_nbins + 1)
+        # The old recipe used a fixed lower limit of 20.3 for DLAs; to adjust for LLS use lnhi_min here.
+        # lnhi_bins = np.linspace(20.3, self.high_nhi_cut_value, num=lnhi_nbins + 1)
+        lnhi_bins = np.linspace(lnhi_min, lnhi_max, num=lnhi_nbins + 1)
         for zz in range(nbins):
             dX = self.path_length(z_bins[zz], z_bins[zz + 1])
             if dX == 0.0:
@@ -1227,10 +1229,12 @@ class DLACatalogue(object):
         plt.xlabel(r"z")
         plt.ylabel(r"$10^3 \times \Omega_\mathrm{DLA}$")
 
-    def plot_omega_dla(self, zmin=2, zmax=4, label="GP", color=None, twosigma=True):
+    def plot_omega_dla(self, zmin=2, zmax=4, label="GP", color=None, twosigma=True,
+                       lnhi_nbins=30, lnhi_min=20.3, lnhi_max=23.0):
         """Plot omega_DLA as a function of redshift, with full Bayesian errors"""
         (z_cent, omega_dla, omega_dla_68, omega_dla_95, xerrs) = self.omega_dla_cddf(
-            z_min=zmin, z_max=zmax
+            z_min=zmin, z_max=zmax,
+            hubble=0.7, lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max,
         )
         if twosigma:
             plt.fill_between(

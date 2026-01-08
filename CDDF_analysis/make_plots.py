@@ -156,7 +156,8 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
     dla_data.omegahi_pro()
     dla_data.crighton_omega()
     (z_cent, omega_dla, omega_dla_68, omega_dla_95) = cat.plot_omega_dla(
-        zmin=z_dla_dndx_min, zmax=z_dla_max
+        zmin=z_dla_dndx_min, zmax=z_dla_max, 
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx,
     )
     #     cat.tophat_prior = True
     #     cat.plot_omega_dla(zmax=5, label="Tophat Prior", twosigma=False)
@@ -265,11 +266,14 @@ def do_snr_check(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla
     dla_data.omegahi_pro()
     dla_data.crighton_omega()
     cat.set_snr(-2)
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="All GP")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="All GP",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.set_snr(2)
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 2")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 2",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.set_snr(4)
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 4")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="SNR > 4",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     #     cat.set_snr(8)
     #     cat.plot_omega_dla(zmax=5,label="SNR > 8")
     plt.legend(loc=0)
@@ -296,13 +300,15 @@ def do_snr_check(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla
     cat.set_snr(first_snr)
 
 
-def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
+def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5, lnhi_nbins=30):
     """Check effect of the low-z cut."""
     lowzcut = cat.lowzcut
     cat.lowzcut = True
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Cutting")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Cutting",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.lowzcut = False
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not cutting")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not cutting",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "omega_gp_lowz"))
     plt.clf()
@@ -320,13 +326,15 @@ def do_lowzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=2
     cat.lowzcut = lowzcut
 
 
-def do_highzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
+def do_highzcut_check(cat, subdir, z_dla_max=5, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5, lnhi_nbins=30):
     """Check effect of the high-z cut."""
     highzcut = cat.highzcut
     cat.highzcut = True
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Tail cutting")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Tail cutting",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     cat.highzcut = False
-    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not tail cutting")
+    cat.plot_omega_dla(zmin=z_dla_dndx_min, zmax=z_dla_max, label="Not tail cutting",
+                       lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "omega_gp_lowz"))
     plt.clf()
@@ -374,7 +382,7 @@ def do_2dla_plots(cat, subdir, z_dla_max=5):
     plt.clf()
 
 
-def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
+def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5, lnhi_nbins=30):
     """Check the effect of the quasar redshift."""
     # Check z_qso split
     oldcond = cat.condition
@@ -394,6 +402,9 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.
             + "$",
             zmin=z_dla_dndx_min,
             zmax=z_dla_max,
+            lnhi_nbins=lnhi_nbins,
+            lnhi_min=lnhi_min_dndx,
+            lnhi_max=lnhi_max_dndx
         )
     plt.ylim(ymin=0)
     plt.legend(loc=0)
@@ -441,6 +452,9 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.
                 + " Cutting",
                 zmin=z_dla_dndx_min,
                 zmax=z_dla_max,
+                lnhi_nbins=lnhi_nbins,
+                lnhi_min=lnhi_min_dndx,
+                lnhi_max=lnhi_max_dndx,
             )
         plt.ylim(ymin=0)
         plt.legend(loc=0)
@@ -490,6 +504,9 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.
             + " SNR > 4",
             zmin=z_dla_dndx_min,
             zmax=z_dla_max,
+            lnhi_nbins=lnhi_nbins,
+            lnhi_min=lnhi_min_dndx,
+            lnhi_max=lnhi_max_dndx,
         )
     plt.ylim(ymin=0)
     plt.legend(loc=0)
@@ -539,6 +556,9 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.
                 + "Tail cutting",
                 zmin=z_dla_dndx_min,
                 zmax=z_dla_max,
+                lnhi_nbins=lnhi_nbins,
+                lnhi_min=lnhi_min_dndx,
+                lnhi_max=lnhi_max_dndx,
             )
         plt.ylim(ymin=0)
         plt.legend(loc=0)
@@ -573,7 +593,7 @@ def do_qso_split(cat, subdir, z_dla_max=5.0, z_dla_dndx_min=2, lnhi_min_dndx=20.
     cat.highzcut = highzcut
 
 
-def do_length_split(cat, subdir, z_dla_max=5, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5):
+def do_length_split(cat, subdir, z_dla_max=5, lnhi_min_dndx=20.3, lnhi_max_dndx=22.5, lnhi_nbins=30):
     """Check the effect of the quasar redshift."""
     # Check z_qso split
     oldcond = cat.condition
@@ -583,7 +603,8 @@ def do_length_split(cat, subdir, z_dla_max=5, lnhi_min_dndx=20.3, lnhi_max_dndx=
     for high_z_qso, z_qso_split in zip(high_z, low_z):
         cat.condition = oldcond * (z_diff < high_z_qso) * (z_diff > z_qso_split)
         cat.plot_omega_dla(
-            label=str(high_z_qso) + " > zQSO > " + str(z_qso_split), zmax=z_dla_max
+            label=str(high_z_qso) + " > zQSO > " + str(z_qso_split), zmax=z_dla_max,
+            lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx
         )
     plt.ylim(ymin=0)
     plt.legend(loc=0)
@@ -631,8 +652,8 @@ def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5,
     plt.clf()
 
     # Omega_DLA
-    cat7.plot_omega_dla(zmax=z_dla_max)
-    cat7s.plot_omega_dla(zmax=z_dla_max, label=label)
+    cat7.plot_omega_dla(zmax=z_dla_max, lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
+    cat7s.plot_omega_dla(zmax=z_dla_max, label=label, lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min_dndx, lnhi_max=lnhi_max_dndx)
     plt.legend(loc=0)
     save_figure(path.join(subdir, "omega_" + label))
     plt.clf()
@@ -713,9 +734,9 @@ def do_dla_statistics_plots(
         lnhi_min_dndx=lnhi_min_dndx,
         lnhi_max_dndx=lnhi_max_dndx,
     )
-    do_qso_split(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx)
-    do_lowzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx)
-    do_highzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx)
+    do_qso_split(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx, lnhi_nbins=lnhi_nbins)
+    do_lowzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx, lnhi_nbins=lnhi_nbins)
+    do_highzcut_check(cat12, subdir, z_dla_max=z_dla_max, z_dla_dndx_min=z_dla_dndx_min, lnhi_min_dndx=lnhi_min_dndx, lnhi_max_dndx=lnhi_max_dndx, lnhi_nbins=lnhi_nbins)
 
     cat12.condition = oldcond
 
