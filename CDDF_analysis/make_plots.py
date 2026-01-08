@@ -80,7 +80,7 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
 
     # xlim (10**lnhi_min, 10**lnhi_max)
     plt.xlim(10**lnhi_min, 10**lnhi_max)
-    plt.ylim(1e-28, 5e-21)
+    plt.ylim(1e-28, f_cddf(lnhi_min))
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_gp"))
     plt.clf()
@@ -131,7 +131,7 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
     plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
 
     plt.xlim(10**lnhi_min, 10**lnhi_max)
-    plt.ylim(1e-28, 5e-21)
+    plt.ylim(1e-28, f_cddf(lnhi_min))
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_zz_gp"))
     plt.clf()
@@ -256,7 +256,7 @@ def do_snr_check(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dla
     plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
 
     plt.xlim(10**lnhi_min, 10**lnhi_max)
-    plt.ylim(1e-28, 5e-21)
+    plt.ylim(1e-28, f_cddf(lnhi_min))
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_gp_snr"))
     plt.clf()
@@ -646,7 +646,7 @@ def do_compare_plots(cat7, cat7s, subdir, label, z_dla_max=5,
     plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
 
     plt.xlim(10**lnhi_min, 10**lnhi_max)
-    plt.ylim(1e-28, 5e-21)
+    plt.ylim(1e-28, f_cddf(lnhi_min))
     plt.legend(loc=0)
     save_figure(path.join(subdir, "cddf_" + label))
     plt.clf()
