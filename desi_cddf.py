@@ -32,6 +32,11 @@ def main():
     parser.add_argument("--high_nhi_cut", action="store_true", help="Apply high NHI cut.")
     parser.add_argument("--high_nhi_cut_value", type=float, default=22.0, help="High NHI cut value.")
     parser.add_argument("--bins_per_z", type=int, default=6, help="Number of bins per redshift.")
+    parser.add_argument("--lnhi_nbins", type=int, default=30, help="Number of ln(NHI) bins.")
+    parser.add_argument("--lnhi_min", type=float, default=20.0, help="Minimum ln(NHI) for histograms.")
+    parser.add_argument("--lnhi_max", type=float, default=23.0, help="Maximum ln(NHI) for histograms.")
+    parser.add_argument("--lnhi_min_dndx", type=float, default=20.3, help="Minimum ln(NHI) for dNdX calculations.")
+    parser.add_argument("--lnhi_max_dndx", type=float, default=22.5, help="Maximum ln(NHI) for dNdX calculations.")
 
     args = parser.parse_args()
 
@@ -48,6 +53,8 @@ def main():
         f"{'_highnhi' if args.high_nhi_cut else ''}_{args.high_nhi_cut_value}"
         f"{'_minobswave' if args.min_obs_wavelength_cut else ''}_{args.min_obs_wavelength}"
         f"_bins_{args.bins_per_z}"
+        f"_lnhi_{args.lnhi_min}-{args.lnhi_max}"
+        f"_lnhi_dndx_{args.lnhi_min_dndx}-{args.lnhi_max_dndx}"
     )
 
     os.makedirs(subdir, exist_ok=True)
@@ -79,6 +86,11 @@ def main():
         z_dla_max=args.z_dla_max,
         high_z_qso=args.high_z_qso,
         low_z_qso=args.low_z_qso,
+        lnhi_nbins=args.lnhi_nbins,
+        lnhi_min=args.lnhi_min,
+        lnhi_max=args.lnhi_max,
+        lnhi_min_dndx=args.lnhi_min_dndx,
+        lnhi_max_dndx=args.lnhi_max_dndx,
     )
 
     print(f"DLA statistics plots saved to subdirectory: {subdir}")

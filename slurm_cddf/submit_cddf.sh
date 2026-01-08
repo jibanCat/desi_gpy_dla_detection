@@ -43,6 +43,13 @@ HIGH_NHI_CUT_VALUE=${HIGH_NHI_CUT_VALUE:-22.0}
 # Bins per z
 BINS_PER_Z=${BINS_PER_Z:-6}
 
+# lnhi parameters
+LNHI_NBINS=${LNHI_NBINS:-30}
+LNHI_MIN=${LNHI_MIN:-20.0}
+LNHI_MAX=${LNHI_MAX:-23.0}
+LNHI_MIN_DNDX=${LNHI_MIN_DNDX:-20.3}
+LNHI_MAX_DNDX=${LNHI_MAX_DNDX:-22.5}
+
 # Run the Python script with parameters
 python desi_cddf.py \
     --processed_file "$PROCESSED_FILE" \
@@ -58,4 +65,9 @@ python desi_cddf.py \
     --min_obs_wavelength_cut \
     --min_obs_wavelength 3700 \
     --high_nhi_cut_value $HIGH_NHI_CUT_VALUE \
-    --bins_per_z $BINS_PER_Z
+    --bins_per_z $BINS_PER_Z \
+    --lnhi_nbins $LNHI_NBINS \
+    --lnhi_min $LNHI_MIN \
+    --lnhi_max $LNHI_MAX \
+    --lnhi_min_dndx $LNHI_MIN_DNDX \
+    --lnhi_max_dndx $LNHI_MAX_DNDX
