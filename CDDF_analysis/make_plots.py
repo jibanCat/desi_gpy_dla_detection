@@ -136,6 +136,51 @@ def do_data_plots(cat: DLACatalogue, subdir, z_dla_max=5, z_dla_cddf_min=1, z_dl
     save_figure(path.join(subdir, "cddf_zz_gp"))
     plt.clf()
 
+    ## Finer redshift evolution plot: for the usage of completeness correction
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(4.0, 4.5, label="4-4.5", color=matplotlib.cm.viridis(0.9),
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
+    np.savetxt(
+        path.join(subdir, "cddf_z4045.txt"),
+        (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
+    )
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(3.5, 4.0, label="3.5-4", color=matplotlib.cm.viridis(0.7),
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
+    np.savetxt(
+        path.join(subdir, "cddf_z3540.txt"),
+        (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
+    )
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(3.0, 3.5, label="3-3.5", color=matplotlib.cm.viridis(0.5),
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
+    np.savetxt(
+        path.join(subdir, "cddf_z3035.txt"),
+        (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
+    )
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(2.5, 3.0, label="2.5-3", color=matplotlib.cm.viridis(0.3),
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
+    np.savetxt(
+        path.join(subdir, "cddf_z2530.txt"),
+        (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
+    )
+    (l_N, cddf, cddf68, cddf95) = cat.plot_cddf(2.0, 2.5, label="2-2.5", color=matplotlib.cm.viridis(0.1),
+        lnhi_nbins=lnhi_nbins, lnhi_min=lnhi_min, lnhi_max=lnhi_max
+    )
+    np.savetxt(
+        path.join(subdir, "cddf_z225.txt"),
+        (l_N, cddf, cddf68[:, 0], cddf68[:, 1], cddf95[:, 0], cddf95[:, 1]),
+    )
+    # Plot the PW14 spline for comparison
+    plt.plot(10**logN_plot, f_cddf(logN_plot), color="grey", ls="--", label="Prochaska+2014 Spline")
+
+    plt.xlim(10**lnhi_min, 10**lnhi_max)
+    plt.ylim(1e-28, f_cddf(lnhi_min))
+    plt.legend(loc=0)
+    save_figure(path.join(subdir, "cddf_zz_0.5_gp"))
+    plt.clf()
+
     # dNdX
     dla_data.dndx_not()
     dla_data.dndx_pro()
