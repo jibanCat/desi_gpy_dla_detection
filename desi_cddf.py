@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--lnhi_max", type=float, default=23.0, help="Maximum ln(NHI) for histograms.")
     parser.add_argument("--lnhi_min_dndx", type=float, default=20.3, help="Minimum ln(NHI) for dNdX calculations.")
     parser.add_argument("--lnhi_max_dndx", type=float, default=22.5, help="Maximum ln(NHI) for dNdX calculations.")
+    parser.add_argument("--z_dla_cddf_min", type=float, default=1.0, help="Minimum DLA redshift for CDDF.")
+    parser.add_argument("--z_dla_dndx_min", type=float, default=2.0, help="Minimum DLA redshift for dNdX.")
 
     args = parser.parse_args()
 
@@ -55,6 +57,8 @@ def main():
         f"_bins_{args.bins_per_z}"
         f"_lnhi_{args.lnhi_min}-{args.lnhi_max}"
         f"_lnhi_dndx_{args.lnhi_min_dndx}-{args.lnhi_max_dndx}"
+        f"_z_dla_cddf_{args.z_dla_cddf_min}-{args.z_dla_cddf_max}"
+        f"_z_dla_dndx_{args.z_dla_dndx_min}-{args.z_dla_dndx_max}"
     )
 
     os.makedirs(subdir, exist_ok=True)
@@ -83,6 +87,8 @@ def main():
     do_dla_statistics_plots(
         dla_catalog,
         subdir=subdir,
+        z_dla_cddf_min=args.z_dla_cddf_min,
+        z_dla_dndx_min=args.z_dla_dndx_min,
         z_dla_max=args.z_dla_max,
         high_z_qso=args.high_z_qso,
         low_z_qso=args.low_z_qso,
