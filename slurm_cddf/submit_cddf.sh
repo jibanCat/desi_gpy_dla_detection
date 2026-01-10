@@ -2,7 +2,9 @@
 #SBATCH --job-name=cddf                      # Job name
 #SBATCH --output=logs/cddf_%j.out            # Standard output log (%j expands to job ID)
 #SBATCH --error=logs/cddf_%j.err             # Standard error log
-#SBATCH --time=01:30:00                      # Time limit
+#SBATCH --time=02:00:00                      # Time limit
+#SBATCH --mail-user=mfho@umich.edu  # Your email for notifications
+#SBATCH --mail-type=ALL             # Notification options (ALL = begin, end, fail, etc.)
 #SBATCH --nodes=1                            # Use one node
 #SBATCH -C cpu                               # Use CPU node
 #SBATCH -q regular                             # Use debug queue (change if needed)
