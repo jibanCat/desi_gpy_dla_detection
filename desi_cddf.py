@@ -57,8 +57,8 @@ def main():
         f"_bins_{args.bins_per_z}"
         f"_lnhi_{args.lnhi_min}-{args.lnhi_max}"
         f"_lnhi_dndx_{args.lnhi_min_dndx}-{args.lnhi_max_dndx}"
-        f"_z_dla_cddf_{args.z_dla_cddf_min}-{args.z_dla_cddf_max}"
-        f"_z_dla_dndx_{args.z_dla_dndx_min}-{args.z_dla_dndx_max}"
+        f"_z_dla_cddf_min_{args.z_dla_cddf_min}"
+        f"_z_dla_dndx_min_{args.z_dla_dndx_min}/"
     )
 
     os.makedirs(subdir, exist_ok=True)
