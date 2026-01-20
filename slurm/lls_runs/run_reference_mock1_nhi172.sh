@@ -8,8 +8,14 @@ STEP=64
 for (( START_INDEX=0; START_INDEX<=MAX_START_INDEX; START_INDEX+=STEP )); do
     END_INDEX=$((START_INDEX + 62))
 
-    # end the loop if START_INDEX exceeds 10 loops
-    if [ $START_INDEX -gt 640 ]; then
+    # from 11th loop to 15th loop, use mock-1
+
+    # so START_INDEX smaller than 702 continue
+    if [ $START_INDEX -lt 702 ]; then
+        continue
+    fi
+    # and START_INDEX greater than 704 + 256 = 960 break
+    if [ $START_INDEX -gt 960 ]; then
         break
     fi
 
