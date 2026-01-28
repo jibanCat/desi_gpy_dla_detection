@@ -504,3 +504,172 @@ def plot_cddf_slice_fN(out, zbin_index, *, label=None, prefer_boot=True, ax=None
     if show:
         plt.show()
     return ax
+
+# ----------------------------
+# 8) Omega_HI from CDDF
+# ----------------------------
+
+def omega_hi_prefactor(H0_km_s_Mpc=70.0):
+    """
+    Return prefactor:
+        K = H0 * m_H / (c * rho_c0)
+    such that:
+        Omega_HI(z) = K * ∫ N f(N,z) dN
+    Units:
+      - N in cm^-2
+      - f(N) in cm^2  (since f(N)=d^2N/(dN dX))
+      - so N*f(N)*dN is dimensionless
+      - K is dimensionless
+
+    Uses cgs constants.
+    """
+    # cgs
+    c_cms = 2.99792458e10          # cm/s
+    mH_g  = 1.6735575e-24          # g
+    G_cgs = 6.67430e-8             # cm^3 g^-1 s^-2
+
+    # H0 in s^-1
+    Mpc_cm = 3.085677581e24
+    H0_s = (H0_km_s_Mpc * 1.0e5) / Mpc_cm
+
+    # rho_c0 = 3 H0^2 / (8 pi G)
+    rho_c0 = 3.0 * H0_s**2 / (8.0 * np.pi * G_cgs)  # g/cm^3
+
+    K = (H0_s * mH_g) / (c_cms * rho_c0)
+    return K
+
+
+def omega_hi_from_cddf(
+    out_cddf,
+    *,
+    zbin_index=None,
+    zmin=None,
+    zmax=None,
+    logN_min=None,
+    logN_max=None,
+    H0_km_s_Mpc=70.0,
+    prefer_boot=True,
+):
+    """
+    Compute Omega_HI(z) from CDDF output of compute_cddf_fN().
+
+    Parameters
+    ----------
+    out_cddf : dict
+        Output from compute_cddf_fN. Must contain:
+          - z_mid (nbz,)
+          - zbins (nbz+1,)
+          - N_edges (nbn+1,)  [linear cm^-2]
+          - dN (nbn,)
+          - fN (nbz, nbn)
+          - err_poisson (nbz, nbn)
+          - err_boot (nbz, nbn) or None
+
+    zbin_index : int or None
+        If provided, compute Omega_HI for a single z-bin.
+
+    zmin, zmax : float or None
+        If provided (and zbin_index is None), integrate/average Omega_HI over
+        z-bins whose z_mid fall in [zmin, zmax]. (Simple average by default.)
+
+    logN_min, logN_max : float or None
+        Column density range for the moment integral. If None, uses full N range
+        of out_cddf.
+
+    Returns
+    -------
+    dict with fields:
+      - z (array of z_mid used)
+      - omega_hi (array)
+      - omega_hi_err (array)  (Poisson or boot, matching prefer_boot)
+      - meta (constants used and N-range)
+    """
+    z_mid = np.asarray(out_cddf["z_mid"], float)
+    zbins = np.asarray(out_cddf["zbins"], float)
+    N_edges = np.asarray(out_cddf["N_edges"], float)
+    dN = np.asarray(out_cddf["dN"], float)
+    fN = np.asarray(out_cddf["fN"], float)
+
+    if prefer_boot and (out_cddf.get("err_boot") is not None):
+        fN_err = np.asarray(out_cddf["err_boot"], float)
+        err_kind = "boot"
+    else:
+        fN_err = np.asarray(out_cddf["err_poisson"], float)
+        err_kind = "poisson"
+
+    # select N-range
+    logN_edges = np.log10(N_edges)
+    n_lo = 0 if (logN_min is None) else int(np.searchsorted(logN_edges, logN_min, side="left"))
+    n_hi = len(dN) if (logN_max is None) else int(np.searchsorted(logN_edges, logN_max, side="right") - 1)
+    # n_lo, n_hi are indices into bins; clamp
+    n_lo = max(0, min(n_lo, len(dN)))
+    n_hi = max(0, min(n_hi, len(dN)))
+    if n_hi <= n_lo:
+        raise ValueError("Empty N range after applying logN_min/logN_max.")
+
+    # Bin centers for moment: use geometric mean (consistent with your CDDF)
+    N_mid = np.sqrt(N_edges[:-1] * N_edges[1:])  # (nbn,)
+
+    # prefactor
+    K = omega_hi_prefactor(H0_km_s_Mpc=H0_km_s_Mpc)
+
+    # choose z bins
+    if zbin_index is not None:
+        z_sel = np.array([z_mid[int(zbin_index)]])
+        f_sel = fN[int(zbin_index)][None, :]
+        e_sel = fN_err[int(zbin_index)][None, :]
+    else:
+        m = np.ones_like(z_mid, dtype=bool)
+        if (zmin is not None) or (zmax is not None):
+            if zmin is not None:
+                m &= (z_mid >= float(zmin))
+            if zmax is not None:
+                m &= (z_mid <= float(zmax))
+        z_sel = z_mid[m]
+        f_sel = fN[m]
+        e_sel = fN_err[m]
+        if len(z_sel) == 0:
+            raise ValueError("No z-bins selected for Omega_HI.")
+
+    # moment integral per z-bin:
+    # Omega_HI = K * Σ_j [ N_mid_j * f_j * ΔN_j ]
+    Nm = N_mid[n_lo:n_hi]
+    dNj = dN[n_lo:n_hi]
+
+    omega = K * np.sum((Nm * f_sel[:, n_lo:n_hi]) * dNj[None, :], axis=1)
+
+    # error propagation (approx, assumes bin errors independent):
+    omega_err = K * np.sqrt(np.sum(((Nm * e_sel[:, n_lo:n_hi]) * dNj[None, :])**2, axis=1))
+
+    return {
+        "z": z_sel,
+        "omega_hi": omega,
+        "omega_hi_err": omega_err,
+        "meta": {
+            "H0_km_s_Mpc": float(H0_km_s_Mpc),
+            "err_kind": err_kind,
+            "logN_min": None if logN_min is None else float(logN_min),
+            "logN_max": None if logN_max is None else float(logN_max),
+        },
+    }
+
+
+def plot_omega_hi(out_omega, *, ax=None, label=None, show=True):
+    z = out_omega["z"]
+
+    # scale ONLY for plotting
+    y = 1e3 * out_omega["omega_hi"]
+    yerr = 1e3 * out_omega["omega_hi_err"]
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    ax.errorbar(z, y, yerr=yerr, fmt="o", capsize=2, label=label)
+    ax.set_xlabel("z")
+    ax.set_ylabel(r"$10^{-3}\,\Omega_{\rm HI}$")
+    ax.grid(True, alpha=0.3)
+    if label:
+        ax.legend()
+    if show:
+        plt.show()
+    return ax
