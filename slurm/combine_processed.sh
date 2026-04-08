@@ -1,11 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=combine_processed_h5     # Job name
+#SBATCH --job-name=combine_processed_h5    # Job name
 #SBATCH --output=logs/combine_%j.out       # Standard output log (%j expands to job ID)
 #SBATCH --error=logs/combine_%j.err        # Standard error log (%j expands to job ID)
 #SBATCH --time=00:30:00                    # Time limit
+#SBATCH --mail-user=mfho@umich.edu         # Your email for notifications
 #SBATCH --nodes=1                          # Use one node
 #SBATCH -C cpu                             # Use CPU node
-#SBATCH -q debug                         # Use regular queue
+#SBATCH -q debug                           # Use regular queue
 #SBATCH -A desi                            # Account name
 
 # Load the required environment
@@ -45,3 +46,6 @@ exit
 # sbatch --export=ALL,CATALOG="/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits",PROCESSED_DIR="/pscratch/sd/j/jibancat/desi-loa-gpdla-20250222-desi-learned/processed",OUTPUT_FILE="/pscratch/sd/j/jibancat/desi-loa-gpdla-20250222-desi-learned/processed-main-dark.h5",SURVEY="main",PROGRAM="dark" slurm/combine_processed.sh
 # sbatch --export=ALL,CATALOG="/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits",PROCESSED_DIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250224-y3-learned-epoch320/processed",OUTPUT_FILE="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250224-y3-learned-epoch320/processed-main-dark.h5",SURVEY="spectra",PROGRAM="16",MOCK_FLAG="--mock" slurm/combine_processed.sh
 # sbatch --export=ALL,CATALOG="/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits",PROCESSED_DIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250224-y3-learned-epoch320/processed",OUTPUT_FILE="/pscratch/sd/j/jibancat/desi-mock-gpdla-20250224-y3-learned-epoch320/processed-main-dark.h5",SURVEY="spectra",PROGRAM="16",MOCK_FLAG="--mock",load_catalog="data/london/cddf-qsocat_zgt2.15_zlt6.fits" slurm/combine_processed.sh
+# sbatch --export=ALL,CATALOG="/global/cfs/cdirs/desi/science/lya/y3/loa/catalogs/QSO_cat_loa_main_dark_healpix_v2-altbal-20241115.fits",PROCESSED_DIR="/pscratch/sd/j/jibancat/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/processed/",OUTPUT_FILE="/pscratch/sd/j/jibancat/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/processed-main-dark.h5",SURVEY="main",PROGRAM="dark" slurm/combine_processed.sh
+# sbatch --export=ALL,CATALOG="/global/cfs/cdirs/desi/science/lya/y3/loa/catalogs/QSO_cat_loa_main_dark_healpix_v2-altbal-20241115.fits",PROCESSED_DIR="/pscratch/sd/j/jibancat/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi190/processed/",OUTPUT_FILE="/pscratch/sd/j/jibancat/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi190/processed-main-dark.h5",SURVEY="main",PROGRAM="dark" slurm/combine_processed.sh
+# sbatch --export=ALL,CATALOG="/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits",PROCESSED_DIR="/pscratch/sd/j/jibancat/desi-mock-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/processed",OUTPUT_FILE="/pscratch/sd/j/jibancat/desi-mock-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/processed-main-dark.h5",SURVEY="spectra",PROGRAM="16",MOCK_FLAG="--mock",LOAD_CATALOG="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/data/london/cddf-qsocat_zgt2.15_zlt6.fits" slurm/combine_processed.sh
