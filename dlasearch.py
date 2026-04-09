@@ -1,9 +1,45 @@
 #!/usr/bin/env python
 
 """
-dlasearch.py
+dlasearch.py — DLA search orchestration for DESI healpix and mock data.
 
-Search for DLAs in spectra from a given catalog.
+This module sits between the CLI entry point (``desi-DLAGP.py``) and the
+per-spectrum Bayesian inference engine (``run_bayes_select.DLAHolder``).
+It handles:
+
+- Loading DESI coadded spectra (b/r/z cameras) from FITS files
+- Coadding the three camera bands into a single ``brz`` wavelength grid
+  (with a fallback to ``resample_spectra_lin_or_log`` when resolution data
+  is missing, as occurs for London mock spectra without truth files)
+- Applying BAL masking using CIV velocity windows from the QSO catalog
+- Enforcing the search-window quality cut (>20% unmasked pixels)
+- Dispatching each spectrum to ``DLAHolder.process_qso()`` for GP-DLA inference
+- Assembling per-spectrum results into an Astropy Table for the FITS catalog
+
+Main functions
+--------------
+dlasearch_hpx(healpix, ..., model_params)
+    Entry point for real DESI data, indexed by healpix pixel.
+
+dlasearch_mock(specfile, catalog, model_params)
+    Entry point for London mock spectra, indexed by FITS file path.
+
+process_spectra_group(coaddpath, catalog, model)
+    Core workhorse: loads, preprocesses, and runs DLA inference on all
+    spectra in a single FITS file.
+
+Important conventions
+---------------------
+``model_params`` is a plain dict (not a Parameters object) because
+``ProcessPoolExecutor`` must pickle arguments across process boundaries.
+Both ``dlasearch_hpx`` and ``dlasearch_mock`` reconstruct ``Parameters``
+and ``DLAHolder`` from this dict inside the worker process.
+
+``model_posteriors`` index convention (line ~498):
+    - DLA run (``single_absorber_model=False``): num_subdla=1
+        index = 1 + 1 + n  →  SubDLA at [1], DLA(n) at [2+n]
+    - LLS/sub-DLA run (``single_absorber_model=True``): num_subdla=0
+        index = 1 + 0 + n  →  single absorber at [1]
 """
 
 import numpy as np
@@ -216,17 +252,68 @@ def dlasearch_mock(specfile, catalog, model_params):
 
 def process_spectra_group(coaddpath, catalog, model: DLAHolder):
     """
-    pre-process group of spectra in same file and run DLA searching tools
+    Pre-process spectra from a single coadd file and run GP-DLA inference.
 
-    Arguments
-    ---------
-    coaddpath (str) : path to file containing spectra
-    catalog (table) : collection of spectra in file to search for DLAs
-    model (DLAHolder) : DLA model object
+    This is the core processing function called by both ``dlasearch_hpx``
+    (for real DESI data) and ``dlasearch_mock`` (for London mock data).
+
+    Processing steps per file:
+    1. Load b/r/z camera coadds from the FITS file.
+    2. Coadd cameras → single ``brz`` wavelength grid.
+       Fallback path when ``resolution_data`` is missing (London mocks):
+       read resolution from the companion ``truth-16-*.fits`` file, then
+       resample to a linear grid (step=0.8 Å) before coadding.
+    3. Per spectrum:
+       a. Extract flux, ivar, rest-frame wavelengths.
+       b. Optionally apply BAL masking: set ``pixel_mask=True`` and ``ivar=0``
+          for pixels within CIV (and other line) velocity windows read from
+          the QSO catalog columns ``NCIV_450``, ``VMIN_CIV_450``, ``VMAX_CIV_450``.
+       c. Enforce search-window quality: skip spectra where >80% of the
+          search region (constants.search_minlam–search_maxlam) is masked.
+       d. Call ``model.process_qso()`` → GP-DLA Bayesian inference.
+       e. Extract MAP z_DLA, log_NHI, errors, and model posteriors.
+       f. Check for potential BAL contamination of detected DLAs (DLAFLAG).
+    4. Write per-file HDF5 results via ``model.save_results()``.
+    5. Assemble FITS catalog table of detected absorbers.
+
+    Parameters
+    ----------
+    coaddpath : str
+        Path to the DESI coadded spectra FITS file (e.g., ``coadd-main-dark-705.fits``
+        or a London mock ``spectra-16-705.fits``).
+    catalog : astropy.table.Table
+        Sub-catalog of spectra to process from this file.
+        Required columns: TARGETID, Z, TARGET_RA/DEC (or RA/DEC for mocks).
+        Optional BAL columns: NCIV_450, VMIN_CIV_450, VMAX_CIV_450.
+    model : DLAHolder
+        Initialized DLA model object (GP matrices + QMC samples loaded).
 
     Returns
     -------
-    fitresults (table) : attributes of detected DLAs
+    fitresults : astropy.table.Table or ()
+        Table of detected DLA/absorber entries with columns:
+        TARGETID, RA, DEC, Z_QSO, SNR_FOREST, SNR_REDSIDE, DLAID,
+        Z_DLA, Z_DLA_ERR, NHI, NHI_ERR, DLAFLAG,
+        P_DLA, P_NULL, LOGP_DLA, LOGP_NULL, MODEL_P.
+        Returns an empty tuple ``()`` if no absorbers were detected.
+
+    Notes
+    -----
+    BAL masking velocity convention:
+        The velocity columns VMIN_CIV_450 and VMAX_CIV_450 are in km/s
+        (absolute velocity relative to QSO). They are converted to
+        rest-frame wavelength offsets via ``v/c``:
+            lambda_mask = lambda_line * (1 ± v/c)
+        where v > 0 is blueward of QSO. The mask is applied to all
+        ``constants.bal_lines`` simultaneously.
+
+    model_posteriors indexing:
+        Only the posterior for the k-th DLA model is saved in the catalog
+        (column ``MODEL_P``). The index into ``model_posteriors`` is:
+            index = 1 + num_subdla + n
+        where num_subdla=1 for DLA runs and 0 for single-absorber runs,
+        and n is the 0-based DLA index (0 for first DLA, 1 for second, ...).
+    """
     """
 
     specobj = desispec.io.read_spectra(
@@ -337,24 +424,33 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         wave_rf = wave / (1 + zqso)
         pixel_mask = specobj.mask["brz"][idx].astype(np.bool_)
 
-        # apply mask to BAL features, if available
+        # Apply BAL masking using CIV velocity windows from the QSO catalog.
+        # NCIV_450 is the number of CIV absorption systems with v > 450 km/s.
+        # VMIN/VMAX_CIV_450 are the velocity bounds (km/s, positive = blueward of QSO).
+        # We mask all lines in constants.bal_lines within each velocity window.
+        # The velocity-to-wavelength conversion:
+        #   lambda_obs = lambda_rest * (1 - v/c)  for blueward velocity
+        # so the mask covers rest-frame wavelengths from lam*(1-v_max/c) to lam*(1-v_min/c).
         if "NCIV_450" in catalog.columns:
             nbal = catalog["NCIV_450"][entry]
             bal_locs = []
             for n in range(nbal):
-                # Compute velocity ranges
+                # velocity factor: (1 - v/c) for each edge of the BAL trough
+                # VMAX_CIV_450 is the high-velocity (blueshifted) edge
+                # VMIN_CIV_450 is the low-velocity edge
                 v_max = -catalog[entry]["VMAX_CIV_450"][n] / constants.c + 1.0
                 v_min = -catalog[entry]["VMIN_CIV_450"][n] / constants.c + 1.0
 
                 for line, lam in constants.bal_lines.items():
-                    # Mask wavelengths within the velocity ranges
+                    # rest-frame wavelength range to mask for this BAL trough + line
                     mask = np.logical_and(wave_rf > lam * v_max, wave_rf < lam * v_min)
+                    # track Lyα and NV observed-frame ranges for post-detection BAL check
                     if (line == "Lya") or (line == "NV"):
                         rededge = (lam * v_min) * (1 + zqso)
                         blueedge = (lam * v_max) * (1 + zqso)
                         bal_locs.append((rededge, blueedge))
 
-                    # Update pixel mask
+                    # Update pixel mask and zero out inverse variance
                     pixel_mask[mask] = True
 
                     ivar[mask] = 0
@@ -495,6 +591,9 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             pnulllist.append(p_no_dla)
             logpdlalist.append(log_posteriors_dla[n])
             logpnulllist.append(log_posteriors_no_dla)
+            # model_posteriors index: [Null, (SubDLA), DLA(0), DLA(1), ...]
+            # DLA run (num_subdla=1): index 2+n picks DLA(n) posterior
+            # Single-absorber run (num_subdla=0): index 1+n picks absorber(n) posterior
             modelplist.append(model_posteriors[1 + num_subdla + n])
 
     # TODO: Intermediate results saving for debugging - this is the same format as Roman's code

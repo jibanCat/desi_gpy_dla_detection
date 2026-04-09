@@ -1,37 +1,90 @@
+"""
+CDDF_analysis/cddf_mock.py
+==========================
+DLA / LLS / sub-DLA population statistics: dN/dX, CDDF f(N), and Omega_HI.
+
+This module implements the **direct-catalog** population statistics pathway.
+It takes an absorber catalog (from GP-DLA inference or a mock truth catalog)
+plus a QSO sightline catalog, applies per-QSO search windows, and computes:
+
+  - dN/dX (line density) in redshift bins
+  - CDDF f(N, z) = d²N_abs / (dN dX)  (Bird+ 2016 convention)
+  - Omega_HI(z) from CDDF integration
+  - Mock validation calibration: alpha(z) = f_measured_mock / f_truth
+
+This is **distinct from** ``CDDF_analysis/calc_cddf.py``, which propagates
+full Bayesian model posteriors (from ``process_helpers.py`` HDF5 output)
+through a Poisson-binomial distribution to obtain credible intervals.
+Use this module when working directly with absorber catalogs (FITS tables),
+and use ``calc_cddf.py`` when working with the HDF5 model-posterior files.
+
+CDDF convention (Bird+ 2016 / arXiv:1610.01165):
+-------------------------------------------------
+    f(N) = d²N_abs / (dN dX)
+
+where N is **linear** column density in cm⁻² and X is the dimensionless
+comoving absorption distance:
+
+    dX/dz = (1+z)² H₀/H(z)   (Bahcall & Peebles 1969)
+
+Bins are defined in log₁₀(N) space, but the normalization divides by
+ΔN = 10^{logN_hi} - 10^{logN_lo}  (linear width), so f(N) has units of cm².
+
+Search-window logic:
+--------------------
+Absorber redshift z_abs is defined using ``absorber_rest`` (default Lyα = 1215.67 Å).
+
+The blue edge of the per-QSO window can be set by:
+  - a global ``zmin`` floor
+  - the instrument blue limit: ``lambda_obs_min / absorber_rest - 1``
+  - the QSO Lyβ edge: ``(1+z_qso) * blue_rest / absorber_rest - 1``
+  - all three combined via ``blue_limit_mode="max"``
+
+The red edge is set by:
+  - proximity-zone cut: ``z_qso - (1+z_qso) * v_prox_kms / c``
+  - optional ``lambda_obs_max`` or ``zmax_global``
+
+Typical DESI DLA-style parameters:
+  - absorber_rest    = 1215.67  (Lyα)
+  - blue_rest        = 1025.72  (Lyβ)
+  - blue_limit_mode  = "max"
+  - lambda_obs_min   = 3700.0   (DESI blue cutoff in Å)
+  - v_prox_kms       = 3000.0
+  - Omega_m          = 0.279    (WMAP9)
+  - zmin             = 2.15
+
+Input catalog requirements:
+  - QSO catalog:      TARGETID, Z
+  - Absorber catalog: TARGETID, Z_DLA, NHI  (NHI in log10 if assume_logNHI=True)
+
+Mock calibration workflow:
+--------------------------
+To calibrate real-data statistics using London mock spectra:
+
+1. Compute ``dNdX_truth`` from the Prochaska+2014 CDDF spline
+   (use ``truth_cddf_prochaska2014()`` and integrate over logN range).
+2. Compute ``dNdX_measured_mock`` by running GP-DLA on London mock spectra
+   and calling ``compute_dndx()`` on the detected mock absorbers.
+3. Compute calibration: ``alpha(z) = dNdX_measured_mock(z) / dNdX_truth(z)``
+   using ``compute_calibration_alpha()``.
+4. Apply to real data: ``dNdX_calibrated = alpha(z) × dNdX_real``
+   using ``apply_calibration()``.
+
+References:
+-----------
+- Bird, Garnett & Ho (2017), MNRAS 466, 2111 [arXiv:1610.01165]
+  CDDF convention and Poisson-binomial CI method.
+- Prochaska, Worseck & O'Meara (2009), ApJL 705, L113
+  Source of the wide-logN CDDF spline used as calibration truth.
+- Bahcall & Peebles (1969), ApJL 156, L7
+  Comoving absorption distance dX/dz formula.
+"""
 # ============================================================
 # DLA/LLS/subDLA summary statistics: dN/dX and CDDF
 #
 # Correct CDDF convention (Bird+ 2016 / arXiv:1610.01165):
 #   f(N) = d^2 N_abs / (dN dX)
 # where N is LINEAR column density in cm^-2, and X is dimensionless
-#
-# This file computes:
-#   - dN/dX in redshift bins (for any logNHI range)
-#   - CDDF f(N) in (z-bin, logN-bin) grids, where the binning is in log10 N
-#     but normalization divides by ΔN = 10^{logN_hi} - 10^{logN_lo}
-#
-# Search-window logic:
-#   - absorber redshift z_abs is defined using absorber_rest (default Lyα 1215.67 Å)
-#   - the blue edge of the search window can be set by:
-#       * a global zmin
-#       * instrument lambda_obs_min converted to z_abs
-#       * the QSO Lyβ edge converted into absorber redshift
-#   - the red edge of the search window is set by:
-#       * proximity-zone cut
-#       * optional lambda_obs_max converted to z_abs
-#       * optional global zmax_global
-#
-# Typical DLA-style use:
-#   - absorber_rest = 1215.67  (Lyα)
-#   - blue_rest     = 1025.72  (Lyβ)
-#   - blue_limit_mode = "max"
-#   - lambda_obs_min = 3600.0
-#   - v_prox_kms = 3000.0
-#
-# Assumptions:
-#   - QSO catalog contains TARGETID, Z
-#   - absorber catalog contains TARGETID, Z_DLA, NHI
-#   - NHI column is log10(NHI/cm^2) if assume_logNHI=True, else linear NHI
 # ============================================================
 
 import numpy as np
@@ -306,7 +359,28 @@ def filter_absorbers_to_qsos(
 
 def total_DeltaX_in_zbins(zbins, qso_zlo, qso_zhi, Xcalc):
     """
-    ΔX_k = sum_i ∫_{W_i ∩ [z_k,z_{k+1}]} dX
+    Total absorption distance ΔX in each z-bin, summed over all QSO sightlines.
+
+    For each redshift bin [z_k, z_{k+1}] and each QSO with window [z_lo_i, z_hi_i]:
+
+        ΔX_k = Σ_i X(min(z_hi_i, z_{k+1})) - X(max(z_lo_i, z_k))
+
+    where X(z) is the comoving absorption distance and the overlap is taken
+    only for sightlines that intersect bin k.
+
+    Parameters
+    ----------
+    zbins : array of shape (nbins+1,)
+        Bin edges in absorber redshift.
+    qso_zlo, qso_zhi : arrays of shape (nqso,)
+        Per-QSO search window lower and upper edges.
+    Xcalc : AbsorptionDistance
+        Precomputed comoving distance calculator.
+
+    Returns
+    -------
+    X_tot : array of shape (nbins,)
+        Total absorption distance per z-bin. Zero for bins with no coverage.
     """
     zbins = np.asarray(zbins, dtype=float)
     nb = len(zbins) - 1
@@ -346,9 +420,63 @@ def compute_dndx(
     lambda_obs_max=None,
 ):
     """
-    dN/dX in z-bins for absorbers with logNHI in [logNHImin, logNHImax].
+    Compute the DLA line density dN/dX in redshift bins.
 
-    Search-window settings are passed through to build_qso_windows().
+    Line density is defined as:
+
+        dN/dX(z) = N_abs(z) / ΔX_tot(z)
+
+    where N_abs(z) is the number of absorbers in the z-bin and ΔX_tot(z) is
+    the total comoving absorption distance across all QSO sightlines in that bin.
+
+    All search-window parameters (``zmin``, ``v_prox_kms``, ``blue_limit_mode``,
+    ``lambda_obs_min``, etc.) are passed through to ``build_qso_windows()``.
+
+    Parameters
+    ----------
+    abs_cat : table-like
+        Absorber catalog with columns: TARGETID, Z_DLA, NHI.
+        NHI is log10(NHI/cm⁻²) if ``assume_logNHI=True``, else linear.
+    qso_cat : table-like
+        QSO sightline catalog with columns: TARGETID, Z.
+    zbins : array-like
+        Redshift bin edges for the output. Shape (nbins+1,).
+    zmin : float or None
+        Global lower floor on absorber redshift.
+    zmax_global : float or None
+        Global upper ceiling on absorber redshift.
+    v_prox_kms : float
+        Proximity-zone velocity cut for the red window edge [km/s].
+    Omega_m : float
+        Matter density parameter for LCDM path length (WMAP9: 0.279).
+    logNHImin, logNHImax : float
+        Column density range for absorber selection [log10 cm⁻²].
+    assume_logNHI : bool
+        If True, the NHI column in abs_cat is already log10-scaled.
+    n_boot : int
+        Number of bootstrap samples for error estimation (0 = skip bootstrap).
+    rng : numpy Generator or None
+        Random number generator for bootstrap. If None, uses default_rng().
+    absorber_rest : float
+        Rest wavelength defining absorber redshift (Lyα = 1215.67 Å for DLAs).
+    blue_limit_mode : {"global", "lyb", "max"}
+        Strategy for setting the blue edge of each QSO search window.
+    blue_rest : float
+        QSO blue-edge rest wavelength (Lyβ = 1025.72 Å).
+    lambda_obs_min, lambda_obs_max : float or None
+        Instrument observed wavelength limits [Å].
+
+    Returns
+    -------
+    dict with keys:
+        z_mid       : (nbins,)  Bin center redshifts.
+        zbins       : (nbins+1,) Input bin edges.
+        dndx        : (nbins,)  dN/dX per bin (NaN where ΔX = 0).
+        err_poisson : (nbins,)  Poisson error = sqrt(N_abs) / ΔX.
+        err_boot    : (nbins,) or None  Bootstrap std over QSO sightlines.
+        N_abs       : (nbins,)  Raw absorber counts per bin.
+        X_tot       : (nbins,)  Total absorption distance per bin.
+        meta        : dict      All window/cosmology parameters used.
     """
     zbins = np.asarray(zbins, dtype=float)
     z_mid = 0.5 * (zbins[:-1] + zbins[1:])
@@ -614,6 +742,26 @@ def compute_cddf_fN(
 # ----------------------------
 
 def plot_dndx(out, *, label=None, prefer_boot=True, ax=None, show=True):
+    """
+    Plot dN/dX vs redshift from the output of ``compute_dndx()``.
+
+    Parameters
+    ----------
+    out : dict
+        Output dict from ``compute_dndx()``.
+    label : str or None
+        Legend label for this series.
+    prefer_boot : bool
+        If True, use bootstrap error bars when available; fall back to Poisson.
+    ax : matplotlib Axes or None
+        Axes to plot on; creates a new figure if None.
+    show : bool
+        If True, call plt.show() after plotting.
+
+    Returns
+    -------
+    ax : matplotlib Axes
+    """
     z = out["z_mid"]
     y = out["dndx"]
     yerr = out["err_boot"] if (prefer_boot and out.get("err_boot") is not None) else out["err_poisson"]
@@ -703,7 +851,37 @@ def omega_hi_from_cddf(
     prefer_boot=True,
 ):
     """
-    Compute Omega_HI(z) from CDDF output of compute_cddf_fN().
+    Compute the neutral hydrogen mass density Omega_HI(z) from CDDF output.
+
+    Integrates the CDDF over column density:
+
+        Omega_HI(z) = K × Σ_j N_HI,j * f(N_HI,j, z) * ΔN_HI,j
+
+    where K = H₀ m_H / (c ρ_c) (dimensionless, ~2.8×10⁻²⁸ for H₀=70).
+    Error propagation assumes independence between N bins (Gaussian quadrature).
+
+    Parameters
+    ----------
+    out_cddf : dict
+        Output from ``compute_cddf_fN()``.
+    zbin_index : int or None
+        If set, compute Omega_HI only for this single z-bin.
+    zmin, zmax : float or None
+        Redshift range for selecting z-bins (ignored if zbin_index is set).
+    logN_min, logN_max : float or None
+        Column density integration limits [log10 cm⁻²].
+    H0_km_s_Mpc : float
+        Hubble constant in km/s/Mpc. Used in the prefactor K.
+    prefer_boot : bool
+        If True, propagate bootstrap errors; fall back to Poisson.
+
+    Returns
+    -------
+    dict with keys:
+        z           : (nz,)   Redshift bin centers selected.
+        omega_hi    : (nz,)   Omega_HI(z).
+        omega_hi_err: (nz,)   Propagated 1-sigma error on Omega_HI(z).
+        meta        : dict    H0, logN range, error kind used.
     """
     z_mid = np.asarray(out_cddf["z_mid"], float)
     zbins = np.asarray(out_cddf["zbins"], float)
@@ -771,6 +949,26 @@ def omega_hi_from_cddf(
 
 
 def plot_omega_hi(out_omega, *, ax=None, label=None, show=True):
+    """
+    Plot Omega_HI vs redshift from the output of ``omega_hi_from_cddf()``.
+
+    The y-axis is scaled by 1000 (i.e., plotted as 10⁻³ Omega_HI) for readability.
+
+    Parameters
+    ----------
+    out_omega : dict
+        Output dict from ``omega_hi_from_cddf()``.
+    ax : matplotlib Axes or None
+        Axes to plot on; creates a new figure if None.
+    label : str or None
+        Legend label.
+    show : bool
+        If True, call plt.show().
+
+    Returns
+    -------
+    ax : matplotlib Axes
+    """
     z = out_omega["z"]
 
     # scale only for plotting
@@ -792,7 +990,240 @@ def plot_omega_hi(out_omega, *, ax=None, label=None, show=True):
 
 
 # ----------------------------
-# 9) Example usage
+# 9) Prochaska+2014 truth CDDF and mock calibration
+# ----------------------------
+
+def truth_cddf_prochaska2014(logN):
+    """
+    Evaluate the Prochaska+2014 wide-logN CDDF spline at log10(N) values.
+
+    This is the literature "truth" CDDF used as the calibration reference
+    when comparing GP-DLA measured statistics to mock truth.  The spline
+    is a piecewise cubic Hermite (PchipInterpolator) fit to nodes spanning
+    logN ∈ [12, 22], covering LLS, sub-DLA, and DLA regimes.
+
+    Source: Prochaska, Worseck & O'Meara (2009), ApJL 705, L113;
+    spline nodes as used in the DESI Y3 GP-DLA calibration notebooks.
+
+    Parameters
+    ----------
+    logN : array-like
+        log10(N_HI / cm⁻²) values at which to evaluate the CDDF.
+
+    Returns
+    -------
+    log10_fN : ndarray
+        log10 of f(N) [cm²] at the requested logN values.
+        Values outside [12, 22] are clipped to the spline boundary.
+
+    Notes
+    -----
+    The returned quantity is log10 f(N), not f(N) itself.
+    To get f(N): ``fN = 10 ** truth_cddf_prochaska2014(logN)``.
+    """
+    try:
+        from scipy.interpolate import PchipInterpolator
+    except ImportError:
+        raise ImportError("scipy is required for truth_cddf_prochaska2014().")
+
+    # Spline nodes from Prochaska+2014 / DESI Y3 calibration notebooks
+    _logN_nodes = np.array([12.0, 15.0, 17.0, 18.0, 20.0, 21.0, 21.5, 22.0])
+    _logf_nodes = np.array([-9.72, -14.41, -17.94, -19.39, -21.28, -22.82, -23.95, -25.50])
+    _spline = PchipInterpolator(_logN_nodes, _logf_nodes)
+
+    logN = np.asarray(logN, dtype=float)
+    logN_clip = np.clip(logN, _logN_nodes[0], _logN_nodes[-1])
+    return _spline(logN_clip)
+
+
+def truth_dndx_prochaska2014(logNHImin, logNHImax, n_points=1000):
+    """
+    Compute the truth dN/dX by numerically integrating the Prochaska+2014
+    CDDF spline over a logN range.
+
+    dN/dX = ∫_{logNHImin}^{logNHImax} f(N) dN
+
+    Parameters
+    ----------
+    logNHImin, logNHImax : float
+        Integration limits in log10(N_HI / cm⁻²).
+    n_points : int
+        Number of quadrature points for trapezoidal integration.
+
+    Returns
+    -------
+    dndx_truth : float
+        Integrated line density (scalar, dimensionless).
+    """
+    logN_grid = np.linspace(logNHImin, logNHImax, int(n_points))
+    N_grid = 10.0 ** logN_grid                                    # cm⁻²
+    fN_grid = 10.0 ** truth_cddf_prochaska2014(logN_grid)        # cm²
+
+    # f(N) dN in linear N: dN = N * ln(10) * d(logN)
+    dlogN = logN_grid[1] - logN_grid[0]
+    dndx_truth = np.trapz(fN_grid * N_grid * np.log(10), logN_grid) * dlogN / dlogN
+    # Simpler: trapz over logN with integrand = f(N) * N * ln(10)
+    dndx_truth = np.trapz(fN_grid * N_grid * np.log(10.0), logN_grid)
+    return float(dndx_truth)
+
+
+def compute_calibration_alpha(out_truth, out_measured_mock, *, kind="linear"):
+    """
+    Compute the calibration factor alpha(z) = dNdX_measured_mock / dNdX_truth.
+
+    This factor corrects for detection incompleteness and false positives:
+    the GP-DLA pipeline measured on London mock spectra is compared to the
+    known truth dN/dX to estimate the redshift-dependent bias alpha(z).
+
+    Parameters
+    ----------
+    out_truth : dict
+        Output of ``compute_dndx()`` on truth absorbers (or a dict with
+        keys ``z_mid``, ``dndx``, ``err_poisson``, and optionally ``err_boot``).
+    out_measured_mock : dict
+        Output of ``compute_dndx()`` on GP-DLA-detected mock absorbers.
+        Must be on the same z grid as ``out_truth``.
+    kind : str
+        Interpolation kind for scipy.interpolate.interp1d ('linear', 'cubic', etc.).
+        Only used if the z grids differ; for same-grid inputs, no interpolation.
+
+    Returns
+    -------
+    dict with keys:
+        z       : (n,)  Redshift bin centers (from out_truth).
+        alpha   : (n,)  alpha(z) = measured / truth.
+        alpha_err : (n,)  Propagated 1-sigma error on alpha(z).
+
+    Notes
+    -----
+    Relative error propagation:
+        sigma_alpha / alpha = sqrt( (sigma_meas/meas)^2 + (sigma_truth/truth)^2 )
+    """
+    z_truth = np.asarray(out_truth["z_mid"], dtype=float)
+    y_truth = np.asarray(out_truth["dndx"], dtype=float)
+    e_truth = (
+        np.asarray(out_truth["err_boot"], dtype=float)
+        if out_truth.get("err_boot") is not None
+        else np.asarray(out_truth["err_poisson"], dtype=float)
+    )
+
+    z_meas = np.asarray(out_measured_mock["z_mid"], dtype=float)
+    y_meas = np.asarray(out_measured_mock["dndx"], dtype=float)
+    e_meas = (
+        np.asarray(out_measured_mock["err_boot"], dtype=float)
+        if out_measured_mock.get("err_boot") is not None
+        else np.asarray(out_measured_mock["err_poisson"], dtype=float)
+    )
+
+    # Interpolate measured mock to truth z grid if needed
+    if not np.allclose(z_truth, z_meas, atol=1e-6):
+        from scipy.interpolate import interp1d
+        y_meas = interp1d(z_meas, y_meas, kind=kind, bounds_error=False, fill_value=np.nan)(z_truth)
+        e_meas = interp1d(z_meas, e_meas, kind=kind, bounds_error=False, fill_value=np.nan)(z_truth)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        alpha = np.where(y_truth > 0, y_meas / y_truth, np.nan)
+        rel_err = np.sqrt(
+            np.where(y_meas > 0, (e_meas / y_meas) ** 2, 0.0)
+            + np.where(y_truth > 0, (e_truth / y_truth) ** 2, 0.0)
+        )
+        alpha_err = alpha * rel_err
+
+    return {"z": z_truth, "alpha": alpha, "alpha_err": alpha_err}
+
+
+def apply_calibration(out_real, out_calibration):
+    """
+    Apply the calibration factor alpha(z) to real GP-DLA dN/dX measurements.
+
+    Calibrated result:
+        dNdX_calibrated = alpha(z) * dNdX_real
+
+    Error propagation (assuming alpha and dNdX_real are independent):
+        err_calibrated = sqrt( (alpha * err_real)^2 + (dNdX_real * err_alpha)^2 )
+
+    Parameters
+    ----------
+    out_real : dict
+        Output of ``compute_dndx()`` on real DESI data.
+    out_calibration : dict
+        Output of ``compute_calibration_alpha()``, with keys z, alpha, alpha_err.
+        The z grid of the calibration will be interpolated to match out_real["z_mid"].
+
+    Returns
+    -------
+    dict with keys:
+        z               : (n,)  Redshift bin centers from out_real.
+        dndx_raw        : (n,)  Uncalibrated dN/dX.
+        dndx_calibrated : (n,)  Calibrated dN/dX.
+        err_raw         : (n,)  Error on raw dN/dX (bootstrap if available).
+        err_calibrated  : (n,)  Propagated error on calibrated dN/dX.
+        alpha           : (n,)  Alpha(z) values used.
+        alpha_err       : (n,)  Error on alpha(z) used.
+    """
+    z_real = np.asarray(out_real["z_mid"], dtype=float)
+    y_real = np.asarray(out_real["dndx"], dtype=float)
+    e_real = (
+        np.asarray(out_real["err_boot"], dtype=float)
+        if out_real.get("err_boot") is not None
+        else np.asarray(out_real["err_poisson"], dtype=float)
+    )
+
+    z_cal = np.asarray(out_calibration["z"], dtype=float)
+    alpha = np.asarray(out_calibration["alpha"], dtype=float)
+    alpha_err = np.asarray(out_calibration["alpha_err"], dtype=float)
+
+    # Interpolate calibration to real data z grid
+    if not np.allclose(z_real, z_cal, atol=1e-6):
+        from scipy.interpolate import interp1d
+        alpha = interp1d(z_cal, alpha, kind="linear", bounds_error=False, fill_value=np.nan)(z_real)
+        alpha_err = interp1d(z_cal, alpha_err, kind="linear", bounds_error=False, fill_value=np.nan)(z_real)
+
+    dndx_cal = alpha * y_real
+    err_cal = np.sqrt((alpha * e_real) ** 2 + (y_real * alpha_err) ** 2)
+
+    return {
+        "z": z_real,
+        "dndx_raw": y_real,
+        "dndx_calibrated": dndx_cal,
+        "err_raw": e_real,
+        "err_calibrated": err_cal,
+        "alpha": alpha,
+        "alpha_err": alpha_err,
+    }
+
+
+def zbins_from_zmid_uniform(z_mid, pad=True):
+    """
+    Reconstruct uniform bin edges from bin center positions.
+
+    Assumes uniformly spaced centers: zbins[k] = z_mid[k] - dz/2.
+
+    Parameters
+    ----------
+    z_mid : array-like
+        Bin centers, assumed to be uniformly spaced.
+    pad : bool
+        If True, extend the last edge by half a bin width (default True).
+
+    Returns
+    -------
+    zbins : array of shape (len(z_mid)+1,)
+        Bin edges.
+    """
+    z_mid = np.asarray(z_mid, dtype=float)
+    dz = np.diff(z_mid)
+    if not np.allclose(dz, dz[0], rtol=1e-4):
+        raise ValueError("z_mid does not appear to be uniformly spaced.")
+    hw = dz[0] / 2.0
+    zbins = np.empty(len(z_mid) + 1)
+    zbins[:-1] = z_mid - hw
+    zbins[-1] = z_mid[-1] + hw
+    return zbins
+
+
+# ----------------------------
+# 10) Example usage
 # ----------------------------
 #
 # Example DESI-style DLA/LLS search window:
