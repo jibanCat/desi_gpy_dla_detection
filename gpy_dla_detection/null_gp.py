@@ -1,5 +1,45 @@
 """
-A class to handle the Null model in Ho, Bird, Garnett (2020).
+null_gp.py — Gaussian Process model for QSO emission (no absorbers).
+
+Overview
+--------
+Implements the "Null" (no-DLA) GP model for quasar spectra.  This is the
+baseline against which DLA models are compared via Bayes factors.
+
+The GP likelihood for a single spectrum is:
+
+    p(y | λ, σ², M, ω, c₀, τ₀, β) = N(y ; μ_lya,  K + Ω + V)
+
+where:
+  μ_lya  — mean QSO flux model (interpolated from learned ``mu``)
+  K = MM^T — low-rank (rank k) covariance of QSO emission fluctuations
+  Ω²    — pixel-wise Lyman-forest absorption noise:
+           Ω(z) ≈ [1 − exp(−τ_eff(z)) + c₀]²  ×  ω²
+  V     — instrumental noise variance (from pipeline inverse-variance)
+
+The Woodbury matrix identity is used to evaluate the log-likelihood in
+O(n k²) rather than O(n³):
+
+    log L = −½ [ y^T D⁻¹ y − y^T D⁻¹ M (I + M^T D⁻¹ M)⁻¹ M^T D⁻¹ y
+                 + log det(I + M^T D⁻¹ M) + Σ log D_ii + n log 2π ]
+
+where D = diag(Ω² + V).
+
+Flux normalization
+------------------
+Each spectrum is normalized to the median flux in rest-frame [1310, 1325] Å
+before calling ``set_data``.
+
+Key classes
+-----------
+NullGP    : base GP class; initialized directly from arrays
+NullGPMAT : convenience subclass that loads ``mu``, ``M``, ``log_omega``,
+            ``log_c_0``, ``log_tau_0``, ``log_beta`` from a MATLAB ``.mat`` file
+
+References
+----------
+Ho, Bird & Garnett (2020) https://arxiv.org/abs/2003.11036
+Garnett et al. (2017) https://arxiv.org/abs/1605.04538
 """
 
 import numpy as np
@@ -44,8 +84,8 @@ class NullGP:
         log_c_0: float,
         log_tau_0: float,
         log_beta: float,
-        prev_tau_0: float = 0.0023,
-        prev_beta: float = 3.65,
+        prev_tau_0: float = 0.0023,   # Kamble et al. (2020), arxiv 1904.01110; legacy default
+        prev_beta: float = 3.65,      # same source; for DESI Y3 use Turner+2024 (arxiv 2405.06743)
     ):
         # parameters and model priors
         self.params = params

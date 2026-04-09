@@ -81,8 +81,13 @@ Lyman_series["kamble20"] = {
     #'Ly5'     : { 'line':937.8035, 'A':0.00554/53.36202, 'B':3.182 },
 }
 
-# optical depth parameters from Turner et al. (2024)
-# arxiv 2405.06743
+# optical depth parameters from Turner et al. (2024) — DESI Year 1
+# Paper: "The Lyman-alpha Forest Power Spectrum and DESI Y1 Optical Depth"
+# arxiv: 2405.06743
+# τ₀ = (2.46 ± 0.14) × 10⁻³, β = 3.62 ± 0.04
+# Note: Lya uses B=3.182 (Kamble+2020 value) rather than 3.62.
+# TODO: verify whether Turner+2024 measures separate β for Lya vs higher lines,
+#       or whether B=3.182 for Lya is a legacy value that should be updated to 3.62.
 Lyman_series["turner24"] = {
     "Lya": {"line": Lya_line, "A": 0.00246, "B": 3.182},
     "Lyb": {"line": Lyb_line, "A": 0.00246 / 5.2615, "B": 3.62},

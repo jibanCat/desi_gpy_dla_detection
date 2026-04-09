@@ -1,10 +1,21 @@
 """
-voigt.py : python version of the Voigt profile for 
+voigt.py : python version of the Voigt profile for
     Roman's voigt.c file, including:
 
 - number of Lyman series members as an option
 - parameterized using : (1) z_dla, (2) nhi;
 - input wavelengths: observed wavelengths
+
+.. deprecated::
+    This pure-Python implementation is **slow** and provided only as a
+    reference / fallback.  In production inference, ``voigt_fast.py``
+    (which wraps the compiled C extension ``_voigt.so``) is used instead.
+    If ``_voigt.so`` cannot be loaded, the code falls back to this module
+    automatically and emits a ``RuntimeWarning``.
+
+    Do **not** import this module directly in new code.  Use
+    ``voigt_fast.VoigtProfile`` (or the module-level fallback in
+    ``dla_gp.py``) instead.
 
 Note:
 I keep the variables of Lyman series in this file to

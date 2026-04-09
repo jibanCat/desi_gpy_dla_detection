@@ -1,8 +1,27 @@
 """
-subdla_meanflux_gp.py
+subdla_meanflux_gp.py — Sub-DLA GP model with mean-flux marginalization.
 
-A GP class for handling subDLAs intervening in a given sightline. 
-This inherits from `DLAMFGP` for handling mean-flux marginalization.
+.. warning:: EXPERIMENTAL
+    This module has **not** been tested in any production run or validated
+    against real DESI data.  Do not use it in the main inference pipeline
+    without first running the full test suite and comparing outputs against
+    the standard SubDLAGP.
+
+Overview
+--------
+Combines the sub-DLA/LLS prior range (log NHI ∈ [19, 20.3] or [17.2, 19])
+with mean-flux marginalization from DLAMFGP.  This is the "mean-flux" variant
+of SubDLAGP (subdla_gp.py).
+
+Status
+------
+- Implemented but untested in production.
+- Before using, verify that: (a) sub-DLA parameter ranges are respected,
+  (b) outputs match SubDLAGP when mean-flux variance is zero.
+
+Key class
+---------
+SubDLAMFGP : sub-DLA model with mean-flux marginalization (inherits DLAMFGP)
 """
 
 from typing import Tuple, Optional
@@ -18,7 +37,15 @@ try:
     from .voigt_fast import VoigtProfile
 
     voigt_absorption = VoigtProfile().compute_voigt_profile
-except ImportError:
+except (OSError, ImportError):
+    import warnings
+    warnings.warn(
+        "Could not load the compiled C Voigt extension (_voigt.so). "
+        "Falling back to the pure-Python voigt_absorption, which is ~100x slower. "
+        "To fix, rebuild the C extension: see gpy_dla_detection/voigt_fast.py.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     from .voigt import voigt_absorption
 
 from .subdla_samples import SubDLASamplesMAT  # for convenient autocomplete

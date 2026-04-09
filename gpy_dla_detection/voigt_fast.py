@@ -1,3 +1,8 @@
+# PRODUCTION Voigt profile implementation.
+# This module wraps the compiled C extension ``_voigt.so``.
+# It is the canonical Voigt implementation for all production inference.
+# If the C extension cannot be loaded, modules that import this will fall back
+# to the pure-Python ``voigt.py`` and emit a RuntimeWarning.
 import os
 import ctypes
 import numpy as np

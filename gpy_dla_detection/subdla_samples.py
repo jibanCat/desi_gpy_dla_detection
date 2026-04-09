@@ -1,6 +1,41 @@
 """
-subdla_samples.py : generate the Quasi-Monte Carlo samples for
-calculating log model evidence of subDLA model
+subdla_samples.py — QMC sample management for sub-DLA and LLS parameter integration.
+
+Overview
+--------
+Analogous to dla_samples.py but for sub-DLA and Lyman-Limit System (LLS)
+absorbers, which have lower column densities than DLAs.
+
+Sample file format
+------------------
+Loads from a MATLAB v7.3 HDF5 ``.mat`` file (generated from
+``Ho-Bird-Garnett's multi_dlas/set_lls_parameters.m``).
+
+Expected HDF5 keys in the sub-DLA ``.mat`` file:
+
+    offset_samples           float64 (N,)  — uniform [0,1] z offsets
+    lls_log_nhi_samples      float64 (N,)  — log₁₀(N_HI) for sub-DLA/LLS
+    lls_nhi_samples          float64 (N,)  — 10^lls_log_nhi_samples
+    extrapolate_min_log_nhi  float64 (1,)  — lower bound of sub-DLA/LLS logNHI range
+    alpha                    float64 (1,)  — mixture weight
+    num_dla_samples          float64 (1,)  — number of QMC samples
+    Z_dla                    float64 (1,)  — normalization (partition function) of DLA prior
+    Z_lls                    float64 (1,)  — normalization (partition function) of sub-DLA/LLS prior
+
+Sample provenance (DESI Y3)
+---------------------------
+Sub-DLA run (log NHI ∈ [19, 20.3]):
+    Samples from Prochaska et al. (2014) priors.
+    Source notebook: notebooks/GenerateSamples_PW14.ipynb
+    Target module:   gpy_dla_detection/generate_samples.py (planned)
+
+LLS run (log NHI ∈ [17.2, 19]):
+    Same source, different NHI range.
+
+Key classes
+-----------
+SubDLASamples    : abstract base class (inherits DLASamples)
+SubDLASamplesMAT : loads samples from a ``.mat`` file
 """
 
 import numpy as np

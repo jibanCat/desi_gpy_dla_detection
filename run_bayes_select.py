@@ -176,11 +176,39 @@ def process_single_spectrum(
     MAP_z_dla, MAP_log_nhi = dla_gp.maximum_a_posteriori()
 
     # Identify the most probable model
+    # -----------------------------------------------------------------------
+    # model_posteriors array layout
+    # -----------------------------------------------------------------------
+    # The length and index meaning depend on the run mode (single_absorber_model).
+    #
+    # DLA run (single_absorber_model=False) — length = 1 + 1 + max_dlas:
+    #   index 0          → Null model  (no absorber)
+    #   index 1          → Sub-DLA model  (log NHI in [19, 20.3])
+    #   index 2          → 1-DLA model
+    #   index 3          → 2-DLA model
+    #   ...
+    #   index 1+max_dlas → max_dlas-DLA model
+    #
+    # Sub-DLA / LLS run (single_absorber_model=True) — length = 1 + max_dlas:
+    #   index 0          → Null model  (no absorber)
+    #   index 1          → 1-absorber model
+    #   index 2          → 2-absorber model  (usually disabled; max_dlas=1 in practice)
+    #   ...
+    #
+    # argmaxind convention:
+    #   0  → no absorber detected (either Null or Sub-DLA is most probable)
+    #   1  → 1 absorber (DLA or LLS/subDLA depending on mode)
+    #   k  → k absorbers
+    #
+    # Note: when single_absorber_model=False, the Sub-DLA index (1) maps to
+    # argmaxind=0, so Sub-DLA being the best model is treated the same as
+    # "no DLA detected" for the purpose of saving MAP parameters.
+    # -----------------------------------------------------------------------
     model_posteriors = bayes.model_posteriors[:]
     if single_absorber_model:
-        argmaxind = np.nanargmax(model_posteriors) # No DLA vs DLA only
+        argmaxind = np.nanargmax(model_posteriors)  # No absorber vs single absorber only
     else:
-        argmaxind = np.nanargmax(model_posteriors) - 1
+        argmaxind = np.nanargmax(model_posteriors) - 1  # offset: index 0=Null, 1=SubDLA, 2+=DLA(k)
 
     # Check if any DLA detection is made
     if argmaxind > 0:

@@ -1,9 +1,39 @@
 """
-A GP class for having at subDLAs intervening in a given slightline.
+subdla_gp.py — GP model for sub-DLA (and LLS) absorbers.
 
-This is basically the same as .dla_gp, but has different priors on
-logNHI and model prior. In order to not overwrite the class method
-in .dla_gp.DLAGP, I chose to inherent from .null_gp.NullGP.
+Overview
+--------
+Inherits from DLAGP (dla_gp.py) but uses a different column-density prior
+range, making it suitable for two DESI Y3 run modes:
+
+  Sub-DLA run:  log NHI ∈ [19, 20.3]   (Prochaska+2014 prior)
+  LLS run:      log NHI ∈ [17.2, 19]   (Prochaska+2014 prior)
+
+Both modes use ``single_absorber_model=True`` (no multi-absorber recursion).
+The sample files for these modes are generated from notebooks/GenerateSamples_PW14.ipynb
+(Prochaska et al. 2014) and differ from the DLA run's dla_samples_a03.mat (Ho+2020).
+
+Science
+-------
+The sub-DLA/LLS model evidence is computed identically to the DLA model: Voigt
+profile multiplication + QMC integration over (z_absorber, log NHI).  The
+difference is purely in the prior range on log NHI and the sample file loaded.
+
+Key classes
+-----------
+SubDLAGP    : base class (inherits DLAGP)
+SubDLAGPMAT : loads model from a MATLAB ``.mat`` file
+
+Run mode summary
+----------------
+  DLA run   (multi):  DLAGP      + single_absorber_model=False + dla_samples_a03.mat
+  SubDLA run (single): SubDLAGP  + single_absorber_model=True  + subDLA sample file
+  LLS run   (single): SubDLAGP   + single_absorber_model=True  + LLS sample file
+
+References
+----------
+Prochaska et al. (2014) https://arxiv.org/abs/1402.0548
+Ho, Bird & Garnett (2020) https://arxiv.org/abs/2003.11036
 """
 
 from typing import Tuple, Optional
@@ -19,7 +49,15 @@ try:
     from .voigt_fast import VoigtProfile
 
     voigt_absorption = VoigtProfile().compute_voigt_profile
-except ImportError:
+except (OSError, ImportError):
+    import warnings
+    warnings.warn(
+        "Could not load the compiled C Voigt extension (_voigt.so). "
+        "Falling back to the pure-Python voigt_absorption, which is ~100x slower. "
+        "To fix, rebuild the C extension: see gpy_dla_detection/voigt_fast.py.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     from .voigt import voigt_absorption
 
 from .subdla_samples import SubDLASamplesMAT  # for convenient autocomplete

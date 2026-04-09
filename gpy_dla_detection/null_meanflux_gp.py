@@ -1,10 +1,35 @@
-# null_meanflux_gp.py
-
 """
-NullMFGP: Null GP model with mean-flux marginalization for DLA detection.
-This class builds on NullGP to incorporate marginalization over `prev_beta` 
-and `prev_tau_0`, following a Monte Carlo approach.
+null_meanflux_gp.py — Null GP model with mean-flux marginalization.
 
+.. warning:: EXPERIMENTAL
+    This module has **not** been tested in any production run or validated
+    against real DESI data.  Do not use it in the main inference pipeline
+    without first running the full test suite and comparing outputs against
+    the standard NullGP.
+
+Overview
+--------
+Extends NullGP (null_gp.py) by marginalizing over the IGM mean-flux
+parameters ``prev_tau_0`` and ``prev_beta``, rather than fixing them to
+point estimates.  This is intended to reduce false-positive DLA detections
+caused by mean-flux fluctuations.
+
+The marginalization is done via a Monte Carlo sum over a grid of
+(prev_tau_0, prev_beta) values.  The model caches the interpolated
+``this_mu`` and ``this_M`` for each grid point (``get_interp``) to avoid
+redundant computation.
+
+Status
+------
+- Implemented but untested in production.
+- No comparison with standard NullGP outputs exists yet.
+- Before using, write tests that verify: (a) posterior probabilities are
+  identical to NullGP when mean-flux variance is zero, and (b) the
+  marginalized model reduces false positives on mock data.
+
+Key class
+---------
+NullMFGP : null model with mean-flux marginalization (inherits NullGP)
 """
 import numpy as np
 import h5py
