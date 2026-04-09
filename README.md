@@ -163,6 +163,104 @@ $(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
 --figure_dir "$FIGURE_DIR"
 ```
 
+## Run modes: DLA, Sub-DLA, and LLS
+
+The pipeline supports three absorber run modes selected via the
+`--single_absorber_model` flag and the sample file you provide.
+
+### DLA run (default — multi-DLA, log NHI > 20.3)
+
+The standard run mode.  Models up to `max_dlas` (default 3) DLAs per spectrum.
+Includes a Sub-DLA model as an alternative to the Null model.
+
+```bash
+python desi-DLAGP.py \
+  --dla_samples_file data/dr12q/processed/dla_samples_a03.mat \
+  --sub_dla_samples_file data/dr12q/processed/subdla_samples.mat \
+  --max_dlas 3 \
+  # (do NOT pass --single_absorber_model)
+  ...
+```
+
+`model_posteriors` output layout (shape N × 5 for max_dlas=3):
+```
+col 0 → P(Null | D)       — no absorber
+col 1 → P(SubDLA | D)     — log NHI ∈ [19, 20.3]
+col 2 → P(DLA(1) | D)     — 1 DLA (log NHI > 20.3)
+col 3 → P(DLA(2) | D)     — 2 DLAs
+col 4 → P(DLA(3) | D)     — 3 DLAs
+```
+
+Sample files: `dla_samples_a03.mat` is the Ho+2020 QMC grid (log NHI ∈ [20.3, 23]).
+
+### Sub-DLA run (single-absorber, log NHI ∈ [19, 20.3])
+
+Set `--single_absorber_model` and provide sub-DLA QMC samples generated from
+`gpy_dla_detection/generate_samples.py` (Prochaska+2014 prior).
+
+```bash
+# Generate sub-DLA samples (one-time):
+python -m gpy_dla_detection.generate_samples --mode subdla \
+  --output data/dr12q/processed/subdla_samples_pw14.mat
+
+# Run inference:
+python desi-DLAGP.py \
+  --sub_dla_samples_file data/dr12q/processed/subdla_samples_pw14.mat \
+  --single_absorber_model \
+  --max_dlas 1 \
+  ...
+```
+
+`model_posteriors` output layout (shape N × 2):
+```
+col 0 → P(Null | D)       — no absorber
+col 1 → P(Absorber | D)   — 1 sub-DLA (log NHI ∈ [19, 20.3])
+```
+
+### LLS run (single-absorber, log NHI ∈ [17.2, 19])
+
+Same as sub-DLA run but with LLS samples.
+
+```bash
+# Generate LLS samples (one-time):
+python -m gpy_dla_detection.generate_samples --mode lls \
+  --output data/dr12q/processed/lls_samples_pw14.mat
+
+# Run inference:
+python desi-DLAGP.py \
+  --sub_dla_samples_file data/dr12q/processed/lls_samples_pw14.mat \
+  --single_absorber_model \
+  --max_dlas 1 \
+  ...
+```
+
+### Quick single-spectrum demo
+
+For a self-contained test with the London mock spectra included in the repo:
+
+```bash
+python examples/demo_desi_spectrum.py --num-spectra 3
+```
+
+This requires the London mock FITS and the SDSS DR16Q learned GP model.
+See `examples/demo_desi_spectrum.py` for the full data file list.
+
+### Key differences between run modes
+
+| Setting | DLA run | Sub-DLA run | LLS run |
+|---------|---------|-------------|---------|
+| `--single_absorber_model` | (not set) | set | set |
+| `--max_dlas` | 3 | 1 | 1 |
+| log NHI range | 20.3–23 | 19–20.3 | 17.2–19 |
+| Sample file | `dla_samples_a03.mat` | PW14 subdla | PW14 lls |
+| `model_posteriors` cols | 5 (N+SubDLA+3×DLA) | 2 (N+1×Absorber) | 2 (N+1×Absorber) |
+| `sub_dla` in DLACatalogue | True | False | False |
+
+**IMPORTANT**: When loading results in `DLACatalogue` (`CDDF_analysis/calc_cddf.py`),
+set `sub_dla=True` for DLA runs and `sub_dla=False` for sub-DLA/LLS runs.
+This controls the `model_posteriors` column offset used when computing
+p(DLA) = sum of DLA columns.
+
 ## For developers
 
 There are some customizable features for this GP-DLA model.

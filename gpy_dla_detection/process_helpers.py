@@ -1,7 +1,85 @@
 """
-process_helpers.py
+gpy_dla_detection/process_helpers.py — HDF5 result I/O for GP-DLA inference.
 
-Helper functions for processing the results of the DLA detection algorithm.
+Overview
+--------
+Provides two functions used by the inference pipeline (run_bayes_select.py,
+dlasearch.py) to initialize and persist per-spectrum GP-DLA outputs:
+
+  initialize_results(num_spectra, max_dlas, num_dla_samples, single_absorber_model)
+      → dict of pre-allocated numpy arrays (NaN-filled)
+
+  save_results_to_hdf5(filename, results, spectrum_ids, z_qsos)
+      → writes the results dict to an HDF5 file
+
+HDF5 output schema
+------------------
+The output HDF5 file (processed-{survey}-{program}-{hpx}.h5) contains the
+following datasets.  All shapes use ``N`` = num_spectra, ``K`` = max_dlas,
+``S`` = num_dla_samples.
+
+Primary per-spectrum arrays:
+  target_ids                 int64    (N,)     DESI TARGETID for each spectrum
+  z_qsos                     float64  (N,)     QSO emission redshift
+  min_z_dlas                 float64  (N,)     minimum DLA search redshift
+  max_z_dlas                 float64  (N,)     maximum DLA search redshift
+  snrs                       float64  (N,)     SNR in the DLA search window
+  snrs_blue                  float64  (N,)     SNR on the blue side of the spectrum
+
+Model posteriors (KEY OUTPUT — see layout note below):
+  model_posteriors           float64  (N, 1+num_subdla+K)  posterior per model
+  p_dlas                     float64  (N,)     P(≥1 DLA | D, z_QSO)
+  p_no_dlas                  float64  (N,)     P(no DLA | D, z_QSO)
+
+model_posteriors column layout
+  DLA run (single_absorber_model=False, num_subdla=1):
+    col 0  → P(Null | D)       no absorber
+    col 1  → P(SubDLA | D)     log NHI ∈ [19, 20.3]
+    col 2  → P(DLA(1) | D)     1 DLA
+    col 3  → P(DLA(2) | D)     2 DLAs
+    col 4  → P(DLA(3) | D)     3 DLAs  (if max_dlas=3)
+
+  Sub-DLA / LLS run (single_absorber_model=True, num_subdla=0):
+    col 0  → P(Null | D)       no absorber
+    col 1  → P(DLA(1) | D)     1 absorber
+
+  IMPORTANT: The column index of DLA(k) = k + num_subdla.
+  DLACatalogue (CDDF_analysis/calc_cddf.py) uses sub_dla=True/False
+  to account for this shift when loading the processed file.
+
+MAP parameter estimates (NaN if no DLA detected):
+  MAP_z_dlas                 float64  (N, K)   MAP DLA redshift per k
+  MAP_log_nhis               float64  (N, K)   MAP log10(N_HI) per k
+  z_dla_errs                 float64  (N, K)   1-sigma error on z_DLA
+  log_nhi_errs               float64  (N, K)   1-sigma error on log N_HI
+
+Evidence / likelihood components (for diagnostics):
+  log_priors_no_dla          float64  (N,)     log P(no DLA | z_QSO)
+  log_priors_dla             float64  (N, K)   log P(DLA(k) | z_QSO)
+  log_likelihoods_no_dla     float64  (N,)     log P(D | Null model)
+  log_likelihoods_dla        float64  (N, K)   log P(D | DLA(k) model)
+  log_posteriors_no_dla      float64  (N,)     log P(Null | D, z_QSO)
+  log_posteriors_dla         float64  (N, K)   log P(DLA(k) | D, z_QSO)
+
+QMC sample likelihoods (large arrays — for CDDF posterior computation):
+  sample_log_likelihoods_dla float64  (N, S, K)  log P(D | DLA(k), θ_j) for
+                                                  each sample j (used by DLACatalogue)
+  base_sample_inds           int32    (N, K-1, S) resampled indices for DLA(k>1)
+                                                  samples (1-indexed in MATLAB convention,
+                                                  subtract 1 when loading in Python)
+
+Detection quality:
+  detection_flags            int32    (N,)     DLAFLAG bitmask (see fitwarning.py)
+                                               0 = no flags, >0 = see bitmask definitions
+
+Notes
+-----
+- ``spectrum_ids`` is saved separately as byte strings (dtype "S") under the
+  key ``spectrum_ids``.  ``target_ids`` (int64) is also saved from results.
+- Arrays are NaN-initialized; NaN entries mean the spectrum was skipped or
+  the model was not evaluated (e.g., z_QSO too low, bad redshift warning).
+- The file is written in a single pass (mode "w"); use combine_processed_h5.py
+  to merge multiple per-healpix files into a single combined file.
 """
 
 import numpy as np
@@ -10,48 +88,52 @@ from typing import List
 
 
 def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int, single_absorber_model: bool = False) -> dict:
-    """
-    Initialize the results dictionary to store outputs for all spectra.
+    """Pre-allocate the results dict for all spectra (NaN/zero-filled).
 
-    This function creates a dictionary that will store various results for each spectrum processed
-    by the DLA detection algorithm. It initializes arrays with NaN (or zeros where appropriate)
-    for each spectrum's output, which includes priors, likelihoods, posteriors, DLA parameters, and more.
+    All arrays are pre-filled with NaN (or 0 for integer arrays) and populated
+    during inference.  NaN values in the output mean the spectrum was not
+    evaluated (e.g., skipped due to z < 2.0 or bad ZWARN).
 
-    Parameters:
+    Parameters
     ----------
     num_spectra : int
-        The number of spectra being processed.
+        Number of spectra to process.
     max_dlas : int
-        The maximum number of DLAs to model.
+        Maximum number of DLAs to model per spectrum (default 3).
+    num_dla_samples : int
+        Number of QMC samples in the DLA sample grid (e.g. 10000).
+    single_absorber_model : bool, optional
+        If False (default, DLA run): includes Sub-DLA model column in
+        ``model_posteriors`` — layout is [Null, SubDLA, DLA(1), ..., DLA(K)].
+        If True (sub-DLA/LLS run): no Sub-DLA column — layout is [Null, DLA(1)].
 
-    Returns:
-    --------
-    results : dict
-        A dictionary initialized with NaN or zero arrays to store results for each spectrum.
-        Keys in the dictionary represent different computed results from the Bayesian model.
+    Returns
+    -------
+    dict
+        Keys and shapes (N=num_spectra, K=max_dlas, S=num_dla_samples):
 
-    Keys:
-    -----
-    z_qsos : Redshifts of the Quasi-Stellar Objects (QSOs).
-    min_z_dlas : Minimum redshift of the DLAs detected for each spectrum.
-    max_z_dlas : Maximum redshift of the DLAs detected for each spectrum.
-    log_priors_no_dla : Log prior probabilities for the no-DLA model.
-    log_priors_dla : Log prior probabilities for DLA models (up to `max_dlas` DLAs).
-    log_likelihoods_no_dla : Log likelihood for the no-DLA model.
-    log_likelihoods_dla : Log likelihoods for DLA models.
-    log_posteriors_no_dla : Log posteriors for the no-DLA model.
-    log_posteriors_dla : Log posteriors for DLA models.
-    sample_log_likelihoods_dla : Sampled log likelihoods for DLA models.
-    base_sample_inds : Indices of base samples used in the sampling process.
-    MAP_z_dlas : Maximum a posteriori (MAP) redshift estimates for DLAs.
-    MAP_log_nhis : Maximum a posteriori (MAP) log N_HI estimates for DLAs.
-    model_posteriors : Posterior probabilities for each model.
-    p_dlas : Posterior probability of DLA models.
-    p_no_dlas : Posterior probability of the no-DLA model.
-    snrs : Signal-to-noise ratios for each spectrum.
-    snrs_blue : Signal-to-noise ratios on the blue side of each spectrum.
-    detection_flags : Flags indicating detection status for each spectrum.
-    single_absorber_model : If True, only single absorber model is used (no subDLA).
+        target_ids                 int64    (N,)       DESI TARGETID
+        z_qsos                     float64  (N,)       QSO redshift
+        min_z_dlas                 float64  (N,)       min DLA search redshift
+        max_z_dlas                 float64  (N,)       max DLA search redshift
+        snrs                       float64  (N,)       SNR in search window
+        snrs_blue                  float64  (N,)       SNR blue side
+        model_posteriors           float64  (N, 1+num_subdla+K)  see layout above
+        p_dlas                     float64  (N,)       P(>=1 DLA | D, z_QSO)
+        p_no_dlas                  float64  (N,)       P(no DLA | D, z_QSO)
+        MAP_z_dlas                 float64  (N, K)     MAP DLA redshift
+        MAP_log_nhis               float64  (N, K)     MAP log10(N_HI)
+        z_dla_errs                 float64  (N, K)     1-sigma z_DLA error
+        log_nhi_errs               float64  (N, K)     1-sigma log NHI error
+        log_priors_no_dla          float64  (N,)       log P(no DLA | z_QSO)
+        log_priors_dla             float64  (N, K)     log P(DLA(k) | z_QSO)
+        log_likelihoods_no_dla     float64  (N,)       log P(D | Null)
+        log_likelihoods_dla        float64  (N, K)     log P(D | DLA(k))
+        log_posteriors_no_dla      float64  (N,)       log P(Null | D)
+        log_posteriors_dla         float64  (N, K)     log P(DLA(k) | D)
+        sample_log_likelihoods_dla float64  (N, S, K)  per-sample log-likelihoods
+        base_sample_inds           int32    (N, K-1, S) DLA(k>1) resample indices
+        detection_flags            int32    (N,)       DLAFLAG bitmask (fitwarning.py)
     """
 
     if single_absorber_model:
