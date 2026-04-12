@@ -1222,6 +1222,83 @@ def zbins_from_zmid_uniform(z_mid, pad=True):
     return zbins
 
 
+def logN_bins_from_mids(logN_mids):
+    """
+    Compute bin edges from uniformly-spaced bin midpoints.
+
+    Each edge is placed halfway between adjacent midpoints; the outer edges
+    are extended by half the bin width.
+
+    Parameters
+    ----------
+    logN_mids : array-like
+        Bin centers in log10(N_HI), assumed to be uniformly spaced.
+
+    Returns
+    -------
+    logN_edges : ndarray, shape (len(logN_mids)+1,)
+        Bin edges.
+    """
+    logN_mids = np.asarray(logN_mids, dtype=float)
+    logN_edges = np.zeros(len(logN_mids) + 1)
+    logN_edges[1:-1] = (logN_mids[:-1] + logN_mids[1:]) / 2
+    logN_edges[0] = logN_mids[0] - (logN_mids[1] - logN_mids[0]) / 2
+    logN_edges[-1] = logN_mids[-1] + (logN_mids[-1] - logN_mids[-2]) / 2
+    return logN_edges
+
+
+def dndx_to_ellz(z, dndx, omega_m=0.279):
+    """
+    Convert dN/dX to dN/dz = dN/dX × dX/dz.
+
+    The comoving path element:
+        dX/dz = (1+z)² / E(z),    E(z) = sqrt(Ω_m (1+z)³ + (1-Ω_m))
+
+    Parameters
+    ----------
+    z : array-like
+        Redshift bin centers.
+    dndx : array-like
+        dN/dX values.
+    omega_m : float
+        Matter density parameter (default 0.279, WMAP9).
+
+    Returns
+    -------
+    ellz : ndarray
+        dN/dz values.
+    """
+    z = np.asarray(z, dtype=float)
+    dndx = np.asarray(dndx, dtype=float)
+    Ez = np.sqrt(omega_m * (1.0 + z) ** 3 + (1.0 - omega_m))
+    return dndx * (1.0 + z) ** 2 / Ez
+
+
+def dndx_bounds_to_ellz(z, bounds, omega_m=0.279):
+    """
+    Convert absolute [low, high] bounds on dN/dX to bounds on dN/dz.
+
+    Parameters
+    ----------
+    z : array-like, shape (N,)
+        Redshift bin centers.
+    bounds : array-like, shape (N, 2)
+        Absolute [low, high] bounds on dN/dX.
+    omega_m : float
+        Matter density parameter (default 0.279, WMAP9).
+
+    Returns
+    -------
+    ell_bounds : ndarray, shape (N, 2)
+        Absolute [low, high] bounds on dN/dz.
+    """
+    z = np.asarray(z, dtype=float)
+    bounds = np.asarray(bounds, dtype=float)
+    Ez = np.sqrt(omega_m * (1.0 + z) ** 3 + (1.0 - omega_m))
+    f = (1.0 + z) ** 2 / Ez
+    return np.column_stack([bounds[:, 0] * f, bounds[:, 1] * f])
+
+
 # ----------------------------
 # 10) Example usage
 # ----------------------------
