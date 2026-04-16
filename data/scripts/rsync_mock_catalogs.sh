@@ -89,7 +89,9 @@ log_err()  { log "  ✗ ERROR: $*"; }
 CTRL_SOCKET="/tmp/nersc_rsync_${TIMESTAMP}_$$.sock"
 SSH_MUX_OPTS="-o ControlMaster=auto -o ControlPath=${CTRL_SOCKET} -o ControlPersist=10m"
 
-if [[ $DRY_RUN -eq 0 ]]; then
+if [[ $DRY_RUN -eq 1 ]]; then
+    log "DRY-RUN mode — printing commands only, no network connection made."
+else
     log "Opening SSH master connection to ${NERSC_HOST} ..."
     log "(You will be prompted for your password + MFA once.)"
     # -N : no remote command; -f : go to background after auth
@@ -106,13 +108,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ── rsync flags ───────────────────────────────────────────────────────────────
+# ── rsync flags (used only in live mode) ─────────────────────────────────────
 
 RSYNC_FLAGS=(-avP --checksum -e "ssh ${SSH_MUX_OPTS}")
-if [[ $DRY_RUN -eq 1 ]]; then
-    RSYNC_FLAGS+=(--dry-run)
-    log "DRY-RUN mode — no files will be transferred"
-fi
 
 # ── Transfer counters ────────────────────────────────────────────────────────
 
@@ -131,6 +129,12 @@ rsync_one() {
 
     mkdir -p "${local_dir}"
     local dst="${local_dir}/${fname}"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+        log "  [would rsync] ${NERSC_HOST}:${src}  →  ${dst}"
+        (( N_SKIP++ )) || true
+        return
+    fi
 
     log "  rsync ${NERSC_HOST}:${src}  →  ${dst}"
     if rsync "${RSYNC_FLAGS[@]}" "${NERSC_HOST}:${src}" "${dst}" >> "${LOG_FILE}" 2>&1; then
@@ -223,7 +227,11 @@ sync_mock \
 
 log ""
 log "═══════════════════════════════════════════════════"
-log "  Done.  OK=${N_OK}  skipped=${N_SKIP}  errors=${N_ERR}"
+if [[ $DRY_RUN -eq 1 ]]; then
+    log "  Done (dry run).  would_transfer=${N_SKIP}"
+else
+    log "  Done.  OK=${N_OK}  skipped=${N_SKIP}  errors=${N_ERR}"
+fi
 log "  Log: ${LOG_FILE}"
 log "═══════════════════════════════════════════════════"
 
