@@ -10,6 +10,9 @@
 #       dla_cat.fits         DLA truth catalog  (London mocks)
 #       hcd_truth_cat.fits   HCD truth catalog  (Saclay mocks)
 #
+# SSH multiplexing is used so you authenticate (password + MFA) only once
+# at the start; all rsync transfers reuse the same open connection.
+#
 # Usage:
 #   bash data/scripts/rsync_mock_catalogs.sh [OPTIONS]
 #
@@ -25,8 +28,8 @@
 #   sync_mock  SUITE  VERSION  MOCK  REMOTE_DIR  TRUTH_CAT
 #
 # Requirements:
-#   - SSH key for NERSC already configured (~/.ssh/config or ssh-agent)
-#   - rsync available locally
+#   - rsync and ssh available locally
+#   - NERSC credentials (password + MFA) — entered once at startup
 #
 # Example (dry run first, then real):
 #   bash data/scripts/rsync_mock_catalogs.sh --dry-run
@@ -37,8 +40,8 @@ set -euo pipefail
 # ── Defaults ────────────────────────────────────────────────────────────────
 
 NERSC_HOST="jibancat@dtn01.nersc.gov"
-# LOCAL_BASE is set relative to the repo root.  The script resolves it to an
-# absolute path so it works regardless of where you call it from.
+# LOCAL_BASE is resolved to an absolute path so the script works regardless
+# of where you call it from.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 LOCAL_BASE="${REPO_ROOT}/data/mocks"
@@ -55,11 +58,11 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --dry-run)   DRY_RUN=1; shift ;;
-        --no-bal)    SKIP_BAL=1; shift ;;
-        --host)      NERSC_HOST="$2"; shift 2 ;;
+        --dry-run)    DRY_RUN=1; shift ;;
+        --no-bal)     SKIP_BAL=1; shift ;;
+        --host)       NERSC_HOST="$2"; shift 2 ;;
         --local-base) LOCAL_BASE="$2"; shift 2 ;;
-        -h|--help)   usage ;;
+        -h|--help)    usage ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -72,12 +75,40 @@ LOG_FILE="${LOG_DIR}/rsync_${TIMESTAMP}.log"
 
 mkdir -p "${LOG_DIR}"
 
-log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "${LOG_FILE}"; }
+log()      { echo "[$(date +%H:%M:%S)] $*" | tee -a "${LOG_FILE}"; }
 log_ok()   { log "  ✓ $*"; }
 log_skip() { log "  - $*"; }
 log_err()  { log "  ✗ ERROR: $*"; }
 
-RSYNC_FLAGS=(-avP --checksum)
+# ── SSH multiplexing — authenticate once, reuse for all transfers ─────────────
+#
+# ControlMaster=auto  : first connection becomes the master
+# ControlPersist=10m  : master stays open 10 min after last use
+# ControlPath         : socket file shared by all rsync calls
+
+CTRL_SOCKET="/tmp/nersc_rsync_${TIMESTAMP}_$$.sock"
+SSH_MUX_OPTS="-o ControlMaster=auto -o ControlPath=${CTRL_SOCKET} -o ControlPersist=10m"
+
+if [[ $DRY_RUN -eq 0 ]]; then
+    log "Opening SSH master connection to ${NERSC_HOST} ..."
+    log "(You will be prompted for your password + MFA once.)"
+    # -N : no remote command; -f : go to background after auth
+    ssh ${SSH_MUX_OPTS} -N -f "${NERSC_HOST}"
+    log "SSH master connection established — all transfers will reuse it."
+fi
+
+# Close the master connection on exit (normal or error)
+cleanup() {
+    if [[ $DRY_RUN -eq 0 ]]; then
+        log "Closing SSH master connection..."
+        ssh -o "ControlPath=${CTRL_SOCKET}" -O exit "${NERSC_HOST}" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+# ── rsync flags ───────────────────────────────────────────────────────────────
+
+RSYNC_FLAGS=(-avP --checksum -e "ssh ${SSH_MUX_OPTS}")
 if [[ $DRY_RUN -eq 1 ]]; then
     RSYNC_FLAGS+=(--dry-run)
     log "DRY-RUN mode — no files will be transferred"
@@ -91,10 +122,7 @@ N_ERR=0
 
 # ── Core helper ──────────────────────────────────────────────────────────────
 #
-# rsync_one SRC_REMOTE LOCAL_DIR FILENAME
-#   SRC_REMOTE  : full remote path including filename
-#   LOCAL_DIR   : local destination directory (created if absent)
-#   FILENAME    : display name for log messages
+# rsync_one REMOTE_PATH LOCAL_DIR FILENAME
 #
 rsync_one() {
     local src="$1"
@@ -117,11 +145,6 @@ rsync_one() {
 # ── Per-mock orchestrator ─────────────────────────────────────────────────────
 #
 # sync_mock SUITE VERSION MOCK REMOTE_DIR TRUTH_CAT
-#   SUITE      : "london" | "saclay" | any future suite name
-#   VERSION    : e.g. "v5.9.5"
-#   MOCK       : e.g. "mock-0"
-#   REMOTE_DIR : full remote directory path (no trailing slash)
-#   TRUTH_CAT  : truth catalog filename, e.g. "dla_cat.fits" or "hcd_truth_cat.fits"
 #
 sync_mock() {
     local suite="$1"
@@ -137,21 +160,17 @@ sync_mock() {
     log "   remote : ${remote_dir}"
     log "   local  : ${local_dir}"
 
-    # QSO redshift catalog — always present
-    rsync_one "${remote_dir}/zcat.fits"     "${local_dir}" "zcat.fits"
+    rsync_one "${remote_dir}/zcat.fits"      "${local_dir}" "zcat.fits"
 
-    # BAL catalog — may not exist for all mocks
     if [[ $SKIP_BAL -eq 0 ]]; then
-        rsync_one "${remote_dir}/bal_cat.fits"  "${local_dir}" "bal_cat.fits"
+        rsync_one "${remote_dir}/bal_cat.fits"   "${local_dir}" "bal_cat.fits"
     else
         log_skip "bal_cat.fits (--no-bal)"
         (( N_SKIP++ )) || true
     fi
 
-    # DLA / HCD truth catalog (name differs by suite)
-    rsync_one "${remote_dir}/${truth_cat}"  "${local_dir}" "${truth_cat}"
+    rsync_one "${remote_dir}/${truth_cat}"   "${local_dir}" "${truth_cat}"
 
-    # Write a sidecar provenance file so you always know where a mock came from
     if [[ $DRY_RUN -eq 0 ]]; then
         cat > "${local_dir}/SOURCE.txt" <<PROV
 suite        : ${suite}
@@ -168,7 +187,7 @@ PROV
 # ── Mock inventory ────────────────────────────────────────────────────────────
 #
 # Add one sync_mock line per mock.  Columns:
-#   SUITE    VERSION   MOCK     REMOTE_DIR                                                                                              TRUTH_CAT
+#   SUITE    VERSION   MOCK     REMOTE_DIR                                   TRUTH_CAT
 #
 # London mocks — v5.9.5 — DLA truth file is "dla_cat.fits"
 sync_mock \
@@ -192,7 +211,7 @@ sync_mock \
     /global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-1/juraLy8-124 \
     hcd_truth_cat.fits
 
-# ── To add a new mock, copy one of the blocks above and adjust the four fields.
+# ── To add a new mock, copy one block above and adjust the fields.
 # Example (London v6):
 #
 # sync_mock \
@@ -208,4 +227,4 @@ log "  Done.  OK=${N_OK}  skipped=${N_SKIP}  errors=${N_ERR}"
 log "  Log: ${LOG_FILE}"
 log "═══════════════════════════════════════════════════"
 
-[[ $N_ERR -eq 0 ]]   # exit non-zero if any transfer failed
+[[ $N_ERR -eq 0 ]]
