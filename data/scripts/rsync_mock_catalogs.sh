@@ -212,7 +212,7 @@ sync_mock \
 
 sync_mock \
     saclay  v4.7.5  mock-1 \
-    /global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-1/juraLy8-124 \
+    /global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-1/jura-124 \
     hcd_truth_cat.fits
 
 # ── To add a new mock, copy one block above and adjust the fields.
