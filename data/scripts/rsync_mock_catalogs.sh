@@ -15,7 +15,7 @@
 #
 # Options:
 #   --dry-run            Print rsync commands without executing them
-#   --host HOST          NERSC SSH host (default: dtn01.nersc.gov)
+#   --host HOST          NERSC SSH host (default: jibancat@dtn01.nersc.gov)
 #   --local-base DIR     Local root for all mocks (default: data/mocks)
 #   --no-bal             Skip bal_cat.fits (useful if the file doesn't exist yet)
 #   -h, --help           Show this help message
@@ -36,7 +36,7 @@ set -euo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 
-NERSC_HOST="dtn01.nersc.gov"
+NERSC_HOST="jibancat@dtn01.nersc.gov"
 # LOCAL_BASE is set relative to the repo root.  The script resolves it to an
 # absolute path so it works regardless of where you call it from.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
