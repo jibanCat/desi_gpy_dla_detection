@@ -314,7 +314,6 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         where num_subdla=1 for DLA runs and 0 for single-absorber runs,
         and n is the 0-based DLA index (0 for first DLA, 1 for second, ...).
     """
-    """
 
     specobj = desispec.io.read_spectra(
         coaddpath,
