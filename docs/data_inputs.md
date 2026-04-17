@@ -46,8 +46,8 @@ their formats, required keys, and how to obtain them.
 
 ## 2. DLA QMC sample file
 
-**Default filename:** `data/dr12q/processed/dla_samples_a03.mat`
-**Production (100k samples):** `dla_samples_a03_100000.mat`
+**Default filename:** `data/dr12q/processed/dla_samples_a03.mat` (legacy 10k, Ho+2020 generator)
+**Production (100k PW14 samples):** `dla_samples_pw14_100000.mat`
 
 **Format:** MATLAB v7.3 HDF5 (`.mat`).
 
@@ -72,7 +72,7 @@ their formats, required keys, and how to obtain them.
 **NHI range by run mode:**
 | Run mode | logNHI range | Sample file |
 |----------|-------------|-------------|
-| DLA | [20.3, 23] | `dla_samples_a03.mat` / `dla_samples_a03_100000.mat` |
+| DLA | [20.3, 23] | `dla_samples_a03.mat` (legacy 10k) / `dla_samples_pw14_100000.mat` (PW14 100k) |
 | Sub-DLA | [19, 20.3] | `subdla_samples_a03_191_200_100000.mat` |
 | LLS | [17.2, 19] | Generated with `generate_samples.py --mode lls` |
 
