@@ -1,7 +1,29 @@
 """
-dla_gp.py
+dla_meanflux_gp.py — DLA GP model with mean-flux marginalization.
 
-A GP class for having multiple DLAs intervening in a given slightline. 
+.. warning:: EXPERIMENTAL
+    This module has **not** been tested in any production run or validated
+    against real DESI data.  Do not use it in the main inference pipeline
+    without first running the full test suite and comparing outputs against
+    the standard DLAGP.
+
+Overview
+--------
+Extends NullMFGP (null_meanflux_gp.py) to add DLA absorption (Voigt profile),
+combining mean-flux marginalization with multi-DLA model evidence computation.
+This is the "mean-flux" variant of DLAGP (dla_gp.py).
+
+Status
+------
+- Implemented but untested in production.
+- The module file was initially named dla_gp.py (note the module docstring
+  title is incorrect — this is dla_meanflux_gp.py, not dla_gp.py).
+- Before using, verify numerical parity with DLAGP on a set of test spectra.
+
+Key class
+---------
+DLAMFGP    : DLA model with mean-flux marginalization (inherits NullMFGP)
+DLAMFGPMAT : loads model from a MATLAB ``.mat`` file
 """
 
 from typing import Tuple, Optional, Callable, List
@@ -28,6 +50,14 @@ try:
     voigt_absorption = VoigtProfile().compute_voigt_profile
 # OSError, ImportError:
 except (OSError, ImportError):
+    import warnings
+    warnings.warn(
+        "Could not load the compiled C Voigt extension (_voigt.so). "
+        "Falling back to the pure-Python voigt_absorption, which is ~100x slower. "
+        "To fix, rebuild the C extension: see gpy_dla_detection/voigt_fast.py.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     from .voigt import voigt_absorption
 
 # this could be replaced to DLASamples in the future;

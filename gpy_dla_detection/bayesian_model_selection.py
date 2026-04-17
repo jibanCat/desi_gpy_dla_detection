@@ -1,7 +1,44 @@
 """
-bayesian_model_selection.py
+bayesian_model_selection.py — Bayesian model selection for DLA detection.
 
-Bayesian model selection for DLA detection.
+This module implements the model comparison step of the GP-DLA pipeline.
+Given a set of model evidence values (log p(D | M_k)) and model priors
+(p(M_k)), it computes the normalized posterior probability for each model:
+
+    p(M_k | D) = p(M_k) × p(D | M_k) / Σ_i p(M_i) × p(D | M_i)
+
+Models compared
+---------------
+For the default DLA run (all_max_dlas=[0, 1, 4], dla_model_ind=2):
+    - M_0 : Null model (no DLA)
+    - M_1 : SubDLA model (1 absorber, log NHI < 20.3)
+    - M_2 : DLA(1) — one DLA (log NHI ≥ 20.3)
+    - M_3 : DLA(2) — two DLAs
+    - M_4 : DLA(3) — three DLAs
+
+For single-absorber runs (all_max_dlas=[0, 1], dla_model_ind=1):
+    - M_0 : Null model
+    - M_1 : One absorber (sub-DLA or LLS depending on NHI range)
+
+Multi-DLA stopping criterion
+----------------------------
+After computing the null and sub-DLA evidence, the pipeline updates a
+``null_evidence`` value that represents the total evidence for "not having
+a traditional DLA" (null + subDLA combined):
+
+    null_evidence = log( p(D | null) × p(null) / p(DLA) )
+                  + accumulated subDLA contribution
+
+This is then passed to ``DLAGP.parallel_log_model_evidences()`` as the
+baseline to compare against. If adding another DLA to the model does not
+improve the evidence above this threshold, the parallel computation is
+short-circuited (see ``filter_low_likelihood``). This prevents evaluating
+DLA(2) and DLA(3) models when the data strongly prefer the null or sub-DLA.
+
+The comparison is:
+    log p(D | k DLAs) < null_evidence  →  skip higher-k models
+
+Reference: Ho, Bird & Garnett (2020), arXiv:2003.11036, Section 3.3.
 """
 
 from typing import List, Union
@@ -95,9 +132,13 @@ class BayesModelSelect:
                 log_likelihood_no_dla = model_list[i].log_model_evidence()
                 log_likelihoods.append([log_likelihood_no_dla])
 
-                # stopping criteria for DLA model
-                # make it ratio of priors: dla evidence * prior < no DLA evidence * prior
-                # ==> null_evidence = log_likelihood_no_dla + log_priors[0] / log_priors[2]
+                # Stopping criterion initialization:
+                # We want to skip DLA(k) models when the data already prefer null.
+                # The criterion is: p(D|null)*p(null) vs p(D|DLA(k))*p(DLA(k))
+                # In log space, the null's effective evidence against DLA is:
+                #   null_evidence = log[p(D|null)] + log[p(null)] - log[p(DLA)]
+                # where log[p(DLA)] = log_prior_dla = logsumexp of all DLA priors.
+                # This is updated after sub-DLA to incorporate sub-DLA evidence too.
                 null_evidence = log_likelihood_no_dla + log_priors[0] - log_prior_dla
 
                 # Log likelihood check
@@ -124,7 +165,11 @@ class BayesModelSelect:
                     )
                     log_likelihoods.append(log_likelihoods_dla)
 
-                    # adding subDLA to null evidence for stopping criteria
+                    # Update the stopping criterion to include sub-DLA evidence.
+                    # A strong sub-DLA detection should also suppress DLA(k>0) models,
+                    # so we add the sub-DLA posterior-weighted evidence to null_evidence
+                    # via logsumexp (log of a sum of exponentials):
+                    #   new null_evidence = log[ exp(null) + exp(subDLA × prior weight) ]
                     log_likelihoods_subdla = log_likelihoods_dla[0]
                     log_likelihoods_subdla = log_likelihoods_subdla + log_priors[1] - log_prior_dla
                     null_evidence = logsumexp([null_evidence, log_likelihoods_subdla])

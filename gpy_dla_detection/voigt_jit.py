@@ -1,3 +1,8 @@
+# EXPERIMENTAL — This module is a Numba JIT-compiled Voigt profile implementation.
+# It was found to be *slower* than the C extension in voigt_fast.py in practice
+# (JIT compilation overhead dominates for typical spectrum sizes).
+# It is NOT used in the production inference pipeline.
+# Do NOT import this module for production use; use voigt_fast.VoigtProfile instead.
 from numba import njit
 import numpy as np
 from scipy.special import wofz

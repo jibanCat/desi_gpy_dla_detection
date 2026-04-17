@@ -1,7 +1,46 @@
 """
-dla_gp.py
+dla_gp.py — Gaussian Process model for quasar spectra with DLA absorption.
 
-A GP class for having multiple DLAs intervening in a given slightline. 
+Overview
+--------
+Extends NullGP (QSO-emission-only GP) by adding one or more Damped Lyman-Alpha
+(DLA) absorbers along the line of sight.  Each DLA multiplies the QSO mean
+model and absorption-noise model by a Voigt absorption profile.
+
+The primary class is ``DLAGP``.  For loading from a MATLAB ``.mat`` file use
+``DLAGPMAT``.
+
+Science
+-------
+Model evidence for k DLAs is approximated via Quasi-Monte Carlo (QMC)
+integration over (z_DLA, log NHI) drawn from flat priors in the search window.
+The Woodbury matrix identity reduces the GP log-likelihood from O(n³) to
+O(n k²), where n is the number of observed pixels and k is the GP rank.
+
+For the default DLA run (Ho et al. 2020, arxiv 2003.11036):
+  - log NHI ∈ [20.3, 23]  (uniform prior)
+  - z_DLA search window defined by set_parameters.Parameters
+  - Sample file: dla_samples_a03.mat  (same as Ho+2020)
+  - Multi-DLA: up to ``max_dlas`` (default 3) via recursive importance resampling
+
+Key functions
+-------------
+select_region_indices_searchsorted : adaptive window selection for QMC samples
+DLAGP.set_data : preprocess a single spectrum and attach to the model
+DLAGP.sample_log_likelihood_k_dlas : QMC evidence for k DLAs
+DLAGP.maximum_a_posteriori : MAP (z_DLA, log NHI) estimates
+
+Dependencies
+------------
+voigt_fast.VoigtProfile (C extension) — falls back to voigt.voigt_absorption
+    with a RuntimeWarning if the C extension is not built.
+null_gp.NullGP — base class providing the Woodbury log-likelihood
+bayesian_model_selection.BayesModelSelect — callers use this for model comparison
+
+References
+----------
+Ho, Bird & Garnett (2020) https://arxiv.org/abs/2003.11036
+Garnett et al. (2017) https://arxiv.org/abs/1605.04538
 """
 import time
 
@@ -31,6 +70,14 @@ try:
     voigt_absorption = VoigtProfile().compute_voigt_profile
 # OSError, ImportError:
 except (OSError, ImportError):
+    import warnings
+    warnings.warn(
+        "Could not load the compiled C Voigt extension (_voigt.so). "
+        "Falling back to the pure-Python voigt_absorption, which is ~100x slower. "
+        "To fix, rebuild the C extension: see gpy_dla_detection/voigt_fast.py.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     from .voigt import voigt_absorption
 
 # this could be replaced to DLASamples in the future;

@@ -1,6 +1,53 @@
 """
-A class to handle the QMC samples of the DLA parameters:
-theta = (z_dla, logNHI) = (redshift of DLA, column density of DLA)
+dla_samples.py — QMC sample management for DLA parameter integration.
+
+Overview
+--------
+Provides classes to load and manage the Quasi-Monte Carlo (QMC) sample grid
+used to numerically integrate the DLA model evidence:
+
+    p(D | k-DLA model) ≈ (1/N) Σᵢ p(D | z_DLA_i, log_NHI_i)
+
+where (z_DLA_i, log_NHI_i) are drawn from the DLA prior.
+
+Sample file format
+------------------
+The primary sample file is ``dla_samples_a03.mat`` (MATLAB v7.3 HDF5 format).
+This file is the **same** as the one used in Ho, Bird & Garnett (2020) and
+is also used for DESI Y3 DLA runs (log NHI ∈ [20.3, 23]).
+
+Expected HDF5 keys in the ``.mat`` file:
+
+    offset_samples       float64 (N,)  — uniform [0,1] offsets for z_DLA
+                                         (Halton / low-discrepancy sequence)
+    log_nhi_samples      float64 (N,)  — log₁₀(N_HI) samples (cm⁻²)
+    nhi_samples          float64 (N,)  — 10^log_nhi_samples
+    alpha                float64 (1,)  — mixture weight for data-driven logNHI prior
+    fit_min_log_nhi      float64 (1,)  — lower bound of the power-law prior region
+    uniform_min_log_nhi  float64 (1,)  — lower bound of uniform logNHI prior
+    uniform_max_log_nhi  float64 (1,)  — upper bound of uniform logNHI prior
+
+z_DLA samples are computed at runtime:
+    z_DLA_i = z_min + (z_max - z_min) * offset_samples_i
+
+For sub-DLA and LLS runs, a different sample file is needed.
+See subdla_samples.py and notebooks/GenerateSamples_PW14.ipynb.
+
+Sample provenance
+-----------------
+- DLA run (log NHI ∈ [20.3, 23]):
+    ``dla_samples_a03.mat`` — generated from Roman Garnett's
+    ``generate_dla_samples.m``, used unchanged from Ho+2020
+    (https://arxiv.org/abs/2003.11036)
+- Sub-DLA run (log NHI ∈ [19, 20.3]) and LLS run (log NHI ∈ [17.2, 19]):
+    Generated from Prochaska et al. (2014) priors.
+    Source notebook: notebooks/GenerateSamples_PW14.ipynb
+    Target module:   gpy_dla_detection/generate_samples.py (planned)
+
+Key classes
+-----------
+DLASamples    : abstract base class
+DLASamplesMAT : loads samples from ``dla_samples_a03.mat``
 """
 
 import numpy as np

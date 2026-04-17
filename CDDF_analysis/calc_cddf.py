@@ -1,27 +1,101 @@
 # -*- coding: utf-8 -*-
 """
-Module to compute the CDDF (and dN/dX, Omega_DLA) for DLAs from the catalogue Roman Garnett gave me.
+CDDF_analysis/calc_cddf.py — Bayesian DLA statistical products from GP-DLA inference outputs.
 
-Important Functions:
+Overview
+--------
+Computes three downstream statistical products from GP-DLA model posteriors:
 
-log_p_nhi(lnhi_min, lnhi_max, filehandle, sampfilehandle):
-- Computes the likelihood that each spectrum has log(NHI) within the bin given by lnhi_bin, given the DLA model and the data,
-    ie: P(NHI && M_DLA | D)
-path_length(min_z, max_z, filehandle):
-- Computes the integrated comoving path length, dX. This has a marginal dependence on Omega_m,
-but the error on Omega_m now is small enough that it won't matter.
+  1. **CDDF** — Column Density Distribution Function:
+       f(N_HI) = d²n_DLA / (dN_HI dX)
+     where n_DLA is the expected number of absorbers per sightline with column density N_HI
+     and X is the absorption distance (dimensionless comoving path length).
+     Units: cm² (since N_HI has units cm⁻²).
 
-We also want dN/dX, which is the total expected number of DLAs in the catalogue, thus:
+  2. **dN/dX** — Line density (number of DLAs per unit absorption distance):
+       dN/dX = sum_spectra P(DLA | z_DLA in [z, z+dz], D) / dX(z, z+dz)
+     Also called the incidence rate.
 
-SUM( Pr(M_DLA | z_QSO, D) ) / dX
+  3. **Omega_DLA** — Neutral hydrogen mass density in DLAs:
+       Omega_DLA = (m_p H_0 / c rho_c) * sum_NHI N_HI * f(N_HI) dN_HI / dX
+     Computed both by summing the CDDF (omega_dla_cddf) and by direct histogram (omega_dla).
 
-and Omega_DLA which is the total expected NHI of DLAs, so should be:
+Input files
+-----------
+  processed_file : HDF5 output of the GP-DLA inference pipeline (process_helpers.py).
+      Contains per-spectrum: model_posteriors, sample_log_likelihoods_dla,
+      log_likelihoods_dla, min_z_dlas, max_z_dlas, z_qsos, snrs, target_ids.
 
-SUM( P(NHI && M_DLA | D) ) / dX
+  sample_file : QMC sample grid (.mat, MATLAB v7.3 HDF5).
+      Contains: offset_samples, log_nhi_samples, nhi_samples.
+      For DLA runs: dla_samples_a03.mat (Ho+2020 grid, log NHI ∈ [20.3, 23]).
+      For sub-DLA/LLS runs: generated via gpy_dla_detection/generate_samples.py.
 
-NaN in any of log_priors_dla, log_likelihoods_no_dla and log_likelihoods_dla means the spectrum was cut for some reason.
-(NOT that there is zero probability of a DLA)
-This is about half the sample of spectra.
+  catalog_file : FITS QSO catalog.
+      Used to align target IDs between the processed file and the reference catalog.
+
+model_posteriors index layout
+------------------------------
+The `model_posteriors` array in the processed file has shape (num_qsos, num_models):
+
+  DLA run (sub_dla=True, default):
+      index 0   → Null model       (no absorber)
+      index 1   → Sub-DLA model    (log NHI ∈ [19, 20.3])
+      index 2   → DLA(1) model     (1 DLA, log NHI > 20.3)
+      index 3   → DLA(2) model     (2 DLAs)
+      index 4   → DLA(3) model     (3 DLAs)
+
+  Sub-DLA / LLS run (sub_dla=False, single_absorber_model=True):
+      index 0   → Null model       (no absorber)
+      index 1   → DLA(1) model     (1 absorber)
+
+The ``sub_dla`` parameter in DLACatalogue accounts for this shift:
+    p_DLA   := model_posteriors[:, 1 + sub_dla:]  (sum of all DLA models)
+    p_no_DLA := model_posteriors[:, :1 + sub_dla]  (null + sub-DLA if present)
+
+Path length formula
+-------------------
+The absorption distance X is the comoving path length per unit redshift:
+
+    dX = (1 + z)^2 * H_0 / H(z) * dz
+
+where H(z) = H_0 * sqrt(Omega_m (1+z)^3 + Omega_Lambda).
+This is integrated numerically for each spectrum's [z_min, z_max] range
+(see ``path_length_int`` and ``path_length``).
+
+Bayesian confidence intervals
+------------------------------
+Each DLA detection contributes a probability p_i to each statistics bin.
+The aggregate count in a bin is a sum of Bernoulli variables → Poisson-binomial
+distribution. Two approximations are used:
+
+  - For p_i < p_switch (default 0.25): Poisson approximation (Le Cam 1960).
+    Error bounded by sum(p_i²) / sum(p_i).
+  - For p_i >= p_switch: exact Poisson-binomial PDF via FFT (Fernandez & Williams 2010).
+
+68% and 95% credible intervals are extracted from the combined PDF.
+
+Key classes
+-----------
+DLACatalogue   : main analysis class; holds file handles, filters, and stat methods.
+
+Key functions (module-level)
+-----------------------------
+path_length_int(z)       : integrand dX/dz for scipy.integrate.quad
+HubbleByH0(z)            : H(z)/H_0 (WMAP9 cosmology)
+rho_crit(hubble)         : critical density at z=0 in g cm⁻³
+get_poisson_binomial_pdf : exact Poisson-binomial PDF via FFT
+pdf_confidence           : MAP + 68/95% credible intervals from a PDF array
+interval                 : confidence interval extraction from a CDF array
+
+References
+----------
+Ho, Bird & Garnett (2020) https://arxiv.org/abs/2003.11036
+Prochaska et al. (2014)   https://arxiv.org/abs/1402.0548
+Noterdaeme et al. (2012)  — dN/dX comparison bins
+Le Cam (1960)             — Poisson approximation theorem
+Fernandez & Williams (2010) — Poisson-binomial FFT algorithm
+WMAP9 cosmological parameters (Omega_m=0.279, h=0.7 default)
 """
 from typing import Optional, Union
 
@@ -53,36 +127,124 @@ matplotlib.use("pdf")
 
 
 class DLACatalogue(object):
-    """Class to contain the DLA catalogue and hold the files containing the data.
+    """GP-DLA statistical catalogue: computes CDDF, dN/dX, and Omega_DLA.
 
-    * :attr:`second_dla` (boolean or int): considers the number of DLAs we want to take into account
-    * :attr:`sub_dla` (boolean): considers sub_dla as an alternative model or not
-    * :attr:`lowzcut` (boolean): remove spectra closer to the DLA than this
+    This class loads the GP-DLA inference outputs (processed HDF5 file) and
+    QMC sample grids, applies quality filters, and provides methods for
+    computing three key DLA statistics: the column density distribution
+    function (CDDF), the incidence rate (dN/dX), and the matter density
+    (Omega_DLA).
 
-    Args:
-        `processed_file` (str): the processed file generated by `process_qsos.m`
-        `sample_file` (str): the samples for `log_nhi_samples` and `sample_z_dlas` generated by `generate_dla_samples.m`
-        `snrs_files` (str): the snrs file generated by `CDDF_analysis.calc_cddf.compute_all_snrs`
+    Run modes and ``sub_dla`` flag
+    -------------------------------
+    The ``sub_dla`` parameter controls how ``model_posteriors`` columns are
+    interpreted.  The processed file stores model posteriors with this layout:
 
-    Attributes:
-        `p_thresh_spec` (float): spectra with a p_dla below this value are assume to have p_dla = 0
-        `p_thresh_sample` (float): samples with p(D|M,θ) below this value are excluded
-        `p_switch` (float): samples with p(D|M,θ) below this value are switched to the Poisson approximation
-        `proximity_zone` (float): remove range which is too close to the quasar
-        `filehandle` (h5py.File): a File object to handle the IO of `processed_file`
-        `_z_min` (np.ndarray): minimum values for `sample_z_dlas`
-        `_z_max` (np.ndarray): maximum values for `sample_z_dlas`
-        `real_index` (np.ndarray): the indices we selected from `preloaded_qsos.mat` based on our `test_ind`
-        `z_offset` (np.ndarray): the Halton sequence used to generated samples of DLA redshifts `sample_z_dlas`
-        `lnhi_vals` (np.ndarray): the samples of log_nhi of DLAs `log_nhi_samples`
-        `p_dla` (np.ndarray): the model posteriors for at least one DLA, p(Mdla(>=1)|D,zqso),
-            computed by `p_dla := 1 - p_no_dla` or `p_dla := 1 - p_no_dla - p_sub_dla`
-        `log_norm_like_cache` (dict{np.ndarray}): cache normed `sample_log_likelihoods_dla`,
-            p(D|M,zqso,θ) / p(M|zqso,D) / num_dla_samples
-        `max_z_dla_fix` (optional float): if float, then re-calculate the max_z_dla. This is
-            due to previous version of the MATLAB code used max(lambda)/lya_wavelength as
-            zQSO. This would be wrong if we load SDSS spectra more than 1216A. So with this
-            flag we cut all zDLA larger than zQSO.
+      DLA run (sub_dla=True, default) — shape (num_qsos, 2 + max_dlas):
+          col 0  → Null model (no absorber)
+          col 1  → Sub-DLA model (log NHI ∈ [19, 20.3])
+          col 2  → DLA(1): exactly 1 DLA
+          col 3  → DLA(2): exactly 2 DLAs
+          col 4  → DLA(3): exactly 3 DLAs
+
+      Sub-DLA / LLS run (sub_dla=False) — shape (num_qsos, 1 + max_dlas):
+          col 0  → Null model (no absorber)
+          col 1  → DLA(1): 1 absorber
+
+    With sub_dla=True (default):
+        p_DLA    = model_posteriors[:, 2:]   # DLA columns only
+        p_no_DLA = model_posteriors[:, :2]   # Null + Sub-DLA
+
+    With sub_dla=False:
+        p_DLA    = model_posteriors[:, 1:]
+        p_no_DLA = model_posteriors[:, :1]
+
+    Quality filters
+    ---------------
+    Spectra are filtered by:
+      - SNR > snr_thresh  (set via ``set_snr(snr_thresh)``; default -2 = no cut)
+      - z_DLA search range > z_dla_minimum (avoids degenerate short windows)
+      - proximity zone: exclude absorption within ``proximity_zone`` dz of QSO
+      - tail zone: exclude absorption within ``tail_zone`` dz of spectrum start
+      - Optionally: Lyman-beta forest region, minimum observed wavelength cut,
+        high N_HI cut (log NHI > 22, for modeling quality)
+
+    Parameters
+    ----------
+    processed_file : str
+        HDF5 output from the GP-DLA inference pipeline.  Must contain:
+        ``model_posteriors``, ``sample_log_likelihoods_dla``,
+        ``log_likelihoods_dla``, ``min_z_dlas``, ``max_z_dlas``,
+        ``z_qsos``, ``snrs``, ``target_ids``.
+    sample_file : str
+        QMC sample grid (.mat HDF5).  Must contain:
+        ``offset_samples`` (shape N×1) and ``log_nhi_samples`` (shape N×1).
+        Use ``dla_samples_a03.mat`` for DLA runs (Ho+2020); use
+        ``gpy_dla_detection.generate_samples`` output for sub-DLA/LLS runs.
+    catalog_file : str
+        FITS QSO catalog with ``TARGETID`` column.  Used to align
+        target IDs between the processed file and the reference catalog.
+    snr : int, optional
+        Minimum SNR threshold.  Default -2 means no SNR cut.
+        Call ``set_snr(snr_thresh)`` to change after construction.
+    lowzcut : bool, optional
+        If True (default), exclude DLA candidates within ``proximity_zone``
+        dz of the QSO redshift (removes proximity-zone contamination).
+    highzcut : bool, optional
+        If True (default), exclude DLA candidates within ``tail_zone``
+        dz of the minimum search redshift (removes tail artifacts).
+    second : int or bool, optional
+        Maximum k for multi-DLA models to include in statistics.
+        False or 0: only DLA(1); 1: DLA(1) + DLA(2); 2: up to DLA(3).
+        Loads additional sample caches for each DLA(k) model.
+    sub_dla : bool, optional
+        If True (default), the processed file includes a Sub-DLA column in
+        ``model_posteriors`` (col 1).  Set to False for single-absorber
+        (sub-DLA/LLS) runs where the layout shifts.
+    occams_razor : int, optional
+        Additional Occam's razor penalty applied to DLA/Sub-DLA model
+        posteriors.  Default 1 means no additional penalty.  Higher values
+        penalize multi-DLA models more aggressively.
+    z_dla_minimum : float, optional
+        Minimum required width (in z) of the DLA search window.  Spectra
+        with a shorter window are excluded.  Default 0.1.
+    z_max_lyb : bool, optional
+        If True, restrict the DLA search to the Ly-limit to Ly-beta range
+        (excludes absorption redward of the Ly-beta wavelength).
+    z_min_lyb : bool, optional
+        If True, restrict to the Ly-beta to Ly-alpha range.
+    min_obs_wavelength_cut : bool, optional
+        If True, exclude DLA candidates below ``min_obs_wavelength`` in
+        observed wavelength.  Useful for removing blue-end artifacts.
+    min_obs_wavelength : float, optional
+        Minimum observed wavelength in Angstroms (default 4000 Å).
+    high_nhi_cut : bool, optional
+        If True (default), exclude QMC samples with log NHI > ``high_nhi_cut_value``.
+        Reduces contamination from pathological large-NHI detections where
+        the eBOSS-trained GP model may be unreliable.
+    high_nhi_cut_value : float, optional
+        Upper log NHI cut applied when ``high_nhi_cut=True`` (default 22.0).
+    bins_per_z : int, optional
+        Number of redshift bins per unit z for dN/dX and Omega_DLA plots
+        (default 6).
+
+    Attributes
+    ----------
+    p_dla : np.ndarray, shape (num_qsos,)
+        Probability of at least one DLA in each spectrum,
+        p(M_DLA(>=1) | D, z_QSO).
+    p_no_dla : np.ndarray, shape (num_qsos,)
+        Probability of no DLA (Null + Sub-DLA if sub_dla=True).
+    model_posteriors : np.ndarray, shape (num_qsos, num_models)
+        Re-normalized model posteriors after Occam's razor penalty.
+        Column layout described in the class docstring above.
+    log_norm_like_cache : dict
+        Per-spectrum cache of normalized sample log-likelihoods for DLA(1):
+        p(D | M, z_QSO, θ) / p(M | z_QSO, D) / num_dla_samples.
+    z_offsets : np.ndarray, shape (num_dla_samples,)
+        Halton sequence offsets in [0, 1] for DLA redshift sampling.
+    lnhi_vals : np.ndarray, shape (num_dla_samples,)
+        log10(N_HI) values for each QMC sample.
     """
 
     def __init__(
@@ -120,9 +282,24 @@ class DLACatalogue(object):
             second  # False or 0: DLA(1); True or 1: DLA(2); 2: DLA(3); ...; k-1: DLA(k)
         )
 
-        # Does model_posteriors include sub_dla as an alternative model?
-        # p(Mdla(k) | zqso, D)   := model_posteriors( k + sub_dla )
-        # Since model_posteriors := (Mnodla, Msubdla, Mdla(1), Mdla(2), ..., Mdla(k))
+        # Does model_posteriors include a Sub-DLA column?
+        # -------------------------------------------------------
+        # DLA run (sub_dla=True):
+        #   model_posteriors columns: [Null, SubDLA, DLA(1), DLA(2), ...]
+        #                              [  0,      1,      2,      3, ...]
+        #   p_DLA    = model_posteriors[:, 2:]   (DLA columns start at index 2)
+        #   p_no_DLA = model_posteriors[:, :2]   (Null + SubDLA)
+        #
+        # Sub-DLA / LLS run (sub_dla=False):
+        #   model_posteriors columns: [Null, DLA(1)]
+        #                              [  0,      1]
+        #   p_DLA    = model_posteriors[:, 1:]
+        #   p_no_DLA = model_posteriors[:, :1]
+        #
+        # The general rule used throughout this class is:
+        #   DLA column k starts at index: k + sub_dla
+        #   p_DLA  := model_posteriors[:, 1 + sub_dla:]
+        #   p_sub_dla (if present) := model_posteriors[:, 1]
         self.sub_dla = sub_dla
 
         # the Occam's implementation for different DLA models is in self._log_norm_like
@@ -234,17 +411,30 @@ class DLACatalogue(object):
 
     # [Occam's razor] an additional occam's razor to penalise the DLA/subDLA detections
     def renormalise_occams_razor(self, occams_razor=10000):
-        """
-        re-calculate : p_dla, p_dla_k, model_posteriors
+        """Re-normalize model posteriors with an additional Occam's razor penalty.
 
-        Note that we assume we only need to modify model_posteriors here.
-        the occams_razor in sample_log_likelihoods_dla will cancel out with the
-        occams_razor in log_likelihoods_dla, and return a log_norm_like.
-        We don't need to worry about occams_razor in log_norm_like because
-            log_norm_like := sample_log_likelihoods_dla - occams_razor -
-                ( log_likelihoods_dla + log(num_dla_samples) - occams_razor )
-                =  sample_log_likelihoods_dla -
-                ( log_likelihoods_dla + log(num_dla_samples) )
+        Applies a penalty factor to DLA/Sub-DLA model posteriors to suppress
+        detections and test robustness against DLA over-counting:
+
+            P'(M_DLA | D) ∝ P(M_DLA | D) / occams_razor
+            P'(M_null | D) ∝ P(M_null | D)  [unchanged]
+
+        The posteriors are then re-normalized so they sum to 1.
+
+        Note: The Occam's penalty in ``sample_log_likelihoods_dla`` cancels
+        with the same factor in ``log_likelihoods_dla`` when computing
+        ``log_norm_like``, so normalizing the sample likelihoods here is not
+        necessary — only ``model_posteriors`` and the derived ``p_dla`` need
+        updating.
+
+        Default occams_razor=1 means no additional penalty (identity transform).
+        The original pipeline uses occams_razor=10000 for aggressive suppression.
+
+        Parameters
+        ----------
+        occams_razor : int or float
+            Penalty factor applied to all non-Null model posteriors (default 10000).
+            1 means no penalty.  Higher values make DLA detection harder.
         """
         # TODO: it's assumed to be re-calculated for the filtered samples
         self.model_posteriors = self.filehandle["model_posteriors"][()]
@@ -728,14 +918,40 @@ class DLACatalogue(object):
             return self._z_min[spec]
 
     def path_length(self, z_min, z_max):
-        """Compute the path length, dX, over which we looked for DLAs.
-        Exclude any paths beyond min_z or max_z and any pixels with pixel_noise > thresh^2
-        To compute dX use dz from
+        """Compute the total comoving absorption path length dX searched for DLAs.
 
-        max_z_dlas - min_z_dlas
+        The absorption distance X is the dimensionless comoving path length
+        used to normalize DLA counts:
 
-        and
-        dX = (1+z)^2 H_0 / H(z) dz
+            dX = (1 + z)^2 * H_0 / H(z) * dz
+
+        where H(z) = H_0 * sqrt(Omega_m (1+z)^3 + Omega_Lambda).
+        This convention ensures that dN/dX is redshift-independent for a
+        population with a constant comoving number density.
+
+        Only spectra passing SNR and z_DLA range cuts contribute to dX.
+        For each contributing spectrum, only the overlap of [z_min_dla, z_max_dla]
+        with [z_min, z_max] is integrated.  Spectra whose entire path falls
+        within [z_min, z_max] are accelerated via a pre-computed bin integral.
+
+        Optional cuts applied before integration (controlled by instance flags):
+          - lowzcut: truncate at proximity zone (exclude z > z_QSO - proximity_zone)
+          - highzcut: truncate at tail zone (exclude z < z_min + tail_zone)
+          - z_max_lyb: cap at Ly-beta wavelength (for Ly-limit to Ly-beta region)
+          - z_min_lyb: floor at Ly-beta wavelength (for Ly-beta to Ly-alpha region)
+          - min_obs_wavelength_cut: exclude below observed wavelength threshold
+
+        Parameters
+        ----------
+        z_min : float
+            Lower redshift bound of the integration bin.
+        z_max : float
+            Upper redshift bound of the integration bin.  Must be > z_min.
+
+        Returns
+        -------
+        float
+            Total dX for the path over which we searched for DLAs in [z_min, z_max].
         """
         assert z_min < z_max
         # Make a clean copy
@@ -882,16 +1098,50 @@ class DLACatalogue(object):
     def column_density_function(
         self, z_min=1.0, z_max=6.0, lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0
     ):
-        """This computes the column density function, which is the number
-        of absorbers per sight line with HI column densities in the interval
-        [NHI, NHI+dNHI] at the absorption distance X.
+        """Compute the HI column density distribution function (CDDF), f(N_HI).
 
-        So we have f(N) = d n_DLA/ dN dX
-        and n_DLA(N) = expected number of absorbers per sightline in each column density bin.
-        ie, f(N) = n_DLA / ΔN / ΔX
-        Note f(N) has dimensions of cm^2, because N has units of cm^-2 and X is dimensionless.
-        Returns:
-            (NHI, f_N_table) - N_HI (binned in log) and corresponding f(N)
+        The CDDF is defined as the number of DLA absorbers per sightline per
+        unit column density per unit absorption distance:
+
+            f(N_HI) = d²n_DLA / (dN_HI dX)
+                     = n_DLA(N_HI, N_HI + dN_HI) / dN_HI / dX
+
+        where:
+          - n_DLA is the Bayesian expected number of DLAs with N_HI in each bin
+            (sum of DLA probabilities weighted by the QMC sample distribution)
+          - dN_HI is the linear bin width  (10^lnhi_max − 10^lnhi_min per bin)
+          - dX = path_length(z_min, z_max) is the total comoving path searched
+
+        Units: cm² (N_HI in cm⁻², X dimensionless).
+
+        68% and 95% Bayesian credible intervals are computed via the
+        Poisson-binomial method (see ``_get_confidence_intervals``).
+
+        Parameters
+        ----------
+        z_min : float
+            Lower redshift bound (default 1.0).
+        z_max : float
+            Upper redshift bound (default 6.0).
+        lnhi_nbins : int
+            Number of log10(N_HI) bins (default 30).
+        lnhi_min : float
+            Lower log10(N_HI) bound (default 20.0).
+        lnhi_max : float
+            Upper log10(N_HI) bound (default 23.0).
+
+        Returns
+        -------
+        l_Ncent : np.ndarray
+            Bin-centre log10(N_HI) values.
+        cddf : np.ndarray
+            MAP f(N_HI) in each bin [cm²].
+        cddf68 : np.ndarray, shape (nbins, 2)
+            68% credible interval [lower, upper] for f(N_HI).
+        cddf95 : np.ndarray, shape (nbins, 2)
+            95% credible interval [lower, upper] for f(N_HI).
+        xerrs : tuple of np.ndarray
+            (lower_xerr, upper_xerr) for N_HI bin widths.
         """
         # Get the NHI bins
         l_nhi = np.linspace(lnhi_min, lnhi_max, num=lnhi_nbins + 1)
@@ -963,8 +1213,41 @@ class DLACatalogue(object):
         return (l_N, cddf, cddf68, cddf95)
 
     def line_density(self, z_min=2, z_max=4, lnhi_min=20.3, lnhi_max=23):
-        """Compute the line density of DLAs as a function of redshift
-        Default bins chosen to match Noterdaeme 2012"""
+        """Compute the DLA line density dN/dX as a function of redshift.
+
+        The line density (or incidence rate) is the expected number of DLAs
+        per unit absorption distance:
+
+            dN/dX(z) = sum_{spectra} P(DLA in [z, z+dz], log NHI in [lnhi_min, lnhi_max] | D)
+                       / dX(z, z+dz)
+
+        Default redshift bins and NHI limits are chosen to match
+        Noterdaeme et al. (2012) for direct comparison.
+
+        Parameters
+        ----------
+        z_min : float
+            Lower redshift bound (default 2).
+        z_max : float
+            Upper redshift bound (default 4).
+        lnhi_min : float
+            Lower log10(N_HI) cut for counting DLAs (default 20.3 — DLA threshold).
+        lnhi_max : float
+            Upper log10(N_HI) cut (default 23).
+
+        Returns
+        -------
+        z_cent : np.ndarray
+            Bin-centre redshifts.
+        dNdX : np.ndarray
+            MAP dN/dX in each redshift bin.
+        dndx68 : np.ndarray, shape (nbins, 2)
+            68% credible interval [lower, upper] on dN/dX.
+        dndx95 : np.ndarray, shape (nbins, 2)
+            95% credible interval [lower, upper] on dN/dX.
+        xerrs : tuple of np.ndarray
+            (lower_xerr, upper_xerr) bin half-widths.
+        """
         # Get the redshifts
         nbins = np.max([int((z_max - z_min) * self.bins_per_z), 1])
         z_bins = np.linspace(z_min, z_max, nbins + 1)
@@ -1002,13 +1285,56 @@ class DLACatalogue(object):
         return (z_cent, dNdX, dndx68, dndx95)
 
     def omega_dla_cddf(self, z_min=2, z_max=4, hubble=0.7, lnhi_nbins=30, lnhi_min=20.3, lnhi_max=23.0):
-        """
-        Compute Omega_dla, the sum of the mass in a given absorber,
-        divided by the volume of the spectra, divided by the critical density.
-        This is computed by summing the column density function, rather than directly by summing
-        columns. Should be the same as omega_dla.
+        """Compute Omega_DLA as a function of redshift by integrating the CDDF.
 
-        So we get omega_dla = m_P H_0 / (c rho_c) int dN N f(N)
+        Omega_DLA is the neutral hydrogen mass density in DLAs relative to
+        the critical density:
+
+            Omega_DLA(z) = (m_p H_0 / c rho_c) * int_{N_min}^{N_max} N_HI f(N_HI) dN_HI / dX
+
+        where:
+          - m_p = proton mass (1.67262178e-24 g)
+          - H_0 = hubble * 100 km/s/Mpc (converted to 1/s)
+          - rho_c = critical density at z=0 (g/cm³; see ``rho_crit``)
+          - f(N_HI) = CDDF (cm²)
+          - dX = path length (dimensionless comoving distance)
+
+        This is the CDDF-based estimator (integrating N * f(N) over the
+        column density function), which gives full Bayesian credible intervals
+        via the Poisson-binomial method.  See also ``omega_dla`` for the
+        simpler histogram-based variance estimator.
+
+        Parameters
+        ----------
+        z_min : float
+            Lower redshift bound (default 2).
+        z_max : float
+            Upper redshift bound (default 4).
+        hubble : float
+            Hubble constant H_0 / (100 km/s/Mpc) (default 0.7).
+        lnhi_nbins : int
+            Number of log10(N_HI) bins for the CDDF integration (default 30).
+        lnhi_min : float
+            Lower log10(N_HI) integration limit (default 20.3 — DLA threshold).
+        lnhi_max : float
+            Upper log10(N_HI) integration limit (default 23.0).
+
+        Returns
+        -------
+        z_cent : np.ndarray
+            Bin-centre redshifts.
+        omega_dla : np.ndarray
+            MAP Omega_DLA in each redshift bin (dimensionless).
+        omega_dla_68 : np.ndarray, shape (nbins, 2)
+            68% credible interval [lower, upper].
+        omega_dla_95 : np.ndarray, shape (nbins, 2)
+            95% credible interval [lower, upper].
+        xerrs : np.ndarray, shape (2, nbins)
+            [lower_xerr, upper_xerr] for redshift bin widths.
+
+        Notes
+        -----
+        Multiply by 1000 to plot as 10³ × Omega_DLA (common convention).
         """
         nbins = np.max([int((z_max - z_min) * self.bins_per_z), 1])
         z_bins = np.linspace(z_min, z_max, nbins + 1)
@@ -1176,10 +1502,39 @@ class DLACatalogue(object):
         )
 
     def omega_dla(self, z_min=2, z_max=4, hubble=0.7, lnhi_max=23.0, lnhi_min=20.3):
-        """
-        Compute the matter density of DLAs as a function of redshift, by summing DLAs.
-        This gives us:
-            Omega_DLA = m_P H_0 / (c rho_c) * sum(NHI) / dX
+        """Compute Omega_DLA by direct histogram summation (Gaussian error approximation).
+
+        Alternative to ``omega_dla_cddf``.  Uses Gaussian error propagation
+        (mean ± sqrt(variance)) instead of the full Poisson-binomial PDF:
+
+            Omega_DLA(z) = (m_p H_0 / c rho_c) * sum_i( P_i * N_HI_i ) / dX
+
+        where P_i is the per-sample DLA probability weighted by N_HI (the
+        first moment).  The variance is sum_i( P_i * (1 - P_i) * N_HI_i² ).
+
+        This method is faster but underestimates errors compared to the full
+        Bayesian Poisson-binomial approach in ``omega_dla_cddf``.  Prefer
+        ``omega_dla_cddf`` for publication-quality error bars.
+
+        Parameters
+        ----------
+        z_min, z_max : float
+            Redshift range (default 2–4).
+        hubble : float
+            H_0 / (100 km/s/Mpc) (default 0.7).
+        lnhi_min, lnhi_max : float
+            log10(N_HI) integration limits (default 20.3–23).
+
+        Returns
+        -------
+        z_cent : np.ndarray
+            Bin-centre redshifts.
+        omega_DLA : np.ndarray
+            Omega_DLA in each bin (dimensionless).
+        err : np.ndarray
+            Gaussian 1-sigma error estimates.
+        z_bins : np.ndarray
+            Redshift bin edges.
         """
         # Get the redshifts
         nbins = np.max([int((z_max - z_min) * self.bins_per_z), 1])
@@ -1502,14 +1857,42 @@ class DLACatalogue(object):
     def _get_confidence_intervals(
         self, q_bins, lred=2.0, ured=4.0, lnhi_min=20.3, lnhi_max=23.0, nhi=False
     ):
-        """
-        Get the confidence interval on the number of DLAs in a given redshift (and column density) bin.
-        The number of DLAs is the sum of n binomial processes, and so given by a likelihood looking like:
-        P(N=n) = sum(all subsets of n) prod (1-p_i) * prod p_i where the first product is over all non-DLA spectra and the second over all DLA spectra.
-        This function is too complex to be evaluated directly, but can be solved using an FFT for p large and small N.
-        For all p < p_switch we approximate the distribution as a Poisson distribution using Le Cam's (1960) theorem; the error from this is bounded by D_2 (sum(p_j^2)/sum(p_j),
-        where D_2 < 16 and is probably ~ 1 here.
-        Returns: (maximum a posteriori likelihoods, lower 68 % confidence levels, upper 68% confidence levels, lower and upper 95 % confidence levels)
+        """Compute MAP + Bayesian 68/95% CIs on DLA counts per bin.
+
+        Each DLA contributes a probability p_i of falling in a given bin,
+        making the total count a sum of Bernoulli variables — a
+        Poisson-binomial distribution.
+
+        Algorithm:
+          1. ``_split_distributions`` partitions samples into two groups:
+             - High-p samples (p >= p_switch=0.25): kept exactly for FFT.
+             - Low-p samples (p < p_switch): approximated as Poisson
+               (Le Cam 1960; error bounded by sum(p²)/sum(p)).
+          2. For high-p samples, the exact Poisson-binomial PDF is computed
+             via FFT (Fernandez & Williams 2010): see ``get_poisson_binomial_pdf``.
+          3. The Poisson component is convolved in via ``_get_combined_levels``.
+          4. MAP, 68%, and 95% credible intervals are extracted from the
+             combined CDF.
+
+        Parameters
+        ----------
+        q_bins : np.ndarray
+            Bin edges — either redshift bins (nhi=False) or log10(N_HI) bins (nhi=True).
+        lred, ured : float
+            Redshift range to include.
+        lnhi_min, lnhi_max : float
+            log10(N_HI) range to include.
+        nhi : bool
+            If True, bin by log10(N_HI); if False, bin by redshift.
+
+        Returns
+        -------
+        maxlikes : list of int
+            MAP DLA count in each bin.
+        levels68 : list of (int, int)
+            68% credible interval (lower, upper) index pairs.
+        levels95 : list of (int, int)
+            95% credible interval (lower, upper) index pairs.
         """
         (probs, poissons) = self._split_distributions(
             q_bins, lred=lred, ured=ured, lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=nhi
@@ -1790,7 +2173,38 @@ def pdf_confidence(pdf_comb, offset):
 
 
 def get_poisson_binomial_pdf(pp):
-    """Get the (exact) PDF of a poisson binomial process from an array listing probabilities"""
+    """Compute the exact PDF of a Poisson-binomial distribution via FFT.
+
+    The Poisson-binomial distribution is the distribution of the sum of
+    independent Bernoulli variables with (different) probabilities p_i.
+    Its PDF P(N=n) = sum_{S ⊆ [m], |S|=n} prod_{i∈S} p_i prod_{i∉S} (1-p_i).
+
+    This is computed using the DFT-based algorithm of Fernandez & Williams (2010):
+        C_n = exp(2πi n / (m+1)) − 1
+        Φ_n = prod_i (1 + p_i C_n)       [characteristic function coefficients]
+        PDF = IFFT(Φ) / (m+1)
+
+    The symmetry of the DFT is used to compute only the first half of the
+    coefficient array.
+
+    Parameters
+    ----------
+    pp : list of np.ndarray
+        List of 1D arrays of DLA probabilities in this bin.
+        Will be concatenated into a single array.
+
+    Returns
+    -------
+    np.ndarray
+        PDF array of length m+1 where m = total number of samples.
+        pdf[n] = probability of exactly n DLAs in this bin.
+
+    References
+    ----------
+    Fernandez, M. and Williams, S. (2010). "Closed-Form Expression for the
+    Poisson-Binomial Probability Density Function."
+    IEEE Transactions on Reliability, 59(3), 615–616.
+    """
     # Check input is reasonable
     if np.size(pp) == 0:
         return np.ones(1)
@@ -1834,15 +2248,43 @@ def stable_complex_product(iterable):
 
 
 def path_length_int(z, Omega_m=0.279):
-    """Integrand function for the path length integral above.
-    dX = (1+z)^2 H_0 / H(z) dz
-    returns dX
+    """Integrand for the comoving absorption path length integral.
+
+    Returns dX/dz = (1 + z)^2 / (H(z)/H_0) = (1 + z)^2 * H_0 / H(z).
+
+    This convention (Bahcall & Peebles 1969) ensures that dN/dX is
+    redshift-independent for a population with constant comoving density.
+
+    Parameters
+    ----------
+    z : float
+        Redshift.
+    Omega_m : float
+        Matter density parameter (default 0.279, WMAP9).
+
+    Returns
+    -------
+    float
+        dX/dz at redshift z.
     """
     return (1 + z) ** 2 / HubbleByH0(z, Omega_m)
 
 
 def rho_crit(hubble=0.7):
-    """Get the critical density at z=0 in units of g cm^-3"""
+    """Critical density at z=0 in g cm⁻³.
+
+    rho_c = 3 H_0^2 / (8 π G)
+
+    Parameters
+    ----------
+    hubble : float
+        Dimensionless Hubble constant h = H_0 / (100 km/s/Mpc) (default 0.7).
+
+    Returns
+    -------
+    float
+        Critical density rho_c(z=0) in g cm⁻³.
+    """
     # H in units of 1/s
     # h * 100 km/s/Mpc in h/s
     h100 = 3.2407789e-18 * hubble
