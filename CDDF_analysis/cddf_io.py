@@ -147,7 +147,9 @@ def save_dndx_combined(
         for k, v in meta.items():
             header_lines.append(f"{k} = {v}")
 
-    header = "\n# ".join(header_lines)
+    # np.savetxt prepends "# " to every header line automatically, so we join
+    # with plain "\n" (not "\n# ") to avoid double comment markers "# # ...".
+    header = "\n".join(header_lines)
     np.savetxt(filename, out, header=header)
     print(f"Saved: {filename}")
 

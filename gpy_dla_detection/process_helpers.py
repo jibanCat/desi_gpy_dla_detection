@@ -69,8 +69,10 @@ QMC sample likelihoods (large arrays — for CDDF posterior computation):
                                                   subtract 1 when loading in Python)
 
 Detection quality:
-  detection_flags            int32    (N,)     DLAFLAG bitmask (see fitwarning.py)
-                                               0 = no flags, >0 = see bitmask definitions
+  detection_flags            bool     (N,)     True if any DLAFLAG bit was set for this
+                                               spectrum (i.e. np.sum(fitwarn) > 0);
+                                               False = no flags. See fitwarning.py for
+                                               per-DLA bitmask values (fitwarn array).
 
 Notes
 -----

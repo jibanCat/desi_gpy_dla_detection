@@ -52,8 +52,8 @@ their formats, required keys, and how to obtain them.
 **Format:** MATLAB v7.3 HDF5 (`.mat`).
 
 **How to get it:**
-- 10k samples: included in the `gp_dr12_trained` repo (via `download_gp_files.sh`)
-- 100k samples: generated with `gpy_dla_detection/generate_samples.py --mode dla`
+- 10k samples (`a03`): included in the `gp_dr12_trained` repo (via `download_gp_files.sh`); uses the original Ho+2020 logNHI prior generator
+- 100k PW14-based samples: generated with `gpy_dla_detection/generate_samples.py --mode dla` — note this uses the Prochaska+2014 (PW14) logNHI prior mixture, **not** the legacy `a03` generator; name the output `dla_samples_pw14_100000.mat` to avoid confusion with the legacy `a03` files
 
 **Required HDF5 keys** (loaded in `gpy_dla_detection/dla_samples.py:DLASamplesMAT`):
 

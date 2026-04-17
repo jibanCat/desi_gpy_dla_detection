@@ -196,13 +196,19 @@ def process_single_spectrum(
     #   ...
     #
     # argmaxind convention:
-    #   0  → no absorber detected (either Null or Sub-DLA is most probable)
-    #   1  → 1 absorber (DLA or LLS/subDLA depending on mode)
-    #   k  → k absorbers
+    #   when single_absorber_model=True:
+    #     0  → no absorber detected (Null model most probable)
+    #     k  → k absorbers detected
     #
-    # Note: when single_absorber_model=False, the Sub-DLA index (1) maps to
-    # argmaxind=0, so Sub-DLA being the best model is treated the same as
-    # "no DLA detected" for the purpose of saving MAP parameters.
+    #   when single_absorber_model=False:
+    #    -1  → Null model is most probable (np.nanargmax=0, minus 1 offset)
+    #     0  → Sub-DLA model is most probable (treated as "no DLA detected")
+    #     k>0 → k DLA absorbers
+    #
+    # Note: in the single_absorber_model=False path, index 0=Null and index
+    # 1=Sub-DLA, so subtracting 1 makes the Null model map to argmaxind=-1
+    # and the Sub-DLA model map to argmaxind=0. Both are treated as "no DLA
+    # detected" for the purpose of saving MAP parameters.
     # -----------------------------------------------------------------------
     model_posteriors = bayes.model_posteriors[:]
     if single_absorber_model:

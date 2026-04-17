@@ -37,10 +37,10 @@ bluesnr_max = 1205  # Å
 # These constants define the default search window for absorber
 # statistics (dN/dX, CDDF). They match the hardcoded notebook params.
 # See CDDF_analysis/cddf_mock.py and docs/tutorial_population_statistics.md.
-ZMIN_SEARCH = 2.15          # Global floor on absorber redshift (DESI coverage)
-V_PROX_KMS = 3000.0         # Proximity-zone velocity cut [km/s, redward]
-LAMBDA_OBS_MIN = 3700.0     # DESI instrument blue cutoff [Å, observed]
-LAMBDA_OBS_MAX = None       # No instrument red cutoff applied
+zmin_search = 2.15          # Global floor on absorber redshift (DESI coverage)
+v_prox_kms = 3000.0         # Proximity-zone velocity cut [km/s, redward]
+lambda_obs_min = 3700.0     # DESI instrument blue cutoff [Å, observed]
+lambda_obs_max = None       # No instrument red cutoff applied
 
 # ---------------------------------------------------------------
 # Catalog quality flags

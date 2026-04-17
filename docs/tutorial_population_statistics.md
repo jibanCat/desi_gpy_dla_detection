@@ -192,10 +192,10 @@ statistics gives a redshift-dependent correction factor alpha(z).
 ### 2.1 Understand the calibration logic
 
 ```
-alpha(z) = dNdX_measured_mock(z) / dNdX_truth(z)
+alpha(z) = dNdX_truth(z) / dNdX_measured_mock(z)
 
 where:
-  dNdX_truth       = integral of Prochaska+2014 CDDF spline over log NHI range
+  dNdX_truth         = integral of Prochaska+2014 CDDF spline over log NHI range
   dNdX_measured_mock = GP-DLA result on London mock spectra (Pipeline B)
 
 Then for real DESI data:
@@ -203,8 +203,8 @@ Then for real DESI data:
   err_calibrated     = sqrt((alpha × err_real)² + (dNdX_real × err_alpha)²)
 ```
 
-`alpha(z) < 1` means the pipeline is missing absorbers (incompleteness).
-`alpha(z) > 1` means the pipeline is over-counting (false positives or bias).
+`alpha(z) > 1` means the pipeline is missing absorbers (incompleteness — measured < truth).
+`alpha(z) < 1` means the pipeline is over-counting (false positives or bias — measured > truth).
 
 ### 2.2 Compute the truth dN/dX
 
@@ -404,5 +404,3 @@ See `CDDF_analysis/calc_cddf.py` module docstring for full details.
 - `CDDF_analysis/cddf_mock.py` — Module docstring with full API reference
 - `notebooks/CDDF_dNdX_all.ipynb` — Full calibration workflow in practice (76 cells)
 - `notebooks/CDDF_fN_z.ipynb` — 2D CDDF f(N,z) with calibration (31 cells)
-</content>
-</invoke>
