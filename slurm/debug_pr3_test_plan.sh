@@ -40,12 +40,37 @@ source /global/cfs/cdirs/desi/software/desi_environment.sh main
 REPO_DIR="${REPO_DIR:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection}"
 DLA_RUN="${DLA_RUN:-/pscratch/sd/j/jibancat/desi-mock-gpdla-20250912-y3-learned-epoch920-filter}"
 LLS_RUN="${LLS_RUN:-/pscratch/sd/j/jibancat/desi-mock-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172}"
-TRUTH="${TRUTH:-/global/cfs/projectdirs/desi/mocks/lya_forest/develop/london/qq_desi_y3/v5.9.5/mock-0/jura-124}"
+# NB: London is at /mocks/lya_forest/london/...  (no "develop/" prefix);
+# Saclay is the one under /mocks/lya_forest/develop/saclay/... — don't
+# confuse them. CLAUDE.md §10 has the canonical path table.
+TRUTH="${TRUTH:-/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124}"
 
 REPORTS_DIR="${REPORTS_DIR:-$SCRATCH/gpdla_pr3_tests_${SLURM_JOB_ID:-manual}}"
 mkdir -p "$REPORTS_DIR"
 
 cd "$REPO_DIR" || { echo "[fatal] could not cd $REPO_DIR"; exit 2; }
+
+# ===== Pre-flight path checks ============================================
+# Steps 4 and 5 need the multi-DLA dir, the LLS dir, the truth dir, and
+# three specific files inside the truth dir. Fail early with a clear
+# message rather than getting an opaque CFITSIO traceback later.
+missing=0
+for path in "$DLA_RUN" "$LLS_RUN" "$TRUTH" \
+            "$TRUTH/dla_cat.fits" \
+            "$TRUTH/dla_cat_mask_20.30.fits" \
+            "$TRUTH/zcat.fits" \
+            "$TRUTH/bal_cat.fits"; do
+    if [[ ! -e "$path" ]]; then
+        echo "[fatal] required path missing: $path"
+        missing=1
+    fi
+done
+if [[ "$missing" -eq 1 ]]; then
+    echo
+    echo "Override paths via --export, e.g.:"
+    echo "  sbatch --export=ALL,TRUTH=/path/to/jura-124,DLA_RUN=/path/to/multi-dla,LLS_RUN=/path/to/lls slurm/debug_pr3_test_plan.sh"
+    exit 2
+fi
 
 echo "============================================================"
 echo " PR #3 test plan"
