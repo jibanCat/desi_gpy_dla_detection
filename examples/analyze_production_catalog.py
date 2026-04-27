@@ -184,11 +184,26 @@ def main():
         bal_tids = set(int(r["TARGETID"]) for r in bal if r["BI_CIV"] > 0)
         print(f"[load] {len(bal_tids)} BAL targets (BI_CIV>0)", flush=True)
 
+    # Restrict truth to TARGETIDs that were ACTUALLY processed by the
+    # pipeline (i.e. appear in the catalog at any p_dla). The full truth
+    # catalog includes spectra that were filtered out upstream of the GP
+    # (z<2.5, ZWARN!=0, BAL exclusion, etc.); counting them in the
+    # completeness denominator makes the production look much worse than
+    # it actually is.
+    cat_all_tids = set(int(t) for t in np.asarray(cat["TARGETID"]))
+    in_cat_mask = np.array([int(t) in cat_all_tids
+                            for t in np.asarray(truth["TARGETID"])])
+    truth_processed = truth[in_cat_mask]
+    print(f"[truth] {in_cat_mask.sum()} of {len(truth)} truth DLAs are on "
+          f"TARGETIDs that were processed by the pipeline", flush=True)
+
     # Match truth ↔ MAP — BEFORE post-processing
     print("[match] truth ↔ map (raw)", flush=True)
-    m_truth, m_map = _match_truth_to_map(truth, cat_pass, args.dz_match_rel)
+    m_truth, m_map = _match_truth_to_map(
+        truth_processed, cat_pass, args.dz_match_rel)
 
-    rows_compl_raw = _per_nhi_bin_stats(m_truth, np.asarray(truth["NHI"]))
+    rows_compl_raw = _per_nhi_bin_stats(
+        m_truth, np.asarray(truth_processed["NHI"]))
     purity_raw = m_map.sum() / len(cat_pass) if len(cat_pass) else 0.0
 
     # ---- Lyβ veto post-processing ----
@@ -201,8 +216,9 @@ def main():
           flush=True)
     cat_lyb_clean = cat_lyb[~cat_lyb["LYBETA_FLAG"]]
     m_truth_lyb, m_map_lyb = _match_truth_to_map(
-        truth, cat_lyb_clean, args.dz_match_rel)
-    rows_compl_lyb = _per_nhi_bin_stats(m_truth_lyb, np.asarray(truth["NHI"]))
+        truth_processed, cat_lyb_clean, args.dz_match_rel)
+    rows_compl_lyb = _per_nhi_bin_stats(
+        m_truth_lyb, np.asarray(truth_processed["NHI"]))
     purity_lyb = m_map_lyb.sum() / len(cat_lyb_clean) if len(cat_lyb_clean) else 0.0
 
     # ---- LLS cross-reference (optional) ----
@@ -238,9 +254,9 @@ def main():
             print(f"[lls-xref] downgraded {n_downgrade} additional MAP DLAs "
                   f"as likely sub-DLA / LLS", flush=True)
             m_truth_lls, m_map_lls = _match_truth_to_map(
-                truth, cat_lls_clean, args.dz_match_rel)
+                truth_processed, cat_lls_clean, args.dz_match_rel)
             rows_compl_lls = _per_nhi_bin_stats(
-                m_truth_lls, np.asarray(truth["NHI"]))
+                m_truth_lls, np.asarray(truth_processed["NHI"]))
             purity_lls = (m_map_lls.sum() / len(cat_lls_clean)
                           if len(cat_lls_clean) else 0.0)
         except Exception as exc:
@@ -253,7 +269,8 @@ def main():
         f"- Multi-DLA catalog: `{args.catalog_dir}`",
         f"- LLS catalog:       `{args.lls_dir or '(none)'}`",
         f"- Truth:             `{args.truth}` "
-        f"(N truth DLAs with NHI≥20.3 = {len(truth)})",
+        f"(N truth DLAs with NHI≥20.3 = {len(truth)}; "
+        f"{len(truth_processed)} on TARGETIDs the pipeline actually processed)",
         f"- Match metric: |Δz|/(1+z_truth) ≤ {args.dz_match_rel}",
         f"- p(DLA) cut: {args.p_dla_cut}",
         f"- N MAP DLAs after cut: raw={len(cat_pass)}",
