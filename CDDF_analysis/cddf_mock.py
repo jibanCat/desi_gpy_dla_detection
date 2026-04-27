@@ -88,6 +88,10 @@ References:
 # ============================================================
 
 import numpy as np
+
+# numpy 2.0 renamed _trapz to np.trapezoid; alias preserves both numpy 1.22+
+# and 2.x compatibility (NERSC stack may still be on numpy 1.x).
+_trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
 import os
 from matplotlib import pyplot as plt
 import matplotlib
@@ -1061,9 +1065,9 @@ def truth_dndx_prochaska2014(logNHImin, logNHImax, n_points=1000):
 
     # f(N) dN in linear N: dN = N * ln(10) * d(logN)
     dlogN = logN_grid[1] - logN_grid[0]
-    dndx_truth = np.trapz(fN_grid * N_grid * np.log(10), logN_grid) * dlogN / dlogN
+    dndx_truth = _trapz(fN_grid * N_grid * np.log(10), logN_grid) * dlogN / dlogN
     # Simpler: trapz over logN with integrand = f(N) * N * ln(10)
-    dndx_truth = np.trapz(fN_grid * N_grid * np.log(10.0), logN_grid)
+    dndx_truth = _trapz(fN_grid * N_grid * np.log(10.0), logN_grid)
     return float(dndx_truth)
 
 

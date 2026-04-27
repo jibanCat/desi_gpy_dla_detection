@@ -233,8 +233,10 @@ def plot_samples_vs_this_mu(dla_gp: DLAGP, bayes: BayesModelSelect, filename, su
     os.makedirs(sub_dir, exist_ok=True)
     # file_path = os.path.join(sub_dir, f"{filename}.png")
 
-    # Determine the number of absorbers to plot based on the posterior probability
-    nth_lya = 1 + bayes.model_posteriors[bayes.dla_model_ind:].argmax() if bayes.p_dla > 0.9 else 0
+    # Determine the number of absorbers to plot based on the posterior probability.
+    # Use nanargmax: the n-DLA models the run did not reach (early-stop based on
+    # log-likelihood) are filled with NaN, and plain argmax would select them.
+    nth_lya = 1 + np.nanargmax(bayes.model_posteriors[bayes.dla_model_ind:]) if bayes.p_dla > 0.9 else 0
 
     # Extract sample z_dlas and sample log likelihoods
     sample_z_dlas = dla_gp.dla_samples.sample_z_dlas(

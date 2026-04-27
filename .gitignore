@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Compiled extensions (built per-machine; see README libcerf section)
+*.so
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Environment
+.env
+.envrc
+
+# Private / restricted paths and data
+# - private/* ignores file contents of private/ (must use /* not / so un-ignore works)
+# - templates (*.template) and .gitkeep are un-ignored so structure is documented
+private/*
+!private/*.template
+!private/.gitkeep
+
+# Generated outputs / large artifacts
+figures/
+out/
+processed/
+*.h5
+*.hdf5
+!data/**/*.h5
+!data/**/*.hdf5
+!tests/**/*.h5
+
+# SLURM job logs (regenerated per submission)
+slurm/greatlakes/*.log
