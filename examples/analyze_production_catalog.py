@@ -56,6 +56,10 @@ def parse_args():
                    help="(optional) dir of LLS-mode dlacat-*.fits")
     p.add_argument("--bal-cat", default=None,
                    help="(optional) bal_cat.fits — used to flag BAL targets")
+    p.add_argument("--no-bal", action="store_true",
+                   help="Exclude TARGETIDs with BI_CIV>0 from BOTH the catalog "
+                        "and the truth denominator. Matches the molly-notebook "
+                        "convention for production purity/completeness reports.")
     p.add_argument("--snr-cat", default=None,
                    help="(optional) snr_cat.fits with SNR_FOREST/SNR_REDSIDE")
     p.add_argument("--dz-match-rel", type=float, default=0.01,
@@ -97,13 +101,18 @@ def _per_nhi_bin_stats(matched: np.ndarray, nhis: np.ndarray) -> list[dict]:
 
 
 def _match_truth_to_map(truth: Table, mp: Table, dz_rel: float
-                        ) -> tuple[np.ndarray, np.ndarray]:
+                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Greedy nearest-z matching by TARGETID. Returns:
-    - matched_truth: bool array length len(truth)
-    - matched_map: bool array length len(mp)
+    - matched_truth: bool array length len(truth) — strict 1-to-1
+    - matched_map_strict: bool array length len(mp) — strict 1-to-1
+    - matched_map_any: bool array length len(mp) — every MAP DLA that has
+      ANY truth DLA at same TID within dz_rel (regardless of whether
+      another MAP already claimed it). Used for the looser "matches a real
+      DLA on LOS" purity metric that matches the molly-notebook style.
     """
     matched_truth = np.zeros(len(truth), dtype=bool)
     matched_map = np.zeros(len(mp), dtype=bool)
+    matched_map_any = np.zeros(len(mp), dtype=bool)
 
     # Index MAP DLAs by TARGETID
     tid_arr = np.asarray(mp["TARGETID"])
@@ -127,6 +136,7 @@ def _match_truth_to_map(truth: Table, mp: Table, dz_rel: float
         cand = map_by_tid.get(tid, [])
         if not cand:
             continue
+        # Strict 1-to-1
         order = sorted(truth_idxs, key=lambda i: -truth_nhi[i])
         for ti in order:
             best, best_dz = None, np.inf
@@ -138,8 +148,14 @@ def _match_truth_to_map(truth: Table, mp: Table, dz_rel: float
             if best is not None and best_dz <= dz_rel:
                 matched_truth[ti] = True
                 matched_map[best] = True
+        # Loose: every MAP at this TID that's near *any* truth DLA on the LOS
+        for mi in cand:
+            for ti in truth_idxs:
+                if abs(z_arr[mi] - truth_z[ti]) / (1 + truth_z[ti]) <= dz_rel:
+                    matched_map_any[mi] = True
+                    break
 
-    return matched_truth, matched_map
+    return matched_truth, matched_map, matched_map_any
 
 
 def _format_table(rows: list[dict], header: str) -> str:
@@ -177,12 +193,24 @@ def main():
     print(f"  after p(DLA)>={args.p_dla_cut}: {len(cat_pass)} entries",
           flush=True)
 
-    # Optional BAL flagging
-    bal_tids = None
+    # Optional BAL flagging / exclusion
+    bal_tids = set()
     if args.bal_cat:
         bal = fitsio.read(args.bal_cat, ext=1, columns=["TARGETID", "BI_CIV"])
         bal_tids = set(int(r["TARGETID"]) for r in bal if r["BI_CIV"] > 0)
         print(f"[load] {len(bal_tids)} BAL targets (BI_CIV>0)", flush=True)
+    if args.no_bal and bal_tids:
+        keep_cat = ~np.isin(np.asarray(cat_pass["TARGETID"]), list(bal_tids))
+        cat_pass = cat_pass[keep_cat]
+        keep_truth = ~np.isin(np.asarray(truth["TARGETID"]), list(bal_tids))
+        truth = truth[keep_truth]
+        print(f"[no-bal] {keep_cat.sum()} cat, {keep_truth.sum()} truth "
+              f"after BAL exclusion", flush=True)
+        # also drop BAL TIDs from the all-cat list used for "processed TIDs"
+        cat_for_processed_tid = cat[~np.isin(np.asarray(cat["TARGETID"]),
+                                              list(bal_tids))]
+    else:
+        cat_for_processed_tid = cat
 
     # Restrict truth to TARGETIDs that were ACTUALLY processed by the
     # pipeline (i.e. appear in the catalog at any p_dla). The full truth
@@ -190,7 +218,7 @@ def main():
     # (z<2.5, ZWARN!=0, BAL exclusion, etc.); counting them in the
     # completeness denominator makes the production look much worse than
     # it actually is.
-    cat_all_tids = set(int(t) for t in np.asarray(cat["TARGETID"]))
+    cat_all_tids = set(int(t) for t in np.asarray(cat_for_processed_tid["TARGETID"]))
     in_cat_mask = np.array([int(t) in cat_all_tids
                             for t in np.asarray(truth["TARGETID"])])
     truth_processed = truth[in_cat_mask]
@@ -199,12 +227,13 @@ def main():
 
     # Match truth ↔ MAP — BEFORE post-processing
     print("[match] truth ↔ map (raw)", flush=True)
-    m_truth, m_map = _match_truth_to_map(
+    m_truth, m_map, m_map_any = _match_truth_to_map(
         truth_processed, cat_pass, args.dz_match_rel)
 
     rows_compl_raw = _per_nhi_bin_stats(
         m_truth, np.asarray(truth_processed["NHI"]))
     purity_raw = m_map.sum() / len(cat_pass) if len(cat_pass) else 0.0
+    purity_raw_loose = m_map_any.sum() / len(cat_pass) if len(cat_pass) else 0.0
 
     # ---- Lyβ veto post-processing ----
     sys.path.insert(0, os.getcwd())
@@ -215,11 +244,12 @@ def main():
     print(f"[lyβ] flagged {int(cat_lyb['LYBETA_FLAG'].sum())} as Lyβ misIDs",
           flush=True)
     cat_lyb_clean = cat_lyb[~cat_lyb["LYBETA_FLAG"]]
-    m_truth_lyb, m_map_lyb = _match_truth_to_map(
+    m_truth_lyb, m_map_lyb, m_map_any_lyb = _match_truth_to_map(
         truth_processed, cat_lyb_clean, args.dz_match_rel)
     rows_compl_lyb = _per_nhi_bin_stats(
         m_truth_lyb, np.asarray(truth_processed["NHI"]))
     purity_lyb = m_map_lyb.sum() / len(cat_lyb_clean) if len(cat_lyb_clean) else 0.0
+    purity_lyb_loose = m_map_any_lyb.sum() / len(cat_lyb_clean) if len(cat_lyb_clean) else 0.0
 
     # ---- LLS cross-reference (optional) ----
     rows_compl_lls = None
@@ -253,12 +283,14 @@ def main():
             n_downgrade = int(cat_lls["LLS_DOWNGRADE_FLAG"].sum())
             print(f"[lls-xref] downgraded {n_downgrade} additional MAP DLAs "
                   f"as likely sub-DLA / LLS", flush=True)
-            m_truth_lls, m_map_lls = _match_truth_to_map(
+            m_truth_lls, m_map_lls, m_map_any_lls = _match_truth_to_map(
                 truth_processed, cat_lls_clean, args.dz_match_rel)
             rows_compl_lls = _per_nhi_bin_stats(
                 m_truth_lls, np.asarray(truth_processed["NHI"]))
             purity_lls = (m_map_lls.sum() / len(cat_lls_clean)
                           if len(cat_lls_clean) else 0.0)
+            purity_lls_loose = (m_map_any_lls.sum() / len(cat_lls_clean)
+                                if len(cat_lls_clean) else 0.0)
         except Exception as exc:
             print(f"[warn] LLS xref failed: {exc}", flush=True)
 
@@ -286,13 +318,13 @@ def main():
         "",
         f"## Headline numbers",
         "",
-        "| stage                       | completeness (all) | purity |",
-        "|:----------------------------|:-----------------:|:------:|",
-        f"| raw catalog                 | {rows_compl_raw[-1]['rate']:.1%} | {purity_raw:.1%} |",
-        f"| + Lyβ veto                  | {rows_compl_lyb[-1]['rate']:.1%} | {purity_lyb:.1%} |",
+        "| stage                       | completeness | strict purity (1-to-1) | loose purity (≥1 truth match) |",
+        "|:----------------------------|:------------:|:----------------------:|:-----------------------------:|",
+        f"| raw catalog                 | {rows_compl_raw[-1]['rate']:.1%} | {purity_raw:.1%} | {purity_raw_loose:.1%} |",
+        f"| + Lyβ veto                  | {rows_compl_lyb[-1]['rate']:.1%} | {purity_lyb:.1%} | {purity_lyb_loose:.1%} |",
     ]
     if rows_compl_lls is not None:
-        lines.append(f"| + LLS cross-reference       | {rows_compl_lls[-1]['rate']:.1%} | {purity_lls:.1%} |")
+        lines.append(f"| + LLS cross-reference       | {rows_compl_lls[-1]['rate']:.1%} | {purity_lls:.1%} | {purity_lls_loose:.1%} |")
 
     lines.append(_format_table(rows_compl_raw, "Completeness — raw"))
     lines.append(_format_table(rows_compl_lyb, "Completeness — after Lyβ veto"))
