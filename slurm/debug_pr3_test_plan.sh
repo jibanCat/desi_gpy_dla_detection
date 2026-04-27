@@ -27,7 +27,11 @@
 # Pipeline stdout is in the slurm log gpdla_pr3_tests_<jobid>.log.
 # ---------------------------------------------------------------------------
 
-set -uo pipefail
+# NOTE: do NOT use `set -u`/`set -e` at script scope — the DESI environment
+# script (`desi_environment.sh`) references unset variables (`DESI_ROOT`, ...)
+# during sourcing, which would abort us under `-u`. We use `pipefail` only,
+# and check exit codes explicitly via PIPESTATUS / $? per step.
+set -o pipefail
 
 # ===== Environment =========================================================
 source /global/cfs/cdirs/desi/software/desi_environment.sh main
