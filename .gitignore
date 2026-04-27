@@ -45,3 +45,6 @@ processed/
 !data/**/*.h5
 !data/**/*.hdf5
 !tests/**/*.h5
+
+# SLURM job logs (regenerated per submission)
+slurm/greatlakes/*.log
