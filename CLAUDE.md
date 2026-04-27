@@ -352,3 +352,40 @@ from CDDF_analysis.cddf_mock import dndx_to_ellz, logN_bins_from_mids, dndx_boun
 print('all imports OK')
 "
 ```
+
+---
+
+## 13. GreatLakes session — 2026-04-27
+
+This session brought the pipeline up on UMich GreatLakes and added
+three analysis capabilities. Reference docs:
+
+| Topic | File |
+|-------|------|
+| Env setup (conda, libcerf, voigt.so) | `docs/greatlakes_setup.md` |
+| NERSC ↔ GreatLakes path mapping | `docs/nersc_greatlakes_mapping.md` |
+| Voigt v2 module (selectable LSF kernel, num_lines) | `gpy_dla_detection/voigt_v2.py` + `tests/test_voigt_v2_parity.py` |
+| Lyβ misID + LLS xref postprocessing | `gpy_dla_detection/postprocess/` (with README) |
+| Smoke-test runners | `examples/smoke_one_spectrum.py`, `run_smoke_batch.sh`, `pick_smoke_targets.py`, … |
+| Production-catalog analyzer | `examples/analyze_production_catalog.py`, `examples/scan_pdla_cuts.py` |
+
+Investigation logs (each is a falsifiable-test write-up, not a
+reference doc — read the prose, not just the tables):
+
+| File | Contents |
+|------|---------|
+| `docs/notes/2026-04-25_smoke_and_model_comparison.md` | eBOSS / Y3 / London model side-by-side on a strong-DLA target |
+| `docs/notes/2026-04-25_filter_samples_sweep.md` | FILTER ∈ {0,1} × N_DLA ∈ {10k, 100k} on 20 strong DLAs |
+| `docs/notes/2026-04-27_filter_completeness_explanation.md` | 200-target FILTER-1 completeness drop in [20.3, 20.6) and 5 fixes |
+| `docs/notes/2026-04-27_lybeta_persistence_hypotheses.md` | Why GP fits Lyβ as a DLA; 4 hypotheses to test |
+| `docs/notes/2026-04-27_subdla_model_improvements.md` | 4 ranked sub-DLA model improvements |
+| `docs/notes/2026-04-27_bayesian_correctness_plan.md` | 4-step plan to discriminate integral / forward-model / prior contributions |
+| `docs/notes/2026-04-27_london_pdla_scan_no_bal.md` | P_DLA cut sweep on London production (recovers historic ~78/80%) |
+| `docs/notes/2026-04-27_london_postprocess_p99_no_bal.md` | Post-processing efficacy at the realistic operating point |
+| `docs/notes/2026-04-27_pr_readiness_checklist.md` | What's done vs. what should land before merging |
+
+**Production-code changes from this session**, intentionally minimal:
+- `CDDF_analysis/cddf_mock.py`: numpy 2.x compat alias for `np.trapz` → `np.trapezoid`. Behaviour-preserving.
+- `gpy_dla_detection/plottings/plot_model.py:237`: `argmax` → `nanargmax` to fix a NaN-label bug in `plot_samples_vs_this_mu`. Behaviour-preserving (the unfixed code crashes the model overlay; this restores it).
+
+**93 tests pass**: the original 80 + 6 voigt_v2 parity + 5 lyb_veto unit + 2 smoke-target contamination.

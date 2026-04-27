@@ -270,6 +270,49 @@ For customization, go to this tutorial:
 - Marginalizing over meanflux for purity (Ho 2021 model)
 - Resample the DLA column density prior
 
+### Catalog post-processing (Lyβ veto + LLS cross-reference)
+
+After running `desi-DLAGP.py` and combining outputs, you can run two
+catalog-time helpers from `gpy_dla_detection.postprocess` to flag
+likely-spurious MAP DLAs without re-running inference:
+
+```python
+from astropy.table import Table
+from gpy_dla_detection.postprocess.lyb_veto import flag_lybeta
+from gpy_dla_detection.postprocess.lls_cross_reference import cross_reference_lls
+
+dla_cat = Table.read("dlacat-iron-main-dark.fits")
+lls_cat = Table.read("dlacat-iron-main-dark-lls.fits")
+
+dla_cat = flag_lybeta(dla_cat)                       # adds LYBETA_FLAG, ...
+dla_cat = cross_reference_lls(dla_cat, lls_cat)      # adds LLS_DOWNGRADE_FLAG, ...
+
+clean = dla_cat[~dla_cat["LYBETA_FLAG"] & ~dla_cat["LLS_DOWNGRADE_FLAG"]]
+```
+
+See `gpy_dla_detection/postprocess/README.md` for the mechanism, the
+tunable thresholds, and the per-flag column meanings. Validation on
+the London production catalog is in
+`docs/notes/2026-04-27_london_postprocess_p99_no_bal.md` (loose
+purity 76.0 % → 79.2 % at P_DLA ≥ 0.99 with BAL excluded).
+
+### Alternative Voigt forward model
+
+`gpy_dla_detection/voigt_v2.py` is a pure-Python alternative to the
+production C extension `voigt_fast.py`, with selectable LSF kernel
+and number of Lyman-series lines. It reproduces the production output
+bit-equivalently when configured the same way (`kernel="boss-log-r2000",
+num_lines=31`), and supports DESI-shaped kernels for studies of N_HI
+bias on DESI mocks. Production behaviour is unchanged.
+
+### GreatLakes vs NERSC
+
+Setup recipes and a path-mapping table for the UMich GreatLakes cluster
+are in `docs/greatlakes_setup.md` and `docs/nersc_greatlakes_mapping.md`.
+The smoke-test runners under `examples/` (notably `smoke_one_spectrum.py`,
+`run_smoke_batch.sh`, and `analyze_production_catalog.py`) are designed
+to run on either cluster.
+
 ## Additional feature: Marginalizing over metal lines for DLAs
 
 To improve the purity, one can do the metal line detection alongside the DLAs.
