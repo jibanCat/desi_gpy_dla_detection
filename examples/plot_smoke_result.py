@@ -109,15 +109,16 @@ def parse_args():
 
 
 def _voigt_absorption_curve(wave_obs: np.ndarray, log_nhi: float, z_dla: float):
-    import sys
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-    if repo_root not in sys.path:
-        sys.path.insert(0, repo_root)
     """Compute a smooth analytical Voigt absorption profile on the observed
     wavelength grid, using the project's compiled C extension if available
     (falls back to the pure-Python voigt). Used only for visualization —
     does NOT include instrumental smoothing beyond what's baked into the C
-    extension's hard-coded kernel."""
+    extension's hard-coded kernel.
+    """
+    import sys
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
     from gpy_dla_detection.voigt_fast import VoigtProfile
     v = VoigtProfile()
     # The C extension trims 3 pixels off each side of the input; pad with

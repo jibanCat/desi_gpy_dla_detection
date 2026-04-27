@@ -19,8 +19,10 @@ Supported kernels:
 - ``"desi-linear-r5000"`` : DESI red/IR (R≈5000) approximation.
 - ``"none"``              : no instrumental smoothing — the bare Voigt
   profile. Use to inspect the LSF effect cleanly.
-- ``"per-pixel-resolution"`` : reserved for future use; will accept the
-  per-spectrum resolution matrix from ``desispec.io.read_spectra``.
+
+A per-pixel resolution-matrix kernel (sourced from
+``desispec.io.read_spectra(...).R``) is a planned follow-up but is not
+implemented here.
 
 Both the production C path and v2 evaluate the **same** Faddeeva-based
 Voigt profile, so when ``kernel="boss-log-r2000"`` and ``num_lines=31``

@@ -1,7 +1,7 @@
 # GreatLakes setup — GP-DLA pipeline
 
 This document captures the environment setup that the pipeline was verified
-against on UMich GreatLakes (account `cavestruz0`). It supplements the generic
+against on UMich GreatLakes (account `cavestru0`). It supplements the generic
 instructions in `README.md`.
 
 ## Login-node toolchain (verified 2026-04-25, gl3114)

@@ -6,9 +6,10 @@
 #SBATCH --job-name=gpdla_pr3_tests
 #SBATCH --output=gpdla_pr3_tests_%j.log
 #SBATCH --error=gpdla_pr3_tests_%j.log
-#SBATCH --mail-user=mfho@umich.edu
-#SBATCH --mail-type=ALL
 #SBATCH -A desi
+# Mail notifications are intentionally not set here — this script is
+# meant to be reusable. Add `#SBATCH --mail-user=...` and
+# `#SBATCH --mail-type=ALL` locally if you want email notifications.
 #SBATCH --time=00:30:00
 #SBATCH --ntasks=1                            # One bash driver, parallelism via &
 #SBATCH --cpus-per-task=256                   # Full Perlmutter CPU node

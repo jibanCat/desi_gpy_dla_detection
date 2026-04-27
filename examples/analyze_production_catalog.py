@@ -60,8 +60,6 @@ def parse_args():
                    help="Exclude TARGETIDs with BI_CIV>0 from BOTH the catalog "
                         "and the truth denominator. Matches the molly-notebook "
                         "convention for production purity/completeness reports.")
-    p.add_argument("--snr-cat", default=None,
-                   help="(optional) snr_cat.fits with SNR_FOREST/SNR_REDSIDE")
     p.add_argument("--dz-match-rel", type=float, default=0.01,
                    help="|Δz|/(1+z_truth) tolerance for truth matching")
     p.add_argument("--p-dla-cut", type=float, default=0.5,

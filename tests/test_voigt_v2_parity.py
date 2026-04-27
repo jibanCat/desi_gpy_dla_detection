@@ -70,19 +70,48 @@ def test_no_kernel_is_deeper_than_smoothed_for_strong_dla():
     )
 
 
-def test_desi_linear_kernel_broader_than_boss_at_dlambda_015():
-    """At DESI's tighter linear pixel grid (dlambda=0.15 Å), the
-    DESI-R3000 kernel should be wider in pixels than the BOSS-R2000 7-pixel
-    kernel was on its log grid — so it smooths more, giving a shallower
-    line core."""
+def test_desi_kernel_smooths_more_than_boss_kernel_on_dlambda_015_grid():
+    """When applied on the DESI linear pixel grid (dlambda=0.15 Å), the
+    DESI-R3000 kernel has a wider σ (≈ 4.2 px) than the BOSS-R2000 kernel
+    (which is ≈ 0.92 px wide and was actually calibrated for a log-λ
+    grid with ~23 km/s/pixel). The narrower BOSS kernel under-smooths,
+    so its profile has a sharper transition between the saturated core
+    and the un-absorbed continuum than the DESI-broadened profile.
+
+    This test asserts the DIRECTION of that physical effect: in the
+    Voigt damping wings (where the line is partially absorbing, not
+    saturated to zero), the BOSS-kernel profile is DEEPER (lower flux)
+    than the DESI-kernel profile."""
     from gpy_dla_detection.voigt_v2 import voigt_absorption
+    z_dla = 2.45
     wave = _grid(z_qso=2.6, dlambda=0.15)
-    boss = voigt_absorption(wave, 21.0, 2.45, num_lines=3,
+    # Use a moderate NHI=20.7 so the wings are partially-absorbing
+    # rather than saturated to zero on both kernels.
+    boss = voigt_absorption(wave, 20.7, z_dla, num_lines=3,
                             kernel="boss-log-r2000", dlambda_A=0.15)
-    desi = voigt_absorption(wave, 21.0, 2.45, num_lines=3,
+    desi = voigt_absorption(wave, 20.7, z_dla, num_lines=3,
                             kernel="desi-linear-r3000", dlambda_A=0.15)
-    # DESI kernel σ ≈ 4.2 px > BOSS σ ≈ 0.92 px; expect line core deeper
-    # in DESI case has been smeared less by sharper kernel? Actually
-    # narrower kernel → less smoothing → deeper trough.
-    # What we really test is: the two profiles differ measurably.
-    assert np.max(np.abs(boss - desi)) > 1e-3
+
+    # Sanity: same shape and not coincidentally identical.
+    assert boss.shape == desi.shape
+    assert np.max(np.abs(boss - desi)) > 1e-3, (
+        "BOSS and DESI kernels produced indistinguishable profiles — "
+        "kernel-dependent broadening is not active"
+    )
+
+    # Direction-of-effect check: in the line wings, BOSS profile is deeper.
+    # Wing region: pixels where the BOSS profile is between 0.05 and 0.5
+    # (i.e. partially absorbing, not saturated to zero, not on the
+    # un-absorbed continuum).
+    wing_mask = (boss > 0.05) & (boss < 0.5)
+    assert wing_mask.sum() > 5, (
+        f"too few wing pixels for the test ({wing_mask.sum()}); "
+        "increase the wave grid or revisit NHI"
+    )
+    boss_wing_mean = float(np.mean(boss[wing_mask]))
+    desi_wing_mean = float(np.mean(desi[wing_mask]))
+    assert boss_wing_mean < desi_wing_mean, (
+        f"expected narrower BOSS kernel to give DEEPER wings than the "
+        f"broader DESI kernel; got BOSS wings={boss_wing_mean:.4f}, "
+        f"DESI wings={desi_wing_mean:.4f}"
+    )

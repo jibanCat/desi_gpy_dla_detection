@@ -129,6 +129,11 @@ def flag_lybeta(
             continue
         # Sort within LOS by descending z (parent candidates first)
         order = idxs[np.argsort(-zs[idxs])]
+        # Track best-fit parent per child by smallest |z_low - z_lyb_parent|.
+        # Without this, multiple eligible parents would each overwrite
+        # LYBETA_PARENT_* and the recorded parent would be whichever came
+        # last in the loop (= lowest-z parent), not the closest match.
+        best_dz = np.full(len(zs), np.inf)
         for i_high in order:
             for i_low in order:
                 if i_low == i_high:
@@ -138,10 +143,12 @@ def flag_lybeta(
                 if require_higher_nhi_parent and nhis[i_high] <= nhis[i_low]:
                     continue
                 z_lyb = lybeta_apparent_z(zs[i_high])
-                if abs(zs[i_low] - z_lyb) <= dz_match:
+                dz = abs(zs[i_low] - z_lyb)
+                if dz <= dz_match and dz < best_dz[i_low]:
                     flag[i_low] = True
                     parent_tid[i_low] = tids[i_high]
                     parent_z[i_low] = zs[i_high]
+                    best_dz[i_low] = dz
 
     dla_table["LYBETA_FLAG"] = flag
     dla_table["LYBETA_PARENT_TID"] = parent_tid

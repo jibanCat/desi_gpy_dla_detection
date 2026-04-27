@@ -33,7 +33,6 @@ def parse_args():
                         "if --no-bal is set")
     p.add_argument("--no-bal", action="store_true",
                    help="Drop MAP DLAs whose TARGETID has BI_CIV>0")
-    p.add_argument("--lls-dir", default=None)
     p.add_argument("--p-cuts", default="0.5,0.9,0.99,0.999")
     p.add_argument("--dz-rel", type=float, default=0.01)
     p.add_argument("--out", required=True)

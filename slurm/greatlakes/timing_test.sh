@@ -9,13 +9,18 @@
 #SBATCH -o slurm/greatlakes/timing_%j.log
 #SBATCH -e slurm/greatlakes/timing_%j.log
 set -euo pipefail
-export LD_LIBRARY_PATH=$HOME/.local/usr/local/lib64:$LD_LIBRARY_PATH
-cd /home/mfho/desi_gpy_dla_detection
+# Defaults below are the GreatLakes paths that this harness was developed
+# against. Override via --export=ALL,REPO_DIR=...,DATA_ROOT=...,SPEC=...,ZCAT=...
+# when submitting from a different machine. PYTHON defaults to whatever's
+# on PATH after the env is set up.
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-$HOME/.local/usr/local/lib64}"
+REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$REPO_DIR"
 
-PY=/home/mfho/.conda/envs/gpdla/bin/python
-DATA_ROOT=/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection
-SPEC=/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/7/789/spectra-16-789.fits
-ZCAT=/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits
+PY="${PYTHON:-${PY:-python}}"
+DATA_ROOT="${DATA_ROOT:-/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection}"
+SPEC="${SPEC:-/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/7/789/spectra-16-789.fits}"
+ZCAT="${ZCAT:-/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits}"
 
 run() {
   local preset=$1

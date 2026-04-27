@@ -15,10 +15,16 @@
 #
 # Note: per-condition output dirs let multiple sweeps coexist.
 set -euo pipefail
-cd /home/mfho/desi_gpy_dla_detection
-export LD_LIBRARY_PATH=$HOME/.local/usr/local/lib64:${LD_LIBRARY_PATH:-}
-PY=/home/mfho/.conda/envs/gpdla/bin/python
-DATA=/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection
+# Defaults below match GreatLakes; override via env vars on NERSC, e.g.:
+#   REPO_DIR=/pscratch/sd/j/jibancat/desi_gpy_dla_detection \
+#   DATA_ROOT=/pscratch/sd/j/jibancat/desi_gpy_dla_detection \
+#   PYTHON=python \
+#   bash examples/run_smoke_batch.sh y3 1 10000 10000 out/smoke/targets.tsv
+REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$REPO_DIR"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+PY="${PYTHON:-${PY:-python}}"
+DATA="${DATA_ROOT:-${DATA:-/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection}}"
 
 PRESET=${1:-eboss}
 FILTER=${2:-1}
