@@ -1,0 +1,38 @@
+# Real DESI LOA paths — TEMPLATE (committed)
+
+This file is the **template** for `private/loa_paths.md`, which is the actual
+configuration consumed by tooling. The real `loa_paths.md` is gitignored so
+restricted DESI LOA paths never enter git history.
+
+## To set up on a new machine
+
+```bash
+cp private/loa_paths.md.template private/loa_paths.md
+$EDITOR private/loa_paths.md
+```
+
+Fill in the placeholders with the actual paths on this machine. Once filled,
+`private/loa_paths.md` is gitignored automatically.
+
+---
+
+## LOA catalog files
+
+Path to the directory containing `QSO_cat_loa_*.fits` and BAL catalog files.
+
+```
+LOA_CATALOG_DIR = <FILL_IN>
+```
+
+## LOA spectra healpix root
+
+Path to the per-healpix DESI LOA spectra tree (`healpix/<survey>/<program>/...`).
+
+```
+LOA_HEALPIX_ROOT = <FILL_IN>
+```
+
+## Notes / lineage
+
+- Add provenance notes if relevant: source of copy, date, which catalog version,
+  any subset filtering applied.
