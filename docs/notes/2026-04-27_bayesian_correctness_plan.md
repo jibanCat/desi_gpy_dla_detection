@@ -6,32 +6,33 @@
 > training GP). Do you think it's likely linked to the instrumental
 > profile mismatch?"*
 
-## Short answer
+## Short answer (calibrated as a hypothesis, not a conclusion)
 
-The integration scheme is **theoretically valid** in the limit of
-infinite samples and an unbiased forward model. It's the **finite-sample
-behaviour combined with a slightly miscalibrated forward model** that
-lets the Lyβ-misidentification mode sneak through. Specifically:
+I do **not yet know** where the Lyβ-misidentification slack lives.
+Three plausible loci, each falsifiable:
 
-1. The forward model predicts the data correctly *only* if the LSF
-   kernel matches the instrument. Today's BOSS-shaped kernel on a DESI
-   linear-λ grid systematically under-broadens the line core.
-2. With a miscalibrated model, the per-sample log-likelihood at
-   "spurious" (z₂, NHI₂) samples near the Lyβ-shifted z is **closer
-   to** the M_DLA(1) likelihood than it should be, because the model's
-   broadening doesn't fully account for what the data actually shows.
-3. Marginalised over the (z₂, NHI₂) prior with finite samples, the
-   M_DLA(2) evidence integral can edge above M_DLA(1).
+1. **The integration formulation is correct, but finite-sample QMC
+   noise lets a small bias survive.** Would be falsified if the
+   spurious-Lyβ rate is invariant under integration-method swaps
+   (Step 4 below).
+2. **The forward model is miscalibrated** (LSF kernel and/or num_lines
+   wrong), so the per-sample log-likelihood at the Lyβ-shifted z is
+   artificially close to the M_DLA(1) value. Would be confirmed if
+   swapping in a DESI-shaped LSF (Steps 1–3) reduces the rate.
+3. **The DLA prior pile-up at NHI=20.3 gives spurious low-NHI second
+   DLAs extra weight.** Would be confirmed if the rate moves with
+   `--alpha` or `--min-log-nhi` changes.
 
-So the "incorrectness" is not in the integral *formulation*; it is in
-the **forward model fed to the integral**. Fix the LSF, and the
-spurious M_DLA(2) likelihood at Lyβ-of-real-DLA samples should drop
-because the model would correctly explain that feature with DLA1's Lyβ
-line alone.
+These hypotheses are not exclusive. The 4-step plan below is designed
+to discriminate among them; **I do NOT have data to commit to any one
+yet**. (Note added 2026-04-27 after user pointed out that an earlier
+draft of this doc asserted the answer was forward-model miscalibration
+without having tested it.)
 
 ## Is it linked to the instrumental profile mismatch?
 
-**Probably yes, partially.** The mechanism is concretely:
+**Unknown until tested.** A plausible mechanism, *if* the LSF mismatch
+matters:
 
 - True data at λ_obs corresponding to z_lybeta_apparent has a Lyβ
   trough whose depth and width are set by the *real* LSF.
@@ -45,11 +46,12 @@ line alone.
   at the Lyβ position more than chance, producing a *real* likelihood
   improvement under the wrong model.
 
-So the LSF mismatch creates a systematic incentive for the multi-DLA
-fitter to add a low-NHI second DLA at the Lyβ position. Fix the LSF,
-and that incentive partially disappears.
+If the LSF mismatch is real *and* dominant, fixing it should reduce
+the spurious-Lyβ rate. If it isn't, fixing it will move nothing. Step 1
+of the plan tests this.
 
-But there are other contributors that **don't** depend on the LSF:
+Other candidate contributors that **don't** depend on the LSF (and
+should be tested independently):
 - The QMC sample density: M_DLA(2) evidence depends on how the (z₂,
   NHI₂) prior is sampled. Sparse sampling near the Lyβ-shifted z lets
   individual high-likelihood samples carry disproportionate weight.
@@ -109,18 +111,24 @@ After steps 1-4 we will have separated the four candidate causes
 quantitatively: (i) LSF, (ii) num_lines, (iii) sample density, (iv)
 prior shape. The fix targets whichever dominates.
 
-## My current best guess
+## I do NOT have a current best guess
 
-Most likely contributors, in order:
-1. **Sample density / integration noise** — FILTER=1 reduces the
-   spurious rate by 2× already, just by truncation. Suggests M_DLA(2)
-   is sensitive to which 10k samples land where.
-2. **LSF kernel mismatch** — under-broadening makes the Lyβ residual
-   non-zero under M_DLA(1), creating the incentive for a second DLA.
-3. **Prior pile-up at NHI=20.3 edge** — gives spurious second DLAs
-   benefit-of-the-doubt prior mass.
-4. **num_lines** — already at 3 in production, going to 6 unlikely
-   to move much because Lyγ contribution is small at modest NHI.
+Pre-announcing which hypothesis I expect to win biases the test
+design. The four steps above are mutually-discriminating; we'll
+report the result of each step, then update the model of what
+matters from data, not before.
 
-So I'd expect Step 1 (LSF) and Step 2 (sample density) to dominate,
-with Steps 3 and 4 second-order.
+## Long-run direction (per user)
+
+User noted (2026-04-27): "in the long-run, I would like to have a
+much more efficient and better sampler for my GP finder (something
+like a super hand-written fast nest sampler)".
+
+If the falsification plan above identifies sample-density / QMC
+noise as a meaningful contributor, the next-iteration sampler is
+the natural fix. Specifically a hand-rolled nested-sampler tuned
+for the (z_DLA, NHI) parameter space — small dimensionality (2 per
+absorber), well-defined likelihood plateau, and the existing
+truncated-sampling scheme already does adaptive partitioning of
+the prior. Saved as a project memory item; not addressed in this
+plan.
