@@ -49,9 +49,12 @@ HCD_TID_COL="${HCD_TID_COL:-TARGETID}"
 HCD_NHI_COL="${HCD_NHI_COL:-NHI}"
 HCD_MIN_PDLA="${HCD_MIN_PDLA:-0.0}"
 
+# Self-contained run layout: one folder per run for easy rsync to GreatLakes.
 OUTDIR_BASE="${OUTDIR_BASE:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection}"
-TRAINSET_H5="${TRAINSET_H5:-${OUTDIR_BASE}/trainsets/loa_${VARIANT}_dbg_${SLURM_JOB_ID}.h5}"
-OUTPUT_DIR="${OUTPUT_DIR:-${OUTDIR_BASE}/learnlogs_v2/loa_${VARIANT}_dbg_${SLURM_JOB_ID}}"
+RUN_TAG="${RUN_TAG:-loa_${VARIANT}_dbg_${SLURM_JOB_ID}}"
+RUN_DIR="${RUN_DIR:-${OUTDIR_BASE}/v2_runs/${RUN_TAG}}"
+TRAINSET_H5="${TRAINSET_H5:-${RUN_DIR}/trainset.h5}"
+OUTPUT_DIR="${OUTPUT_DIR:-${RUN_DIR}}"
 
 case "$VARIANT" in
     no_dla_no_bal)
@@ -90,7 +93,7 @@ DLAMBDA="${DLAMBDA:-0.15}"
 [ -d "$SPECDIR" ] || { echo "[error] SPECDIR: $SPECDIR" >&2; exit 4; }
 [ -r "$HCD_CAT" ] || { echo "[error] HCD_CAT: $HCD_CAT" >&2; exit 5; }
 
-mkdir -p "$(dirname "$TRAINSET_H5")" "$OUTPUT_DIR"
+mkdir -p "$RUN_DIR"
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
@@ -162,5 +165,10 @@ assert all(math.isfinite(x) for x in h), 'non-finite loss'
 print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs)')
 " || { echo "[error] post-flight loss check failed" >&2; exit 9; }
 
+cp slurm_train/e2e_loa_dbg_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+
 echo
 echo "=== e2e_loa DEBUG $VARIANT COMPLETE ==="
+echo "  Outputs in:  $RUN_DIR"
+echo "  Move to GreatLakes with:"
+echo "    rsync -av $RUN_DIR/  greatlakes:/path/to/v2_runs/${RUN_TAG}/"

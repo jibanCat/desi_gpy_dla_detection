@@ -73,9 +73,14 @@ esac
 [ -d "$MOCK_DIR" ] || { echo "[error] MOCK_DIR not found: $MOCK_DIR" >&2; exit 3; }
 [ -r "$MOCK_DIR/zcat.fits" ] || { echo "[error] zcat.fits not in $MOCK_DIR" >&2; exit 4; }
 
-TRAINSET_H5="${SCRATCH}/trainsets/2lpt_${TAG}_${SLURM_JOB_ID}.h5"
-OUTPUT_DIR="${SCRATCH}/learnlogs_v2/2lpt_${TAG}_${SLURM_JOB_ID}"
-mkdir -p "$(dirname "$TRAINSET_H5")" "$OUTPUT_DIR"
+# Self-contained run layout: one folder per run for easy rsync to GreatLakes.
+# Inside: trainset.h5, model_epoch_*.h5, checkpoint_*.pt, config.json,
+# loss_history.json, slurm.log.
+RUN_TAG="${RUN_TAG:-2lpt_${TAG}_${SLURM_JOB_ID}}"
+RUN_DIR="${RUN_DIR:-${SCRATCH}/v2_runs/${RUN_TAG}}"
+TRAINSET_H5="${TRAINSET_H5:-${RUN_DIR}/trainset.h5}"
+OUTPUT_DIR="${OUTPUT_DIR:-${RUN_DIR}}"
+mkdir -p "$RUN_DIR"
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
@@ -143,6 +148,10 @@ assert all(math.isfinite(x) for x in h), 'non-finite loss'
 print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs)')
 " || { echo "[error] post-flight loss check failed" >&2; exit 8; }
 
+cp slurm_train/2lpt_train_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+
 echo
 echo "=== 2LPT $VARIANT TRAINING COMPLETE ==="
-echo "Models:  $OUTPUT_DIR/model_epoch_NNNN.h5"
+echo "  Outputs in:  $RUN_DIR"
+echo "  Move to GreatLakes with:"
+echo "    rsync -av $RUN_DIR/  greatlakes:/path/to/v2_runs/${RUN_TAG}/"

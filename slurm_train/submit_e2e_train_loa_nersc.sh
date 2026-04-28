@@ -93,9 +93,24 @@ HCD_NHI_COL="${HCD_NHI_COL:-NHI}"
 # confident detections.
 HCD_MIN_PDLA="${HCD_MIN_PDLA:-0.0}"
 
+# Self-contained run layout: everything for this job lives under ONE
+# folder so you can rsync it to GreatLakes in one shot, e.g.
+#
+#   rsync -av /pscratch/.../v2_runs/loa_no_hcd_with_bal_<jobid>/  \
+#       greatlakes:/nfs/turbo/.../v2_runs/loa_no_hcd_with_bal_<jobid>/
+#
+# Layout inside RUN_DIR:
+#   trainset.h5               — preload output (legacy schema)
+#   config.json               — TrainConfig snapshot
+#   loss_history.json         — per-epoch loss
+#   slurm.log                 — SLURM stdout (copied at end)
+#   checkpoint_epoch_NNNN.pt  — full Adam state, every save_every
+#   model_epoch_NNNN.h5       — inference-ready models
 OUTDIR_BASE="${OUTDIR_BASE:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection}"
-TRAINSET_H5="${TRAINSET_H5:-${OUTDIR_BASE}/trainsets/loa_${VARIANT}_${SLURM_JOB_ID}.h5}"
-OUTPUT_DIR="${OUTPUT_DIR:-${OUTDIR_BASE}/learnlogs_v2/loa_${VARIANT}_${SLURM_JOB_ID}}"
+RUN_TAG="${RUN_TAG:-loa_${VARIANT}_${SLURM_JOB_ID}}"
+RUN_DIR="${RUN_DIR:-${OUTDIR_BASE}/v2_runs/${RUN_TAG}}"
+TRAINSET_H5="${TRAINSET_H5:-${RUN_DIR}/trainset.h5}"
+OUTPUT_DIR="${OUTPUT_DIR:-${RUN_DIR}}"
 
 # Filter args per VARIANT.
 case "$VARIANT" in
@@ -143,7 +158,7 @@ if [ "$HCD_MIN_NHI" != "" ] && [ -n "$HCD_CAT" ]; then
     [ -r "$HCD_CAT" ] || { echo "[error] HCD_CAT not readable: $HCD_CAT" >&2; exit 5; }
 fi
 
-mkdir -p "$(dirname "$TRAINSET_H5")" "$OUTPUT_DIR"
+mkdir -p "$RUN_DIR"
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
@@ -241,7 +256,14 @@ assert all(math.isfinite(x) for x in h), 'loss history contains non-finite value
 print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs, monotone-ish: {h[-1] < h[0]})')
 " || { echo "[error] training produced non-finite loss" >&2; exit 9; }
 
+# Copy the SLURM stdout into the run dir so everything for this run is
+# in one place (rsync to GreatLakes in one shot).
+cp slurm_train/e2e_train_loa_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+
 echo
 echo "===================================================="
 echo "  e2e_train_loa  $VARIANT  COMPLETE"
+echo "  Outputs in:  $RUN_DIR"
+echo "  Move to GreatLakes with:"
+echo "    rsync -av $RUN_DIR/  greatlakes:/path/to/v2_runs/${RUN_TAG}/"
 echo "===================================================="

@@ -59,9 +59,12 @@ case "$VARIANT" in
         ;;
 esac
 
-TRAINSET_H5="${SCRATCH}/trainset_2lpt_${TAG}_${SLURM_JOB_ID}.h5"
-OUTPUT_DIR="${SCRATCH}/learnlogs_v2/2lpt_${TAG}_${SLURM_JOB_ID}"
-mkdir -p "$(dirname "$TRAINSET_H5")" "$OUTPUT_DIR"
+# Self-contained run layout: one folder per run.
+RUN_TAG="${RUN_TAG:-2lpt_${TAG}_${SLURM_JOB_ID}}"
+RUN_DIR="${RUN_DIR:-${SCRATCH}/v2_runs/${RUN_TAG}}"
+TRAINSET_H5="${TRAINSET_H5:-${RUN_DIR}/trainset.h5}"
+OUTPUT_DIR="${OUTPUT_DIR:-${RUN_DIR}}"
+mkdir -p "$RUN_DIR"
 
 # Load env
 module load cuda/12.4.0 2>/dev/null || true
@@ -118,4 +121,7 @@ python -u train_gp.py \
     --device cuda \
     --save-every 10
 
+cp slurm/greatlakes/train_2lpt_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+
 echo "=== done ==="
+echo "Outputs in: $RUN_DIR"
