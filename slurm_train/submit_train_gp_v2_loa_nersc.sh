@@ -45,7 +45,10 @@
 #   sbatch --export=ALL,NUM_EPOCHS=400,BATCH_SIZE=25000 \
 #       slurm_train/submit_train_gp_v2_loa_nersc.sh
 
-set -euo pipefail
+# NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
+# references DESI_ROOT before defining it, which trips `set -u`. Same
+# workaround used in slurm/debug_pr3_test_plan.sh (commit a521ad8).
+set -eo pipefail
 
 export CUDA_LAUNCH_BLOCKING=${CUDA_LAUNCH_BLOCKING:-0}
 export PYTHONUNBUFFERED=1

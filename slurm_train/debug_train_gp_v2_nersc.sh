@@ -30,7 +30,10 @@
 #   sbatch --export=ALL,PRELOADED_FILE=/path/to/your.h5,MAX_SPECTRA=2000 \
 #       slurm_train/debug_train_gp_v2_nersc.sh
 
-set -euo pipefail
+# NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
+# references DESI_ROOT before defining it, which trips `set -u`. Same
+# workaround used in slurm/debug_pr3_test_plan.sh (commit a521ad8).
+set -eo pipefail
 
 export PYTHONUNBUFFERED=1
 
