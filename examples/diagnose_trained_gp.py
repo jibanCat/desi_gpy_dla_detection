@@ -217,23 +217,28 @@ def cmd_visualize(args):
 
     # --- log10(omega ratio) for first model vs the rest, showing where they differ ---
     if len(models) >= 2:
+        from scipy.interpolate import interp1d
         ref = models[0]
         fig, ax = plt.subplots(figsize=(14, 5))
         for m in models[1:]:
-            # Interpolate m onto ref's grid for a fair compare.
-            from scipy.interpolate import interp1d
-            mu_ratio = (m.mu / np.maximum(ref.mu, 1e-30))
-            omega_ratio = np.exp(m.log_omega) / np.maximum(np.exp(ref.log_omega), 1e-30)
-            if m.rest_wavelengths.shape != ref.rest_wavelengths.shape:
-                mu_interp = interp1d(m.rest_wavelengths, m.mu, bounds_error=False)(ref.rest_wavelengths)
-                ome_interp = interp1d(m.rest_wavelengths, np.exp(m.log_omega), bounds_error=False)(ref.rest_wavelengths)
-                mu_ratio = mu_interp / np.maximum(ref.mu, 1e-30)
-                omega_ratio = ome_interp / np.maximum(np.exp(ref.log_omega), 1e-30)
-            ax.plot(ref.rest_wavelengths, np.log10(np.maximum(omega_ratio, 1e-6)),
-                    label=f"log10(ω[{m.tag}]/ω[{ref.tag}])")
-        ax.axhline(0, color="grey", ls="--")
+            # Always interpolate m onto ref's grid (handles different n_pix).
+            ref_omega = np.exp(ref.log_omega)
+            if m.rest_wavelengths.shape == ref.rest_wavelengths.shape and \
+               np.allclose(m.rest_wavelengths, ref.rest_wavelengths):
+                m_omega_on_ref = np.exp(m.log_omega)
+            else:
+                m_omega_on_ref = interp1d(
+                    m.rest_wavelengths, np.exp(m.log_omega),
+                    bounds_error=False, fill_value=np.nan,
+                )(ref.rest_wavelengths)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                omega_ratio = m_omega_on_ref / np.maximum(ref_omega, 1e-30)
+            ax.plot(ref.rest_wavelengths,
+                    np.log10(np.maximum(omega_ratio, 1e-6)),
+                    label=f"ω[{m.tag}] / ω[{ref.tag}]")
+        ax.axhline(0, color="grey", ls="--", alpha=0.6)
         ax.set_xlabel(r"$\lambda_{\rm rest}$ (Å)")
-        ax.set_ylabel(r"log10 $\omega$ ratio")
+        ax.set_ylabel(r"log$_{10}$ $\omega$ ratio")
         ax.set_title(f"Per-pixel ω(λ) ratio relative to {ref.tag}")
         ax.legend(loc="best", fontsize=10)
         plt.tight_layout()
