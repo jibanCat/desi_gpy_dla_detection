@@ -1,0 +1,191 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -C gpu
+#SBATCH -q regular
+#SBATCH --job-name=e2e_train_loa
+#SBATCH --output=slurm_train/e2e_train_loa_%j.log
+#SBATCH --error=slurm_train/e2e_train_loa_%j.err
+#SBATCH -A desi
+#SBATCH --time=24:00:00
+#SBATCH --gpus=1
+
+# End-to-end NERSC submit: PRELOAD real LOA data + TRAIN v2 GP, in one job.
+#
+# Three named VARIANTs control which sightlines feed the GP:
+#
+#   no_dla_no_bal      (legacy convention)
+#       Exclude TARGETIDs with any DLA (logNHI ≥ 20.3) in HCD_CAT,
+#       AND TARGETIDs with BI_CIV > 0 in qsocat.
+#       sub-DLAs and LLS are KEPT.
+#       This matches what the legacy production GP was trained on.
+#
+#   no_hcd_with_bal    (BAL-aware GP; the "model with BALs")
+#       Exclude TARGETIDs with any HCD (logNHI ≥ 17.0) in HCD_CAT.
+#       BAL sightlines are KEPT, so the trained GP can be applied to
+#       BAL spectra at inference time without a separate model.
+#
+#   no_hcd_no_bal      (clean baseline; the "model without LLS/sub-DLAs")
+#       Exclude any HCD (logNHI ≥ 17.0) AND any BAL.
+#       Cleanest possible LOA training set.
+#
+# To submit:
+#   sbatch --export=ALL,VARIANT=no_dla_no_bal slurm_train/submit_e2e_train_loa_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_with_bal slurm_train/submit_e2e_train_loa_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_no_bal slurm_train/submit_e2e_train_loa_nersc.sh
+#
+# All paths can be overridden:
+#   sbatch --export=ALL,VARIANT=no_hcd_no_bal,QSOCAT=/your/path,HCD_CAT=/your/dla.fits \
+#       slurm_train/submit_e2e_train_loa_nersc.sh
+
+# NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
+# references DESI_ROOT before defining it.
+set -eo pipefail
+export PYTHONUNBUFFERED=1
+
+# Load NERSC desi env.
+source /global/cfs/cdirs/desi/software/desi_environment.sh main || {
+    echo "[submit] ERROR: failed to load NERSC desi environment" >&2; exit 1
+}
+
+# --- Tunables ---
+VARIANT="${VARIANT:?must be set: no_dla_no_bal | no_hcd_with_bal | no_hcd_no_bal}"
+
+# Default LOA paths on NERSC. Override via --export=ALL,QSOCAT=...
+QSOCAT="${QSOCAT:-/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v3-altbal.fits}"
+SPECDIR="${SPECDIR:-/global/cfs/cdirs/desi/spectro/redux/loa}"
+# HCD catalog: ANY catalog file with TARGETID + log NHI columns.
+# Common choices on NERSC:
+#   - A previous GP-DLA combined.h5 (its `MAP_log_nhis` column).
+#   - An external CNN catalog (e.g. Wang+2022) with `TARGETID`, `LOG_NHI`.
+# This submit defaults to the user's current LOA combined.h5 (as recorded in
+# CLAUDE.md), but you should pass HCD_CAT explicitly if you want a
+# different reference.
+HCD_CAT="${HCD_CAT:-/pscratch/sd/j/jibancat/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/combined.h5}"
+HCD_TID_COL="${HCD_TID_COL:-target_ids}"   # combined.h5 uses 'target_ids' (per combine_processed_h5.py)
+HCD_NHI_COL="${HCD_NHI_COL:-MAP_log_nhis}" # 2D (per-spec, per-slot) — preload reduces to per-spec max
+
+OUTDIR_BASE="${OUTDIR_BASE:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection}"
+TRAINSET_H5="${TRAINSET_H5:-${OUTDIR_BASE}/trainsets/loa_${VARIANT}_${SLURM_JOB_ID}.h5}"
+OUTPUT_DIR="${OUTPUT_DIR:-${OUTDIR_BASE}/learnlogs_v2/loa_${VARIANT}_${SLURM_JOB_ID}}"
+
+# Filter args per VARIANT.
+case "$VARIANT" in
+    no_dla_no_bal)
+        HCD_MIN_NHI="${HCD_MIN_NHI:-20.3}"
+        EXCLUDE_BAL_FLAG="--exclude-bal"
+        ;;
+    no_hcd_with_bal)
+        HCD_MIN_NHI="${HCD_MIN_NHI:-17.0}"
+        EXCLUDE_BAL_FLAG=""
+        ;;
+    no_hcd_no_bal)
+        HCD_MIN_NHI="${HCD_MIN_NHI:-17.0}"
+        EXCLUDE_BAL_FLAG="--exclude-bal"
+        ;;
+    *)
+        echo "[error] VARIANT must be one of: no_dla_no_bal, no_hcd_with_bal, no_hcd_no_bal" >&2
+        exit 2
+        ;;
+esac
+
+# Other knobs (overridable).
+Z_MIN="${Z_MIN:-2.0}"
+Z_MAX="${Z_MAX:-4.25}"
+MAX_SPECTRA="${MAX_SPECTRA:-300000}"
+NUM_EPOCHS="${NUM_EPOCHS:-800}"
+BATCH_SIZE="${BATCH_SIZE:-12500}"
+LEARNING_RATE="${LEARNING_RATE:-0.005}"
+NUM_PCA="${NUM_PCA:-30}"
+NUM_FOREST_LINES="${NUM_FOREST_LINES:-3}"
+DLAMBDA="${DLAMBDA:-0.15}"
+
+# Pre-flight: required paths.
+[ -r "$QSOCAT" ] || { echo "[error] QSOCAT not readable: $QSOCAT" >&2; exit 3; }
+[ -d "$SPECDIR" ] || { echo "[error] SPECDIR not a directory: $SPECDIR" >&2; exit 4; }
+if [ "$HCD_MIN_NHI" != "" ] && [ -n "$HCD_CAT" ]; then
+    [ -r "$HCD_CAT" ] || { echo "[error] HCD_CAT not readable: $HCD_CAT" >&2; exit 5; }
+fi
+
+mkdir -p "$(dirname "$TRAINSET_H5")" "$OUTPUT_DIR"
+
+REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+cd "$REPO_DIR"
+
+# Pre-flight: imports.
+python -c "
+import torch
+from gpy_dla_detection.training.dataset import load_preprocessed_h5
+from gpy_dla_detection.training.objective_v2 import vectorized_nll
+from gpy_dla_detection.training.trainer_v2 import train, TrainConfig
+from gpy_dla_detection.training.model_v2 import GPModelV2
+import desispec.io
+print(f'[preflight] torch={torch.__version__} cuda={torch.cuda.is_available()}')
+assert torch.cuda.is_available(), 'CUDA not available; check NERSC env'
+" || { echo "[error] preflight import failed" >&2; exit 6; }
+
+echo "===================================================="
+echo "  e2e_train_loa  variant: $VARIANT  job: $SLURM_JOB_ID"
+echo "===================================================="
+echo "  qsocat:         $QSOCAT"
+echo "  specdir:        $SPECDIR"
+echo "  hcd_cat:        ${HCD_CAT:-(none)}"
+echo "  hcd_min_nhi:    $HCD_MIN_NHI"
+echo "  exclude_bal:    ${EXCLUDE_BAL_FLAG:-(off)}"
+echo "  trainset_h5:    $TRAINSET_H5"
+echo "  output_dir:     $OUTPUT_DIR"
+echo "  z range:        [$Z_MIN, $Z_MAX]"
+echo "  max_spectra:    $MAX_SPECTRA"
+echo "  epochs=$NUM_EPOCHS  batch=$BATCH_SIZE  lr=$LEARNING_RATE  k=$NUM_PCA"
+echo "===================================================="
+echo
+
+# --- Step 1: PRELOAD ---
+echo "=== STEP 1: preload ==="
+PRELOAD_CMD="python -u preload_spectra/preload_loa_real.py \
+    --qsocat \"$QSOCAT\" \
+    --specdir \"$SPECDIR\" \
+    --output \"$TRAINSET_H5\" \
+    --z-min $Z_MIN --z-max $Z_MAX \
+    --max-spectra $MAX_SPECTRA \
+    --dlambda $DLAMBDA \
+    $EXCLUDE_BAL_FLAG"
+if [ -n "${HCD_CAT}" ]; then
+    PRELOAD_CMD="$PRELOAD_CMD --hcd-cat \"$HCD_CAT\" --hcd-tid-col \"$HCD_TID_COL\" --hcd-nhi-col \"$HCD_NHI_COL\" --hcd-min-nhi $HCD_MIN_NHI"
+fi
+
+eval "$PRELOAD_CMD"
+
+[ -r "$TRAINSET_H5" ] || { echo "[error] preload did not produce $TRAINSET_H5" >&2; exit 7; }
+echo "preload wrote: $TRAINSET_H5 ($(du -h $TRAINSET_H5 | cut -f1))"
+echo
+
+# --- Step 2: TRAIN ---
+echo "=== STEP 2: train ==="
+python -u train_gp.py \
+    --preloaded-file "$TRAINSET_H5" \
+    --z-min $Z_MIN --z-max $Z_MAX \
+    --max-spectra $MAX_SPECTRA \
+    --num-pca-components $NUM_PCA \
+    --num-epochs $NUM_EPOCHS \
+    --batch-size $BATCH_SIZE \
+    --learning-rate $LEARNING_RATE \
+    --num-forest-lines $NUM_FOREST_LINES \
+    --output-dir "$OUTPUT_DIR" \
+    --device cuda \
+    --save-every 10
+
+# Post-flight: confirm training finished without NaN.
+LOSS_FILE="$OUTPUT_DIR/loss_history.json"
+[ -r "$LOSS_FILE" ] || { echo "[error] loss_history.json not written" >&2; exit 8; }
+python -c "
+import json, math, sys
+with open('$LOSS_FILE') as f:
+    h = json.load(f)
+assert all(math.isfinite(x) for x in h), 'loss history contains non-finite values'
+print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs, monotone-ish: {h[-1] < h[0]})')
+" || { echo "[error] training produced non-finite loss" >&2; exit 9; }
+
+echo
+echo "===================================================="
+echo "  e2e_train_loa  $VARIANT  COMPLETE"
+echo "===================================================="
