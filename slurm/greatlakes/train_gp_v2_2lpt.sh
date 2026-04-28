@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -A cavestru0
-#SBATCH -p gpu
+#SBATCH -p spgpu
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8

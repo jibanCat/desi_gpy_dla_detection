@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -A cavestru0
-#SBATCH -p gpu
+#SBATCH -p spgpu
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
@@ -10,6 +10,11 @@
 #SBATCH -o slurm/greatlakes/profile_train_%j.log
 #SBATCH -e slurm/greatlakes/profile_train_%j.log
 set -euo pipefail
+
+# NB: GreatLakes' `gpu` partition gives V100 (compute capability 7.0)
+# which the conda-env PyTorch (built for CC 7.5+) doesn't support. Use
+# `spgpu` (A40, CC 8.6) instead. NERSC's A100 (CC 8.0) is fine for
+# production runs.
 
 # Layer 3 profile of GP training on a single GreatLakes GPU.
 # Compares CPU baseline (~36 s/epoch on 128 spectra) against GPU.
