@@ -78,16 +78,20 @@ VARIANT="${VARIANT:?must be set: no_dla_no_bal | no_hcd_with_bal | no_hcd_no_bal
 # Default LOA paths on NERSC. Override via --export=ALL,QSOCAT=...
 QSOCAT="${QSOCAT:-/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v3-altbal.fits}"
 SPECDIR="${SPECDIR:-/global/cfs/cdirs/desi/spectro/redux/loa}"
-# HCD catalog: ANY catalog file with TARGETID + log NHI columns.
-# Common choices on NERSC:
-#   - A previous GP-DLA combined.h5 (its `MAP_log_nhis` column).
-#   - An external CNN catalog (e.g. Wang+2022) with `TARGETID`, `LOG_NHI`.
-# This submit defaults to the user's current LOA combined.h5 (as recorded in
-# CLAUDE.md), but you should pass HCD_CAT explicitly if you want a
-# different reference.
-HCD_CAT="${HCD_CAT:-/pscratch/sd/j/jibancat/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/combined.h5}"
-HCD_TID_COL="${HCD_TID_COL:-target_ids}"   # combined.h5 uses 'target_ids' (per combine_processed_h5.py)
-HCD_NHI_COL="${HCD_NHI_COL:-MAP_log_nhis}" # 2D (per-spec, per-slot) — preload reduces to per-spec max
+# HCD catalog: a per-absorber FITS table (one row per detected
+# DLA / sub-DLA / LLS) with columns TARGETID, NHI, P_DLA.
+# The user keeps these in:
+#   /global/cfs/cdirs/desicollab/users/jibancat/DLA/processed_gp_samples/
+# The "LLS-mode" run is the natural choice for an "all HCDs" filter
+# because it covers logNHI ≥ 17.2.
+HCD_CAT="${HCD_CAT:-/global/cfs/cdirs/desicollab/users/jibancat/DLA/processed_gp_samples/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/dlacat-loa-main-dark.fits}"
+HCD_TID_COL="${HCD_TID_COL:-TARGETID}"
+HCD_NHI_COL="${HCD_NHI_COL:-NHI}"
+# Optional P_DLA gate: only exclude TARGETIDs whose absorber has
+# P_DLA ≥ this. Default 0 = no P_DLA cut (any absorber in the
+# catalog excludes the sightline). Set to e.g. 0.99 to filter only
+# confident detections.
+HCD_MIN_PDLA="${HCD_MIN_PDLA:-0.0}"
 
 OUTDIR_BASE="${OUTDIR_BASE:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection}"
 TRAINSET_H5="${TRAINSET_H5:-${OUTDIR_BASE}/trainsets/loa_${VARIANT}_${SLURM_JOB_ID}.h5}"
@@ -168,7 +172,15 @@ echo "    hcd cols:       tid='$HCD_TID_COL'  nhi='$HCD_NHI_COL'"
 echo "  Filter pipeline (applied IN ORDER inside preload):"
 echo "    1) z in [$Z_MIN, $Z_MAX]  AND  ZWARN==0"
 echo "    2) BAL anti-join:  ${EXCLUDE_BAL_FLAG:+ON  (drop BI_CIV > 0)}${EXCLUDE_BAL_FLAG:-OFF (BALs KEPT)}"
-echo "    3) HCD anti-join:  drop TARGETIDs whose max(MAP_log_nhis) ≥ $HCD_MIN_NHI"
+if [ -n "${HCD_CAT}" ]; then
+    PDLA_DESC=""
+    if [ "$(awk "BEGIN{print ($HCD_MIN_PDLA > 0)}")" = "1" ]; then
+        PDLA_DESC=" AND P_DLA ≥ $HCD_MIN_PDLA"
+    fi
+    echo "    3) HCD anti-join:  drop TARGETIDs with absorber NHI ≥ $HCD_MIN_NHI${PDLA_DESC}"
+else
+    echo "    3) HCD anti-join:  OFF (no --hcd-cat)"
+fi
 echo "    4) random cap to MAX_SPECTRA=$MAX_SPECTRA"
 echo "  Outputs:"
 echo "    trainset_h5:    $TRAINSET_H5"
@@ -189,7 +201,12 @@ PRELOAD_CMD="python -u preload_spectra/preload_loa_real.py \
     --dlambda $DLAMBDA \
     $EXCLUDE_BAL_FLAG"
 if [ -n "${HCD_CAT}" ]; then
-    PRELOAD_CMD="$PRELOAD_CMD --hcd-cat \"$HCD_CAT\" --hcd-tid-col \"$HCD_TID_COL\" --hcd-nhi-col \"$HCD_NHI_COL\" --hcd-min-nhi $HCD_MIN_NHI"
+    PRELOAD_CMD="$PRELOAD_CMD \
+        --hcd-cat \"$HCD_CAT\" \
+        --hcd-tid-col \"$HCD_TID_COL\" \
+        --hcd-nhi-col \"$HCD_NHI_COL\" \
+        --hcd-min-nhi $HCD_MIN_NHI \
+        --hcd-min-pdla $HCD_MIN_PDLA"
 fi
 
 eval "$PRELOAD_CMD"

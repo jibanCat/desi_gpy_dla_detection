@@ -108,21 +108,29 @@ def _spec_path_loa(specdir: Path, healpix: int) -> Path:
 
 
 def _load_hcd_targetids(hcd_cat_path: Path, *, tid_col: str, nhi_col: str,
-                        min_nhi: float) -> set[int]:
-    """Return TARGETIDs whose maximum logNHI across DLA slots is ≥ min_nhi.
+                        min_nhi: float, pdla_col: str = "P_DLA",
+                        min_pdla: float = 0.0) -> set[int]:
+    """Return TARGETIDs that have at least one absorber with
+    ``log NHI ≥ min_nhi`` AND (optionally) ``P_DLA ≥ min_pdla``.
 
-    The catalog can be FITS or HDF5. For FITS we read with astropy.Table
-    (one row per absorber; multiple absorbers per TARGETID allowed).
-    For HDF5 (combined.h5 from the GP-DLA pipeline) the NHI column is
-    typically 2D: shape ``(num_dla_slots, num_spectra)`` (per
-    ``CDDF_analysis/qso_loader.py``: ``self.processed_file['MAP_log_nhis'][()].T``).
-    We take the max NHI across slots for each spectrum and compare to
-    ``min_nhi``.
+    Catalog formats supported:
+
+      - **FITS** (e.g. ``dlacat-loa-main-dark.fits``): one row per
+        absorber, columns ``TARGETID``, ``NHI``, ``P_DLA``. A
+        ``TARGETID`` with multiple absorbers gets one row each; we
+        anti-join on ``TARGETID``, so a single confident detection is
+        enough to exclude that sightline.
+
+      - **HDF5** (legacy combined.h5): per-spectrum arrays. ``NHI``
+        column may be 2D (slots × spectra). We reduce to per-spectrum
+        max NHI; ``P_DLA`` filtering is not applied for HDF5 (the
+        combined.h5 schema doesn't carry per-slot P_DLA).
     """
     p = Path(hcd_cat_path)
+
     if p.suffix.lower() in (".h5", ".hdf5"):
+        # HDF5 path (combined.h5).
         with h5py.File(p, "r") as f:
-            # Be lenient about case in HDF5 dataset names.
             keys = {k.lower(): k for k in f.keys()}
             tid_key = keys.get(tid_col.lower(), tid_col)
             nhi_key = keys.get(nhi_col.lower(), nhi_col)
@@ -133,13 +141,11 @@ def _load_hcd_targetids(hcd_cat_path: Path, *, tid_col: str, nhi_col: str,
                 )
             tids = np.asarray(f[tid_key][()]).reshape(-1).astype(np.int64)
             nhi_raw = np.asarray(f[nhi_key][()]).astype(np.float64)
-        # Reduce 2D (slots × spectra OR spectra × slots) to 1D per-spectrum max.
         if nhi_raw.ndim == 2:
-            # Match against tid length to figure orientation.
             if nhi_raw.shape[0] == tids.size:
-                per_spec_max = np.nanmax(nhi_raw, axis=1)  # spectra × slots
+                per_spec_max = np.nanmax(nhi_raw, axis=1)
             elif nhi_raw.shape[1] == tids.size:
-                per_spec_max = np.nanmax(nhi_raw, axis=0)  # slots × spectra
+                per_spec_max = np.nanmax(nhi_raw, axis=0)
             else:
                 raise ValueError(
                     f"{nhi_key} 2D shape {nhi_raw.shape} does not match "
@@ -149,30 +155,40 @@ def _load_hcd_targetids(hcd_cat_path: Path, *, tid_col: str, nhi_col: str,
                   f"reduced to per-spectrum max")
         else:
             per_spec_max = nhi_raw.reshape(-1)
-            if per_spec_max.size != tids.size:
-                raise ValueError(
-                    f"{nhi_key} length {per_spec_max.size} != "
-                    f"{tid_key} length {tids.size}"
-                )
-        # Replace -inf / NaN with -inf so threshold compares correctly.
         per_spec_max = np.where(np.isfinite(per_spec_max), per_spec_max, -np.inf)
         bad_mask = per_spec_max >= min_nhi
         bad_tids = set(int(x) for x in tids[bad_mask])
+        if min_pdla > 0:
+            print(f"[hcd] {p.name}: --hcd-min-pdla={min_pdla} ignored "
+                  f"(HDF5 schema has no per-slot P_DLA)")
         print(f"[hcd] {p.name}: {tids.size} spectra, "
-              f"{bad_mask.sum()} with max logNHI ≥ {min_nhi} → {len(bad_tids)} unique TIDs to exclude")
-    else:
-        t = Table.read(str(p))
-        if tid_col not in t.colnames or nhi_col not in t.colnames:
-            raise KeyError(
-                f"{p} does not have columns {tid_col!r} / {nhi_col!r}; "
-                f"available: {t.colnames[:20]}"
-            )
-        tids = np.asarray(t[tid_col]).astype(np.int64)
-        nhis = np.asarray(t[nhi_col]).astype(np.float64)
-        keep = np.isfinite(nhis) & (nhis >= min_nhi)
-        bad_tids = set(int(x) for x in tids[keep])
-        print(f"[hcd] {p.name}: {len(t)} rows, {keep.sum()} with logNHI ≥ {min_nhi} "
+              f"{bad_mask.sum()} with max logNHI ≥ {min_nhi}  "
               f"→ {len(bad_tids)} unique TIDs to exclude")
+        return bad_tids
+
+    # FITS path (one row per absorber).
+    t = Table.read(str(p))
+    if tid_col not in t.colnames or nhi_col not in t.colnames:
+        raise KeyError(
+            f"{p} does not have columns {tid_col!r} / {nhi_col!r}; "
+            f"available: {t.colnames[:25]}"
+        )
+    tids = np.asarray(t[tid_col]).astype(np.int64)
+    nhis = np.asarray(t[nhi_col]).astype(np.float64)
+    keep = np.isfinite(nhis) & (nhis >= min_nhi)
+    msg = f"[hcd] {p.name}: {len(t)} rows; {keep.sum()} with logNHI ≥ {min_nhi}"
+    if min_pdla > 0:
+        if pdla_col not in t.colnames:
+            raise KeyError(
+                f"--hcd-min-pdla={min_pdla} requires column {pdla_col!r} "
+                f"in {p}; available: {t.colnames[:25]}"
+            )
+        pdla = np.asarray(t[pdla_col]).astype(np.float64)
+        keep_pdla = np.isfinite(pdla) & (pdla >= min_pdla)
+        keep &= keep_pdla
+        msg += f", {keep.sum()} also with {pdla_col} ≥ {min_pdla}"
+    bad_tids = set(int(x) for x in tids[keep])
+    print(f"{msg}  → {len(bad_tids)} unique TIDs to exclude")
     return bad_tids
 
 
@@ -278,12 +294,26 @@ def main():
                    help="Exclude rows where BAL_COL > this (default 0)")
     # HCD anti-join
     p.add_argument("--hcd-cat", default=None, type=Path,
-                   help="External catalog of HCDs (FITS or HDF5)")
-    p.add_argument("--hcd-tid-col", default="TARGETID")
-    p.add_argument("--hcd-nhi-col", default="LOG_NHI")
+                   help="External catalog of HCDs (FITS like dlacat-*.fits, "
+                        "or HDF5 combined.h5)")
+    p.add_argument("--hcd-tid-col", default="TARGETID",
+                   help="TARGETID column name (FITS dlacat: TARGETID; "
+                        "combined.h5: target_ids)")
+    p.add_argument("--hcd-nhi-col", default="NHI",
+                   help="NHI column name (FITS dlacat: NHI; combined.h5: "
+                        "MAP_log_nhis)")
     p.add_argument("--hcd-min-nhi", type=float, default=20.3,
-                   help="Exclude TARGETIDs with any HCD logNHI ≥ this. "
-                        "20.3 = DLA-only filter; 17.0 = any HCD")
+                   help="Exclude TARGETIDs with any absorber logNHI ≥ this. "
+                        "20.3 = DLA-only filter; 19.0 = DLAs+sub-DLAs; "
+                        "17.2 = any HCD (LLS+sub-DLA+DLA)")
+    p.add_argument("--hcd-pdla-col", default="P_DLA",
+                   help="P_DLA column name in FITS catalogs (used only if "
+                        "--hcd-min-pdla > 0)")
+    p.add_argument("--hcd-min-pdla", type=float, default=0.0,
+                   help="Additional gate: only exclude absorbers with "
+                        "P_DLA ≥ this. Default 0 = no P_DLA cut. "
+                        "Useful for filtering only confident detections "
+                        "(e.g. 0.99 keeps only high-purity catalog entries).")
     # Rest-frame grid
     p.add_argument("--min-lambda", type=float, default=850.75)
     p.add_argument("--max-lambda", type=float, default=1420.75)
@@ -346,6 +376,7 @@ def main():
         bad_tids = _load_hcd_targetids(
             args.hcd_cat, tid_col=args.hcd_tid_col, nhi_col=args.hcd_nhi_col,
             min_nhi=args.hcd_min_nhi,
+            pdla_col=args.hcd_pdla_col, min_pdla=args.hcd_min_pdla,
         )
         in_bad = np.isin(np.asarray(qcat["TARGETID"]), list(bad_tids))
         before = int(keep.sum())
