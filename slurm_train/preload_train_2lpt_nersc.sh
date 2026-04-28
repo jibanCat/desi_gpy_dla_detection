@@ -41,8 +41,10 @@ source /global/cfs/cdirs/desi/software/desi_environment.sh main || {
 
 VARIANT="${VARIANT:?must be set: loa0 | loa124_nohcd_nobal}"
 
-# Tunables.
-MAX_SPECTRA="${MAX_SPECTRA:-50000}"
+# Tunables. Sized for the 30-min debug walltime: at ~57 spectra/s preload
+# (FITS I/O bound), 20k spectra ≈ 6 min preload + ~3 min train + overhead
+# = ~12 min total, leaving ~18 min margin. Job 52188320 timed out on 50k.
+MAX_SPECTRA="${MAX_SPECTRA:-20000}"
 NUM_EPOCHS="${NUM_EPOCHS:-200}"
 BATCH_SIZE="${BATCH_SIZE:-12500}"
 LEARNING_RATE="${LEARNING_RATE:-0.005}"

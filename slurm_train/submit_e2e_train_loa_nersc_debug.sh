@@ -78,10 +78,14 @@ case "$VARIANT" in
         ;;
 esac
 
-# Debug-scale knobs.
+# Debug-scale knobs. Sized for the 30-min debug walltime: at the LOA
+# coadd I/O rate (multi-spectrum-per-file) preload is faster per spectrum
+# than 2LPT's spectra-16, but still ~5 min for 50k. Drop the regular's
+# 300k default to 50k for debug — leaves training + post-flight margin.
+# For a fully-converged production model, run the regular-queue submit.
 Z_MIN="${Z_MIN:-2.0}"
 Z_MAX="${Z_MAX:-4.25}"
-MAX_SPECTRA="${MAX_SPECTRA:-300000}"
+MAX_SPECTRA="${MAX_SPECTRA:-50000}"
 NUM_EPOCHS="${NUM_EPOCHS:-200}"          # debug-scale: 200 (vs 800 in regular)
 BATCH_SIZE="${BATCH_SIZE:-12500}"
 LEARNING_RATE="${LEARNING_RATE:-0.005}"
