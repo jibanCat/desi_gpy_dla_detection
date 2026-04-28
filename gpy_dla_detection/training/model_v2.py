@@ -65,11 +65,35 @@ class GPModelV2(nn.Module):
         init_log_c_0: float = math.log(0.1),
         init_log_tau_0: float = math.log(0.00246),
         init_log_beta: float = math.log(3.62),
+        rest_wavelengths: Optional[torch.Tensor] = None,
+        mu: Optional[torch.Tensor] = None,
+        max_noise_variance: float = 9.0,
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
         self.num_pixels = num_pixels
         self.k = k
+
+        # Non-trainable metadata kept on the model so the H5 saver can dump
+        # everything the legacy inference loader expects (rest_wavelengths,
+        # mu, max_noise_variance).
+        if rest_wavelengths is None:
+            rest_wavelengths = torch.linspace(911.0, 1216.0, num_pixels, dtype=dtype)
+        elif isinstance(rest_wavelengths, np.ndarray):
+            rest_wavelengths = torch.from_numpy(rest_wavelengths).to(dtype)
+        else:
+            rest_wavelengths = rest_wavelengths.to(dtype)
+        self.register_buffer("rest_wavelengths", rest_wavelengths.clone().detach())
+
+        if mu is None:
+            mu = torch.zeros(num_pixels, dtype=dtype)
+        elif isinstance(mu, np.ndarray):
+            mu = torch.from_numpy(mu).to(dtype)
+        else:
+            mu = mu.to(dtype)
+        self.register_buffer("mu", mu.clone().detach())
+
+        self.max_noise_variance = float(max_noise_variance)
 
         if init_M is None:
             init_M = torch.randn(num_pixels, k, dtype=dtype) * 0.05
@@ -92,12 +116,16 @@ class GPModelV2(nn.Module):
         self.log_beta = nn.Parameter(torch.tensor(init_log_beta, dtype=dtype))
 
     def state_dict_for_h5(self):
-        """Flat dict suitable for h5py / scipy.io.savemat dump.
+        """Flat dict suitable for h5py dump.
 
         Keys mirror the legacy ``save_h5_file`` output layout so that
         downstream code (e.g. the inference pipeline reading
         ``learnlogs/model_epoch_NNN.h5``) can load v2-trained models
         unchanged.
+
+        Required by the legacy inference loader (gpy_dla_detection/dla_gp.py
+        line 1042-1056 and null_gp.py line 453-457):
+            rest_wavelengths, mu, M, log_omega, log_c_0, log_tau_0, log_beta
         """
         return {
             "M": self.M.detach().cpu().numpy(),
@@ -105,6 +133,9 @@ class GPModelV2(nn.Module):
             "log_c_0": float(self.log_c_0.detach().cpu().item()),
             "log_tau_0": float(self.log_tau_0.detach().cpu().item()),
             "log_beta": float(self.log_beta.detach().cpu().item()),
+            "rest_wavelengths": self.rest_wavelengths.detach().cpu().numpy(),
+            "mu": self.mu.detach().cpu().numpy(),
+            "max_noise_variance": float(self.max_noise_variance),
             "num_pixels": self.num_pixels,
             "k": self.k,
         }

@@ -107,11 +107,16 @@ def save_h5_model(model: GPModelV2, output_dir: Path, epoch: int) -> Path:
     p = output_dir / f"model_epoch_{epoch:04d}.h5"
     state = model.state_dict_for_h5()
     with h5py.File(p, "w") as f:
+        # Trainable parameters
         f.create_dataset("M", data=state["M"], compression="gzip")
         f.create_dataset("log_omega", data=state["log_omega"], compression="gzip")
-        f.create_dataset("log_c_0", data=np.array([state["log_c_0"]]))
-        f.create_dataset("log_tau_0", data=np.array([state["log_tau_0"]]))
-        f.create_dataset("log_beta", data=np.array([state["log_beta"]]))
+        f.create_dataset("log_c_0", data=np.array(state["log_c_0"]))
+        f.create_dataset("log_tau_0", data=np.array(state["log_tau_0"]))
+        f.create_dataset("log_beta", data=np.array(state["log_beta"]))
+        # Metadata required by the legacy inference loader.
+        f.create_dataset("rest_wavelengths", data=state["rest_wavelengths"])
+        f.create_dataset("mu", data=state["mu"])
+        f.create_dataset("max_noise_variance", data=np.array(state["max_noise_variance"]))
         f.attrs["num_pixels"] = state["num_pixels"]
         f.attrs["k"] = state["k"]
         f.attrs["epoch"] = epoch

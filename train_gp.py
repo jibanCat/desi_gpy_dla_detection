@@ -148,9 +148,13 @@ def main():
     print(f"[main] PCA init M: shape {initial_M.shape}, σ {initial_M.std():.3e}")
 
     # 3) Build the model.
+    # Pass rest_wavelengths and mu through so the saved H5 includes the
+    # metadata the legacy inference loader expects.
     model = GPModelV2(
         num_pixels=ts.n_pix, k=args.num_pca_components,
         init_M=initial_M, init_log_omega=initial_log_omega,
+        rest_wavelengths=ts.rest_wavelengths,
+        mu=ts.mu,  # may be None if --no-center
     )
 
     # Sanity: every initial parameter must be finite, otherwise the

@@ -55,6 +55,9 @@ class TrainingSet:
     noise_variances: torch.Tensor  # (N, n_pix)
     z_qsos: torch.Tensor          # (N,)
     rest_wavelengths: torch.Tensor  # (n_pix,)
+    mu: Optional[torch.Tensor]    # (n_pix,), inverse-variance-weighted mean
+                                  # flux from centering (= μ in Ho 2020 eq.).
+                                  # None if --no-center.
     n_pix: int
     n_spectra: int
 
@@ -240,6 +243,7 @@ def load_preprocessed_h5(
         print(f"[dataset] de-forest: tau_0={de_forest_tau_0} beta={de_forest_beta} "
               f"num_lines={de_forest_num_lines}")
 
+    mean_flux = None
     if apply_center:
         fluxes, mean_flux = _center_fluxes_inverse_variance(fluxes, noise_variance)
         print(f"[dataset] centered (inverse-variance weighted mean subtracted)")
@@ -250,12 +254,16 @@ def load_preprocessed_h5(
     lya_1pzs = one_plus_z_qso * rest_wave[None, :] / _LYA_WAVELENGTH_AA  # (N, n_pix)
 
     # Cast back to target dtype for training memory budget.
+    mu_t = None
+    if mean_flux is not None:
+        mu_t = torch.from_numpy(mean_flux.astype(np.float32)).to(dtype)
     return TrainingSet(
         fluxes=torch.from_numpy(fluxes.astype(np.float32)).to(dtype),
         lya_1pzs=torch.from_numpy(lya_1pzs.astype(np.float32)).to(dtype),
         noise_variances=torch.from_numpy(noise_variance.astype(np.float32)).to(dtype),
         z_qsos=torch.from_numpy(z_qsos.astype(np.float32)).to(dtype),
         rest_wavelengths=torch.from_numpy(rest_wave.astype(np.float32)).to(dtype),
+        mu=mu_t,
         n_pix=int(rest_wave.shape[0]),
         n_spectra=int(n_kept),
     )

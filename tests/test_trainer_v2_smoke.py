@@ -82,13 +82,18 @@ def test_trainer_v2_converges_on_synthetic(tmp_path):
         json_history = json.load(f)
     assert json_history == history
 
-    # h5 checkpoint exists and has correct schema.
+    # h5 checkpoint exists and has the legacy-inference-compatible schema.
     h5_files = sorted(out_dir.glob("model_epoch_*.h5"))
     assert len(h5_files) >= 1
     final_h5 = h5_files[-1]
     with h5py.File(final_h5, "r") as f:
+        # Trainable parameters
         for key in ["M", "log_omega", "log_c_0", "log_tau_0", "log_beta"]:
             assert key in f, f"missing {key} in {final_h5}"
+        # Metadata that the legacy inference loader (dla_gp.py L1042-1056)
+        # requires for v2-trained models to be drop-in for DLAHolder.
+        for key in ["rest_wavelengths", "mu", "max_noise_variance"]:
+            assert key in f, f"missing {key} in {final_h5} (inference loader needs it)"
         M_loaded = f["M"][:]
         assert M_loaded.shape == (n_pix, k)
         assert "num_pixels" in f.attrs

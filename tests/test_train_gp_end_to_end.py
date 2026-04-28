@@ -168,6 +168,9 @@ def test_train_gp_runs_two_epochs_end_to_end(tmp_path):
     with h5py.File(h5_files[-1], "r") as f:
         for key in ["M", "log_omega", "log_c_0", "log_tau_0", "log_beta"]:
             assert key in f
+        # Inference-loader requirements (dla_gp.py:1042-1056):
+        for key in ["rest_wavelengths", "mu", "max_noise_variance"]:
+            assert key in f, f"v2 H5 missing {key} (inference loader needs it)"
 
     # All loaded model params must be finite (catches NaN-leak bugs in
     # the preprocessing / training path).
