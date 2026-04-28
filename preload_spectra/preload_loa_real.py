@@ -1,63 +1,87 @@
 #!/usr/bin/env python
 """Streamlined LOA real-data preload → gp_interp_trainset.h5.
 
-Reads a DESI LOA QSO catalog (e.g. ``QSO_cat_loa_main_dark_healpix_v3-altbal.fits``,
-which already contains ``HPXPIXEL`` and ``BI_CIV`` columns), optionally filters
-out HCD-bearing sightlines via an external catalog, optionally excludes BAL
-sightlines via ``BI_CIV``, reads each ``coadd-main-dark-{healpix}.fits`` via
-``desispec.io.read_spectra``, applies the legacy ``SpectrumProcessor``
-preprocessing (mask noisy pixels + interpolate to a common rest grid),
-and writes an HDF5 in the legacy ``gp_interp_trainset.h5`` schema.
+EXPLICIT FILTER PIPELINE (each filter applied in this order):
+
+    INPUT: full altbal QSO catalog (~2.7M rows)
+                                        |
+       (1) z + ZWARN filter             v
+       --------------------------------------
+       Keep rows with:
+         z_min ≤ Z ≤ z_max
+         ZWARN == 0  (if column exists)
+                                        |
+       (2) BAL anti-join                v       (only if --exclude-bal)
+       --------------------------------------
+       Drop rows where BAL_COL > BAL_MIN
+       (default BAL_COL = "BI_CIV", BAL_MIN = 0.0).
+       This is an in-catalog filter — no external file needed.
+                                        |
+       (3) HCD anti-join                v       (only if --hcd-cat is given)
+       --------------------------------------
+       Read EXTERNAL catalog (FITS or HDF5) of HCD detections.
+       For each TARGETID in that catalog, compute the per-spectrum
+       MAX log NHI across DLA/HCD slots:
+         - For 1D NHI columns: use directly.
+         - For 2D NHI arrays (combined.h5 stores
+           MAP_log_nhis as slots×spectra): take np.nanmax along the
+           slot axis.
+       Mark TARGETIDs where (max log NHI) ≥ --hcd-min-nhi.
+       Drop QSO rows whose TARGETID is in that set.
+
+       The threshold determines what "HCD" means:
+         --hcd-min-nhi 20.3 → DLAs only             (logNHI ≥ 20.3)
+         --hcd-min-nhi 19.0 → DLAs + sub-DLAs       (logNHI ≥ 19.0)
+         --hcd-min-nhi 17.2 → all HCDs (LLS + sub-DLA + DLA)
+
+       NOTE: a TARGETID NOT present in --hcd-cat is KEPT. So the
+       HCD catalog must cover the QSO sample of interest, OR the
+       user accepts that uncatalogued HCDs slip through — typical
+       for real LOA where LLS detection is incomplete.
+                                        |
+       (4) cap to --max-spectra         v       (random subset, seeded)
+       --------------------------------------
+       If still > max_spectra, draw a uniform random subset.
+
+    OUTPUT: per-spectrum (flux, noise_var) interpolated to a common
+    rest-frame grid, in HDF5 with the legacy gp_interp_trainset
+    schema (`tids`, `rest_wavelengths`, `fluxes`, `noise_variance`,
+    `zqso`, `redsnr`, `bluesnr`).
 
 This is the production-data analogue of ``preload_2lpt_simple.py``.
-Real LOA spectra differ from 2LPT in two ways:
-  (a) ``HPXPIXEL`` is in the catalog (no RA/DEC → healpix conversion needed).
-  (b) ``BI_CIV`` is in the same catalog as ``Z`` and ``TARGETID``
-      (no separate ``bal_cat.fits``).
+Real LOA spectra differ from 2LPT in three ways:
+  (a) ``HPXPIXEL`` is already in the catalog — no RA/DEC → healpix step.
+  (b) ``BI_CIV`` is in the SAME catalog as ``Z`` and ``TARGETID``
+      (no separate ``bal_cat.fits`` — it's all altbal).
   (c) The healpix file path follows the LOA layout:
       ``{specdir}/healpix/main/dark/{H//100}/{H}/coadd-main-dark-{H}.fits``.
 
-The HCD filter uses an external catalog with ``TARGETID`` + log NHI columns
-(configurable), and a user-provided ``--hcd-min-nhi`` threshold:
+Usage examples::
 
-  - ``--hcd-min-nhi 20.3`` excludes sightlines with any DLA in the catalog
-    (the conventional DLA boundary).
-  - ``--hcd-min-nhi 17.0`` excludes sightlines with any HCD (DLA, sub-DLA, LLS).
-
-If ``--hcd-cat`` is not provided, no HCD filtering is applied.
-If ``--exclude-bal`` is not set, BALs are NOT excluded (so the resulting
-GP can be used at inference time on BAL spectra).
-
-Usage::
-
-    # 1) Spectra without DLAs and without BALs (legacy convention):
+    # 1) DLAs + BALs excluded — legacy convention. sub-DLAs / LLS kept.
     python preload_spectra/preload_loa_real.py \\
         --qsocat /path/to/QSO_cat_loa_main_dark_healpix_v3-altbal.fits \\
         --specdir /global/cfs/cdirs/desi/spectro/redux/loa \\
-        --hcd-cat /path/to/dla_catalog.fits \\
+        --hcd-cat /path/to/dla_combined.h5 \\
+        --hcd-tid-col target_ids --hcd-nhi-col MAP_log_nhis \\
         --hcd-min-nhi 20.3 \\
         --exclude-bal \\
         --output trainset_no_dla_no_bal.h5
 
-    # 2) Spectra without HCDs but WITH BALs (so model can learn BAL shape):
+    # 2) All HCDs excluded, BALs KEPT — gives a "BAL-aware" GP.
     python preload_spectra/preload_loa_real.py \\
-        --qsocat /path/to/QSO_cat_loa_main_dark_healpix_v3-altbal.fits \\
-        --specdir /global/cfs/cdirs/desi/spectro/redux/loa \\
-        --hcd-cat /path/to/dla_catalog.fits \\
-        --hcd-min-nhi 17.0 \\
+        --qsocat ... --specdir ... --hcd-cat ... \\
+        --hcd-tid-col target_ids --hcd-nhi-col MAP_log_nhis \\
+        --hcd-min-nhi 17.2 \\
         --output trainset_no_hcd_with_bal.h5
 
-    # 3) Spectra without HCDs and without BALs:
+    # 3) All HCDs + BALs excluded — cleanest baseline.
     python preload_spectra/preload_loa_real.py \\
-        --qsocat /path/to/QSO_cat_loa_main_dark_healpix_v3-altbal.fits \\
-        --specdir /global/cfs/cdirs/desi/spectro/redux/loa \\
-        --hcd-cat /path/to/dla_catalog.fits \\
-        --hcd-min-nhi 17.0 \\
+        --qsocat ... --specdir ... --hcd-cat ... \\
+        --hcd-tid-col target_ids --hcd-nhi-col MAP_log_nhis \\
+        --hcd-min-nhi 17.2 \\
         --exclude-bal \\
         --output trainset_no_hcd_no_bal.h5
-
-The HCD catalog format is configurable: pass ``--hcd-tid-col`` and
-``--hcd-nhi-col`` to match your file (defaults: ``TARGETID``, ``LOG_NHI``).
 """
 
 from __future__ import annotations
@@ -275,30 +299,49 @@ def main():
     if not args.specdir.exists():
         sys.exit(f"[error] specdir not found: {args.specdir}")
 
-    # 1) Load QSO catalog.
+    # ============================================================
+    # FILTER PIPELINE
+    # ============================================================
     print(f"[step 1/5] reading {args.qsocat}")
     qcat = Table.read(args.qsocat)
-    print(f"[step 1/5] qsocat: {len(qcat)} rows")
+    n_total = len(qcat)
+    print(f"[filter 0] full catalog                                  : "
+          f"{n_total:>10d} rows")
 
     for col in ("TARGETID", "Z", "HPXPIXEL"):
         if col not in qcat.colnames:
             sys.exit(f"[error] qsocat missing required column: {col}")
 
-    keep = (qcat["Z"] >= args.z_min) & (qcat["Z"] <= args.z_max)
+    # ---- (1) z + ZWARN filter ----
+    z_mask = (qcat["Z"] >= args.z_min) & (qcat["Z"] <= args.z_max)
+    n_after_z = int(z_mask.sum())
+    print(f"[filter 1] z in [{args.z_min:.2f}, {args.z_max:.2f}]"
+          f"{'                       ' if 'ZWARN' not in qcat.colnames else ''}"
+          f"{'  + ZWARN==0' if 'ZWARN' in qcat.colnames else ''}"
+          f": {n_after_z:>10d} rows  ({n_total - n_after_z:>10d} dropped)")
     if "ZWARN" in qcat.colnames:
-        keep &= (qcat["ZWARN"] == 0)
-    print(f"[step 1/5] z + ZWARN filter: {keep.sum()} kept")
+        z_mask &= (qcat["ZWARN"] == 0)
+        n_after_zwarn = int(z_mask.sum())
+        if n_after_zwarn != n_after_z:
+            print(f"[filter 1]   (ZWARN==0 dropped a further "
+                  f"{n_after_z - n_after_zwarn} rows from the z-cut subset)")
+    keep = z_mask.copy()
 
-    # BAL filter (in-catalog).
+    # ---- (2) BAL anti-join (in-catalog) ----
     if args.exclude_bal:
         if args.bal_col not in qcat.colnames:
             sys.exit(f"[error] --exclude-bal: column {args.bal_col!r} not in qsocat")
-        bal_mask = qcat[args.bal_col] > args.bal_min
-        keep &= ~bal_mask
-        print(f"[step 1/5] BAL filter ({args.bal_col} > {args.bal_min}): "
-              f"{(~bal_mask & keep).sum()} kept of {keep.sum()} after BAL exclude")
+        bal_flag = qcat[args.bal_col] > args.bal_min
+        before = int(keep.sum())
+        keep &= ~bal_flag
+        n_after_bal = int(keep.sum())
+        n_bal_dropped = before - n_after_bal
+        print(f"[filter 2] exclude_bal ({args.bal_col} > {args.bal_min})            "
+              f": {n_after_bal:>10d} rows  ({n_bal_dropped:>10d} dropped)")
+    else:
+        print(f"[filter 2] exclude_bal: SKIPPED (BALs are KEPT in this run)")
 
-    # HCD filter (external catalog anti-join).
+    # ---- (3) HCD anti-join (external catalog) ----
     if args.hcd_cat is not None:
         bad_tids = _load_hcd_targetids(
             args.hcd_cat, tid_col=args.hcd_tid_col, nhi_col=args.hcd_nhi_col,
@@ -307,15 +350,37 @@ def main():
         in_bad = np.isin(np.asarray(qcat["TARGETID"]), list(bad_tids))
         before = int(keep.sum())
         keep &= ~in_bad
-        print(f"[step 1/5] HCD filter: {before} → {keep.sum()} after anti-join")
+        n_after_hcd = int(keep.sum())
+        n_hcd_dropped = before - n_after_hcd
+        # Threshold semantics summary, for the log.
+        if args.hcd_min_nhi >= 20.3:
+            sem = "DLAs only"
+        elif args.hcd_min_nhi >= 19.0:
+            sem = "DLAs + sub-DLAs"
+        else:
+            sem = "DLAs + sub-DLAs + LLS"
+        print(f"[filter 3] exclude_hcd (logNHI ≥ {args.hcd_min_nhi:.2f}, {sem})"
+              f"{' ' * max(0, 7 - len(sem))}"
+              f": {n_after_hcd:>10d} rows  ({n_hcd_dropped:>10d} dropped)")
+    else:
+        print(f"[filter 3] exclude_hcd: SKIPPED (no --hcd-cat given)")
 
     qcat = qcat[keep]
 
+    # ---- (4) cap to --max-spectra ----
     if args.max_spectra is not None and len(qcat) > args.max_spectra:
+        before = len(qcat)
         idx = rng.choice(len(qcat), size=args.max_spectra, replace=False)
         idx.sort()
         qcat = qcat[idx]
-        print(f"[step 1/5] capped at --max-spectra={args.max_spectra}")
+        print(f"[filter 4] random subset to --max-spectra"
+              f"                  : "
+              f"{len(qcat):>10d} rows  ({before - len(qcat):>10d} dropped)")
+    else:
+        print(f"[filter 4] cap to max-spectra: not triggered "
+              f"({len(qcat)} ≤ {args.max_spectra})")
+    print(f"[filter 5] FINAL catalog used for preload                 : "
+          f"{len(qcat):>10d} rows")
 
     # 2) Group by HPXPIXEL.
     print("[step 2/5] grouping by HPXPIXEL")

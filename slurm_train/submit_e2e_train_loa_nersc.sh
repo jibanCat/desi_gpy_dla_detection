@@ -11,30 +11,55 @@
 
 # End-to-end NERSC submit: PRELOAD real LOA data + TRAIN v2 GP, in one job.
 #
-# Three named VARIANTs control which sightlines feed the GP:
+# ============================================================
+# EXPLICIT FILTER PIPELINE (applied INSIDE preload_loa_real.py):
 #
-#   no_dla_no_bal      (legacy convention)
-#       Exclude TARGETIDs with any DLA (logNHI ≥ 20.3) in HCD_CAT,
-#       AND TARGETIDs with BI_CIV > 0 in qsocat.
-#       sub-DLAs and LLS are KEPT.
-#       This matches what the legacy production GP was trained on.
+#   filter 0: full altbal QSO catalog                  (~2.7M rows)
+#   filter 1: z ∈ [Z_MIN, Z_MAX] AND ZWARN==0          (always on)
+#   filter 2: BAL anti-join — drop BI_CIV > 0          (only if --exclude-bal)
+#   filter 3: HCD anti-join — drop TARGETIDs whose
+#             max(MAP_log_nhis) ≥ HCD_MIN_NHI          (only if --hcd-cat)
+#   filter 4: random cap to MAX_SPECTRA                (if needed)
 #
-#   no_hcd_with_bal    (BAL-aware GP; the "model with BALs")
-#       Exclude TARGETIDs with any HCD (logNHI ≥ 17.0) in HCD_CAT.
-#       BAL sightlines are KEPT, so the trained GP can be applied to
-#       BAL spectra at inference time without a separate model.
+# The HCD anti-join uses an EXTERNAL catalog (the user's previous
+# combined.h5 from the GP-DLA pipeline by default; can be overridden
+# with --hcd-cat). It reads the per-spectrum log-NHI MAP across DLA
+# slots and excludes TARGETIDs whose ANY slot is above HCD_MIN_NHI.
 #
-#   no_hcd_no_bal      (clean baseline; the "model without LLS/sub-DLAs")
-#       Exclude any HCD (logNHI ≥ 17.0) AND any BAL.
-#       Cleanest possible LOA training set.
+# A TARGETID NOT present in --hcd-cat is KEPT — so the HCD catalog
+# determines coverage. For LOA real data, only catalog-detected
+# absorbers are filtered; uncatalogued LLS slip through.
+# ============================================================
+#
+# Three named VARIANTs:
+#
+# ┌──────────────────┬──────────────┬──────────────┬─────────────────────────────────┐
+# │ VARIANT          │ HCD_MIN_NHI  │ exclude_bal  │ what stays in the training set  │
+# ├──────────────────┼──────────────┼──────────────┼─────────────────────────────────┤
+# │ no_dla_no_bal    │ 20.3 (DLAs)  │ YES          │ no DLAs, no BALs;               │
+# │ (legacy)         │              │              │ sub-DLAs + LLS are KEPT         │
+# ├──────────────────┼──────────────┼──────────────┼─────────────────────────────────┤
+# │ no_hcd_with_bal  │ 17.2 (any    │ NO           │ no HCDs (DLA+sub-DLA+LLS);      │
+# │ ("BAL model")    │      HCD)    │              │ BALs KEPT — model learns BAL   │
+# │                  │              │              │ continuum / can be applied at   │
+# │                  │              │              │ inference to BAL targets        │
+# ├──────────────────┼──────────────┼──────────────┼─────────────────────────────────┤
+# │ no_hcd_no_bal    │ 17.2 (any    │ YES          │ no HCDs, no BALs;               │
+# │ (clean baseline) │      HCD)    │              │ cleanest possible LOA sample    │
+# └──────────────────┴──────────────┴──────────────┴─────────────────────────────────┘
+#
+# NHI threshold semantics:
+#   logNHI ≥ 20.3 = DLAs only
+#   logNHI ≥ 19.0 = DLAs + sub-DLAs
+#   logNHI ≥ 17.2 = DLAs + sub-DLAs + LLS  (the conventional "all HCD" cut)
 #
 # To submit:
 #   sbatch --export=ALL,VARIANT=no_dla_no_bal slurm_train/submit_e2e_train_loa_nersc.sh
 #   sbatch --export=ALL,VARIANT=no_hcd_with_bal slurm_train/submit_e2e_train_loa_nersc.sh
 #   sbatch --export=ALL,VARIANT=no_hcd_no_bal slurm_train/submit_e2e_train_loa_nersc.sh
 #
-# All paths can be overridden:
-#   sbatch --export=ALL,VARIANT=no_hcd_no_bal,QSOCAT=/your/path,HCD_CAT=/your/dla.fits \
+# All paths and thresholds can be overridden:
+#   sbatch --export=ALL,VARIANT=no_hcd_no_bal,HCD_MIN_NHI=19.0,HCD_CAT=/your/dla.fits \
 #       slurm_train/submit_e2e_train_loa_nersc.sh
 
 # NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
@@ -71,16 +96,24 @@ OUTPUT_DIR="${OUTPUT_DIR:-${OUTDIR_BASE}/learnlogs_v2/loa_${VARIANT}_${SLURM_JOB
 # Filter args per VARIANT.
 case "$VARIANT" in
     no_dla_no_bal)
+        # Exclude only DLAs (logNHI ≥ 20.3) AND BALs (BI_CIV > 0).
+        # Sub-DLAs and LLS are kept. Matches the legacy convention.
         HCD_MIN_NHI="${HCD_MIN_NHI:-20.3}"
         EXCLUDE_BAL_FLAG="--exclude-bal"
+        VARIANT_DESCRIPTION="DLAs (logNHI ≥ 20.3) + BALs excluded; sub-DLAs/LLS kept"
         ;;
     no_hcd_with_bal)
-        HCD_MIN_NHI="${HCD_MIN_NHI:-17.0}"
+        # Exclude all HCDs (logNHI ≥ 17.2 = DLA + sub-DLA + LLS). Keep BALs.
+        # The trained GP can be applied to BAL spectra at inference time.
+        HCD_MIN_NHI="${HCD_MIN_NHI:-17.2}"
         EXCLUDE_BAL_FLAG=""
+        VARIANT_DESCRIPTION="all HCDs (logNHI ≥ 17.2) excluded; BALs KEPT"
         ;;
     no_hcd_no_bal)
-        HCD_MIN_NHI="${HCD_MIN_NHI:-17.0}"
+        # Exclude all HCDs AND all BALs. Cleanest possible LOA training set.
+        HCD_MIN_NHI="${HCD_MIN_NHI:-17.2}"
         EXCLUDE_BAL_FLAG="--exclude-bal"
+        VARIANT_DESCRIPTION="all HCDs (logNHI ≥ 17.2) + BALs excluded"
         ;;
     *)
         echo "[error] VARIANT must be one of: no_dla_no_bal, no_hcd_with_bal, no_hcd_no_bal" >&2
@@ -125,17 +158,23 @@ assert torch.cuda.is_available(), 'CUDA not available; check NERSC env'
 
 echo "===================================================="
 echo "  e2e_train_loa  variant: $VARIANT  job: $SLURM_JOB_ID"
+echo "  $VARIANT_DESCRIPTION"
 echo "===================================================="
-echo "  qsocat:         $QSOCAT"
-echo "  specdir:        $SPECDIR"
-echo "  hcd_cat:        ${HCD_CAT:-(none)}"
-echo "  hcd_min_nhi:    $HCD_MIN_NHI"
-echo "  exclude_bal:    ${EXCLUDE_BAL_FLAG:-(off)}"
-echo "  trainset_h5:    $TRAINSET_H5"
-echo "  output_dir:     $OUTPUT_DIR"
-echo "  z range:        [$Z_MIN, $Z_MAX]"
-echo "  max_spectra:    $MAX_SPECTRA"
-echo "  epochs=$NUM_EPOCHS  batch=$BATCH_SIZE  lr=$LEARNING_RATE  k=$NUM_PCA"
+echo "  Inputs:"
+echo "    qsocat:         $QSOCAT"
+echo "    specdir:        $SPECDIR"
+echo "    hcd_cat:        ${HCD_CAT:-(none)}"
+echo "    hcd cols:       tid='$HCD_TID_COL'  nhi='$HCD_NHI_COL'"
+echo "  Filter pipeline (applied IN ORDER inside preload):"
+echo "    1) z in [$Z_MIN, $Z_MAX]  AND  ZWARN==0"
+echo "    2) BAL anti-join:  ${EXCLUDE_BAL_FLAG:+ON  (drop BI_CIV > 0)}${EXCLUDE_BAL_FLAG:-OFF (BALs KEPT)}"
+echo "    3) HCD anti-join:  drop TARGETIDs whose max(MAP_log_nhis) ≥ $HCD_MIN_NHI"
+echo "    4) random cap to MAX_SPECTRA=$MAX_SPECTRA"
+echo "  Outputs:"
+echo "    trainset_h5:    $TRAINSET_H5"
+echo "    output_dir:     $OUTPUT_DIR"
+echo "  Training:"
+echo "    epochs=$NUM_EPOCHS  batch=$BATCH_SIZE  lr=$LEARNING_RATE  k=$NUM_PCA"
 echo "===================================================="
 echo
 
