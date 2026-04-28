@@ -76,12 +76,41 @@ slurm_train/submit_train_gp_v2_loa_nersc.sh
 slurm/greatlakes/train_gp_v2_2lpt.sh
 ```
 
+## End-to-end pipeline overview
+
+The pipeline is **three steps**, only the third is implemented in v2:
+
+| step | code | input | output |
+|---|---|---|---|
+| 1. Preload spectra | `preload_spectra/desi-preload.py` | DESI spectra-16 fits | per-healpix HDF5 (`preloaded_*.h5`) |
+| 2. Build trainset  | `preload_spectra/prepare_trainset.py` | per-healpix HDF5 | consolidated `gp_interp_trainset.h5` (rest-grid-interpolated) |
+| 3. Train (v2 NEW)  | `train_gp.py` (this PR) | `gp_interp_trainset.h5` | `learnlogs_v2/.../model_epoch_NNNN.h5` |
+
+Steps 1 and 2 are the existing legacy pipeline (in `preload_spectra/`)
+and are **out of scope for v2** — they're separately tested. Step 3 is
+where the speed/correctness fixes live.
+
+The v2 trainer applies the train-time preprocessing (mask high-noise
+pixels + de-forest with Turner+2024 τ₀/β + inverse-variance-weighted
+centering) inside `dataset.py` so the inputs to `vectorized_nll` match
+what the legacy `objective.objective` saw after
+`GPModelTrainer.prepare_data` ran.
+
 ## NERSC submit (LOA / Y3 production)
+
+**ALWAYS debug-submit first** — the `-q debug` queue is short and the
+script does pre-flight import + path checks before training:
 
 ```bash
 ssh perlmutter
-cd /global/u2/j/jibancat/desi_gpy_dla_detection
-git checkout claude/training-and-lsf-validation
+cd ~/desi_gpy_dla_detection
+git fetch && git checkout claude/training-and-lsf-validation
+sbatch slurm_train/debug_train_gp_v2_nersc.sh
+```
+
+Once that succeeds (5 epochs on 5,000 spectra in ≤ 30 min), submit production:
+
+```bash
 sbatch slurm_train/submit_train_gp_v2_loa_nersc.sh
 ```
 

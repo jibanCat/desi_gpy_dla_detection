@@ -28,6 +28,16 @@
 #     correct dlog_beta gradient (legacy used an approximation; both
 #     converge but to slightly different log_beta values)
 #
+# Prerequisites (NOT done by this script):
+#   - The preloaded HDF5 must exist. It is produced by the existing
+#     preload pipeline:
+#         preload_spectra/desi-preload.py     (raw spectra → per-hpx HDF5)
+#         preload_spectra/prepare_trainset.py (per-hpx → gp_interp_trainset.h5)
+#     See docs/training_v2_workflow.md.
+#   - Recommended: run the debug submit first
+#         sbatch slurm_train/debug_train_gp_v2_nersc.sh
+#     to validate paths/env before queuing this multi-hour job.
+#
 # To submit:
 #   sbatch slurm_train/submit_train_gp_v2_loa_nersc.sh
 #
@@ -41,11 +51,13 @@ export CUDA_LAUNCH_BLOCKING=${CUDA_LAUNCH_BLOCKING:-0}
 export PYTHONUNBUFFERED=1
 
 # Load NERSC desi env.
-source /global/cfs/cdirs/desi/software/desi_environment.sh main
+source /global/cfs/cdirs/desi/software/desi_environment.sh main || {
+    echo "[submit] ERROR: failed to load NERSC desi environment" >&2; exit 1
+}
 
 # Allow caller to override these at submit time.
 PRELOADED_FILE="${PRELOADED_FILE:-/pscratch/sd/j/jibancat/preload-loa-gpdla-20250202/gp_interp_trainset.h5}"
-CATALOG_FILE="${CATALOG_FILE:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection/data/loa/gp_trainset_loa.fits}"
+CATALOG_FILE="${CATALOG_FILE:-}"  # optional TARGETID filter; leave empty to use all spectra
 OUTPUT_DIR="${OUTPUT_DIR:-/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs_v2/run_${SLURM_JOB_ID}}"
 NUM_EPOCHS="${NUM_EPOCHS:-800}"
 BATCH_SIZE="${BATCH_SIZE:-12500}"
@@ -56,10 +68,33 @@ NUM_FOREST_LINES="${NUM_FOREST_LINES:-3}"
 Z_MIN="${Z_MIN:-2.5}"
 Z_MAX="${Z_MAX:-4.25}"
 
+# Pre-flight: required input file must exist.
+if [ ! -r "$PRELOADED_FILE" ]; then
+    echo "[submit] ERROR: PRELOADED_FILE not readable: $PRELOADED_FILE" >&2
+    echo "        Override via --export=ALL,PRELOADED_FILE=/path/to/your.h5" >&2
+    exit 2
+fi
+if [ -n "$CATALOG_FILE" ] && [ ! -r "$CATALOG_FILE" ]; then
+    echo "[submit] ERROR: CATALOG_FILE not readable: $CATALOG_FILE" >&2
+    exit 3
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
+
+# Pre-flight: imports work (catches torch / module mismatches before
+# burning queue time on a multi-hour job).
+python -c "
+from gpy_dla_detection.training.dataset import load_preprocessed_h5
+from gpy_dla_detection.training.objective_v2 import vectorized_nll
+from gpy_dla_detection.training.trainer_v2 import train, TrainConfig
+from gpy_dla_detection.training.model_v2 import GPModelV2
+import torch
+assert torch.cuda.is_available(), 'CUDA not available; check NERSC env'
+print('[preflight] training/ imports OK; CUDA available')
+" || { echo "[submit] ERROR: preflight import failed" >&2; exit 4; }
 
 echo "=== train_gp_v2 NERSC submit ==="
 echo "host: $(hostname)"
