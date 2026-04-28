@@ -117,8 +117,10 @@ def main():
     p.add_argument("--num-forest-lines", type=int, default=3)
     p.add_argument("--scheduler", default="cosine", choices=["cosine", "step", "none"])
     p.add_argument("--save-every", type=int, default=10)
-    p.add_argument("--apply-y1-prior", action="store_true", default=True)
-    p.add_argument("--no-y1-prior", dest="apply_y1_prior", action="store_false")
+    # Y1 (Turner+2024) Gaussian prior on (τ₀, β) is ON by default; pass
+    # --no-y1-prior to drop it (e.g. for ablation studies).
+    p.add_argument("--no-y1-prior", dest="apply_y1_prior",
+                   action="store_false", default=True)
     # I/O
     p.add_argument("--output-dir", required=True)
     p.add_argument("--seed", type=int, default=42)

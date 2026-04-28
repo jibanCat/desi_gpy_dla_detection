@@ -123,17 +123,26 @@ def save_h5_model(model: GPModelV2, output_dir: Path, epoch: int) -> Path:
     return p
 
 
-def maybe_resume(model: GPModelV2, opt, scheduler, output_dir: Path) -> tuple[int, list]:
+def maybe_resume(model: GPModelV2, opt, scheduler, output_dir: Path,
+                 device: Optional[torch.device] = None) -> tuple[int, list]:
     """If ``output_dir`` contains the latest checkpoint, restore
     state_dicts and return (start_epoch, loss_history). Otherwise
-    return (0, [])."""
+    return (0, []).
+
+    The ``device`` arg is required for GPU resumes — without it,
+    ``torch.load(..., map_location="cpu")`` leaves Adam's state tensors
+    (``exp_avg``, ``exp_avg_sq``) on CPU while the model parameters live
+    on GPU, which raises a device-mismatch error on the next
+    ``optimizer.step()``. (Copilot review #6, PR #4.)
+    """
     if not output_dir.exists():
         return 0, []
     checkpoints = sorted(output_dir.glob("checkpoint_epoch_*.pt"))
     if not checkpoints:
         return 0, []
     latest = checkpoints[-1]
-    payload = torch.load(latest, map_location="cpu", weights_only=False)
+    map_location = device if device is not None else "cpu"
+    payload = torch.load(latest, map_location=map_location, weights_only=False)
     model.load_state_dict(payload["model_state"])
     opt.load_state_dict(payload["optimizer_state"])
     if scheduler is not None and payload.get("scheduler_state"):
@@ -164,33 +173,41 @@ def train(
     device = torch.device(cfg.device)
     model.to(device)
 
-    fluxes = fluxes.to(device, non_blocking=True)
-    lya_1pzs = lya_1pzs.to(device, non_blocking=True)
-    noise_variances = noise_variances.to(device, non_blocking=True)
-    z_qsos = z_qsos.to(device, non_blocking=True)
+    # Keep the FULL dataset on CPU (pinned for fast batch transfer) and
+    # move only the current batch to GPU inside the loop. For production
+    # sizes (e.g. 300k × 3801 fp32 ≈ 4.5 GB per tensor × 4 tensors = 18 GB)
+    # this avoids OOM on smaller GPUs and reduces unnecessary GPU memory
+    # pressure. (Copilot review #7, PR #4.)
+    pin = (device.type == "cuda")
+    fluxes_cpu = fluxes.contiguous().pin_memory() if pin else fluxes.contiguous()
+    lya_1pzs_cpu = lya_1pzs.contiguous().pin_memory() if pin else lya_1pzs.contiguous()
+    noise_variances_cpu = noise_variances.contiguous().pin_memory() if pin else noise_variances.contiguous()
+    z_qsos_cpu = z_qsos.contiguous().pin_memory() if pin else z_qsos.contiguous()
     transition_wavelengths = transition_wavelengths.to(device)
     oscillator_strengths = oscillator_strengths.to(device)
 
     opt = _build_optimizer(model, cfg)
     scheduler = _build_scheduler(opt, cfg)
 
-    start_epoch, loss_history = maybe_resume(model, opt, scheduler, output_dir)
+    start_epoch, loss_history = maybe_resume(model, opt, scheduler, output_dir,
+                                              device=device)
 
-    n = fluxes.shape[0]
+    n = fluxes_cpu.shape[0]
     bs = cfg.batch_size
 
     # Save initial config + persist as JSON.
     with (output_dir / "config.json").open("w") as f:
         json.dump(asdict(cfg), f, indent=2)
 
-    print(f"[trainer_v2] device={cfg.device} n_spectra={n} n_pix={fluxes.shape[1]} "
+    print(f"[trainer_v2] device={cfg.device} n_spectra={n} n_pix={fluxes_cpu.shape[1]} "
           f"k={model.k} batch_size={bs} epochs={cfg.num_epochs} starting_epoch={start_epoch}")
 
     for epoch in range(start_epoch, cfg.num_epochs):
         t0 = time.perf_counter()
 
-        # Shuffle indices once per epoch (cheap).
-        perm = torch.randperm(n, device=device)
+        # Shuffle indices once per epoch (cheap, on CPU since it indexes into
+        # CPU tensors).
+        perm = torch.randperm(n)
         epoch_loss = 0.0
         n_batches = 0
         for start in range(0, n, bs):
@@ -198,8 +215,13 @@ def train(
             idx = perm[start:end]
 
             opt.zero_grad(set_to_none=True)
+            # Transfer only the current batch to GPU (pinned-CPU → GPU).
+            bf = fluxes_cpu[idx].to(device, non_blocking=pin)
+            bl = lya_1pzs_cpu[idx].to(device, non_blocking=pin)
+            bn = noise_variances_cpu[idx].to(device, non_blocking=pin)
+            bz = z_qsos_cpu[idx].to(device, non_blocking=pin)
             loss = vectorized_nll(
-                fluxes[idx], lya_1pzs[idx], noise_variances[idx], z_qsos[idx],
+                bf, bl, bn, bz,
                 model.M, model.log_omega, model.log_c_0, model.log_tau_0, model.log_beta,
                 transition_wavelengths, oscillator_strengths,
                 num_forest_lines=cfg.num_forest_lines,

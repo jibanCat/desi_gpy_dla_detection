@@ -48,6 +48,10 @@ def test_trainer_v2_converges_on_synthetic(tmp_path):
     n_spectra, n_pix = fluxes.shape
     k = 4
 
+    # Seed *before* model construction so the random init_M / init_log_omega
+    # are deterministic. Otherwise the loss-decrease assertion below can
+    # be flaky across runs / PyTorch versions (Copilot review #3, PR #4).
+    torch.manual_seed(0)
     model = GPModelV2(num_pixels=n_pix, k=k)
 
     cfg = TrainConfig(

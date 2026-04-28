@@ -172,11 +172,20 @@ def load_preprocessed_h5(
     """
     h5_path = Path(h5_path)
     with h5py.File(h5_path, "r") as f:
-        # Try legacy then newer key naming.
+        # Try legacy then newer key naming. For 2D rest_wavelengths
+        # (one row per spectrum, all identical), only read the first row —
+        # the full 2D array is multiple GB redundant on production sizes
+        # (300k × 3801 × 4B ≈ 4.5 GB). Fall back to the full read only if
+        # the dataset is 1D.
+        def _read_rest_wavelengths(dset):
+            if dset.ndim == 2:
+                return dset[0]
+            return dset[:]
+
         keys = set(f.keys())
         if {"tids", "rest_wavelengths", "fluxes", "noise_variance", "zqso", "redsnr"} <= keys:
             tids = f["tids"][:]
-            rest_wavelengths = f["rest_wavelengths"][:]
+            rest_wavelengths = _read_rest_wavelengths(f["rest_wavelengths"])
             fluxes_raw = f["fluxes"][:]
             noise_variance_raw = f["noise_variance"][:]
             z_qsos_raw = f["zqso"][:]
@@ -184,7 +193,7 @@ def load_preprocessed_h5(
         elif {"tidlist", "rest_wavelength_list", "flux_list",
               "noise_variance_list", "zqsolist", "redsnrlist"} <= keys:
             tids = f["tidlist"][:]
-            rest_wavelengths = f["rest_wavelength_list"][:]
+            rest_wavelengths = _read_rest_wavelengths(f["rest_wavelength_list"])
             fluxes_raw = f["flux_list"][:]
             noise_variance_raw = f["noise_variance_list"][:]
             z_qsos_raw = f["zqsolist"][:]

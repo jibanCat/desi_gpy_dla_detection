@@ -198,7 +198,6 @@ def _read_one_coadd_file(specfile: Path, target_ids: list[int]):
     Real LOA coadds have aligned bands → ``coadd_cameras`` succeeds without
     fallback. We still keep the truth-resolution fallback path for safety.
     """
-    import fitsio
     from desispec.io import read_spectra
     from desispec.coaddition import coadd_cameras, resample_spectra_lin_or_log
 
@@ -407,6 +406,8 @@ def main():
         print(f"[filter 4] random subset to --max-spectra"
               f"                  : "
               f"{len(qcat):>10d} rows  ({before - len(qcat):>10d} dropped)")
+    elif args.max_spectra is None:
+        print(f"[filter 4] cap to max-spectra: not requested")
     else:
         print(f"[filter 4] cap to max-spectra: not triggered "
               f"({len(qcat)} ≤ {args.max_spectra})")
