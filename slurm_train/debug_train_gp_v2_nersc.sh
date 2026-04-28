@@ -119,18 +119,24 @@ if [ ! -r "$LOSS_FILE" ]; then
     exit 6
 fi
 
-echo
-echo "=== DEBUG SUCCESS ==="
-echo "wrote $H5_COUNT model H5 files"
-echo "loss history (first/last):"
+# Loss-history sanity check. NaN = silent training failure (e.g.
+# non-finite param init), so reject those even if files were produced.
 python -c "
-import json
+import json, math, sys
 with open('$LOSS_FILE') as f:
     h = json.load(f)
-print(f'  epoch 0: {h[0]:.4f}')
-print(f'  epoch {len(h)-1}: {h[-1]:.4f}')
-print(f'  monotone-ish: {h[-1] < h[0]}')
-"
+print(f'  epoch 0      : {h[0]}')
+print(f'  epoch {len(h)-1:>5d}: {h[-1]}')
+all_finite = all(isinstance(x, (int, float)) and math.isfinite(x) for x in h)
+if not all_finite:
+    print('[debug] ERROR: loss history contains non-finite values (NaN/inf)')
+    sys.exit(1)
+print(f'  monotone-ish : {h[-1] < h[0]}')
+" || { echo "[debug] FAIL: loss history not finite"; exit 7; }
+
+echo
+echo "=== DEBUG SUCCESS ==="
+echo "wrote $H5_COUNT model H5 files; loss history is finite"
 
 echo
 echo "If this debug job succeeded, submit production with:"

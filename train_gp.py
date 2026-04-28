@@ -73,9 +73,27 @@ def _initial_M_from_pca(centered_fluxes: np.ndarray, k: int) -> np.ndarray:
     return (coefficients * np.sqrt(eigvals)).astype(np.float32)
 
 
-def _initial_log_omega(centered_fluxes: np.ndarray) -> np.ndarray:
-    """Initial log_omega = log(per-pixel std)."""
-    return np.log(np.nanstd(centered_fluxes, axis=0).clip(min=1e-8)).astype(np.float32)
+def _initial_log_omega(centered_fluxes: np.ndarray, default: float = 0.1) -> np.ndarray:
+    """Initial log_omega = log(per-pixel std).
+
+    Pixels where all spectra are NaN-padded (e.g. rest-grid edges) yield
+    nanstd → NaN → log(NaN) → NaN. .clip(min=...) does NOT mask NaN, so
+    we explicitly substitute the median of finite per-pixel std (and fall
+    back to ``default`` if no pixel has a finite std).
+    """
+    per_pix_std = np.nanstd(centered_fluxes, axis=0)
+    # Replace inf and 0 (or near-0) with NaN so they're treated uniformly
+    # below.
+    per_pix_std = np.where(np.isfinite(per_pix_std) & (per_pix_std > 1e-12),
+                            per_pix_std, np.nan)
+    n_bad = int(np.isnan(per_pix_std).sum())
+    if n_bad > 0:
+        finite = per_pix_std[np.isfinite(per_pix_std)]
+        fill = float(np.median(finite)) if finite.size else default
+        per_pix_std = np.where(np.isnan(per_pix_std), fill, per_pix_std)
+        print(f"[init] log_omega: {n_bad}/{len(per_pix_std)} pixels had "
+              f"non-finite/zero std; filled with median={fill:.3e}")
+    return np.log(per_pix_std).astype(np.float32)
 
 
 def main():
@@ -134,6 +152,18 @@ def main():
         num_pixels=ts.n_pix, k=args.num_pca_components,
         init_M=initial_M, init_log_omega=initial_log_omega,
     )
+
+    # Sanity: every initial parameter must be finite, otherwise the
+    # entire training run produces NaN from epoch 0.
+    bad = []
+    for name, p in model.named_parameters():
+        finite = torch.isfinite(p)
+        if not bool(finite.all().item()):
+            bad.append((name, int((~finite).sum().item()), int(p.numel())))
+    if bad:
+        for name, n_bad, n_total in bad:
+            print(f"[init] ERROR: {name} has {n_bad}/{n_total} non-finite values")
+        sys.exit("[init] non-finite parameters at initialisation; aborting")
 
     # 4) Train.
     cfg = TrainConfig(

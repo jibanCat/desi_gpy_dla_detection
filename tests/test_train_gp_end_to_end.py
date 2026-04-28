@@ -114,6 +114,27 @@ def test_de_forest_changes_flux(tmp_path):
     assert diff.max().item() > 1e-3, "de-forest didn't change any flux"
 
 
+def test_initial_log_omega_handles_all_nan_columns():
+    """Regression guard: when every spectrum is NaN-padded at some pixel
+    (e.g. rest-grid edge), nanstd returns NaN there. The init function
+    must replace those NaN with a finite fill so log_omega has no NaN at
+    epoch 0 — otherwise the whole training run produces NaN. Caught on
+    the first NERSC debug submit (job 52174580)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from train_gp import _initial_log_omega
+
+    # Build a (5, 10) flux array where 3 columns are entirely NaN.
+    centered = np.random.RandomState(0).standard_normal((5, 10)).astype(np.float32)
+    centered[:, [0, 4, 9]] = np.nan
+
+    log_omega = _initial_log_omega(centered)
+    assert log_omega.shape == (10,)
+    assert np.isfinite(log_omega).all(), (
+        f"log_omega has non-finite values: {log_omega}"
+    )
+
+
 def test_train_gp_runs_two_epochs_end_to_end(tmp_path):
     """Build synthetic preloaded HDF5 → load → train 2 epochs → assert
     output H5 is well-formed.
