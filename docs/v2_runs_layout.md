@@ -34,39 +34,22 @@ So a finished run might live at e.g.:
 - `/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/loa_no_hcd_with_bal_52234567/`
 - `/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_48881057/`
 
-## Move a run between clusters
+## Move runs between clusters (Globus)
 
-### NERSC → GreatLakes (one run)
+To move EVERYTHING in one shot, transfer the whole `v2_runs/` tree:
 
-```bash
-# from your laptop or the GreatLakes login node:
-rsync -av --progress \
-    perlmutter:/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/loa_no_hcd_with_bal_52234567/ \
-    /nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/loa_no_hcd_with_bal_52234567/
-```
+| cluster | source / destination |
+|---|---|
+| NERSC | `/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/` |
+| GreatLakes | `/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/` |
 
-### NERSC → GreatLakes (all v2 runs)
+Each subdirectory under `v2_runs/` is one fully-self-contained run.
+You can also pick individual run folders if you only want some.
 
-```bash
-rsync -av --progress \
-    perlmutter:/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/ \
-    /nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/
-```
-
-### Just the trained models (no trainset, no Adam checkpoints)
-
-`trainset.h5` is large (~hundreds of MB) and `checkpoint_*.pt` carry
-optimizer state useful only for resuming training. For inference you
-only need `model_epoch_*.h5`:
-
-```bash
-rsync -av --progress \
-    --include='*/' --include='model_epoch_*.h5' --include='config.json' \
-    --include='loss_history.json' --include='slurm.log' \
-    --exclude='*' \
-    perlmutter:/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/ \
-    /nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/
-```
+The `trainset.h5` files are large (~hundreds of MB) — if you only
+need the trained models for inference, you can deselect them in the
+Globus UI and keep only `model_epoch_*.h5`, `config.json`,
+`loss_history.json`, `slurm.log`.
 
 ## Resume a partial run
 

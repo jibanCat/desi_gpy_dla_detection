@@ -152,6 +152,4 @@ cp slurm_train/2lpt_train_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null |
 
 echo
 echo "=== 2LPT $VARIANT TRAINING COMPLETE ==="
-echo "  Outputs in:  $RUN_DIR"
-echo "  Move to GreatLakes with:"
-echo "    rsync -av $RUN_DIR/  greatlakes:/path/to/v2_runs/${RUN_TAG}/"
+echo "  Run folder:  $RUN_DIR"

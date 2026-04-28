@@ -169,6 +169,4 @@ cp slurm_train/e2e_loa_dbg_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null 
 
 echo
 echo "=== e2e_loa DEBUG $VARIANT COMPLETE ==="
-echo "  Outputs in:  $RUN_DIR"
-echo "  Move to GreatLakes with:"
-echo "    rsync -av $RUN_DIR/  greatlakes:/path/to/v2_runs/${RUN_TAG}/"
+echo "  Run folder:  $RUN_DIR"
