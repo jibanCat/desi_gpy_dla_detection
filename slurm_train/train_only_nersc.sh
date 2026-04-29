@@ -1,19 +1,25 @@
 #!/bin/bash
 #SBATCH -N 1
 #SBATCH -C gpu
-#SBATCH -q debug
+#SBATCH -q regular
 #SBATCH --job-name=train_v2
 #SBATCH --output=slurm_train/train_v2_%j.log
 #SBATCH --error=slurm_train/train_v2_%j.err
 #SBATCH -A desi
-#SBATCH --time=00:30:00
+#SBATCH --time=04:00:00
 #SBATCH --gpus=1
 
 # TRAIN-ONLY: assumes a preload job has already produced
 #   ${OUTDIR_BASE}/v2_runs/${RUN_TAG}/trainset.h5
-# (e.g. via slurm_train/preload_loa_only_nersc.sh or any other
-# producer). Runs on `-q debug` GPU because at this point we just
-# need an A100 for ~10 min of training, not a long queue wait.
+# (e.g. via slurm_train/preload_loa_only_nersc.sh or any other producer).
+#
+# Defaults to `-q regular` with 4-hour walltime so production runs
+# (NUM_EPOCHS=800-920, ~7s/epoch on A100 at 300k spectra → ~1.5-2 h)
+# have ample headroom. For a fast smoke test override on the command
+# line — `-q debug` is hard-capped at 30 min:
+#
+#   sbatch -q debug --time=00:30:00 --export=ALL,RUN_TAG=...,NUM_EPOCHS=5 \
+#       slurm_train/train_only_nersc.sh
 #
 # Outputs land in the SAME RUN_DIR (alongside trainset.h5):
 #   model_epoch_NNNN.h5
@@ -22,12 +28,12 @@
 #   loss_history.json
 #   train.slurm.log
 #
-# Submit:
+# Submit (production):
 #   sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_<jobid> slurm_train/train_only_nersc.sh
 #
 # Tunables overridable via --export=ALL,KEY=val,...
-#   NUM_EPOCHS=200 (debug-scale; resubmit with NUM_EPOCHS=800 to extend
-#                  via auto-resume from the latest checkpoint).
+#   NUM_EPOCHS=800 (production default; resubmit to extend via auto-resume
+#                  from the latest checkpoint if more epochs are needed).
 #   BATCH_SIZE, LEARNING_RATE, NUM_PCA, etc.
 
 set -eo pipefail
@@ -50,7 +56,7 @@ TRAINSET_H5="${RUN_DIR}/trainset.h5"
     exit 2
 }
 
-NUM_EPOCHS="${NUM_EPOCHS:-200}"
+NUM_EPOCHS="${NUM_EPOCHS:-800}"
 BATCH_SIZE="${BATCH_SIZE:-12500}"
 LEARNING_RATE="${LEARNING_RATE:-0.005}"
 NUM_PCA="${NUM_PCA:-30}"
@@ -83,7 +89,7 @@ assert torch.cuda.is_available(), 'CUDA not available'
 
 echo "===================================================="
 echo "  TRAIN ONLY  RUN_TAG=$RUN_TAG  job: $SLURM_JOB_ID"
-echo "  -q debug -C gpu  walltime 30 min"
+echo "  queue:       $SLURM_JOB_QOS  walltime: $SLURM_JOB_TIME_LIMIT"
 echo "===================================================="
 echo "  trainset:    $TRAINSET_H5  ($(du -h $TRAINSET_H5 | cut -f1))"
 echo "  output_dir:  $RUN_DIR"
