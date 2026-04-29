@@ -1,5 +1,28 @@
 # Voigt LSF + num_lines hypothesis test — first-pass findings
 
+> **2026-04-29 follow-up — partial retraction**: a user-flagged kernel
+> truncation bug in `_kernel_for` was discovered after this report
+> landed. DESI-R3000 was being clipped to a 7-pixel kernel, collapsing
+> σ_eff from 4.25 → 1.92 px (45% of intent). That makes the **LLS /
+> sub-DLA results below invalid** (configs A and B were both narrow
+> kernels in disguise). The DLA-regime nullity is still real — the
+> saturated DLA core is wider than any kernel — but the strong claim
+> "hypothesis #1 falsified" is *not* supported by this run. See "Bug
+> retractions" section at the end. Fix landed in commit `eda1930`;
+> a re-run is queued.
+>
+> Three additional caveats raised by the user that compound the above:
+> 1. Targets are picked for high SNR + clean truth — easy-to-fit cases,
+>    biased toward small Δ. Doesn't generalize.
+> 2. The QMC samples are denser at low NHI than at high NHI by design
+>    (matching the prior). For a truth at log_nhi = 21.26, the nearest
+>    sample is at ~21.20 or ~21.30, so the MAP is sample-grid-snapped.
+>    Adaptive sampler is the right fix.
+> 3. The voigt path under test is `gpy_dla_detection/voigt_v2.py` — the
+>    new selectable-kernel module on this branch — not the production C
+>    extension `voigt_fast.so`. v2 + voigt_v2_inject is what the sweep
+>    runner injects per-config.
+
 > **Run**: 18 picked targets × 4 configs (A/B/C/D) = 72 inferences.
 > Both local CPU (gl3287, 16-core, 54 min wall) and SLURM `standard`
 > partition (job 48947439, 45.7 min wall) gave identical results.
@@ -8,7 +31,7 @@
 > `/tmp/voigt_sweep_local/runs/master.csv` and
 > `voigt_sweep_48947439/runs/master.csv`.
 
-## Headline: hypothesis #1 (LSF mismatch) is **null** for the DLA regime
+## Headline (with caveats below): hypothesis #1 looks null for DLA regime, **inconclusive elsewhere**
 
 For 4 of 5 DLA-regime targets, MAP log NHI is **bit-identical across all
 four configs** (BOSS-log-R2000, DESI-linear-R3000, DESI-linear-R3000 +
@@ -30,7 +53,16 @@ shift the QMC argmax for DLA-regime targets, because the damping wings
 perturbs a handful of pixels at the line core. The bit-identical MAPs are
 the QMC sample grid snapping to the same best sample in every case.
 
-### Critically: a strong-DLA target (truth ≈ 21.3) shows tiny bias
+### A strong-DLA target (truth ≈ 21.3) shows tiny bias — but cherry-picked
+
+**Caveat (raised by user)**: the picker explicitly selects targets that
+(a) pass the SNR cut, (b) have exactly one truth absorber, (c) are
+mid-forest. Strong, clean DLAs at SNR ≥ 2 are easy to fit by definition
+— the picker selects-against the failure modes that produced the
+historical +0.37 dex bias. So a small Δ here is consistent with both
+"the bias is target-specific" and "we filtered out the targets that
+would have shown it". Not strong evidence either way until we re-run
+with looser cuts and on the historical target itself.
 
 | target | mock | truth log NHI | MAP A | MAP B | Δ vs truth |
 |---|---|---:|---:|---:|---:|
@@ -126,16 +158,57 @@ the dominant cost is the QMC sample loop, not the LSF convolution.
 
 ## Recommended next steps
 
-1. **Re-run with N_PER_BIN ≥ 10** to firm up the null in the DLA
-   regime and probe the saclay sub-DLA hint at config-spread.
-2. **Run inference on TID 120046865 directly** under all 4 configs.
-   If the bias reproduces and the configs differ, hypothesis #1
-   isn't falsified for that target. If configs match (no LSF effect)
-   and bias persists, the bias is from elsewhere (continuum, prior,
-   QMC sampling).
-3. **Move to Bayesian-correctness Step 2** (QMC sample density and
+1. **Re-run the whole sweep with the kernel-fix commit `eda1930`** —
+   the LLS / sub-DLA cells in this report are invalid. The DLA-regime
+   columns can stand once verified against the fixed kernel (expected
+   to be similar since the saturated core dominates).
+2. **Run inference on TID 120046865 directly** under all 4 *fixed* configs.
+   First attempt with the buggy kernel returned `p_DLA = 0.05` (no
+   detection) — itself a worrying disagreement with the historical v1
+   result, may be a separate v2-vs-v1 issue.
+3. **Loosen the picker cuts** so the population isn't selected for
+   easy-to-fit-ness. Drop the SNR floor; allow multi-absorber LOS
+   (use the strongest as truth); allow targets close to the redshift
+   prior edges. Sample 50+ per cell, then the bin medians have something
+   to hang on.
+4. **Adaptive QMC sampler** to fix the sparse-coverage problem at
+   high NHI. The current `dla_samples_a03_100000.mat` has ~5e-5 dex
+   spacing at log_nhi=20 (where the prior is dense) and >1e-3 dex
+   spacing at log_nhi=22 — at the historical bias target's truth
+   (21.26) the MAP is *forced* to snap to one of the few high-NHI
+   samples. A two-stage sampler that re-densifies in the high-likelihood
+   region is the right fix; this is independent of LSF.
+5. **Move to Bayesian-correctness Step 2** (QMC sample density and
    prior shape — `docs/notes/2026-04-27_bayesian_correctness_plan.md`).
-   Step 1's null result steers us to the QMC integral itself rather
-   than the forward model.
-4. **FILTER fix #5** is independent of LSF — already on the task list,
+   This subsumes #4 and is the logical follow-up to the LSF question
+   either way.
+6. **FILTER fix #5** is independent of LSF — already on the task list,
    should land before the next sweep so LLS-regime results are clean.
+
+## Bug retractions (2026-04-29)
+
+### Kernel half_width truncation
+`_kernel_for("desi-linear-r3000", ...)` returned a 7-pixel Gaussian for
+the standard 0.15 Å DESI grid even though the intended σ is 4.25 px.
+Truncating to ±3 px clipped the wings and dropped the effective σ to
+1.92 px — 45% of what was intended. So the configs-A-vs-B comparison
+in this report was actually comparing two narrow-ish kernels (BOSS
+σ_eff=0.61 px vs broken-DESI σ_eff=1.92 px), not the BOSS-vs-DESI
+mismatch the experiment was designed to test. Symptoms in this report:
+all 7-pixel-kernel configs giving bit-identical MAPs (because the
+absorption profile differences were below 1e-4) and the
+`voigt_kernel_demo.png` plot showing the bare Voigt indistinguishable
+from the LSF-broadened versions even at LLS where it should look very
+different. Fix: half_width auto-sizes to ⌈4σ⌉ and `voigt_absorption`
+internally pads `raw_profile` so the output trim stays at 3 px per
+side regardless of kernel width. Commit `eda1930`. Demo PNG
+regenerated and now correctly shows DESI-R3000 broader / shallower
+than BOSS at low NHI.
+
+### Canonical-target run gave NaN MAP under v2
+Running TID 120046865 under v2 (with the buggy kernel) returned
+`p_DLA = 0.05` — i.e. no DLA detected — across all 4 configs. The
+historical v1 result was `p_DLA ≈ 1, MAP = 21.63`. Whether this is
+due to the kernel bug, a separate v2-vs-v1 inference issue, or model
+state drift since the historical run hasn't been disentangled. Will
+re-run after the kernel fix.
