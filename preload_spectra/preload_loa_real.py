@@ -548,7 +548,11 @@ def main():
     print(f"[step 5/5] wrote {args.output} ({len(out_tids)} spectra × {n_pix} pixels)")
 
     # Companion README + JSON metadata for human / tooling consumption.
-    from preload_spectra._dataset_readme import write_dataset_readme
+    # Sibling module — `python preload_spectra/preload_loa_real.py` makes
+    # sys.path[0] = preload_spectra/, so import directly without the package
+    # prefix. The `from preload_spectra._dataset_readme` form fails because
+    # the package's parent dir isn't on sys.path under this invocation.
+    from _dataset_readme import write_dataset_readme
     filter_pipeline = [
         f"z in [{args.z_min}, {args.z_max}] AND ZWARN==0",
     ]
