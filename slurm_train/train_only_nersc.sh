@@ -6,17 +6,23 @@
 #SBATCH --output=slurm_train/train_v2_%j.log
 #SBATCH --error=slurm_train/train_v2_%j.err
 #SBATCH -A desi
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gpus=1
 
 # TRAIN-ONLY: assumes a preload job has already produced
 #   ${OUTDIR_BASE}/v2_runs/${RUN_TAG}/trainset.h5
 # (e.g. via slurm_train/preload_loa_only_nersc.sh or any other producer).
 #
-# Defaults to `-q regular` with 4-hour walltime so production runs
-# (NUM_EPOCHS=800-920, ~7s/epoch on A100 at 300k spectra → ~1.5-2 h)
-# have ample headroom. For a fast smoke test override on the command
-# line — `-q debug` is hard-capped at 30 min:
+# Defaults to `-q regular` with 12-hour walltime — NERSC GPU queue can
+# be long, so we'd rather sit through one wait and run to convergence
+# than risk a too-short walltime cutting off training mid-run. At ~7s/
+# epoch on A100 with 300k spectra, NUM_EPOCHS=1500 finishes in ~3 h
+# with plenty of headroom for slow startup, GPU contention, etc. The
+# trainer auto-resumes from the latest checkpoint if more epochs are
+# wanted later.
+#
+# For a fast smoke test override on the command line — `-q debug` is
+# hard-capped at 30 min:
 #
 #   sbatch -q debug --time=00:30:00 --export=ALL,RUN_TAG=...,NUM_EPOCHS=5 \
 #       slurm_train/train_only_nersc.sh
@@ -32,8 +38,10 @@
 #   sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_<jobid> slurm_train/train_only_nersc.sh
 #
 # Tunables overridable via --export=ALL,KEY=val,...
-#   NUM_EPOCHS=800 (production default; resubmit to extend via auto-resume
-#                  from the latest checkpoint if more epochs are needed).
+#   NUM_EPOCHS=1500 (production default — historical Y3 used model_epoch_920;
+#                   1500 leaves headroom to converge fully without re-queueing.
+#                   Trainer auto-resumes from the latest checkpoint if even
+#                   more epochs are wanted later).
 #   BATCH_SIZE, LEARNING_RATE, NUM_PCA, etc.
 
 set -eo pipefail
@@ -56,7 +64,7 @@ TRAINSET_H5="${RUN_DIR}/trainset.h5"
     exit 2
 }
 
-NUM_EPOCHS="${NUM_EPOCHS:-800}"
+NUM_EPOCHS="${NUM_EPOCHS:-1500}"
 BATCH_SIZE="${BATCH_SIZE:-12500}"
 LEARNING_RATE="${LEARNING_RATE:-0.005}"
 NUM_PCA="${NUM_PCA:-30}"
