@@ -187,28 +187,63 @@ the dominant cost is the QMC sample loop, not the LSF convolution.
 
 ## Bug retractions (2026-04-29)
 
-### Kernel half_width truncation
-`_kernel_for("desi-linear-r3000", ...)` returned a 7-pixel Gaussian for
-the standard 0.15 Å DESI grid even though the intended σ is 4.25 px.
-Truncating to ±3 px clipped the wings and dropped the effective σ to
-1.92 px — 45% of what was intended. So the configs-A-vs-B comparison
-in this report was actually comparing two narrow-ish kernels (BOSS
-σ_eff=0.61 px vs broken-DESI σ_eff=1.92 px), not the BOSS-vs-DESI
-mismatch the experiment was designed to test. Symptoms in this report:
-all 7-pixel-kernel configs giving bit-identical MAPs (because the
-absorption profile differences were below 1e-4) and the
-`voigt_kernel_demo.png` plot showing the bare Voigt indistinguishable
-from the LSF-broadened versions even at LLS where it should look very
-different. Fix: half_width auto-sizes to ⌈4σ⌉ and `voigt_absorption`
-internally pads `raw_profile` so the output trim stays at 3 px per
-side regardless of kernel width. Commit `eda1930`. Demo PNG
-regenerated and now correctly shows DESI-R3000 broader / shallower
-than BOSS at low NHI.
+### Kernel half_width "truncation" — partial walk-back
+`_kernel_for("desi-linear-r3000", ...)` returned a 7-pixel Gaussian
+even when the intended σ exceeded that. Truncating a wide Gaussian to
+7 pixels collapses its effective σ — *if* you're applying it on a
+fine grid. I claimed this was the cause of "configs A vs B identical"
+in the sweep. **It isn't, for production data.** Trace data from a
+real DESI inference shows the convolution actually happens on the
+0.8 Å observed-data grid (after the GP model has been interpolated
+onto that grid), where σ_pix(R=3000) is only 0.80 px and there's no
+truncation issue. The half_width-auto-sizing fix in commit `eda1930`
+is still useful as defensive code (if anyone runs voigt_v2 on a finer
+grid, e.g. a unit test at dλ=0.15 Å, it won't silently truncate), but
+it does NOT fix a real production bias. Apologies for the misdirection
+— I was running the demo at dλ=0.15 (the GP rest-grid spacing) which
+is not where the actual convolution happens. Updated demo PNG at
+`docs/voigt_demo/voigt_kernel_demo_dl08.png` uses the correct dλ=0.8.
 
-### Canonical-target run gave NaN MAP under v2
-Running TID 120046865 under v2 (with the buggy kernel) returned
-`p_DLA = 0.05` — i.e. no DLA detected — across all 4 configs. The
-historical v1 result was `p_DLA ≈ 1, MAP = 21.63`. Whether this is
-due to the kernel bug, a separate v2-vs-v1 inference issue, or model
-state drift since the historical run hasn't been disentangled. Will
-re-run after the kernel fix.
+The actual production C ext kernel (σ_eff=0.61 px) applied on the
+DESI 0.8 Å grid: σ_λ ≈ 0.49 Å, σ_v ≈ 37 km/s, **R_eff ≈ 3400** —
+roughly close to the intended DESI R=3000. Slightly sharper, but not
+a factor-of-7 over-sharpening as I'd claimed.
+
+### Canonical target: confirmed forward-model bias, NOT sampler-limited
+Implemented the user's "log L at truth vs log L at MAP" test
+(`examples/check_truth_vs_map_likelihood.py`) on TID 120046865 with
+the historical bias (truth: z=2.773, logNHI=21.263; sub-DLA at
+z=2.287 logNHI=19.41). Brute-force scanned 20,000 random QMC samples
+to bypass the FILTER step's initial-scan rejection.
+
+| quantity | log L |
+|---|---:|
+| null (no absorber) | **−2886.1** |
+| truth (z=2.773, logNHI=21.263) | **−2865.9** |
+| brute-force MAP over QMC (z=2.7722, **logNHI=21.547**) | **−2864.5** |
+
+Outcome:
+- Truth fits **+20.2 log-units better** than null — the data clearly
+  has the DLA, so this isn't a "DLA absent" pathology.
+- The brute-force MAP sits at **logNHI = 21.547, +0.28 dex above
+  truth** — closely reproducing the historical +0.37 dex bias.
+- Truth fits **−1.4 log-units worse** than the brute-force MAP. So
+  the GP+Voigt+continuum is genuinely happier with NHI=21.55 than
+  with NHI=21.26 on this spectrum.
+- The QMC sample at truth's exact logNHI=21.263 *exists* in the
+  100k-sample set (Δ=0.0000 dex). **This is not a sampler-density
+  problem** for the strong-DLA component.
+
+⇒ **The +0.37 dex bias on this target is a real forward-model /
+continuum bias**, not LSF and not sampler-limited. Most likely
+candidates: GP mean μ overestimates flux in the DLA wing region, or
+ω² (per-pixel uncertainty) is too small there, so the optimizer
+compensates with stronger absorption (higher NHI). Continuum
+mismatch on the DLA's blueward wing would do exactly this.
+
+### Separate issue: FILTER initial-scan is broken on this target
+With 100k samples + clear DLA detection (Δ(MAP − null) = +21.7), the
+FILTER initial-scan still returned "no valid regions" and the holder
+reported `p_DLA = 0.05` (≈ prior). Brute-force argmax confirms the
+data clearly contains the DLA. This is FILTER fix #5 territory —
+already on the task list.

@@ -94,7 +94,17 @@ _BOSS_KERNEL_7 = np.array([
 
 
 KernelName = Literal[
-    "boss-log-r2000", "desi-linear-r3000", "desi-linear-r5000", "none"
+    "boss-log-r2000",        # production hardcoded 7-pixel kernel — R≈3000 on
+                             # the BOSS log-λ grid, but R≈21000 effective when
+                             # the same kernel is applied to a 0.15 Å DESI grid.
+                             # Useful as a *bug reproduction* config, not a
+                             # physical instrument.
+    "desi-linear-r3000",     # correct R=3000 Gaussian sized for the local
+    "desi-linear-r5000",     # linear-Å pixel grid.
+    "linear-r2000",          # generic R=2000 / R=3000 / R=5000 Gaussians on
+    "linear-r3000",          # the local linear-Å pixel grid (use these to
+    "linear-r5000",          # represent real BOSS-like or DESI LSFs).
+    "none",                  # no LSF: bare Voigt profile.
 ]
 
 
@@ -133,15 +143,14 @@ def _kernel_for(name: str, dlambda_A: float, lam_obs_mid_A: float) -> np.ndarray
         return np.array([1.0])
     if name == "boss-log-r2000":
         return _BOSS_KERNEL_7
-    if name == "desi-linear-r3000":
-        # FWHM in velocity = c/R ≈ 100 km/s ⇒ σ_v ≈ 42 km/s
-        # Pixel velocity at λ ≈ lam_obs_mid: dv = c · (dλ/λ)
-        dv = _C_CGS / 1e5 * (dlambda_A / lam_obs_mid_A)  # km/s
-        sigma_pix = (_C_CGS / 1e5 / 3000.0) / 2.3548 / dv
-        return _gaussian_kernel_auto_width(sigma_pix)
-    if name == "desi-linear-r5000":
-        dv = _C_CGS / 1e5 * (dlambda_A / lam_obs_mid_A)
-        sigma_pix = (_C_CGS / 1e5 / 5000.0) / 2.3548 / dv
+    # Generic R-from-name path: 'r2000' / 'r3000' / 'r5000' on a linear-Å
+    # grid — Gaussian σ from c/(R · 2.3548), expressed in pixels.
+    if name in ("desi-linear-r3000", "desi-linear-r5000",
+                "linear-r2000", "linear-r3000", "linear-r5000"):
+        R_str = name.split("-r")[-1]
+        R = float(R_str)
+        dv = _C_CGS / 1e5 * (dlambda_A / lam_obs_mid_A)  # km/s/pixel
+        sigma_pix = (_C_CGS / 1e5 / R) / 2.3548 / dv
         return _gaussian_kernel_auto_width(sigma_pix)
     raise ValueError(f"unknown kernel name: {name!r}")
 
