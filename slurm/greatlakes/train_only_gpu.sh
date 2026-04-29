@@ -4,7 +4,10 @@
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=32G
+# 300k spectra × 3801 px × float32 = 4.6 GB per array, ×3 main arrays plus
+# de-forest/centering intermediates → loader peaks ~32-40 GB. 32G OOMs every
+# time. 64G has comfortable headroom.
+#SBATCH --mem=64G
 #SBATCH -t 2:00:00
 #SBATCH -J train_v2
 #SBATCH -o slurm/greatlakes/train_v2_%j.log
