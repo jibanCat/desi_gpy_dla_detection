@@ -133,7 +133,7 @@ def _run_one_inference(
         from gpy_dla_detection.set_parameters import Parameters
         from run_bayes_select import DLAHolder
 
-        params = Parameters(
+        common = dict(
             loading_min_lambda=preset.loading_min_lambda,
             loading_max_lambda=preset.loading_max_lambda,
             normalization_min_lambda=preset.normalization_min_lambda,
@@ -142,9 +142,15 @@ def _run_one_inference(
             max_lambda=preset.max_lambda,
             dlambda=preset.dlambda,
             k=preset.k,
+            max_noise_variance=9.0,
+            num_lines=cfg.num_lines,
+            max_z_cut=3000.0,
+            min_z_cut=3000.0,
             num_forest_lines=preset.num_forest_lines,
-            num_lines=cfg.num_lines,    # also passes num_lines through
         )
+        params = Parameters(num_dla_samples=100000, **common)
+        params_subdla = Parameters(num_dla_samples=100000, **common)
+
         holder = DLAHolder(
             learned_file=learned_file,
             catalog_name=catalog_name,
@@ -153,28 +159,33 @@ def _run_one_inference(
             dla_samples_file=dla_samples_file,
             sub_dla_samples_file=sub_dla_samples_file,
             params=params,
+            params_subdla=params_subdla,
             min_z_separation=3000.0,
             prev_tau_0=preset.prev_tau_0,
             prev_beta=preset.prev_beta,
             max_dlas=4,
+            broadening=True,
             plot_figures=False,
             max_workers=4,
             batch_size=12500,
             figure_dir="/tmp",
             single_absorber_model=False,
             filter_low_likelihood=True,
-            num_dla_samples=100000,
-            num_subdla_samples=100000,
         )
+        holder.initialize_results(1)
         holder.process_qso(
-            target_id=target_id, wavelengths=wave, fluxes=flux,
-            noise_variance=noise_var, pixel_mask=mask, z_qso=z_qso,
+            idx=0,
+            target_id=str(target_id),
+            wavelengths=wave,
+            flux=flux,
+            noise_variance=noise_var,
+            pixel_mask=mask,
+            z_qso=z_qso,
         )
-        # Extract MAP DLA from the holder's last result.
-        # process_qso doesn't return — read internal state.
-        map_z = float(holder.MAP_z_dlas[0][0]) if hasattr(holder, "MAP_z_dlas") else float("nan")
-        map_log_nhi = float(holder.MAP_log_nhis[0][0]) if hasattr(holder, "MAP_log_nhis") else float("nan")
-        p_dla = float(holder.p_dlas[0]) if hasattr(holder, "p_dlas") else float("nan")
+        res = holder.results
+        map_z = float(res["MAP_z_dlas"][0, 0])
+        map_log_nhi = float(res["MAP_log_nhis"][0, 0])
+        p_dla = float(res["p_dlas"][0])
     except Exception as e:
         import traceback
         return {"error": f"infer: {e}\n{traceback.format_exc()[:500]}"}
@@ -207,6 +218,16 @@ def _run_one_inference(
         "delta_z_dla": float(map_z - truth_z_dla),
         "wall_s": float(wall),
     }
+
+
+# ---------------------------------------------------------------------------
+# Process wrapper: drops the dict result onto a queue so the parent can read
+# it. Used because we launch via ctx.Process (not Pool) to keep the child
+# non-daemonic — daemonic children can't spawn the inner ProcessPoolExecutor.
+# ---------------------------------------------------------------------------
+def _proc_target(q, *args):
+    result = _run_one_inference(*args)
+    q.put(result)
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +285,9 @@ def main():
           f"{len(targets) * len(config_tags)} inferences")
 
     # Run sequentially in spawned processes (kernel swap requires isolation).
+    # Use ctx.Process (non-daemonic) so the child can itself spawn the inner
+    # ProcessPoolExecutor used by parallel_log_model_evidences. ctx.Pool would
+    # make the worker daemonic and forbid grandchild processes.
     ctx = get_context("spawn")
     rows: list[dict] = []
     t_start = time.perf_counter()
@@ -278,8 +302,14 @@ def main():
                 dla_samples_path, sub_dla_samples_path, str(out_h5),
             )
             print(f"[sweep] [{t_idx + 1}/{len(targets)}] {tag}", flush=True)
-            with ctx.Pool(1) as pool:
-                result = pool.apply(_run_one_inference, args_tuple)
+            q = ctx.Queue()
+            p = ctx.Process(target=_proc_target, args=(q,) + args_tuple)
+            p.start()
+            p.join()
+            if q.empty():
+                result = {"error": f"child exited without result (exitcode={p.exitcode})"}
+            else:
+                result = q.get_nowait()
             rows.append(result)
             if "error" in result:
                 print(f"  ERROR: {result['error']}")
