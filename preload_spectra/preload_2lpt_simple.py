@@ -402,6 +402,52 @@ def main():
 
     print(f"[step 5/5] wrote {args.output} ({n_keep} spectra × {n_pix} pixels)")
 
+    # Companion README + JSON metadata for human / tooling consumption.
+    from preload_spectra._dataset_readme import write_dataset_readme
+    filter_pipeline = [
+        f"z in [{args.z_min}, {args.z_max}] AND ZWARN==0 (if column exists)",
+    ]
+    if args.exclude_hcd:
+        filter_pipeline.append(
+            f"HCD anti-join: drop TARGETIDs with logNHI ≥ {args.hcd_min_nhi} "
+            f"in mock's hcd_truth_cat.fits"
+        )
+    if args.exclude_bal:
+        filter_pipeline.append(
+            "BAL anti-join: drop TARGETIDs with BI_CIV > 0 in mock's bal_cat.fits"
+        )
+    if args.max_spectra is not None:
+        filter_pipeline.append(
+            f"Random subset to --max-spectra={args.max_spectra}"
+        )
+    suggested = (
+        "python train_gp.py "
+        f"--preloaded-file {args.output.name} "
+        f"--z-min {args.z_min} --z-max {args.z_max} "
+        f"--num-pca-components 30 "
+        "--num-epochs 800 --batch-size 12500 --learning-rate 0.005 "
+        "--num-forest-lines 3 "
+        f"--output-dir <run_folder> --device cuda --save-every 25"
+    )
+    write_dataset_readme(
+        args.output,
+        dataset_kind="2lpt_mock",
+        n_spectra=n_keep,
+        n_pix=n_pix,
+        rest_min=float(args.min_lambda),
+        rest_max=float(args.max_lambda),
+        dlambda=float(args.dlambda),
+        z_min=float(args.z_min),
+        z_max=float(args.z_max),
+        filter_pipeline=filter_pipeline,
+        sources={
+            "mock_dir": str(args.mock_dir),
+        },
+        cli_args={k: (str(v) if isinstance(v, Path) else v)
+                  for k, v in vars(args).items()},
+        suggested_train_command=suggested,
+    )
+
 
 if __name__ == "__main__":
     main()

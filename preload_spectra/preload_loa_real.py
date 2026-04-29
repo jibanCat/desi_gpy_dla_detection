@@ -547,6 +547,59 @@ def main():
 
     print(f"[step 5/5] wrote {args.output} ({len(out_tids)} spectra × {n_pix} pixels)")
 
+    # Companion README + JSON metadata for human / tooling consumption.
+    from preload_spectra._dataset_readme import write_dataset_readme
+    filter_pipeline = [
+        f"z in [{args.z_min}, {args.z_max}] AND ZWARN==0",
+    ]
+    if args.exclude_bal:
+        filter_pipeline.append(
+            f"BAL anti-join: drop {args.bal_col} > {args.bal_min}"
+        )
+    if args.hcd_cat is not None:
+        sem = ("DLAs only" if args.hcd_min_nhi >= 20.3
+               else "DLAs + sub-DLAs" if args.hcd_min_nhi >= 19.0
+               else "all HCDs")
+        line = (f"HCD anti-join via {Path(args.hcd_cat).name}: "
+                f"drop TARGETIDs with logNHI ≥ {args.hcd_min_nhi} ({sem})")
+        if args.hcd_min_pdla > 0:
+            line += f" AND P_DLA ≥ {args.hcd_min_pdla}"
+        filter_pipeline.append(line)
+    if args.max_spectra is not None:
+        filter_pipeline.append(
+            f"Random subset to --max-spectra={args.max_spectra} "
+            f"(group-level: whole hpx files in shuffled order)"
+        )
+    suggested = (
+        "python train_gp.py "
+        f"--preloaded-file {args.output.name} "
+        f"--z-min {args.z_min} --z-max {args.z_max} "
+        f"--num-pca-components 30 "
+        "--num-epochs 800 --batch-size 12500 --learning-rate 0.005 "
+        "--num-forest-lines 3 "
+        f"--output-dir <run_folder> --device cuda --save-every 25"
+    )
+    write_dataset_readme(
+        args.output,
+        dataset_kind="loa_real",
+        n_spectra=len(out_tids),
+        n_pix=n_pix,
+        rest_min=float(args.min_lambda),
+        rest_max=float(args.max_lambda),
+        dlambda=float(args.dlambda),
+        z_min=float(args.z_min),
+        z_max=float(args.z_max),
+        filter_pipeline=filter_pipeline,
+        sources={
+            "qsocat": str(args.qsocat),
+            "specdir": str(args.specdir),
+            "hcd_cat": str(args.hcd_cat) if args.hcd_cat else "(not used)",
+        },
+        cli_args={k: (str(v) if isinstance(v, Path) else v)
+                  for k, v in vars(args).items()},
+        suggested_train_command=suggested,
+    )
+
 
 if __name__ == "__main__":
     main()
