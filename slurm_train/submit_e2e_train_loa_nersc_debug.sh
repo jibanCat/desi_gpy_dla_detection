@@ -78,14 +78,21 @@ case "$VARIANT" in
         ;;
 esac
 
-# Debug-scale knobs. Sized for the 30-min debug walltime: at the LOA
-# coadd I/O rate (multi-spectrum-per-file) preload is faster per spectrum
-# than 2LPT's spectra-16, but still ~5 min for 50k. Drop the regular's
-# 300k default to 50k for debug — leaves training + post-flight margin.
-# For a fully-converged production model, run the regular-queue submit.
+# Debug-scale knobs. Sized for the 30-min debug walltime, with empirical
+# margin for variable cfs I/O.
+#
+# Measured TIDs-per-hpx after filtering (no_dla_no_bal): median 54,
+# 16,509 unique hpx files in the full filtered pool. Group-level
+# sampling needs ~974 files for 50k spectra in random hpx order.
+# Per-file desispec.io.read_spectra costs were 0.5–6 s on the previous
+# wave (cfs varies by load), so 50k is a 8–58 min preload — risky on
+# the 30 min `-q debug` wall.
+#
+# Safer default: 25,000 spectra → ~487 hpx files → ~4–25 min preload.
+# Bump up after one successful run confirms cfs throughput.
 Z_MIN="${Z_MIN:-2.0}"
 Z_MAX="${Z_MAX:-4.25}"
-MAX_SPECTRA="${MAX_SPECTRA:-50000}"
+MAX_SPECTRA="${MAX_SPECTRA:-25000}"
 NUM_EPOCHS="${NUM_EPOCHS:-200}"          # debug-scale: 200 (vs 800 in regular)
 BATCH_SIZE="${BATCH_SIZE:-12500}"
 LEARNING_RATE="${LEARNING_RATE:-0.005}"
