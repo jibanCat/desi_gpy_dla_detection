@@ -166,7 +166,10 @@ def _run_one_inference(
             max_dlas=4,
             broadening=True,
             plot_figures=False,
-            max_workers=4,
+            # Match production multi-DLA settings (per user): 8 workers, 12500
+            # batch. 8 batches over 8 workers — 1 round, minimal dispatch
+            # overhead.
+            max_workers=8,
             batch_size=12500,
             figure_dir="/tmp",
             single_absorber_model=False,
