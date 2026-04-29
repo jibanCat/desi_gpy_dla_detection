@@ -5,17 +5,23 @@
 
 ## Headline
 
-The +0.34 dex N_HI bias on TID 120046865 is **not** an LSF problem (in
-production, on DESI data). It is a **τ_eff prior mismatch**, fully
-resolved on the strong-DLA target by an HCD-masked empirical-Bayes
-τ_eff fit per spectrum.
+The +0.34 dex N_HI bias on Y3 mock DLA targets is **not** an LSF problem
+(in production, on DESI data). It is a **τ_eff prior mismatch**, fixable
+by an HCD-masked empirical-Bayes τ_eff fit per spectrum.
 
-**Multi-target validation (n=6)**: HCD-masked τ-EB closes the DLA-regime
-bias to ~0 dex on all 4 DLA-regime targets tested (median bias +0.12 →
-−0.02 dex). It does NOT close sub-DLA / LLS regime biases — but those
-turn out to be from the DLA prior boundary (`uniform_min_log_nhi=20.0`
-forces sub-DLA truths to map to ≥20.0), not τ_eff. Different problem,
-fixed by the sub-DLA model (items #6, #7, #11) and FILTER fix #5.
+**Multi-target validation at scale (n=54, EOD 2026-04-29)**: HCD-masked
+τ-EB closes **81% of median DLA-regime bias** across n=18 DLA targets
+in 3 mocks (+0.240 → +0.045 dex). Per-mock: 2LPT 54%, London 84%,
+Saclay 81%. Does **NOT** close sub-DLA / LLS biases — those are a
+prior-boundary problem (`uniform_min_log_nhi=20.0` for the DLA model
+forces sub-DLA truths to map to ≥20.0), separate from τ_eff. Fix for
+those is sub-DLA model improvements (tasks #6, #7, #11) + FILTER fix
+#5 (now landed in commit `861151a`).
+
+**FILTER fix #5 (also landed today)**: bypasses the truncated-region
+correction for the 1-DLA evidence; matches the unbiased FILTER=0
+baseline to 0.7% on TID 120046865 with 10× the speed. Recovers
+p_DLA from 0.05 (broken) → 0.52 (matches FILTER=0 ground truth).
 
 A separate kernel-truncation defensive fix in `voigt_v2.py` does *not*
 shift production results (DESI 0.8 Å grid, half_width=3 was already
