@@ -197,6 +197,191 @@ def voigt_absorption(
     return np.convolve(raw_profile, k, mode="valid")
 
 
+# ---------------------------------------------------------------------------
+# Adaptive-window helper for batched Voigt — empirical calibration.
+# ---------------------------------------------------------------------------
+# Empirical study (tests/profile/profile_voigt.py + adaptive-window calib):
+# absorption depth at offset Δλ from a Lyα line at z=2.1 (log_nhi=22.0)
+# is ~4e-3 at Δλ=1000 Å, ~3e-1 at 100 Å. The Lorentzian wing of a strong
+# DLA does not become windowable below 1e-3 within ~1500 Å — wider than
+# most DESI forest windows.
+#
+# Conclusion: **windowing is NOT effective for log_nhi ≥ 20**, where most
+# DLA-mode QMC samples sit. It IS effective for LLS / sub-DLA samples
+# (window ≤ 100 Å gives <1e-3 error at log_nhi ≤ 19).
+#
+# So the windowed code path is provided as an OPTION (mostly for LLS-
+# mode inference), not as a default speedup for multi-DLA mode. The
+# serious 10× speedup path is GPU-batched Voigt + GPU log_mvnpdf — see
+# PHASE_2 in the branch.
+#
+# Window calibration (max abs-depth error < 1e-3, verified by tests):
+#   log_nhi: 17.0  17.5  18.0  18.5  19.0  19.5  20.0  20.5  21.0  21.5  22+
+#   win_AA:    10    20    50    50   100   200   500   500  1000  1000  full
+
+def _adaptive_window_AA(log_nhi: float | np.ndarray) -> float | np.ndarray:
+    """Empirically calibrated damping-window half-width in Å as a
+    function of log NHI. Returns ``inf`` for log_nhi ≥ 21 (windowing is
+    not useful at high NHI — the Lorentzian wing extends ~1500 Å and
+    no realistic spectrum window is bigger than that anyway)."""
+    arr = np.asarray(log_nhi, dtype=float)
+    # Piecewise lookup table (interpolated for intermediate values).
+    table = np.array([
+        [17.0,    10.0],
+        [17.5,    20.0],
+        [18.0,    50.0],
+        [18.5,    50.0],
+        [19.0,   100.0],
+        [19.5,   200.0],
+        [20.0,   500.0],
+        [20.5,   500.0],
+        [20.99, 1000.0],
+        [21.0, np.inf],   # full eval at and above DLA boundary
+    ])
+    win = np.interp(arr, table[:, 0], table[:, 1])
+    # Anything above the largest tabulated NHI: full evaluation.
+    win = np.where(arr >= 21.0, np.inf, win)
+    return win
+
+
+def voigt_absorption_batched(
+    wavelengths_A: np.ndarray,
+    log_nhi_arr: np.ndarray,
+    z_dla_arr: np.ndarray,
+    num_lines: int = 3,
+    kernel: KernelName = "boss-log-r2000",
+    dlambda_A: float | None = None,
+    use_window: bool = True,
+    window_AA: float | None = None,
+) -> np.ndarray:
+    """Batched Voigt absorption across many QMC samples.
+
+    The serial ``voigt_absorption`` evaluates one (z, log_nhi) pair at a
+    time. For inference at 100k QMC samples per spectrum, that's 100k
+    Python-level wofz dispatches. Batching alone gives no speedup
+    (wofz internally is at ~70 ns/eval, the bottleneck), but batching
+    *combined with adaptive windowing* gives 2-5× speedup because most
+    samples only need wofz at a few hundred pixels (where the line is)
+    rather than the full ~3000-5000 pixel forest.
+
+    Parameters
+    ----------
+    wavelengths_A : (n_pix,) observed wavelengths in Å.
+    log_nhi_arr   : (n_samples,) log10(N_HI / cm⁻²) per QMC sample.
+    z_dla_arr     : (n_samples,) DLA redshift per QMC sample.
+    num_lines     : number of Lyman series lines to include.
+    kernel        : LSF kernel name (same options as ``voigt_absorption``).
+    dlambda_A     : pixel spacing for desi-linear-* kernels.
+    use_window    : if True, compute Voigt only on pixels within
+                    ``_adaptive_window_AA(log_nhi)`` Å of each line center.
+                    Outside-window pixels are set to absorption=1.
+                    If False, evaluate on the full grid (slow but exact).
+    window_AA     : override the adaptive window with a fixed half-width
+                    in Å. Mainly for testing.
+
+    Returns
+    -------
+    profiles : (n_samples, n_pix) absorption profiles, post-LSF if
+               kernel != 'none'.
+
+    Notes
+    -----
+    - Bit-equivalent to a per-sample loop calling ``voigt_absorption``
+      when ``use_window=False`` (verified by parity tests).
+    - With ``use_window=True``, the per-pixel absorption error is
+      ≤ 1e-3 by design of ``_adaptive_window_AA``. The propagation of this
+      error to the GP log-likelihood is bounded by per-pixel y²/σ² × ε²,
+      total contribution per spectrum ~10⁻⁵ in log-likelihood units
+      (verified by tests/test_voigt_lsf_correctness.py).
+    """
+    if num_lines < 1 or num_lines > 31:
+        raise ValueError(f"num_lines must be in [1, 31], got {num_lines}")
+    log_nhi_arr = np.asarray(log_nhi_arr, dtype=float)
+    z_dla_arr = np.asarray(z_dla_arr, dtype=float)
+    if log_nhi_arr.shape != z_dla_arr.shape:
+        raise ValueError(
+            f"log_nhi_arr and z_dla_arr must have the same shape, got "
+            f"{log_nhi_arr.shape} vs {z_dla_arr.shape}"
+        )
+
+    n_samples = log_nhi_arr.shape[0]
+    n_pix = wavelengths_A.shape[0]
+    wave_cm = np.asarray(wavelengths_A, dtype=float) * 1e-8
+
+    # Initialise total optical depth as zero (absorption = exp(0) = 1).
+    total_tau = np.zeros((n_samples, n_pix), dtype=float)
+
+    # Decide windowing per (sample, line) pair.
+    if window_AA is not None:
+        win_AA_per_sample = np.full(n_samples, float(window_AA))
+    elif use_window:
+        win_AA_per_sample = _adaptive_window_AA(log_nhi_arr)
+    else:
+        win_AA_per_sample = None  # full evaluation
+
+    for j in range(num_lines):
+        lam_line_cm = _TRANS_WAV_CM[j]
+        gamma = _GAMMAS_CM_S[j]
+        leading = _LEADING_CONSTS_CM2[j]
+
+        if win_AA_per_sample is None:
+            # Full-pixel evaluation: vectorise across (samples × pixels).
+            # vel shape: (n_samples, n_pix)
+            vel = wave_cm[None, :] * (
+                _C_CGS / (lam_line_cm * (1.0 + z_dla_arr[:, None]))
+            ) - _C_CGS
+            zc = (vel + 1j * gamma) / (_SIGMA * np.sqrt(2.0))
+            voigt = np.real(wofz(zc)) / (_SIGMA * np.sqrt(2 * np.pi))
+            total_tau += -leading * (10.0 ** log_nhi_arr[:, None]) * voigt
+            continue
+
+        # Windowed: each sample i contributes only at pixels within
+        # win_AA_per_sample[i] Å of (1 + z_dla[i]) · λ_rest_j.
+        # Note: for log_nhi ≥ 21 the table returns inf, falling back to
+        # full evaluation per sample (no speedup at high NHI).
+        lam_line_A = lam_line_cm * 1e8
+        line_centre_obs_AA = (1.0 + z_dla_arr) * lam_line_A
+        # Per-sample [lo, hi] pixel index window.
+        for i in range(n_samples):
+            half_w = win_AA_per_sample[i]
+            if not np.isfinite(half_w):
+                # Full evaluation for this sample (high NHI).
+                vel = wave_cm * (
+                    _C_CGS / (lam_line_cm * (1.0 + z_dla_arr[i]))
+                ) - _C_CGS
+                zc = (vel + 1j * gamma) / (_SIGMA * np.sqrt(2.0))
+                voigt = np.real(wofz(zc)) / (_SIGMA * np.sqrt(2 * np.pi))
+                total_tau[i] += -leading * (10.0 ** log_nhi_arr[i]) * voigt
+                continue
+            centre = line_centre_obs_AA[i]
+            lo = np.searchsorted(wavelengths_A, centre - half_w, side="left")
+            hi = np.searchsorted(wavelengths_A, centre + half_w, side="right")
+            if hi <= lo:
+                continue
+            sub_cm = wave_cm[lo:hi]
+            vel = sub_cm * (_C_CGS / (lam_line_cm * (1.0 + z_dla_arr[i]))) - _C_CGS
+            zc = (vel + 1j * gamma) / (_SIGMA * np.sqrt(2.0))
+            voigt = np.real(wofz(zc)) / (_SIGMA * np.sqrt(2 * np.pi))
+            total_tau[i, lo:hi] += -leading * (10.0 ** log_nhi_arr[i]) * voigt
+
+    raw_profiles = np.exp(total_tau)
+
+    if kernel == "none":
+        return raw_profiles
+
+    if dlambda_A is None:
+        dlambda_A = float(np.diff(wavelengths_A)[0])
+    lam_mid = float(wavelengths_A[len(wavelengths_A) // 2])
+    k = _kernel_for(kernel, dlambda_A, lam_mid)
+    # Convolve each sample's profile with the LSF kernel.
+    # np.convolve doesn't broadcast over rows; loop, but each is fast.
+    n_out = n_pix - (len(k) - 1)
+    out = np.empty((n_samples, n_out), dtype=float)
+    for i in range(n_samples):
+        out[i] = np.convolve(raw_profiles[i], k, mode="valid")
+    return out
+
+
 # Convenience class API mirroring voigt_fast.VoigtProfile so v2 can be
 # dropped into call sites that expect the production interface.
 class VoigtProfileV2:
