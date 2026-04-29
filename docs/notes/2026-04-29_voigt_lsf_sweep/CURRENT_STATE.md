@@ -6,11 +6,16 @@
 ## Headline
 
 The +0.34 dex N_HI bias on TID 120046865 is **not** an LSF problem (in
-production, on DESI data). It is at least partially a **τ_eff prior
-mismatch**. With a per-spectrum empirical-Bayes τ_eff fit done after
-masking putative-HCD pixels, the truth N_HI is recoverable on this
-target to within sampling resolution (−0.06 dex). n=1 — needs validation
-across more targets before any production change.
+production, on DESI data). It is a **τ_eff prior mismatch**, fully
+resolved on the strong-DLA target by an HCD-masked empirical-Bayes
+τ_eff fit per spectrum.
+
+**Multi-target validation (n=6)**: HCD-masked τ-EB closes the DLA-regime
+bias to ~0 dex on all 4 DLA-regime targets tested (median bias +0.12 →
+−0.02 dex). It does NOT close sub-DLA / LLS regime biases — but those
+turn out to be from the DLA prior boundary (`uniform_min_log_nhi=20.0`
+forces sub-DLA truths to map to ≥20.0), not τ_eff. Different problem,
+fixed by the sub-DLA model (items #6, #7, #11) and FILTER fix #5.
 
 A separate kernel-truncation defensive fix in `voigt_v2.py` does *not*
 shift production results (DESI 0.8 Å grid, half_width=3 was already
@@ -107,16 +112,18 @@ for ~300k spectra × 3801 pixels). Schema verified: `fluxes`,
 
 ## What's queued for the next session
 
-- (a) **Saclay sub-DLA target deep-dive** (TID 2385001246): config D shifts
-  MAP +0.36 dex with the fixed kernel. Is this real LSF sensitivity at
-  sub-DLA, or an interaction with FILTER? Worth understanding before
-  drawing any conclusion about sub-DLA-regime LSF.
-- (b) **Multi-target HCD-masking τ-EB** validation: the +0.06 dex truth
-  recovery on TID 120046865 is n=1 and a particularly strong DLA. Need
-  to test on (i) different z_qso, (ii) weaker DLAs, (iii) DLA-free
-  controls (HCD masking should be a no-op there).
-- (c) **Train GP on the no-DLA / no-BAL preload** — preload step is done;
-  training step pending.
+- (a) ~~Saclay sub-DLA target deep-dive~~ **DONE**: confirmed the +0.36
+  dex spread between configs in the sweep is multi-DLA solver noise,
+  not real LSF sensitivity. All 3 kernels brute-force to MAP ≈ 21.22
+  on a sub-DLA truth of 19.56 — that's a +1.7 dex bias from the
+  DLA-prior boundary (`uniform_min_log_nhi=20.0`), not the kernel.
+- (b) ~~Multi-target HCD-masking τ-EB~~ **DONE on n=6**: see results
+  table above. HCD-masked EB closes DLA-regime bias to ~0 dex (median
+  +0.12 → −0.02 dex over 4 DLA targets). Sub-DLA / LLS unchanged —
+  that bias is prior-boundary, not τ_eff.
+- (c) **Train GP on the no-DLA / no-BAL preload** — preload step done;
+  training step pending. This is what would actually validate Step 4
+  (does retraining on truly-clean forest data move the inference bias).
 
 ## Files of record
 
