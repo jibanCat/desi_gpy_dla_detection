@@ -30,8 +30,6 @@ from typing import Callable, Optional
 import h5py
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
-
 from .model_v2 import GPModelV2
 from .objective_v2 import vectorized_nll
 
@@ -209,7 +207,7 @@ def train(
         # CPU tensors).
         perm = torch.randperm(n)
         epoch_loss = 0.0
-        n_batches = 0
+        n_spectra_seen = 0
         for start in range(0, n, bs):
             end = min(n, start + bs)
             idx = perm[start:end]
@@ -234,12 +232,14 @@ def train(
 
             # Single CPU sync per batch — fine since we accumulate locally.
             epoch_loss += float(loss.detach().cpu().item())
-            n_batches += 1
+            n_spectra_seen += len(idx)
 
         if device.type == "cuda":
             torch.cuda.synchronize()
         epoch_wall = time.perf_counter() - t0
-        avg_loss = epoch_loss / max(n_batches, 1)
+        # Normalize by total spectra (not n_batches) so the metric is a
+        # per-spectrum NLL regardless of whether the last batch is smaller.
+        avg_loss = epoch_loss / max(n_spectra_seen, 1)
         loss_history.append(avg_loss)
 
         if scheduler is not None:

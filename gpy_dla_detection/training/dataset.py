@@ -225,11 +225,9 @@ def load_preprocessed_h5(
     z_qsos = z_qsos_raw[mask].astype(np.float64)
 
     # The HDF5 stores per-spectrum rest_wavelengths but they're typically
-    # the same grid — pull the first row as the canonical grid.
-    if rest_wavelengths.ndim == 2:
-        rest_wave = rest_wavelengths[0].astype(np.float64)
-    else:
-        rest_wave = rest_wavelengths.astype(np.float64)
+    # the same grid — _read_rest_wavelengths already extracted the 1D grid
+    # (first row if 2D, or the array directly if 1D).
+    rest_wave = rest_wavelengths.astype(np.float64)
 
     print(f"[dataset] {h5_path.name}: {n_total} total → {n_filtered} after "
           f"z/SNR/catalog filter → {n_kept} after max_spectra cap")
