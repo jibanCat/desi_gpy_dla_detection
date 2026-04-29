@@ -99,25 +99,53 @@ def pick_for_mock(mock: str, mock_dir: Path, n_per_bin: int,
     """Return list of selected targets across all 3 NHI regimes."""
     rng = np.random.default_rng(seed)
 
-    # Load mock truth catalog + zcat.
-    hcd_path = mock_dir / "hcd_truth_cat.fits"
+    # Load mock truth catalog + zcat. Schema varies by mock generator:
+    #   2LPT, Saclay : `hcd_truth_cat.fits` with cols (TARGETID, Z, NHI, ...)
+    #   London      : `dla_cat.fits`        with cols (TARGETID, Z_DLA, NHI, DLAID)
+    hcd_candidates = [
+        mock_dir / "hcd_truth_cat.fits",
+        mock_dir / "dla_cat.fits",
+    ]
+    hcd_path = next((p for p in hcd_candidates if p.exists()), None)
     zcat_path = mock_dir / "zcat.fits"
-    if not hcd_path.exists() or not zcat_path.exists():
-        print(f"[skip {mock}] missing files: {hcd_path.exists()=} {zcat_path.exists()=}")
+    if hcd_path is None or not zcat_path.exists():
+        print(f"[skip {mock}] no truth catalog found in {mock_dir}; "
+              f"tried {[p.name for p in hcd_candidates]}; "
+              f"zcat={zcat_path.exists()}")
         return []
 
-    print(f"[mock={mock}] reading truth + zcat from {mock_dir}")
+    print(f"[mock={mock}] reading truth ({hcd_path.name}) + zcat from {mock_dir}")
     hcd = Table.read(hcd_path)
     zcat = Table.read(zcat_path)
 
-    # Normalise the NHI column name.
+    # Normalise the NHI column name (always 'NHI' in our 3 mocks; LOG_NHI
+    # is a defensive fallback for any future schema).
     if "LOG_NHI" in hcd.colnames:
         nhi_col = "LOG_NHI"
     elif "NHI" in hcd.colnames:
         nhi_col = "NHI"
     else:
         raise KeyError(f"{hcd_path}: no LOG_NHI or NHI column")
-    print(f"[mock={mock}] hcd col={nhi_col}, n={len(hcd)}")
+
+    # Normalise the absorber-redshift column name. London uses 'Z_DLA';
+    # 2LPT/Saclay use 'Z' (since their hcd_truth_cat is per-absorber).
+    if "Z" in hcd.colnames and "Z_DLA" not in hcd.colnames:
+        z_col = "Z"
+    elif "Z_DLA" in hcd.colnames:
+        z_col = "Z_DLA"
+    else:
+        raise KeyError(f"{hcd_path}: no Z or Z_DLA column")
+    print(f"[mock={mock}] hcd cols: nhi={nhi_col!r}, z={z_col!r}, n={len(hcd)}")
+
+    # zcat RA/DEC column normalisation. 2LPT + Saclay use TARGET_RA /
+    # TARGET_DEC; London uses plain RA / DEC. Match either.
+    if "TARGET_RA" in zcat.colnames and "TARGET_DEC" in zcat.colnames:
+        ra_col, dec_col = "TARGET_RA", "TARGET_DEC"
+    elif "RA" in zcat.colnames and "DEC" in zcat.colnames:
+        ra_col, dec_col = "RA", "DEC"
+    else:
+        raise KeyError(f"{zcat_path}: no RA/DEC columns")
+    print(f"[mock={mock}] zcat RA/DEC cols: {ra_col!r} / {dec_col!r}")
 
     # Index zcat by TARGETID for quick lookup.
     zcat_by_tid = {int(r["TARGETID"]): r for r in zcat}
@@ -143,7 +171,7 @@ def pick_for_mock(mock: str, mock_dir: Path, n_per_bin: int,
                 continue
             zrow = zcat_by_tid[tid]
             z_qso = float(zrow["Z"])
-            z_dla = float(row["Z"])
+            z_dla = float(row[z_col])
             log_nhi = float(row[nhi_col])
             # Mid-forest cut: z_qso - 0.5 ≤ z_dla ≤ z_qso - 0.05.
             if not (z_qso - 0.5 <= z_dla <= z_qso - 0.05):
@@ -153,7 +181,7 @@ def pick_for_mock(mock: str, mock_dir: Path, n_per_bin: int,
                 continue
             # Healpix from RA/DEC.
             try:
-                hpx = int(_radec_to_healpix(zrow["TARGET_RA"], zrow["TARGET_DEC"]))
+                hpx = int(_radec_to_healpix(zrow[ra_col], zrow[dec_col]))
             except Exception:
                 continue
             # Build spec path.
