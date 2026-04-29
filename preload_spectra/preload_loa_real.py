@@ -398,14 +398,39 @@ def main():
     qcat = qcat[keep]
 
     # ---- (4) cap to --max-spectra ----
+    # Sample WHOLE HEALPIX GROUPS, not per-TID. The dominant cost in step 4
+    # is `desispec.io.read_spectra(...)` + `coadd_cameras(...)` PER FILE
+    # (~0.5 s open + I/O), not per spectrum. With ~3 TIDs per LOA hpx file,
+    # a uniform per-TID random sample fans 50k spectra over ~15k files →
+    # 9 hours of preload, blows the 30 min `-q debug` cap.
+    # Group-level sampling instead: pick whole healpix groups until we
+    # have enough spectra. ~3 TIDs/file means 50k spectra ≈ 17k files
+    # uniformly, but if we pick ENTIRE groups we read the whole group
+    # (avg 65 TIDs/group on the dense end) per file open.
     if args.max_spectra is not None and len(qcat) > args.max_spectra:
         before = len(qcat)
-        idx = rng.choice(len(qcat), size=args.max_spectra, replace=False)
-        idx.sort()
-        qcat = qcat[idx]
-        print(f"[filter 4] random subset to --max-spectra"
-              f"                  : "
-              f"{len(qcat):>10d} rows  ({before - len(qcat):>10d} dropped)")
+        # Compute per-hpx group sizes, shuffle, take whole groups in
+        # shuffled order until we have ≥ max_spectra spectra.
+        # Note: rows of qcat are still raw QSOs (1 row = 1 TID).
+        hpx_arr = np.asarray(qcat["HPXPIXEL"]).astype(np.int64)
+        unique_hpx, inverse = np.unique(hpx_arr, return_inverse=True)
+        hpx_order = rng.permutation(len(unique_hpx))
+        cum_cumsum = 0
+        keep_groups: list[int] = []
+        # Build a per-group index list once, indexable by hpx position.
+        groups: list[np.ndarray] = [np.where(inverse == i)[0]
+                                     for i in range(len(unique_hpx))]
+        for hpx_pos in hpx_order:
+            keep_groups.append(int(hpx_pos))
+            cum_cumsum += len(groups[hpx_pos])
+            if cum_cumsum >= args.max_spectra:
+                break
+        kept_idx = np.concatenate([groups[i] for i in keep_groups])
+        kept_idx.sort()
+        qcat = qcat[kept_idx]
+        print(f"[filter 4] random subset to --max-spectra (group-level): "
+              f"{len(qcat):>10d} rows in {len(keep_groups):>5d} hpx files  "
+              f"({before - len(qcat):>10d} dropped)")
     elif args.max_spectra is None:
         print(f"[filter 4] cap to max-spectra: not requested")
     else:
