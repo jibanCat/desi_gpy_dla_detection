@@ -1,0 +1,54 @@
+# Layer 3 — training profile (gpu_n1024_k30_npix600_bs128)
+
+## Setup
+- device: `cuda`
+- spectra (per epoch): `1024`
+- n_pix: `600`, k: `30`, num_forest_lines: `3`
+- batch_size: `128`, epochs: `3`
+- optimizer: Adam(lr=0.005)
+
+## Per-epoch wall time
+
+| epoch | seconds |
+|:---:|---:|
+| 0 | 4.014 |
+| 1 | 4.122 |
+| 2 | 4.116 |
+| **mean** | **4.084** |
+
+## Top 25 ops by self time
+
+```
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg       CPU Mem  Self CPU Mem      CUDA Mem  Self CUDA Mem    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                      objective_forward         0.00%       0.000us         0.00%       0.000us       0.000us       12.218s      1097.20%       12.218s     509.083ms           0 B           0 B           0 B           0 B            24  
+                                                epoch_1         0.00%       0.000us         0.00%       0.000us       0.000us        3.607s       323.89%        3.607s        3.607s           0 B           0 B           0 B           0 B             1  
+                                                epoch_2         0.00%       0.000us         0.00%       0.000us       0.000us        3.605s       323.77%        3.605s        3.605s           0 B           0 B           0 B           0 B             1  
+                                                epoch_0         0.00%       0.000us         0.00%       0.000us       0.000us        3.506s       314.87%        3.506s        3.506s           0 B           0 B           0 B           0 B             1  
+                                      objective_forward        16.86%        2.066s        99.80%       12.228s     509.518ms       0.000us         0.00%        1.113s      46.381ms         384 B         -40 B       1.79 MB      -2.62 GB            24  
+                                                epoch_1         0.01%       1.777ms        33.64%        4.122s        4.122s       0.000us         0.00%     371.360ms     371.360ms           0 B         -32 B           0 B        -512 B             1  
+                                                epoch_2         0.01%       1.663ms        33.60%        4.116s        4.116s       0.000us         0.00%     371.345ms     371.345ms           0 B         -32 B           0 B        -512 B             1  
+                                                epoch_0         0.02%       1.909ms        32.76%        4.014s        4.014s       0.000us         0.00%     371.307ms     371.307ms          16 B         -32 B           0 B        -512 B             1  
+                                            aten::index         3.18%     389.210ms        17.42%        2.134s      99.242us      90.075ms         8.09%     224.906ms      10.459us           0 B           0 B     439.83 MB     344.17 MB         21504  
+                                          aten::nonzero         6.88%     843.554ms        15.92%        1.950s      70.542us     172.431ms        15.48%     172.730ms       6.247us           0 B           0 B     122.88 MB      -6.50 KB         27648  
+                                              aten::mul         7.50%     919.499ms        11.91%        1.459s      15.824us     144.638ms        12.99%     144.649ms       1.568us           0 B           0 B     564.41 MB     564.40 MB         92232  
+                                           aten::matmul         0.39%      47.176ms         6.29%     770.830ms      31.365us       0.000us         0.00%     140.560ms       5.719us           0 B           0 B     438.33 MB           0 B         24576  
+                                               aten::mm         3.84%     470.660ms         5.06%     619.468ms      28.807us     129.717ms        11.65%     129.717ms       6.032us           0 B           0 B     436.83 MB     436.83 MB         21504  
+                          aten::linalg_solve_triangular         1.29%     158.157ms         4.95%     605.908ms      98.618us      74.943ms         6.73%      97.181ms      15.817us           0 B           0 B     402.33 MB      -6.00 MB          6144  
+void at::native::index_elementwise_kernel<128, 4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      90.079ms         8.09%      90.079ms       4.189us           0 B           0 B           0 B           0 B         21504  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      84.176ms         7.56%      84.176ms       1.521us           0 B           0 B           0 B           0 B         55344  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      83.469ms         7.50%      83.469ms       1.429us           0 B           0 B           0 B           0 B         58416  
+                        ampere_sgemm_32x32_sliced1x4_nt         0.00%       0.000us         0.00%       0.000us       0.000us      82.817ms         7.44%      82.817ms      13.479us           0 B           0 B           0 B           0 B          6144  
+                                              aten::dot         2.02%     248.084ms         5.19%     636.021ms      29.577us      72.780ms         6.54%      72.786ms       3.385us           0 B           0 B      10.50 MB           0 B         21504  
+                                       aten::index_put_         0.14%      16.802ms         4.90%     600.197ms      97.688us       0.000us         0.00%      63.341ms      10.309us           0 B           0 B           0 B           0 B          6144  
+                                 aten::_index_put_impl_         0.68%      83.443ms         4.76%     583.395ms      94.954us      25.378ms         2.28%      63.341ms      10.309us           0 B           0 B           0 B     -27.30 MB          6144  
+                                            aten::copy_         1.37%     167.578ms         3.07%     375.617ms      13.527us      58.156ms         5.22%      58.156ms       2.094us           0 B           0 B           0 B           0 B         27768  
+                                  aten::linalg_cholesky         0.09%      11.446ms         4.19%     513.522ms     167.162us       0.000us         0.00%      56.538ms      18.404us           0 B           0 B      12.00 MB      -1.50 MB          3072  
+void at_cuda_detail::cub::detail::select::DeviceSele...         0.00%       0.000us         0.00%       0.000us       0.000us      54.831ms         4.92%      54.831ms       1.983us           0 B           0 B           0 B           0 B         27648  
+void at_cuda_detail::cub::detail::reduce::DeviceRedu...         0.00%       0.000us         0.00%       0.000us       0.000us      51.305ms         4.61%      51.305ms       1.856us           0 B           0 B           0 B           0 B         27648  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 12.253s
+Self CUDA time total: 1.114s
+
+```

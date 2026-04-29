@@ -225,6 +225,10 @@ def parse_args():
     p.add_argument("--data-root", required=True,
                    help="Root containing data/dr12q/processed/, learnlogs/, etc. "
                         "Typically /nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection")
+    p.add_argument("--learned-file", default=None,
+                   help="Absolute path to a trained GP model HDF5. If unset, uses "
+                        "the preset's hardcoded path under --data-root. Use this "
+                        "to test a v2-trained model.")
     p.add_argument("--dla-samples-file", default=None,
                    help="Override DLA QMC samples (.mat). If unset, uses preset default.")
     p.add_argument("--sub-dla-samples-file", default=None,
@@ -262,7 +266,7 @@ def main():
     def under_root(rel: str) -> str:
         return os.path.join(args.data_root, rel)
 
-    learned_file = under_root(preset.learned_file)
+    learned_file = args.learned_file if args.learned_file else under_root(preset.learned_file)
     catalog_name = under_root("data/dr12q/processed/catalog.mat")
     los_catalog = under_root("data/dla_catalogs/dr9q_concordance/processed/los_catalog")
     dla_catalog = under_root("data/dla_catalogs/dr9q_concordance/processed/dla_catalog")
