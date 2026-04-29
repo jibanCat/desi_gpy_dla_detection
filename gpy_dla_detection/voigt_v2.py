@@ -98,19 +98,36 @@ KernelName = Literal[
 ]
 
 
-def _gaussian_kernel(sigma_pixels: float, half_width: int = 3) -> np.ndarray:
+def _gaussian_kernel(sigma_pixels: float, half_width: int) -> np.ndarray:
     """Normalised Gaussian on a discrete pixel grid, length 2·half_width+1."""
     i = np.arange(-half_width, half_width + 1, dtype=float)
     k = np.exp(-0.5 * (i / sigma_pixels) ** 2)
     return k / k.sum()
 
 
+def _gaussian_kernel_auto_width(sigma_pixels: float) -> np.ndarray:
+    """Gaussian kernel sized to capture the full broadening.
+
+    Truncating a Gaussian of σ to ±3 pixels (the BOSS-kernel default)
+    drops most of the wings when σ ≳ 1 px and the effective σ collapses.
+    For DESI-linear at R=3000 the intended σ is ~4.25 px; with half_width=3
+    only ~45% of that broadening is preserved. Use 4σ on each side to
+    capture ≥99.99% of the kernel mass.
+    """
+    half_width = max(3, int(np.ceil(4.0 * sigma_pixels)))
+    return _gaussian_kernel(sigma_pixels, half_width=half_width)
+
+
 def _kernel_for(name: str, dlambda_A: float, lam_obs_mid_A: float) -> np.ndarray:
     """Return a normalised, discrete LSF kernel appropriate to the named
     instrument and the given linear-Å pixel spacing.
 
-    The width-3 (7-pixel) total support matches the C extension's
-    convolution window, so v2 returns a profile of the same length as v1.
+    BOSS uses a hardcoded 7-pixel kernel that matches the C extension and
+    is correctly sized for the BOSS log-λ grid (σ_eff ≈ 0.61 px).
+    DESI-linear kernels auto-size the half-width to the intended σ so the
+    Gaussian isn't truncated; the caller is responsible for padding the
+    profile to keep the output length consistent across kernel choices
+    (see ``voigt_absorption``).
     """
     if name == "none":
         return np.array([1.0])
@@ -121,12 +138,17 @@ def _kernel_for(name: str, dlambda_A: float, lam_obs_mid_A: float) -> np.ndarray
         # Pixel velocity at λ ≈ lam_obs_mid: dv = c · (dλ/λ)
         dv = _C_CGS / 1e5 * (dlambda_A / lam_obs_mid_A)  # km/s
         sigma_pix = (_C_CGS / 1e5 / 3000.0) / 2.3548 / dv
-        return _gaussian_kernel(sigma_pix, half_width=3)
+        return _gaussian_kernel_auto_width(sigma_pix)
     if name == "desi-linear-r5000":
         dv = _C_CGS / 1e5 * (dlambda_A / lam_obs_mid_A)
         sigma_pix = (_C_CGS / 1e5 / 5000.0) / 2.3548 / dv
-        return _gaussian_kernel(sigma_pix, half_width=3)
+        return _gaussian_kernel_auto_width(sigma_pix)
     raise ValueError(f"unknown kernel name: {name!r}")
+
+
+def _trim_pixels(kernel_length: int) -> int:
+    """How many pixels `np.convolve(..., mode='valid')` drops on each side."""
+    return (kernel_length - 1) // 2
 
 
 def voigt_absorption(
@@ -188,12 +210,22 @@ def voigt_absorption(
     lam_mid = float(wavelengths_A[len(wavelengths_A) // 2])
     k = _kernel_for(kernel, dlambda_A, lam_mid)
 
-    # The C extension's convolution drops half_width pixels at each edge.
-    # `np.convolve(..., mode='valid')` is ~200x faster than the equivalent
-    # Python loop and returns identical results (verified to <1e-15).
-    # Note: numpy's convolve flips the kernel; our LSF kernels are
-    # symmetric (Gaussians + the symmetric BOSS kernel), so the flip is
-    # a no-op. If asymmetric kernels are added later, pre-flip with `k[::-1]`.
+    # Output length contract: trim 3 pixels per side (BOSS-equivalent).
+    # For wider kernels (e.g. DESI-R3000 needs ±17 pixels to avoid Gaussian
+    # truncation), pad raw_profile with 1.0 (no absorption) at the edges so
+    # `mode='valid'` still yields n_pix - 6 output. Without this padding the
+    # output would shrink by 2*half_width pixels, breaking the dla_gp.py
+    # padded_wavelengths contract.
+    half_width = _trim_pixels(len(k))
+    boss_trim = 3
+    if half_width > boss_trim:
+        extra = half_width - boss_trim
+        raw_profile = np.pad(
+            raw_profile, extra, mode="constant", constant_values=1.0,
+        )
+    # numpy's convolve flips the kernel; our LSF kernels are symmetric, so
+    # the flip is a no-op. If asymmetric kernels are added later, pre-flip
+    # with `k[::-1]`.
     return np.convolve(raw_profile, k, mode="valid")
 
 
@@ -373,9 +405,20 @@ def voigt_absorption_batched(
         dlambda_A = float(np.diff(wavelengths_A)[0])
     lam_mid = float(wavelengths_A[len(wavelengths_A) // 2])
     k = _kernel_for(kernel, dlambda_A, lam_mid)
+    # Same output-length contract as the serial path: trim 3 px per side
+    # regardless of kernel width. Pad with 1.0 (no absorption) for kernels
+    # wider than 7 pixels.
+    half_width = _trim_pixels(len(k))
+    boss_trim = 3
+    if half_width > boss_trim:
+        extra = half_width - boss_trim
+        raw_profiles = np.pad(
+            raw_profiles, ((0, 0), (extra, extra)),
+            mode="constant", constant_values=1.0,
+        )
     # Convolve each sample's profile with the LSF kernel.
     # np.convolve doesn't broadcast over rows; loop, but each is fast.
-    n_out = n_pix - (len(k) - 1)
+    n_out = raw_profiles.shape[1] - (len(k) - 1)
     out = np.empty((n_samples, n_out), dtype=float)
     for i in range(n_samples):
         out[i] = np.convolve(raw_profiles[i], k, mode="valid")
