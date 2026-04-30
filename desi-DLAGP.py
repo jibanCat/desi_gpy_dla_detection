@@ -211,7 +211,7 @@ def parse(options=None):
     )
     parser.add_argument(
         "--tau_eb_factors",
-        type=float, nargs="+", default=[0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
+        type=float, nargs="+", default=[0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0],
         help="τ-grid factors for the EB scan (multiplied by --prev_tau_0).",
     )
     parser.add_argument(

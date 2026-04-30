@@ -139,6 +139,6 @@ def test_holder_disabled_path_unchanged(canonical_spectrum):
         enable_tau_eb=False,
     )
     assert holder.enable_tau_eb is False
-    assert holder.tau_eb_factors == (0.5, 1.0, 1.5, 2.0, 3.0, 4.0)
+    assert holder.tau_eb_factors == (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)
     assert holder.tau_eb_apply_hcd_mask is False
     assert holder.tau_eb_objective == "null"

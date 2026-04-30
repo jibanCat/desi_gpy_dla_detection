@@ -331,7 +331,7 @@ class DLAHolder:
         filter_low_likelihood: bool = False,
         single_absorber_model: bool = False,
         enable_tau_eb: bool = False,
-        tau_eb_factors: tuple = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0),
+        tau_eb_factors: tuple = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
         tau_eb_apply_hcd_mask: bool = False,
         tau_eb_mask_threshold_sigma: float = 1.5,
         tau_eb_objective: str = "null",

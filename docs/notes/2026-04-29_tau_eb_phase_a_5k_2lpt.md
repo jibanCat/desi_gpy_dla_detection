@@ -39,7 +39,39 @@ single-DLA targets — those spectra have a strong absorber whose deep
 trough is partly "carrying" the τ obligation. On the broader population
 the recipe more often goes to τ ≥ 3.
 
-## τ_factor distribution histogram (NULL EB, n=5000)
+## Update — extended grid to τ=6× (re-run on same 5000 spectra)
+
+To check whether the 28 % ceiling pile-up at τ=4 hides a fat tail or
+not, re-ran with `--tau-factors 0.5 0.75 1.0 1.25 1.5 2.0 3.0 4.0 5.0 6.0`.
+Result: the histogram **decays past 4×** rather than discovering a
+new ceiling.
+
+| τ_factor | n (4× grid) | n (6× grid) |
+|---|---:|---:|
+| ≤ 1.5 | 1152 (23 %) | 1152 (23 %) — same |
+| 2.0 | 1069 (21 %) | 1069 (21 %) — same |
+| 3.0 | 1362 (27 %) | 1362 (27 %) — same |
+| 4.0 | **1417 (28 %, ceiling)** | 871 (17 %) |
+| 5.0 | — | 351 (7 %) |
+| 6.0 | — | **195 (4 %, new ceiling)** |
+
+Of the 1417 that pinned at τ=4 with the old grid:
+  - 871 (61 %) stay at τ=4 → genuinely there
+  - 351 (25 %) move to τ=5
+  - 195 (14 %) move to τ=6
+
+89 % of all spectra pick the SAME τ in both grids; the other 11 %
+were ceiling-bound. The new ceiling at τ=6 has 4 % pile-up — small
+enough to call the grid choice defensible. Going to τ=8+ would
+recover the last ~4 %, but production grid (0.5, 1.0, 1.5, 2.0, 3.0,
+4.0, 5.0, 6.0) is now the codebase default.
+
+Stats with the extended grid: median = 3.0 (unchanged), mean = 2.78
+(was 2.63), std = 1.35 (was 1.11). Per-regime medians unchanged.
+
+Result CSV: `tests/profile/results/tau_eb_phase_a_5k_2lpt_extgrid.tsv`.
+
+## τ_factor distribution histogram (NULL EB, n=5000, original 4× grid)
 
 ```
   τ=0.50:   225 ( 4.5 %) ▌▌
