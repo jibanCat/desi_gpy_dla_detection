@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sacct *)",
+      "Bash(sacctmgr show *)",
+      "Bash(scontrol show *)",
+      "Bash(sinfo *)",
+      "Bash(module purge)",
+      "Bash(module list)",
+      "Bash(nvidia-smi)",
+      "Bash(nvidia-smi *)",
+      "Bash(myaccount)",
+      "Bash(my_accounts)",
+      "Bash(bash -n *)",
+      "Bash(source \"$(conda info --base)/etc/profile.d/conda.sh\" && conda activate gpdla *)",
+      "Bash(source \"$(conda info --base)/etc/profile.d/conda.sh\" && conda activate * && export *)",
+      "Bash(awk *)",
+      "Bash(timeout * python *)",
+      "Bash(timeout * /home/mfho/.conda/envs/gpdla/bin/python *)",
+      "Bash(/home/mfho/.conda/envs/gpdla/bin/python *)",
+      "Bash(parallel *)",
+      "Bash(xargs *)",
+      "Bash(tee *)"
+    ]
+  }
+}
