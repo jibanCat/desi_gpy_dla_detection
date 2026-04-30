@@ -69,7 +69,9 @@ def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16):
         prev_tau_0=p.prev_tau_0, prev_beta=p.prev_beta,
         max_dlas=3, max_workers=max_workers, batch_size=313,
         enable_tau_eb=False,  # start in BASELINE; we'll toggle
-        tau_eb_factors=(0.5, 1.0, 1.5, 2.0, 3.0, 4.0),
+        # Default grid pulled from DLAHolder.__init__; pass explicitly only
+        # to override. Empty/missing here = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0,
+        # 5.0, 6.0) per the codebase default.
         tau_eb_apply_hcd_mask=False,
         tau_eb_objective="null",
     )
