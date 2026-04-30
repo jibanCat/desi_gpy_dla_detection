@@ -201,6 +201,38 @@ def parse(options=None):
         dest="single_absorber_model"
     )
 
+    # Per-spectrum empirical-Bayes τ_eff fit
+    # (see gpy_dla_detection/tau_eb.py + docs/tau_eb_hcd_mask.md +
+    #  docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md)
+    parser.add_argument(
+        "--enable_tau_eb", type=int, default=0,
+        help="Set to 1 to enable per-spectrum τ_0 fit; default 0.",
+        dest="enable_tau_eb",
+    )
+    parser.add_argument(
+        "--tau_eb_factors",
+        type=float, nargs="+", default=[0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
+        help="τ-grid factors for the EB scan (multiplied by --prev_tau_0).",
+    )
+    parser.add_argument(
+        "--tau_eb_apply_hcd_mask", type=int, default=0,
+        help="Set to 1 to mask HCD pixels during τ-fit; default 0 (at scale "
+             "the mask over-corrects — see 2026-04-29_tau_eb_n90_unbiasedness.md).",
+        dest="tau_eb_apply_hcd_mask",
+    )
+    parser.add_argument(
+        "--tau_eb_mask_threshold_sigma",
+        type=float, default=1.5,
+        help="HCD-flag threshold N: pixels with (y-μ_pred)/σ < -N are masked "
+             "during the τ-fit step (only when --tau_eb_apply_hcd_mask=1).",
+    )
+    parser.add_argument(
+        "--tau_eb_objective",
+        choices=["null", "dla"], default="null",
+        help='"null" (default, cheap): fit τ on null-model log evidence. '
+             '"dla": match the validated diagnostic at higher cost.',
+    )
+
     # Parameter-related arguments
     # These are the values used in the trained GP model, don't change them unless you change the trained model
     parser.add_argument(
@@ -507,6 +539,11 @@ def main(args=None):
         "figure_dir": args.figure_dir,
         "filter_low_likelihood": bool(args.filter_low_likelihood),
         "single_absorber_model": bool(args.single_absorber_model),  # single absorber model only
+        "enable_tau_eb": bool(args.enable_tau_eb),
+        "tau_eb_factors": tuple(args.tau_eb_factors),
+        "tau_eb_apply_hcd_mask": bool(args.tau_eb_apply_hcd_mask),
+        "tau_eb_mask_threshold_sigma": float(args.tau_eb_mask_threshold_sigma),
+        "tau_eb_objective": args.tau_eb_objective,
     }
 
     # Set up for nested multiprocessing
