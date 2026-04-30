@@ -82,7 +82,8 @@ def _process_one(row: dict) -> dict:
             rest_wavelengths=rest_w, flux=flux, noise_variance=nv,
             pixel_mask=mask, z_qso=z_qso,
             prev_tau_0_seed=p.prev_tau_0, prev_beta=p.prev_beta,
-            tau_factors=(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0),
+            tau_factors=tuple(row.get("_tau_factors",
+                              (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0))),
             apply_hcd_mask=False, objective="null",
         )
 
@@ -92,7 +93,8 @@ def _process_one(row: dict) -> dict:
             rest_wavelengths=rest_w, flux=flux, noise_variance=nv,
             pixel_mask=mask, z_qso=z_qso,
             prev_tau_0_seed=p.prev_tau_0, prev_beta=p.prev_beta,
-            tau_factors=(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0),
+            tau_factors=tuple(row.get("_tau_factors",
+                              (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0))),
             apply_hcd_mask=True, mask_threshold_sigma=1.5, objective="null",
         )
         out.update(
@@ -117,12 +119,19 @@ def main():
     p.add_argument("--jobs", type=int, default=16)
     p.add_argument("--limit", type=int, default=0,
                    help="Cap the number processed (0 = all).")
+    p.add_argument("--tau-factors", type=float, nargs="+", default=None,
+                   help="Override τ_factor grid. Default: "
+                        "(0.5,0.75,1.0,1.25,1.5,2.0,3.0,4.0).")
     args = p.parse_args()
+    if args.tau_factors:
+        print(f"[grid] override τ_factors = {tuple(args.tau_factors)}")
 
     rows = []
     with open(args.targets_tsv) as f:
         rdr = csv.DictReader(f, delimiter="\t")
         for r in rdr:
+            if args.tau_factors:
+                r["_tau_factors"] = tuple(args.tau_factors)
             rows.append(r)
     if args.limit:
         rows = rows[:args.limit]
