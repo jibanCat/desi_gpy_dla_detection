@@ -82,29 +82,67 @@ Turner was calibrated on similar real data. Mock-trained models pick
 *lower* residual τ₀ but compensate with higher β — they trade off
 mean-flux scale for steeper z-evolution.
 
-## Learned μ — what each model thinks "no-DLA forest" looks like
+## Learned μ + ω + loss — split into v1 / v2 panels
 
 ![μ + ω + loss comparison](../story_figures/trained_gp_models_compare.png)
 
-Panel A shows μ(λ_rest) for all 5 models. Lyα emission line at
-1215.67 Å is clearly visible in all models (they all see real QSO
-shape). The **production μ has visibly more high-frequency structure
-than the v2-trained models** — likely a side-effect of v1's non-centered
-training; the absolute numerical scales are also offset because v1
-and v2 use different normalization conventions.
+> **Why the figure is split into v1 vs v2 panels (not all in one)**:
+> the two trainers use different normalization conventions, so the
+> absolute numerical values of μ, ω, and loss live on different
+> scales by construction. Same physics, different conventions —
+> values within each side are directly comparable, but cross-side
+> comparison requires the conversions below.
 
-Panel B shows ω(λ_rest), the per-pixel forest noise scale. The wild
-dynamic range of LOA_no_dla_no_bal (peak ω ~100 around Lyα emission
-core) reflects the model's high uncertainty in regions where there's
-little forest signal. The other v2 models are smoother because their
-training data was less aggressively filtered (BALs add structure that
-gets baked into ω rather than μ).
+### Why v1 production μ ≈ 1 (with peaks at Lyα), v2 μ in absolute flux units
 
-Panel C is the loss history. Production model is on a v1 absolute-loss
-scale (~10⁸); v2 models all converge in a similar 2000-2700 normalised-loss
-range. The v2 LOA_no_hcd_with_bal model has the lowest end loss (2078),
-arguably because BAL features contribute systematic structure that
-the GP can model rather than noise.
+| Trainer | Pre-training normalization | μ stored in .h5 |
+|---|---|---|
+| v1 (`learn_qso_model.SpectrumProcessor`) | Each spectrum divided by **its own median flux in [1425, 1475] Å rest** before training. | μ is **learned as a parameter**; in normalized-flux units, fluctuating around 1 (with QSO emission like Lyα peaking above 1). |
+| v2 (`training/dataset._weighted_mean_centering`) | Inverse-variance-weighted **population mean flux** is computed and SUBTRACTED from each spectrum. Trainer fits the residual. | μ in the .h5 is **that population mean flux** (NOT learned per epoch — computed once from data). In absolute flux units. |
+
+So the v1 production μ ≈ 1 baseline is just because v1 normalizes-to-1.
+The "v2 LOA_no_dla_no_bal μ is lower than v1 production μ" comparison
+isn't apples-to-apples — v2 μ is in absolute flux, v1 μ is fractional.
+
+### Why ω looks very different across trainers
+
+ω scales with the same normalization as μ:
+
+- **v1 ω**: in *fractional* flux units (since the data was divided by
+  median ≈ 1 before training). Smooth curve ranging 0.5-2.
+- **v2 ω**: in *absolute* flux units (since data was only mean-subtracted).
+  Has wild dynamic range with spikes near Lyα emission edges.
+
+The spikes in v2 ω near 1215 Å rest are at the boundary between
+the QSO emission line and the forest, where the GP has high uncertainty.
+v1 doesn't show these spikes because (a) it normalizes per-spectrum
+so variance scales differently, and (b) v1's μ absorbs more of the
+emission-line shape into its learned parameters.
+
+The v2 `LOA_no_dla_no_bal` ω (panel B2) has the largest dynamic range
+of the v2 set — sub-DLAs and LLS in the trainset add absorption
+features that go into ω.
+
+### Why loss y-scales differ by 8 orders of magnitude
+
+| Trainer | Loss reported |
+|---|---|
+| v1 | Total log-likelihood (or negative log-likelihood × N_pix × N_spectra), absolute matlab-era scale |
+| v2 | Per-pixel normalized loss (typically the per-pixel −log p(D | model) averaged over the batch) |
+
+So v1 production loss reports ~6 × 10⁸ while v2 models all converge
+in a 2 000-2 700 normalised-loss range. **They're not the same number;
+direct comparison is meaningless.**
+
+The v1 loss panel (C1) also shows an odd jump from very low to 6e8
+around epoch 200 — likely an artifact of v1's two-phase training
+schedule (PCA initialization phase has different loss scale than full
+GP-fitting phase). For convergence purposes, only the late-epoch slope
+matters; both v1 and v2 are converged.
+
+For a proper comparable view, you could re-run the figure script with
+each model's loss normalized by its `loss[0]` (or `loss[end]`). I've
+left it un-normalized so the absolute-scale issue is visible.
 
 ## What the trainer actually optimises (architectural clarification, 2026-05-01)
 
@@ -150,52 +188,6 @@ the GP can model rather than noise.
 > are the **Ω-kernel** parameters. They corroborate the same
 > mock-vs-real story (mocks need steeper β in Ω too) but they are
 > a different number from the runtime mean-flux β.
-
-## Convergence — should we train more?
-
-```
-LOA_no_dla_no_bal             1500 ep, loss 2724 → 2597, slope last-100: −0.002 / ep  CONVERGED
-LOA_no_hcd_with_bal           1500 ep, loss 2239 → 2078, slope last-100: +0.001 / ep  converged (oscillating)
-MOCK_2lpt_loa0                 800 ep, loss 2768 → 2428, slope last-100: −0.002 / ep  CONVERGED
-MOCK_2lpt_loa124_nohcd_nobal   800 ep, loss 2493 → 2199, slope last-100: −0.002 / ep  CONVERGED
-```
-
-All four are converged. Extending the 2 GL models from 800 → 1500
-epochs would reduce loss by ~2 (negligible vs final 2199-2428 range).
-Worth doing for apples-to-apples comparison if epoch-count differences
-matter for a referee, but the science conclusion is unchanged.
-
-## Trainset filter differences (corrected — 2026-05-01)
-
-The two NERSC-trained datasets are NOT symmetric in their filter
-choices:
-
-|  | `loa_no_dla_no_bal_52198069` | `loa_no_hcd_with_bal_52198070` |
-|---|---|---|
-| n_total | 300 008 | 300 032 |
-| z range | [2.0, 4.25] | [2.0, 4.25] |
-| ZWARN | =0 | =0 |
-| BAL filter | **`exclude_bal=true`** (BI_CIV>0 dropped) | **`exclude_bal=false`** (BALs kept) |
-| HCD filter | NHI ≥ 20.3 dropped (**DLAs only**; sub-DLAs+LLS kept) | NHI ≥ 17.2 dropped (**all HCDs**: DLAs+sub-DLAs+LLS) |
-| BALs in data? | No | Yes |
-| Sub-DLAs/LLS in data? | **Yes** | No |
-
-Neither is "BAL-only". The `with_bal` in `loa_no_hcd_with_bal` means
-"BAL spectra are kept alongside non-BAL spectra" (i.e. not excluded),
-not "BAL spectra only".
-
-The asymmetric filtering explains the trained-parameter pattern in
-the bar chart above:
-
-- `loa_no_dla_no_bal` keeps sub-DLAs + LLS in the data → there's
-  residual absorption above what Turner-deforest removed → optimizer
-  drives the Ω-kernel τ₀ up to **0.0048 (2× Turner)** to absorb that.
-- `loa_no_hcd_with_bal` masks all HCDs (down to NHI 17.2) → no extra
-  absorption signature in the data → optimizer drives the Ω-kernel
-  τ₀ down to **~0** (BAL features get modelled by μ/M instead).
-
-Both are converged. Different optima reflect different filtered
-training distributions, not training failure.
 
 ## Convergence — should we train more?
 

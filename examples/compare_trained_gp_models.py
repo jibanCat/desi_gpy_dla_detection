@@ -103,11 +103,15 @@ def main():
               f"L_end={info['loss_history'][-1] if info['loss_history'] is not None else 'N/A'}")
 
     # ============================================================
-    # Figure 1 — μ comparison + log_omega comparison + loss curves
+    # Figure 1 — split into v1 (production) vs v2 (new) panels
+    # because the trainers use different normalization conventions:
+    #   v1: per-spectrum-median-normalized (μ fluctuates around 1)
+    #   v2: inverse-variance-weighted-population-mean centered (μ
+    #       is the absolute mean flux per pixel, not learned but
+    #       computed from data; centered data has mean ≈ 0)
     # ============================================================
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10),
+    fig, axes = plt.subplots(3, 2, figsize=(14, 11),
                              gridspec_kw=dict(height_ratios=[2, 2, 1.5]))
-    ax_mu, ax_om, ax_loss = axes
 
     color_map = {
         "PROD_y3_LOA": "C0",
@@ -116,40 +120,61 @@ def main():
         "MOCK_2lpt_loa0": "C3",
         "MOCK_2lpt_loa124_nohcd_nobal": "C4",
     }
+    v1_models = ["PROD_y3_LOA"]
+    v2_models = [n for n in extracted if n not in v1_models]
 
-    for name, info in extracted.items():
-        c = color_map.get(name, "0.4")
-        rest = info["rest_wavelengths"]
-        ax_mu.plot(rest, info["mu"], color=c, lw=0.8, label=name)
-        ax_om.plot(rest, np.exp(info["log_omega"]), color=c, lw=0.8, label=name)
-        if info["loss_history"] is not None:
-            ax_loss.plot(np.arange(len(info["loss_history"])),
-                         info["loss_history"], color=c, lw=0.7, label=name)
+    def _plot_panel(ax, key, models, ylabel, title, log=False):
+        for n in models:
+            if n not in extracted: continue
+            info = extracted[n]
+            rest = info["rest_wavelengths"]
+            y = info[key] if key != "omega" else np.exp(info["log_omega"])
+            ax.plot(rest, y, color=color_map.get(n, "0.4"), lw=0.9, label=n)
+        ax.set_xlabel("rest wavelength [Å]")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title, fontsize=10)
+        ax.legend(fontsize=8, loc="upper right")
+        ax.grid(alpha=0.3, which="both" if log else "major")
+        if log:
+            ax.set_yscale("log")
+        ax.axvline(1215.67, color="0.7", lw=0.5, ls="--")
 
-    ax_mu.set_xlabel("rest wavelength [Å]")
-    ax_mu.set_ylabel("μ (mean QSO model, deforested at Turner)")
-    ax_mu.set_title("(A) Learned μ — what each model thinks no-DLA forest looks like")
-    ax_mu.legend(fontsize=8, loc="upper right")
-    ax_mu.grid(alpha=0.3)
-    ax_mu.axvline(1215.67, color="0.7", lw=0.5, ls="--")
-    ax_mu.text(1215.67, ax_mu.get_ylim()[1] * 0.95, " Lyα",
-               color="0.5", fontsize=8, va="top")
+    _plot_panel(axes[0, 0], "mu", v1_models,
+                "μ (per-spectrum median-normalized)",
+                "(A1) v1 trainer — μ centered around 1.0 (QSO emission ≥ 1)")
+    _plot_panel(axes[0, 1], "mu", v2_models,
+                "μ (population inverse-variance-weighted mean)",
+                "(A2) v2 trainer — μ in absolute flux units")
+    _plot_panel(axes[1, 0], "omega", v1_models,
+                "ω (normalized-flux units)",
+                "(B1) v1 ω", log=True)
+    _plot_panel(axes[1, 1], "omega", v2_models,
+                "ω (absolute-flux units)",
+                "(B2) v2 ω", log=True)
 
-    ax_om.set_xlabel("rest wavelength [Å]")
-    ax_om.set_ylabel(r"$\omega$ (per-pixel forest noise scale)")
-    ax_om.set_title("(B) Learned ω — per-pixel uncertainty after de-forest")
-    ax_om.set_yscale("log")
-    ax_om.legend(fontsize=8, loc="upper right")
-    ax_om.grid(alpha=0.3, which="both")
+    # Loss panels — also split (v1 absolute log-likelihood vs v2 normalized)
+    for ax, models, title in [
+        (axes[2, 0], v1_models, "(C1) v1 loss (absolute log-likelihood scale)"),
+        (axes[2, 1], v2_models, "(C2) v2 loss (per-pixel normalized scale)"),
+    ]:
+        for n in models:
+            if n not in extracted: continue
+            info = extracted[n]
+            if info["loss_history"] is None: continue
+            ax.plot(np.arange(len(info["loss_history"])),
+                    info["loss_history"],
+                    color=color_map.get(n, "0.4"), lw=0.8, label=n)
+        ax.set_xlabel("epoch")
+        ax.set_ylabel("training loss")
+        ax.set_title(title, fontsize=10)
+        ax.legend(fontsize=8, loc="upper right")
+        ax.grid(alpha=0.3)
 
-    ax_loss.set_xlabel("epoch")
-    ax_loss.set_ylabel("training loss")
-    ax_loss.set_title("(C) Loss history")
-    ax_loss.legend(fontsize=8, loc="upper right")
-    ax_loss.grid(alpha=0.3)
-    ax_loss.set_yscale("log")
-
-    fig.tight_layout()
+    fig.suptitle("Trained GP models — v1 (production) vs v2 (new) trainer\n"
+                 "Note: v1 / v2 normalization conventions differ; values are "
+                 "NOT directly comparable across trainers.",
+                 fontsize=11, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     out1 = out_dir / "trained_gp_models_compare.png"
     fig.savefig(out1, dpi=130)
     print(f"\n[saved] {out1}")
