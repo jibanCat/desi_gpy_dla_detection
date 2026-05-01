@@ -15,6 +15,33 @@
 
 ---
 
+## Architectural clarification — what τ-EB actually tunes
+
+PR #5's τ-EB recipe tunes the **runtime mean-flux-suppression**
+parameter `prev_tau_0`, not the trained `log_tau_0` in the .h5
+file. The codebase has two distinct (τ_0, β) parameter pairs:
+
+1. **Mean-flux A** = exp(−τ_eff(z)) multiplies BOTH μ AND K in the
+   GP likelihood: `N(A·μ, A^T·K·A + Ω² + V)`. Built at inference
+   from `prev_tau_0` / `prev_beta` (runtime constants, default
+   Turner+2024). **Never touched by the trainer** — the data is
+   pre-deforested at fixed Turner before training.
+2. **Ω-kernel diagonal** uses a SEPARATE (log_tau_0, log_beta)
+   pair (the ones in the trained .h5) to parameterize the per-pixel
+   absorption noise.
+
+τ-EB tunes (1) per-spectrum at inference. The trained model's
+identity (LOA-trained vs mock-trained vs production v1) affects μ
+shape and Ω calibration but **not** the mean-flux suppression
+applied at inference. The mock-vs-real τ_factor divergence is
+therefore measuring the **actual mean-flux opacity gap**, largely
+independent of which trained GP we use.
+
+User has flagged that unifying the two parameter pairs into one is
+more elegant but out of scope for PR #5 (would be a future cleanup
+PR). See `docs/notes/2026-05-01_trained_gp_models_comparison.md` §
+"What the trainer actually optimises" for the architectural detail.
+
 ## Update — 2026-05-01: 50 k validation across 3 mocks + 5 k real LOA
 
 The hypothesis ledger below was finalised on the 5 k Phase B 2lpt run.
