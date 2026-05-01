@@ -8,7 +8,7 @@
 # de-forest/centering intermediates → loader peaks ~32-40 GB. 32G OOMs every
 # time. 64G has comfortable headroom.
 #SBATCH --mem=64G
-#SBATCH -t 2:00:00
+#SBATCH -t 4:00:00
 #SBATCH -J train_v2
 #SBATCH -o slurm/greatlakes/train_v2_%j.log
 #SBATCH -e slurm/greatlakes/train_v2_%j.log
@@ -32,7 +32,9 @@ RUN_TAG="${RUN_TAG:?must be set to the RUN_TAG of the preload job, e.g. 2lpt_loa
 
 OUTDIR_BASE="${OUTDIR_BASE:-/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection}"
 RUN_DIR="${RUN_DIR:-${OUTDIR_BASE}/v2_runs/${RUN_TAG}}"
-TRAINSET_H5="${RUN_DIR}/trainset.h5"
+# Allow re-using a trainset from a different RUN_DIR (e.g. the original
+# pre-fix trainset for a "from-scratch" retrain into a fresh output dir).
+TRAINSET_H5="${TRAINSET_H5:-${RUN_DIR}/trainset.h5}"
 
 [ -r "$TRAINSET_H5" ] || {
     echo "[error] trainset.h5 not found: $TRAINSET_H5" >&2
