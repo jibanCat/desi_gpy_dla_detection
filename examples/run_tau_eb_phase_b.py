@@ -30,8 +30,14 @@ import numpy as np
 
 
 def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16,
-                  max_dlas: int = 3, filter_low_likelihood: bool = False):
-    """Build a single DLAHolder; we'll mutate enable_tau_eb per call."""
+                  max_dlas: int = 3, filter_low_likelihood: bool = False,
+                  learned_file_override: str = None):
+    """Build a single DLAHolder; we'll mutate enable_tau_eb per call.
+
+    learned_file_override: if set, use this absolute path for the GP
+    learned file instead of the y3-preset default. Used for the
+    training-data-anchor experiment (see docs/notes/2026-05-01_*).
+    """
     sys.path.insert(0, "/home/mfho/desi_gpy_dla_detection")
     from gpy_dla_detection.voigt_v2_inject import inject
     inject(kernel="boss-log-r2000", num_lines=3)
@@ -58,8 +64,12 @@ def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16,
     subdla_samples_file = (os.path.join(DATA_ROOT, "data/dr12q/processed/subdla_samples.mat")
                            if num_dla_samples == 10000
                            else os.path.join(DATA_ROOT, "data/dr12q/processed/subdla_samples_a03_191_200_100000.mat"))
+    learned_file = (learned_file_override
+                    if learned_file_override
+                    else os.path.join(DATA_ROOT, p.learned_file))
+    print(f"[holder] learned_file = {learned_file}", flush=True)
     holder = DLAHolder(
-        learned_file=os.path.join(DATA_ROOT, p.learned_file),
+        learned_file=learned_file,
         catalog_name=os.path.join(DATA_ROOT, "data/dr12q/processed/catalog.mat"),
         los_catalog=os.path.join(DATA_ROOT, "data/dla_catalogs/dr9q_concordance/processed/los_catalog"),
         dla_catalog=os.path.join(DATA_ROOT, "data/dla_catalogs/dr9q_concordance/processed/dla_catalog"),
@@ -141,6 +151,11 @@ def main():
                    help="DLAHolder.max_dlas; production multi-DLA uses 3 or 4.")
     p.add_argument("--filter-low-likelihood", type=int, default=0,
                    help="0=FILTER off (default); 1=FILTER on (with fix #5).")
+    p.add_argument("--learned-file", type=str, default=None,
+                   help="Absolute path to a GP learned-model .h5 to use "
+                        "in place of the y3-preset default. Used to swap "
+                        "between LOA-trained and 2lpt-trained models for "
+                        "the training-data-anchor experiment.")
     args = p.parse_args()
 
     rows = []
@@ -156,7 +171,8 @@ def main():
     holder, preset = _build_holder(num_dla_samples=args.num_dla_samples,
                                    max_workers=args.max_workers,
                                    max_dlas=args.max_dlas,
-                                   filter_low_likelihood=bool(args.filter_low_likelihood))
+                                   filter_low_likelihood=bool(args.filter_low_likelihood),
+                                   learned_file_override=args.learned_file)
     print(f"[holder] built; max_workers={args.max_workers} "
           f"num_dla_samples={args.num_dla_samples} max_dlas={args.max_dlas} "
           f"filter={args.filter_low_likelihood}", flush=True)

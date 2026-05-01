@@ -71,7 +71,8 @@ python -u examples/run_tau_eb_phase_b.py \
     --max-workers 16 \
     --num-dla-samples "${NUM_DLA_SAMPLES:-10000}" \
     --max-dlas "${MAX_DLAS:-3}" \
-    --filter-low-likelihood "${FILTER_LOW_LIKELIHOOD:-0}"
+    --filter-low-likelihood "${FILTER_LOW_LIKELIHOOD:-0}" \
+    ${LEARNED_FILE:+--learned-file "$LEARNED_FILE"}
 
 echo
 echo "  task $TASK_ID DONE → $CHUNK_OUT"
