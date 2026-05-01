@@ -30,6 +30,24 @@ agree at ~3× Turner; real data diverges at ~1.5×. Three independent
 mock pipelines give the same answer, and that answer is wrong by a
 factor of 2 in opacity vs DESI's real Y3 data.
 
+## Architectural note (2026-05-01)
+
+τ-EB tunes the **mean-flux-suppression `prev_tau_0` at INFERENCE time**.
+That parameter never enters the training loss — the data is
+pre-deforested at fixed Turner+2024 before training, and the trainable
+`log_tau_0` / `log_beta` parameterize a SEPARATE Ω-kernel
+(per-pixel absorption noise model), not the mean-flux A. Therefore
+swapping which trained GP we use changes the μ-shape and Ω calibration
+but does NOT change "the model's idea of forest opacity". The
+mock-vs-real τ_factor divergence is measuring **actual mean-flux
+opacity gap** between mocks / real LOA / Turner+2024.
+
+See `docs/notes/2026-05-01_trained_gp_models_comparison.md` § "What
+the trainer actually optimises" for the architectural breakdown.
+The 2×2 anchor experiment (49108430-49108443) will tell us how
+much of the residual τ_factor distribution comes from μ-shape /
+Ω calibration vs the actual mean-flux gap.
+
 ## What this means for production
 
 - **τ-EB is safe to run on real LOA**. The median spectrum gets a 1.5×

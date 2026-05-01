@@ -106,6 +106,95 @@ range. The v2 LOA_no_hcd_with_bal model has the lowest end loss (2078),
 arguably because BAL features contribute systematic structure that
 the GP can model rather than noise.
 
+## What the trainer actually optimises (architectural clarification, 2026-05-01)
+
+> **The codebase carries two distinct (τ_0, β) parameter pairs**
+> for what is physically the same forest-opacity quantity:
+>
+> 1. **Mean-flux suppression** in the GP likelihood, used to build
+>    `A = exp(−τ_eff(z))` that multiplies BOTH the mean and the
+>    covariance:
+>    ```
+>    y ~ N(A·μ ,  A^T K A  +  Ω²  +  V)
+>    ```
+>    Here A appears on μ (mean-flux suppression of the QSO emission
+>    model) AND on the rank-k covariance K via `A^T K A`. At inference
+>    these are computed from `prev_tau_0` / `prev_beta` — **runtime
+>    constants** (Turner+2024 by default), not learnable.
+>
+> 2. **Ω-kernel diagonal** for per-pixel forest absorption noise.
+>    This uses a SEPARATE pair of parameters (`log_tau_0`, `log_beta`
+>    in the .h5) that ARE learnable in training. They parameterize
+>    `Ω² ∝ (1 − A)² c_0 + ω²` for the diagonal noise term.
+>
+> Conceptually these two (τ_0, β) pairs should be the same
+> physical thing; the codebase keeps them separate, and the user
+> (jibanCat) has noted this is on the to-do list to unify but is
+> not part of PR #5.
+>
+> The training data is pre-deforested at FIXED Turner+2024 before
+> training (`gpy_dla_detection/training/dataset.py`,
+> `_de_forest_spectra`), so the bulk mean-flux opacity is "consumed"
+> at dataset prep time; the trained `log_tau_0` / `log_beta` are
+> Ω-kernel residuals.
+>
+> **Therefore the τ-EB recipe in this PR is tuning `prev_tau_0` —
+> the mean-flux-A coefficient — at INFERENCE time.** That parameter
+> is **never touched by training**, so the trained model's identity
+> (LOA-trained vs mock-trained vs production v1) is largely
+> orthogonal to the τ-EB story. The mock-vs-real τ_factor divergence
+> we measure is the actual mean-flux opacity gap between mocks /
+> real LOA / Turner+2024.
+>
+> The trained `log_tau_0` / `log_beta` shown in the bar chart above
+> are the **Ω-kernel** parameters. They corroborate the same
+> mock-vs-real story (mocks need steeper β in Ω too) but they are
+> a different number from the runtime mean-flux β.
+
+## Convergence — should we train more?
+
+```
+LOA_no_dla_no_bal             1500 ep, loss 2724 → 2597, slope last-100: −0.002 / ep  CONVERGED
+LOA_no_hcd_with_bal           1500 ep, loss 2239 → 2078, slope last-100: +0.001 / ep  converged (oscillating)
+MOCK_2lpt_loa0                 800 ep, loss 2768 → 2428, slope last-100: −0.002 / ep  CONVERGED
+MOCK_2lpt_loa124_nohcd_nobal   800 ep, loss 2493 → 2199, slope last-100: −0.002 / ep  CONVERGED
+```
+
+All four are converged. Extending the 2 GL models from 800 → 1500
+epochs would reduce loss by ~2 (negligible vs final 2199-2428 range).
+Worth doing for apples-to-apples comparison if epoch-count differences
+matter for a referee, but the science conclusion is unchanged.
+
+## "no HCD with BALs" trainset clarification
+
+`loa_no_hcd_with_bal_52198070` is **the full LOA QSO catalogue with
+HCDs masked, BALs kept** (298 754 spectra). Not "BAL only". For
+comparison, `loa_no_dla_no_bal_52198069` has 298 807 spectra with
+both DLAs and BALs masked. Same parent catalogue, different filter
+choices.
+
+## Convergence — should we train more?
+
+```
+LOA_no_dla_no_bal             1500 ep, loss 2724 → 2597, slope last-100: −0.002 / ep  CONVERGED
+LOA_no_hcd_with_bal           1500 ep, loss 2239 → 2078, slope last-100: +0.001 / ep  converged (oscillating)
+MOCK_2lpt_loa0                 800 ep, loss 2768 → 2428, slope last-100: −0.002 / ep  CONVERGED
+MOCK_2lpt_loa124_nohcd_nobal   800 ep, loss 2493 → 2199, slope last-100: −0.002 / ep  CONVERGED
+```
+
+All four are converged. Extending the 2 GL models from 800 → 1500
+epochs would reduce loss by ~2 (negligible vs final 2199-2428 range).
+Worth doing for apples-to-apples comparison if epoch-count differences
+matter for a referee, but the science conclusion is unchanged.
+
+## "no HCD with BALs" trainset clarification
+
+`loa_no_hcd_with_bal_52198070` is **the full LOA QSO catalogue with
+HCDs masked, BALs kept** (298 754 spectra). Not "BAL only". For
+comparison, `loa_no_dla_no_bal_52198069` has 298 807 spectra with
+both DLAs and BALs masked. Same parent catalogue, different filter
+choices.
+
 ## Why the τ-EB recipe behaves as it does — the linking story
 
 τ-EB picks per-spectrum τ_factor that maximises log-evidence under the
