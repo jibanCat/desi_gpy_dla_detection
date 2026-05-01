@@ -14,12 +14,20 @@ mkdir -p docs/story_figures
 
 run_one() {
     local mock="$1" tid="$2" spec="$3" zcat="$4" tz="$5" tn="$6" out="$7"
+    # Look up truth + BAL catalogs from the spec path's mock directory.
+    local mock_dir
+    mock_dir="$(dirname $(dirname $(dirname "$spec")))"  # spectra-16/X/Y → mock dir
+    local truth_cat="$mock_dir/hcd_truth_cat.fits"
+    [ -f "$truth_cat" ] || truth_cat="$mock_dir/dla_cat.fits"  # london naming
+    local bal_cat="$mock_dir/bal_cat.fits"
     echo "=== ${mock} TID=${tid} → ${out} ==="
     python -u examples/plot_one_spectrum_with_fit.py \
         --mock "$mock" --target-id "$tid" \
         --spec "$spec" --zcat "$zcat" \
         --truth-z "$tz" --truth-log-nhi "$tn" \
-        --out-png "$out" 2>&1 | grep -E "^\[|τ_factor|Voigt|saved" | tail -8
+        --truth-catalog "$truth_cat" \
+        --bal-catalog "$bal_cat" \
+        --out-png "$out" 2>&1 | grep -E "^\[|τ_factor|Voigt|saved" | tail -10
 }
 
 # 2lpt (Phase B 5k results — actual production-bayes biases)

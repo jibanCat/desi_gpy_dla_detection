@@ -4,7 +4,7 @@
 #SBATCH -N 1
 #SBATCH -c 16
 #SBATCH --mem=32G
-#SBATCH -t 6:00:00
+#SBATCH -t 8:00:00
 #SBATCH -J tau_eb_phase_b
 #SBATCH --array=0-15
 #SBATCH -o slurm/greatlakes/phase_b_%A_%a.log

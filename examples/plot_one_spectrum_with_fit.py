@@ -155,6 +155,13 @@ def main():
     p.add_argument("--truth-z", type=float, default=-1.0,
                    help="Truth DLA z (use -1 for no truth marker).")
     p.add_argument("--truth-log-nhi", type=float, default=-1.0)
+    p.add_argument("--truth-catalog", type=str, default=None,
+                   help="Optional path to hcd_truth_cat.fits (or dla_cat.fits "
+                        "for london). When provided, ALL absorbers on this TID "
+                        "are looked up and marked, color-coded by NHI strength.")
+    p.add_argument("--bal-catalog", type=str, default=None,
+                   help="Optional path to bal_cat.fits. When provided, the "
+                        "figure title flags whether this TID is BAL.")
     p.add_argument("--out-png", required=True)
     p.add_argument("--zoom-around-truth", action="store_true",
                    help="Zoom panel A around the truth DLA position.")
@@ -170,6 +177,36 @@ def main():
     print(f"[load] mock={args.mock} TID={args.target_id}")
     wave, flux, nv, mask = load_one_desi_spectrum(args.spec, args.target_id)
     z_qso = lookup_z_qso(args.zcat, args.target_id)
+
+    # Optionally load ALL absorbers on this TID + BAL flag.
+    truth_absorbers = []  # list of (z_truth, log_nhi)
+    if args.truth_catalog:
+        import fitsio
+        try:
+            tc = fitsio.read(args.truth_catalog)
+            z_col = "Z" if "Z" in tc.dtype.names else "Z_DLA"
+            mask_tid = tc["TARGETID"] == args.target_id
+            for row in tc[mask_tid]:
+                truth_absorbers.append((float(row[z_col]), float(row["NHI"])))
+            print(f"[truth] {len(truth_absorbers)} absorber(s) on TID {args.target_id}: "
+                  + ", ".join(f"z={z:.3f} log NHI={n:.2f}" for z, n in truth_absorbers))
+        except Exception as e:
+            print(f"[truth] WARN: could not load {args.truth_catalog}: {e}")
+    elif args.truth_z > 0:
+        truth_absorbers.append((args.truth_z, args.truth_log_nhi))
+
+    is_bal = False
+    bal_msg = ""
+    if args.bal_catalog:
+        import fitsio
+        try:
+            bc = fitsio.read(args.bal_catalog)
+            tid_col = "TARGETID" if "TARGETID" in bc.dtype.names else "MOCKID"
+            is_bal = bool((bc[tid_col] == args.target_id).any())
+            bal_msg = "BAL" if is_bal else "no-BAL"
+            print(f"[bal] TID {args.target_id} → {bal_msg}")
+        except Exception as e:
+            print(f"[bal] WARN: could not load {args.bal_catalog}: {e}")
 
     holder, preset = _build_holder()
 
@@ -206,18 +243,35 @@ def main():
                           fr"$p_{{DLA}}\!=\!{enab['p_dla']:.2f}$, "
                           fr"$\tau_{{factor}}\!=\!{enab['tau_factor']:.2f}\times$")
 
-    # Truth + Lyα markers
-    if args.truth_z > 0:
-        dla_obs = 1215.67 * (1 + args.truth_z)
-        ax_top.axvspan(dla_obs - 25, dla_obs + 25, color="C3", alpha=0.15,
-                       label=fr"truth DLA $z\!=\!{args.truth_z:.3f}$, "
-                             fr"$\log N_{{HI}}\!=\!{args.truth_log_nhi:.2f}$")
+    # All-absorbers markers, color-coded by NHI strength
+    # DLA  (NHI ≥ 20.3)   → red
+    # subDLA (19.0–20.3)  → orange
+    # LLS  (17.2–19.0)    → gold
+    # Lyα-forest noise (<17.2) → grey (rare in catalogs but possible)
+    def _absorber_color(log_nhi):
+        if log_nhi >= 20.3: return "C3", "DLA"
+        if log_nhi >= 19.0: return "tab:orange", "sub-DLA"
+        if log_nhi >= 17.2: return "tab:olive", "LLS"
+        return "0.5", "weak"
     lya_obs = 1215.67 * (1 + z_qso)
+    seen_labels = set()  # de-duplicate legend entries
+    for z_t, n_t in truth_absorbers:
+        obs = 1215.67 * (1 + z_t)
+        c, kind = _absorber_color(n_t)
+        # Only mark the FIRST absorber of each kind in the legend (or label
+        # individually if there are <=3 absorbers — typical case).
+        lbl = (fr"truth {kind} $z\!=\!{z_t:.3f}$, "
+               fr"$\log N_{{HI}}\!=\!{n_t:.2f}$")
+        ax_top.axvspan(obs - 20, obs + 20, color=c, alpha=0.15, label=lbl)
+        # Vertical line at the absorber centre too — easier to see in dense forests
+        ax_top.axvline(obs, color=c, lw=0.6, alpha=0.6)
     ax_top.axvline(lya_obs, color="C4", lw=0.8, ls="--", alpha=0.6,
                    label=fr"Ly$\alpha$ at $z_{{qso}}\!=\!{z_qso:.3f}$")
 
-    if args.zoom_around_truth and args.truth_z > 0:
-        center = 1215.67 * (1 + args.truth_z)
+    if args.zoom_around_truth and truth_absorbers:
+        # Zoom around the strongest absorber
+        z_t = max(truth_absorbers, key=lambda x: x[1])[0]
+        center = 1215.67 * (1 + z_t)
         ax_top.set_xlim(center - 200, center + 200)
         ax_top.set_ylim(-0.5, 2.5)
     else:
@@ -233,8 +287,18 @@ def main():
     ax_top.axhline(0, color="0.7", lw=0.5, ls=":")
     ax_top.set_ylabel("normalized flux")
     title = f"{args.mock}  TID={args.target_id}  z_qso={z_qso:.3f}"
-    if args.truth_z > 0:
-        title += fr"  truth DLA z={args.truth_z:.3f} log N$_{{HI}}$={args.truth_log_nhi:.2f}"
+    n_dla = sum(1 for _, n in truth_absorbers if n >= 20.3)
+    n_subdla = sum(1 for _, n in truth_absorbers if 19.0 <= n < 20.3)
+    n_lls = sum(1 for _, n in truth_absorbers if 17.2 <= n < 19.0)
+    if truth_absorbers:
+        title += f"  truth: {n_dla} DLA / {n_subdla} sub-DLA / {n_lls} LLS"
+    else:
+        title += "  (no truth absorber on this LOS)"
+    if args.bal_catalog:
+        if is_bal:
+            title += "  ⚠ BAL"
+        else:
+            title += "  (non-BAL)"
     ax_top.set_title(title, fontsize=10)
     ax_top.legend(fontsize=7, loc="upper left")
     ax_top.grid(alpha=0.3)
