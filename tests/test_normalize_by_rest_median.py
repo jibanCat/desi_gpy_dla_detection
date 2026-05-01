@@ -366,10 +366,23 @@ def _build_params(norm_min=1425.0, norm_max=1475.0):
 
 
 def _data_root_or_skip():
-    DATA_ROOT = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection"
-    if not os.path.exists(os.path.join(DATA_ROOT, "data/dr12q/processed/catalog.mat")):
-        pytest.skip("prior catalog files not present on this filesystem")
-    return DATA_ROOT
+    """Find DR9Q catalog files. Tries GL turbo, NERSC pscratch, repo-local
+    (if symlinked), and $DESI_GPDLA_DATA_ROOT env var. Skip if none works."""
+    candidates = [
+        os.environ.get("DESI_GPDLA_DATA_ROOT", ""),
+        "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection",  # GreatLakes
+        "/pscratch/sd/j/jibancat/desi_gpy_dla_detection",                      # NERSC pscratch
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),           # repo root
+    ]
+    for root in candidates:
+        if root and os.path.exists(
+            os.path.join(root, "data/dr12q/processed/catalog.mat")
+        ):
+            return root
+    pytest.skip(
+        "DR9Q prior catalog not found on this filesystem; tried "
+        f"{candidates}. Set DESI_GPDLA_DATA_ROOT to override."
+    )
 
 
 def _build_prior(params, DATA_ROOT):
@@ -441,13 +454,27 @@ def test_set_data_uses_overridden_norm_region(tmp_path):
 # ============================================================
 def test_real_trainset_after_normalize_lands_at_unity():
     """On an actual v2 trainset.h5, applying the normalize step gives
-    μ ≈ 1 in [1310, 1325]. Validates the fix on real data."""
-    real_path = (
+    μ ≈ 1 in [1310, 1325]. Validates the fix on real data.
+
+    Tries several mount points so the test runs on GL or NERSC."""
+    candidates = [
+        # GL (2lpt mock)
         "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/"
-        "v2_runs/2lpt_loa124_nohcd_nobal_48938766/trainset.h5"
-    )
-    if not os.path.exists(real_path):
-        pytest.skip(f"real trainset not on this fs: {real_path}")
+        "v2_runs/2lpt_loa124_nohcd_nobal_48938766/trainset.h5",
+        # GL (real LOA, copied via Globus)
+        "/nfs/turbo/lsa-cavestru/mfho/DESI/GP_trained/"
+        "loa_no_dla_no_bal_52198069/trainset.h5",
+        # NERSC pscratch
+        "/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/"
+        "loa_no_dla_no_bal_52198069/trainset.h5",
+        "/pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/"
+        "loa_no_hcd_with_bal_52198070/trainset.h5",
+    ]
+    real_path = next((p for p in candidates if os.path.exists(p)), None)
+    if real_path is None:
+        pytest.skip(
+            "no v2 trainset.h5 found. Tried: " + ", ".join(candidates)
+        )
 
     from gpy_dla_detection.training.dataset import load_preprocessed_h5
     ts = load_preprocessed_h5(
