@@ -17,8 +17,8 @@
 | # | Path | Trainer | Trained on | Epochs | Notes |
 |---|---|---|---|---:|---|
 | 1 | `pscratch/.../learnlogs/model_epoch_920.h5` | v1 (matlab → torch port) | real DESI Y3 LOA | 953 | **Current production** (Apr 25) |
-| 2 | `GP_trained/loa_no_dla_no_bal_52198069/model_epoch_1499.h5` | v2 | real LOA, DLAs + BALs masked → cleanest forest | 1500 | NERSC train, Apr 30 |
-| 3 | `GP_trained/loa_no_hcd_with_bal_52198070/model_epoch_1499.h5` | v2 | real LOA, HCDs masked, BALs kept | 1500 | NERSC train, Apr 30 |
+| 2 | `GP_trained/loa_no_dla_no_bal_52198069/model_epoch_1499.h5` | v2 | real LOA, **DLAs (NHI ≥ 20.3) + BALs masked**, sub-DLAs + LLS kept | 1500 | NERSC train, Apr 30 |
+| 3 | `GP_trained/loa_no_hcd_with_bal_52198070/model_epoch_1499.h5` | v2 | real LOA, **all HCDs (NHI ≥ 17.2) masked**, BALs kept | 1500 | NERSC train, Apr 30 |
 | 4 | `pscratch/.../v2_runs/2lpt_loa0_48938765/model_epoch_0799.h5` | v2 | 2lpt mock, loa-0 (forest-only by construction) | 800 | GreatLakes train, Apr 29 |
 | 5 | `pscratch/.../v2_runs/2lpt_loa124_nohcd_nobal_48938766/model_epoch_0799.h5` | v2 | 2lpt mock loa-124, HCDs + BALs masked | 800 | GreatLakes train, Apr 29 |
 
@@ -165,13 +165,37 @@ epochs would reduce loss by ~2 (negligible vs final 2199-2428 range).
 Worth doing for apples-to-apples comparison if epoch-count differences
 matter for a referee, but the science conclusion is unchanged.
 
-## "no HCD with BALs" trainset clarification
+## Trainset filter differences (corrected — 2026-05-01)
 
-`loa_no_hcd_with_bal_52198070` is **the full LOA QSO catalogue with
-HCDs masked, BALs kept** (298 754 spectra). Not "BAL only". For
-comparison, `loa_no_dla_no_bal_52198069` has 298 807 spectra with
-both DLAs and BALs masked. Same parent catalogue, different filter
-choices.
+The two NERSC-trained datasets are NOT symmetric in their filter
+choices:
+
+|  | `loa_no_dla_no_bal_52198069` | `loa_no_hcd_with_bal_52198070` |
+|---|---|---|
+| n_total | 300 008 | 300 032 |
+| z range | [2.0, 4.25] | [2.0, 4.25] |
+| ZWARN | =0 | =0 |
+| BAL filter | **`exclude_bal=true`** (BI_CIV>0 dropped) | **`exclude_bal=false`** (BALs kept) |
+| HCD filter | NHI ≥ 20.3 dropped (**DLAs only**; sub-DLAs+LLS kept) | NHI ≥ 17.2 dropped (**all HCDs**: DLAs+sub-DLAs+LLS) |
+| BALs in data? | No | Yes |
+| Sub-DLAs/LLS in data? | **Yes** | No |
+
+Neither is "BAL-only". The `with_bal` in `loa_no_hcd_with_bal` means
+"BAL spectra are kept alongside non-BAL spectra" (i.e. not excluded),
+not "BAL spectra only".
+
+The asymmetric filtering explains the trained-parameter pattern in
+the bar chart above:
+
+- `loa_no_dla_no_bal` keeps sub-DLAs + LLS in the data → there's
+  residual absorption above what Turner-deforest removed → optimizer
+  drives the Ω-kernel τ₀ up to **0.0048 (2× Turner)** to absorb that.
+- `loa_no_hcd_with_bal` masks all HCDs (down to NHI 17.2) → no extra
+  absorption signature in the data → optimizer drives the Ω-kernel
+  τ₀ down to **~0** (BAL features get modelled by μ/M instead).
+
+Both are converged. Different optima reflect different filtered
+training distributions, not training failure.
 
 ## Convergence — should we train more?
 
@@ -187,13 +211,37 @@ epochs would reduce loss by ~2 (negligible vs final 2199-2428 range).
 Worth doing for apples-to-apples comparison if epoch-count differences
 matter for a referee, but the science conclusion is unchanged.
 
-## "no HCD with BALs" trainset clarification
+## Trainset filter differences (corrected — 2026-05-01)
 
-`loa_no_hcd_with_bal_52198070` is **the full LOA QSO catalogue with
-HCDs masked, BALs kept** (298 754 spectra). Not "BAL only". For
-comparison, `loa_no_dla_no_bal_52198069` has 298 807 spectra with
-both DLAs and BALs masked. Same parent catalogue, different filter
-choices.
+The two NERSC-trained datasets are NOT symmetric in their filter
+choices:
+
+|  | `loa_no_dla_no_bal_52198069` | `loa_no_hcd_with_bal_52198070` |
+|---|---|---|
+| n_total | 300 008 | 300 032 |
+| z range | [2.0, 4.25] | [2.0, 4.25] |
+| ZWARN | =0 | =0 |
+| BAL filter | **`exclude_bal=true`** (BI_CIV>0 dropped) | **`exclude_bal=false`** (BALs kept) |
+| HCD filter | NHI ≥ 20.3 dropped (**DLAs only**; sub-DLAs+LLS kept) | NHI ≥ 17.2 dropped (**all HCDs**: DLAs+sub-DLAs+LLS) |
+| BALs in data? | No | Yes |
+| Sub-DLAs/LLS in data? | **Yes** | No |
+
+Neither is "BAL-only". The `with_bal` in `loa_no_hcd_with_bal` means
+"BAL spectra are kept alongside non-BAL spectra" (i.e. not excluded),
+not "BAL spectra only".
+
+The asymmetric filtering explains the trained-parameter pattern in
+the bar chart above:
+
+- `loa_no_dla_no_bal` keeps sub-DLAs + LLS in the data → there's
+  residual absorption above what Turner-deforest removed → optimizer
+  drives the Ω-kernel τ₀ up to **0.0048 (2× Turner)** to absorb that.
+- `loa_no_hcd_with_bal` masks all HCDs (down to NHI 17.2) → no extra
+  absorption signature in the data → optimizer drives the Ω-kernel
+  τ₀ down to **~0** (BAL features get modelled by μ/M instead).
+
+Both are converged. Different optima reflect different filtered
+training distributions, not training failure.
 
 ## Why the τ-EB recipe behaves as it does — the linking story
 
