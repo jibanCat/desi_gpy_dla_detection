@@ -58,6 +58,8 @@ def main():
                    help="Override the registered mock dir for --mock.")
     p.add_argument("--z-qso-min", type=float, default=2.0,
                    help="Filter to z_qso >= this value (production runs use 2.0).")
+    p.add_argument("--exclude-bal", action="store_true",
+                   help="Drop targets listed in bal_cat.fits (production catalogs do).")
     args = p.parse_args()
     if args.mock_dir is None:
         args.mock_dir = MOCK_DIRS[args.mock]
@@ -70,6 +72,17 @@ def main():
         print(f"[zcat] {len(zcat)} QSOs (filtered z>={args.z_qso_min} from {n_before})")
     else:
         print(f"[zcat] {len(zcat)} QSOs (no z filter)")
+    if args.exclude_bal:
+        bal_path = os.path.join(args.mock_dir, "bal_cat.fits")
+        if os.path.exists(bal_path):
+            bal = fitsio.read(bal_path)
+            tid_col = "TARGETID" if "TARGETID" in bal.dtype.names else "MOCKID"
+            bal_set = set(int(t) for t in bal[tid_col])
+            n_before = len(zcat)
+            zcat = zcat[[int(t) not in bal_set for t in zcat["TARGETID"]]]
+            print(f"[bal_cat] dropped {n_before - len(zcat)} BAL targets (from {n_before})")
+        else:
+            print(f"[bal_cat] {bal_path} not found; --exclude-bal had no effect")
     # Truth file naming + column varies by mock.
     truth_path = os.path.join(args.mock_dir, "hcd_truth_cat.fits")
     if not os.path.exists(truth_path):

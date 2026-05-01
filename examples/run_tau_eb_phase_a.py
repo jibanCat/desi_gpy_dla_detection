@@ -95,7 +95,9 @@ def _process_one(row: dict) -> dict:
             prev_tau_0_seed=p.prev_tau_0, prev_beta=p.prev_beta,
             tau_factors=tuple(row.get("_tau_factors",
                               (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0))),
-            apply_hcd_mask=True, mask_threshold_sigma=1.5, objective="null",
+            apply_hcd_mask=True,
+            mask_threshold_sigma=float(row.get("_hcd_threshold", 1.5)),
+            objective="null",
         )
         out.update(
             status="ok",
@@ -122,9 +124,12 @@ def main():
     p.add_argument("--tau-factors", type=float, nargs="+", default=None,
                    help="Override τ_factor grid. Default: "
                         "(0.5,0.75,1.0,1.25,1.5,2.0,3.0,4.0).")
+    p.add_argument("--hcd-threshold", type=float, default=1.5,
+                   help="HCD-mask threshold σ for the mask-on column.")
     args = p.parse_args()
     if args.tau_factors:
         print(f"[grid] override τ_factors = {tuple(args.tau_factors)}")
+    print(f"[hcd_threshold] mask-on column will use σ={args.hcd_threshold}")
 
     rows = []
     with open(args.targets_tsv) as f:
@@ -132,6 +137,7 @@ def main():
         for r in rdr:
             if args.tau_factors:
                 r["_tau_factors"] = tuple(args.tau_factors)
+            r["_hcd_threshold"] = args.hcd_threshold
             rows.append(r)
     if args.limit:
         rows = rows[:args.limit]

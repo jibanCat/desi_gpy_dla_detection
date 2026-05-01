@@ -29,7 +29,8 @@ from pathlib import Path
 import numpy as np
 
 
-def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16):
+def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16,
+                  max_dlas: int = 3, filter_low_likelihood: bool = False):
     """Build a single DLAHolder; we'll mutate enable_tau_eb per call."""
     sys.path.insert(0, "/home/mfho/desi_gpy_dla_detection")
     from gpy_dla_detection.voigt_v2_inject import inject
@@ -67,11 +68,10 @@ def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16):
         params=params, params_subdla=_copy.copy(params),
         min_z_separation=3000.0,
         prev_tau_0=p.prev_tau_0, prev_beta=p.prev_beta,
-        max_dlas=3, max_workers=max_workers, batch_size=313,
+        max_dlas=max_dlas, max_workers=max_workers, batch_size=313,
+        filter_low_likelihood=filter_low_likelihood,
         enable_tau_eb=False,  # start in BASELINE; we'll toggle
-        # Default grid pulled from DLAHolder.__init__; pass explicitly only
-        # to override. Empty/missing here = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0,
-        # 5.0, 6.0) per the codebase default.
+        # Default grid pulled from DLAHolder.__init__ (= 0.5..6.0).
         tau_eb_apply_hcd_mask=False,
         tau_eb_objective="null",
     )
@@ -137,6 +137,10 @@ def main():
     p.add_argument("--max-workers", type=int, default=16,
                    help="DLAHolder.max_workers per spectrum")
     p.add_argument("--num-dla-samples", type=int, default=10000)
+    p.add_argument("--max-dlas", type=int, default=3,
+                   help="DLAHolder.max_dlas; production multi-DLA uses 3 or 4.")
+    p.add_argument("--filter-low-likelihood", type=int, default=0,
+                   help="0=FILTER off (default); 1=FILTER on (with fix #5).")
     args = p.parse_args()
 
     rows = []
@@ -150,8 +154,12 @@ def main():
     print(f"[chunk] {args.start}-{args.end} → {len(chunk)} targets", flush=True)
 
     holder, preset = _build_holder(num_dla_samples=args.num_dla_samples,
-                                   max_workers=args.max_workers)
-    print(f"[holder] built; max_workers={args.max_workers} num_dla_samples={args.num_dla_samples}", flush=True)
+                                   max_workers=args.max_workers,
+                                   max_dlas=args.max_dlas,
+                                   filter_low_likelihood=bool(args.filter_low_likelihood))
+    print(f"[holder] built; max_workers={args.max_workers} "
+          f"num_dla_samples={args.num_dla_samples} max_dlas={args.max_dlas} "
+          f"filter={args.filter_low_likelihood}", flush=True)
 
     fieldnames = ["target_id", "z_qso", "truth_log_nhi", "nhi_regime", "status",
                   "baseline_p_dla", "baseline_map_log_nhi", "baseline_wall_s",

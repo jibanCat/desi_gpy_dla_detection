@@ -68,7 +68,10 @@ python -u examples/run_tau_eb_phase_b.py \
     --targets-tsv "$TARGETS_TSV" \
     --start "$START" --end "$END" \
     --out "$CHUNK_OUT" \
-    --max-workers 16 --num-dla-samples 10000
+    --max-workers 16 \
+    --num-dla-samples "${NUM_DLA_SAMPLES:-10000}" \
+    --max-dlas "${MAX_DLAS:-3}" \
+    --filter-low-likelihood "${FILTER_LOW_LIKELIHOOD:-0}"
 
 echo
 echo "  task $TASK_ID DONE → $CHUNK_OUT"
