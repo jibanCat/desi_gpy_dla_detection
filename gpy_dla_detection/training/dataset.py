@@ -148,7 +148,18 @@ def _normalize_by_rest_median(
             f"[{rest_wavelengths.min():.1f}, {rest_wavelengths.max():.1f}] — "
             f"choose a different window."
         )
-    medians = np.nanmedian(fluxes[:, norm_mask], axis=1)  # (N,)
+    # Suppress the "All-NaN slice" RuntimeWarning here — it fires for any
+    # row that's entirely NaN inside the normalization window, which is a
+    # legitimate (if rare) outcome (e.g. localized pixel-masking removed
+    # all pixels in [1310, 1325]). The downstream check on `bad` below
+    # zeros those spectra out cleanly, and the print line announces the
+    # count, so the warning itself is just noise.
+    import warnings as _warnings
+    with _warnings.catch_warnings():
+        _warnings.filterwarnings("ignore",
+                                 category=RuntimeWarning,
+                                 message="All-NaN slice encountered")
+        medians = np.nanmedian(fluxes[:, norm_mask], axis=1)  # (N,)
     # Spectra with median == 0 or NaN are unusable
     bad = ~np.isfinite(medians) | (medians == 0)
     n_bad = int(bad.sum())
