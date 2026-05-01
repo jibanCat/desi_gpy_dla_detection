@@ -126,6 +126,52 @@ Same physics. Apples-to-apples comparison would require dividing v2 μ by
 the median flux in [1425, 1475], which we haven't done because the v2
 trainset already discarded the per-spectrum medians.
 
+### ⚠ BUG — v2 preload skips per-spectrum normalization
+
+**2026-05-01, found by jibanCat raising a sanity-check question**:
+
+The v2 preload scripts (`preload_spectra/preload_loa_real.py`,
+`preload_spectra/preload_2lpt_simple.py`) and the alternative
+`preload_spectra/prepare_trainset.py` **do not apply per-spectrum
+median normalization** before saving the trainset.h5. They only
+mask + interpolate.
+
+Verified empirically on the 2lpt v2 trainset:
+- `fluxes` range: −6.87 to 134.76 (raw DESI absolute flux)
+- Per-spectrum median flux at rest [1100, 1180] Å: 5th pct = 0.15,
+  95th pct = 6.12 → **42× dynamic range across the population**
+- The rest grid [850.8, 1420.8] doesn't even include the standard
+  [1425, 1475] normalization region, so a normalize step couldn't
+  even use that range without re-grid
+
+When the v2 trainer's `_center_fluxes_inverse_variance` runs on
+this data, the inverse-variance-weighted mean is heavily weighted
+toward bright QSOs. The resulting μ doesn't represent a typical
+QSO; it represents a bright-source-weighted average.
+
+The CLI args `--norm_min_lambda=1425 --norm_max_lambda=1475` exist
+in `prepare_trainset.py` but the corresponding `normalize_spectra`
+call is **never made** in the pipeline. Likely an oversight.
+
+**Implications for the 4 v2 trained models** (LOA_no_dla_no_bal,
+LOA_no_hcd_with_bal, MOCK_2lpt_loa0, MOCK_2lpt_loa124_nohcd_nobal):
+their μ is biased; they should NOT be promoted to production as-is.
+
+**The v1 production model is correctly normalized** —
+`SpectrumProcessor.normalize_spectra` (line 290) divides each spectrum
+by its own median in [1425, 1475] before centring.
+
+**Impact on the τ-EB story (PR #5)**: largely unaffected. τ-EB tunes
+runtime `prev_tau_0` (mean-flux A), not the trained μ. So the bias-
+closure measurements still stand even though the trained-μ underlying
+the inference happens to be the v1 production (correctly normalized)
+model.
+
+Filed as a Tier 1 follow-up in
+`docs/notes/2026-05-01_post_pr5_priorities.md`. Fix:
+add a per-spectrum normalize step before `_center_fluxes_inverse_variance`
+(either at preload time or in `dataset.load_preprocessed_h5`).
+
 ### Train-time z range — likely also differs
 
 | Trainer | z range |

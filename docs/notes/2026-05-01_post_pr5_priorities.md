@@ -58,7 +58,40 @@ extension as a stop-gap, and (b) prototype the two-stage scan as a
 research follow-up. Scientifically the two-stage scan is the
 right answer.
 
-### 2. Promote v2 LOA-trained model AND test mock-trained model
+### 2. ⚠ Fix v2 preload pipeline — per-spectrum normalization is missing
+
+**2026-05-01, found via sanity-check question from jibanCat**:
+
+The v2 preload scripts (`preload_loa_real.py`, `preload_2lpt_simple.py`,
+and the alternative `prepare_trainset.py`) do not apply per-spectrum
+median normalization before saving the trainset.h5. They only mask +
+interpolate. Verified: v2 trainset fluxes range −7 to 135 (raw DESI
+flux), 42× dynamic range in per-spectrum median at rest [1100, 1180].
+
+Without this step, `_center_fluxes_inverse_variance` produces a μ
+dominated by bright QSOs. The 4 v2 trained models we have are NOT
+production-ready as-is. The v1 production model IS correctly
+normalized via `SpectrumProcessor.normalize_spectra` (line 290).
+
+The CLI args `--norm_min_lambda=1425 --norm_max_lambda=1475` exist
+in `prepare_trainset.py` but the corresponding call is never made.
+Likely an oversight in the v2 port.
+
+**Action**: add a per-spectrum normalize step (divide each spectrum
+by its median in [1425, 1475] Å rest, mirroring v1) at preload time,
+then re-train the 4 v2 models. ~5 h NERSC + ~5 h GreatLakes per model.
+
+**Side note**: the rest grid in v2 trainsets is [850.8, 1420.8] Å,
+which doesn't include [1425, 1475]. The fix needs to either expand
+the rest range OR compute the median on the original wave grid
+(before interpolation) and store it as a per-spectrum metadata
+column for the trainer to apply.
+
+This blocks "Promote v2 LOA-trained model" — promotion can't happen
+until the bug is fixed and the models are retrained.
+
+### 3. Promote v2 LOA-trained model AND test mock-trained model
+(BLOCKED on #2 above)
 
 `loa_no_dla_no_bal_52198069/model_epoch_1499.h5` is the candidate
 v2 production replacement (cleaner data than v1, 1500 epochs vs 953).
