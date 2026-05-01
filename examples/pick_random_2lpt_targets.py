@@ -25,7 +25,12 @@ import numpy as np
 from astropy.table import Table
 
 
-MOCK_DIR = "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124"
+MOCK_DIRS = {
+    "2lpt": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124",
+    "london": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/london/qq_desi_y3/v5.9.5/mock-0/jura-124",
+    "saclay": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124",
+}
+MOCK_DIR = MOCK_DIRS["2lpt"]  # back-compat for callers that reference MOCK_DIR
 
 
 def _spec_path_from_healpix(healpix: int) -> str:
@@ -47,31 +52,51 @@ def main():
     p.add_argument("--n", type=int, default=5000)
     p.add_argument("--seed", type=int, default=100)
     p.add_argument("--out", required=True)
-    p.add_argument("--mock-dir", default=MOCK_DIR)
+    p.add_argument("--mock", choices=list(MOCK_DIRS), default="2lpt",
+                   help="Pick from one of the registered mock dirs.")
+    p.add_argument("--mock-dir", default=None,
+                   help="Override the registered mock dir for --mock.")
+    p.add_argument("--z-qso-min", type=float, default=2.0,
+                   help="Filter to z_qso >= this value (production runs use 2.0).")
     args = p.parse_args()
+    if args.mock_dir is None:
+        args.mock_dir = MOCK_DIRS[args.mock]
 
-    print(f"[mock_dir] {args.mock_dir}")
+    print(f"[mock={args.mock}] {args.mock_dir}")
     zcat = Table.read(os.path.join(args.mock_dir, "zcat.fits"))
-    truth = Table.read(os.path.join(args.mock_dir, "hcd_truth_cat.fits"))
-    print(f"[zcat] {len(zcat)} QSOs")
-    print(f"[truth] {len(truth)} absorbers (any NHI), "
-          f"{(truth['NHI'] >= 20.3).sum()} DLA-strength")
+    if args.z_qso_min > 0:
+        n_before = len(zcat)
+        zcat = zcat[zcat["Z"] >= args.z_qso_min]
+        print(f"[zcat] {len(zcat)} QSOs (filtered z>={args.z_qso_min} from {n_before})")
+    else:
+        print(f"[zcat] {len(zcat)} QSOs (no z filter)")
+    # Truth file naming + column varies by mock.
+    truth_path = os.path.join(args.mock_dir, "hcd_truth_cat.fits")
+    if not os.path.exists(truth_path):
+        truth_path = os.path.join(args.mock_dir, "dla_cat.fits")
+    truth = Table.read(truth_path)
+    z_col = "Z" if "Z" in truth.colnames else "Z_DLA"
+    print(f"[truth] {truth_path} — {len(truth)} absorbers (any NHI), "
+          f"{(truth['NHI'] >= 20.3).sum()} DLA-strength  (z_col={z_col})")
 
     rng = np.random.default_rng(args.seed)
     sample_idx = rng.choice(len(zcat), size=args.n, replace=False)
     sample = zcat[sample_idx]
     print(f"[sample] picked {len(sample)} TIDs at random (seed={args.seed})")
 
-    # healpix-16 from RA/DEC (nest)
+    # healpix-16 from RA/DEC (nest); column names differ across mocks
     ra_col = "TARGET_RA" if "TARGET_RA" in zcat.colnames else "RA"
     dec_col = "TARGET_DEC" if "TARGET_DEC" in zcat.colnames else "DEC"
     healpix = _healpix_from_radec(np.asarray(sample[ra_col]),
                                   np.asarray(sample[dec_col]))
+    # Spec layout: spectra-16/{healpix//100}/{healpix}/spectra-16-{healpix}.fits
+    spec_dir = os.path.join(args.mock_dir, "spectra-16")
+    zcat_path = os.path.join(args.mock_dir, "zcat.fits")
 
     truth_by_tid = {}
     for row in truth:
         truth_by_tid.setdefault(int(row["TARGETID"]), []).append(
-            (float(row["Z"]), float(row["NHI"])))
+            (float(row[z_col]), float(row["NHI"])))
 
     # Output: one row per TID, listing the strongest truth absorber.
     rows = []
@@ -83,8 +108,8 @@ def main():
         tid = int(sample["TARGETID"][i])
         z_qso = float(sample["Z"][i])
         hpx = int(healpix[i])
-        spec = _spec_path_from_healpix(hpx)
-        zcat_path = os.path.join(args.mock_dir, "zcat.fits")
+        spec = os.path.join(spec_dir, str(hpx // 100), str(hpx),
+                            f"spectra-16-{hpx}.fits")
         truths = truth_by_tid.get(tid, [])
         if truths:
             # Strongest absorber on this LOS
