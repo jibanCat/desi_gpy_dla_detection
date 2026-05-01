@@ -95,7 +95,8 @@ python -u train_gp.py \
     --num-forest-lines "$NUM_FOREST_LINES" \
     --output-dir "$RUN_DIR" \
     --device cuda \
-    --save-every 25
+    --save-every 25 \
+    ${EXTRA_TRAIN_FLAGS:-}
 
 LOSS_FILE="$RUN_DIR/loss_history.json"
 [ -r "$LOSS_FILE" ] || { echo "[error] loss_history.json not written" >&2; exit 7; }
