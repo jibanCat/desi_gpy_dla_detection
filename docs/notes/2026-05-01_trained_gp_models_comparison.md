@@ -95,14 +95,50 @@ mean-flux scale for steeper z-evolution.
 
 ### Why v1 production μ ≈ 1 (with peaks at Lyα), v2 μ in absolute flux units
 
-| Trainer | Pre-training normalization | μ stored in .h5 |
-|---|---|---|
-| v1 (`learn_qso_model.SpectrumProcessor`) | Each spectrum divided by **its own median flux in [1425, 1475] Å rest** before training. | μ is **learned as a parameter**; in normalized-flux units, fluctuating around 1 (with QSO emission like Lyα peaking above 1). |
-| v2 (`training/dataset._weighted_mean_centering`) | Inverse-variance-weighted **population mean flux** is computed and SUBTRACTED from each spectrum. Trainer fits the residual. | μ in the .h5 is **that population mean flux** (NOT learned per epoch — computed once from data). In absolute flux units. |
+**Correction (2026-05-01)**: an earlier draft of this section claimed
+v1 doesn't centre and v2 does. That was wrong — **both v1 and v2 apply
+inverse-variance-weighted mean centering**, and in BOTH the μ stored
+in the .h5 is the centring target (passed at construction, NOT learned
+as a parameter):
 
-So the v1 production μ ≈ 1 baseline is just because v1 normalizes-to-1.
-The "v2 LOA_no_dla_no_bal μ is lower than v1 production μ" comparison
-isn't apples-to-apples — v2 μ is in absolute flux, v1 μ is fractional.
+  - v1 `learn_qso_model.SpectrumProcessor.center_fluxes` (line 366):
+    > `Centers fluxes by subtracting the inverse-variance weighted mean.`
+  - v2 `training/dataset._weighted_mean_centering`: same operation.
+
+The actual difference is v1 has an **extra per-spectrum normalization
+step** before centering, which v2 skips:
+
+| step | v1 (`SpectrumProcessor`) | v2 (`training/dataset`) |
+|---|---|---|
+| 1. mask high-noise pixels | yes | yes |
+| 2. interpolate to rest grid | yes | yes |
+| 3. **per-spectrum normalize by median in [1425, 1475]** | **YES** (`normalize_spectra`) | NO |
+| 4. de-forest at fixed Turner+2024 | yes | yes |
+| 5. inverse-variance-weighted mean centering | yes | yes |
+| 6. μ saved to .h5 | the population mean of *normalized* fluxes (≈ 1, with QSO emission peaking above) | the population mean of *absolute* fluxes |
+
+So the v1 production μ ≈ 1 baseline is because v1 normalizes-each-spectrum-to-1
+*before* centring → centring subtracts a population mean that's also ≈ 1.
+v2 skips the per-spectrum normalize step → centring subtracts a population
+mean in absolute flux units.
+
+Same physics. Apples-to-apples comparison would require dividing v2 μ by
+the median flux in [1425, 1475], which we haven't done because the v2
+trainset already discarded the per-spectrum medians.
+
+### Train-time z range — likely also differs
+
+| Trainer | z range |
+|---|---|
+| **v2 (all 4 trainings)** | `[2.0, 4.25]` (per each preload's README) |
+| **v1 production model** | NOT recoverable from `model_epoch_920.h5` alone. The v1 source has two catalog defaults: `LegacyGPCatalog z_range=(3.0, 4.25)` and another at `(2.15, 4.25)`. User recalls v1 was trained on `~(2.5, 4.25)` but never verified. |
+
+If v1 was trained on a higher-z subset (z ≥ 2.5 or z ≥ 3.0), it didn't
+see the low-z forest behaviour where mocks-vs-real divergence is largest
+(per the τ-EB measurements: at z_qso ≥ 3.0 even real LOA wants τ_factor=1.0×;
+the divergence is at z_qso = 2.0–2.5). This affects how μ and ω compare
+between v1 and v2 — but the comparison is between trainsets that don't
+fully overlap in z, so caveat the cross-trainer scale comparison.
 
 ### Why ω looks very different across trainers
 
