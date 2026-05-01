@@ -1,5 +1,29 @@
 # Voigt LSF + num_lines hypothesis test — first-pass findings
 
+> **2026-04-30 SECOND RETRACTION — n=90 / n=5000 invalidate the n=18
+> headline**: this report and the "n=6/n=18 multi-target" follow-ups
+> in `report.md` and `2026-04-29_voigt_lsf_sweep/scale_out/summary_n54.csv`
+> claim that **HCD-masked** τ-EB closes ~80 % of the DLA-regime bias.
+> That number was driven by a cherry-picked SNR≥2 / single-truth-absorber
+> picker.
+>
+> At n=90 random DLA targets (seed=43, no picker) and at n=5000 random
+> 2lpt (Phase B production-bayes), HCD-masking **systematically over-corrects**:
+> mean τ pushed too high → MAP NHI dragged below truth (median bias
+> +0.135 → −0.131 dex with mask, vs +0.135 → +0.026 dex without).
+>
+> **Production default is now `apply_hcd_mask=False`**. The mask is
+> available as an opt-in flag in `gpy_dla_detection.tau_eb.fit_tau_eb`
+> but is no longer the recommended path.
+>
+> See `docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md`,
+> `docs/notes/2026-04-29_tau_eb_phase_a_5k_2lpt.md`, and
+> `docs/notes/2026-04-30_tau_eb_phase_b_5k_2lpt.md` for the population
+> measurements that flipped the conclusion. The HCD-mask recipe doc
+> at `docs/tau_eb_hcd_mask.md` still describes the algorithm, but
+> the n=90 / n=5000 docs are the authoritative source for the
+> production recommendation.
+
 > **2026-04-29 follow-up — partial retraction**: a user-flagged kernel
 > truncation bug in `_kernel_for` was discovered after this report
 > landed. DESI-R3000 was being clipped to a 7-pixel kernel, collapsing

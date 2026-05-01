@@ -261,6 +261,42 @@ set `sub_dla=True` for DLA runs and `sub_dla=False` for sub-DLA/LLS runs.
 This controls the `model_posteriors` column offset used when computing
 p(DLA) = sum of DLA columns.
 
+## Per-spectrum mean-flux calibration: `--enable_tau_eb` (optional)
+
+Production hardcodes the Lyα mean-flux prior to τ_0 = 0.00246
+(Turner+2024). On Y3 mocks this leaves a +0.13 dex median DLA-regime
+N_HI bias. Passing `--enable_tau_eb 1` to `desi-DLAGP.py` runs a
+per-spectrum empirical-Bayes fit to pick τ_0 from a small grid before
+each inference; on n=5000 random 2LPT spectra this drops the median
+DLA-regime bias to +0.04 dex (-65 %) and the no-DLA false-positive
+rate to 1.5 % (-35 %), with no measurable cost overhead (the τ-EB
+step is ~1 % of the bayes step, and at the higher τ values it picks
+the bayes early-stopping kicks in more often, often yielding ENABLED
+≤ BASELINE wall time).
+
+```
+desi-DLAGP.py --enable_tau_eb 1 ...
+              [--tau_eb_factors 0.5 1.0 1.5 2.0 3.0 4.0 5.0 6.0]
+              [--tau_eb_apply_hcd_mask 0]    # default OFF
+              [--tau_eb_objective null]      # or "dla"
+```
+
+The flag is **default OFF**, so existing pipelines are unaffected
+unless explicitly enabled. Algorithm + figures + per-mock results:
+
+- `docs/tau_eb_hcd_mask.md` — recipe walkthrough + demo figure
+- `docs/stories/tau_eb_story_{2lpt,london,saclay}.md` — per-mock results
+- `docs/notes/2026-04-30_tau_eb_phase_b_5k_2lpt.md` — 5000-spectrum
+  validation
+- `docs/notes/2026-04-29_bayesian_correctness_synthesis.md` — full
+  hypothesis ledger that motivated this fix
+
+The HCD-mask variant of the recipe (`--tau_eb_apply_hcd_mask 1`) was
+the original implementation; at population scale it was found to
+over-correct and is no longer the default. See
+`docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md` for the
+falsification.
+
 ## For developers
 
 There are some customizable features for this GP-DLA model.
@@ -269,6 +305,7 @@ For customization, go to this tutorial:
 - Number of DLA samples
 - Marginalizing over meanflux for purity (Ho 2021 model)
 - Resample the DLA column density prior
+- Per-spectrum τ_eff fit (`gpy_dla_detection.tau_eb.fit_tau_eb`)
 
 ### Catalog post-processing (Lyβ veto + LLS cross-reference)
 

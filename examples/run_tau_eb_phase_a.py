@@ -40,7 +40,7 @@ def _process_one(row: dict) -> dict:
     from gpy_dla_detection.set_parameters import Parameters
     from gpy_dla_detection.model_priors import PriorCatalog
     from gpy_dla_detection.dla_samples import DLASamplesMAT
-    from gpy_dla_detection.tau_eb import fit_tau_eb_hcd_mask
+    from gpy_dla_detection.tau_eb import fit_tau_eb
 
     DATA_ROOT = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection"
     p = PRESETS["y3"]
@@ -77,7 +77,7 @@ def _process_one(row: dict) -> dict:
         dla_samples = DLASamplesMAT(params, prior, dla_samples_file)
 
         # No HCD mask (production default): cheap K=6 null builds
-        tau_null, info_null = fit_tau_eb_hcd_mask(
+        tau_null, info_null = fit_tau_eb(
             params=params, prior=prior, learned_file=learned,
             rest_wavelengths=rest_w, flux=flux, noise_variance=nv,
             pixel_mask=mask, z_qso=z_qso,
@@ -88,7 +88,7 @@ def _process_one(row: dict) -> dict:
         )
 
         # WITH HCD mask: same grid, just extra masking step
-        tau_mask, info_mask = fit_tau_eb_hcd_mask(
+        tau_mask, info_mask = fit_tau_eb(
             params=params, prior=prior, learned_file=learned,
             rest_wavelengths=rest_w, flux=flux, noise_variance=nv,
             pixel_mask=mask, z_qso=z_qso,

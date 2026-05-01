@@ -385,7 +385,7 @@ class DLAHolder:
         # Single absorber model flag: No Sub-DLA model, only Null and DLA models
         self.single_absorber_model = single_absorber_model
 
-        # τ-EB knobs (see fit_tau_eb_hcd_mask).
+        # τ-EB knobs (see gpy_dla_detection.tau_eb.fit_tau_eb).
         self.enable_tau_eb = enable_tau_eb
         self.tau_eb_factors = tuple(tau_eb_factors)
         self.tau_eb_apply_hcd_mask = bool(tau_eb_apply_hcd_mask)
@@ -450,8 +450,8 @@ class DLAHolder:
         # only; the rest of the inference is unchanged.
         prev_tau_0_eff = self.prev_tau_0
         if self.enable_tau_eb:
-            from gpy_dla_detection.tau_eb import fit_tau_eb_hcd_mask
-            prev_tau_0_eff, tau_eb_info = fit_tau_eb_hcd_mask(
+            from gpy_dla_detection.tau_eb import fit_tau_eb
+            prev_tau_0_eff, tau_eb_info = fit_tau_eb(
                 params=self.params,
                 prior=self.prior,
                 learned_file=self.learned_file,

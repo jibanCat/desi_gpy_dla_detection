@@ -51,14 +51,17 @@ Truth log NHI = 20.96 at z=2.069. Strongest closure in the n=6 subset.
 
 ![London large-bias closure (TID 140016836)](../story_figures/london_02_dla_large_bias.png)
 
-### London 180258638 — marginal DLA at the prior boundary
+### London 260234757 — strong DLA where production was already on-target
 
-Truth log NHI = 20.33 at z=2.808 — right at the DLA prior boundary
-(min log NHI = 20.3). Production: NHI=20.75 (+0.42); EB+mask:
-NHI=20.60 (+0.27). The recipe helps but the prior pile-up at 20.3
-is the dominant residual error here, not τ.
+Truth log NHI = 21.28 at z=2.276. Production: NHI=21.10 (-0.18);
+EB+mask: NHI=20.98 (-0.30). Both treatments slightly UNDER-shoot —
+this is the type of target where τ-EB has nothing to fix and may
+slightly hurt. Mention here for honesty about failure modes.
+(Note: the originally-planned marginal-DLA target TID 180258638
+failed to load with a `KeyError: 'b'` in the desispec band coadd —
+a London-specific spectra layout quirk.)
 
-![London marginal DLA (TID 180258638)](../story_figures/london_03_marginal_dla.png)
+![London strong DLA (TID 260234757)](../story_figures/london_03_strong_dla.png)
 
 ---
 

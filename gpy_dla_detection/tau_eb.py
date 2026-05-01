@@ -30,9 +30,9 @@ two might diverge (open question).
 
 Usage::
 
-    from gpy_dla_detection.tau_eb import fit_tau_eb_hcd_mask
+    from gpy_dla_detection.tau_eb import fit_tau_eb
 
-    tau_eb, info = fit_tau_eb_hcd_mask(
+    tau_eb, info = fit_tau_eb(
         params=params,
         prior=prior,
         learned_file=learned_file,
@@ -172,7 +172,7 @@ def _log_l_dla_max_over_grid_at_tau(
     return float(best)
 
 
-def fit_tau_eb_hcd_mask(
+def fit_tau_eb(
     *,
     params,
     prior,
@@ -311,3 +311,8 @@ def fit_tau_eb_hcd_mask(
         info["hcd_pixel_mask"] = new_mask
         info["tau_factors"] = tau_factors.tolist()
     return tau_eb, info
+
+
+# Backward-compatible alias (was the original name when HCD masking was
+# the default; the mask is now an opt-in flag, so the API name is broader).
+fit_tau_eb_hcd_mask = fit_tau_eb

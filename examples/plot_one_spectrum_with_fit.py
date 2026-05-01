@@ -94,9 +94,9 @@ def _run_and_capture(holder, preset, target_id, wave, flux, nv, mask, z_qso,
     # or the EB-chosen value for ENABLED. Reconstruct by re-running τ-EB
     # if enabled (cheap), otherwise use the seed.
     if enable_tau_eb:
-        from gpy_dla_detection.tau_eb import fit_tau_eb_hcd_mask
+        from gpy_dla_detection.tau_eb import fit_tau_eb
         rest_w = holder.params.emitted_wavelengths(wave, z_qso)
-        used_tau, info = fit_tau_eb_hcd_mask(
+        used_tau, info = fit_tau_eb(
             params=holder.params, prior=holder.prior,
             learned_file=holder.learned_file,
             rest_wavelengths=rest_w, flux=flux, noise_variance=nv,
@@ -234,14 +234,16 @@ def main():
     ax_top.plot(base["obs_wave"], base["mu"], color="C0", lw=0.8, alpha=0.55,
                 label=fr"null GP, $\tau_0\!=\!{preset.prev_tau_0:.5f}$ (1×)")
     if base["mu_dla"] is not None:
-        ax_top.plot(base["obs_wave"], base["mu_dla"], color="C1", lw=1.2,
-                    label=fr"BASELINE Voigt fit, $\log N_{{HI}}={float(np.nanmax(base['map_nhi'])):.2f}$, "
+        # purple for BASELINE Voigt fit (avoids clash with sub-DLA orange band)
+        ax_top.plot(base["obs_wave"], base["mu_dla"], color="purple", lw=1.2,
+                    label=fr"BASELINE Voigt, $\log N_{{HI}}={float(np.nanmax(base['map_nhi'])):.2f}$, "
                           fr"$p_{{DLA}}\!=\!{base['p_dla']:.2f}$")
     if enab["mu_dla"] is not None:
-        ax_top.plot(enab["obs_wave"], enab["mu_dla"], color="C2", lw=1.2,
-                    label=fr"τ-EB Voigt fit, $\log N_{{HI}}={float(np.nanmax(enab['map_nhi'])):.2f}$, "
+        # green for τ-EB Voigt fit
+        ax_top.plot(enab["obs_wave"], enab["mu_dla"], color="green", lw=1.2,
+                    label=fr"τ-EB Voigt, $\log N_{{HI}}={float(np.nanmax(enab['map_nhi'])):.2f}$, "
                           fr"$p_{{DLA}}\!=\!{enab['p_dla']:.2f}$, "
-                          fr"$\tau_{{factor}}\!=\!{enab['tau_factor']:.2f}\times$")
+                          fr"$\tau\!=\!{enab['tau_factor']:.1f}\times$")
 
     # All-absorbers markers, color-coded by NHI strength
     # DLA  (NHI ≥ 20.3)   → red
