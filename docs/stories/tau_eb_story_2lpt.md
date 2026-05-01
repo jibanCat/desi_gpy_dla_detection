@@ -1,4 +1,73 @@
-# τ-EB on 2LPT — closing the +0.13 dex DLA bias on a representative population
+# τ-EB on 2LPT — closing the DLA bias on n=49 000 random spectra
+
+> **2026-05-01 — production-realistic 50 k validation landed.** SLURM
+> array `49065622`, FILTER=1, max_dlas=4, BAL-excluded, 6× τ-grid.
+> 50/50 array tasks completed (49 000 rows after BAL exclusion).
+> The headline below is now anchored on the 50 k sample at the
+> production-typical `p_DLA ≥ 0.97` cut; the earlier 5 k FILTER=0 numbers
+> are kept further down for the methodology trail.
+
+## TL;DR (50 k FILTER=1 max=4 BAL-excl, p_DLA ≥ 0.97)
+
+| Metric | BASELINE | ENABLED τ-EB | Δ |
+|---|---:|---:|---:|
+| n_DLA-truth in sample | 4 810 | 4 810 | — |
+| n DLA-truth detected by both at p≥0.97 | 1 940 | 1 940 | — |
+| **median bias on detected DLA** | **+0.095 dex** | **+0.042 dex** | **−56 %** |
+| mean bias | +0.124 | +0.060 | −52 % |
+| RMS | 0.239 | 0.205 | −14 % |
+| Wilcoxon p (H₀ : median = 0) | 9 × 10⁻¹⁶⁰ | 2 × 10⁻⁴⁷ | 113 orders weaker rejection |
+| DLA-completeness (truth NHI≥20.3) | 44.6 % | 40.8 % | −3.8 pp |
+| **purity** (TP / total detected) | **75.0 %** | **77.0 %** | **+2.0 pp** |
+| **FPR** (no-truth detected as DLA) | 0.004 % | 0.004 % | — |
+
+τ-EB cuts the median DLA-regime bias by 56 %, keeps the FPR pinned
+near zero (BAL excluded already → no major source of false
+positives), and improves catalog purity by 2 pp at the cost of 3.8 pp
+completeness loss. The Wilcoxon p-values both reject zero-bias, but
+the ENABLED case is 113 orders of magnitude weaker — i.e. the
+remaining bias is real but small.
+
+## τ_factor distribution (n=49 000)
+
+| τ_factor | count | % |
+|---:|---:|---:|
+| 0.50 | 2 862 | 5.8 |
+| 1.00 | 3 288 | 6.7 |
+| 1.50 | 5 329 | 10.9 |
+| 2.00 | 10 479 | 21.4 |
+| **3.00** | **13 722** | **28.0** |
+| 4.00 | 8 320 | 17.0 |
+| 5.00 | 3 442 | 7.0 |
+| 6.00 | 1 558 | 3.2 |
+
+**Median 3.00 × Turner+2024**, mean 2.75. 77 % of spectra prefer τ ≥ 2×.
+The 6× grid ceiling captures 96.8 % of the tail (only 3.2 % pin at the
+top). That's the headline from the τ-distribution side.
+
+## τ_factor by z_qso bin
+
+The recipe's preference for high-τ is driven by the low-z forest:
+
+| z_qso bin | n | median τ | mean τ | frac ≥ 2× |
+|---|---:|---:|---:|---:|
+| [2.0, 2.3) | 19 239 | 3.00 | 3.44 | 88 % |
+| [2.3, 2.6) | 14 326 | 3.00 | 2.79 | 85 % |
+| [2.6, 3.0) | 9 692 | 2.00 | 2.10 | 69 % |
+| [3.0, 5.5) | 5 743 | 1.50 | 1.41 | 29 % |
+
+At low z (where the forest is sparser and Turner+2024's `(1+z)^β`
+extrapolation is most uncertain) the recipe wants τ ≈ 3-4×. At high
+z the forest matches Turner closely. **This z-evolution holds in all
+three mocks AND in real LOA data** — see the LOA story for the
+mock-vs-real comparison.
+
+## TL;DR — earlier 5 k run (FILTER=0, max_dlas=3, BAL included)
+
+> **Background** — the original Phase B was on the same 5 k 2lpt
+> targets but with FILTER=0, max_dlas=3, and the older 4× τ-grid.
+> Numbers below are kept for the methodology trail; the 50 k FILTER=1
+> max=4 result above is the production-realistic answer.
 
 > **Audience**: anyone wanting to understand what the per-spectrum
 > empirical-Bayes τ_eff fit (the “τ-EB” recipe in this PR) actually

@@ -15,6 +15,30 @@
 
 ---
 
+## Update — 2026-05-01: 50 k validation across 3 mocks + 5 k real LOA
+
+The hypothesis ledger below was finalised on the 5 k Phase B 2lpt run.
+Since then we have:
+
+| Run | n | Mock | Median bias closure (BASELINE → ENABLED at p≥0.97) |
+|---|---:|---|---|
+| 49065622 | 49 000 | 2lpt | +0.095 → +0.042 dex (−56 %) |
+| 49071204 | 48 000 | london | +0.095 → +0.037 dex (−61 %) |
+| 49071205 | 49 000 | saclay | +0.089 → +0.032 dex (−65 %) |
+| 49071304 | 5 000 | **LOA real** | (no truth — see τ_factor result) |
+
+The bias closure on **all three independent mock pipelines** is
+remarkably consistent (56–65 %). FPR is pinned near zero on all
+three (BAL excluded). Purity goes up by 2-3 pp; completeness loses
+3-4 pp. **PR #5 ships with full multi-mock validation at production
+settings (FILTER=1, max_dlas=4, BAL-excl).**
+
+τ_factor distributions: mocks all median 3.0 × Turner+2024.
+**Real LOA median 1.5 ×.** The mocks systematically over-estimate
+forest opacity by ~2× vs real DESI; τ-EB compensates on mocks but
+is closer to a no-op on real data. See
+`docs/stories/tau_eb_story_loa.md` for the full LOA writeup.
+
 ## TL;DR
 
 Of the four candidate causes for the historical +0.34 dex DLA bias and

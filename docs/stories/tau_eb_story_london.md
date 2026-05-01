@@ -1,16 +1,68 @@
-# τ-EB on London — preliminary; multi-mock 5k Phase B in flight
+# τ-EB on London — closing the DLA bias on n=48 000 random spectra
 
-> **Status (2026-04-30)**: SLURM array `49062627` is running 5000
-> random London QSOs (mock-0/jura-124, z_qso ≥ 2, no cherry-picking)
-> through both BASELINE and ENABLED τ-EB.  Wall ETA ~3 h.  When it
-> lands, the headline numbers below will be replaced with the
-> production-bayes population result.
->
-> What we have NOW: the n=18 picker subset (cherry-picked: SNR ≥ 2,
-> exactly-1-truth-absorber, mid-forest) tested with the *diagnostic*
-> recipe (truth_z DLA-grid scan, `examples/check_tau_eb_robust_mask.py`).
-> Bias numbers are NOT directly comparable to the 2lpt 5k production
-> Phase B; they're a sanity check that the recipe behaves on London.
+> **2026-05-01 — production-realistic 50 k validation landed.** SLURM
+> array `49071204`, FILTER=1, max_dlas=4, BAL-excluded, 6× τ-grid.
+> 48/50 array tasks completed (2 cancelled — 96 % yield = 48 000 rows).
+> The headline below is anchored on this; the earlier 5 k FILTER=0
+> result is kept lower in the document for the methodology trail.
+
+## TL;DR (50 k FILTER=1 max=4 BAL-excl, p_DLA ≥ 0.97)
+
+| Metric | BASELINE | ENABLED τ-EB | Δ |
+|---|---:|---:|---:|
+| n_DLA-truth in sample | 5 085 | 5 085 | — |
+| n DLA-truth detected by both at p≥0.97 | 2 077 | 2 077 | — |
+| **median bias on detected DLA** | **+0.095 dex** | **+0.037 dex** | **−61 %** |
+| mean bias | +0.118 | +0.056 | −53 % |
+| RMS | 0.226 | 0.200 | −12 % |
+| Wilcoxon p | 1 × 10⁻¹⁷² | 3 × 10⁻⁴⁶ | |
+| DLA-completeness (truth ≥ 20.3) | 44.8 % | 41.4 % | −3.4 pp |
+| **purity** | **76.5 %** | **78.3 %** | **+1.8 pp** |
+| **FPR** (no-truth → DLA) | 0.004 % | 0.004 % | — |
+
+Same shape as 2lpt — slightly stronger bias closure on London (61 %
+vs 56 %) but otherwise nearly identical.  Both mocks, three
+independent simulation pipelines, give the same per-mock answer.
+
+## τ_factor distribution (n=48 000)
+
+| τ_factor | count | % |
+|---:|---:|---:|
+| 0.50 | 3 083 | 6.4 |
+| 1.00 | 3 097 | 6.5 |
+| 1.50 | 5 226 | 10.9 |
+| 2.00 | 10 681 | 22.3 |
+| **3.00** | **13 200** | **27.5** |
+| 4.00 | 8 076 | 16.8 |
+| 5.00 | 3 202 | 6.7 |
+| 6.00 | 1 435 | 3.0 |
+
+Median 3.00 × Turner+2024, mean 2.72.  Identical to 2lpt within 1 %.
+This is striking: London and 2lpt are independent simulation
+pipelines (lyacolore vs jura) but produce the same τ_factor
+distribution.  Argues that what we're calibrating is a feature of
+the GP forward model, not mock-physics.
+
+## τ_factor by z_qso bin
+
+| z_qso bin | n | median τ | mean τ | frac ≥ 2× |
+|---|---:|---:|---:|---:|
+| [2.0, 2.3) | 19 159 | 3.00 | 3.36 | 87 % |
+| [2.3, 2.6) | 13 824 | 3.00 | 2.76 | 85 % |
+| [2.6, 3.0) | 9 436 | 2.00 | 2.09 | 69 % |
+| [3.0, 5.5) | 5 581 | 1.50 | 1.44 | 30 % |
+
+Same monotonic decrease with z as 2lpt.  See LOA story for how this
+compares to real data.
+
+## Earlier 5 k FILTER=0 result (kept for methodology trail)
+
+> The first London Phase B used FILTER=0, max_dlas=3, no BAL
+> exclusion, 6× τ-grid.  Headline: median bias +0.140 → +0.055 dex
+> (61 % closure), n=5000, ~62 % of detections are non-BAL → FPR
+> dominated by BAL contamination as on 2lpt.  See
+> `docs/notes/2026-04-29_voigt_lsf_sweep/scale_out/summary_n54.csv`
+> for the older n=18 cherry-picked subset numbers.
 
 ---
 

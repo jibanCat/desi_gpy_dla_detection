@@ -1,15 +1,62 @@
-# τ-EB on Saclay — preliminary; multi-mock 5k Phase B in flight
+# τ-EB on Saclay — closing the DLA bias on n=49 000 random spectra
 
-> **Status (2026-04-30)**: SLURM array `49062628` is running 5000
-> random Saclay QSOs (mock-0/juraLy8-124, z_qso ≥ 2, no cherry-picking)
-> through both BASELINE and ENABLED τ-EB. Wall ETA ~3 h.  When it
-> lands, the headline numbers below will be replaced with the
-> production-bayes population result.
->
-> What we have NOW: the n=18 picker subset (cherry-picked) tested
-> with the *diagnostic* recipe.  Bias numbers are NOT directly
-> comparable to the 2lpt 5k production Phase B; they're a sanity
-> check that the recipe behaves on Saclay.
+> **2026-05-01 — production-realistic 50 k validation landed.** SLURM
+> array `49071205`, FILTER=1, max_dlas=4, BAL-excluded, 6× τ-grid.
+> 49/50 array tasks completed (1 cancelled — 98 % yield = 48 999 rows).
+
+## TL;DR (50 k FILTER=1 max=4 BAL-excl, p_DLA ≥ 0.97)
+
+| Metric | BASELINE | ENABLED τ-EB | Δ |
+|---|---:|---:|---:|
+| n_DLA-truth in sample | 4 869 | 4 869 | — |
+| n DLA-truth detected by both at p≥0.97 | 1 969 | 1 969 | — |
+| **median bias on detected DLA** | **+0.089 dex** | **+0.032 dex** | **−65 %** |
+| mean bias | +0.106 | +0.045 | −58 % |
+| RMS | 0.204 | 0.177 | −13 % |
+| Wilcoxon p | 5 × 10⁻¹⁶⁴ | 2 × 10⁻³⁵ | |
+| DLA-completeness (truth ≥ 20.3) | 44.4 % | 41.0 % | −3.4 pp |
+| **purity** | **75.9 %** | **78.7 %** | **+2.8 pp** |
+| **FPR** | 0.000 % | 0.000 % | — |
+
+Saclay shows the strongest closure of the three mocks (65 %).
+Production median bias is also lowest on Saclay (+0.089 vs +0.095 on
+2lpt and London) — i.e. Saclay was already the closest to truth and
+τ-EB still closes most of the residual.
+
+## τ_factor distribution (n=48 999)
+
+| τ_factor | count | % |
+|---:|---:|---:|
+| 0.50 | 3 088 | 6.3 |
+| 1.00 | 3 243 | 6.6 |
+| 1.50 | 5 650 | 11.5 |
+| 2.00 | 11 681 | 23.8 |
+| **3.00** | **13 724** | **28.0** |
+| 4.00 | 7 644 | 15.6 |
+| 5.00 | 2 754 | 5.6 |
+| 6.00 | 1 215 | 2.5 |
+
+Median 3.00 × Turner, mean 2.64.  Slightly less heavy-tailed than 2lpt
+or London (smaller fraction at τ ≥ 5×).  All three mocks land at
+median 3.00.
+
+## τ_factor by z_qso bin
+
+| z_qso bin | n | median τ | mean τ | frac ≥ 2× |
+|---|---:|---:|---:|---:|
+| [2.0, 2.3) | 19 628 | 3.00 | 3.22 | 85 % |
+| [2.3, 2.6) | 14 511 | 3.00 | 2.66 | 83 % |
+| [2.6, 3.0) | 9 697 | 2.00 | 2.04 | 67 % |
+| [3.0, 5.5) | 5 163 | 1.50 | 1.51 | 35 % |
+
+Identical monotonic decline with z as 2lpt and London.
+
+## Earlier 5 k FILTER=0 result (kept for methodology trail)
+
+> The first Saclay Phase B used FILTER=0, max_dlas=3, no BAL excl.
+> Headline: median bias +0.111 → +0.050 dex (55 % closure), n=5000.
+> See `docs/notes/2026-04-29_voigt_lsf_sweep/scale_out/summary_n54.csv`
+> for the original n=18 cherry-picked subset numbers.
 
 ---
 
