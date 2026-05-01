@@ -183,6 +183,8 @@ class SubDLAGPMAT(SubDLAGP):
         prev_tau_0: float = 0.0023,
         prev_beta: float = 3.65,
     ):
+        # See NullGPMAT for the rationale on the normalization region:
+        # v2 .h5 carries its own region; mutate params in place if present.
         # Load the learned model from the .mat file
         with h5py.File(learned_file, "r") as learned:
             # Check if the learned model is DESI or not
@@ -208,6 +210,12 @@ class SubDLAGPMAT(SubDLAGP):
                 log_c_0 = learned["log_c_0"][0, 0]
                 log_tau_0 = learned["log_tau_0"][0, 0]
                 log_beta = learned["log_beta"][0, 0]
+
+            if "normalization_min_lambda" in learned:
+                new_min = float(learned["normalization_min_lambda"][()])
+                new_max = float(learned["normalization_max_lambda"][()])
+                params.normalization_min_lambda = new_min
+                params.normalization_max_lambda = new_max
 
         # Initialize the SubDLAGP class explicitly with all parameters
         super().__init__(

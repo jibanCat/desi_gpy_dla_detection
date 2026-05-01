@@ -115,6 +115,15 @@ def save_h5_model(model: GPModelV2, output_dir: Path, epoch: int) -> Path:
         f.create_dataset("rest_wavelengths", data=state["rest_wavelengths"])
         f.create_dataset("mu", data=state["mu"])
         f.create_dataset("max_noise_variance", data=np.array(state["max_noise_variance"]))
+        # Per-spectrum normalization region used at PRELOAD time. Inference
+        # MUST normalize incoming spectra in the same region; otherwise the
+        # absolute flux scale of the prediction won't match the data.
+        # See null_gp.py:set_data — picks these up if present, falls back to
+        # params.normalization_{min,max}_lambda for legacy v1 .h5 files.
+        f.create_dataset("normalization_min_lambda",
+                         data=np.array(state["normalization_min_lambda"]))
+        f.create_dataset("normalization_max_lambda",
+                         data=np.array(state["normalization_max_lambda"]))
         f.attrs["num_pixels"] = state["num_pixels"]
         f.attrs["k"] = state["k"]
         f.attrs["epoch"] = epoch
