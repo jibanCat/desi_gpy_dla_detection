@@ -6,7 +6,7 @@
 #SBATCH --output=slurm/loa_compress_%j.log
 #SBATCH --error=slurm/loa_compress_%j.err
 #SBATCH -A desi
-#SBATCH --time=08:00:00
+#SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 
@@ -21,11 +21,20 @@
 # Smoke-test mode: pass HEALPIX_LIST=10351,10452,10531 to do a
 # 285-QSO / ~30 s build before launching the full job.
 #
+# Walltime history: original 8h was insufficient — job 52341034
+# wrote 473k of 928k QSOs (~50%) before SIGTERM at TIME LIMIT, leaving
+# a corrupt partial h5 (h5py couldn't open the catalog group after
+# the kill). Effective rate ~18.7 QSOs/sec → full 928k QSO catalog
+# needs ~14h wall; bumped to 24h (NERSC regular CPU max for ≤16 nodes)
+# with comfortable margin. If even 24h proves insufficient, the next
+# step is --shard-by-healpix in the writer (one h5 per ~1k QSOs) so
+# partial completion is recoverable.
+#
 # Submit (smoke):
 #   sbatch --export=ALL,HEALPIX_LIST=10351,10452,10531,WITH_RES=1 \
 #          slurm/compress_loa_archive_nersc.sh
 #
-# Submit (full LOA z>=2 with R):
+# Submit (full LOA z>=2 with R, ~110 GB out):
 #   sbatch --export=ALL,WITH_RES=1 slurm/compress_loa_archive_nersc.sh
 #
 # Submit (full LOA z>=2 without R, ~10 GB out):
