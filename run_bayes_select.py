@@ -329,10 +329,39 @@ class DLAHolder:
         figure_dir: str = "figures/",
         params_subdla=None,
         filter_low_likelihood: bool = False,
-        single_absorber_model: bool = False
+        single_absorber_model: bool = False,
+        enable_tau_eb: bool = False,
+        tau_eb_factors: tuple = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
+        tau_eb_apply_hcd_mask: bool = False,
+        tau_eb_mask_threshold_sigma: float = 1.5,
+        tau_eb_objective: str = "null",
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
+
+        Additional parameters
+        ---------------------
+        enable_tau_eb : bool, default False
+            If True, run the per-spectrum empirical-Bayes τ_0 fit (see
+            ``gpy_dla_detection/tau_eb.py`` and ``docs/tau_eb_hcd_mask.md``)
+            and use the chosen τ_0 in place of ``prev_tau_0`` for the
+            production inference. At n=90 mock DLA targets the recipe drops
+            median bias from +0.135 → +0.026 dex (no HCD mask) or −0.131 dex
+            (with HCD mask, default OFF). See
+            ``docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md``.
+        tau_eb_factors : tuple of float
+            τ-grid for the EB scan: candidate τ_0 = factor * prev_tau_0.
+            Default (0.5, 1.0, 1.5, 2.0, 3.0, 4.0) covers the range
+            observed in mock validation.
+        tau_eb_apply_hcd_mask : bool, default False
+            If True, mask pixels with negative residual < -N σ during the
+            τ-fit step. Default OFF — at scale this *over-corrects* the
+            τ-fit. Keep True only for saturated-DLA-dominated targets.
+        tau_eb_mask_threshold_sigma : float
+            HCD-flag threshold; only used when tau_eb_apply_hcd_mask=True.
+        tau_eb_objective : {"null", "dla"}
+            "null" (default, cheap): fit τ on null-model log evidence.
+            "dla": match the validated diagnostic at higher cost.
         """
 
         self.learned_file = learned_file
@@ -355,6 +384,13 @@ class DLAHolder:
 
         # Single absorber model flag: No Sub-DLA model, only Null and DLA models
         self.single_absorber_model = single_absorber_model
+
+        # τ-EB knobs (see gpy_dla_detection.tau_eb.fit_tau_eb).
+        self.enable_tau_eb = enable_tau_eb
+        self.tau_eb_factors = tuple(tau_eb_factors)
+        self.tau_eb_apply_hcd_mask = bool(tau_eb_apply_hcd_mask)
+        self.tau_eb_mask_threshold_sigma = float(tau_eb_mask_threshold_sigma)
+        self.tau_eb_objective = tau_eb_objective
 
         self.params = params  # Pass in the Parameters object here
         if params_subdla is None:
@@ -407,12 +443,45 @@ class DLAHolder:
 
         rest_wavelengths = self.params.emitted_wavelengths(wavelengths, z_qso)
 
+        # Optional per-spectrum empirical-Bayes τ_0 fit
+        # (see gpy_dla_detection/tau_eb.py + docs/tau_eb_hcd_mask.md +
+        # docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md).
+        # When enabled, this replaces ``self.prev_tau_0`` for THIS spectrum
+        # only; the rest of the inference is unchanged.
+        prev_tau_0_eff = self.prev_tau_0
+        if self.enable_tau_eb:
+            from gpy_dla_detection.tau_eb import fit_tau_eb
+            prev_tau_0_eff, tau_eb_info = fit_tau_eb(
+                params=self.params,
+                prior=self.prior,
+                learned_file=self.learned_file,
+                rest_wavelengths=rest_wavelengths,
+                flux=flux,
+                noise_variance=noise_variance,
+                pixel_mask=pixel_mask,
+                z_qso=z_qso,
+                prev_tau_0_seed=self.prev_tau_0,
+                prev_beta=self.prev_beta,
+                tau_factors=self.tau_eb_factors,
+                apply_hcd_mask=self.tau_eb_apply_hcd_mask,
+                mask_threshold_sigma=self.tau_eb_mask_threshold_sigma,
+                objective=self.tau_eb_objective,
+                dla_samples=self.dla_samples,
+            )
+            log.info(
+                f" ...     τ-EB[{self.tau_eb_objective}, "
+                f"hcd_mask={self.tau_eb_apply_hcd_mask}]: "
+                f"factor_best={tau_eb_info['tau_factor_best']:.2f}  "
+                f"τ_0={prev_tau_0_eff:.5f}  "
+                f"n_hcd={tau_eb_info['n_hcd']}"
+            )
+
         # Initialize the Null and DLA models for this spectrum
         null_gp = NullGPMAT(
             self.params,
             self.prior,
             learned_file=self.learned_file,
-            prev_tau_0=self.prev_tau_0,
+            prev_tau_0=prev_tau_0_eff,
             prev_beta=self.prev_beta,
         )
         dla_gp = DLAGPMAT(
@@ -422,7 +491,7 @@ class DLAHolder:
             min_z_separation=self.min_z_separation,
             learned_file=self.learned_file,
             broadening=self.broadening,
-            prev_tau_0=self.prev_tau_0,
+            prev_tau_0=prev_tau_0_eff,
             prev_beta=self.prev_beta,
         )
         if self.single_absorber_model:
@@ -436,7 +505,7 @@ class DLAHolder:
                 min_z_separation=self.min_z_separation,
                 learned_file=self.learned_file,
                 broadening=self.broadening,
-                prev_tau_0=self.prev_tau_0,
+                prev_tau_0=prev_tau_0_eff,
                 prev_beta=self.prev_beta,
             )
             bayes = BayesModelSelect([0, 1, self.max_dlas], 2)

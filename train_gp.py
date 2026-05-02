@@ -117,6 +117,18 @@ def main():
     p.add_argument("--num-forest-lines", type=int, default=3)
     p.add_argument("--scheduler", default="cosine", choices=["cosine", "step", "none"])
     p.add_argument("--save-every", type=int, default=10)
+    # Per-spectrum median normalization in [norm_min_lambda, norm_max_lambda]
+    # is ON by default (Garnett+2017 [1310, 1325] Å rest). v2 trainsets do
+    # NOT include normalization; this step has to happen at training-load
+    # time for now. Pass --no-normalize to disable for ablation.
+    p.add_argument("--no-normalize", dest="apply_normalize",
+                   action="store_false", default=True,
+                   help="Disable per-spectrum median normalization "
+                        "(reproduces the buggy pre-2026-05-01 behavior).")
+    p.add_argument("--norm-min-lambda", type=float, default=1310.0,
+                   help="Per-spectrum normalization window min Å rest. "
+                        "Default Garnett+2017 [1310, 1325].")
+    p.add_argument("--norm-max-lambda", type=float, default=1325.0)
     # Y1 (Turner+2024) Gaussian prior on (τ₀, β) is ON by default; pass
     # --no-y1-prior to drop it (e.g. for ablation studies).
     p.add_argument("--no-y1-prior", dest="apply_y1_prior",
@@ -139,6 +151,9 @@ def main():
         z_min=args.z_min, z_max=args.z_max, min_snr=args.min_snr,
         max_spectra=args.max_spectra,
         catalog_targetids=catalog_targetids,
+        apply_normalize=args.apply_normalize,
+        norm_min_lambda=args.norm_min_lambda,
+        norm_max_lambda=args.norm_max_lambda,
         dtype=torch.float32,
     )
     print(f"[main] loaded {ts.n_spectra} spectra × {ts.n_pix} pixels")
@@ -152,11 +167,28 @@ def main():
     # 3) Build the model.
     # Pass rest_wavelengths and mu through so the saved H5 includes the
     # metadata the legacy inference loader expects.
+    #
+    # Carry the normalization region forward so save_h5_model writes it
+    # into the .h5 → inference picks it up automatically (see
+    # null_gp.NullGPMAT.__init__ for the read-side). When --no-normalize
+    # was passed, write NaN as a sentinel: the inference loader will
+    # detect NaN, skip the params mutation, and warn the user that the
+    # model was trained un-normalized so they need to set the
+    # normalization region explicitly. Distinguishes from legacy v1 .h5
+    # files (no fields at all) which still fall back silently.
+    if args.apply_normalize:
+        norm_min_for_model = args.norm_min_lambda
+        norm_max_for_model = args.norm_max_lambda
+    else:
+        norm_min_for_model = float("nan")
+        norm_max_for_model = float("nan")
     model = GPModelV2(
         num_pixels=ts.n_pix, k=args.num_pca_components,
         init_M=initial_M, init_log_omega=initial_log_omega,
         rest_wavelengths=ts.rest_wavelengths,
         mu=ts.mu,  # may be None if --no-center
+        normalization_min_lambda=norm_min_for_model,
+        normalization_max_lambda=norm_max_for_model,
     )
 
     # Sanity: every initial parameter must be finite, otherwise the

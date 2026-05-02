@@ -389,3 +389,50 @@ reference doc — read the prose, not just the tables):
 - `gpy_dla_detection/plottings/plot_model.py:237`: `argmax` → `nanargmax` to fix a NaN-label bug in `plot_samples_vs_this_mu`. Behaviour-preserving (the unfixed code crashes the model overlay; this restores it).
 
 **93 tests pass**: the original 80 + 6 voigt_v2 parity + 5 lyb_veto unit + 2 smoke-target contamination.
+
+## 14. GreatLakes session — 2026-04-30 (τ-EB recipe)
+
+PR #5 lands a per-spectrum empirical-Bayes τ_eff fit
+(`gpy_dla_detection/tau_eb.py`, CLI `--enable_tau_eb 1`) that closes
+65 % of the median DLA-regime N_HI bias on n=5000 random 2LPT spectra
+with no measurable cost overhead. Default OFF.
+
+| Topic | File |
+|-------|------|
+| Recipe walkthrough + demo figure | `docs/tau_eb_hcd_mask.md` |
+| Per-mock story + example spectra | `docs/stories/tau_eb_story_{2lpt,london,saclay}.md` |
+| Population-scale validation | `docs/notes/2026-04-30_tau_eb_phase_b_5k_2lpt.md` |
+| Hypothesis ledger + scope | `docs/notes/2026-04-29_bayesian_correctness_synthesis.md` |
+| n=90 cherry-pick reversal (HCD-mask now off-by-default) | `docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md` |
+| Production cost in node-hours | `docs/notes/2026-04-29_production_cost_estimate.md` |
+
+**Key API**:
+```python
+from gpy_dla_detection.tau_eb import fit_tau_eb
+tau_eb_0, info = fit_tau_eb(
+    params=..., prior=..., learned_file=...,
+    rest_wavelengths=..., flux=..., noise_variance=..., pixel_mask=...,
+    z_qso=..., prev_tau_0_seed=0.00246, prev_beta=3.62,
+    tau_factors=(0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
+    apply_hcd_mask=False,    # default — at scale the mask over-corrects
+    objective="null",        # cheap K=8 null builds; "dla" is more rigorous
+    dla_samples=None,        # required only when objective="dla"
+)
+# Then run production inference at tau_eb_0 in place of the seed.
+```
+
+**Tests**: 7 in `tests/test_tau_eb_wiring.py` — module run, holder
+defaults, both objectives, both HCD-mask branches, input validation,
+backward-compat alias.
+
+**Validation runs queued/landed**:
+- `49040725` — 5k 2lpt, FILTER=0, max_dlas=3, 4× grid, BAL incl. **DONE**.
+- `49062626/27/28` — multi-mock 5k Phase B, 6× grid (running).
+- `49063779` — 5k 2lpt FILTER=1, max_dlas=4, BAL excl, 6× grid (running).
+- `49065622` — 50k 2lpt FILTER=1, max_dlas=4, BAL excl (running).
+- `examples/render_story_figures.sh` — 9 inline figures embedded in stories.
+
+**Out of scope for this PR** (separate follow-ups):
+- Sub-DLA / LLS prior boundary fix (orthogonal to τ-EB; H4 in synthesis)
+- Cost gap closure (1M QSOs = ~340 node-hours, target ~50; 6× over)
+- Long-run sampler (H6); non-Gaussian residuals (H7); retrained-GP (H8)

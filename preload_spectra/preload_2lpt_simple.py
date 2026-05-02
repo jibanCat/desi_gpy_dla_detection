@@ -403,7 +403,11 @@ def main():
     print(f"[step 5/5] wrote {args.output} ({n_keep} spectra × {n_pix} pixels)")
 
     # Companion README + JSON metadata for human / tooling consumption.
-    from preload_spectra._dataset_readme import write_dataset_readme
+    # Sibling module — work regardless of whether the repo is pip-installed
+    # (only `gpdla` env on GreatLakes has the editable install). Bare
+    # `from _dataset_readme import …` works because sys.path[0] is the
+    # script's directory under `python preload_spectra/preload_2lpt_simple.py`.
+    from _dataset_readme import write_dataset_readme
     filter_pipeline = [
         f"z in [{args.z_min}, {args.z_max}] AND ZWARN==0 (if column exists)",
     ]

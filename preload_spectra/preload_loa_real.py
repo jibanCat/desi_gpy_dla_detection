@@ -288,6 +288,11 @@ def main():
     p.add_argument("--max-spectra", type=int, default=None)
     p.add_argument("--exclude-bal", action="store_true",
                    help="Exclude TARGETIDs with BI_CIV > --bal-min")
+    p.add_argument("--bal-only", action="store_true",
+                   help="KEEP only TARGETIDs with BI_CIV > --bal-min (drop non-BAL). "
+                        "Mutually exclusive with --exclude-bal. For training a "
+                        "BAL-only GP that can be Bayesian-model-selected against "
+                        "the non-BAL GP at inference.")
     p.add_argument("--bal-col", default="BI_CIV")
     p.add_argument("--bal-min", type=float, default=0.0,
                    help="Exclude rows where BAL_COL > this (default 0)")
@@ -356,7 +361,9 @@ def main():
                   f"{n_after_z - n_after_zwarn} rows from the z-cut subset)")
     keep = z_mask.copy()
 
-    # ---- (2) BAL anti-join (in-catalog) ----
+    # ---- (2) BAL filter (in-catalog) ----
+    if args.exclude_bal and args.bal_only:
+        sys.exit("[error] --exclude-bal and --bal-only are mutually exclusive")
     if args.exclude_bal:
         if args.bal_col not in qcat.colnames:
             sys.exit(f"[error] --exclude-bal: column {args.bal_col!r} not in qsocat")
@@ -367,8 +374,18 @@ def main():
         n_bal_dropped = before - n_after_bal
         print(f"[filter 2] exclude_bal ({args.bal_col} > {args.bal_min})            "
               f": {n_after_bal:>10d} rows  ({n_bal_dropped:>10d} dropped)")
+    elif args.bal_only:
+        if args.bal_col not in qcat.colnames:
+            sys.exit(f"[error] --bal-only: column {args.bal_col!r} not in qsocat")
+        bal_flag = qcat[args.bal_col] > args.bal_min
+        before = int(keep.sum())
+        keep &= bal_flag
+        n_after_bal = int(keep.sum())
+        n_bal_dropped = before - n_after_bal
+        print(f"[filter 2] bal_only ({args.bal_col} > {args.bal_min}) keep BALs   "
+              f": {n_after_bal:>10d} rows  ({n_bal_dropped:>10d} dropped non-BAL)")
     else:
-        print(f"[filter 2] exclude_bal: SKIPPED (BALs are KEPT in this run)")
+        print(f"[filter 2] exclude_bal / bal_only: SKIPPED (mixed BAL+non-BAL)")
 
     # ---- (3) HCD anti-join (external catalog) ----
     if args.hcd_cat is not None:
@@ -537,6 +554,7 @@ def main():
         f.attrs["qsocat"] = str(args.qsocat)
         f.attrs["specdir"] = str(args.specdir)
         f.attrs["exclude_bal"] = bool(args.exclude_bal)
+        f.attrs["bal_only"] = bool(args.bal_only)
         f.attrs["hcd_cat"] = str(args.hcd_cat) if args.hcd_cat else ""
         f.attrs["hcd_min_nhi"] = float(args.hcd_min_nhi) if args.hcd_cat else float("nan")
         f.attrs["min_lambda"] = float(args.min_lambda)
@@ -548,13 +566,22 @@ def main():
     print(f"[step 5/5] wrote {args.output} ({len(out_tids)} spectra × {n_pix} pixels)")
 
     # Companion README + JSON metadata for human / tooling consumption.
-    from preload_spectra._dataset_readme import write_dataset_readme
+    # Sibling module — `python preload_spectra/preload_loa_real.py` makes
+    # sys.path[0] = preload_spectra/, so import directly without the package
+    # prefix. The `from preload_spectra._dataset_readme` form fails because
+    # the package's parent dir isn't on sys.path under this invocation.
+    from _dataset_readme import write_dataset_readme
     filter_pipeline = [
         f"z in [{args.z_min}, {args.z_max}] AND ZWARN==0",
     ]
     if args.exclude_bal:
         filter_pipeline.append(
             f"BAL anti-join: drop {args.bal_col} > {args.bal_min}"
+        )
+    if args.bal_only:
+        filter_pipeline.append(
+            f"BAL-only filter: KEEP only {args.bal_col} > {args.bal_min} "
+            f"(drop non-BAL)"
         )
     if args.hcd_cat is not None:
         sem = ("DLAs only" if args.hcd_min_nhi >= 20.3

@@ -102,6 +102,80 @@ def _de_forest_batch(fluxes: np.ndarray, noise_variances: np.ndarray,
     return de_fluxes, de_noise
 
 
+def _normalize_by_rest_median(
+    fluxes: np.ndarray,
+    noise_variances: np.ndarray,
+    rest_wavelengths: np.ndarray,
+    norm_min_lambda: float,
+    norm_max_lambda: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per-spectrum median-flux normalization in [norm_min_lambda, norm_max_lambda].
+
+    Mirrors ``SpectrumProcessor.normalize_spectra`` from the v1 trainer
+    (``learn_qso_model.py:290``) but operates on already-interpolated
+    rest-frame fluxes.
+
+    Garnett+2017 (arXiv:1605.04460) recommended region is [1310, 1325] Å
+    rest, redward of the Lyα forest and void of strong emission lines.
+    The v1 production model used [1425, 1475] Å instead. v2 trainsets
+    do not include [1425, 1475] in their rest grid (they end at ~1421 Å)
+    so [1310, 1325] is the appropriate choice.
+
+    Parameters
+    ----------
+    fluxes : (N, n_pix) np.ndarray
+    noise_variances : (N, n_pix) np.ndarray
+    rest_wavelengths : (n_pix,) np.ndarray
+    norm_min_lambda, norm_max_lambda : float
+        Inclusive boundaries for the median window.
+
+    Returns
+    -------
+    fluxes_normed : (N, n_pix) np.ndarray
+        ``fluxes / median_flux`` per spectrum.
+    nv_normed : (N, n_pix) np.ndarray
+        ``noise_variance / median_flux**2`` per spectrum (preserves SNR).
+    medians : (N,) np.ndarray
+        The per-spectrum median used for normalization. Spectra with too
+        few valid pixels in the window get NaN here AND have their
+        flux row zeroed out (they're effectively unusable).
+    """
+    norm_mask = (rest_wavelengths >= norm_min_lambda) & (rest_wavelengths <= norm_max_lambda)
+    if norm_mask.sum() < 2:
+        raise ValueError(
+            f"Normalization window [{norm_min_lambda}, {norm_max_lambda}] Å "
+            f"contains < 2 pixels of the rest grid "
+            f"[{rest_wavelengths.min():.1f}, {rest_wavelengths.max():.1f}] — "
+            f"choose a different window."
+        )
+    # Suppress the "All-NaN slice" RuntimeWarning here — it fires for any
+    # row that's entirely NaN inside the normalization window, which is a
+    # legitimate (if rare) outcome (e.g. localized pixel-masking removed
+    # all pixels in [1310, 1325]). The downstream check on `bad` below
+    # zeros those spectra out cleanly, and the print line announces the
+    # count, so the warning itself is just noise.
+    import warnings as _warnings
+    with _warnings.catch_warnings():
+        _warnings.filterwarnings("ignore",
+                                 category=RuntimeWarning,
+                                 message="All-NaN slice encountered")
+        medians = np.nanmedian(fluxes[:, norm_mask], axis=1)  # (N,)
+    # Spectra with median == 0 or NaN are unusable
+    bad = ~np.isfinite(medians) | (medians == 0)
+    n_bad = int(bad.sum())
+    if n_bad > 0:
+        print(f"[dataset] normalize: {n_bad} of {len(medians)} spectra have no "
+              f"finite median in [{norm_min_lambda}, {norm_max_lambda}]; "
+              f"these will be zeroed out.")
+    safe_med = np.where(bad, 1.0, medians)  # avoid div-by-zero; we'll zero them below
+    fluxes_normed = fluxes / safe_med[:, None]
+    nv_normed = noise_variances / (safe_med[:, None] ** 2)
+    if n_bad > 0:
+        fluxes_normed[bad] = np.nan
+        nv_normed[bad] = np.nan
+    return fluxes_normed, nv_normed, medians
+
+
 def _center_fluxes_inverse_variance(fluxes: np.ndarray, noise_variances: np.ndarray,
                                     ) -> tuple[np.ndarray, np.ndarray]:
     """Inverse-variance-weighted per-pixel mean subtraction.
@@ -139,8 +213,11 @@ def load_preprocessed_h5(
     catalog_targetids: Optional[set[int]] = None,
     max_noise_variance: float = 9.0,
     apply_mask: bool = True,
+    apply_normalize: bool = True,
     apply_de_forest: bool = True,
     apply_center: bool = True,
+    norm_min_lambda: float = 1310.0,
+    norm_max_lambda: float = 1325.0,
     de_forest_tau_0: float = 0.00246,
     de_forest_beta: float = 3.62,
     de_forest_num_lines: int = 3,
@@ -232,14 +309,27 @@ def load_preprocessed_h5(
     print(f"[dataset] {h5_path.name}: {n_total} total → {n_filtered} after "
           f"z/SNR/catalog filter → {n_kept} after max_spectra cap")
 
-    # Train-time preprocessing — mirrors the legacy SpectrumProcessor steps
-    # 3 (mask) + 6 (de-forest) + 7 (center). Skipped via flags if the caller
-    # wants to inspect intermediate state.
+    # Train-time preprocessing — mirrors the legacy SpectrumProcessor pipeline:
+    # 1. mask high-noise pixels (`SpectrumProcessor.mask_noisy_pixels`)
+    # 2. normalize per-spectrum by median in [norm_min_lambda, norm_max_lambda]
+    #    (`SpectrumProcessor.normalize_spectra`) — Garnett+2017 [1310, 1325]
+    # 3. de-forest at fixed Turner+2024 (`SpectrumProcessor.de_forest_spectra`)
+    # 4. inverse-variance-weighted mean centering (`SpectrumProcessor.center_fluxes`)
     if apply_mask:
         fluxes, noise_variance = _mask_high_noise_pixels(
             fluxes, noise_variance, max_noise_variance
         )
         print(f"[dataset] mask: max_noise_variance={max_noise_variance}")
+
+    if apply_normalize:
+        fluxes, noise_variance, _meds = _normalize_by_rest_median(
+            fluxes, noise_variance, rest_wave,
+            norm_min_lambda=norm_min_lambda,
+            norm_max_lambda=norm_max_lambda,
+        )
+        print(f"[dataset] normalize: per-spectrum median in "
+              f"[{norm_min_lambda}, {norm_max_lambda}] Å rest "
+              f"(Garnett+2017 convention)")
 
     if apply_de_forest:
         fluxes, noise_variance = _de_forest_batch(

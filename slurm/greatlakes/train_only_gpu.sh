@@ -4,8 +4,11 @@
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=32G
-#SBATCH -t 2:00:00
+# 300k spectra × 3801 px × float32 = 4.6 GB per array, ×3 main arrays plus
+# de-forest/centering intermediates → loader peaks ~32-40 GB. 32G OOMs every
+# time. 64G has comfortable headroom.
+#SBATCH --mem=64G
+#SBATCH -t 4:00:00
 #SBATCH -J train_v2
 #SBATCH -o slurm/greatlakes/train_v2_%j.log
 #SBATCH -e slurm/greatlakes/train_v2_%j.log
@@ -29,7 +32,9 @@ RUN_TAG="${RUN_TAG:?must be set to the RUN_TAG of the preload job, e.g. 2lpt_loa
 
 OUTDIR_BASE="${OUTDIR_BASE:-/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection}"
 RUN_DIR="${RUN_DIR:-${OUTDIR_BASE}/v2_runs/${RUN_TAG}}"
-TRAINSET_H5="${RUN_DIR}/trainset.h5"
+# Allow re-using a trainset from a different RUN_DIR (e.g. the original
+# pre-fix trainset for a "from-scratch" retrain into a fresh output dir).
+TRAINSET_H5="${TRAINSET_H5:-${RUN_DIR}/trainset.h5}"
 
 [ -r "$TRAINSET_H5" ] || {
     echo "[error] trainset.h5 not found: $TRAINSET_H5" >&2
@@ -90,7 +95,8 @@ python -u train_gp.py \
     --num-forest-lines "$NUM_FOREST_LINES" \
     --output-dir "$RUN_DIR" \
     --device cuda \
-    --save-every 25
+    --save-every 25 \
+    ${EXTRA_TRAIN_FLAGS:-}
 
 LOSS_FILE="$RUN_DIR/loss_history.json"
 [ -r "$LOSS_FILE" ] || { echo "[error] loss_history.json not written" >&2; exit 7; }

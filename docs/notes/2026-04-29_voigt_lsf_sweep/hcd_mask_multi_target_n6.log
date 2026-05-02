@@ -1,0 +1,164 @@
+
+==================================================================
+[target] mock=2lpt tid=120046865 z_qso=2.962 truth_z=2.7730 truth_logNHI=21.263
+==================================================================
+target=120046865 z_qso=2.9620 truth: z=2.773, logNHI=21.263
+
+[residuals diagnostics]
+  residuals/σ:  min=-2.94  median=-0.15  max=3.14
+  μ_pred range:    [0.732, 4.056]
+  y range:         [-11.742, 14.547]
+
+[HCD mask] threshold = 1.5σ
+  pixels: 1511 total, 61 flagged as HCD (4.0%)
+
+NHI grid 20.30–22.00 step 0.025 (69 pts), τ-grid [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] (K=6)
+
+[scanning naive (no HCD mask)]
+[scanning HCD-masked]
+
+treatment                         tau best   MAP NHI     bias  log L (truth)
+--------------------------------------------------------------------------------
+(1) production τ=1.0                  1.00    21.600   +0.337       -2865.91
+(2) EB naive                          1.50    21.500   +0.237       -2863.26
+(2) EB + HCD-mask (1.5σ)              2.00    21.200   -0.063       -2683.33
+
+  ⇒ HCD masking improves EB: naive MAP=21.500 → masked MAP=21.200  (-0.300 dex)
+  ⇒ τ_best shifted: 1.5 → 2.0 under HCD masking (the convention matters for τ).
+
+==================================================================
+[target] mock=london tid=50129689 z_qso=2.417 truth_z=2.156 truth_logNHI=21.280
+==================================================================
+target=50129689 z_qso=2.4169 truth: z=2.156, logNHI=21.280
+
+[residuals diagnostics]
+  residuals/σ:  min=-3.18  median=-0.24  max=11.87
+  μ_pred range:    [1.053, 3.825]
+  y range:         [-0.087, 6.442]
+
+[HCD mask] threshold = 1.5σ
+  pixels: 698 total, 129 flagged as HCD (18.5%)
+
+NHI grid 20.30–22.00 step 0.025 (69 pts), τ-grid [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] (K=6)
+
+[scanning naive (no HCD mask)]
+[scanning HCD-masked]
+
+treatment                         tau best   MAP NHI     bias  log L (truth)
+--------------------------------------------------------------------------------
+(1) production τ=1.0                  1.00    21.325   +0.045        -124.51
+(2) EB naive                          2.00    21.300   +0.020         -89.90
+(2) EB + HCD-mask (1.5σ)              2.00    21.300   +0.020         -99.44
+
+  ⇒ HCD masking didn't shift EB MAP meaningfully on this target (+0.000 dex).
+  ⇒ τ_best unchanged at 2.0 (HCD pixels were not a τ-fit confound here).
+
+==================================================================
+[target] mock=2lpt tid=50068236 z_qso=2.464 truth_z=2.155 truth_logNHI=20.339
+==================================================================
+target=50068236 z_qso=2.4635 truth: z=2.155, logNHI=20.339
+
+[residuals diagnostics]
+  residuals/σ:  min=-3.38  median=-0.08  max=4.44
+  μ_pred range:    [1.043, 3.818]
+  y range:         [-0.477, 4.883]
+
+[HCD mask] threshold = 1.5σ
+  pixels: 768 total, 70 flagged as HCD (9.1%)
+
+NHI grid 20.30–22.00 step 0.025 (69 pts), τ-grid [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] (K=6)
+
+[scanning naive (no HCD mask)]
+[scanning HCD-masked]
+
+treatment                         tau best   MAP NHI     bias  log L (truth)
+--------------------------------------------------------------------------------
+(1) production τ=1.0                  1.00    20.450   +0.111        -481.92
+(2) EB naive                          2.00    20.425   +0.086        -448.88
+(2) EB + HCD-mask (1.5σ)              2.00    20.300   -0.039        -360.90
+
+  ⇒ HCD masking improves EB: naive MAP=20.425 → masked MAP=20.300  (-0.125 dex)
+  ⇒ τ_best unchanged at 2.0 (HCD pixels were not a τ-fit confound here).
+
+==================================================================
+[target] mock=saclay tid=2229000465 z_qso=2.231 truth_z=2.026 truth_logNHI=20.757
+==================================================================
+target=2229000465 z_qso=2.2305 truth: z=2.026, logNHI=20.757
+
+[residuals diagnostics]
+  residuals/σ:  min=-3.42  median=0.13  max=6.66
+  μ_pred range:    [1.086, 4.019]
+  y range:         [-0.650, 6.081]
+
+[HCD mask] threshold = 1.5σ
+  pixels: 414 total, 61 flagged as HCD (14.7%)
+
+NHI grid 20.30–22.00 step 0.025 (69 pts), τ-grid [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] (K=6)
+
+[scanning naive (no HCD mask)]
+[scanning HCD-masked]
+
+treatment                         tau best   MAP NHI     bias  log L (truth)
+--------------------------------------------------------------------------------
+(1) production τ=1.0                  1.00    20.875   +0.118        -243.94
+(2) EB naive                          2.00    20.850   +0.093        -226.60
+(2) EB + HCD-mask (1.5σ)              2.00    20.775   +0.018        -172.68
+
+  ⇒ HCD masking improves EB: naive MAP=20.850 → masked MAP=20.775  (-0.075 dex)
+  ⇒ τ_best unchanged at 2.0 (HCD pixels were not a τ-fit confound here).
+
+==================================================================
+[target] mock=saclay tid=2385001246 z_qso=2.690 truth_z=2.297 truth_logNHI=19.557
+==================================================================
+target=2385001246 z_qso=2.6903 truth: z=2.297, logNHI=19.557
+
+[residuals diagnostics]
+  residuals/σ:  min=-4.90  median=-1.11  max=1.75
+  μ_pred range:    [0.996, 4.426]
+  y range:         [-0.830, 4.131]
+
+[HCD mask] threshold = 1.5σ
+  pixels: 1113 total, 440 flagged as HCD (39.5%)
+
+NHI grid 20.30–22.00 step 0.025 (69 pts), τ-grid [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] (K=6)
+
+[scanning naive (no HCD mask)]
+[scanning HCD-masked]
+
+treatment                         tau best   MAP NHI     bias  log L (truth)
+--------------------------------------------------------------------------------
+(1) production τ=1.0                  1.00    20.300   +0.743        -739.12
+(2) EB naive                          2.00    20.300   +0.743        -695.75
+(2) EB + HCD-mask (1.5σ)              2.00    20.300   +0.743        -283.66
+
+  ⇒ HCD masking didn't shift EB MAP meaningfully on this target (+0.000 dex).
+  ⇒ τ_best unchanged at 2.0 (HCD pixels were not a τ-fit confound here).
+
+==================================================================
+[target] mock=2lpt tid=260170003 z_qso=2.653 truth_z=2.317 truth_logNHI=17.844
+==================================================================
+target=260170003 z_qso=2.6529 truth: z=2.317, logNHI=17.844
+
+[residuals diagnostics]
+  residuals/σ:  min=-7.42  median=-0.47  max=2.41
+  μ_pred range:    [1.004, 4.563]
+  y range:         [-0.237, 3.119]
+
+[HCD mask] threshold = 1.5σ
+  pixels: 1056 total, 309 flagged as HCD (29.3%)
+
+NHI grid 20.30–22.00 step 0.025 (69 pts), τ-grid [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] (K=6)
+
+[scanning naive (no HCD mask)]
+[scanning HCD-masked]
+
+treatment                         tau best   MAP NHI     bias  log L (truth)
+--------------------------------------------------------------------------------
+(1) production τ=1.0                  1.00    20.300   +2.456       -1007.87
+(2) EB naive                          1.50    20.300   +2.456        -994.65
+(2) EB + HCD-mask (1.5σ)              2.00    20.300   +2.456        -726.82
+
+  ⇒ HCD masking didn't shift EB MAP meaningfully on this target (+0.000 dex).
+  ⇒ τ_best shifted: 1.5 → 2.0 under HCD masking (the convention matters for τ).
+
+ALL_DONE

@@ -52,6 +52,16 @@ class TrainConfig:
     # Forward-model knobs
     num_forest_lines: int = 3
     apply_y1_prior: bool = True
+    # Numerical-stability knobs for the (k, k) Woodbury Cholesky.
+    # ``jitter`` is the default ridge added to ``B = I + M.T diag(d_inv) M``
+    # before Cholesky. Set to a small positive value to avoid f32 roundoff
+    # producing a non-PD matrix on bright low-noise mock spectra. On any
+    # ``_LinAlgError`` the trainer retries the same batch with progressively
+    # larger jitter (jitter * jitter_retry_factor^retry up to
+    # jitter_retry_max_steps); if all retries fail the batch is skipped.
+    jitter: float = 1e-6
+    jitter_retry_factor: float = 100.0  # 1e-6 → 1e-4 → 1e-2 → 1.0 → 1e2
+    jitter_retry_max_steps: int = 4
     # I/O cadence
     save_every: int = 10  # epochs between full-checkpoint saves
     # Misc
@@ -115,6 +125,15 @@ def save_h5_model(model: GPModelV2, output_dir: Path, epoch: int) -> Path:
         f.create_dataset("rest_wavelengths", data=state["rest_wavelengths"])
         f.create_dataset("mu", data=state["mu"])
         f.create_dataset("max_noise_variance", data=np.array(state["max_noise_variance"]))
+        # Per-spectrum normalization region used at PRELOAD time. Inference
+        # MUST normalize incoming spectra in the same region; otherwise the
+        # absolute flux scale of the prediction won't match the data.
+        # See null_gp.py:set_data — picks these up if present, falls back to
+        # params.normalization_{min,max}_lambda for legacy v1 .h5 files.
+        f.create_dataset("normalization_min_lambda",
+                         data=np.array(state["normalization_min_lambda"]))
+        f.create_dataset("normalization_max_lambda",
+                         data=np.array(state["normalization_max_lambda"]))
         f.attrs["num_pixels"] = state["num_pixels"]
         f.attrs["k"] = state["k"]
         f.attrs["epoch"] = epoch
@@ -218,13 +237,48 @@ def train(
             bl = lya_1pzs_cpu[idx].to(device, non_blocking=pin)
             bn = noise_variances_cpu[idx].to(device, non_blocking=pin)
             bz = z_qsos_cpu[idx].to(device, non_blocking=pin)
-            loss = vectorized_nll(
-                bf, bl, bn, bz,
-                model.M, model.log_omega, model.log_c_0, model.log_tau_0, model.log_beta,
-                transition_wavelengths, oscillator_strengths,
-                num_forest_lines=cfg.num_forest_lines,
-                apply_y1_prior=cfg.apply_y1_prior,
-            )
+
+            # Try the batch with progressively larger jitter on Cholesky
+            # failure. f32 mocks occasionally have a single bright spectrum
+            # whose post-normalization noise variance produces an
+            # ill-conditioned Woodbury matrix; bumping jitter resolves it
+            # without distorting the well-conditioned spectra in the batch.
+            loss = None
+            for retry in range(cfg.jitter_retry_max_steps + 1):
+                cur_jitter = cfg.jitter * (cfg.jitter_retry_factor ** retry)
+                try:
+                    loss = vectorized_nll(
+                        bf, bl, bn, bz,
+                        model.M, model.log_omega, model.log_c_0,
+                        model.log_tau_0, model.log_beta,
+                        transition_wavelengths, oscillator_strengths,
+                        num_forest_lines=cfg.num_forest_lines,
+                        apply_y1_prior=cfg.apply_y1_prior,
+                        jitter=cur_jitter,
+                    )
+                    if retry > 0:
+                        print(
+                            f"[trainer_v2] epoch {epoch} batch start={start} "
+                            f"recovered with jitter={cur_jitter:.1e} "
+                            f"(retry {retry}/{cfg.jitter_retry_max_steps})",
+                            flush=True,
+                        )
+                    break
+                except torch._C._LinAlgError as e:
+                    if retry == cfg.jitter_retry_max_steps:
+                        print(
+                            f"[trainer_v2] epoch {epoch} batch start={start} "
+                            f"SKIPPED: Cholesky failed at jitter={cur_jitter:.1e} "
+                            f"after {cfg.jitter_retry_max_steps} retries: {e}",
+                            flush=True,
+                        )
+                        loss = None
+                        break
+
+            if loss is None:
+                # Skip this batch entirely; opt state is already zero'd.
+                continue
+
             loss.backward()
             if cfg.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)

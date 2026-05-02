@@ -729,7 +729,28 @@ class DLAGP(NullGP):
                 sample_probabilities[:] = np.exp(
                     sample_log_likelihoods[:, num_dlas] - max_log_likelihood
                 )
-                if filter_low_likelihood and (null_evidence is not None):
+                # FILTER fix #5 (2026-04-29): the truncated-region bias correction
+                # below produces unreliable values for the 1-DLA evidence when
+                # the initial-scan valid_mask is small or degenerate (the failure
+                # mode that produced p_DLA = 0.05 on TID 120046865 despite a
+                # real DLA). For the **single-DLA evidence (num_dlas == 0)** we
+                # therefore always use the unbiased initial-scan estimate (a
+                # uniform prior sample of n_initial=5000, which is enough for
+                # 1-DLA marginalization) rather than the truncated correction.
+                # The truncated correction still applies for num_dlas >= 1 where
+                # the dimensionality justifies the cost / variance tradeoff.
+                if (filter_low_likelihood
+                        and (null_evidence is not None)
+                        and num_dlas == 0
+                        and not np.all(np.isnan(initial_logL))):
+                    initial_max_L = np.nanmax(initial_logL)
+                    initial_probs = np.exp(initial_logL - initial_max_L)
+                    log_likelihoods_dla[num_dlas] = (
+                        initial_max_L + np.log(np.nanmean(initial_probs))
+                    )
+                    # Skip the multi-DLA truncated-correction branch — early-stop
+                    # check below still applies normally.
+                elif filter_low_likelihood and (null_evidence is not None):
                     # ===== Bias correction for truncated region using initial scan =====
                     # We are approximating the model evidence (log Z) by partitioning the sample space
                     # into two regions:
@@ -1029,6 +1050,9 @@ class DLAGPMAT(DLAGP):
         prev_tau_0: float = 0.0023,
         prev_beta: float = 3.65,
     ):
+        # See NullGPMAT for the rationale: v2 trained .h5 carries its own
+        # normalization region; mutate params in place if present so set_data
+        # picks it up.
         with h5py.File(learned_file, "r") as learned:
 
             # Check if the learned model is DESI or not
@@ -1054,6 +1078,9 @@ class DLAGPMAT(DLAGP):
                 log_c_0 = learned["log_c_0"][0, 0]
                 log_tau_0 = learned["log_tau_0"][0, 0]
                 log_beta = learned["log_beta"][0, 0]
+
+            from ._h5_helpers import apply_normalization_from_h5
+            apply_normalization_from_h5(params, learned, verbose=False)
 
         super().__init__(
             params,

@@ -163,6 +163,10 @@ class NullGP:
 
         # normalize flux: be aware that you might choose a normalization range
         # out side of the spectrum range.
+        # Window comes from self.params — globally consistent with the
+        # rest of the inference pipeline. NullGPMAT/DLAGPMAT/SubDLAGPMAT
+        # constructors mutate params.normalization_{min,max}_lambda when
+        # the trained .h5 carries v2-style metadata, so this stays in sync.
         if normalize:
             ind = (
                 (self.x >= self.params.normalization_min_lambda)
@@ -441,6 +445,11 @@ class NullGPMAT(NullGP):
         prev_tau_0: float = 0.0023,
         prev_beta: float = 3.65,
     ):
+        # v2 trained .h5 files include `normalization_{min,max}_lambda`
+        # datasets — when present we MUTATE params in place so that
+        # set_data + the rest of the inference pipeline read the right
+        # window. Without this, scale mismatch between training and
+        # inference would silently break the μ × A_lyα prediction.
         with h5py.File(learned_file, "r") as learned:
             # Check if the learned model is DESI or not
             if learned["log_tau_0"].ndim == 0:
@@ -465,6 +474,12 @@ class NullGPMAT(NullGP):
                 log_c_0 = learned["log_c_0"][0, 0]
                 log_tau_0 = learned["log_tau_0"][0, 0]
                 log_beta = learned["log_beta"][0, 0]
+
+            # v2 trained models carry their normalization region as scalar
+            # datasets. Sync ``params`` to the trained window (or warn
+            # if the model was trained with --no-normalize → NaN sentinel).
+            from ._h5_helpers import apply_normalization_from_h5
+            apply_normalization_from_h5(params, learned)
 
         super().__init__(
             params,

@@ -31,11 +31,15 @@
 #   no_dla_no_bal      DLAs (NHI ≥ 20.3) + BALs excluded; sub-DLAs/LLS kept
 #   no_hcd_with_bal    All HCDs (NHI ≥ 17.2) excluded; BALs KEPT
 #   no_hcd_no_bal      All HCDs + BALs excluded
+#   bal_only           ONLY BAL spectra (BI_CIV>0); all HCDs excluded
+#                       For training a BAL-only GP that can be Bayesian-
+#                       model-selected against the non-BAL GP.
 #
 # Submit:
 #   sbatch --export=ALL,VARIANT=no_dla_no_bal     slurm_train/preload_loa_only_nersc.sh
 #   sbatch --export=ALL,VARIANT=no_hcd_with_bal   slurm_train/preload_loa_only_nersc.sh
 #   sbatch --export=ALL,VARIANT=no_hcd_no_bal     slurm_train/preload_loa_only_nersc.sh
+#   sbatch --export=ALL,VARIANT=bal_only          slurm_train/preload_loa_only_nersc.sh
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
@@ -72,8 +76,12 @@ case "$VARIANT" in
         HCD_MIN_NHI="${HCD_MIN_NHI:-17.2}"
         EXCLUDE_BAL_FLAG="--exclude-bal"
         ;;
+    bal_only)
+        HCD_MIN_NHI="${HCD_MIN_NHI:-17.2}"
+        EXCLUDE_BAL_FLAG="--bal-only"
+        ;;
     *)
-        echo "[error] VARIANT must be no_dla_no_bal | no_hcd_with_bal | no_hcd_no_bal" >&2
+        echo "[error] VARIANT must be no_dla_no_bal | no_hcd_with_bal | no_hcd_no_bal | bal_only" >&2
         exit 2
         ;;
 esac

@@ -68,6 +68,8 @@ class GPModelV2(nn.Module):
         rest_wavelengths: Optional[torch.Tensor] = None,
         mu: Optional[torch.Tensor] = None,
         max_noise_variance: float = 9.0,
+        normalization_min_lambda: float = 1310.0,
+        normalization_max_lambda: float = 1325.0,
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
@@ -94,6 +96,13 @@ class GPModelV2(nn.Module):
         self.register_buffer("mu", mu.clone().detach())
 
         self.max_noise_variance = float(max_noise_variance)
+        # Normalization region used at PRELOAD/TRAINING time. Stored on the
+        # model so the inference pipeline can pick up the right window when
+        # loading this trained model. Default [1310, 1325] matches the
+        # Garnett+2017 (arXiv:1605.04460) recommendation; v1 production
+        # used [1425, 1475] but v2 trainsets don't extend that red.
+        self.normalization_min_lambda = float(normalization_min_lambda)
+        self.normalization_max_lambda = float(normalization_max_lambda)
 
         if init_M is None:
             init_M = torch.randn(num_pixels, k, dtype=dtype) * 0.05
@@ -136,6 +145,8 @@ class GPModelV2(nn.Module):
             "rest_wavelengths": self.rest_wavelengths.detach().cpu().numpy(),
             "mu": self.mu.detach().cpu().numpy(),
             "max_noise_variance": float(self.max_noise_variance),
+            "normalization_min_lambda": float(self.normalization_min_lambda),
+            "normalization_max_lambda": float(self.normalization_max_lambda),
             "num_pixels": self.num_pixels,
             "k": self.k,
         }

@@ -60,6 +60,7 @@ def vectorized_nll(
     tau_0_prior_sigma: float = DEFAULT_TAU_0_PRIOR_SIGMA,
     beta_prior_mu: float = DEFAULT_BETA_PRIOR_MU,
     beta_prior_sigma: float = DEFAULT_BETA_PRIOR_SIGMA,
+    jitter: float = 0.0,
 ) -> torch.Tensor:
     """Compute the (posterior, by default) NLL over a batch of spectra.
 
@@ -86,6 +87,17 @@ def vectorized_nll(
         same DESI Y1 Gaussian used by the legacy ``objective.py``.
     tau_0_prior_mu, tau_0_prior_sigma, beta_prior_mu, beta_prior_sigma : float
         Override the prior parameters if needed.
+    jitter : float
+        Extra ridge added to the diagonal of the (k, k) Woodbury matrix
+        ``B = I + M.T @ diag(d_inv) @ M`` before ``cholesky``. Default 0
+        keeps the math identical to legacy ``objective.spectrum_loss``
+        (so parity tests pass). Set to a small positive value
+        (e.g. ``1e-6``) when training on f32 batches where the
+        condition number of ``B`` for some spectra (typically very-bright
+        mock QSOs whose post-normalization noise variance is tiny) can
+        push Cholesky into "not positive-definite" territory due to
+        floating-point roundoff. The trainer (``trainer_v2.train``) sets
+        a sensible default and retries with larger jitter on failure.
 
     Returns
     -------
@@ -169,7 +181,8 @@ def vectorized_nll(
     # Using einsum: (n_pix,k) x (B,n_pix) x (n_pix,k) -> (B,k,k)
     # = sum_i d_inv[b,i] * M[i,j] * M[i,l]
     B_batched = torch.einsum("ij,bi,il->bjl", M, d_inv, M)   # (B, k, k)
-    B_batched = B_batched + torch.eye(k, device=device, dtype=dtype).unsqueeze(0)
+    eye_k = torch.eye(k, device=device, dtype=dtype).unsqueeze(0)
+    B_batched = B_batched + (1.0 + jitter) * eye_k
 
     # Cholesky and solve, batched.
     L = torch.linalg.cholesky(B_batched)                     # (B, k, k)
