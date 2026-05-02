@@ -39,7 +39,7 @@ source /global/cfs/cdirs/desi/software/desi_environment.sh main || {
 }
 
 # Inputs.
-QSOCAT="${QSOCAT:-/global/cfs/cdirs/desi/science/lya/y3/loa/catalogs/QSO_cat_loa_main_dark_healpix_v2-altbal-20241115.fits}"
+QSOCAT="${QSOCAT:-/global/cfs/cdirs/desi/users/martini/bal-catalogs/loa/QSO_cat_loa_main_dark_healpix_v3-altbal.fits}"
 LOA_ROOT="${LOA_ROOT:-/global/cfs/cdirs/desi/spectro/redux/loa}"
 
 # Output: default to a self-describing name under the user's pscratch.
