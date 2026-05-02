@@ -206,3 +206,95 @@ def test_small_jitter_perturbs_loss_minimally_in_f64():
     )
     rel = abs(loss_jit.item() - loss_zero.item()) / max(abs(loss_zero.item()), 1.0)
     assert rel < 1e-6, f"jitter=1e-9 perturbed loss by {rel:.2e} (>1e-6)"
+
+
+def test_jitter_does_not_bias_trained_hyperparameters_in_f64():
+    """100-epoch f64 train at jitter=0 vs jitter=1e-6 must converge to the
+    same hyperparameters within ~1e-4 relative.
+
+    Reviewer concern: ``B = M' diag(d_inv) M + (1+jitter) I`` participates
+    in both ``log|K|`` and ``K_inv_y``. With jitter=1e-6 the loss surface
+    shifts; in principle this could pull (log_omega, log_tau_0, log_beta)
+    away from the true optimum. f32 noise alone shifts hyperparameters
+    by ~1e-3, so we need f64 + a well-conditioned synthetic dataset to
+    isolate the jitter effect.
+
+    Pass criterion: |ΔM|_∞ < 1e-4, |Δlog_omega|_∞ < 1e-4, and the three
+    scalar hyperparameters agree to 1e-4 absolute. At convergence on a
+    smooth surface the jitter shift is O(jitter * trace(B^-1)) which for
+    k=4 and well-conditioned B is well below 1e-4.
+    """
+    from pathlib import Path
+    import tempfile
+
+    from gpy_dla_detection.training.model_v2 import GPModelV2
+    from gpy_dla_detection.training.trainer_v2 import TrainConfig, train
+
+    n_spectra = 64
+    n_pix = 64
+    k = 4
+    dtype = torch.float64
+
+    # Build a deterministic, well-conditioned f64 synthetic batch. Keep
+    # noise variance away from zero so neither run ever hits the
+    # _LinAlgError path (otherwise we'd be comparing skipped batches).
+    g = torch.Generator().manual_seed(2026)
+    fluxes = (0.5 * torch.randn(n_spectra, n_pix, generator=g, dtype=dtype))
+    noise_variances = (0.2 + 0.5 * torch.rand(n_spectra, n_pix, generator=g, dtype=dtype))
+    z_qsos = (2.5 + 0.5 * torch.rand(n_spectra, generator=g, dtype=dtype))
+    rest_lambda = torch.linspace(911.0, 1216.0, n_pix, dtype=dtype)
+    one_plus_z_qso = (1.0 + z_qsos).unsqueeze(-1)
+    lya_1pzs = one_plus_z_qso * rest_lambda / 1215.6701
+
+    tw = torch.tensor(TRANSITION_WAVELENGTHS_NP, dtype=dtype)
+    os_ = torch.tensor(OSCILLATOR_STRENGTHS_NP, dtype=dtype)
+
+    def _train(jitter: float) -> dict:
+        # Re-seed before EVERY model construction so init_M / init_log_omega
+        # are bit-identical between the two runs.
+        torch.manual_seed(0)
+        model = GPModelV2(num_pixels=n_pix, k=k, dtype=dtype)
+        cfg = TrainConfig(
+            learning_rate=5e-3,
+            num_epochs=100,
+            batch_size=32,
+            scheduler="none",
+            apply_y1_prior=False,    # isolate likelihood gradient from prior
+            save_every=1000,         # don't pollute tmpdir
+            seed=0,
+            device="cpu",
+            jitter=jitter,
+            jitter_retry_factor=10.0,
+            jitter_retry_max_steps=0,  # NEVER retry — any failure should fail loud
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            train(
+                model, fluxes, lya_1pzs, noise_variances, z_qsos,
+                tw, os_, Path(tmp) / "run", cfg,
+            )
+        return dict(
+            M=model.M.detach().clone(),
+            log_omega=model.log_omega.detach().clone(),
+            log_c_0=model.log_c_0.detach().clone(),
+            log_tau_0=model.log_tau_0.detach().clone(),
+            log_beta=model.log_beta.detach().clone(),
+        )
+
+    state_zero = _train(jitter=0.0)
+    state_jit = _train(jitter=1e-6)
+
+    # Per-tensor max-abs deviations.
+    dM = (state_jit["M"] - state_zero["M"]).abs().max().item()
+    dlog_omega = (state_jit["log_omega"] - state_zero["log_omega"]).abs().max().item()
+    dlog_c_0 = (state_jit["log_c_0"] - state_zero["log_c_0"]).abs().item()
+    dlog_tau_0 = (state_jit["log_tau_0"] - state_zero["log_tau_0"]).abs().item()
+    dlog_beta = (state_jit["log_beta"] - state_zero["log_beta"]).abs().item()
+
+    tol = 1e-4
+    assert dM < tol, f"M diverged: max|ΔM| = {dM:.2e} (tol {tol:.0e})"
+    assert dlog_omega < tol, (
+        f"log_omega diverged: max|Δlog_omega| = {dlog_omega:.2e} (tol {tol:.0e})"
+    )
+    assert dlog_c_0 < tol, f"log_c_0 diverged by {dlog_c_0:.2e} (tol {tol:.0e})"
+    assert dlog_tau_0 < tol, f"log_tau_0 diverged by {dlog_tau_0:.2e} (tol {tol:.0e})"
+    assert dlog_beta < tol, f"log_beta diverged by {dlog_beta:.2e} (tol {tol:.0e})"
