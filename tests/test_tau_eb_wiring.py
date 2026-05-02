@@ -8,7 +8,10 @@ checks:
   3. With the SAME spectrum, the holder's chosen τ matches the diagnostic
      recipe's ``check_tau_eb_robust_mask.py`` for ``objective="dla"``.
 
-Skipped if the canonical 2lpt mock isn't available on this machine.
+Skipped if the canonical 2lpt mock isn't available on this machine, or
+if ``fitsio`` is not installed (``examples.smoke_one_spectrum`` requires
+it; environments without DESI/desispec stack — e.g. the CDDF-only
+``desc`` env — should skip rather than error on collection).
 """
 from __future__ import annotations
 
@@ -18,6 +21,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+# ``examples.smoke_one_spectrum`` (used by the canonical_spectrum fixture
+# and ``_build_params``) imports ``fitsio`` at module top. Skip the whole
+# module on environments without fitsio so ``pytest`` collection doesn't
+# error out.
+pytest.importorskip("fitsio")
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))

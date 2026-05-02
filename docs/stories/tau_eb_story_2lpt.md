@@ -78,7 +78,11 @@ mock-vs-real comparison.
 > (Turner+2024) and once with `--enable_tau_eb 1` letting the recipe
 > pick τ_0 per spectrum from a grid. SLURM array job `49040725`,
 > 16 tasks × 313 spectra each, ~3 h wall.
-> **Result CSV**: `tests/profile/results/tau_eb_phase_b_5k_2lpt.tsv`.
+> **Result TSV**: regenerated locally from the SLURM array job; not
+> kept in git (~700 KB per-target file). Re-run via `sbatch
+> slurm/greatlakes/phase_b_5k_array.sh` and concatenate
+> `phase_b_${SLURM_ARRAY_JOB_ID}/chunk_*.tsv`. Aggregate summary lives
+> in `tests/profile/results/phase_b_aggregate.csv`.
 
 ---
 
