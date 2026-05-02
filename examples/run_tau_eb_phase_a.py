@@ -26,10 +26,17 @@ from pathlib import Path
 import numpy as np
 
 
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
 def _process_one(row: dict) -> dict:
     """Run τ-fit on one TID. Returns a dict of the chosen tau (no-mask) and
     diagnostic info (no full bayes — Phase A is fast)."""
-    sys.path.insert(0, "/home/mfho/desi_gpy_dla_detection")
+    # ProcessPoolExecutor workers re-import the module, so they get
+    # _REPO_ROOT for free; we just need to make sure it's on sys.path
+    # before the relative imports below.
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
     # Inject the right voigt kernel inside the worker (one-time per process)
     from gpy_dla_detection.voigt_v2_inject import inject
     inject(kernel="boss-log-r2000", num_lines=3)

@@ -29,6 +29,9 @@ from pathlib import Path
 import numpy as np
 
 
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
 def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16,
                   max_dlas: int = 3, filter_low_likelihood: bool = False,
                   learned_file_override: str = None):
@@ -38,7 +41,11 @@ def _build_holder(num_dla_samples: int = 10000, max_workers: int = 16,
     learned file instead of the y3-preset default. Used for the
     training-data-anchor experiment (see docs/notes/2026-05-01_*).
     """
-    sys.path.insert(0, "/home/mfho/desi_gpy_dla_detection")
+    # ProcessPoolExecutor workers re-import the module, so they get
+    # _REPO_ROOT for free; we just ensure it's on sys.path before the
+    # relative imports below.
+    if _REPO_ROOT not in sys.path:
+        sys.path.insert(0, _REPO_ROOT)
     from gpy_dla_detection.voigt_v2_inject import inject
     inject(kernel="boss-log-r2000", num_lines=3)
 

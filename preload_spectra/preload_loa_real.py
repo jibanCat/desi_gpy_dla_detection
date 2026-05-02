@@ -554,6 +554,7 @@ def main():
         f.attrs["qsocat"] = str(args.qsocat)
         f.attrs["specdir"] = str(args.specdir)
         f.attrs["exclude_bal"] = bool(args.exclude_bal)
+        f.attrs["bal_only"] = bool(args.bal_only)
         f.attrs["hcd_cat"] = str(args.hcd_cat) if args.hcd_cat else ""
         f.attrs["hcd_min_nhi"] = float(args.hcd_min_nhi) if args.hcd_cat else float("nan")
         f.attrs["min_lambda"] = float(args.min_lambda)
@@ -576,6 +577,11 @@ def main():
     if args.exclude_bal:
         filter_pipeline.append(
             f"BAL anti-join: drop {args.bal_col} > {args.bal_min}"
+        )
+    if args.bal_only:
+        filter_pipeline.append(
+            f"BAL-only filter: KEEP only {args.bal_col} > {args.bal_min} "
+            f"(drop non-BAL)"
         )
     if args.hcd_cat is not None:
         sem = ("DLAs only" if args.hcd_min_nhi >= 20.3
