@@ -476,19 +476,10 @@ class NullGPMAT(NullGP):
                 log_beta = learned["log_beta"][0, 0]
 
             # v2 trained models carry their normalization region as scalar
-            # datasets. Mutate params in place so the rest of the pipeline
-            # (set_data) sees the right window.
-            if "normalization_min_lambda" in learned:
-                new_min = float(learned["normalization_min_lambda"][()])
-                new_max = float(learned["normalization_max_lambda"][()])
-                if (new_min != params.normalization_min_lambda
-                    or new_max != params.normalization_max_lambda):
-                    print(f"  → overriding params.normalization window from "
-                          f".h5: [{params.normalization_min_lambda:.1f}, "
-                          f"{params.normalization_max_lambda:.1f}] Å → "
-                          f"[{new_min:.1f}, {new_max:.1f}] Å")
-                    params.normalization_min_lambda = new_min
-                    params.normalization_max_lambda = new_max
+            # datasets. Sync ``params`` to the trained window (or warn
+            # if the model was trained with --no-normalize → NaN sentinel).
+            from ._h5_helpers import apply_normalization_from_h5
+            apply_normalization_from_h5(params, learned)
 
         super().__init__(
             params,

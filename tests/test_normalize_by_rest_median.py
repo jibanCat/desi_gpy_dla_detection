@@ -425,6 +425,34 @@ def test_null_gp_mat_falls_back_for_legacy_v1(tmp_path):
     assert params.normalization_max_lambda == 1475.0
 
 
+def test_null_gp_mat_warns_on_no_normalize_sentinel(tmp_path):
+    """v2 .h5 trained with --no-normalize writes NaN sentinel for
+    ``normalization_*_lambda``. Inference must (1) emit a RuntimeWarning
+    pointing the user at params.normalization_*_lambda, (2) NOT mutate
+    ``params`` (the user is expected to set the window themselves)."""
+    import warnings
+    from gpy_dla_detection.null_gp import NullGPMAT
+    DATA_ROOT = _data_root_or_skip()
+
+    p = _make_fake_v2_model_h5(
+        tmp_path, norm_min=float("nan"), norm_max=float("nan"),
+        include_norm_fields=True,
+    )
+    params = _build_params(norm_min=1425.0, norm_max=1475.0)
+    prior = _build_prior(params, DATA_ROOT)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        NullGPMAT(params, prior, learned_file=str(p))
+    # params unchanged — user must set them explicitly
+    assert params.normalization_min_lambda == 1425.0
+    assert params.normalization_max_lambda == 1475.0
+    msgs = [str(w.message) for w in caught
+            if issubclass(w.category, RuntimeWarning)]
+    assert any("--no-normalize" in m for m in msgs), (
+        f"expected --no-normalize RuntimeWarning, got: {msgs}"
+    )
+
+
 def test_set_data_uses_overridden_norm_region(tmp_path):
     """End-to-end: load v2 model → set_data reads from the (mutated) params."""
     from gpy_dla_detection.null_gp import NullGPMAT

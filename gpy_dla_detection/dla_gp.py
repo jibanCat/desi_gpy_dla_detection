@@ -1079,11 +1079,8 @@ class DLAGPMAT(DLAGP):
                 log_tau_0 = learned["log_tau_0"][0, 0]
                 log_beta = learned["log_beta"][0, 0]
 
-            if "normalization_min_lambda" in learned:
-                new_min = float(learned["normalization_min_lambda"][()])
-                new_max = float(learned["normalization_max_lambda"][()])
-                params.normalization_min_lambda = new_min
-                params.normalization_max_lambda = new_max
+            from ._h5_helpers import apply_normalization_from_h5
+            apply_normalization_from_h5(params, learned, verbose=False)
 
         super().__init__(
             params,

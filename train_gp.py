@@ -167,16 +167,28 @@ def main():
     # 3) Build the model.
     # Pass rest_wavelengths and mu through so the saved H5 includes the
     # metadata the legacy inference loader expects.
+    #
+    # Carry the normalization region forward so save_h5_model writes it
+    # into the .h5 → inference picks it up automatically (see
+    # null_gp.NullGPMAT.__init__ for the read-side). When --no-normalize
+    # was passed, write NaN as a sentinel: the inference loader will
+    # detect NaN, skip the params mutation, and warn the user that the
+    # model was trained un-normalized so they need to set the
+    # normalization region explicitly. Distinguishes from legacy v1 .h5
+    # files (no fields at all) which still fall back silently.
+    if args.apply_normalize:
+        norm_min_for_model = args.norm_min_lambda
+        norm_max_for_model = args.norm_max_lambda
+    else:
+        norm_min_for_model = float("nan")
+        norm_max_for_model = float("nan")
     model = GPModelV2(
         num_pixels=ts.n_pix, k=args.num_pca_components,
         init_M=initial_M, init_log_omega=initial_log_omega,
         rest_wavelengths=ts.rest_wavelengths,
         mu=ts.mu,  # may be None if --no-center
-        # Carry the normalization region forward so save_h5_model writes it
-        # into the .h5 → inference picks it up automatically. See
-        # null_gp.NullGPMAT.__init__ for the read-side.
-        normalization_min_lambda=args.norm_min_lambda,
-        normalization_max_lambda=args.norm_max_lambda,
+        normalization_min_lambda=norm_min_for_model,
+        normalization_max_lambda=norm_max_for_model,
     )
 
     # Sanity: every initial parameter must be finite, otherwise the

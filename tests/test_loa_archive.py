@@ -210,3 +210,201 @@ def test_wavelength_shape_mismatch_raises(tmp_path) -> None:
     out = tmp_path / "bad.h5"
     with pytest.raises(ValueError, match="flux for TARGETID"):
         write_archive(out, [bad_record], wavelength=wave, source_root="/loa")
+
+
+# ---------------------------------------------------------------------------
+# Integration test: archive round-trip preserves P(DLA) at inference
+# ---------------------------------------------------------------------------
+# This test validates the PR description's claim that the LoaArchive
+# preserves P(DLA) "to 4 sig figs" through the inference pipeline. It runs
+# only on machines with both the production GP model AND a real LOA coadd
+# AND the DR9Q prior catalogs available — i.e. GreatLakes / NERSC. On any
+# other machine it skips with a clear reason.
+
+LOA_COADD_PATH = (
+    "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/healpix/main/dark/109/10978/"
+    "coadd-main-dark-10978.fits"
+)
+PROD_LEARNED = (
+    "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/"
+    "learnlogs/model_epoch_920.h5"
+)
+DATA_ROOT_CANDIDATES = [
+    "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection",
+    "/pscratch/sd/j/jibancat/desi_gpy_dla_detection",
+]
+
+
+def _data_root_or_none() -> str | None:
+    """Return the first DATA_ROOT that has DR9Q catalog, or None."""
+    import os
+    for root in DATA_ROOT_CANDIDATES:
+        if os.path.exists(os.path.join(root, "data/dr12q/processed/catalog.mat")):
+            return root
+    return None
+
+
+def test_loa_archive_preserves_pdla_through_inference(tmp_path):
+    """Build a 1-spectrum LoaArchive from a real LOA coadd, then run the
+    full ``DLAHolder.process_qso`` on (a) the FITS-loaded arrays and
+    (b) the archive-loaded arrays. Assert ``model_posteriors`` agrees
+    to 4 sig figs — the PR description and
+    ``project_loa_archive_2026_05_01.md`` claim "2/2 P(DLA)/MAP-NHI/MAP-z
+    identical to 4 sig figs"; this codifies that empirical check.
+
+    Skipped on machines that don't have the production GP model + a real
+    LOA coadd + the DR9Q prior catalogs (i.e. anything other than
+    GreatLakes / NERSC).
+    """
+    import os
+    import sys
+    pytest.importorskip("desispec")
+    pytest.importorskip("fitsio")
+    if not os.path.exists(LOA_COADD_PATH):
+        pytest.skip(f"LOA coadd not available: {LOA_COADD_PATH}")
+    if not os.path.exists(PROD_LEARNED):
+        pytest.skip(f"production learned-file not available: {PROD_LEARNED}")
+    DATA_ROOT = _data_root_or_none()
+    if DATA_ROOT is None:
+        pytest.skip(
+            f"DR9Q prior catalog not found; tried {DATA_ROOT_CANDIDATES}"
+        )
+
+    # Need to import run_bayes_select which lives at repo root.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+    import warnings
+    import desispec.io
+    from desispec.coaddition import coadd_cameras
+    from gpy_dla_detection.loa_archive import CoaddRecord, LoaArchive, write_archive
+    from gpy_dla_detection.set_parameters import Parameters
+    from run_bayes_select import DLAHolder
+
+    # 1) Load one TARGETID from a real LOA coadd via the production path.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        spec = desispec.io.read_spectra(
+            LOA_COADD_PATH,
+            skip_hdus=["EXP_FIBERMAP", "SCORES", "EXTRA_CATALOG"],
+        )
+        spec = coadd_cameras(spec)
+    fmap_tids = np.asarray(spec.fibermap["TARGETID"])
+    target_idx = 0
+    target_tid = int(fmap_tids[target_idx])
+
+    wave = np.asarray(spec.wave["brz"], dtype=np.float32)
+    flux_fits = spec.flux["brz"][target_idx].astype(np.float32)
+    ivar_fits = spec.ivar["brz"][target_idx].astype(np.float32)
+    mask_fits = spec.mask["brz"][target_idx].astype(np.uint32)
+    R_fits = spec.resolution_data["brz"][target_idx]
+
+    # 2) Round-trip through LoaArchive.
+    record = CoaddRecord(
+        targetid=target_tid, z=2.5, ra=180.0, dec=-15.0, healpix=10978,
+        zwarn=0, blue_snr=2.0, red_snr=3.0,
+        source_file="coadd-main-dark-10978.fits", fiber_idx=target_idx,
+        flux=flux_fits, ivar=ivar_fits, mask=mask_fits, R=R_fits,
+    )
+    archive_path = tmp_path / "single_tid.h5"
+    write_archive(archive_path, [record], wavelength=wave,
+                  source_root="/nfs/turbo/lsa-cavestru/mfho/DESI/loa")
+    with LoaArchive(archive_path) as ar:
+        spec_arch = ar.get_spectrum(target_tid)
+        wave_arch = np.asarray(spec_arch.wavelength, dtype=np.float32)
+        flux_arch = np.asarray(spec_arch.flux, dtype=np.float32)
+        ivar_arch = np.asarray(spec_arch.ivar, dtype=np.float32)
+        mask_arch = np.asarray(spec_arch.mask, dtype=np.uint32)
+
+    # 3) The arrays MUST be bit-exact (writer is a passthrough for f32).
+    np.testing.assert_array_equal(wave_arch, wave)
+    np.testing.assert_array_equal(flux_arch, flux_fits)
+    np.testing.assert_array_equal(ivar_arch, ivar_fits)
+    np.testing.assert_array_equal(mask_arch, mask_fits)
+
+    # 4) Build the DLAHolder. Same params as the y3 production preset
+    # (smoke_one_spectrum.PRESETS["y3"]). The subdla_samples.mat enforces
+    # num_dla_samples=10000 via an assertion in SubDLASamplesMAT.__init__,
+    # so we keep the production sample count. max_dlas=1 keeps the test
+    # to one DLA-recursion step (~30s per process_qso call).
+    common_params = dict(
+        loading_min_lambda=910.0, loading_max_lambda=1550.0,
+        normalization_min_lambda=1425.0, normalization_max_lambda=1475.0,
+        min_lambda=911.75, max_lambda=1216.75,
+        dlambda=0.15, k=30, max_noise_variance=9.0,
+        num_lines=3, max_z_cut=3000.0, min_z_cut=3000.0,
+        num_forest_lines=3,
+    )
+    params = Parameters(num_dla_samples=10000, **common_params)
+    params_subdla = Parameters(num_dla_samples=10000, **common_params)
+
+    holder = DLAHolder(
+        learned_file=PROD_LEARNED,
+        catalog_name=os.path.join(DATA_ROOT, "data/dr12q/processed/catalog.mat"),
+        los_catalog=os.path.join(
+            DATA_ROOT,
+            "data/dla_catalogs/dr9q_concordance/processed/los_catalog",
+        ),
+        dla_catalog=os.path.join(
+            DATA_ROOT,
+            "data/dla_catalogs/dr9q_concordance/processed/dla_catalog",
+        ),
+        dla_samples_file=os.path.join(
+            DATA_ROOT, "data/dr12q/processed/dla_samples_a03.mat"),
+        sub_dla_samples_file=os.path.join(
+            DATA_ROOT, "data/dr12q/processed/subdla_samples.mat"),
+        params=params, params_subdla=params_subdla,
+        min_z_separation=3000.0,
+        prev_tau_0=0.00246, prev_beta=3.62,
+        max_dlas=1, broadening=True, plot_figures=False,
+        max_workers=1, batch_size=1,
+        single_absorber_model=False,
+    )
+
+    def _ivar_to_nv(ivar):
+        return np.where(ivar > 0, 1.0 / np.where(ivar == 0, 1.0, ivar), 1e10)
+
+    z_qso_fixed = 2.6  # plausible LOA z; doesn't have to be the truth
+    pixel_mask = mask_fits != 0
+    pixel_mask_arch = mask_arch != 0
+
+    holder.initialize_results(1)
+    holder.process_qso(
+        idx=0, target_id=target_tid,
+        wavelengths=wave.astype(np.float64),
+        flux=flux_fits.astype(np.float64),
+        noise_variance=_ivar_to_nv(ivar_fits).astype(np.float64),
+        pixel_mask=pixel_mask, z_qso=z_qso_fixed,
+    )
+    mp_fits = np.asarray(holder.results["model_posteriors"][0]).copy()
+    p_dla_fits = float(holder.results["p_dlas"][0])
+
+    holder.initialize_results(1)
+    holder.process_qso(
+        idx=0, target_id=target_tid,
+        wavelengths=wave_arch.astype(np.float64),
+        flux=flux_arch.astype(np.float64),
+        noise_variance=_ivar_to_nv(ivar_arch).astype(np.float64),
+        pixel_mask=pixel_mask_arch, z_qso=z_qso_fixed,
+    )
+    mp_arch = np.asarray(holder.results["model_posteriors"][0]).copy()
+    p_dla_arch = float(holder.results["p_dlas"][0])
+
+    # 5) Inputs were bit-exact → outputs should be too. PR description
+    # commits to "4 sig figs"; we use 1e-4 relative for the headline
+    # P(DLA) plus 1e-4 absolute on the per-model posterior vector.
+    assert mp_fits.shape == mp_arch.shape
+    assert abs(p_dla_arch - p_dla_fits) < 1e-4, (
+        f"P(DLA) divergence: FITS={p_dla_fits:.6f} ARCHIVE={p_dla_arch:.6f} "
+        f"Δ={p_dla_arch - p_dla_fits:.2e}"
+    )
+    np.testing.assert_allclose(
+        mp_arch, mp_fits, rtol=0, atol=1e-4,
+        err_msg=(
+            f"per-model posterior divergence:\n"
+            f"  FITS:    {mp_fits}\n"
+            f"  ARCHIVE: {mp_arch}\n"
+            f"  Δ:       {mp_arch - mp_fits}"
+        ),
+    )
