@@ -53,19 +53,30 @@ from gpy_dla_detection.voigt import (  # noqa: E402
 def _initial_M_from_pca(centered_fluxes: np.ndarray, k: int) -> np.ndarray:
     """Initial M = top-k PCA components × √eigenvalues.
 
-    Mirrors the initialization used by
-    ``gpy_dla_detection.learn_qso_model.GaussianProcessModel`` so v2
-    starts from the same point as the legacy trainer.
+    Mirrors the v1 MATLAB ``learn_qso_model.m`` initialization (lines
+    197-216) and the legacy ``learn_qso_model.py:fill_nan_with_median``:
+
+      - For each spectrum (ROW), replace NaN pixels with that
+        spectrum's median flux.
+
+    The earlier v2 implementation used per-PIXEL (column) median fill,
+    which artificially aligned NaN-padded spectra to the population
+    mean shape and inflated the rank-1 component. Empirical evidence:
+    docs/notes/2026-05-02_v2_trainer_calibration_finding.md.
+
+    The data passed in is the centered flux matrix (μ already
+    subtracted). PCA is then run on the filled matrix; the top-k
+    components × sqrt(eigenvalues) seed M.
     """
-    # Replace NaNs with per-pixel median so PCA doesn't choke.
     fluxes = centered_fluxes.copy()
-    for j in range(fluxes.shape[1]):
-        col = fluxes[:, j]
-        finite = np.isfinite(col)
+    n_quasars, n_pix = fluxes.shape
+    for i in range(n_quasars):
+        row = fluxes[i, :]
+        finite = np.isfinite(row)
         if finite.any():
-            col[~finite] = np.nanmedian(col[finite])
+            row[~finite] = np.nanmedian(row[finite])
         else:
-            col[:] = 0.0
+            row[:] = 0.0
     pca = PCA(n_components=k)
     pca.fit(fluxes)
     coefficients = pca.components_.T  # (n_pix, k)
@@ -116,6 +127,9 @@ def main():
     p.add_argument("--learning-rate", type=float, default=5e-3)
     p.add_argument("--num-forest-lines", type=int, default=3)
     p.add_argument("--scheduler", default="cosine", choices=["cosine", "step", "none"])
+    p.add_argument("--weight-decay", type=float, default=0.0,
+                   help="L2 weight decay on optimizer (default 0.0; 1e-6 to "
+                        "constrain M growth and prevent rank-1 collapse).")
     p.add_argument("--save-every", type=int, default=10)
     # Per-spectrum median normalization in [norm_min_lambda, norm_max_lambda]
     # is ON by default (Garnett+2017 [1310, 1325] Å rest). v2 trainsets do
@@ -210,6 +224,7 @@ def main():
         batch_size=args.batch_size,
         num_forest_lines=args.num_forest_lines,
         scheduler=args.scheduler,
+        weight_decay=args.weight_decay,
         save_every=args.save_every,
         apply_y1_prior=args.apply_y1_prior,
         seed=args.seed,
