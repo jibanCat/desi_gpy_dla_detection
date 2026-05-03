@@ -297,6 +297,104 @@ over-correct and is no longer the default. See
 `docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md` for the
 falsification.
 
+## Training your own GP model — quickstart
+
+The pipeline ships with a pre-trained GP at
+`learnlogs/model_epoch_920.h5` (Y3 production, trained on real DESI
+LOA spectra). You only need to retrain the GP if you're building a
+**custom emission model** — e.g. a BAL-only GP, a mock-trained model
+for validation, a different rest-wavelength range, or a sensitivity
+ablation. Inference uses any compatible `.h5` via the
+`--learned_file` flag.
+
+The training pipeline has three stages:
+
+```
+preload (NERSC/GL)        →     train (GL/NERSC GPU)       →     validate
+─────────────────────             ─────────────────             ─────────
+preload_spectra/                  train_gp.py                    examples/
+preload_loa_real.py    ──────►    (uses trainer_v2)   ──────►    check_v2_model_calibration.py
+preload_2lpt_simple.py            outputs                        compare_v2_models_canonical.py
+                                  model_epoch_NNNN.h5            plot_v2_model_diagnostics.py
+                                  loss_history.json              plot_pca_init_K.py
+```
+
+### Smallest possible training (sanity check, ~5 min on CPU)
+
+```bash
+python train_gp.py \
+    --preloaded-file /path/to/trainset.h5 \
+    --output-dir /tmp/gp_sanity \
+    --max-spectra 5000 --num-epochs 50 --batch-size 1000 \
+    --weight-decay 1e-6 --scheduler none \
+    --device cpu
+```
+
+### Production training (NERSC, ~5 h on a GPU node)
+
+```bash
+sbatch slurm_train/submit_train_gp_v2_loa_nersc.sh
+```
+
+or on GreatLakes:
+
+```bash
+sbatch slurm/greatlakes/train_only_gpu.sh
+```
+
+Both wrap `train_gp.py` with the production defaults (1500 epochs,
+12,500 batch size, cosine LR — but **see caveats** about scheduler
+and weight_decay in the detailed doc).
+
+### Key flags worth knowing
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--num-epochs` | 800 | Total training epochs. 1500+ for production. |
+| `--batch-size` | 12,500 | Spectra per minibatch. Memory-bounded. |
+| `--learning-rate` | 5e-3 | Adam learning rate. |
+| `--scheduler` | `cosine` | LR schedule. `none` recommended after 2026-05-02 finding. |
+| `--weight-decay` | 0.0 | L2 on optimizer. **1e-6 recommended** to prevent rank-1 collapse. |
+| `--norm-min/max-lambda` | 1310 / 1325 | Per-spectrum normalization window (Garnett+2017). |
+| `--min-valid-pixels-lyman` | 200 | Drop spectra with too few valid pixels in [911, 1216] Å. |
+| `--no-normalize` | (off) | Disable per-spectrum normalization (ablation only). |
+| `--no-y1-prior` | (off) | Disable Y1 (Turner+2024) Gaussian prior on (τ_0, β). |
+
+### Validate the trained model before promoting
+
+After training finishes, **always run the calibration check** on a
+sample of the trainset:
+
+```bash
+python examples/check_v2_model_calibration.py \
+    --model /path/to/output/model_epoch_NNNN.h5 \
+    --trainset /path/to/trainset.h5 \
+    --n-spectra 500 \
+    --out figs/calibration.png
+```
+
+Look for **χ²/n_valid mean ≈ 1** and **per-pixel std_resid ≈ 1**.
+If chi²/n is much smaller than 1 (e.g. 0.02), the GP is over-fit
+(M·M^T grew unbounded, ω² collapsed). If much larger, under-fit.
+
+For visual diagnostics, also run:
+
+```bash
+python examples/plot_v2_model_diagnostics.py \
+    --models /path/to/your_model.h5,learnlogs/model_epoch_920.h5 \
+    --labels "your-model,v1-baseline" \
+    --out figs/diagnostics.png
+```
+
+### Detailed workflow
+
+See **[`docs/training_v2_workflow.md`](docs/training_v2_workflow.md)**
+for: trainset preparation, what each preload step does, NERSC vs
+GreatLakes submit details, calibration interpretation, common
+failure modes, and the v1↔v2 trainer math comparison.
+
+---
+
 ## For developers
 
 There are some customizable features for this GP-DLA model.

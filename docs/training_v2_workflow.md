@@ -206,3 +206,111 @@ takes ~10 min wall.
   noticeable overhead. Configurable via ``--save-every``.
 - **No covariance plotting in the trainer** — that's a separate
   diagnostic; do it from the saved h5 files offline.
+
+---
+
+## 2026-05-02 update — training-dynamics findings + recommended settings
+
+A user-flagged investigation in May 2026 found that all 4 v2-trained
+models (LOA + 2lpt + saclay) on the wide [851, 1421] Å rest grid were
+**over-fit / mode-collapsed**: trace(ω²) shrunk to 0.2-3.4 % of
+trace(K), top eigenvalue 5-500× the second, χ²/n_valid on the
+training spectra averaged 0.02-1.0 (vs the well-calibrated target
+of ~1). Consequences:
+
+- Inference under-attributes residuals to noise → DLA absorption gets
+  absorbed as a "small variance excursion in the dominant continuum
+  mode" → DLA detection p_dla collapses for some configurations.
+- Demonstrated on canonical TID 120046865: the LOA-trained-with-BAL
+  model gave p_dla = 0.037 vs v1's 0.920 on a known DLA.
+
+### Diagnosis (corrected after multiple iterations)
+
+The first guess — that PCA NaN-fill choice (per-pixel vs per-row) was
+the bug — turned out to be a red herring. Once the trainset.h5 fluxes
+go through `load_preprocessed_h5`'s normalize → de-forest → center
+pipeline, PCA init produces a healthy basis (eff_rank 1.78 on LOA,
+3.11 on 2lpt). The per-row vs per-column NaN-fill choice barely
+matters on properly normalized data.
+
+**The actual cause is in training dynamics**: Adam optimizer +
+`weight_decay=0` + cosine LR with `eta_min=1e-5`. Adam momentum
+amplifies the dominant-eigenvector gradient, no L2 constrains M
+growth, and the LR anneals before the basis can diversify.
+
+The legacy v1 trainer used L-BFGS (no momentum, line-search step
+sizes), which avoids this trap. v2 was switched to Adam for batch
+vectorization; the cost of that switch is the need for explicit
+regularization.
+
+### Recommended training settings (post-2026-05-02)
+
+For all NEW v2 training, prefer:
+
+```
+--weight-decay 1e-6          # constrains M growth
+--scheduler none             # constant LR, no premature anneal
+--num-epochs 1500            # production: more epochs help
+--min-valid-pixels-lyman 200 # v1-equivalent quality filter
+--norm-min-lambda 1310       # Garnett+2017 (forced by v2 grid coverage)
+--norm-max-lambda 1325
+```
+
+The CLI defaults preserve backward compatibility (cosine LR,
+weight_decay=0) so existing runs reproduce. New runs should override.
+
+### Validation workflow (mandatory before model promotion)
+
+After every training run, run all four diagnostics. If any fails the
+model is **not production-ready**:
+
+1. **Calibration check** —
+   `examples/check_v2_model_calibration.py`. Verifies χ²/n_valid ≈ 1
+   on a 500-spectrum sample of the trainset. Verdict printed.
+
+2. **Per-model μ + ω + K viz** —
+   `examples/plot_v2_model_diagnostics.py`. Look at the trace ratio
+   (ω² should be O(0.1-1.0) of trace(K), not 0.001) and the
+   correlation matrix (should show emission-line off-diagonal
+   structure, not rank-1 sharp blocks).
+
+3. **PCA init K viz** —
+   `examples/plot_pca_init_K.py`. Run on the same trainset. If init
+   eff_rank is healthy (≥ 1.5) but trained eff_rank is rank-1, you
+   have a training-dynamics regression — re-check weight_decay +
+   scheduler.
+
+4. **Canonical TID test** —
+   `examples/compare_v2_models_canonical.py` on TID 120046865 (2lpt
+   mock-0). Should detect a DLA at z=2.77, log NHI≈21.6 with
+   p_dla > 0.5. If it misses, the model is unsuitable for production.
+
+Full evidence trail in:
+- `docs/notes/2026-05-02_v2_calibration_root_cause.md`
+- `docs/notes/2026-05-02_v2_trainer_calibration_finding.md`
+- `docs/notes/2026-05-02_v2_canonical_tid_comparison.md`
+
+### v1-style quality filter (added 2026-05-02)
+
+`load_preprocessed_h5` now drops:
+- spectra with NaN normalization median (v1 `preload_qsos.m` bit 2)
+- spectra with < `min_valid_pixels_lyman` valid pixels in
+  [`lyman_min_lambda`, `lyman_max_lambda`] = [911, 1216] Å rest
+  (v1 `preload_qsos.m` bit 3)
+
+Default `min_valid_pixels_lyman=200` is conservative (~10% of the
+2030-pixel range at dlambda=0.15). Set to 0 to disable.
+
+### What's still being tested
+
+SLURM job 49227683 (queued at the time of writing): a 1500-epoch
+retrain with the recommended settings on `loa_no_dla_no_bal` trainset
++ z [2.5, 4.25]. After it finishes the calibration verdict will tell
+us whether weight_decay + scheduler=none alone is sufficient or
+whether deeper trainer changes are needed.
+
+For onboarding new contributors: **don't promote a v2 trained model
+to production without running the four-step validation workflow
+above.** The parity tests (`tests/test_objective_v2_parity.py`)
+verify per-spectrum NLL math but do NOT catch training-dynamics
+issues that emerge only at 100s-1000s of epochs on a real trainset.
