@@ -42,35 +42,27 @@ for p in picks:
 
 
 def find_and_load(tid, base, healpix_for_tid):
-    """Locate spectra-16-N.fits containing TID, load + camera-coadd."""
+    """Reuse examples.smoke_one_spectrum.load_one_desi_spectrum which
+    already handles the mock camera-coadd + truth-file resolution
+    fallback. Don't reinvent IO."""
+    from examples.smoke_one_spectrum import load_one_desi_spectrum
     hpx = healpix_for_tid
-    # Files are organized as spectra-16/{hpx//100}/{hpx}/spectra-16-{hpx}.fits
     spec_path = f"{base}/spectra-16/{hpx // 100}/{hpx}/spectra-16-{hpx}.fits"
     if not os.path.exists(spec_path):
         return None
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        spec = desispec.io.read_spectra(spec_path, targetids=[int(tid)])
-        try:
-            from desispec.coaddition import coadd_cameras
-            spec = coadd_cameras(spec)
-        except Exception:
-            return None
-    fmap = spec.fibermap
-    idx = np.where(fmap["TARGETID"] == int(tid))[0]
-    if len(idx) == 0:
+    try:
+        wave, flux, nv, mask = load_one_desi_spectrum(spec_path, int(tid))
+        return dict(wave=wave, flux=flux, nv=nv, mask=mask)
+    except Exception as e:
+        print(f"    [warn] tid {tid} ({spec_path}): {e}")
         return None
-    i = int(idx[0])
-    return dict(
-        wave=spec.wave["brz"],
-        flux=spec.flux["brz"][i],
-        ivar=spec.ivar["brz"][i],
-    )
 
 
-def healpix_for_tid_via_zcat(tid, zcat_path):
-    """The mock zcat has TARGETID + healpix info? Try HPXPIXEL or
-    derive from RA/DEC."""
+def healpix_for_tid_via_zcat(tid, zcat_path, nside=16):
+    """Compute NSIDE=16 HPXPIXEL for TID from zcat's RA/DEC.
+    spectra-16-N.fits files are organized at NSIDE=16 (DESI's
+    'spectra-16' = nside-16 healpix grouping) — confirmed by
+    listing spectra-16/ subdirs (max hpx ≈ 998 = 12*16²-1)."""
     cols = fitsio.FITS(zcat_path)[1].get_colnames()
     if "HPXPIXEL" in cols:
         d = fitsio.read(zcat_path, columns=["TARGETID", "HPXPIXEL"])
@@ -78,7 +70,6 @@ def healpix_for_tid_via_zcat(tid, zcat_path):
         if len(idx) == 0:
             return None
         return int(d["HPXPIXEL"][idx[0]])
-    # else compute from RA/DEC
     if "TARGET_RA" in cols and "TARGET_DEC" in cols:
         d = fitsio.read(zcat_path, columns=["TARGETID", "TARGET_RA", "TARGET_DEC"])
         idx = np.where(d["TARGETID"] == int(tid))[0]
@@ -87,7 +78,8 @@ def healpix_for_tid_via_zcat(tid, zcat_path):
         import healpy as hp
         ra = float(d["TARGET_RA"][idx[0]])
         dec = float(d["TARGET_DEC"][idx[0]])
-        return int(hp.ang2pix(64, ra, dec, lonlat=True, nest=True))
+        # DESI standard for spectra-16 is NESTED ordering at nside=16.
+        return int(hp.ang2pix(nside, ra, dec, lonlat=True, nest=True))
     return None
 
 
@@ -121,11 +113,8 @@ for row, pick in enumerate(picks):
                     ha="center", va="center", fontsize=10, color="0.5")
             ax.set_xticks([]); ax.set_yticks([])
             continue
-        wave = spec["wave"]
-        flux = spec["flux"]
-        # rest wavelength axis = wave / (1+z)
-        rest = wave / (1.0 + z_qso)
-        ax.plot(rest, flux, color="0.3", lw=0.4)
+        rest = spec["wave"] / (1.0 + z_qso)
+        ax.plot(rest, spec["flux"], color="0.3", lw=0.4)
         ax.axhline(0, color="0.7", lw=0.4, ls="--")
         # mark lines + BAL outflow zone
         for lname, lwave in LINES.items():
