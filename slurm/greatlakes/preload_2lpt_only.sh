@@ -27,14 +27,18 @@
 #   sbatch --export=ALL,RUN_TAG=<same tag> slurm/greatlakes/train_only_gpu.sh
 #
 # VARIANTs:
-#   loa0               2LPT loa-0 uncontaminated (no DLAs/metals/BALs by mock)
-#   loa124_nohcd_nobal 2LPT loa-124 contaminated; HCDs (logNHI ≥ 17) and
-#                      BALs (BI_CIV > 0) anti-joined out via truth catalogs
+#   loa0                  2LPT loa-0 uncontaminated (no DLAs/metals/BALs by mock)
+#   loa124_nohcd_nobal    2LPT loa-124 contaminated; HCDs (logNHI ≥ 17) and
+#                         BALs (BI_CIV > 0) anti-joined out via truth catalogs
+#   loa124_nohcd_with_bal 2LPT loa-124; HCDs anti-joined out (truth-based);
+#                         BALs KEPT (intended as BAL-GP training base — at
+#                         training time, subset to BAL-positive TIDs via
+#                         --catalog-file from mock-0/loa-124/bal_cat.fits)
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
 
-VARIANT="${VARIANT:?must be set: loa0 | loa124_nohcd_nobal}"
+VARIANT="${VARIANT:?must be set: loa0 | loa124_nohcd_nobal | loa124_nohcd_with_bal}"
 
 MAX_SPECTRA="${MAX_SPECTRA:-300000}"  # full mock; preload caps to whatever's in zcat after filters
 Z_MIN="${Z_MIN:-2.0}"
@@ -52,8 +56,12 @@ case "$VARIANT" in
         MOCK_DIR="$DATA_BASE/loa-124"
         EXTRA_FLAGS="--exclude-hcd --exclude-bal"
         ;;
+    loa124_nohcd_with_bal)
+        MOCK_DIR="$DATA_BASE/loa-124"
+        EXTRA_FLAGS="--exclude-hcd"
+        ;;
     *)
-        echo "[error] VARIANT must be loa0 | loa124_nohcd_nobal" >&2
+        echo "[error] VARIANT must be loa0 | loa124_nohcd_nobal | loa124_nohcd_with_bal" >&2
         exit 2
         ;;
 esac
