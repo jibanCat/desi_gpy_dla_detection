@@ -48,9 +48,14 @@ def _per_row_fill(fluxes):
 
 
 def _subset_then_per_row_fill(fluxes, max_nan_frac=0.3):
-    """RECOMMENDED FIX: drop heavily-NaN pixels first, then per-row fill on
-    the high-coverage subset. Returns (filled_subset, keep_mask) so caller
-    can pad M back to the full grid."""
+    """KEPT FOR DIAGNOSTIC ONLY — DO NOT USE in production. Drops
+    heavily-NaN pixels then per-row fills the subset. The "fix" pads M
+    back to the full grid with zeros, but that leaves the dropped pixels
+    with no GP basis contribution — they appear as empty bands in K and
+    inference at those pixels collapses to ω²-only. v1 does NOT subset;
+    it trains on the full wide grid with per-row NaN fill on the full
+    matrix. This function only stays in the diagnostic plot to show
+    visually why subsetting is wrong."""
     nan_frac = np.isnan(fluxes).mean(axis=0)
     keep = nan_frac < max_nan_frac
     sub = fluxes[:, keep].copy()

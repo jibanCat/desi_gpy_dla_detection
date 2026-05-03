@@ -50,79 +50,42 @@ from gpy_dla_detection.voigt import (  # noqa: E402
 )
 
 
-def _initial_M_from_pca(
-    centered_fluxes: np.ndarray, k: int, max_pixel_nan_frac: float = 1.0,
-) -> np.ndarray:
+def _initial_M_from_pca(centered_fluxes: np.ndarray, k: int) -> np.ndarray:
     """Initial M = top-k PCA components × √eigenvalues.
 
-    The v1 MATLAB code (``learn_qso_model.m`` lines 197-216) and the
-    legacy v1 Python (``learn_qso_model.py:fill_nan_with_median``) both
-    do per-row median fill for NaN pixels before PCA. Their training
-    data was on a NARROW rest grid [911, 1216] where NaN fraction was
-    small, so the fill choice didn't materially affect the basis.
+    Mirrors v1 MATLAB ``learn_qso_model.m`` (lines 197-216) and the
+    legacy v1 Python ``learn_qso_model.py:fill_nan_with_median``:
 
-    v2 trains on a wider rest grid [851, 1421] where the blue end
-    [851, 1100] has 60-90% NaN per pixel (most QSOs at z>2 don't observe
-    rest-frame < 1100 Å). At that NaN density, BOTH per-row and
-    per-column NaN fill produce a rank-1 collapsed PCA basis (verified
-    empirically in docs/notes/2026-05-02_v2_trainer_calibration_finding.md):
+      - For each spectrum (ROW), replace NaN pixels with that
+        spectrum's median flux (NOT per-pixel population median —
+        per-pixel fill artificially aligns NaN-padded spectra).
+      - PCA on the filled centered fluxes.
+      - M = top-k components × sqrt(eigenvalues).
 
-      - per-row fill: each spectrum becomes "flat at row-median +
-        real-data-in-band". PCA then picks up the bright/dim
-        across-spectrum scale variance as a single dominant mode.
-      - per-column fill: heavily-NaN pixels get the population mean →
-        zero variance there → still rank-1 dominant.
-
-    Fix (this function): restrict PCA to the HIGH-COVERAGE pixel subset
-    (NaN frac < ``max_pixel_nan_frac``), do per-row fill on the subset
-    (matches v1 behavior on its native grid), run PCA, then pad M back
-    to the full grid with zeros for the dropped pixels. The training
-    loop (``trainer_v2.train``) handles the full grid via
-    ``valid_mask``; pixels with M = 0 simply rely on ω² for their
-    variance budget, which Adam can adjust freely.
-
-    Default ``max_pixel_nan_frac=0.3`` keeps ~62% of v2's 3801-pixel
-    grid (rest λ > ~1100 Å) — comparable to v1's effective coverage.
-    Set to 1.0 to disable subset filtering.
+    Important: the input ``centered_fluxes`` MUST be the post-pipeline
+    fluxes (i.e. after normalize → de-forest → center, as produced by
+    ``load_preprocessed_h5``). Running PCA on raw un-normalized
+    trainset.h5 fluxes gives a misleading rank-1 basis because the
+    per-spectrum amplitude variance dominates.
     """
     fluxes = centered_fluxes.copy()
     n_quasars, n_pix = fluxes.shape
-
-    nan_frac_per_pix = np.isnan(fluxes).mean(axis=0)
-    keep_mask = nan_frac_per_pix < max_pixel_nan_frac
-    n_keep = int(keep_mask.sum())
-    if n_keep < k * 2:
-        raise ValueError(
-            f"After filtering pixels with NaN fraction >= {max_pixel_nan_frac}, "
-            f"only {n_keep} pixels remain ({n_pix} total) — too few for k={k} "
-            f"PCA components. Loosen --pca-max-nan-frac or use a narrower trainset."
-        )
-    print(f"[pca-init] keeping {n_keep}/{n_pix} pixels with NaN frac < {max_pixel_nan_frac}")
-
-    sub = fluxes[:, keep_mask].copy()
-    # Per-row median fill on the subset (v1 MATLAB behavior; cheap on the
-    # subset because NaN density is low here by construction).
     for i in range(n_quasars):
-        row = sub[i, :]
+        row = fluxes[i, :]
         finite = np.isfinite(row)
         if finite.any():
             row[~finite] = np.nanmedian(row[finite])
         else:
             row[:] = 0.0
-
     pca = PCA(n_components=k)
-    pca.fit(sub)
-    coefs_sub = pca.components_.T            # (n_keep, k)
-    eigvals = pca.explained_variance_         # (k,)
-    M_sub = (coefs_sub * np.sqrt(eigvals)).astype(np.float32)
-    # Pad back to full grid; pixels outside keep_mask get M = 0 (trainer
-    # initializes them to zero and Adam will learn from there).
-    M_full = np.zeros((n_pix, k), dtype=np.float32)
-    M_full[keep_mask, :] = M_sub
+    pca.fit(fluxes)
+    coefficients = pca.components_.T          # (n_pix, k)
+    eigvals = pca.explained_variance_          # (k,)
     print(f"[pca-init] eigvals top-5 = {eigvals[:5]}")
     print(f"[pca-init] eff_rank = trace_MMT/max_eig = "
-          f"{float((M_sub**2).sum()) / float(eigvals[0]):.2f}  (target: > 5 for diverse basis)")
-    return M_full
+          f"{float((coefficients**2 * eigvals).sum()) / float(eigvals[0]):.2f}  "
+          f"(>5 = healthy, ~1 = collapsed)")
+    return (coefficients * np.sqrt(eigvals)).astype(np.float32)
 
 
 def _initial_log_omega(centered_fluxes: np.ndarray, default: float = 0.1) -> np.ndarray:
@@ -162,15 +125,6 @@ def main():
     p.add_argument("--max-spectra", type=int, default=300_000)
     # Model
     p.add_argument("--num-pca-components", type=int, default=30)
-    p.add_argument("--pca-max-nan-frac", type=float, default=1.0,
-                   help="OPT-IN: drop pixels with NaN fraction >= this "
-                        "threshold from PCA initialization. M is padded with "
-                        "zeros back to the full grid. Default 1.0 (no subset; "
-                        "matches v1 MATLAB which trains on the wide [850, "
-                        "1420] grid). Set to e.g. 0.3 if you want to seed PCA "
-                        "only from the high-coverage pixels (rest λ > ~1100); "
-                        "the trainer's valid_mask handles the dropped pixels "
-                        "via ω² regardless.")
     # Optimization
     p.add_argument("--num-epochs", type=int, default=800)
     p.add_argument("--batch-size", type=int, default=12_500)
@@ -238,8 +192,7 @@ def main():
 
     # 2) Initialise PCA-based M and log_omega from the loaded fluxes.
     centered_fluxes_np = ts.fluxes.numpy()
-    initial_M = _initial_M_from_pca(centered_fluxes_np, args.num_pca_components,
-                                     max_pixel_nan_frac=args.pca_max_nan_frac)
+    initial_M = _initial_M_from_pca(centered_fluxes_np, args.num_pca_components)
     initial_log_omega = _initial_log_omega(centered_fluxes_np)
     print(f"[main] PCA init M: shape {initial_M.shape}, σ {initial_M.std():.3e}")
 
