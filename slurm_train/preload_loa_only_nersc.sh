@@ -6,9 +6,21 @@
 #SBATCH --output=slurm_train/loa_preload_%j.log
 #SBATCH --error=slurm_train/loa_preload_%j.err
 #SBATCH -A desi
-#SBATCH --time=06:00:00
+#SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
+
+# Walltime history: original 6h was insufficient for the bal_only
+# variant — jobs 52338154 (2026-05-01) and 52367927 (2026-05-02) BOTH
+# hit TIME LIMIT after processing only ~7h of work, leaving an empty
+# output directory because the writer doesn't flush partial trainsets.
+# Root cause: the BAL-fiber selection happens AFTER the per-coadd read,
+# so the I/O budget is identical to a full-LOA preload (~16k healpixes
+# × ~3-5s/coadd ≈ 18-20h). Bumped to 24h (NERSC -q regular max for
+# ≤16 nodes). The other variants (no_dla_no_bal, no_hcd_with_bal,
+# no_hcd_no_bal) drop more fibers per coadd so they completed in 6h —
+# but to keep one walltime for all variants, 24h is safe across the
+# board.
 
 # PRELOAD-ONLY: real LOA → trainset.h5 + README + metadata.
 # Runs on CPU (no GPU needed for FITS I/O), regular queue
