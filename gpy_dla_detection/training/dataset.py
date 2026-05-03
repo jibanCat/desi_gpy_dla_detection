@@ -221,6 +221,9 @@ def load_preprocessed_h5(
     de_forest_tau_0: float = 0.00246,
     de_forest_beta: float = 3.62,
     de_forest_num_lines: int = 3,
+    min_valid_pixels_lyman: int = 200,
+    lyman_min_lambda: float = 911.0,
+    lyman_max_lambda: float = 1216.0,
     dtype: torch.dtype = torch.float32,
 ) -> TrainingSet:
     """Load and filter a preprocessed GP training set HDF5 file.
@@ -330,6 +333,38 @@ def load_preprocessed_h5(
         print(f"[dataset] normalize: per-spectrum median in "
               f"[{norm_min_lambda}, {norm_max_lambda}] Å rest "
               f"(Garnett+2017 convention)")
+        # Drop spectra with NaN normalization median (per v1 preload_qsos.m
+        # bit 2: "cannot normalize"). _normalize_by_rest_median sets the
+        # whole flux row to NaN for such spectra, so we just check.
+        bad_norm = ~np.isfinite(_meds) | (_meds == 0)
+        if bad_norm.any():
+            n_bad = int(bad_norm.sum())
+            print(f"[dataset] drop {n_bad} spectra with bad normalization "
+                  f"median (NaN/zero in [{norm_min_lambda}, {norm_max_lambda}])")
+            keep = ~bad_norm
+            fluxes = fluxes[keep]
+            noise_variance = noise_variance[keep]
+            z_qsos = z_qsos[keep]
+
+    # Per-spectrum minimum-valid-pixel filter on the Lyman-modelling range
+    # (per v1 preload_qsos.m bit 3: "not enough pixels available"). Spectra
+    # with fewer than `min_valid_pixels_lyman` valid pixels in
+    # [lyman_min_lambda, lyman_max_lambda] are dropped — they contribute
+    # nothing to the Lyα-forest training signal but their NaN-padded rows
+    # pollute the inverse-variance-weighted μ + PCA init.
+    if min_valid_pixels_lyman > 0:
+        lyman_mask_pix = (rest_wave >= lyman_min_lambda) & (rest_wave <= lyman_max_lambda)
+        n_valid_per_spec = (np.isfinite(fluxes[:, lyman_mask_pix])).sum(axis=1)
+        bad_cov = n_valid_per_spec < min_valid_pixels_lyman
+        if bad_cov.any():
+            n_bad = int(bad_cov.sum())
+            print(f"[dataset] drop {n_bad} spectra with < {min_valid_pixels_lyman} "
+                  f"valid pixels in [{lyman_min_lambda}, {lyman_max_lambda}] Å rest "
+                  f"(v1 preload_qsos.m bit 3 equivalent)")
+            keep = ~bad_cov
+            fluxes = fluxes[keep]
+            noise_variance = noise_variance[keep]
+            z_qsos = z_qsos[keep]
 
     if apply_de_forest:
         fluxes, noise_variance = _de_forest_batch(

@@ -1,12 +1,13 @@
 """Plot the K = M·M^T correlation matrix from the PCA initialization,
-comparing OLD (per-pixel NaN fill) vs NEW (per-row NaN fill) on the
-same trainset.
+comparing fill strategies on the SAME trainset, AFTER applying the
+production normalize → deforest → center pipeline (matches what the
+trainer actually feeds into PCA at init time).
 
-Lets us verify the PCA bug fix produces physically meaningful initial
-correlations (smooth Lyα/Lyβ/metal off-diagonal structure) vs the old
-behavior (rank-1 sharp blocks).
-
-Each panel: 2-row grid (μ + |corr K|) × 2 columns (old / new).
+Important: the raw trainset.h5 fluxes are NOT normalized. v2's
+``load_preprocessed_h5`` applies normalize→deforest→center at training
+time. PCA in ``train_gp.py:_initial_M_from_pca`` then runs on the
+post-pipeline fluxes. This script reproduces that pipeline so the PCA
+diagnostic reflects actual training conditions.
 """
 from __future__ import annotations
 
@@ -90,27 +91,25 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
-    print(f"[main] loading trainset: {args.trainset}")
-    with h5py.File(args.trainset, "r") as f:
-        n_total = f["fluxes"].shape[0]
-        n_pix = f["fluxes"].shape[1]
-        rng = np.random.default_rng(args.seed)
-        n = min(args.n_spectra, n_total)
-        idx = np.sort(rng.choice(n_total, size=n, replace=False))
-        fluxes = f["fluxes"][idx]
-        rest_w = f["rest_wavelengths"][idx[0]]   # all spectra share grid
-    print(f"  shape={fluxes.shape}  rest=[{rest_w[0]:.1f}, {rest_w[-1]:.1f}]")
-
-    # Center on inverse-variance-weighted μ approximation: just per-pixel mean
-    # for visualization purposes (matches what training data already has if
-    # the trainer's preload step centered them; but the trainset.h5 is NOT
-    # centered, so we do it here for the PCA init step). v2 train_gp.py
-    # currently passes centered_fluxes_np = ts.fluxes.numpy() — which is the
-    # post-centering per-spectrum. For this diagnostic we just demean per
-    # pixel to mirror the test conditions.
-    mu = np.nanmean(fluxes, axis=0)
-    centered = fluxes - mu[None, :]
-    print(f"  center: μ[1100-1180Å] median = {np.nanmedian(mu[(rest_w>1100)&(rest_w<1180)]):.4f}")
+    # Use the production pipeline so PCA is on the SAME data the trainer feeds.
+    print(f"[main] loading trainset via load_preprocessed_h5: {args.trainset}")
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from gpy_dla_detection.training.dataset import load_preprocessed_h5
+    ts = load_preprocessed_h5(
+        args.trainset,
+        z_min=2.0, z_max=4.5,    # generous; let the trainset's own range dominate
+        max_spectra=args.n_spectra,
+        # production defaults match train_gp.py defaults
+        norm_min_lambda=1310.0, norm_max_lambda=1325.0,
+        de_forest_tau_0=0.00246, de_forest_beta=3.62,
+        de_forest_num_lines=3,
+    )
+    centered = ts.fluxes.numpy()  # already normalize + deforest + center
+    rest_w = ts.rest_wavelengths.numpy()
+    n_pix = centered.shape[1]
+    print(f"  shape={centered.shape}  rest=[{rest_w[0]:.1f}, {rest_w[-1]:.1f}]")
+    print(f"  centered std @ rest=1350 Å: {np.nanstd(centered[:, np.argmin(np.abs(rest_w-1350))]):.4f}")
     print(f"  fluxes nan fraction: {np.isnan(centered).mean():.4f}")
 
     # Build M three ways

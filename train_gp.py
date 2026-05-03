@@ -193,6 +193,17 @@ def main():
                    help="Per-spectrum normalization window min Å rest. "
                         "Default Garnett+2017 [1310, 1325].")
     p.add_argument("--norm-max-lambda", type=float, default=1325.0)
+    p.add_argument("--min-valid-pixels-lyman", type=int, default=200,
+                   help="Drop spectra with fewer than this many valid pixels "
+                        "in the Lyman-modelling range [911, 1216] Å rest "
+                        "(v1 preload_qsos.m bit 3 equivalent). Set to 0 to "
+                        "disable the filter.")
+    p.add_argument("--lyman-min-lambda", type=float, default=911.0,
+                   help="Lower bound of the Lyman science range used for "
+                        "the min-valid-pixels filter.")
+    p.add_argument("--lyman-max-lambda", type=float, default=1216.0,
+                   help="Upper bound of the Lyman science range used for "
+                        "the min-valid-pixels filter.")
     # Y1 (Turner+2024) Gaussian prior on (τ₀, β) is ON by default; pass
     # --no-y1-prior to drop it (e.g. for ablation studies).
     p.add_argument("--no-y1-prior", dest="apply_y1_prior",
@@ -218,6 +229,9 @@ def main():
         apply_normalize=args.apply_normalize,
         norm_min_lambda=args.norm_min_lambda,
         norm_max_lambda=args.norm_max_lambda,
+        min_valid_pixels_lyman=args.min_valid_pixels_lyman,
+        lyman_min_lambda=args.lyman_min_lambda,
+        lyman_max_lambda=args.lyman_max_lambda,
         dtype=torch.float32,
     )
     print(f"[main] loaded {ts.n_spectra} spectra × {ts.n_pix} pixels")
