@@ -233,6 +233,19 @@ def parse(options=None):
              '"dla": match the validated diagnostic at higher cost.',
     )
 
+    # Optional LoaArchive (precomputed coadd HDF5) — when set, bypasses
+    # desispec.io.read_spectra and slices the archive instead. Validated
+    # bit-equivalent to the FITS path on real LOA TIDs (Δp_dla ≈ 1e-6 at
+    # production num_dla_samples=10000); see
+    # docs/notes/2026-05-03_archive_vs_fits_dla_comparison.md.
+    parser.add_argument(
+        "--archive", default=None,
+        help="Path to a LoaArchive HDF5 (e.g. loa_full_z2_noR_v2.h5). "
+             "When set, FITS reads are skipped and the archive is sliced "
+             "by TARGETID per healpix instead. The coadd directory does "
+             "NOT need to exist locally. ~50-100x faster IO at scale.",
+    )
+
     # Parameter-related arguments
     # These are the values used in the trained GP model, don't change them unless you change the trained model
     parser.add_argument(
@@ -563,6 +576,7 @@ def main(args=None):
                     datapath,
                     catalog[catalog["HPXPIXEL"] == hpx],
                     model_params,  # Pass the model parameters dictionary here
+                    archive_path=args.archive,
                 )
                 for hpx in this_hpxs
             ]
@@ -576,6 +590,7 @@ def main(args=None):
                     "datapath": datapath,
                     "hpxcat": catalog[catalog["HPXPIXEL"] == hpx],
                     "model_params": model_params,
+                    "archive_path": args.archive,
                 }
                 for hpx in this_hpxs
             ]

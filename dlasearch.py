@@ -77,7 +77,7 @@ warnings.simplefilter("error", OptimizeWarning)
 ##########################
 
 
-def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
+def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params, archive_path=None):
     """
     Find the best fitting DLA profile(s) for spectra in hpx catalog.
 
@@ -100,43 +100,55 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     coaddname = f"coadd-{survey}-{program}-{str(healpix)}.fits"
     coadd = os.path.join(datapath, str(healpix // 100), str(healpix), coaddname)
 
-    if os.path.exists(coadd):
-        # Reconstruct the Parameters instance from the dictionary
-        params = Parameters(**model_params["params_dict"])
-        params_subdla = Parameters(**model_params["params_subdla_dict"])
-
-        # Reconstruct the DLAHolder instance using the reconstructed Parameters
-        model = DLAHolder(
-            learned_file=model_params["learned_file"],
-            catalog_name=model_params["catalog_name"],
-            los_catalog=model_params["los_catalog"],
-            dla_catalog=model_params["dla_catalog"],
-            dla_samples_file=model_params["dla_samples_file"],
-            sub_dla_samples_file=model_params["sub_dla_samples_file"],
-            params=params,
-            min_z_separation=model_params["min_z_separation"],
-            prev_tau_0=model_params["prev_tau_0"],
-            prev_beta=model_params["prev_beta"],
-            max_dlas=model_params["max_dlas"],
-            plot_figures=model_params["plot_figures"],
-            max_workers=model_params["max_workers"],
-            batch_size=model_params["batch_size"],
-            figure_dir=model_params["figure_dir"],
-            params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
-            filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
-            single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
-            enable_tau_eb=model_params.get("enable_tau_eb", False),
-            tau_eb_factors=model_params.get("tau_eb_factors", (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)),
-            tau_eb_apply_hcd_mask=model_params.get("tau_eb_apply_hcd_mask", False),
-            tau_eb_mask_threshold_sigma=model_params.get("tau_eb_mask_threshold_sigma", 1.5),
-            tau_eb_objective=model_params.get("tau_eb_objective", "null"),
-        )
-
-        fitresults = process_spectra_group(coadd, hpxcat, model)
-
-    else:
+    # When --archive is set, the coadd FITS file isn't needed (the
+    # archive contains pre-coadded spectra by TARGETID). Otherwise
+    # require the coadd to exist before model construction.
+    if archive_path is None and not os.path.exists(coadd):
         log.error(f"could not locate coadd file for healpix {healpix}")
         return ()
+
+    # Reconstruct the Parameters instance from the dictionary
+    params = Parameters(**model_params["params_dict"])
+    params_subdla = Parameters(**model_params["params_subdla_dict"])
+
+    # Reconstruct the DLAHolder instance using the reconstructed Parameters
+    model = DLAHolder(
+        learned_file=model_params["learned_file"],
+        catalog_name=model_params["catalog_name"],
+        los_catalog=model_params["los_catalog"],
+        dla_catalog=model_params["dla_catalog"],
+        dla_samples_file=model_params["dla_samples_file"],
+        sub_dla_samples_file=model_params["sub_dla_samples_file"],
+        params=params,
+        min_z_separation=model_params["min_z_separation"],
+        prev_tau_0=model_params["prev_tau_0"],
+        prev_beta=model_params["prev_beta"],
+        max_dlas=model_params["max_dlas"],
+        plot_figures=model_params["plot_figures"],
+        max_workers=model_params["max_workers"],
+        batch_size=model_params["batch_size"],
+        figure_dir=model_params["figure_dir"],
+        params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
+        filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+        single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
+        enable_tau_eb=model_params.get("enable_tau_eb", False),
+        tau_eb_factors=model_params.get("tau_eb_factors", (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)),
+        tau_eb_apply_hcd_mask=model_params.get("tau_eb_apply_hcd_mask", False),
+        tau_eb_mask_threshold_sigma=model_params.get("tau_eb_mask_threshold_sigma", 1.5),
+        tau_eb_objective=model_params.get("tau_eb_objective", "null"),
+    )
+
+    # If --archive was passed, open the LoaArchive once for this
+    # healpix group and pass to process_spectra_group; the FITS
+    # path is bypassed entirely.
+    archive = None
+    if archive_path is not None:
+        from gpy_dla_detection.loa_archive import LoaArchive
+        archive = LoaArchive(archive_path)
+        archive.open()
+    fitresults = process_spectra_group(coadd, hpxcat, model, archive=archive)
+    if archive is not None:
+        archive.close()
 
     t1 = time.time()
     total = np.round(t1 - t0, 2)
@@ -260,7 +272,99 @@ def dlasearch_mock(specfile, catalog, model_params):
     return fitresults
 
 
-def process_spectra_group(coaddpath, catalog, model: DLAHolder):
+def _load_group_spectra(coaddpath, catalog, archive=None):
+    """Load (wave, flux_arr, ivar_arr, mask_arr, fmap_tids) for a healpix
+    group, either from a coadd FITS file (default) or from an open
+    LoaArchive instance.
+
+    Returns
+    -------
+    wave : np.ndarray (n_pix,)
+        Common observed wavelength grid.
+    flux_arr, ivar_arr, mask_arr : np.ndarray (n_loaded, n_pix)
+        Per-spectrum flux / inverse variance / pixel-mask. ``n_loaded``
+        is the number of TIDs from ``catalog`` that were found in the
+        source. Missing TIDs are skipped (with a warning).
+    fmap_tids : np.ndarray (n_loaded,) of int
+        TARGETID list aligned with the rows of flux_arr/ivar_arr/mask_arr.
+
+    Notes
+    -----
+    The ``archive`` path is byte-equivalent to the FITS path for any TID
+    common to both, validated by
+    ``docs/notes/2026-05-03_archive_vs_fits_dla_comparison.md``.
+    """
+    if archive is not None:
+        wave = np.asarray(archive.wavelength, dtype=np.float64)
+        flux_list, ivar_list, mask_list, valid_tids = [], [], [], []
+        for tid in catalog["TARGETID"]:
+            try:
+                spec = archive.get_spectrum(int(tid))
+            except KeyError:
+                log.warning(f"TID {tid} not in archive; skipping")
+                continue
+            flux_list.append(np.asarray(spec.flux))
+            ivar_list.append(np.asarray(spec.ivar))
+            mask_list.append(np.asarray(spec.mask))
+            valid_tids.append(int(tid))
+        return (
+            wave,
+            np.asarray(flux_list),
+            np.asarray(ivar_list),
+            np.asarray(mask_list),
+            np.asarray(valid_tids, dtype=np.int64),
+        )
+
+    # FITS path (existing behavior).
+    specobj = desispec.io.read_spectra(
+        coaddpath,
+        targetids=catalog["TARGETID"],
+        skip_hdus=["EXP_FIBERMAP", "SCORES", "EXTRA_CATALOG"],
+    )
+    try:
+        specobj = coadd_cameras(specobj)
+    except:
+        if specobj.resolution_data is not None:
+            wave_min = np.min(specobj.wave["b"])
+            wave_max = np.max(specobj.wave["z"])
+            specobj = resample_spectra_lin_or_log(
+                specobj, linear_step=0.8,
+                wave_min=wave_min, wave_max=wave_max, fast=True,
+            )
+            specobj = coadd_cameras(specobj)
+        else:
+            truthfile = coaddpath.replace("spectra-16-", "truth-16-")
+            if not os.path.exists(truthfile):
+                log.error(
+                    f"cannot process {coaddpath}; no mock truth file or resolution data"
+                )
+            specobj.resolution_data = {}
+            for cam in ["b", "r", "z"]:
+                tres = fitsio.read(truthfile, ext=f"{cam}_RESOLUTION")
+                tresdata = np.empty(
+                    [specobj.flux[cam].shape[0], tres.shape[0],
+                     specobj.flux[cam].shape[1]],
+                    dtype=float,
+                )
+                for i in range(specobj.flux[cam].shape[0]):
+                    tresdata[i] = tres
+                specobj.resolution_data[cam] = tresdata
+            specobj = resample_spectra_lin_or_log(
+                specobj, linear_step=0.8,
+                wave_min=np.min(specobj.wave["b"]),
+                wave_max=np.max(specobj.wave["z"]),
+                fast=True,
+            )
+    return (
+        np.asarray(specobj.wave["brz"]),
+        np.asarray(specobj.flux["brz"]),
+        np.asarray(specobj.ivar["brz"]),
+        np.asarray(specobj.mask["brz"]),
+        np.asarray(specobj.fibermap["TARGETID"], dtype=np.int64),
+    )
+
+
+def process_spectra_group(coaddpath, catalog, model: DLAHolder, archive=None):
     """
     Pre-process spectra from a single coadd file and run GP-DLA inference.
 
@@ -325,57 +429,9 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         and n is the 0-based DLA index (0 for first DLA, 1 for second, ...).
     """
 
-    specobj = desispec.io.read_spectra(
-        coaddpath,
-        targetids=catalog["TARGETID"],
-        skip_hdus=["EXP_FIBERMAP", "SCORES", "EXTRA_CATALOG"],
+    wave, flux_all, ivar_all, mask_all, fmap_tids = _load_group_spectra(
+        coaddpath, catalog, archive=archive
     )
-    try:
-        specobj = coadd_cameras(specobj)
-    except:
-        if specobj.resolution_data is not None:
-            # resample on linear grid
-            wave_min = np.min(specobj.wave["b"])
-            wave_max = np.max(specobj.wave["z"])
-            specobj = resample_spectra_lin_or_log(
-                specobj,
-                linear_step=0.8,
-                wave_min=wave_min,
-                wave_max=wave_max,
-                fast=True,
-            )
-            specobj = coadd_cameras(specobj)
-        else:
-            # check if mock truth file exists
-            truthfile = coaddpath.replace("spectra-16-", "truth-16-")
-            if not (os.path.exists(truthfile)):
-                log.error(
-                    f"cannot process {coaddpath}; no mock truth file or resolution data"
-                )
-            specobj.resolution_data = {}
-            for cam in ["b", "r", "z"]:
-                tres = fitsio.read(truthfile, ext=f"{cam}_RESOLUTION")
-                tresdata = np.empty(
-                    [
-                        specobj.flux[cam].shape[0],
-                        tres.shape[0],
-                        specobj.flux[cam].shape[1],
-                    ],
-                    dtype=float,
-                )
-                for i in range(specobj.flux[cam].shape[0]):
-                    tresdata[i] = tres
-                specobj.resolution_data[cam] = tresdata
-            specobj = resample_spectra_lin_or_log(
-                specobj,
-                linear_step=0.8,
-                wave_min=np.min(specobj.wave["b"]),
-                wave_max=np.max(specobj.wave["z"]),
-                fast=True,
-            )
-
-    # for each entry in passed catalog, fit spectrum with intrinsic model + N DLA
-    wave = specobj.wave["brz"]
 
     # lists shared with Allyson's finder
     tidlist, ralist, declist, zqsolist, bluesnrlist, redsnrlist, dlaidlist = (
@@ -419,19 +475,17 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         zqso = catalog["Z"][entry]
 
         try:
-            idx = np.nonzero(specobj.fibermap["TARGETID"] == tid)[0][0]
+            idx = int(np.nonzero(fmap_tids == tid)[0][0])
         except:
             log.error(
                 f"Targetid {tid} NOT FOUND on healpix {catalog['HPXPIXEL'][entry]}"
             )
             continue
 
-        # TODO: Do the GP finder here
-
-        flux = specobj.flux["brz"][idx]
-        ivar = specobj.ivar["brz"][idx]
+        flux = flux_all[idx]
+        ivar = ivar_all[idx]
         wave_rf = wave / (1 + zqso)
-        pixel_mask = specobj.mask["brz"][idx].astype(np.bool_)
+        pixel_mask = mask_all[idx].astype(np.bool_)
 
         # Apply BAL masking using CIV velocity windows from the QSO catalog.
         # NCIV_450 is the number of CIV absorption systems with v > 450 km/s.
