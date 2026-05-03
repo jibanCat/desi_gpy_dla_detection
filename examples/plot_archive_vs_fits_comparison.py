@@ -101,18 +101,35 @@ def main():
         xmin_obs = 3500
         xmax_obs = 1250 * (1.0 + z_qso) + 200
 
+        # Per-spectrum normalization MATCHING what the GP does internally:
+        # flux / median(flux in [norm_min, norm_max] rest = [1425, 1475] Å)
+        # This is the same input the Bayesian DLA inference fits against.
+        NORM_MIN, NORM_MAX = 1425.0, 1475.0
         for col, (label, wave, flux, res) in enumerate([
             ("FITS pipeline", wave_f, flux_f, r["fits"]),
             ("LoaArchive", wave_a, flux_a, r["archive"]),
         ]):
             ax = axes[row, col]
             if wave is not None and flux is not None:
-                ax.plot(wave, flux, color="0.3", lw=0.4, alpha=0.85)
-                # smoothed median for visual reference
+                # Normalize: divide by per-spectrum median in [1425, 1475] Å rest
+                rest = wave / (1.0 + z_qso)
+                norm_mask = (rest >= NORM_MIN) & (rest <= NORM_MAX)
+                if norm_mask.sum() > 0:
+                    med = float(np.nanmedian(flux[norm_mask]))
+                    if not np.isfinite(med) or med <= 0:
+                        med = 1.0
+                else:
+                    med = 1.0
+                flux_norm = flux / med
+                ax.plot(wave, flux_norm, color="0.3", lw=0.4, alpha=0.85)
                 from scipy.ndimage import median_filter
-                ax.plot(wave, median_filter(flux, size=51), color="C0", lw=0.7,
-                        label="51-pix median")
+                ax.plot(wave, median_filter(flux_norm, size=51), color="C0", lw=0.7,
+                        label=f"51-pix median (÷{med:.2f})")
+                # Mark the normalization window
+                ax.axvspan(NORM_MIN * (1+z_qso), NORM_MAX * (1+z_qso),
+                           color="C1", alpha=0.10, label="norm window [1425,1475]Å rest")
             ax.axhline(0, color="0.7", lw=0.4, ls="--")
+            ax.axhline(1, color="0.7", lw=0.4, ls=":", alpha=0.6)
 
             # Mark Lyα at z_qso
             ax.axvline(1215.67 * (1 + z_qso), color="C2", ls=":", lw=0.7,
@@ -122,26 +139,25 @@ def main():
                     fontsize=7, ha="center", color="C2",
                     bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="C2", alpha=0.7))
 
-            # MAP DLA Voigt overlay
+            # MAP DLA Voigt overlay (already at unity continuum scale since we normalized)
             if not np.isnan(res["map_log_nhi"]):
-                # Estimate continuum scale at red side of the spectrum for amplitude reference
-                cont_med = np.nanmedian(flux[(wave > 5500) & (wave < 6500)]) if wave is not None else 1.0
-                if not np.isfinite(cont_med) or cont_med <= 0:
-                    cont_med = 1.0
                 voigt = voigt_profile(wave_a, res["map_z"], res["map_log_nhi"])
-                ax.plot(wave_a, cont_med * voigt, color="C3", lw=0.8, alpha=0.85,
-                        label=f"MAP DLA z={res['map_z']:.4f} logNHI={res['map_log_nhi']:.2f}")
+                ax.plot(wave_a, voigt, color="C3", lw=0.9, alpha=0.85,
+                        label=f"MAP DLA Voigt: z={res['map_z']:.4f} logNHI={res['map_log_nhi']:.2f}")
                 ax.axvline(1215.67 * (1 + res["map_z"]), color="C3",
                            ls="--", lw=0.7, alpha=0.7)
 
             ax.set_xlim(xmin_obs, xmax_obs)
+            # Common y-range: with per-spectrum normalization, expect ~[-0.5, 4]
+            ax.set_ylim(-0.5, 4.0)
             ax.grid(alpha=0.3)
             verdict = (f"DLA detected: p={res['p_dla']:.4f}"
                        if not np.isnan(res["map_log_nhi"])
                        else f"no DLA: p_dla={res['p_dla']:.4f}")
             ax.set_title(f"{label}  →  {verdict}", fontsize=9)
             if col == 0:
-                ax.set_ylabel(f"flux\nTID {tid}\nz_qso={z_qso:.3f}", fontsize=8)
+                ax.set_ylabel(f"NORMALIZED flux\n(÷ per-spec median\n in [1425,1475]Å rest)\n\nTID {tid}\nz_qso={z_qso:.3f}",
+                              fontsize=8)
             ax.legend(fontsize=7, loc="upper right")
         # Annotate Δp_dla in the row title space
         axes[row, 1].text(1.02, 0.5,
@@ -155,8 +171,10 @@ def main():
     axes[-1, 1].set_xlabel("observed wavelength [Å]")
     fig.suptitle(
         "FITS pipeline ↔ LoaArchive: DLA search comparison on 3 random TIDs\n"
-        "(production model_epoch_920.h5, num_dla_samples=10000, max_dlas=1)",
-        fontsize=10, y=0.998)
+        "(production model_epoch_920.h5, num_dla_samples=10000, max_dlas=1)\n"
+        "spectra plotted with the SAME per-spectrum normalization the GP applies internally\n"
+        "(flux / median(flux in [1425, 1475] Å rest) — the unit-flux level is the dotted gray line)",
+        fontsize=9, y=0.998)
     fig.tight_layout()
 
     out = Path(args.out)
