@@ -9,7 +9,10 @@ Effective optical depth for DESI Y1 (https://arxiv.org/abs/2405.06743):
 
 import torch
 import numpy as np
-from .voigt import transition_wavelengths, oscillator_strengths
+# 2026-05-07 review fix (d): absolute import so this module is loadable
+# from the training_v3 subpackage. The v1 source at the package root uses
+# `from .voigt …`; here we re-anchor to the package root.
+from gpy_dla_detection.voigt import transition_wavelengths, oscillator_strengths
 
 def print_gpu_memory(prefix=""):
     device = torch.cuda.current_device()

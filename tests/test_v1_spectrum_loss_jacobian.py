@@ -63,7 +63,7 @@ from gpy_dla_detection.objective import spectrum_loss  # noqa: E402
 FIX = Path(__file__).resolve().parent / "fixtures" / "2lpt_frozen"
 DTYPE = torch.float64
 EPS = 1e-5  # eps^(1/3) ≈ 1e-5 is the optimal central-FD step for float64
-TIDS = [120046865, 237926, 250915, 237575, 242431, 243225]
+TIDS = [270126904, 300065288, 250095019, 300072939, 350029642, 120046865]
 N_FD_SAMPLES = 5
 # Per-parameter tolerances — see module docstring for rationale.
 TOL_DEFAULT = 1e-4   # log_c_0, log_τ_0, log_ω, M

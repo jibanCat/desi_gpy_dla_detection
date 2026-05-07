@@ -33,7 +33,7 @@ from gpy_dla_detection.training_v3_5.objective import spectrum_loss  # noqa: E40
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "2lpt_frozen"
 DTYPE = torch.float64
-TIDS = [120046865, 237926, 250915, 237575, 242431, 243225]
+TIDS = [270126904, 300065288, 250095019, 300072939, 350029642, 120046865]
 TOL_IDENT = 1e-10
 TOL_DLOG_BETA_LO = 1e-4   # lowest expected divergence
 TOL_DLOG_BETA_HI = 5e-2   # upper bound

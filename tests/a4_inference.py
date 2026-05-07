@@ -72,12 +72,13 @@ def _save_h5(lane, params):
     1D mu/log_omega/rest_wavelengths, 2D M (n_pix, k). max_noise_variance =
     9.0 from v1 preset (Parameters.max_noise_variance default for DESI Y3).
 
-    Adds normalization_min/max_lambda = [1310, 1325] so the loader
-    mutates params.normalization_*_lambda in-place at inference time
-    (per the 2026-05-01 LIBnormalize fix). The Step A.3 trainer applied
-    no per-spectrum normalization (matching v1 desi_learn_qsos_model.py
-    which has it commented out), so we set norm window = entire rest grid
-    via [850.8, 1420.8] to disable per-spectrum normalize at inference.
+    Does NOT write normalization_min/max_lambda — DLAHolder falls back to
+    the preset's [1425, 1475] window which is what v1 production uses. The
+    A.3 trainer didn't apply per-spectrum normalize (matching v1
+    desi_learn_qsos_model.py:97-104 which has it commented out), so the
+    inference will normalize while training did not. The resulting
+    flux-scale mismatch on canonical TID is the documented mean-flux
+    issue addressed at inference time by τ-EB (PR #5; out of scope here).
     """
     H5_DIR.mkdir(parents=True, exist_ok=True)
     out = H5_DIR / f"{lane}.h5"
@@ -95,10 +96,6 @@ def _save_h5(lane, params):
         f.create_dataset("log_tau_0", data=np.float64(params["log_tau_0"]))
         f.create_dataset("log_beta", data=np.float64(params["log_beta"]))
         f.create_dataset("max_noise_variance", data=np.float64(9.0))  # v1 preset
-        # normalization metadata: tell inference NOT to renormalize the
-        # spectrum (set window = full rest grid)
-        f.create_dataset("normalization_min_lambda", data=np.float64(1420.0))
-        f.create_dataset("normalization_max_lambda", data=np.float64(1421.0))
     return out
 
 

@@ -20,9 +20,12 @@ import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.data import TensorDataset, DataLoader
 from scipy.interpolate import interp1d
 
-from .effective_optical_depth import effective_optical_depth
+# 2026-05-07 review fix (d): absolute imports.  effective_optical_depth and
+# voigt live at the package root; spectrum_loss/objective/print_gpu_memory
+# live in the local training_v3 module.
+from gpy_dla_detection.effective_optical_depth import effective_optical_depth
 from .objective import spectrum_loss, objective, print_gpu_memory
-from .voigt import transition_wavelengths, oscillator_strengths
+from gpy_dla_detection.voigt import transition_wavelengths, oscillator_strengths
 from tqdm import tqdm  # For progress bar
 
 # Select device (CUDA if available, otherwise CPU)

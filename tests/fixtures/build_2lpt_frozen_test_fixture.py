@@ -66,7 +66,9 @@ INITIAL_C_0 = 0.1
 INITIAL_TAU_0 = 0.00246
 INITIAL_BETA = 3.62
 NUM_PCA_K = 30
-NUM_FOREST_LINES = 3
+NUM_FOREST_LINES = 31  # MATLAB DR16 convention; v1 Python hardcodes 3 in
+                       # learn_qso_model.py:357 but the gold-standard MATLAB
+                       # learn_qso_model.m used 31 — agreed with user 2026-05-07
 DEFOREST_TAU_0 = 0.00246  # same as runtime; v1 SpectrumProcessor default
 DEFOREST_BETA = 3.62
 
@@ -97,23 +99,57 @@ def _load_lyman_constants():
 
 
 def _de_forest(rest_wavelengths, fluxes, noise_variances, z_qsos,
-               tau_0=DEFOREST_TAU_0, beta=DEFOREST_BETA):
-    """Apply v1 SpectrumProcessor.de_forest_spectra logic (line 349 of
-    learn_qso_model.py). Multiplicative correction; pixels above Lyα at
-    QSO frame are unchanged. fluxes shape (N, n_pix), z_qsos shape (N,).
+               tau_0=DEFOREST_TAU_0, beta=DEFOREST_BETA,
+               num_forest_lines=NUM_FOREST_LINES):
+    """Apply v1's effective_optical_depth() to the full Lyman series.
+
+    v1 SpectrumProcessor.de_forest_spectra (learn_qso_model.py:357) calls
+    effective_optical_depth(..., num_forest_lines=3); MATLAB legacy used
+    31 (the user's preference). We use 31 here per the 2026-05-07 review.
+
+    fluxes shape (N, n_pix); rest_wavelengths shape (n_pix,);
+    z_qsos shape (N,).
+
+    The de-forest correction is divisive: y_corrected = y * exp(τ_eff).
+    Pixels with τ=0 (above Lyα at QSO frame) are unchanged.
     """
-    LYA_REST_A = 1215.67  # Å (v1 uses this)
-    # observer wavelength of each pixel for each spectrum
-    obs = rest_wavelengths[None, :] * (1.0 + z_qsos[:, None])  # (N, n_pix)
-    lya_obs = LYA_REST_A * (1.0 + z_qsos[:, None])             # (N, 1)
-    z_lya = obs / LYA_REST_A - 1.0                              # absorber 1+z grid
-    # only pixels below Lyα at QSO frame get de-forested
-    in_forest = obs < lya_obs                                   # (N, n_pix)
-    tau = tau_0 * np.power(1.0 + z_lya, beta)                   # (N, n_pix)
-    correction = np.exp(tau)                                    # divide by exp(-tau)
-    flux_out = np.where(in_forest, fluxes * correction, fluxes)
-    nv_out = np.where(in_forest, noise_variances * correction**2, noise_variances)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from gpy_dla_detection.effective_optical_depth import effective_optical_depth
+
+    flux_out = np.empty_like(fluxes)
+    nv_out = np.empty_like(noise_variances)
+    for i, z_qso in enumerate(z_qsos):
+        # observer-frame wavelengths for this spectrum (rest * (1+z_qso))
+        obs_wave = rest_wavelengths * (1.0 + float(z_qso))
+        # effective_optical_depth returns (n_pix, num_forest_lines);
+        # sum over Lyman series → total per-pixel τ_eff
+        tau_per_line = effective_optical_depth(
+            obs_wave, beta, tau_0, float(z_qso), num_forest_lines=num_forest_lines,
+        )
+        tau_total = tau_per_line.sum(axis=1)
+        correction = np.exp(tau_total)
+        flux_out[i] = fluxes[i] * correction
+        nv_out[i] = noise_variances[i] * correction ** 2
     return flux_out, nv_out
+
+
+def _compute_snr(fluxes, noise_variances, rest_wavelengths,
+                 forest_lo=1050.0, forest_hi=1180.0,
+                 redside_lo=1220.0, redside_hi=1300.0):
+    """Compute per-spectrum SNR_FOREST and SNR_REDSIDE from raw fluxes.
+
+    User pinged 2026-05-07: "blue SNR is bluer to the Lyα peak, red SNR is
+    redward". `bluesnr` field in the v2 trainset.h5 happens to be 0 for the
+    rows we care about; compute it ourselves from the band median of
+    flux/sqrt(noise_variance).
+    """
+    forest = (rest_wavelengths >= forest_lo) & (rest_wavelengths <= forest_hi)
+    redside = (rest_wavelengths >= redside_lo) & (rest_wavelengths <= redside_hi)
+    valid = np.isfinite(fluxes) & np.isfinite(noise_variances) & (noise_variances > 0)
+    snr_pix = np.where(valid, fluxes / np.sqrt(np.maximum(noise_variances, 1e-30)), np.nan)
+    snr_forest = np.nanmedian(np.where(forest[None, :], snr_pix, np.nan), axis=1)
+    snr_redside = np.nanmedian(np.where(redside[None, :], snr_pix, np.nan), axis=1)
+    return snr_forest, snr_redside
 
 
 def _center_fluxes_inv_var(fluxes, noise_variances):
@@ -192,6 +228,23 @@ def main():
     bal_set = set(int(t) for t in bal["TARGETID"][bal["BI_CIV"] > 0])
     print(f"  BAL TIDs: {len(bal_set)}")
 
+    # Compute SNR_FOREST + SNR_REDSIDE per spectrum from raw flux/nv. The
+    # trainset's `bluesnr` field is all zeros for our targets so cannot be
+    # trusted; compute directly. (Per user: blue SNR = SNR blueward of Lyα,
+    # red SNR = SNR redward.)
+    print("[snr] computing SNR_FOREST / SNR_REDSIDE from raw flux/nv ...")
+    snr_forest_all, snr_redside_all = _compute_snr(flux_all, nv_all, rest_wavelengths)
+    finite_f = np.isfinite(snr_forest_all)
+    finite_r = np.isfinite(snr_redside_all)
+    print(f"  SNR_FOREST  pct (5/50/95): "
+          f"{np.percentile(snr_forest_all[finite_f], 5):.2f} / "
+          f"{np.percentile(snr_forest_all[finite_f], 50):.2f} / "
+          f"{np.percentile(snr_forest_all[finite_f], 95):.2f}")
+    print(f"  SNR_REDSIDE pct (5/50/95): "
+          f"{np.percentile(snr_redside_all[finite_r], 5):.2f} / "
+          f"{np.percentile(snr_redside_all[finite_r], 50):.2f} / "
+          f"{np.percentile(snr_redside_all[finite_r], 95):.2f}")
+
     # Stratified sample for PCA / mu / log_omega
     print("[strat] z-stratified sample for PCA fit (~100/0.1-z bin):")
     strat_idx = _stratified_z_indices(z_all, n_per_bin=100, z_lo=2.5, z_hi=3.85, dz=0.1, seed=0)
@@ -266,12 +319,15 @@ def main():
     print(f"[saved] {init_npz}  ({init_npz.stat().st_size/1e6:.2f} MB)")
     print(f"[saved] {init_mat}  ({init_mat.stat().st_size/1e6:.2f} MB)")
 
-    # Pick the 5 frozen TIDs FROM the trainset (z + SNR diversity)
-    chosen = _pick_frozen_tids(tids_all, z_all, bluesnr_all, bal_set, PICKS)
+    # Pick the 5 frozen TIDs FROM the trainset (z + SNR diversity).
+    # Use the computed SNR_FOREST (not trainset's bogus bluesnr).
+    chosen = _pick_frozen_tids(tids_all, z_all, snr_forest_all, bal_set, PICKS)
     # Add canonical TID
     canon_idx = np.where(tids_all == CANONICAL_TID)[0]
     if canon_idx.size:
-        chosen.append((int(canon_idx[0]), 2.96, 0.59, "canonical"))
+        chosen.append((int(canon_idx[0]), 2.96,
+                       float(snr_forest_all[canon_idx[0]]) if np.isfinite(snr_forest_all[canon_idx[0]]) else 0.0,
+                       "canonical"))
 
     # Apply v1 preprocessing to each frozen TID and save
     LYA_REST_A = 1215.67
@@ -293,7 +349,10 @@ def main():
         per_spec = dict(
             target_id=np.int64(tid),
             z_qso=np.float64(z_qso),
-            snr_forest=np.float64(bluesnr_all[row_idx]),
+            snr_forest=np.float64(snr_forest_all[row_idx])
+                       if np.isfinite(snr_forest_all[row_idx]) else np.float64(0.0),
+            snr_redside=np.float64(snr_redside_all[row_idx])
+                        if np.isfinite(snr_redside_all[row_idx]) else np.float64(0.0),
             flux=flux_centered,
             noise_variance=nv_def_1d,
             lya_1pz=lya_1pz,
@@ -306,7 +365,9 @@ def main():
         mat = OUT_DIR / f"{tid}.mat"
         np.savez(npz, **per_spec)
         savemat(mat, per_spec)
-        print(f"  TID={tid:>10} z={z_qso:.3f} SNR_F={bluesnr_all[row_idx]:.2f} "
+        snr_f_print = (snr_forest_all[row_idx] if np.isfinite(snr_forest_all[row_idx])
+                       else 0.0)
+        print(f"  TID={tid:>10} z={z_qso:.3f} SNR_F={snr_f_print:.2f} "
               f"valid={valid_mask.sum():>4}/{n_pix}  tier={tier}  → {npz.name}")
 
     # Manifest
@@ -323,7 +384,8 @@ def main():
             target_id=int(tids_all[i]),
             row_idx=int(i),
             z_qso=float(z_all[i]),
-            snr_forest=float(bluesnr_all[i]),
+            snr_forest=(float(snr_forest_all[i]) if np.isfinite(snr_forest_all[i]) else None),
+            snr_redside=(float(snr_redside_all[i]) if np.isfinite(snr_redside_all[i]) else None),
             tier=tier,
             z_target=z_t, snr_target=snr_t,
         ) for i, z_t, snr_t, tier in chosen],

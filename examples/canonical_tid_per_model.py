@@ -121,8 +121,10 @@ def main():
                                 formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--data-root", default="/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection")
     p.add_argument("--out-dir", default="docs/notes/2026-05-06_corrected_model_validation/canonical_tid")
-    p.add_argument("--filter", action="store_true", default=True,
-                   help="use FILTER=True (post-fix path; default)")
+    p.add_argument("--filter", action=argparse.BooleanOptionalAction, default=True,
+                   help="FILTER_LOW_LIKELIHOOD setting; default ON (post fix #5 path). "
+                        "Pass --no-filter to use full QMC integration (slower, "
+                        "0.7%% match to FILTER=True per the FILTER fix #5 memory).")
     args = p.parse_args()
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     results = []
