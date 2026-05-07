@@ -138,6 +138,111 @@ def _full_batch_objective(spectrum_loss, mu, M, log_omega, log_c_0, log_tau_0, l
     return total, dlog_c_0_acc, dlog_tau_0_acc, dlog_beta_acc
 
 
+def _train_lbfgs_lane(lane, n_iters, init, train, t0_global,
+                      use_strong_wolfe=True, history_size=10):
+    """Step A.3 4th lane: torch.optim.LBFGS with strong-Wolfe line search.
+
+    Uses v1 spectrum_loss (approximate dlog_β) for an apples-to-apples
+    comparison with MATLAB's minFunc/L-BFGS — same loss kernel, same
+    optimizer family. If endpoints match MATLAB to a small tolerance,
+    that validates torch.optim.LBFGS for this problem class.
+    """
+    spectrum_loss = _import_spectrum_loss("v1")
+    print(f"\n=== lane: {lane} (torch.optim.LBFGS, "
+          f"line_search={'strong_wolfe' if use_strong_wolfe else 'None'}, "
+          f"history={history_size}, n_iters={n_iters}) ===")
+
+    mu, M, log_omega, log_c_0, log_tau_0, log_beta, TW, OS, num_forest_lines = \
+        _build_init_params(init)
+
+    centered_fluxes = torch.tensor(train["centered_fluxes"], dtype=DTYPE)
+    centered_fluxes = torch.where(torch.isfinite(centered_fluxes), centered_fluxes,
+                                  torch.zeros_like(centered_fluxes))
+    noise_variances = torch.tensor(train["noise_variances"], dtype=DTYPE)
+    valid_masks = torch.tensor(train["valid_masks"], dtype=torch.bool)
+    z_qsos = train["z_qsos"]
+    rest_wavelengths = init["rest_wavelengths"]
+    lya_1pzs = _compute_lya_1pzs(rest_wavelengths, z_qsos)
+
+    optimizer = torch.optim.LBFGS(
+        [M, log_omega, log_c_0, log_tau_0, log_beta],
+        lr=1.0,                # line search picks step internally
+        max_iter=1,            # one L-BFGS step per .step() call so we can log
+        history_size=history_size,
+        line_search_fn="strong_wolfe" if use_strong_wolfe else None,
+        tolerance_grad=0.0,    # we control termination ourselves
+        tolerance_change=0.0,
+    )
+
+    history = dict(loss=[], log_c_0=[], log_tau_0=[], log_beta=[], wall_s=[])
+    dM_accum = torch.zeros_like(M)
+    dlog_omega_accum = torch.zeros_like(log_omega)
+    last_loss = [None]   # closure-captured
+
+    def closure():
+        # 1) zero existing .grad on params
+        optimizer.zero_grad()
+        # 2) compute loss + manually-set gradients (mirrors v1 pattern)
+        total, dlog_c_0_acc, dlog_tau_0_acc, dlog_beta_acc = _full_batch_objective(
+            spectrum_loss, mu, M, log_omega, log_c_0, log_tau_0, log_beta,
+            centered_fluxes, noise_variances, valid_masks,
+            lya_1pzs, z_qsos, num_forest_lines, TW, OS,
+            dM_accum, dlog_omega_accum,
+        )
+        # 3) populate .grad (L-BFGS reads .grad after closure() returns)
+        with torch.no_grad():
+            M.grad = dM_accum.clone()
+            log_omega.grad = dlog_omega_accum.clone()
+            log_c_0.grad = dlog_c_0_acc.clone()
+            log_tau_0.grad = dlog_tau_0_acc.clone()
+            log_beta.grad = dlog_beta_acc.clone()
+        # 4) return loss as a tensor — L-BFGS uses it for line-search comparison
+        loss_val = float(total)
+        last_loss[0] = loss_val
+        return torch.tensor(loss_val, dtype=DTYPE)
+
+    for it in range(n_iters):
+        t0 = time.time()
+        optimizer.step(closure)
+        dt = time.time() - t0
+        history["loss"].append(last_loss[0])
+        history["log_c_0"].append(float(log_c_0.detach()))
+        history["log_tau_0"].append(float(log_tau_0.detach()))
+        history["log_beta"].append(float(log_beta.detach()))
+        history["wall_s"].append(float(dt))
+        if it < 5 or it % 5 == 0 or it == n_iters - 1:
+            wall = time.time() - t0_global
+            print(f"  it={it:>3d}  loss={last_loss[0]:>14.4f}  "
+                  f"τ_0={float(torch.exp(log_tau_0.detach())):.6f}  "
+                  f"β={float(torch.exp(log_beta.detach())):.4f}  "
+                  f"c_0={float(torch.exp(log_c_0.detach())):.6f}  "
+                  f"({dt:.2f}s/iter, total {wall:.0f}s)")
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    out = OUT / f"{lane}.npz"
+    np.savez(out,
+        lane=lane, n_iters=n_iters, lr=1.0,
+        line_search="strong_wolfe" if use_strong_wolfe else "none",
+        history_size=history_size,
+        loss_history=np.asarray(history["loss"]),
+        log_c_0_history=np.asarray(history["log_c_0"]),
+        log_tau_0_history=np.asarray(history["log_tau_0"]),
+        log_beta_history=np.asarray(history["log_beta"]),
+        wall_s_history=np.asarray(history["wall_s"]),
+        M_final=M.detach().numpy(),
+        mu=mu.numpy(),
+        log_omega_final=log_omega.detach().numpy(),
+        log_c_0_final=float(log_c_0.detach()),
+        log_tau_0_final=float(log_tau_0.detach()),
+        log_beta_final=float(log_beta.detach()),
+        c_0_final=float(torch.exp(log_c_0.detach())),
+        tau_0_final=float(torch.exp(log_tau_0.detach())),
+        beta_final=float(torch.exp(log_beta.detach())),
+        rest_wavelengths=init["rest_wavelengths"],
+    )
+    print(f"  [saved] {out}")
+
+
 def _train_one_lane(lane, n_iters, lr, init, train, t0_global):
     spectrum_loss = _import_spectrum_loss(lane)
     print(f"\n=== lane: {lane} (Adam, lr={lr}, n_iters={n_iters}) ===")
@@ -217,7 +322,7 @@ def _train_one_lane(lane, n_iters, lr, init, train, t0_global):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--lane", choices=["v1", "v3.5", "both"], default="both")
+    p.add_argument("--lane", choices=["v1", "v3.5", "lbfgs", "lbfgs-no-ls", "both"], default="both")
     p.add_argument("--n-iters", type=int, default=50)
     p.add_argument("--lr", type=float, default=0.01)
     args = p.parse_args()
@@ -233,6 +338,14 @@ def main():
         _train_one_lane("v1", args.n_iters, args.lr, init, train, t0_global)
     if args.lane in ("v3.5", "both"):
         _train_one_lane("v3.5", args.n_iters, args.lr, init, train, t0_global)
+    if args.lane == "lbfgs":
+        _train_lbfgs_lane("lbfgs", args.n_iters, init, train, t0_global,
+                          use_strong_wolfe=True)
+    if args.lane == "lbfgs-no-ls":
+        # Diagnostic — torch L-BFGS WITHOUT line search (the "doesn't work"
+        # configuration). For comparison.
+        _train_lbfgs_lane("lbfgs-no-ls", args.n_iters, init, train, t0_global,
+                          use_strong_wolfe=False)
     print(f"\n  total wall time: {time.time() - t0_global:.0f}s")
 
 
