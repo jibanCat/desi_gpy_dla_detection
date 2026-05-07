@@ -33,6 +33,31 @@ broken scaffolding. Cleaner: copy v1 verbatim into `training_v3/`
 introduce only the additions v2 was supposed to deliver (vectorization
 across batch; saving normalization metadata in trained .h5).
 
+## 2026-05-07 update — 4-way comparison after Step A.1 found a v1+MATLAB approximation
+
+Step A.1 (numeric Jacobian sanity, `tests/test_v1_spectrum_loss_jacobian.py`)
+landed with one finding: v1 + MATLAB share an approximate `dlog_β` that
+drops the chromatic-correction term `Σ_{k>1} τ_k · log(λ_lya/λ_k)` for
+`num_forest_lines > 1`. Bias is 0.5–2.5 % scaling with z_qso.
+
+See `docs/notes/2026-05-07_dlog_beta_approximation_finding.md` for the
+full math + impact analysis.
+
+We now run Steps A.2 / A.3 / A.4 / B as a **four-way comparison**:
+
+| variant | dlog_β | role |
+|---|---|---|
+| **v1**     | approximate | frozen Python reference |
+| **MATLAB** | approximate | gold-standard reference (v1 ≡ MATLAB at all gradients) |
+| **v3**     | approximate (= v1) | working copy in `training_v3/`; gains vectorization in Step B without changing the math |
+| **v3.5**   | **strict**  | new variant in `training_v3_5/objective.py`; same as v1 except `dlog_β` includes term (B) |
+
+Step A.1 results for both variants on the 6 frozen TIDs:
+  v1   max rel_err  (log_c_0/τ_0/ω, M):  5.37e-05  ✓ (tol 1e-4)
+  v1   max rel_err  (log_β APPROX):      2.44e-02  ✓ (tol 5e-2)
+  v3.5 max rel_err  (ALL PARAMS):        5.37e-05  ✓ (tol 1e-4)
+                    including log_β:     6.37e-10
+
 ## The four steps
 
 ### Step A — verbatim retrain reproduces v1 (and matches MATLAB)
@@ -88,6 +113,58 @@ A.4 **Canonical TID inference** with the resulting `model_epoch_<N>.h5`:
 If A.1–A.4 all pass, Step A is complete. If any fails, the bug is in
 v1 itself (or in the preprocessing pipeline), not in v2 — escalate
 before continuing.
+
+### Step A.2 — MATLAB cross-check (4-way)
+
+Two parallel comparisons on the 6 frozen TIDs from
+`tests/fixtures/2lpt_frozen/`:
+
+A.2.a **v1 ≡ MATLAB on ALL gradients to ~1e-10.** Both share the
+   approximation; expect machine-precision agreement on `nlog_p`,
+   `dM`, `dlog_ω`, `dlog_c_0`, `dlog_τ_0`, **and `dlog_β`** (because
+   both compute term (A) only).
+
+A.2.b **v3.5 vs MATLAB**: machine-precision on 4 gradients;
+   `dlog_β` differs by 0.5–2.5 % (the bias measured in Step A.1). The
+   measured difference per TID should match the term-(B) prediction.
+   This is the empirical confirmation that v3.5's patch is consistent
+   with the math derivation.
+
+Both legs of A.2 run from the same `.mat` fixtures (no preprocessing
+mismatch possible).
+
+### Step A.3 — short retrain (4-way: v1, v3.5, MATLAB, [v3 once vectorized])
+
+Two parallel trainings on the 1300-spectrum stratified 2lpt fixture,
+~50 epochs each:
+
+- **v1 short retrain** (approximate dlog_β) — reference behaviour.
+- **v3.5 short retrain** (strict dlog_β) — does β converge to a
+  different fixed point?
+- **MATLAB short retrain** (if convenient): trains under MATLAB's
+  legacy code on the same data; expect to match v1.
+- **v3** short retrain (post-vectorization, Step B): expect to match
+  v1.
+
+Compare across the four:
+  - β trajectory + final β (Δβ vs prior σ = 0.04 is the "matters" bar)
+  - μ overlay
+  - corr(M·M^T) shape
+  - χ²/n_valid + z-score on a held-out 200-spectrum 2lpt set
+
+### Step A.4 — canonical TID inference (4-way)
+
+After A.3 trainings finish, run `examples/canonical_tid_per_model.py`
+under each variant's resulting `model_epoch_*.h5`:
+
+- **v1** weights — expect p_DLA ≈ 1 (matches our 2026-05-06 control
+  run on prev v2 untouched).
+- **v3.5** weights — does the strict-gradient training improve MAP
+  NHI bias? Reduce false positives?
+- **MATLAB** weights (if A.3 ran). Should ≈ v1.
+- **v3** (post-vectorization) — expect ≈ v1.
+
+Acceptance: each variant detects canonical TID with p_DLA ≥ 0.9.
 
 ### Step B — vectorize the per-spectrum loop, with its own equivalence test
 

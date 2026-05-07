@@ -1,0 +1,230 @@
+"""
+v3.5 — strict-``dlog_β`` variant of v1's ``objective``.
+
+Same as ``gpy_dla_detection/objective.py`` (v1) EXCEPT:
+
+  ``dlog_β`` includes the chromatic correction term that v1 + MATLAB drop.
+  See ``docs/notes/2026-05-07_dlog_beta_approximation_finding.md`` for
+  the derivation. Concretely, where v1 computes:
+
+      da_β = ω² · scaling · τ_total · exp(-τ_total) · log(1 + z_lya) · β · 𝟙
+
+  v3.5 computes the strict form:
+
+      da_β = ω² · scaling · exp(-τ_total) · (∂τ_total/∂β) · β · 𝟙
+           = ω² · scaling · exp(-τ_total)
+             · (τ_total · log(1+z_lya)
+                + Σ_{k>1} τ_k · log(λ_lya/λ_k) · 𝟙_{k-forest})
+             · β · 𝟙
+
+The chromatic correction
+``Σ_{k>1} τ_k · log(λ_lya/λ_k) · 𝟙_{k-forest}`` is accumulated alongside
+τ_total during the Lyman-line loop.
+
+Loss value, ``dM``, ``dlog_ω``, ``dlog_c_0``, ``dlog_τ_0`` are
+IDENTICAL to v1 by construction; only ``dlog_β`` differs.
+
+Effective optical depth for DESI Y1 (https://arxiv.org/abs/2405.06743):
+ τ(z)=τ0(1+z)^γ
+ τ0=(2.46±0.14)×10−3
+ γ=3.62±0.04
+"""
+
+import torch
+import numpy as np
+from gpy_dla_detection.voigt import transition_wavelengths, oscillator_strengths
+
+def print_gpu_memory(prefix=""):
+    device = torch.cuda.current_device()
+    allocated = torch.cuda.memory_allocated(device) / 1024**2  # Convert to MB
+    reserved = torch.cuda.memory_reserved(device) / 1024**2  # Convert to MB
+    print(f"{prefix} | GPU {device}: Allocated {allocated:.2f} MB, Reserved {reserved:.2f} MB")
+
+def objective(model, fluxes, lya_1pzs, noise_variances, num_forest_lines,
+              all_transition_wavelengths, all_oscillator_strengths, z_qsos):
+    """
+    Computes the negative log-likelihood for the entire training dataset.
+    """
+    device = fluxes.device
+
+    # ✅ Move model parameters to the correct device
+    M = model.M.to(device, non_blocking=True)  # (num_pixels, k)
+    omega2 = torch.exp(2 * model.log_omega).to(device, non_blocking=True)  # (num_pixels,)
+    c_0 = torch.exp(model.log_c_0).to(device, non_blocking=True)  # (scalar)
+    tau_0 = torch.exp(model.log_tau_0).to(device, non_blocking=True)  # (scalar)
+    beta = torch.exp(model.log_beta).to(device, non_blocking=True)  # (scalar)
+
+    # ✅ Initialize accumulators
+    total_loss = torch.tensor(0.0, device=device)
+    dM_accum = torch.zeros_like(M, device=device)
+    dlog_omega_accum = torch.zeros_like(model.log_omega, device=device)
+    dlog_c_0_accum = torch.tensor(0.0, device=device)
+    dlog_tau_0_accum = torch.tensor(0.0, device=device)
+    dlog_beta_accum = torch.tensor(0.0, device=device)
+
+    valid_masks = ~torch.isnan(fluxes)
+
+    for i in range(len(fluxes)):  
+        valid_mask = valid_masks[i]
+        if valid_mask.sum() == 0:
+            continue
+
+        # ✅ Compute spectrum loss per sample
+        nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta = spectrum_loss(
+            fluxes[i, valid_mask], lya_1pzs[i, valid_mask], noise_variances[i, valid_mask], 
+            M[valid_mask, :], omega2[valid_mask], c_0, tau_0, beta, 
+            num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, z_qsos[i]
+        )
+
+        total_loss += nlog_p.detach()
+        dM_accum[valid_mask, :] += dM.detach()
+        dlog_omega_accum[valid_mask] += dlog_omega.detach()
+        dlog_c_0_accum += dlog_c_0.detach()
+        dlog_tau_0_accum += dlog_tau_0.detach()
+        dlog_beta_accum += dlog_beta.detach()
+
+    # ✅ Apply **DESI Y1 Prior** for log_tau_0 and log_beta
+    tau_0_mu = 0.00246  # DESI Y1 Mean τ₀
+    tau_0_sigma = 0.00014  # DESI Y1 Std τ₀
+    beta_mu = 3.62  # DESI Y1 Mean β
+    beta_sigma = 0.04  # DESI Y1 Std β
+
+    # ✅ Correct prior application in log-space
+    dlog_tau_0_accum += (tau_0 - tau_0_mu) / tau_0_sigma**2 * tau_0  # Chain rule
+    dlog_beta_accum += (beta - beta_mu) / beta_sigma**2 * beta  # Chain rule
+
+    # ✅ Apply accumulated gradients
+    if model.M.grad is None:
+        model.M.grad = dM_accum
+    else:
+        model.M.grad += dM_accum
+    if model.log_omega.grad is None:
+        model.log_omega.grad = dlog_omega_accum
+    else:
+        model.log_omega.grad += dlog_omega_accum
+    if model.log_c_0.grad is None:
+        model.log_c_0.grad = dlog_c_0_accum
+    else:
+        model.log_c_0.grad += dlog_c_0_accum
+    if model.log_tau_0.grad is None:    
+        model.log_tau_0.grad = dlog_tau_0_accum
+    else:
+        model.log_tau_0.grad += dlog_tau_0_accum
+    if model.log_beta.grad is None:
+        model.log_beta.grad = dlog_beta_accum
+    else:
+        model.log_beta.grad += dlog_beta_accum
+
+    return total_loss
+
+def spectrum_loss(y, lya_1pz, noise_variance, M, omega2, c_0, tau_0, beta,
+                  num_forest_lines, all_transition_wavelengths, all_oscillator_strengths, zqso_1pz):
+    """
+    Computes the negative log-likelihood and gradients for a single spectrum.
+    """
+    log_2pi = 1.83787706640934534  # log(2π)
+
+    n, k = M.shape  # (n, k) = (num_pixels, num_latent_components)
+    
+    # ✅ Compute approximate Lyα optical depth
+    lya_optical_depth = tau_0 * torch.pow(lya_1pz, beta)  # (n,)
+
+    # ✅ Apply indicator mask (only consider pixels within quasar redshift)
+    indicator = (lya_1pz <= zqso_1pz).float()  # (n,)
+    lya_optical_depth *= indicator  # (n,)
+
+    # v3.5: chromatic_correction = Σ_{k>1} τ_k · log(λ_lya/λ_k) · 𝟙_{k-forest}
+    # used by the strict dlog_β gradient (term B of ∂τ_tot/∂β).
+    # Lyα contributes 0 to this sum since log(λ_lya/λ_lya) = 0.
+    chromatic_correction = torch.zeros_like(lya_optical_depth)  # (n,)
+
+    # ✅ Compute Lyman series optical depth using scaling relationships
+    for i in range(1, num_forest_lines):
+        # v3.5: keep lyman_1pz un-zeroed; mask via lyman_indicator multiplicatively.
+        # log(r_i) is a per-line constant (Lyβ: 0.170, Lyγ: 0.224, ...) used in
+        # the chromatic correction; we still mask the τ_k contribution itself
+        # by lyman_indicator so non-forest pixels contribute zero everywhere.
+        r_i = all_transition_wavelengths[0] / all_transition_wavelengths[i]  # scalar
+        lyman_1pz = r_i * lya_1pz                                              # (n,)
+        lyman_indicator = (lyman_1pz <= zqso_1pz).float()                      # (n,)
+
+        tau_i_scale = (tau_0 * all_transition_wavelengths[i] * all_oscillator_strengths[i]) / \
+                      (all_transition_wavelengths[0] * all_oscillator_strengths[0])  # scalar
+
+        tau_lyk = tau_i_scale * torch.pow(lyman_1pz, beta) * lyman_indicator   # (n,)
+        lya_optical_depth = lya_optical_depth + tau_lyk
+        chromatic_correction = chromatic_correction + tau_lyk * torch.log(r_i)
+
+    # ✅ Compute approximate absorption due to Lyα and Lyman series
+    lya_absorption = torch.exp(-lya_optical_depth)  # (n,)
+
+    # ✅ Compute "absorption noise" contribution
+    scaling_factor = 1 - lya_absorption + c_0  # (n,)
+    absorption_noise = omega2 * scaling_factor ** 2  # (n,)
+
+    # ✅ Compute total variance (including instrumental noise)
+    d = noise_variance + absorption_noise #+ 1e-6  # (n,)
+    d_inv = 1.0 / d  # (n,)
+
+    # ✅ Compute inverse terms
+    D_inv_y = d_inv * y  # (n,)
+    D_inv_M = d_inv[:, None] * M  # (n, k)
+
+    # ✅ Compute covariance matrix using Woodbury identity
+    B = M.T @ D_inv_M  # (k, k)
+    B.diagonal().add_(1.0)  # (k, k) → adding 1 to diagonal for stability
+
+    # ✅ Perform Cholesky decomposition for numerical stability
+    L = torch.linalg.cholesky(B)  # (k, k)
+
+    # ✅ Solve for C using two triangular solves (MATLAB equivalent)
+    X = torch.linalg.solve_triangular(L, D_inv_M.T, upper=False)  # Forward substitution
+    C = torch.linalg.solve_triangular(L.T, X, upper=True)  # Backward substitution
+
+    # ✅ Compute K⁻¹ y
+    C_y = C @ y.unsqueeze(-1)  # (k, n) @ (n, 1) → should result in (k, 1)
+    K_inv_y = D_inv_y - torch.matmul(D_inv_M, C_y).view(-1)  # (n,) - ((n, k) @ (k, 1)).squeeze(-1) → (n,)
+
+    # ✅ Compute log determinant of K
+    log_det_K = torch.sum(torch.log(d)) + 2 * torch.sum(torch.log(torch.diagonal(L)))  # (scalar)
+
+    # ✅ Compute negative log-likelihood
+    nlog_p = 0.5 * (y @ K_inv_y + log_det_K + n * log_2pi)  # (scalar)
+
+    # ✅ Compute gradients analytically
+    # Compute inverse covariance terms    
+    # print(f"D_inv_M shape: {D_inv_M.shape}, C shape: {C.shape}, M shape: {M.shape}")
+
+    tmp = C @ M  # (k, k)
+    K_inv_M = D_inv_M - torch.matmul(D_inv_M, tmp)  # Explicit torch.matmul
+    del tmp  # Free memory immediately    # K_inv_M = D_inv_M - (D_inv_M @ C @ M)  # (n, k)
+
+    # Gradient wrt M
+    dM = -(K_inv_y[:, None] @ (K_inv_y[None, :] @ M) - K_inv_M)  # (n, k)
+
+    # Compute diag K⁻¹ efficiently (without full product)
+    diag_K_inv = d_inv - torch.sum(C * D_inv_M.T, dim=0)  # (n,)
+
+    # Gradient wrt log ω
+    dlog_omega = -(absorption_noise * (K_inv_y ** 2 - diag_K_inv))  # (n,)
+
+    # Gradient wrt log c₀
+    da_c0 = c_0 * omega2 * scaling_factor  # (n,)
+    # ✅ Correct MATLAB translation:
+    dlog_c_0 = -(torch.dot(K_inv_y * da_c0, K_inv_y) - torch.dot(diag_K_inv, da_c0))  # (scalar)
+
+    # Gradient wrt log τ₀
+    da_tau0 = omega2 * scaling_factor * lya_optical_depth * lya_absorption  # (n,)
+    # ✅ Perform dot product like MATLAB's `(...)' * K_inv_y`
+    dlog_tau_0 = -torch.dot(K_inv_y * da_tau0, K_inv_y) + torch.dot(diag_K_inv, da_tau0)  # (scalar)
+
+    # Gradient wrt log β (v3.5 strict form: includes chromatic correction term)
+    # ∂τ_tot/∂β = τ_tot · log(1+z_lya) + Σ_{k>1} τ_k · log(λ_lya/λ_k) · 𝟙_{k-forest}
+    #           = lya_optical_depth · log(lya_1pz)  +  chromatic_correction
+    # da_β = ω² · scaling · exp(-τ_tot) · ∂τ_tot/∂β · β · 𝟙_{lya-forest}
+    da_beta = (omega2 * scaling_factor * lya_absorption *
+               (lya_optical_depth * torch.log(lya_1pz) + chromatic_correction) *
+               beta * indicator)                                                # (n,)
+    dlog_beta = -torch.dot(K_inv_y * da_beta, K_inv_y) + torch.dot(diag_K_inv, da_beta)  # (scalar)
+
+    return nlog_p, dM, dlog_omega, dlog_c_0, dlog_tau_0, dlog_beta
