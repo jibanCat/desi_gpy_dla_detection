@@ -1,0 +1,69 @@
+{
+  "source_trainset": "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_48938765/trainset.h5",
+  "bal_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits",
+  "n_strat": 1300,
+  "n_pix": 3801,
+  "k": 30,
+  "c_0": 0.1,
+  "tau_0": 0.00246,
+  "beta": 3.62,
+  "deforest_tau_0": 0.00246,
+  "deforest_beta": 3.62,
+  "num_forest_lines": 3,
+  "spectra": [
+    {
+      "target_id": 237926,
+      "row_idx": 24,
+      "z_qso": 2.600756883621216,
+      "snr_forest": 0.0,
+      "tier": "high",
+      "z_target": 2.6,
+      "snr_target": 8.0
+    },
+    {
+      "target_id": 250915,
+      "row_idx": 85,
+      "z_qso": 2.878598213195801,
+      "snr_forest": 0.0,
+      "tier": "med",
+      "z_target": 2.9,
+      "snr_target": 3.0
+    },
+    {
+      "target_id": 237575,
+      "row_idx": 19,
+      "z_qso": 3.2248423099517822,
+      "snr_forest": 0.0,
+      "tier": "low",
+      "z_target": 3.2,
+      "snr_target": 1.0
+    },
+    {
+      "target_id": 242431,
+      "row_idx": 415,
+      "z_qso": 3.501962184906006,
+      "snr_forest": 0.0,
+      "tier": "med-hi",
+      "z_target": 3.5,
+      "snr_target": 4.0
+    },
+    {
+      "target_id": 243225,
+      "row_idx": 44,
+      "z_qso": 3.7819364070892334,
+      "snr_forest": 0.0,
+      "tier": "med",
+      "z_target": 3.8,
+      "snr_target": 2.0
+    },
+    {
+      "target_id": 120046865,
+      "row_idx": 122197,
+      "z_qso": 2.9619851112365723,
+      "snr_forest": 0.0,
+      "tier": "canonical",
+      "z_target": 2.96,
+      "snr_target": 0.59
+    }
+  ]
+}
