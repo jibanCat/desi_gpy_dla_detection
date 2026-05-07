@@ -223,6 +223,30 @@ def main():
     TW, OS = _load_lyman_constants()
     print(f"[lyman] num_forest_lines={NUM_FOREST_LINES} TW[0]={TW[0]} OS[0]={OS[0]}")
 
+    # Save the 1300-spectrum stratified TRAINING SET so both Python and MATLAB
+    # short-retrain runs see byte-identical inputs. Each row is post (mask →
+    # interpolate → deforest → center). Validity: pixels are valid where
+    # `centered` is finite (i.e. nv > 0 and the de-forest division didn't blow
+    # up). The trainer derives lya_1pz from rest_wavelengths + z_qso.
+    centered_for_save = centered.astype(np.float64)
+    nv_for_save = nv_def.astype(np.float64)
+    valid_masks = np.isfinite(centered_for_save) & np.isfinite(nv_for_save) & (nv_for_save > 0)
+    train = dict(
+        centered_fluxes=centered_for_save,                     # (N, n_pix)
+        noise_variances=nv_for_save,                            # (N, n_pix)  (de-forested)
+        z_qsos=z_strat.astype(np.float64),                      # (N,)
+        target_ids=tids_all[strat_idx].astype(np.int64),        # (N,)
+        valid_masks=valid_masks,                                # (N, n_pix), bool
+        rest_wavelengths=rest_wavelengths,                      # (n_pix,)
+        n_train_spectra=np.int64(len(strat_idx)),
+    )
+    train_npz = OUT_DIR / "training_set.npz"
+    train_mat = OUT_DIR / "training_set.mat"
+    np.savez(train_npz, **train)
+    savemat(train_mat, train)
+    print(f"[saved] {train_npz}  ({train_npz.stat().st_size/1e6:.2f} MB)")
+    print(f"[saved] {train_mat}  ({train_mat.stat().st_size/1e6:.2f} MB)")
+
     # Save population init
     init_npz = OUT_DIR / "init_params.npz"
     init_mat = OUT_DIR / "init_params.mat"
