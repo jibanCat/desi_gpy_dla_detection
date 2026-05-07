@@ -1,0 +1,12 @@
+{
+  "lane": "v1",
+  "learned_h5": "/home/mfho/desi_gpy_dla_detection/tests/fixtures/2lpt_frozen/short_retrain/h5/v1.h5",
+  "target_id": 120046865,
+  "truth_log_nhi": 21.263,
+  "z_qso": 2.9619851112365723,
+  "p_dla": 0.9446946790863716,
+  "map_z_dla": 2.7743213466539123,
+  "map_log_nhi": 21.62847460932111,
+  "delta_log_nhi": 0.3654746093211081,
+  "elapsed_s": 49.93477392196655
+}
