@@ -65,13 +65,29 @@ def _build_cache():
             flux = np.asarray(f[all_flux[0, qi]])[0]
             nv = np.asarray(f[all_nv[0, qi]])[0]
             mask = np.asarray(f[all_mask[0, qi]])[0].astype(bool)
-            valid = ~mask & np.isfinite(flux) & np.isfinite(nv) & (nv > 0)
-            if valid.sum() < 100: continue
-            wave_rest = wave[valid] / (1.0 + float(z_qsos[i]))
-            interp_flux[i] = np.interp(rest_grid, wave_rest, flux[valid],
-                                        left=np.nan, right=np.nan)
-            interp_nv[i] = np.interp(rest_grid, wave_rest, nv[valid],
-                                       left=np.nan, right=np.nan)
+            # 2026-05-08 fix per debug-agent #2: MATLAB interp1 keeps full
+            # wavelength axis with masked pixels set to NaN; rest-grid points
+            # bracketed by a NaN return NaN. np.interp silently linearly
+            # bridges masked pixels — produces noise at sky-line gaps. Use
+            # NaN-aware linear interp here.
+            bad = mask | ~np.isfinite(flux) | ~np.isfinite(nv) | ~(nv > 0)
+            flux_nan = flux.copy(); flux_nan[bad] = np.nan
+            nv_nan = nv.copy();     nv_nan[bad] = np.nan
+            n_finite = int(np.sum(~bad))
+            if n_finite < 100: continue
+            wave_rest = wave / (1.0 + float(z_qsos[i]))
+            # Linear interp where both bracketing points are finite, else NaN
+            idx = np.searchsorted(wave_rest, rest_grid) - 1
+            valid_grid = (idx >= 0) & (idx < len(wave_rest) - 1)
+            idx_safe = np.clip(idx, 0, len(wave_rest) - 2)
+            t = (rest_grid - wave_rest[idx_safe]) / (
+                wave_rest[idx_safe + 1] - wave_rest[idx_safe])
+            f_interp = (1.0 - t) * flux_nan[idx_safe] + t * flux_nan[idx_safe + 1]
+            n_interp = (1.0 - t) * nv_nan[idx_safe]   + t * nv_nan[idx_safe + 1]
+            f_interp[~valid_grid] = np.nan
+            n_interp[~valid_grid] = np.nan
+            interp_flux[i] = f_interp
+            interp_nv[i] = n_interp
         print(f"  [cache] done in {time.time()-t0:.0f}s")
 
     # 2026-05-08 fix per debug-agent report: MATLAB masks pixels with
