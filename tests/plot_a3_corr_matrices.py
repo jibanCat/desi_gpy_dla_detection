@@ -42,18 +42,24 @@ def main():
     init_npz = np.load(FIX / "init_params.npz")
     rest = init_npz["rest_wavelengths"].astype(float)
     M_init = init_npz["M"].astype(float)
-    M_v1 = _load_M(OUT / "v1.npz", "M_final").astype(float)
-    M_v35 = _load_M(OUT / "v3.5.npz", "M_final").astype(float)
-    M_ml = _load_M(OUT / "matlab.mat", "M_final").astype(float)
 
-    panels = [
-        ("init  (PCA, before training)", M_init),
-        ("v1    (Adam, 50 iter; approx dlog_β)", M_v1),
-        ("v3.5  (Adam, 50 iter; strict dlog_β)", M_v35),
-        ("MATLAB (L-BFGS, 50 iter)", M_ml),
-    ]
+    panels = [("init  (PCA, before training)", M_init)]
+    if (OUT / "v1.npz").exists():
+        panels.append(("v1    (Adam, 50 iter; approx dlog_β)",
+                       _load_M(OUT / "v1.npz", "M_final").astype(float)))
+    if (OUT / "v3.5.npz").exists():
+        panels.append(("v3.5  (Adam, 50 iter; strict dlog_β)",
+                       _load_M(OUT / "v3.5.npz", "M_final").astype(float)))
+    if (OUT / "matlab.mat").exists():
+        panels.append(("MATLAB (L-BFGS, 50 iter)",
+                       _load_M(OUT / "matlab.mat", "M_final").astype(float)))
 
-    fig, axes = plt.subplots(2, 2, figsize=(13, 13))
+    n_panels = len(panels)
+    n_cols = 2 if n_panels > 2 else n_panels
+    n_rows = (n_panels + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(6.5 * n_cols, 6.5 * n_rows),
+                             squeeze=False)
     extent = [rest[0], rest[-1], rest[-1], rest[0]]
     for (title, M), ax in zip(panels, axes.flat):
         if M.shape[0] != rest.shape[0]:
@@ -80,13 +86,15 @@ def main():
 
     # Also make a delta plot (training - init) per lane to highlight what
     # training learned beyond the PCA prior.
-    fig2, axes2 = plt.subplots(1, 3, figsize=(16, 5.5))
+    delta_panels = []
+    for title, M in panels[1:]:  # skip init
+        delta_panels.append((title.split()[0] + " − init", M))
+    if not delta_panels:
+        return
+    fig2, axes2 = plt.subplots(1, len(delta_panels), figsize=(5.5 * len(delta_panels), 5.5),
+                                squeeze=False)
     C0 = _corr(M_init if M_init.shape[0] == rest.shape[0] else M_init.T)
-    for ax, (title, M), name in zip(axes2,
-                                     [("v1 − init", M_v1),
-                                      ("v3.5 − init", M_v35),
-                                      ("MATLAB − init", M_ml)],
-                                     ["v1", "v3.5", "matlab"]):
+    for ax, (title, M) in zip(axes2[0], delta_panels):
         if M.shape[0] != rest.shape[0]:
             M = M.T
         C = _corr(M)

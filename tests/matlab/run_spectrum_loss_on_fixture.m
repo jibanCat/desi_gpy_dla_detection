@@ -39,7 +39,7 @@ function run_spectrum_loss_on_fixture()
   fprintf('init: n_pix=%d  k=%d  c_0=%.4f  tau_0=%.5f  beta=%.4f\n', ...
     size(M_full, 1), size(M_full, 2), c_0, tau_0, beta);
 
-  tids = [270126904, 300065288, 250095019, 300072939, 350029642, 120046865];
+  tids = [270143607, 250027833, 40000430, 220250636, 180021938, 120046865];
 
   for ti = 1:length(tids)
     tid = tids(ti);

@@ -53,7 +53,7 @@ from sklearn.decomposition import PCA
 # v2 trainset.h5 — raw fluxes after (mask + interpolate) only.
 # We apply the v1 (deforest + center) on top to get the input form
 # spectrum_loss expects.
-TRAINSET = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_48938765/trainset.h5"
+TRAINSET = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_wide_v2_1778186324/trainset.h5"  # 2026-05-07 wider preload [850.75, 1700, 0.15] → 5662 pixels
 ROOT = "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124"
 BAL_CAT = f"{ROOT}/bal_cat.fits"
 ZCAT = f"{ROOT}/zcat.fits"

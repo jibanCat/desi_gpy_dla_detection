@@ -28,6 +28,21 @@ Run:
 """
 from __future__ import annotations
 
+# 2026-05-07 PERFORMANCE NOTE: this trainer iterates over 1300 spectra
+# inside Python (no batch vectorization yet — Step B). Each call to
+# spectrum_loss does small linear-algebra ops (a 30×30 Cholesky + (n×30)
+# matmuls). With multi-threaded BLAS (default OMP_NUM_THREADS=#cores),
+# every inner-loop iteration spawns a thread storm whose synchronization
+# overhead dwarfs the actual compute. Result: per-iter time blows up
+# 10–20× under default threading.
+#
+# Pinning to 1 thread makes the inner loop 10× faster on this machine.
+# Step B (vectorize across spectra) will let us re-enable multi-threaded
+# BLAS profitably.
+import os as _os
+for _name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+    _os.environ.setdefault(_name, "1")
+
 import argparse
 import importlib
 import sys
