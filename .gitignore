@@ -55,3 +55,7 @@ slurm/greatlakes/*.log
 # and the GPU/CPU profiler trace JSONs (~MB-GB) are not.
 tests/profile/results/*.tsv
 tests/profile/results/trace_*.json
+
+# Step A trainset fixtures regenerable from build_2lpt_frozen_test_fixture.py
+tests/fixtures/2lpt_frozen/training_set.mat
+tests/fixtures/2lpt_frozen/training_set.npz

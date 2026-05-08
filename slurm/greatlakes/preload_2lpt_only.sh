@@ -3,7 +3,7 @@
 #SBATCH -p standard
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=32G
+#SBATCH --mem=96G
 #SBATCH -t 4:00:00
 #SBATCH -J 2lpt_preload
 #SBATCH -o slurm/greatlakes/2lpt_preload_%j.log
