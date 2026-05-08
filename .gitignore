@@ -59,3 +59,8 @@ tests/profile/results/trace_*.json
 # Step A trainset fixtures regenerable from build_2lpt_frozen_test_fixture.py
 tests/fixtures/2lpt_frozen/training_set.mat
 tests/fixtures/2lpt_frozen/training_set.npz
+
+# Phase 2 DR16 cache (re-buildable from build_data_cache())
+tests/fixtures/dr16_pca_init.npz
+tests/fixtures/dr16_phase2_cache/
+docs/notes/2026-05-08_matlab_dr16_validation/phase2_result.npz
