@@ -22,6 +22,7 @@ for _name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
 
 import argparse
 import json
+import signal
 import sys
 import time
 from pathlib import Path
@@ -45,8 +46,18 @@ PRELOAD = REF_DIR / "preloaded_qsos.mat"
 CATALOG = REF_DIR / "catalog.mat"
 LEARNED = REF_DIR / "learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat"
 OUT_DIR = REPO / "docs/notes/2026-05-08_matlab_dr16_validation"
-CACHE_DIR = REPO / "tests/fixtures/dr16_phase2_cache"
+# Default to scratch (home quota is 80 GiB, cache is ~5.5 GB at 89k spectra).
+# Override with --cache-dir / --checkpoint-dir as needed.
+SCRATCH_DEFAULT = Path("/scratch/cavestru_root/cavestru0/mfho/phase2_dr16")
+CACHE_DIR_DEFAULT = SCRATCH_DEFAULT / "data_cache"
+CHECKPOINT_DIR_DEFAULT = SCRATCH_DEFAULT / "checkpoints"
+# Fallback locations (if the original home cache exists, use it transparently).
+CACHE_DIR_HOME = REPO / "tests/fixtures/dr16_phase2_cache"
 PCA_INIT = REPO / "tests/fixtures/dr16_pca_init.npz"
+
+# Set by main(); used by _build_data_cache and _train.
+_RUNTIME = {"cache_dir": CACHE_DIR_DEFAULT, "checkpoint_dir": CHECKPOINT_DIR_DEFAULT,
+            "save_now": False}
 
 DTYPE = torch.float64
 MIN_LAMBDA, MAX_LAMBDA, DLAMBDA = 850.75, 1420.75, 0.25
@@ -65,12 +76,22 @@ BETA_PRIOR_MU, BETA_PRIOR_SIGMA = 3.182, 0.074
 def _build_data_cache(n_spectra=None):
     """Same preprocessing as plot_corr_dr16_comparison.py:_build_cache, but
     saves the per-spectrum centered_fluxes/nv/lya_1pzs needed for training.
+
+    Looks for the cache file at (in order): _RUNTIME['cache_dir'], then the
+    legacy CACHE_DIR_HOME path. Builds in _RUNTIME['cache_dir'] if missing.
     """
-    cache_path = CACHE_DIR / f"data_cache_n{n_spectra or 'all'}.npz"
-    if cache_path.exists():
-        print(f"[cache] using existing {cache_path.name}")
-        return cache_path
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_dir = _RUNTIME["cache_dir"]
+    fname = f"data_cache_n{n_spectra or 'all'}.npz"
+    primary = cache_dir / fname
+    legacy = CACHE_DIR_HOME / fname
+    if primary.exists():
+        print(f"[cache] using existing {primary}")
+        return primary
+    if legacy.exists():
+        print(f"[cache] using legacy home cache {legacy}")
+        return legacy
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = primary
 
     print("[cache] loading train_ind from learned_qso_model.mat ...")
     with h5py.File(LEARNED, "r") as f:
@@ -183,10 +204,14 @@ def _pca_init(centered, k=K):
 
 
 def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_init,
-           num_forest_lines, n_iters, lr):
+           num_forest_lines, n_iters, lr, checkpoint_every=5, resume_path=None,
+           max_walltime_sec=None):
     """Adam loop matching tests/short_retrain_2lpt.py:_full_batch_objective.
     Bypasses v1's objective.py wrapper (zqso_1pz=z_qso+1 directly).
     Applies BOSS DR12Q priors on log_τ_0 and log_β.
+
+    Saves a checkpoint to _RUNTIME['checkpoint_dir'] every `checkpoint_every`
+    iterations, on SIGTERM/SIGINT, or when wall elapsed exceeds max_walltime_sec.
     """
     from gpy_dla_detection.voigt import (
         transition_wavelengths as TW, oscillator_strengths as OS)
@@ -207,11 +232,57 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
 
     optimizer = torch.optim.Adam([M, log_omega, log_c_0, log_tau_0, log_beta], lr=lr)
     history = dict(loss=[], log_c_0=[], log_tau_0=[], log_beta=[])
+    start_iter = 0
+    if resume_path is not None:
+        rp = Path(resume_path)
+        print(f"\n[resume] loading checkpoint from {rp}")
+        ckpt = torch.load(rp, map_location="cpu", weights_only=False)
+        with torch.no_grad():
+            M.copy_(ckpt["M"])
+            log_omega.copy_(ckpt["log_omega"])
+            log_c_0.copy_(ckpt["log_c_0"])
+            log_tau_0.copy_(ckpt["log_tau_0"])
+            log_beta.copy_(ckpt["log_beta"])
+        optimizer.load_state_dict(ckpt["optim_state"])
+        history = {k: list(v) for k, v in ckpt["history"].items()}
+        start_iter = int(ckpt["iter_completed"]) + 1
+        print(f"[resume] resuming at iter={start_iter} "
+              f"(prior loss={history['loss'][-1]:.4f})")
+
     dM_accum = torch.zeros_like(M)
     dlog_omega_accum = torch.zeros_like(log_omega)
 
-    print(f"\n=== Training: {n} spectra, {n_iters} iter, lr={lr} ===")
-    for it in range(n_iters):
+    ckpt_dir = _RUNTIME["checkpoint_dir"]
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    def _save_checkpoint(it_done, tag="iter"):
+        cpath = ckpt_dir / f"phase2_checkpoint_{tag}{it_done:04d}.pt"
+        torch.save(dict(
+            M=M.detach().clone(),
+            log_omega=log_omega.detach().clone(),
+            log_c_0=log_c_0.detach().clone(),
+            log_tau_0=log_tau_0.detach().clone(),
+            log_beta=log_beta.detach().clone(),
+            optim_state=optimizer.state_dict(),
+            iter_completed=int(it_done),
+            history=history,
+            mu=mu,
+        ), cpath)
+        print(f"[checkpoint] saved {cpath} (iter {it_done})")
+        return cpath
+
+    # Signal handler: set save_now flag; loop checks it at next iter boundary.
+    def _on_signal(signum, _frame):
+        print(f"\n[signal] caught {signum}, requesting graceful save at next iter boundary")
+        _RUNTIME["save_now"] = True
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+
+    train_t0 = time.time()
+    print(f"\n=== Training: {n} spectra, {n_iters} iter, lr={lr}, "
+          f"start_iter={start_iter}, checkpoint_every={checkpoint_every} ===")
+    it = start_iter - 1  # ensure defined after loop, even if it doesn't run
+    for it in range(start_iter, n_iters):
         t0 = time.time()
         optimizer.zero_grad()
         omega2 = torch.exp(2 * log_omega)
@@ -270,6 +341,24 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
                   f"β={float(beta.detach()):.4f}  "
                   f"c_0={float(c_0.detach()):.6f}  ({dt:.2f}s/iter)")
 
+        # Periodic checkpoint
+        if checkpoint_every and ((it + 1) % checkpoint_every == 0):
+            _save_checkpoint(it)
+
+        # Walltime budget exceeded → save and bail
+        if max_walltime_sec is not None and (time.time() - train_t0) > max_walltime_sec:
+            print(f"[walltime] elapsed > {max_walltime_sec}s; saving and exiting at iter={it}")
+            _save_checkpoint(it, tag="walltime_exit_iter")
+            break
+
+        # SIGTERM / SIGINT received → save and bail
+        if _RUNTIME["save_now"]:
+            _save_checkpoint(it, tag="signal_exit_iter")
+            break
+
+    # Final checkpoint at clean exit
+    _save_checkpoint(it, tag="final_iter")
+
     return dict(M=M.detach().numpy(),
                 mu=mu,
                 log_omega=log_omega.detach().numpy(),
@@ -294,7 +383,23 @@ def main():
                    help="Subsample of train_ind for training (default 5000; full = 89408)")
     p.add_argument("--n-iters", type=int, default=50)
     p.add_argument("--lr", type=float, default=0.01)
+    p.add_argument("--cache-dir", type=Path, default=CACHE_DIR_DEFAULT,
+                   help=f"Where to write/read the preprocessed npz cache "
+                        f"(default: {CACHE_DIR_DEFAULT}). Falls back to "
+                        f"{CACHE_DIR_HOME} if a cache file is present there.")
+    p.add_argument("--checkpoint-dir", type=Path, default=CHECKPOINT_DIR_DEFAULT,
+                   help=f"Where to write training checkpoints "
+                        f"(default: {CHECKPOINT_DIR_DEFAULT}).")
+    p.add_argument("--checkpoint-every", type=int, default=5,
+                   help="Save a checkpoint every N iterations (default 5; 0 disables periodic).")
+    p.add_argument("--resume", type=Path, default=None,
+                   help="Path to a .pt checkpoint file to resume from.")
+    p.add_argument("--max-walltime-sec", type=int, default=None,
+                   help="If set, save and exit when training elapsed exceeds this (seconds).")
     args = p.parse_args()
+
+    _RUNTIME["cache_dir"] = args.cache_dir
+    _RUNTIME["checkpoint_dir"] = args.checkpoint_dir
 
     cache_path = _build_data_cache(n_spectra=args.n_spectra)
     cache = np.load(cache_path)
@@ -316,7 +421,10 @@ def main():
     # Train
     result = _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu,
                     M_init, log_omega_init, NUM_FOREST_LINES,
-                    args.n_iters, args.lr)
+                    args.n_iters, args.lr,
+                    checkpoint_every=args.checkpoint_every,
+                    resume_path=args.resume,
+                    max_walltime_sec=args.max_walltime_sec)
 
     # Save
     out_npz = OUT_DIR / "phase2_result.npz"

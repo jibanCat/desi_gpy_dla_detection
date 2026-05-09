@@ -39,6 +39,11 @@ export OPENBLAS_NUM_THREADS=1
 N_ITERS="${N_ITERS:-200}"      # 200 Adam iter; loss should converge at this scale
 N_SPECTRA="${N_SPECTRA:-89408}"  # full DR16 train_ind set
 LR="${LR:-0.01}"
+CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-5}"
+# Save and exit if training elapsed > this (seconds). 23h = 82800s, leaves
+# ~1h for clean shutdown / final artifact write before SLURM walltime kill.
+MAX_WALLTIME_SEC="${MAX_WALLTIME_SEC:-82800}"
+RESUME="${RESUME:-}"  # path to .pt checkpoint to resume from, or empty
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
@@ -51,12 +56,23 @@ echo "  Phase 2 DR16 retrain  job: $SLURM_JOB_ID"
 echo "  GreatLakes -p standard  c=8  mem=64G  t=24h"
 echo "  spectra: $N_SPECTRA   iters: $N_ITERS   lr: $LR"
 echo "  thread cap: OMP=$OMP_NUM_THREADS"
+echo "  checkpoint_every: $CHECKPOINT_EVERY"
+echo "  max_walltime_sec: $MAX_WALLTIME_SEC"
+echo "  resume:  ${RESUME:-<from scratch>}"
 echo "===================================================="
+
+RESUME_ARG=()
+if [ -n "$RESUME" ]; then
+    RESUME_ARG=(--resume "$RESUME")
+fi
 
 python -u tests/phase2_train_dr16.py \
     --n-spectra "$N_SPECTRA" \
     --n-iters "$N_ITERS" \
-    --lr "$LR"
+    --lr "$LR" \
+    --checkpoint-every "$CHECKPOINT_EVERY" \
+    --max-walltime-sec "$MAX_WALLTIME_SEC" \
+    "${RESUME_ARG[@]}"
 
 echo
 echo "===================================================="
