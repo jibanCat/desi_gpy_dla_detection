@@ -28,12 +28,15 @@
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
-# Thread cap matches the documented finding (2026-05-07): the 89k-spectrum
-# Python loop suffers BLAS thread oversubscription with default threading.
-# Single-thread + parallel small-matrix ops gives ~10× speedup vs default.
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
+# Vectorized path (default --vectorized=1): one batched matmul per chunk
+# benefits from multi-threaded BLAS, so OMP=4 is profitable. The thread-storm
+# constraint from 2026-05-07 was specific to the per-spectrum Python loop
+# where every spectrum spawned 8 BLAS threads and saturated the node.
+# Override with OMP_NUM_THREADS=1 in env if explicitly running the
+# per-spectrum reference path (--vectorized 0).
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-4}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-4}"
 
 # Tunables
 N_ITERS="${N_ITERS:-200}"      # 200 Adam iter; loss should converge at this scale
@@ -44,6 +47,8 @@ CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-5}"
 # ~1h for clean shutdown / final artifact write before SLURM walltime kill.
 MAX_WALLTIME_SEC="${MAX_WALLTIME_SEC:-82800}"
 RESUME="${RESUME:-}"  # path to .pt checkpoint to resume from, or empty
+VECTORIZED="${VECTORIZED:-1}"     # 1 = spectrum_loss_batch (default); 0 = per-spectrum loop
+CHUNK_SIZE="${CHUNK_SIZE:-1000}"  # batch chunk for the vectorized path
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
@@ -55,9 +60,10 @@ echo "===================================================="
 echo "  Phase 2 DR16 retrain  job: $SLURM_JOB_ID"
 echo "  GreatLakes -p standard  c=8  mem=64G  t=24h"
 echo "  spectra: $N_SPECTRA   iters: $N_ITERS   lr: $LR"
-echo "  thread cap: OMP=$OMP_NUM_THREADS"
+echo "  thread cap: OMP=$OMP_NUM_THREADS  MKL=$MKL_NUM_THREADS  OPENBLAS=$OPENBLAS_NUM_THREADS"
 echo "  checkpoint_every: $CHECKPOINT_EVERY"
 echo "  max_walltime_sec: $MAX_WALLTIME_SEC"
+echo "  vectorized: $VECTORIZED   chunk_size: $CHUNK_SIZE"
 echo "  resume:  ${RESUME:-<from scratch>}"
 echo "===================================================="
 
@@ -72,6 +78,8 @@ python -u tests/phase2_train_dr16.py \
     --lr "$LR" \
     --checkpoint-every "$CHECKPOINT_EVERY" \
     --max-walltime-sec "$MAX_WALLTIME_SEC" \
+    --vectorized "$VECTORIZED" \
+    --chunk-size "$CHUNK_SIZE" \
     "${RESUME_ARG[@]}"
 
 echo

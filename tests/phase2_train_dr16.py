@@ -38,6 +38,7 @@ import matplotlib.pyplot as plt
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 from gpy_dla_detection.objective import spectrum_loss
+from gpy_dla_detection.training_v3.objective_vectorized import spectrum_loss_batch
 from gpy_dla_detection.effective_optical_depth import effective_optical_depth
 from gpy_dla_detection import voigt as _v
 
@@ -205,10 +206,21 @@ def _pca_init(centered, k=K):
 
 def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_init,
            num_forest_lines, n_iters, lr, checkpoint_every=5, resume_path=None,
-           max_walltime_sec=None):
+           max_walltime_sec=None, vectorized=True, chunk_size=1000):
     """Adam loop matching tests/short_retrain_2lpt.py:_full_batch_objective.
     Bypasses v1's objective.py wrapper (zqso_1pz=z_qso+1 directly).
     Applies BOSS DR12Q priors on log_τ_0 and log_β.
+
+    Two paths give numerically equivalent gradients (verified by
+    tests/test_v3_objective_vectorized_parity.py and
+    tests/test_v3_train_step_parity.py to ~1e-10 / 2e-10 over 3 Adam iters):
+
+      vectorized=True (default):  spectrum_loss_batch on chunks of `chunk_size`
+                                  spectra. Lifts the OMP=1 thread-storm
+                                  constraint of the per-spectrum loop.
+      vectorized=False:           per-spectrum Python loop calling v1's
+                                  spectrum_loss; reference path retained for
+                                  cross-validation.
 
     Saves a checkpoint to _RUNTIME['checkpoint_dir'] every `checkpoint_every`
     iterations, on SIGTERM/SIGINT, or when wall elapsed exceeds max_walltime_sec.
@@ -225,9 +237,13 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
     log_beta = nn.Parameter(torch.tensor(np.log(INITIAL_BETA), dtype=DTYPE))
 
     centered_t = torch.tensor(np.where(valid_masks, centered, 0.0), dtype=DTYPE)
-    nv_t = torch.tensor(nv, dtype=DTYPE)
+    # Sanitize NaN noise variances at invalid pixels once. Both paths mask out
+    # invalid contributions internally; the vectorized path additionally needs
+    # finite values everywhere so torch.where/cholesky never sees NaN.
+    nv_t = torch.tensor(np.where(valid_masks, nv, 1.0), dtype=DTYPE)
     lya_1pzs_t = torch.tensor(lya_1pzs, dtype=DTYPE)
     valid_t = torch.tensor(valid_masks, dtype=torch.bool)
+    zqso_1pz_t = torch.tensor(np.asarray(z_qsos) + 1.0, dtype=DTYPE)
     n = centered.shape[0]
 
     optimizer = torch.optim.Adam([M, log_omega, log_c_0, log_tau_0, log_beta], lr=lr)
@@ -297,27 +313,49 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
         dlog_tau_0_acc = torch.zeros((), dtype=DTYPE)
         dlog_beta_acc = torch.zeros((), dtype=DTYPE)
 
-        for i in range(n):
-            valid_i = valid_t[i]
-            if not valid_i.any():
-                continue
-            y = centered_t[i, valid_i]
-            nv_i = nv_t[i, valid_i]
-            lya_1pz_i = lya_1pzs_t[i, valid_i]
-            M_i = M[valid_i, :]
-            omega2_i = omega2[valid_i]
-            zqso_1pz = torch.tensor(float(z_qsos[i]) + 1.0, dtype=DTYPE)
+        if vectorized:
+            # Chunked vectorized path: spectrum_loss_batch over slices of size
+            # `chunk_size`. Sums are accumulated across chunks; final result is
+            # bit-equivalent to the per-spectrum path within f64 noise (verified
+            # by tests/test_v3_train_step_parity.py).
+            for s in range(0, n, chunk_size):
+                e = min(s + chunk_size, n)
+                nlp_c, dM_c, dlogw_c, dc0_c, dt0_c, db_c = spectrum_loss_batch(
+                    centered_t[s:e], lya_1pzs_t[s:e], nv_t[s:e], valid_t[s:e],
+                    M, omega2, c_0, tau_0, beta,
+                    num_forest_lines, TW_t, OS_t,
+                    zqso_1pz_t[s:e],
+                )
+                total = total + nlp_c.detach()
+                dM_accum.add_(dM_c.detach())
+                dlog_omega_accum.add_(dlogw_c.detach())
+                dlog_c_0_acc = dlog_c_0_acc + dc0_c.detach()
+                dlog_tau_0_acc = dlog_tau_0_acc + dt0_c.detach()
+                dlog_beta_acc = dlog_beta_acc + db_c.detach()
+        else:
+            # Per-spectrum reference path (the v1 loop). Retained for
+            # cross-validation; `vectorized=False` selects this.
+            for i in range(n):
+                valid_i = valid_t[i]
+                if not valid_i.any():
+                    continue
+                y = centered_t[i, valid_i]
+                nv_i = nv_t[i, valid_i]
+                lya_1pz_i = lya_1pzs_t[i, valid_i]
+                M_i = M[valid_i, :]
+                omega2_i = omega2[valid_i]
+                zqso_1pz_i = zqso_1pz_t[i]
 
-            nlog_p, dM_i, dlog_omega_i, dlog_c_0_i, dlog_tau_0_i, dlog_beta_i = \
-                spectrum_loss(y, lya_1pz_i, nv_i, M_i, omega2_i,
-                              c_0, tau_0, beta, num_forest_lines, TW_t, OS_t,
-                              zqso_1pz)
-            total = total + nlog_p.detach()
-            dM_accum[valid_i, :] += dM_i.detach()
-            dlog_omega_accum[valid_i] += dlog_omega_i.detach()
-            dlog_c_0_acc = dlog_c_0_acc + dlog_c_0_i.detach()
-            dlog_tau_0_acc = dlog_tau_0_acc + dlog_tau_0_i.detach()
-            dlog_beta_acc = dlog_beta_acc + dlog_beta_i.detach()
+                nlog_p, dM_i, dlog_omega_i, dlog_c_0_i, dlog_tau_0_i, dlog_beta_i = \
+                    spectrum_loss(y, lya_1pz_i, nv_i, M_i, omega2_i,
+                                  c_0, tau_0, beta, num_forest_lines, TW_t, OS_t,
+                                  zqso_1pz_i)
+                total = total + nlog_p.detach()
+                dM_accum[valid_i, :] += dM_i.detach()
+                dlog_omega_accum[valid_i] += dlog_omega_i.detach()
+                dlog_c_0_acc = dlog_c_0_acc + dlog_c_0_i.detach()
+                dlog_tau_0_acc = dlog_tau_0_acc + dlog_tau_0_i.detach()
+                dlog_beta_acc = dlog_beta_acc + dlog_beta_i.detach()
 
         dlog_tau_0_acc = dlog_tau_0_acc + tau_0 * (tau_0 - TAU_0_PRIOR_MU) / TAU_0_PRIOR_SIGMA**2
         dlog_beta_acc = dlog_beta_acc + beta * (beta - BETA_PRIOR_MU) / BETA_PRIOR_SIGMA**2
@@ -396,6 +434,12 @@ def main():
                    help="Path to a .pt checkpoint file to resume from.")
     p.add_argument("--max-walltime-sec", type=int, default=None,
                    help="If set, save and exit when training elapsed exceeds this (seconds).")
+    p.add_argument("--vectorized", type=int, default=1,
+                   help="1 = use spectrum_loss_batch (default; lifts OMP=1 thread cap); "
+                        "0 = use per-spectrum loop (reference path).")
+    p.add_argument("--chunk-size", type=int, default=1000,
+                   help="Batch chunk size for vectorized path (default 1000; "
+                        "memory ~ chunk * N_PIX * k * 16B).")
     args = p.parse_args()
 
     _RUNTIME["cache_dir"] = args.cache_dir
@@ -424,7 +468,9 @@ def main():
                     args.n_iters, args.lr,
                     checkpoint_every=args.checkpoint_every,
                     resume_path=args.resume,
-                    max_walltime_sec=args.max_walltime_sec)
+                    max_walltime_sec=args.max_walltime_sec,
+                    vectorized=bool(args.vectorized),
+                    chunk_size=args.chunk_size)
 
     # Save
     out_npz = OUT_DIR / "phase2_result.npz"
