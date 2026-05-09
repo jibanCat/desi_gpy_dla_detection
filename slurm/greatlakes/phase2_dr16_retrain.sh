@@ -49,6 +49,7 @@ MAX_WALLTIME_SEC="${MAX_WALLTIME_SEC:-82800}"
 RESUME="${RESUME:-}"  # path to .pt checkpoint to resume from, or empty
 VECTORIZED="${VECTORIZED:-1}"     # 1 = spectrum_loss_batch (default); 0 = per-spectrum loop
 CHUNK_SIZE="${CHUNK_SIZE:-1000}"  # batch chunk for the vectorized path
+OUT_DIR="${OUT_DIR:-}"  # final-results dir; empty = trainer default (in-repo)
 
 REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$REPO_DIR"
@@ -71,6 +72,10 @@ RESUME_ARG=()
 if [ -n "$RESUME" ]; then
     RESUME_ARG=(--resume "$RESUME")
 fi
+OUT_DIR_ARG=()
+if [ -n "$OUT_DIR" ]; then
+    OUT_DIR_ARG=(--out-dir "$OUT_DIR")
+fi
 
 python -u tests/phase2_train_dr16.py \
     --n-spectra "$N_SPECTRA" \
@@ -80,7 +85,8 @@ python -u tests/phase2_train_dr16.py \
     --max-walltime-sec "$MAX_WALLTIME_SEC" \
     --vectorized "$VECTORIZED" \
     --chunk-size "$CHUNK_SIZE" \
-    "${RESUME_ARG[@]}"
+    "${RESUME_ARG[@]}" \
+    "${OUT_DIR_ARG[@]}"
 
 echo
 echo "===================================================="

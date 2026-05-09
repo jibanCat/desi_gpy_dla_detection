@@ -440,10 +440,17 @@ def main():
     p.add_argument("--chunk-size", type=int, default=1000,
                    help="Batch chunk size for vectorized path (default 1000; "
                         "memory ~ chunk * N_PIX * k * 16B).")
+    p.add_argument("--out-dir", type=Path, default=OUT_DIR,
+                   help=f"Where to write the final phase2_result.npz, "
+                        f"phase2_corr_compare.png, and phase2_endpoint_table.md "
+                        f"(default: {OUT_DIR}). Use a separate dir for parallel "
+                        f"runs to avoid clobbering each other.")
     args = p.parse_args()
 
     _RUNTIME["cache_dir"] = args.cache_dir
     _RUNTIME["checkpoint_dir"] = args.checkpoint_dir
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     cache_path = _build_data_cache(n_spectra=args.n_spectra)
     cache = np.load(cache_path)
@@ -473,7 +480,7 @@ def main():
                     chunk_size=args.chunk_size)
 
     # Save
-    out_npz = OUT_DIR / "phase2_result.npz"
+    out_npz = out_dir / "phase2_result.npz"
     np.savez(out_npz, rest_wavelengths=rest, **{k: result[k] for k in
              ["M", "mu", "log_omega", "log_c_0", "log_tau_0", "log_beta",
               "c_0", "tau_0", "beta"]},
@@ -512,7 +519,7 @@ def main():
                   location="right", label="correlation", pad=0.02)
     fig.suptitle("Phase 2: corr(M·M^T) — ours initial / ours trained / MATLAB initial / MATLAB final",
                  fontsize=11, fontweight="bold")
-    out = OUT_DIR / "phase2_corr_compare.png"
+    out = out_dir / "phase2_corr_compare.png"
     fig.savefig(out, dpi=140, bbox_inches="tight"); plt.close(fig)
     print(f"[saved] {out}")
 
@@ -531,7 +538,7 @@ def main():
         ("β",  result["beta"], beta_ref),
     ]:
         rows.append(f"| {name} | {ours_val:.6f} | {ref_val:.6f} | {ours_val-ref_val:+.6f} |")
-    md_out = OUT_DIR / "phase2_endpoint_table.md"
+    md_out = out_dir / "phase2_endpoint_table.md"
     md_out.write_text("\n".join(rows) + "\n")
     print(f"[saved] {md_out}")
 
