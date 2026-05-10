@@ -186,8 +186,21 @@ def _build_data_cache(n_spectra=None):
     return cache_path
 
 
-def _pca_init(centered, k=K):
-    """Match MATLAB: row-median NaN fill, then PCA, then M = coeff·sqrt(eigval)."""
+def _pca_init(centered, k=K, random_state=0):
+    """Match MATLAB: row-median NaN fill, then PCA, then M = coeff·sqrt(eigval).
+
+    sklearn's PCA `auto` solver picks `randomized` SVD for n_components << min(n_samples,
+    n_features) (true here: k=20 vs (n_spectra, n_pix) = (89408, 2281)). Without an
+    explicit random_state, randomized SVD seeds itself per-call → run-to-run drift in
+    the top-k eigenvector basis (~1e-7 in eigenvectors, amplifying to ~1e-4 at iter-0
+    loss → ~12% relative |dM| over 50+ Adam iters even when gradients are
+    bit-identical between paths). See docs/notes/2026-05-09_vec_smoke_vs_phase1_baseline.md.
+
+    Setting random_state=0 makes M_init bit-reproducible across runs — so two retrains
+    on the same cached data with the same code path produce identical trained M to f64
+    noise. This is the right default for production / regression testing. Override only
+    if intentionally probing init sensitivity.
+    """
     from sklearn.decomposition import PCA
     pca_input = centered.copy()
     for i in range(pca_input.shape[0]):
@@ -199,7 +212,7 @@ def _pca_init(centered, k=K):
         else:
             pca_input[i] = 0.0
     pca_input = np.nan_to_num(pca_input, nan=0.0, posinf=0.0, neginf=0.0)
-    pca = PCA(n_components=k)
+    pca = PCA(n_components=k, random_state=random_state)
     pca.fit(pca_input)
     return pca.components_.T * np.sqrt(pca.explained_variance_)[None, :], pca.explained_variance_
 
