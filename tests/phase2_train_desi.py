@@ -120,14 +120,16 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
     # intermediates (which can hit 5+ GB at chunk=5k×5662×k=30). This
     # mirrors trainer_v2's per-batch CPU→GPU transfer pattern.
     pin = (device.type == "cuda")
-    centered_cpu = torch.tensor(np.where(valid_masks, centered, 0.0),
-                                dtype=DTYPE, pin_memory=pin)
-    nv_cpu = torch.tensor(np.where(valid_masks, nv, 1.0),
-                          dtype=DTYPE, pin_memory=pin)
-    lya_1pzs_cpu = torch.tensor(lya_1pzs, dtype=DTYPE, pin_memory=pin)
-    valid_cpu = torch.tensor(valid_masks, dtype=torch.bool, pin_memory=pin)
-    zqso_1pz_cpu = torch.tensor(np.asarray(z_qsos) + 1.0,
-                                dtype=DTYPE, pin_memory=pin)
+    # torch.tensor(np_array, pin_memory=...) doesn't accept pin_memory
+    # for numpy inputs. Construct via from_numpy().to(dtype).pin_memory().
+    def _mk(arr_np, dtype):
+        t = torch.from_numpy(np.ascontiguousarray(arr_np)).to(dtype)
+        return t.pin_memory() if pin else t
+    centered_cpu = _mk(np.where(valid_masks, centered, 0.0).astype(np.float32), DTYPE)
+    nv_cpu = _mk(np.where(valid_masks, nv, 1.0).astype(np.float32), DTYPE)
+    lya_1pzs_cpu = _mk(lya_1pzs.astype(np.float32), DTYPE)
+    valid_cpu = _mk(valid_masks.astype(bool), torch.bool)
+    zqso_1pz_cpu = _mk((np.asarray(z_qsos) + 1.0).astype(np.float32), DTYPE)
     n = centered.shape[0]
 
     optimizer = torch.optim.Adam([M, log_omega, log_c_0, log_tau_0, log_beta], lr=lr)
