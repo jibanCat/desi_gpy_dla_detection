@@ -86,6 +86,33 @@ That kernel agrees to 1.7 % Frobenius. Combined with the matching
 are training to the same statistical model, modulo PCA-init
 randomness.
 
+## Correlation matrix corr(M·M^T)
+
+Same `_corr` definition as `tests/phase2_train_dr16.py:425`:
+`corr(M) = (M·M^T) / outer(sqrt(diag), sqrt(diag))`, clipped to
+[-1, 1]. Dividing out the diagonal removes the `M`-norm gauge
+component and isolates the *shape* of the kernel — which is what
+matters for Bayesian inference downstream.
+
+| quantity | value |
+|---|---:|
+| corr range, vec_full | [−0.3632, +1.0000] |
+| corr range, per_spec | [−0.3554, +1.0000] |
+| \|Δcorr\|_max | 3.69e-02 |
+| ‖Δcorr‖_F / ‖corr_vec‖_F | **9.5e-03** (≈ 1 %) |
+| mean \|Δcorr\| | 2.87e-03 |
+| max \|diag − 1\| | 2.22e-16 (both — sanity OK) |
+
+The two correlation matrices match to **0.95 % Frobenius** — even
+tighter than the raw `M·M^T` diff (1.7 %), because removing the
+diagonal-scale ambiguity collapses gauge noise. The largest single
+correlation difference anywhere in the 2281×2281 matrix is 0.037 —
+well below typical eigenmode-noise floor between two PCA-init seeds.
+
+Figure: `2026-05-11_vec_vs_perspec_corr.png` — 3-panel
+(corr_vec / corr_per / Δcorr). Reproduce with
+`python tests/plot_vec_vs_perspec_corr.py`.
+
 ## Figures
 
 - `2026-05-09_phase2_paths_comparison.png` — 4-panel overlay
@@ -95,12 +122,15 @@ randomness.
   comparison (used for the headline 3.05× number).
 - `2026-05-11_vec_vs_perspec_kernels.png` — **new** — 3-panel
   `M·M^T` overlay (vec / per-spec / |ΔC| log-scale).
+- `2026-05-11_vec_vs_perspec_corr.png` — **new** — 3-panel
+  correlation-matrix overlay (corr_vec / corr_per / Δcorr).
 
 ## Reproduce
 
 ```bash
 python tests/plot_phase2_paths_comparison.py
 python tests/plot_vec_vs_perspec_kernels.py
+python tests/plot_vec_vs_perspec_corr.py
 ```
 
 Both scripts read the two `phase2_result.npz` files and emit PNGs to
