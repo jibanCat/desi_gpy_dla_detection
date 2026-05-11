@@ -122,14 +122,19 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
     pin = (device.type == "cuda")
     # torch.tensor(np_array, pin_memory=...) doesn't accept pin_memory
     # for numpy inputs. Construct via from_numpy().to(dtype).pin_memory().
+    # IN-PLACE mask operations to avoid duplicating arrays in host RAM.
     def _mk(arr_np, dtype):
         t = torch.from_numpy(np.ascontiguousarray(arr_np)).to(dtype)
         return t.pin_memory() if pin else t
-    centered_cpu = _mk(np.where(valid_masks, centered, 0.0).astype(np.float32), DTYPE)
-    nv_cpu = _mk(np.where(valid_masks, nv, 1.0).astype(np.float32), DTYPE)
-    lya_1pzs_cpu = _mk(lya_1pzs.astype(np.float32), DTYPE)
+    # In-place sanitize: write 0 / 1 directly into centered / nv at invalid
+    # pixels (no temporary copy from np.where).
+    centered[~valid_masks] = 0.0
+    nv[~valid_masks] = 1.0
+    centered_cpu = _mk(centered, DTYPE)
+    nv_cpu = _mk(nv, DTYPE)
+    lya_1pzs_cpu = _mk(lya_1pzs, DTYPE)
     valid_cpu = _mk(valid_masks.astype(bool), torch.bool)
-    zqso_1pz_cpu = _mk((np.asarray(z_qsos) + 1.0).astype(np.float32), DTYPE)
+    zqso_1pz_cpu = _mk((z_qsos + 1.0).astype(np.float32), DTYPE)
     n = centered.shape[0]
 
     optimizer = torch.optim.Adam([M, log_omega, log_c_0, log_tau_0, log_beta], lr=lr)
@@ -475,18 +480,23 @@ def main():
         dtype=torch.float32,
     )
 
-    # Convert to numpy for PCA + the train pre-conversion. Keep float64
-    # for PCA / mask logic; _train casts to DTYPE on device.
-    centered = ts.fluxes.numpy().astype(np.float64)
-    nv = ts.noise_variances.numpy().astype(np.float64)
-    lya_1pzs = ts.lya_1pzs.numpy().astype(np.float64)
-    z_qsos = ts.z_qsos.numpy().astype(np.float64)
-    rest = ts.rest_wavelengths.numpy().astype(np.float64)
-    mu = ts.mu.numpy().astype(np.float64) if ts.mu is not None else np.zeros(ts.n_pix)
+    # Keep large arrays at float32 to fit in host RAM. At 300k × 5662
+    # spectra, an f64 cast would need 13 GB per array × 3 = 39 GB just
+    # for centered/nv/lya_1pzs (plus the f32 originals from load_preprocessed_h5
+    # before GC) → blows past 64 GB SLURM mem budget.
+    # PCA can run on f32 (sklearn handles it natively).
+    centered = ts.fluxes.numpy()             # already f32 from load_preprocessed_h5
+    nv = ts.noise_variances.numpy()          # f32
+    lya_1pzs = ts.lya_1pzs.numpy()           # f32
+    z_qsos = ts.z_qsos.numpy().astype(np.float32)
+    rest = ts.rest_wavelengths.numpy().astype(np.float64)  # tiny — keep f64 for save
+    mu = (ts.mu.numpy().astype(np.float32) if ts.mu is not None
+          else np.zeros(ts.n_pix, dtype=np.float32))
 
     valid_masks = np.isfinite(centered) & np.isfinite(nv) & (nv > 0)
     print(f"[data] {ts.n_spectra} spectra × {ts.n_pix} pix, "
-          f"valid_pix_frac={valid_masks.mean():.3f}")
+          f"valid_pix_frac={valid_masks.mean():.3f}, "
+          f"dtype={centered.dtype}")
 
     # 2. PCA init on CPU (sklearn). Pin random_state=0 (per ac7bed8).
     print(f"[pca] computing init for k={args.k}")
