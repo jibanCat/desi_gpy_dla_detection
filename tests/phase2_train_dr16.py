@@ -492,7 +492,32 @@ def main():
                     vectorized=bool(args.vectorized),
                     chunk_size=args.chunk_size)
 
-    # Save
+    # Save — primary is .h5 in DESI learned-model schema (the same format
+    # as learnlogs/model_epoch_*.h5 that null_gp.py:453-468 reads). The
+    # .npz is kept as a training-history record (loss/log_*_history etc.),
+    # NOT the learned model — see feedback_learned_model_h5_format.md.
+    out_h5 = out_dir / "phase2_result.h5"
+    with h5py.File(out_h5, "w") as f:
+        # learned-model schema (matches null_gp DESI branch)
+        f.create_dataset("M", data=np.asarray(result["M"], dtype=np.float64))
+        f.create_dataset("mu", data=np.asarray(result["mu"], dtype=np.float64))
+        f.create_dataset("log_omega", data=np.asarray(result["log_omega"], dtype=np.float64))
+        f.create_dataset("log_c_0", data=np.float64(result["log_c_0"]))
+        f.create_dataset("log_tau_0", data=np.float64(result["log_tau_0"]))
+        f.create_dataset("log_beta", data=np.float64(result["log_beta"]))
+        f.create_dataset("rest_wavelengths", data=np.asarray(rest, dtype=np.float64))
+        # required scalars for the inference loader (Parameters defaults
+        # at training time on DR16 — matches MATLAB DR16 reference)
+        f.create_dataset("max_noise_variance", data=np.float64(MAX_NV))
+        f.create_dataset("normalization_min_lambda", data=np.float64(1310.0))
+        f.create_dataset("normalization_max_lambda", data=np.float64(1325.0))
+        # training-provenance attributes (not part of inference schema)
+        f.attrs["n_spectra"] = int(args.n_spectra)
+        f.attrs["n_iters"] = int(args.n_iters)
+        f.attrs["lr"] = float(args.lr)
+        f.attrs["vectorized"] = int(bool(args.vectorized))
+    print(f"[saved] {out_h5}")
+
     out_npz = out_dir / "phase2_result.npz"
     np.savez(out_npz, rest_wavelengths=rest, **{k: result[k] for k in
              ["M", "mu", "log_omega", "log_c_0", "log_tau_0", "log_beta",
@@ -502,7 +527,7 @@ def main():
              log_tau_0_history=np.asarray(result["history"]["log_tau_0"]),
              log_beta_history=np.asarray(result["history"]["log_beta"]),
              n_spectra=args.n_spectra, n_iters=args.n_iters, lr=args.lr)
-    print(f"[saved] {out_npz}")
+    print(f"[saved] {out_npz} (training-history record; learned model is .h5 above)")
 
     # Compare to MATLAB
     with h5py.File(LEARNED, "r") as f:
