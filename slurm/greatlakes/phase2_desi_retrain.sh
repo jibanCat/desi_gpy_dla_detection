@@ -5,7 +5,7 @@
 #SBATCH -N 1
 #SBATCH -c 8
 #SBATCH --mem=64G
-#SBATCH -t 8:00:00
+#SBATCH -t 12:00:00
 #SBATCH -J phase2_desi_retrain
 #SBATCH -o slurm/greatlakes/phase2_desi_retrain_%j.log
 #SBATCH -e slurm/greatlakes/phase2_desi_retrain_%j.log
@@ -54,7 +54,12 @@ RUN_NAME="${RUN_NAME:?must set RUN_NAME=<dataset_label>}"
 # Optional:
 N_ITERS="${N_ITERS:-1500}"
 LR="${LR:-0.005}"
-CHUNK_SIZE="${CHUNK_SIZE:-12500}"
+CHUNK_SIZE="${CHUNK_SIZE:-5000}"
+# 5000 chosen post-smoke (49913952): chunk=2000 ran at 0.43 s/iter on
+# 5k×5662×k=30. Per-chunk peak ~7 GB; 5000 should fit in 44 GB GPU
+# headroom comfortably with the per-chunk CPU→GPU transfer fix
+# (commit 3e72854). Larger chunks = fewer GPU launches = faster
+# per-iter at scale.
 MAX_SPECTRA="${MAX_SPECTRA:-}"   # empty = use all
 RESUME="${RESUME:-}"
 
@@ -90,7 +95,7 @@ python -u tests/phase2_train_desi.py \
     --chunk-size "$CHUNK_SIZE" \
     --checkpoint-dir "$CKPT_DIR" \
     --checkpoint-every 25 \
-    --max-walltime-sec 27000 \
+    --max-walltime-sec 41000 \
     --out-dir "$OUT_DIR" \
     $EXTRA_ARGS
 
