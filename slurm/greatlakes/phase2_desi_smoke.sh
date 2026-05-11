@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -A cavestru0
-#SBATCH -p gpu_mig40
+#SBATCH -p spgpu
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
@@ -9,10 +9,9 @@
 #SBATCH -J phase2_desi_smoke
 #SBATCH -o slurm/greatlakes/phase2_desi_smoke_%j.log
 #SBATCH -e slurm/greatlakes/phase2_desi_smoke_%j.log
-# gpu_mig40 = A100 MIG 40GB slice — same partition as the v2 corrected
-# retrain jobs (49243842-49268620). Shorter queue than spgpu (28 vs 286
-# pending at last check). cavestru0 allocation has GPU access (verified
-# from past jobs' AllocTRES).
+# spgpu = larger node pool than gpu_mig40 with faster turnover; per
+# 2026-05-11 attempt, gpu_mig40 projected START_TIME 24h+ for our 1h
+# job. spgpu has more nodes and the same training_v3 path runs there.
 
 # Step C smoke: 5k spectra × 50 iter on 2lpt loa-0 wide v2 preload.
 # Verifies tests/phase2_train_desi.py works end-to-end on GPU before
@@ -54,10 +53,16 @@ python -u tests/phase2_train_desi.py \
     --max-spectra "$MAX_SPECTRA" \
     --n-iters "$N_ITERS" \
     --device cuda \
-    --chunk-size 5000 \
+    --chunk-size 2000 \
     --checkpoint-dir "$CKPT_DIR" \
     --checkpoint-every 25 \
     --out-dir "$OUT_DIR"
+# chunk_size 2000 chosen to fit in ~10 GB GPU memory headroom.
+# Per-chunk (B=2000, N=5662, k=30) intermediates ~1.4 GB each;
+# spectrum_loss_batch holds ~5 of them simultaneously. First smoke
+# OOM'd at chunk=5000 → 3.4 GB each ⇒ ~17 GB peak ⇒ exceeded the
+# 44 GiB GPU after upfront-data-load overhead. The per-chunk
+# CPU→GPU transfer fix in phase2_train_desi.py also reduces peak.
 
 echo
 echo "=== smoke complete; outputs in $OUT_DIR ==="

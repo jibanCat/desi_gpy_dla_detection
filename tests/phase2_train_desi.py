@@ -113,11 +113,21 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
     # are masked-where-invalid by load_preprocessed_h5 (flux→0, nv→NaN);
     # the vectorized path needs finite values everywhere so cholesky
     # never sees NaN.
-    centered_t = torch.tensor(np.where(valid_masks, centered, 0.0), dtype=DTYPE, device=device)
-    nv_t = torch.tensor(np.where(valid_masks, nv, 1.0), dtype=DTYPE, device=device)
-    lya_1pzs_t = torch.tensor(lya_1pzs, dtype=DTYPE, device=device)
-    valid_t = torch.tensor(valid_masks, dtype=torch.bool, device=device)
-    zqso_1pz_t = torch.tensor(np.asarray(z_qsos) + 1.0, dtype=DTYPE, device=device)
+    #
+    # IMPORTANT: keep data tensors on CPU (pinned if GPU). Transfer one
+    # chunk per Adam iter inside the loop. Loading all 300k × 5662 × 4B
+    # to GPU upfront wastes 7+ GB and competes with the per-chunk
+    # intermediates (which can hit 5+ GB at chunk=5k×5662×k=30). This
+    # mirrors trainer_v2's per-batch CPU→GPU transfer pattern.
+    pin = (device.type == "cuda")
+    centered_cpu = torch.tensor(np.where(valid_masks, centered, 0.0),
+                                dtype=DTYPE, pin_memory=pin)
+    nv_cpu = torch.tensor(np.where(valid_masks, nv, 1.0),
+                          dtype=DTYPE, pin_memory=pin)
+    lya_1pzs_cpu = torch.tensor(lya_1pzs, dtype=DTYPE, pin_memory=pin)
+    valid_cpu = torch.tensor(valid_masks, dtype=torch.bool, pin_memory=pin)
+    zqso_1pz_cpu = torch.tensor(np.asarray(z_qsos) + 1.0,
+                                dtype=DTYPE, pin_memory=pin)
     n = centered.shape[0]
 
     optimizer = torch.optim.Adam([M, log_omega, log_c_0, log_tau_0, log_beta], lr=lr)
@@ -191,11 +201,19 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
 
         for s in range(0, n, chunk_size):
             e = min(s + chunk_size, n)
+            # Per-chunk CPU→GPU transfer (non_blocking=pin enables async
+            # copy when src is pinned-memory CPU). Free chunks at end via
+            # del + (optionally) torch.cuda.empty_cache to keep peak low.
+            cb = centered_cpu[s:e].to(device, non_blocking=pin)
+            lb = lya_1pzs_cpu[s:e].to(device, non_blocking=pin)
+            nb = nv_cpu[s:e].to(device, non_blocking=pin)
+            vb = valid_cpu[s:e].to(device, non_blocking=pin)
+            zb = zqso_1pz_cpu[s:e].to(device, non_blocking=pin)
             nlp_c, dM_c, dlogw_c, dc0_c, dt0_c, db_c = spectrum_loss_batch(
-                centered_t[s:e], lya_1pzs_t[s:e], nv_t[s:e], valid_t[s:e],
+                cb, lb, nb, vb,
                 M, omega2, c_0, tau_0, beta,
                 num_forest_lines, TW_t, OS_t,
-                zqso_1pz_t[s:e],
+                zb,
             )
             total = total + nlp_c.detach()
             dM_accum.add_(dM_c.detach())
@@ -203,6 +221,7 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
             dlog_c_0_acc = dlog_c_0_acc + dc0_c.detach()
             dlog_tau_0_acc = dlog_tau_0_acc + dt0_c.detach()
             dlog_beta_acc = dlog_beta_acc + db_c.detach()
+            del cb, lb, nb, vb, zb, nlp_c, dM_c, dlogw_c, dc0_c, dt0_c, db_c
 
         # Turner+2024 priors on (τ_0, β). dlog_τ_0 += τ_0 (τ_0 - μ)/σ²
         # follows from chain rule on log-parameter prior.
