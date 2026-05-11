@@ -46,6 +46,13 @@ processed/
 !data/**/*.hdf5
 !tests/**/*.h5
 
+# Trained-model + training-history artifacts. .npz files under docs/notes/
+# are large and regenerable from the trainer; only fixtures under tests/
+# are tracked.
+*.npz
+!data/**/*.npz
+!tests/**/*.npz
+
 # SLURM job logs (regenerated per submission)
 slurm/greatlakes/*.log
 
