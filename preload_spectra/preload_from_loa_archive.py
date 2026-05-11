@@ -268,18 +268,28 @@ def loa_archive_to_trainset(
 
 def _load_excludes_from_fits(path: Path | None, *, tid_col: str = "TARGETID",
                              bal_col: str | None = None,
-                             bal_min: float = 0.0) -> set[int]:
+                             bal_min: float = 0.0,
+                             nhi_col: str | None = None,
+                             nhi_min: float | None = None) -> set[int]:
     """Helper: build exclusion set from a FITS catalog.
 
-    If `bal_col` is given, exclude rows with `bal_col > bal_min`. Otherwise
-    exclude all rows in the catalog.
+    Filtering modes:
+      - `bal_col` + `bal_min` → exclude rows with `bal_col > bal_min`.
+      - `nhi_col` + `nhi_min` → exclude rows with `nhi_col >= nhi_min`
+        (HCD anti-join with NHI threshold; matches preload_loa_real.py
+        `--hcd-min-nhi` behaviour).
+      - neither → exclude all rows in the catalog.
     """
     if path is None:
         return set()
     from astropy.table import Table
     tbl = Table.read(path)
+    if bal_col is not None and nhi_col is not None:
+        raise ValueError("pass at most one of bal_col / nhi_col")
     if bal_col is not None:
         mask = np.asarray(tbl[bal_col]) > bal_min
+    elif nhi_col is not None and nhi_min is not None:
+        mask = np.asarray(tbl[nhi_col]) >= nhi_min
     else:
         mask = np.ones(len(tbl), dtype=bool)
     return set(int(t) for t in np.asarray(tbl[tid_col])[mask])
@@ -307,6 +317,13 @@ def main():
     p.add_argument("--hcd-cat", type=Path, default=None,
                    help="FITS or HDF5 catalog with HCD TARGETIDs to exclude.")
     p.add_argument("--hcd-tid-col", default="TARGETID")
+    p.add_argument("--hcd-nhi-col", default="NHI",
+                   help="Column for the HCD NHI threshold filter (default 'NHI'). "
+                        "Set --hcd-min-nhi to enable threshold filtering.")
+    p.add_argument("--hcd-min-nhi", type=float, default=None,
+                   help="If set, only exclude HCD rows with NHI ≥ this value. "
+                        "Match preload_loa_real.py convention: 20.3 = DLA-only, "
+                        "17.2 = DLAs + sub-DLAs / LLS.")
     args = p.parse_args()
 
     excludes: set[int] = set()
@@ -317,9 +334,14 @@ def main():
         print(f"[main] BAL exclude: {len(bal_excl)} TIDs")
         excludes |= bal_excl
     if args.hcd_cat:
-        hcd_excl = _load_excludes_from_fits(args.hcd_cat,
-                                            tid_col=args.hcd_tid_col)
-        print(f"[main] HCD exclude: {len(hcd_excl)} TIDs")
+        hcd_excl = _load_excludes_from_fits(
+            args.hcd_cat,
+            tid_col=args.hcd_tid_col,
+            nhi_col=args.hcd_nhi_col if args.hcd_min_nhi is not None else None,
+            nhi_min=args.hcd_min_nhi,
+        )
+        nhi_str = f" (NHI ≥ {args.hcd_min_nhi})" if args.hcd_min_nhi is not None else " (all rows)"
+        print(f"[main] HCD exclude{nhi_str}: {len(hcd_excl)} TIDs")
         excludes |= hcd_excl
     print(f"[main] total exclude set: {len(excludes)} TIDs")
 

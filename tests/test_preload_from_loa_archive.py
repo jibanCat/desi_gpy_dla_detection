@@ -216,6 +216,39 @@ def test_mask_propagates_to_invalid(tmp_path):
     assert np.isfinite(flux).sum() > 0
 
 
+def test_hcd_nhi_filter_via_helper(tmp_path):
+    """_load_excludes_from_fits with nhi_col + nhi_min builds the right
+    HCD exclusion set.
+
+    Mirrors the legacy preload_loa_real.py --hcd-min-nhi behaviour:
+    only HCDs with NHI ≥ threshold get excluded.
+    """
+    from astropy.table import Table
+    from preload_spectra.preload_from_loa_archive import _load_excludes_from_fits
+
+    cat = Table()
+    cat["TARGETID"] = [1, 2, 3, 4, 5]
+    cat["NHI"] = [19.5, 20.5, 21.0, 17.5, 22.5]
+    cat_path = tmp_path / "hcd.fits"
+    cat.write(cat_path, format="fits")
+
+    # NHI ≥ 20.3 → exclude TIDs with NHI in {20.5, 21.0, 22.5} → {2, 3, 5}
+    excl_strict = _load_excludes_from_fits(
+        cat_path, tid_col="TARGETID", nhi_col="NHI", nhi_min=20.3,
+    )
+    assert excl_strict == {2, 3, 5}
+
+    # NHI ≥ 17.2 → all 5 rows
+    excl_lax = _load_excludes_from_fits(
+        cat_path, tid_col="TARGETID", nhi_col="NHI", nhi_min=17.2,
+    )
+    assert excl_lax == {1, 2, 3, 4, 5}
+
+    # No nhi_min → exclude all (default behaviour)
+    excl_all = _load_excludes_from_fits(cat_path, tid_col="TARGETID")
+    assert excl_all == {1, 2, 3, 4, 5}
+
+
 def test_compatible_with_load_preprocessed_h5(tmp_path):
     """Output is consumable by gpy_dla_detection.training.dataset.load_preprocessed_h5."""
     from gpy_dla_detection.training.dataset import load_preprocessed_h5
