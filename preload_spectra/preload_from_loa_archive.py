@@ -39,12 +39,16 @@ needs no further changes.
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
 import h5py
 import numpy as np
 from scipy.interpolate import interp1d
+
+# Make the repo importable when invoked as a top-level script (e.g. SLURM).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from gpy_dla_detection.loa_archive import LoaArchive
 
