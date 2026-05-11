@@ -1,14 +1,17 @@
 #!/bin/bash
 #SBATCH -A cavestru0
-#SBATCH -p spgpu
+#SBATCH -p gpu_mig40
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=128G
+#SBATCH --mem=64G
 #SBATCH -t 8:00:00
 #SBATCH -J phase2_desi_retrain
 #SBATCH -o slurm/greatlakes/phase2_desi_retrain_%j.log
 #SBATCH -e slurm/greatlakes/phase2_desi_retrain_%j.log
+# gpu_mig40 = A100 MIG 40GB slice — same partition as v2 corrected
+# retrains (jobs 49243842-49268620, ran 1500 iter on 118k×3801 in 1h20m).
+# Mem=64G matches that production setup. Shorter queue than spgpu.
 
 # Step C production retrain: 1500 iter on a v2 preload (DESI 2lpt or LOA).
 # Uses tests/phase2_train_desi.py — corrected trainer (PCA init +

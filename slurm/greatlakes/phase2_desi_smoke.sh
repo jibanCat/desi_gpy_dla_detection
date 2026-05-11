@@ -1,14 +1,18 @@
 #!/bin/bash
 #SBATCH -A cavestru0
-#SBATCH -p spgpu
+#SBATCH -p gpu_mig40
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH -t 1:00:00
 #SBATCH -J phase2_desi_smoke
 #SBATCH -o slurm/greatlakes/phase2_desi_smoke_%j.log
 #SBATCH -e slurm/greatlakes/phase2_desi_smoke_%j.log
+# gpu_mig40 = A100 MIG 40GB slice — same partition as the v2 corrected
+# retrain jobs (49243842-49268620). Shorter queue than spgpu (28 vs 286
+# pending at last check). cavestru0 allocation has GPU access (verified
+# from past jobs' AllocTRES).
 
 # Step C smoke: 5k spectra × 50 iter on 2lpt loa-0 wide v2 preload.
 # Verifies tests/phase2_train_desi.py works end-to-end on GPU before
