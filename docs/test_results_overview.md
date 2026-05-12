@@ -109,8 +109,10 @@ Per-iter rate is the most stable measure (independent of total iter count).
 | 49925098 | LoaArchive adapter (no-HCD + with-BAL) | standard CPU | FAILED (sys.path) | superseded by 49927768 |
 | 49927767 | LoaArchive adapter (no-DLA + no-BAL), unchunked code | standard CPU | OOM at 2h21m | superseded by 49939506 (chunked-read fix) |
 | 49927768 | LoaArchive adapter (no-HCD + with-BAL), unchunked code | standard CPU | OOM at 1h29m | superseded by 49936991 (chunked-read fix) |
-| 49936991 | LoaArchive adapter (no-HCD + with-BAL), chunked-read fix | standard CPU | RUNNING | 8.7% at 16m → ETA ~3h |
-| 49939506 | LoaArchive adapter (no-DLA + no-BAL), chunked-read fix | standard CPU | PENDING | ETA ~3h after start |
+| 49936991 | LoaArchive adapter (no-HCD + with-BAL), chunked-read fix | standard CPU | **COMPLETED 50.7 min** | 577,392 spectra → 36.6 GB trainset.h5 at `/scratch/.../loa_wide_v2/loa_no_hcd_with_bal_wide/` |
+| 49939506 | LoaArchive adapter (no-DLA + no-BAL), chunked-read fix | standard CPU | **COMPLETED 53.8 min** | 639,419 spectra → 40.5 GB trainset.h5 at `/scratch/.../loa_wide_v2/loa_no_dla_no_bal_wide/` |
+| 49947724 | LOA real production retrain (no-DLA + no-BAL, 639k × 1500 iter, chunk=10000) | A40 spgpu | PENDING | ETA ~10h projected on chunk=10000, output → `docs/notes/2026-05-11_desi_phase2_loa_no_dla_no_bal_wide/` |
+| 49947725 | LOA real production retrain (no-HCD + with-BAL, 577k × 1500 iter, chunk=10000) | A40 spgpu | PENDING | ETA ~10h projected, output → `docs/notes/2026-05-11_desi_phase2_loa_no_hcd_with_bal_wide/` |
 
 When a job lands, replace its "RUNNING" / "PENDING" with "COMPLETED + outcome" or "FAILED + reason".
 
