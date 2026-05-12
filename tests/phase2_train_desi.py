@@ -89,7 +89,8 @@ _RUNTIME = dict(checkpoint_dir=None, save_now=False)
 def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_init,
            num_forest_lines, n_iters, lr, device,
            checkpoint_every=5, resume_path=None,
-           max_walltime_sec=None, chunk_size=12500):
+           max_walltime_sec=None, chunk_size=12500,
+           rest_wavelengths=None):
     """Adam loop on `device` (CPU or CUDA) with hand-coded gradients via
     `spectrum_loss_batch`. Mirrors `phase2_train_dr16._train` exactly except:
       - tensors moved to `device`
@@ -166,6 +167,8 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
         cpath = ckpt_dir / f"phase2_desi_checkpoint_{tag}{it_done:04d}.pt"
         # Move to CPU before saving so the checkpoint is portable
         # (CUDA-saved tensors require the same device on load).
+        # Include rest_wavelengths so the .pt → .h5 converter doesn't
+        # need to re-derive the rest grid from the preload file.
         torch.save(dict(
             M=M.detach().cpu().clone(),
             log_omega=log_omega.detach().cpu().clone(),
@@ -176,6 +179,9 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
             iter_completed=int(it_done),
             history=history,
             mu=mu,
+            rest_wavelengths=(np.asarray(rest_wavelengths)
+                              if rest_wavelengths is not None else None),
+            num_forest_lines=int(num_forest_lines),
         ), cpath)
         print(f"[checkpoint] saved {cpath} (iter {it_done})")
         return cpath
@@ -521,7 +527,8 @@ def main():
                     checkpoint_every=args.checkpoint_every,
                     resume_path=args.resume,
                     max_walltime_sec=args.max_walltime_sec,
-                    chunk_size=args.chunk_size)
+                    chunk_size=args.chunk_size,
+                    rest_wavelengths=rest)
 
     # 4. Save: .h5 (DESI schema, primary) + .npz (training history) + README.md.
     out_h5 = args.out_dir / "phase2_result.h5"

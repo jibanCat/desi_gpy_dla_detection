@@ -160,13 +160,21 @@ def _normalize_by_rest_median(
                                  category=RuntimeWarning,
                                  message="All-NaN slice encountered")
         medians = np.nanmedian(fluxes[:, norm_mask], axis=1)  # (N,)
-    # Spectra with median == 0 or NaN are unusable
-    bad = ~np.isfinite(medians) | (medians == 0)
+    # Spectra with median == 0, NaN, negative, or |median| < 1e-3 are
+    # unusable — divide-by-tiny-median produces |flux| > 1e3 outliers
+    # that contaminate the downstream PCA init (verified on 2lpt v2 wide
+    # preloads 2026-05-12: ~1500 spectra had median ≤ 0 → trained M's
+    # corr matrix went noisy from iter 0; see
+    # docs/notes/2026-05-12_2lpt_corr_noise_debug/).
+    bad = ~np.isfinite(medians) | (medians <= 0) | (np.abs(medians) < 1e-3)
     n_bad = int(bad.sum())
     if n_bad > 0:
-        print(f"[dataset] normalize: {n_bad} of {len(medians)} spectra have no "
-              f"finite median in [{norm_min_lambda}, {norm_max_lambda}]; "
-              f"these will be zeroed out.")
+        n_neg = int((medians <= 0).sum())
+        n_tiny = int(((medians > 0) & (np.abs(medians) < 1e-3)).sum())
+        n_nan = int((~np.isfinite(medians)).sum())
+        print(f"[dataset] normalize: {n_bad} of {len(medians)} spectra have bad "
+              f"median in [{norm_min_lambda}, {norm_max_lambda}] (NaN={n_nan}, "
+              f"≤0={n_neg}, |·|<1e-3={n_tiny}); these will be zeroed out.")
     safe_med = np.where(bad, 1.0, medians)  # avoid div-by-zero; we'll zero them below
     fluxes_normed = fluxes / safe_med[:, None]
     nv_normed = noise_variances / (safe_med[:, None] ** 2)

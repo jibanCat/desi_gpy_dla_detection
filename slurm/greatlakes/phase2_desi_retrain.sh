@@ -55,19 +55,26 @@ RUN_NAME="${RUN_NAME:?must set RUN_NAME=<dataset_label>}"
 # Optional:
 N_ITERS="${N_ITERS:-1500}"
 LR="${LR:-0.005}"
-CHUNK_SIZE="${CHUNK_SIZE:-7500}"
+CHUNK_SIZE="${CHUNK_SIZE:-5000}"
 # Tuning history:
 #   chunk=5000 measured 20 s/iter on 236k×5662 (2lpt). Works fine.
-#   chunk=10000 measured GPU OOM on 638k LOA (49949799): the matmul
-#     C @ M.unsqueeze(0) tried to allocate 6.3 GB on top of 42.7 GB
-#     already used → exceeded 44 GB A40.
-#   chunk=7500 chosen as middle ground: per-chunk peak ~25 GB (5
-#     intermediates × 7500×5663×30×4B = 5.1 GB each), fits in 44 GB
-#     A40 headroom. Per-iter rate similar to chunk=5000 since launch
-#     overhead is small relative to per-spectrum compute at this scale.
-# At LOA scale (638k spectra), 1500 iter ~ 23 h wall — will need
-# checkpoint+resume across multiple SLURM jobs (--max-walltime-sec
-# below + --resume on a fresh sbatch).
+#   chunk=7500 GPU-OOM'd on LOA 638k×5663 (49977782): matmul
+#     K_inv_M = D_inv_M - matmul(D_inv_M, tmp) needed 4.75 GB on top
+#     of 41.7 GB used.
+#   chunk=10000 GPU-OOM'd on LOA 638k×5663 (49949799).
+#   Reverting default to chunk=5000 — proven safe at both 2lpt and
+#   LOA scale, ~20 s/iter on A40.
+MIN_SNR="${MIN_SNR:-1.0}"
+# Outlier filter (added 2026-05-12 per agent debug findings):
+# 1079 spectra in the 2lpt v2 wide preloads have NEGATIVE median
+# flux in the [1310, 1325] Å normalization band. After divide-by-
+# median normalization their flux blows up to |2.5e6|, contaminating
+# the PCA init → trained M is frozen at a noisy basis from iter 0
+# onward (verified by docs/notes/2026-05-12_2lpt_corr_noise_debug/).
+# min_snr=1.0 drops 25 % of spectra but eliminates 100 % of outliers
+# in both 2lpt loa-0 and 2lpt loa-124 preloads. Override at submit
+# with MIN_SNR=2.0 (more aggressive) or MIN_SNR=0.0 (legacy bug,
+# don't use unless you've otherwise filtered the preload).
 MAX_SPECTRA="${MAX_SPECTRA:-}"   # empty = use all
 RESUME="${RESUME:-}"
 
@@ -85,6 +92,7 @@ echo "  n_iters      : $N_ITERS"
 echo "  lr           : $LR"
 echo "  chunk_size   : $CHUNK_SIZE"
 echo "  max_spectra  : ${MAX_SPECTRA:-all}"
+echo "  min_snr      : $MIN_SNR  (outlier filter — see header)"
 echo "  resume       : ${RESUME:-(none)}"
 echo "  job_id       : ${SLURM_JOB_ID:-(local)}"
 echo "  node         : $(hostname)"
@@ -101,6 +109,7 @@ python -u tests/phase2_train_desi.py \
     --lr "$LR" \
     --device cuda \
     --chunk-size "$CHUNK_SIZE" \
+    --min-snr "$MIN_SNR" \
     --checkpoint-dir "$CKPT_DIR" \
     --checkpoint-every 25 \
     --max-walltime-sec 41000 \
