@@ -55,12 +55,16 @@ RUN_NAME="${RUN_NAME:?must set RUN_NAME=<dataset_label>}"
 # Optional:
 N_ITERS="${N_ITERS:-1500}"
 LR="${LR:-0.005}"
-CHUNK_SIZE="${CHUNK_SIZE:-5000}"
-# 5000 chosen post-smoke (49913952): chunk=2000 ran at 0.43 s/iter on
-# 5k×5662×k=30. Per-chunk peak ~7 GB; 5000 should fit in 44 GB GPU
-# headroom comfortably with the per-chunk CPU→GPU transfer fix
-# (commit 3e72854). Larger chunks = fewer GPU launches = faster
-# per-iter at scale.
+CHUNK_SIZE="${CHUNK_SIZE:-10000}"
+# Bumped 5000→10000 after measuring chunk=5000 in production
+# (49921626/27): 0.43 s/chunk fixed cost regardless of chunk size,
+# so larger chunks amortize GPU kernel-launch overhead. At chunk=5000
+# we hit 20 s/iter (47 chunks/iter × 0.43s). At chunk=10000 expected
+# ~10 s/iter (24 chunks × similar per-chunk time). Per-chunk peak GPU
+# mem at chunk=10000 ≈ 25-30 GB (5 intermediates × 10000×5662×30×4B
+# ≈ 6.8 GB each, but Cholesky-related arrays don't all coexist) —
+# safely under 44 GB A40 headroom. If OOM, drop back to 5000 via
+# CHUNK_SIZE=5000 on submit.
 MAX_SPECTRA="${MAX_SPECTRA:-}"   # empty = use all
 RESUME="${RESUME:-}"
 
