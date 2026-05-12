@@ -446,8 +446,8 @@ def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1,
         f.create_dataset("rest_wavelengths", data=np.asarray(rest, dtype=np.float64))
         # --- Required-for-loader scalars ---
         f.create_dataset("max_noise_variance", data=np.float64(9.0))
-        f.create_dataset("normalization_min_lambda", data=np.float64(1310.0))
-        f.create_dataset("normalization_max_lambda", data=np.float64(1325.0))
+        f.create_dataset("normalization_min_lambda", data=np.float64(1425.0))
+        f.create_dataset("normalization_max_lambda", data=np.float64(1475.0))
         # --- v1 provenance: initial values (PCA / data-driven init) ---
         if initial_M is not None:
             f.create_dataset("initial_M", data=np.asarray(initial_M, dtype=np.float64))
@@ -517,10 +517,17 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Load + filter + preprocess via the existing v2 dataset loader.
-    # Use working_dtype=float32 throughout to bound host RAM at 600k+
-    # scale — the default f64 path needs ~110 GB during preprocessing
-    # (29 GB × multiple arrays), exceeding the SLURM mem budget. f32
-    # matches what trainer_v2 production also uses.
+    # Normalization band: [1425, 1475] Å rest matches MATLAB DR16
+    # (`set_parameters.m:30-31`) and v1 production. The earlier choice
+    # of Garnett+2017 [1310, 1325] was driven by the legacy narrow
+    # trainsets (which ended at 1421 Å); the wide v2 preloads include
+    # both bands. Switching to [1425, 1475] reduces bad-median outliers
+    # 35× (31 vs 1101 on 2lpt loa-0) — redder band has less Lyα forest
+    # contamination + 3× more pixels → more robust median estimate.
+    # Documented in docs/notes/2026-05-12_2lpt_corr_noise_debug/.
+    #
+    # working_dtype=float32 to bound host RAM at 600k+ spectra scale
+    # (default f64 needs ~110 GB; matches trainer_v2 dtype).
     ts = load_preprocessed_h5(
         args.preload,
         z_min=args.z_min, z_max=args.z_max, min_snr=args.min_snr,
@@ -528,7 +535,7 @@ def main():
         max_noise_variance=9.0,
         apply_mask=True, apply_normalize=True,
         apply_de_forest=True, apply_center=True,
-        norm_min_lambda=1310.0, norm_max_lambda=1325.0,
+        norm_min_lambda=1425.0, norm_max_lambda=1475.0,
         de_forest_tau_0=TAU_0_PRIOR_MU, de_forest_beta=BETA_PRIOR_MU,
         de_forest_num_lines=NUM_FOREST_LINES,
         dtype=torch.float32,
