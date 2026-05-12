@@ -3,6 +3,11 @@
 > Last updated 2026-05-11 (mid-PR #6). This file maps the multiple
 > generations of GP training code that have accumulated in this repo.
 > Read this before adding a new trainer or refactoring an existing one.
+>
+> See also: **[`test_results_overview.md`](test_results_overview.md)** —
+> running record of correctness tests + perf benchmarks (per-iter rates,
+> speedup ratios, SLURM job ledger, storage paths). Update that file
+> when a new test lands or a benchmark changes.
 
 ## TL;DR — which trainer should I use?
 
