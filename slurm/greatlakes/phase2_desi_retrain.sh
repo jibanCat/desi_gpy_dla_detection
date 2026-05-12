@@ -64,17 +64,24 @@ CHUNK_SIZE="${CHUNK_SIZE:-5000}"
 #   chunk=10000 GPU-OOM'd on LOA 638k×5663 (49949799).
 #   Reverting default to chunk=5000 — proven safe at both 2lpt and
 #   LOA scale, ~20 s/iter on A40.
-MIN_SNR="${MIN_SNR:-1.0}"
-# Outlier filter (added 2026-05-12 per agent debug findings):
+MIN_SNR="${MIN_SNR:-2.0}"
+# Outlier filter, set to match DR16 v1 convention
+# (`gpy_dla_detection/learn_qso_model.py:108` GPTrainingSetLoader
+# hardcodes min_snr=2.0 for SDSS DR16). The v1 DESI loader
+# (`GPModelTrainer:184`) defaults to min_snr=0.0, which is why
+# this preload class was vulnerable to outlier corruption.
+#
+# Why this matters (agent debug findings 2026-05-12):
 # 1079 spectra in the 2lpt v2 wide preloads have NEGATIVE median
 # flux in the [1310, 1325] Å normalization band. After divide-by-
-# median normalization their flux blows up to |2.5e6|, contaminating
-# the PCA init → trained M is frozen at a noisy basis from iter 0
-# onward (verified by docs/notes/2026-05-12_2lpt_corr_noise_debug/).
-# min_snr=1.0 drops 25 % of spectra but eliminates 100 % of outliers
-# in both 2lpt loa-0 and 2lpt loa-124 preloads. Override at submit
-# with MIN_SNR=2.0 (more aggressive) or MIN_SNR=0.0 (legacy bug,
-# don't use unless you've otherwise filtered the preload).
+# median, their |flux| reaches 2.5e6, contaminating PCA init →
+# trained M is frozen at a noisy basis from iter 0 (verified by
+# docs/notes/2026-05-12_2lpt_corr_noise_debug/).
+#
+# min_snr at this preload (2lpt loa-0):
+#   0.0  → 236755 kept, 1079 outlier-median spectra (BUG)
+#   1.0  → 177348 kept, 0 outliers (minimal-cut)
+#   2.0  → 122272 kept, 0 outliers (matches DR16 v1 convention)  ← default
 MAX_SPECTRA="${MAX_SPECTRA:-}"   # empty = use all
 RESUME="${RESUME:-}"
 
