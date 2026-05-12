@@ -65,6 +65,8 @@ CHUNK_SIZE="${CHUNK_SIZE:-5000}"
 #   Reverting default to chunk=5000 — proven safe at both 2lpt and
 #   LOA scale, ~20 s/iter on A40.
 MIN_SNR="${MIN_SNR:-0.0}"
+NORM_MIN_LAMBDA="${NORM_MIN_LAMBDA:-1425.0}"
+NORM_MAX_LAMBDA="${NORM_MAX_LAMBDA:-1475.0}"
 # No per-spectrum SNR cut by default — MATLAB DR16 doesn't have one,
 # only a per-pixel max_noise_variance=9 cut (already applied in
 # load_preprocessed_h5). The earlier MIN_SNR=2.0 was a workaround
@@ -91,6 +93,7 @@ echo "  lr           : $LR"
 echo "  chunk_size   : $CHUNK_SIZE"
 echo "  max_spectra  : ${MAX_SPECTRA:-all}"
 echo "  min_snr      : $MIN_SNR  (outlier filter — see header)"
+echo "  norm_band    : [$NORM_MIN_LAMBDA, $NORM_MAX_LAMBDA] Å rest"
 echo "  resume       : ${RESUME:-(none)}"
 echo "  job_id       : ${SLURM_JOB_ID:-(local)}"
 echo "  node         : $(hostname)"
@@ -108,6 +111,8 @@ python -u tests/phase2_train_desi.py \
     --device cuda \
     --chunk-size "$CHUNK_SIZE" \
     --min-snr "$MIN_SNR" \
+    --norm-min-lambda "$NORM_MIN_LAMBDA" \
+    --norm-max-lambda "$NORM_MAX_LAMBDA" \
     --checkpoint-dir "$CKPT_DIR" \
     --checkpoint-every 25 \
     --max-walltime-sec 41000 \
