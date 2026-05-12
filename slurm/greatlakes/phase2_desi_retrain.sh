@@ -4,7 +4,7 @@
 #SBATCH --gpus=1
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=96G
+#SBATCH --mem=192G
 #SBATCH -t 12:00:00
 #SBATCH -J phase2_desi_retrain
 #SBATCH -o slurm/greatlakes/phase2_desi_retrain_%j.log

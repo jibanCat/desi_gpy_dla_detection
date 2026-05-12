@@ -222,6 +222,7 @@ def load_preprocessed_h5(
     de_forest_beta: float = 3.62,
     de_forest_num_lines: int = 3,
     dtype: torch.dtype = torch.float32,
+    working_dtype: np.dtype = np.float64,
 ) -> TrainingSet:
     """Load and filter a preprocessed GP training set HDF5 file.
 
@@ -297,14 +298,20 @@ def load_preprocessed_h5(
         mask = new_mask
     n_kept = int(mask.sum())
 
-    fluxes = fluxes_raw[mask].astype(np.float64)  # promote for preprocessing precision
-    noise_variance = noise_variance_raw[mask].astype(np.float64)
-    z_qsos = z_qsos_raw[mask].astype(np.float64)
+    # `working_dtype` controls the precision used during preprocessing.
+    # Default float64 promotes for precision (matches legacy behaviour).
+    # Pass `working_dtype=np.float32` at very large scale (300k+ spectra
+    # × 5662 px) to keep host RAM bounded — saves ~50% memory at the
+    # cost of a small precision drop in the centering / normalization
+    # path. trainer_v2 production also runs in f32 throughout.
+    fluxes = fluxes_raw[mask].astype(working_dtype)
+    noise_variance = noise_variance_raw[mask].astype(working_dtype)
+    z_qsos = z_qsos_raw[mask].astype(working_dtype)
 
     # The HDF5 stores per-spectrum rest_wavelengths but they're typically
     # the same grid — _read_rest_wavelengths already extracted the 1D grid
     # (first row if 2D, or the array directly if 1D).
-    rest_wave = rest_wavelengths.astype(np.float64)
+    rest_wave = rest_wavelengths.astype(working_dtype)
 
     print(f"[dataset] {h5_path.name}: {n_total} total → {n_filtered} after "
           f"z/SNR/catalog filter → {n_kept} after max_spectra cap")

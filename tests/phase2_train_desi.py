@@ -467,6 +467,10 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Load + filter + preprocess via the existing v2 dataset loader.
+    # Use working_dtype=float32 throughout to bound host RAM at 600k+
+    # scale — the default f64 path needs ~110 GB during preprocessing
+    # (29 GB × multiple arrays), exceeding the SLURM mem budget. f32
+    # matches what trainer_v2 production also uses.
     ts = load_preprocessed_h5(
         args.preload,
         z_min=args.z_min, z_max=args.z_max, min_snr=args.min_snr,
@@ -478,6 +482,7 @@ def main():
         de_forest_tau_0=TAU_0_PRIOR_MU, de_forest_beta=BETA_PRIOR_MU,
         de_forest_num_lines=NUM_FOREST_LINES,
         dtype=torch.float32,
+        working_dtype=np.float32,
     )
 
     # Keep large arrays at float32 to fit in host RAM. At 300k × 5662
