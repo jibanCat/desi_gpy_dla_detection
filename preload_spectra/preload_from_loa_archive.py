@@ -210,30 +210,52 @@ def loa_archive_to_trainset(
         flux_out = np.empty((n_kept, n_pix), dtype=np.float32)
         nv_out = np.empty((n_kept, n_pix), dtype=np.float32)
 
-        # Read flux/ivar/mask in one bulk slice for speed (avoids per-QSO HDF5 IO).
-        flux_block = ar._h["flux"][kept_idx]      # (n_kept, n_obs_pix) f4
-        ivar_block = ar._h["ivar"][kept_idx]      # (n_kept, n_obs_pix) f4
-        mask_block = ar._h["mask"][kept_idx]      # (n_kept, n_obs_pix) u4
+        # Chunked bulk read to bound host RAM. Bulk-loading all kept
+        # spectra at once for 500k+ QSOs needs ~80 GB (3 arrays × N ×
+        # n_obs × 4B), blowing past the 64 GB SLURM mem budget. With
+        # chunks of 50k we cap per-chunk allocation at ~4.7 GB.
+        bulk_chunk = 50000
+        for chunk_start in range(0, n_kept, bulk_chunk):
+            chunk_end = min(chunk_start + bulk_chunk, n_kept)
+            slice_idx = kept_idx[chunk_start:chunk_end]
+            # Sort indices for h5py (it requires monotonically increasing
+            # indices for fancy indexing).
+            order = np.argsort(slice_idx)
+            sorted_idx = slice_idx[order]
+            flux_block = ar._h["flux"][sorted_idx]
+            ivar_block = ar._h["ivar"][sorted_idx]
+            mask_block = ar._h["mask"][sorted_idx]
+            # Unscramble back to slice order for matching with kept_idx layout.
+            inv_order = np.argsort(order)
+            flux_block = flux_block[inv_order]
+            ivar_block = ivar_block[inv_order]
+            mask_block = mask_block[inv_order]
+            if verbose and chunk_start % (bulk_chunk * 4) == 0:
+                print(f"[loa_adapter] bulk read + process: "
+                      f"{chunk_end}/{n_kept} spectra ({100*chunk_end/n_kept:.1f}%)")
 
-        for i, src_idx in enumerate(kept_idx):
-            row = cat[src_idx]
-            z = float(row["Z"])
-            f_obs = flux_block[i].astype(np.float64)
-            iv = ivar_block[i].astype(np.float64)
-            m = mask_block[i]
-            # Apply DESI mask: any nonzero → invalid
-            bad = (m != 0) | (iv <= 0) | ~np.isfinite(iv) | ~np.isfinite(f_obs)
-            f_obs[bad] = np.nan
-            with np.errstate(divide="ignore", invalid="ignore"):
-                nv = np.where(bad, np.inf, 1.0 / iv)
+            for local_i, src_idx in enumerate(slice_idx):
+                i = chunk_start + local_i
+                row = cat[src_idx]
+                z = float(row["Z"])
+                f_obs = flux_block[local_i].astype(np.float64)
+                iv = ivar_block[local_i].astype(np.float64)
+                m = mask_block[local_i]
+                # Apply DESI mask: any nonzero → invalid
+                bad = (m != 0) | (iv <= 0) | ~np.isfinite(iv) | ~np.isfinite(f_obs)
+                f_obs[bad] = np.nan
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    nv = np.where(bad, np.inf, 1.0 / iv)
 
-            f_rest, nv_rest = _interp_to_rest(wave_obs, f_obs, nv, z, rest_grid)
-            tids_out[i] = int(row["TARGETID"])
-            zqso_out[i] = np.float32(z)
-            redsnr_out[i] = np.float32(_compute_redsnr(wave_obs, f_obs, nv, z))
-            bluesnr_out[i] = np.float32(_compute_bluesnr(wave_obs, f_obs, nv, z))
-            flux_out[i] = f_rest
-            nv_out[i] = nv_rest
+                f_rest, nv_rest = _interp_to_rest(wave_obs, f_obs, nv, z, rest_grid)
+                tids_out[i] = int(row["TARGETID"])
+                zqso_out[i] = np.float32(z)
+                redsnr_out[i] = np.float32(_compute_redsnr(wave_obs, f_obs, nv, z))
+                bluesnr_out[i] = np.float32(_compute_bluesnr(wave_obs, f_obs, nv, z))
+                flux_out[i] = f_rest
+                nv_out[i] = nv_rest
+            # Release block memory before next chunk
+            del flux_block, ivar_block, mask_block
 
     # 6. Write v2 trainset.h5 (legacy schema — load_preprocessed_h5 reads it)
     rest_wave_2d = np.tile(rest_grid.astype(np.float32)[None, :], (n_kept, 1))
