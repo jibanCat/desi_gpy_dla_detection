@@ -414,9 +414,29 @@ def _git_head_sha() -> str:
         return "unknown"
 
 
-def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1):
-    """Write learned model in DESI schema (production-loadable)."""
+def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1,
+             initial_M=None, initial_log_omega=None,
+             initial_log_c_0=None, initial_log_tau_0=None, initial_log_beta=None):
+    """Write learned model in DESI schema (production-loadable).
+
+    Schema matches v1 production (`learnlogs/model_epoch_*.h5`) where it
+    overlaps, plus the DESI-loader-required normalization scalars:
+
+      M, mu, log_omega                               trained kernel
+      log_c_0, log_tau_0, log_beta                   trained scalars
+      rest_wavelengths, max_noise_variance           required by loader
+      normalization_min_lambda, normalization_max_lambda  v2-only,
+                                                     auto-applied by NullGPMAT
+
+    Plus v1-compatible provenance + history (so plot_corr_dr16_comparison
+    and other v1-era scripts work directly on our outputs):
+
+      initial_M, initial_log_omega                   PCA init / data-driven
+      initial_log_c_0, initial_log_tau_0, initial_log_beta   initial scalars
+      loss_history, log_c_0_history, log_tau_0_history, log_beta_history
+    """
     with h5py.File(out_path, "w") as f:
+        # --- Trained kernel (v1 schema) ---
         f.create_dataset("M", data=np.asarray(result["M"], dtype=np.float64))
         f.create_dataset("mu", data=np.asarray(result["mu"], dtype=np.float64))
         f.create_dataset("log_omega", data=np.asarray(result["log_omega"], dtype=np.float64))
@@ -424,9 +444,33 @@ def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1):
         f.create_dataset("log_tau_0", data=np.float64(result["log_tau_0"]))
         f.create_dataset("log_beta", data=np.float64(result["log_beta"]))
         f.create_dataset("rest_wavelengths", data=np.asarray(rest, dtype=np.float64))
+        # --- Required-for-loader scalars ---
         f.create_dataset("max_noise_variance", data=np.float64(9.0))
         f.create_dataset("normalization_min_lambda", data=np.float64(1310.0))
         f.create_dataset("normalization_max_lambda", data=np.float64(1325.0))
+        # --- v1 provenance: initial values (PCA / data-driven init) ---
+        if initial_M is not None:
+            f.create_dataset("initial_M", data=np.asarray(initial_M, dtype=np.float64))
+        if initial_log_omega is not None:
+            f.create_dataset("initial_log_omega",
+                             data=np.asarray(initial_log_omega, dtype=np.float64))
+        if initial_log_c_0 is not None:
+            f.create_dataset("initial_log_c_0", data=np.float64(initial_log_c_0))
+        if initial_log_tau_0 is not None:
+            f.create_dataset("initial_log_tau_0", data=np.float64(initial_log_tau_0))
+        if initial_log_beta is not None:
+            f.create_dataset("initial_log_beta", data=np.float64(initial_log_beta))
+        # --- v1 training history (embedded so .h5 is self-contained) ---
+        hist = result.get("history", {}) or {}
+        if "loss" in hist:
+            f.create_dataset("loss_history", data=np.asarray(hist["loss"], dtype=np.float64))
+        if "log_c_0" in hist:
+            f.create_dataset("log_c_0_history", data=np.asarray(hist["log_c_0"], dtype=np.float64))
+        if "log_tau_0" in hist:
+            f.create_dataset("log_tau_0_history", data=np.asarray(hist["log_tau_0"], dtype=np.float64))
+        if "log_beta" in hist:
+            f.create_dataset("log_beta_history", data=np.asarray(hist["log_beta"], dtype=np.float64))
+        # --- attrs ---
         f.attrs["n_spectra"] = int(n_spectra)
         f.attrs["n_iters"] = int(n_iters)
         f.attrs["lr"] = float(lr)
@@ -532,7 +576,12 @@ def main():
 
     # 4. Save: .h5 (DESI schema, primary) + .npz (training history) + README.md.
     out_h5 = args.out_dir / "phase2_result.h5"
-    _save_h5(out_h5, result, rest, ts.n_spectra, args.n_iters, args.lr)
+    _save_h5(out_h5, result, rest, ts.n_spectra, args.n_iters, args.lr,
+             initial_M=M_init,
+             initial_log_omega=log_omega_init,
+             initial_log_c_0=float(np.log(INITIAL_C_0)),
+             initial_log_tau_0=float(np.log(INITIAL_TAU_0)),
+             initial_log_beta=float(np.log(INITIAL_BETA)))
 
     out_npz = args.out_dir / "phase2_result.npz"
     np.savez(out_npz, rest_wavelengths=rest, **{k: result[k] for k in
