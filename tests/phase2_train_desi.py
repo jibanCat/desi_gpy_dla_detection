@@ -70,12 +70,17 @@ NUM_FOREST_LINES = 31  # Match phase2_train_dr16.py:66 (deep Lyman series).
 K_DESI = 30  # DESI Y3 production convention (matches trainer_v2 corrected runs).
              # Different from DR16's k=20 — don't reuse the DR16 K constant.
 
-# Turner+2024 priors (Y3 production). Match `gpy_dla_detection.set_parameters`
-# defaults `prev_tau_0=0.00246, prev_beta=3.62`.
+# Turner+2024 priors (Y3 production). Use strict Turner sigmas to
+# match v1 production (`gpy_dla_detection/objective.py:65,67`). The
+# audit (docs/notes/2026-05-12_training_pipeline_audit_vs_matlab/)
+# identified the earlier (0.00064, 0.074) as BOSS DR12Q sigmas mixed
+# with Turner means — too loose, allowed 2lpt mocks to drift to
+# τ_0~0.0006, β~1.3 (well below physical Turner mean). Strict Turner
+# σ pulls the trained scalars back toward the published mean.
 TAU_0_PRIOR_MU = 0.00246
-TAU_0_PRIOR_SIGMA = 0.00064
+TAU_0_PRIOR_SIGMA = 0.00014   # Turner+2024 (was 0.00064 = BOSS DR12Q)
 BETA_PRIOR_MU = 3.62
-BETA_PRIOR_SIGMA = 0.074
+BETA_PRIOR_SIGMA = 0.04       # Turner+2024 (was 0.074 = BOSS DR12Q)
 
 # Initial point for hyperparameters
 INITIAL_C_0 = 0.1
