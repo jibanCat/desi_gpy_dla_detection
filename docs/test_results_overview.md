@@ -103,8 +103,8 @@ Per-iter rate is the most stable measure (independent of total iter count).
 | 49913952 | Step C smoke (5k×50 on 2lpt loa-0 wide) | A40 spgpu | COMPLETED 7m | 0.43 s/iter validated GPU path |
 | 49916028 | 2lpt loa-0 wide, 1500 iter, chunk=5000 | A40 spgpu | OOM (host RAM) | superseded by 49921626 (f32 fix) |
 | 49916029 | 2lpt loa-124 wide, 1500 iter, chunk=5000 | A40 spgpu | OOM (host RAM) | superseded by 49921627 (f32 fix) |
-| 49921626 | 2lpt loa-0 retrain (after f32 fix) | A40 spgpu | RUNNING | 20 s/iter, ETA ~8h |
-| 49921627 | 2lpt loa-124 retrain (after f32 fix) | A40 spgpu | RUNNING | 17 s/iter, ETA ~7h |
+| 49921626 | 2lpt loa-0 retrain (after f32 fix) | A40 spgpu | **COMPLETED 8h55m** | iter 1499 final: τ_0=0.000540, β=1.279, c_0=0.003964, loss=7.78e8 |
+| 49921627 | 2lpt loa-124 retrain (after f32 fix) | A40 spgpu | **COMPLETED 7h37m** | iter 1499 final: τ_0=0.000694, β=1.451, c_0=0.006008, loss=6.28e8 |
 | 49925097 | LoaArchive adapter (no-DLA + no-BAL) | standard CPU | FAILED (sys.path) | superseded by 49927767 |
 | 49925098 | LoaArchive adapter (no-HCD + with-BAL) | standard CPU | FAILED (sys.path) | superseded by 49927768 |
 | 49927767 | LoaArchive adapter (no-DLA + no-BAL), unchunked code | standard CPU | OOM at 2h21m | superseded by 49939506 (chunked-read fix) |
@@ -113,8 +113,10 @@ Per-iter rate is the most stable measure (independent of total iter count).
 | 49939506 | LoaArchive adapter (no-DLA + no-BAL), chunked-read fix | standard CPU | **COMPLETED 53.8 min** | 639,419 spectra → 40.5 GB trainset.h5 at `/scratch/.../loa_wide_v2/loa_no_dla_no_bal_wide/` |
 | 49947724 | LOA real (no-DLA + no-BAL, 638k × 1500 iter, chunk=10000) | A40 spgpu | OOM at 1m54s | host RAM at load_preprocessed_h5 (f64 preproc on 638k×5663 = 29 GB×N arrays, exceeded 96G); superseded by 49949799 |
 | 49947725 | LOA real (no-HCD + with-BAL, 576k × 1500 iter, chunk=10000) | A40 spgpu | OOM at 1m54s | same — superseded by 49949800 |
-| 49949799 | LOA real (no-DLA + no-BAL) — `working_dtype=f32` preproc + mem 192G | A40 spgpu | submitted | output → `docs/notes/2026-05-11_desi_phase2_loa_no_dla_no_bal_wide/` |
-| 49949800 | LOA real (no-HCD + with-BAL) — same fix | A40 spgpu | submitted | output → `docs/notes/2026-05-11_desi_phase2_loa_no_hcd_with_bal_wide/` |
+| 49949799 | LOA real (no-DLA + no-BAL) — `working_dtype=f32` preproc + mem 192G + chunk=10000 | A40 spgpu | **GPU OOM at iter 0** | matmul C@M needed 6.3 GB on top of 42.7 GB used → 44 GB capacity exceeded; superseded by 49977782 (chunk=7500) |
+| 49949800 | LOA real (no-HCD + with-BAL) — same | A40 spgpu | CANCELLED preemptively | would have hit same OOM; superseded by 49977783 |
+| 49977782 | LOA real (no-DLA + no-BAL) — chunk=7500 | A40 spgpu | submitted | 638k spectra × 1500 iter ~23h; uses --max-walltime-sec=41000 + walltime-exit checkpoint, may need 2-3 chained jobs via --resume |
+| 49977783 | LOA real (no-HCD + with-BAL) — chunk=7500 | A40 spgpu | submitted | 575k spectra × 1500 iter ~21h; same checkpoint+resume strategy |
 
 When a job lands, replace its "RUNNING" / "PENDING" with "COMPLETED + outcome" or "FAILED + reason".
 
