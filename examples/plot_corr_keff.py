@@ -48,7 +48,11 @@ def _corr(K: np.ndarray) -> np.ndarray:
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(1, len(MODELS), figsize=(6.5 * len(MODELS), 6.2))
+    # 2 rows × N cols:
+    #   Top row: corr(K_eff) full range [-1, +1] (diagonal dominates)
+    #   Bottom row: corr(K_eff) with diagonal masked + colorbar tight to
+    #     off-diag 1st/99th percentile so physical off-diag features pop.
+    fig, axes = plt.subplots(2, len(MODELS), figsize=(6.5 * len(MODELS), 12.0))
     for i, (name, path) in enumerate(MODELS.items()):
         m = _load(path)
         M = m["M"]
@@ -61,24 +65,51 @@ def main():
         C = _corr(K_eff)
         adj = np.abs(np.diff(C, axis=1)).mean()
         extent = [rw[0], rw[-1], rw[-1], rw[0]]
-        im = axes[i].imshow(C, cmap="RdBu_r", vmin=-1, vmax=1,
-                            extent=extent, aspect="auto")
-        axes[i].set_title(f"({chr(ord('a')+i)}) {name}\n"
-                          f"corr(K$_\\mathrm{{eff}}$ = c$_0^2$·M·M$^T$ + diag(ω²))\n"
-                          f"c_0 = {c_0:.4g}   mean adj diff = {adj:.4f}")
-        axes[i].set_xlabel(r"$\lambda_\mathrm{rest}$ [Å]")
+
+        # Top row: full [-1, +1] view
+        ax0 = axes[0, i]
+        im0 = ax0.imshow(C, cmap="RdBu_r", vmin=-1, vmax=1,
+                         extent=extent, aspect="auto")
+        ax0.set_title(f"({chr(ord('a')+i)}) {name}\n"
+                      f"corr(K$_\\mathrm{{eff}}$), full range\n"
+                      f"c_0 = {c_0:.4g}   mean adj diff = {adj:.4f}")
+        ax0.set_xlabel(r"$\lambda_\mathrm{rest}$ [Å]")
         if i == 0:
-            axes[i].set_ylabel(r"$\lambda_\mathrm{rest}$ [Å]")
-        plt.colorbar(im, ax=axes[i], fraction=0.046, label="correlation")
+            ax0.set_ylabel(r"$\lambda_\mathrm{rest}$ [Å]")
+        plt.colorbar(im0, ax=ax0, fraction=0.046, label="correlation")
+
+        # Bottom row: diagonal masked, off-diag-only color range
+        ax1 = axes[1, i]
+        C_off = C.copy()
+        # Mask the main diagonal AND the immediate near-diagonals to let
+        # the wider off-diagonal structure dominate the colorbar.
+        diag_mask = np.zeros_like(C, dtype=bool)
+        for k in range(-1, 2):  # mask diagonal ± 1 pixel
+            diag_mask |= np.eye(C.shape[0], C.shape[1], k=k, dtype=bool)
+        C_off_masked = np.where(diag_mask, np.nan, C_off)
+        # Tight color range based on off-diag percentile
+        finite = C_off_masked[np.isfinite(C_off_masked)]
+        vmax = float(np.percentile(np.abs(finite), 99))
+        vmax = max(vmax, 1e-4)  # avoid degenerate colorbar
+        cmap = plt.cm.RdBu_r.copy()
+        cmap.set_bad(color="white")
+        im1 = ax1.imshow(C_off_masked, cmap=cmap, vmin=-vmax, vmax=vmax,
+                         extent=extent, aspect="auto")
+        ax1.set_title(f"corr(K$_\\mathrm{{eff}}$), off-diag only "
+                      f"(±{vmax:.4f} = 99th %ile, diag±1 masked)")
+        ax1.set_xlabel(r"$\lambda_\mathrm{rest}$ [Å]")
+        if i == 0:
+            ax1.set_ylabel(r"$\lambda_\mathrm{rest}$ [Å]")
+        plt.colorbar(im1, ax=ax1, fraction=0.046, label="correlation")
 
     fig.suptitle(
-        "corr(K$_\\mathrm{eff}$) — inference-relevant kernel correlation. "
-        "The 2lpt models look noisy in raw corr(M·M$^T$) but smooth here "
-        "because c_0² ≈ 1.6e-5 crushes the M contribution; "
-        "ω² dominates on the observed-flux scale.",
-        fontsize=12, y=1.02,
+        "corr(K$_\\mathrm{eff}$) — inference-relevant kernel correlation\n"
+        "Top row: full [-1, +1] (diagonal dominates because ω² dominates K_eff). "
+        "Bottom row: diagonal masked + tight colorbar so physical off-diag features "
+        "(emission lines, continuum modes) become visible.",
+        fontsize=12, y=1.00,
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(OUT_PATH, dpi=140, bbox_inches="tight")
     plt.close(fig)
     print(f"[saved] {OUT_PATH}")
