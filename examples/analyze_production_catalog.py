@@ -49,7 +49,14 @@ def parse_args():
     p.add_argument("--catalog-dir", required=True,
                    help="dir of dlacat-*.fits (multi-DLA mode catalog)")
     p.add_argument("--truth", required=True,
-                   help="dla_cat_mask_20.30.fits (truth DLAs with NHI>=20.3)")
+                   help="Truth catalog. London uses dla_cat_mask_20.30.fits "
+                        "(column Z_DLA) or dla_cat.fits. Saclay & 2LPT use "
+                        "hcd_truth_cat.fits (column Z; full NHI range — filter "
+                        "with --truth-nhi-min).")
+    p.add_argument("--truth-nhi-min", type=float, default=20.3,
+                   help="Drop truth rows below this NHI threshold "
+                        "(default 20.3 matches the multi-DLA catalog regime). "
+                        "Set to 0 to disable.")
     p.add_argument("--zcat", required=True,
                    help="zcat.fits with TARGETID, Z, ZWARN")
     p.add_argument("--lls-dir", default=None,
@@ -121,7 +128,12 @@ def _match_truth_to_map(truth: Table, mp: Table, dz_rel: float
         map_by_tid.setdefault(int(t), []).append(i)
 
     truth_tid = np.asarray(truth["TARGETID"])
-    truth_z = np.asarray(truth["Z_DLA"], dtype=float)
+    # London uses Z_DLA; Saclay & 2LPT use Z; some variants Z_DLA_NO_RSD.
+    _z_col = next((c for c in ("Z_DLA", "Z_DLA_NO_RSD", "Z")
+                   if c in truth.colnames), None)
+    if _z_col is None:
+        raise SystemExit(f"truth catalog has no Z_DLA / Z column: {truth.colnames}")
+    truth_z = np.asarray(truth[_z_col], dtype=float)
     truth_nhi = np.asarray(truth["NHI"], dtype=float)
 
     # Greedy: per TARGETID, sort truth DLAs by descending NHI (priority to
@@ -173,7 +185,12 @@ def main():
 
     print("[load] truth", flush=True)
     truth = Table(fitsio.read(args.truth))
-    print(f"  truth DLAs (NHI>=20.3): {len(truth)}", flush=True)
+    print(f"  truth rows raw: {len(truth)}  cols={truth.colnames}", flush=True)
+    if args.truth_nhi_min > 0:
+        keep = np.asarray(truth["NHI"]) >= args.truth_nhi_min
+        truth = truth[keep]
+        print(f"  after NHI≥{args.truth_nhi_min:.2f}: {len(truth)} truth DLAs",
+              flush=True)
 
     cat = _load_catalog_dir(args.catalog_dir)
     print(f"[load] catalog rows: {len(cat)}", flush=True)
