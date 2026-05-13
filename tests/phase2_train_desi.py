@@ -88,6 +88,15 @@ INITIAL_TAU_0 = TAU_0_PRIOR_MU
 INITIAL_BETA = TAU_0_PRIOR_MU * 0 + 3.62  # avoid stale-cache typo
 INITIAL_BETA = 3.62
 
+# Optional Gaussian prior on log_c_0 to prevent the c_0 → 0 degeneracy
+# observed in the 2026-05-11/12 retrains (factor-analysis gauge ambiguity:
+# (c_0, M) → (c_0/k, k·M) leaves the loss invariant). When LOG_C_0_PRIOR_SIGMA
+# is None, no prior is applied (matches MATLAB / v1). When set to a finite
+# value, adds  loss += 0.5 * (log_c_0 - LOG_C_0_PRIOR_MU)² / σ²  to the
+# Adam objective. Anchored at log(0.1) ≈ -2.30 (Garnett+ historical value).
+LOG_C_0_PRIOR_MU = np.log(INITIAL_C_0)  # log(0.1) ≈ -2.30258509
+LOG_C_0_PRIOR_SIGMA = None  # set via --log-c-0-prior-sigma at submit time
+
 _RUNTIME = dict(checkpoint_dir=None, save_now=False)
 
 
@@ -245,6 +254,11 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
         # follows from chain rule on log-parameter prior.
         dlog_tau_0_acc = dlog_tau_0_acc + tau_0 * (tau_0 - TAU_0_PRIOR_MU) / TAU_0_PRIOR_SIGMA**2
         dlog_beta_acc = dlog_beta_acc + beta * (beta - BETA_PRIOR_MU) / BETA_PRIOR_SIGMA**2
+        # Optional Gaussian prior on log_c_0 (anchors c_0 to prevent the
+        # factor-analysis degeneracy where c_0 → 0 and M → ∞). Direct
+        # gradient of  0.5*(log_c_0 - μ)²/σ²  is  (log_c_0 - μ)/σ².
+        if LOG_C_0_PRIOR_SIGMA is not None:
+            dlog_c_0_acc = dlog_c_0_acc + (log_c_0.detach() - LOG_C_0_PRIOR_MU) / LOG_C_0_PRIOR_SIGMA**2
 
         with torch.no_grad():
             M.grad = dM_accum.clone()
@@ -518,7 +532,15 @@ def main():
                    help="Per-spectrum normalization band lower edge (default 1425, MATLAB DR16 convention)")
     p.add_argument("--norm-max-lambda", type=float, default=1475.0,
                    help="Per-spectrum normalization band upper edge (default 1475)")
+    p.add_argument("--log-c-0-prior-sigma", type=float, default=None,
+                   help="If set, add a Gaussian prior on log_c_0 around log(0.1) "
+                        "with this σ. Anchors c_0 to prevent the factor-analysis "
+                        "degeneracy (c_0 → 0, M → ∞). Try 0.5 for loose, 0.1 for "
+                        "tight. Unset = MATLAB / v1 behaviour (no c_0 prior).")
     args = p.parse_args()
+    # Wire CLI σ into the global so the prior gradient picks it up
+    global LOG_C_0_PRIOR_SIGMA
+    LOG_C_0_PRIOR_SIGMA = args.log_c_0_prior_sigma
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"[config] device={device} preload={args.preload}")

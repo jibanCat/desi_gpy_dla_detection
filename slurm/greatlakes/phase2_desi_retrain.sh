@@ -67,6 +67,7 @@ CHUNK_SIZE="${CHUNK_SIZE:-5000}"
 MIN_SNR="${MIN_SNR:-0.0}"
 NORM_MIN_LAMBDA="${NORM_MIN_LAMBDA:-1425.0}"
 NORM_MAX_LAMBDA="${NORM_MAX_LAMBDA:-1475.0}"
+LOG_C_0_PRIOR_SIGMA="${LOG_C_0_PRIOR_SIGMA:-}"   # optional Gaussian prior on log_c_0 to prevent gauge collapse
 # No per-spectrum SNR cut by default — MATLAB DR16 doesn't have one,
 # only a per-pixel max_noise_variance=9 cut (already applied in
 # load_preprocessed_h5). The earlier MIN_SNR=2.0 was a workaround
@@ -113,6 +114,7 @@ python -u tests/phase2_train_desi.py \
     --min-snr "$MIN_SNR" \
     --norm-min-lambda "$NORM_MIN_LAMBDA" \
     --norm-max-lambda "$NORM_MAX_LAMBDA" \
+    ${LOG_C_0_PRIOR_SIGMA:+--log-c-0-prior-sigma "$LOG_C_0_PRIOR_SIGMA"} \
     --checkpoint-dir "$CKPT_DIR" \
     --checkpoint-every 25 \
     --max-walltime-sec 41000 \
