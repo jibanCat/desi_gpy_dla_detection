@@ -9,6 +9,29 @@
 > prioritized list, scoped specifically to what a GreatLakes trainer agent
 > can act on without coordinating inference-side changes.
 >
+> ## 2026-05-13 user corrections (read first)
+>
+> 1. **Tier 0.1 (v2 preload normalization bug) is fixed in PR #6**,
+>    awaiting merge. User will write normalization-range metadata into
+>    trained `.h5` in a future cleanup.
+> 2. **Tier 1.1 retrain on GreatLakes is already running.**
+> 3. **K=20 was historical default; K=30 was first used for DESI v1
+>    production.** Update K-sweep to {20, 30, 50, 64}.
+> 4. **The trainer does NOT learn τ.** The deforest mean-flux A =
+>    exp(−τ_eff) uses *literature* Turner+2024 τ_0=0.00246, β=3.62 —
+>    fixed at BOTH train and inference. Only the Ω-kernel diagonal noise
+>    term is trained. The τ-EB recipe is the *runtime* mechanism to adapt
+>    τ per-spectrum, and it is independent of trained model identity.
+>    Tier 1.3 (widen z range) was originally motivated by a wrong
+>    train-side τ argument — retracted; weaker remaining benefit from
+>    Ω-kernel low-z calibration only.
+> 5. **Sub-DLA detection should use 2-way `[null, subDLA]`**, NOT 3-way
+>    `[null, subDLA, DLA]`. The 3-way mode is structured to treat sub-DLA
+>    as null-like for DLA-purity improvement, not for sub-DLA detection.
+>    Open question: does extending the sub-DLA prior to [19, 20.3] (with
+>    overlap into [20.0, 20.3)) improve DLA detection? Untested — see
+>    Tier 2.0 below.
+>
 > Companion docs (read these first if you have time):
 > - [`2026-04-29_bayesian_correctness_synthesis.md`](2026-04-29_bayesian_correctness_synthesis.md) — H1-H8 hypothesis ledger
 > - [`2026-05-01_trained_gp_models_comparison.md`](2026-05-01_trained_gp_models_comparison.md) — 5 trained models on disk + v2 normalization bug
@@ -36,7 +59,13 @@ Inference-only levers (τ-EB, BAL pixel masking, multi-line cross-checks, neighb
 
 ### 0.1 — Fix the v2 preload normalization bug [T]
 
-**Status: known bug, root-cause identified, no fix landed yet.** See
+**Status (2026-05-13): the fix is on PR #6, awaiting merge. User has noted
+they will write the normalization-range metadata into the trained `.h5`
+files in a future cleanup. Tier 1.1 retrain is already running on
+GreatLakes with the PR #6 fix.** Section retained below for historical
+record; treat the rest of this Tier as "done, monitor the retrain."
+
+Original write-up: see
 [`2026-05-01_trained_gp_models_comparison.md`](2026-05-01_trained_gp_models_comparison.md)
 § "⚠ BUG — v2 preload skips per-spectrum normalization".
 
@@ -91,6 +120,9 @@ test in isolation. Pick one at a time.
 
 ### 1.1 — Train on the cleanest forest possible: LOA real, all HCDs masked [T]
 
+**Status (2026-05-13): IN PROGRESS** — user has the retrain running on
+GreatLakes after the PR #6 preload-bug fix.
+
 The trainer agent already submitted `loa_no_hcd_with_bal_52198069` (mask
 all NHI ≥ 17.2, keep BALs). After the Tier 0 fix re-train it. This is
 the **cleanest-forest model**: every known absorber is masked out of the
@@ -119,25 +151,27 @@ have residual absorption pulling μ down at those wavelengths).
 4. If the cleanest-forest model wins, this becomes the new production
    GP candidate.
 
-### 1.2 — Test GP rank K > 30 [T]
+### 1.2 — Test GP rank K beyond 30 [T]
 
-Current production K=30. The GP forward model is a rank-K factor model
-on the (M, K) basis. Higher K means less smoothing of the QSO emission
-shape — sharper peaks at Lyα / NV / etc., potentially better
-discrimination between emission-line residuals and weak DLA signatures.
+**User correction (2026-05-13)**: K=20 was the historical default; K=30
+was *first introduced in the v1 production model for DESI*. So the test
+should include K=20 as a baseline (matches the pre-DESI codebase), and
+sweep upward to test if larger K helps DESI specifically.
 
-The synthesis note marks H1 (LSF) and H2 (num_lines) as ruled out for
-the DLA regime but **doesn't test rank**. There's no theoretical reason
-K=30 is optimal; it's a legacy choice from Ho+2020.
+The GP forward model is a rank-K factor model on the (M, K) basis. Higher
+K means less smoothing of the QSO emission shape — sharper peaks at Lyα
+/ NV / etc., potentially better discrimination between emission-line
+residuals and weak DLA signatures. The synthesis note marks H1 (LSF) and
+H2 (num_lines) as ruled out for the DLA regime but **doesn't test rank**.
 
 **Action for the trainer agent:**
-1. Train at K ∈ {30 (baseline), 50, 64} with the fixed preload + the
-   same trainset as Tier 1.1.
+1. Train at K ∈ {20 (historical pre-DESI), 30 (current production), 50, 64}
+   with the fixed preload + the same trainset as Tier 1.1.
 2. Compare loss-at-convergence per rank.
 3. Compare P/C on the 200-target stratified sample.
-4. **Stop early if K=50 doesn't show a clear improvement** — diminishing
-   returns are likely and the inference cost scales as K² for the
-   covariance solve.
+4. **Stop early if K=50 doesn't show a clear improvement over K=30** —
+   diminishing returns are likely and the inference cost scales as K²
+   for the covariance solve.
 
 **Cost:** ~16 GPU-h × 3 ranks = 48 GPU-h. Cheap.
 
@@ -145,30 +179,32 @@ K=30 is optimal; it's a legacy choice from Ho+2020.
 spurious detections if the emission-line shape was previously under-fit
 at K=30. Could be zero if K=30 is already saturated.
 
-### 1.3 — Widen the training z range [T]
+### 1.3 — Widen the training z range [T] — RETRACTED reasoning, modest remaining benefit
 
-The four v2 models all use z ∈ [2.0, 4.25]. v1 production is suspected
-to be trained on z ≈ (2.5, 4.25) or (3.0, 4.25) — the user recalls
-~(2.5, 4.25) but verification from the .h5 alone isn't possible. The
-τ-EB story (mocks at 3× Turner, real LOA at 1.5×) **is largest at low
-z (2.0–2.5)**. If v1 wasn't trained on this low-z forest behaviour, it
-may under-fit there.
+**User correction (2026-05-13)**: the rationale I gave originally was
+wrong. **The runtime mean-flux deforest A = exp(−τ_eff) uses literature
+τ_0 and β (Turner+2024) — fixed at BOTH training and inference.** The
+trainer does NOT learn τ at all. The only opacity-like parameter learned
+during training is the Ω-kernel diagonal noise term (which has its own
+separate (log_tau_0, log_beta) pair, by codebase convention). The
+τ-EB recipe at inference is *the* mechanism to adapt the per-spectrum
+runtime τ, and it is independent of the trained model identity.
 
-**Action for the trainer agent:**
+So the original argument — "widening z range fixes the τ-EB-implied
+under-training at low z" — is incorrect. Widening z range could still
+help by giving the GP more low-z spectra to fit μ + Ω on (Ω-kernel
+calibration at low-z forest noise), but the dominant effect (mean-flux
+correction) is handled by τ-EB at inference and is not a training
+problem.
+
+**Action for the trainer agent (revised):**
 1. Use the v2 trainer (post-Tier-0-fix) at z ∈ [2.0, 4.25] as the
-   baseline.
-2. Optionally also try z ∈ [1.96, 4.25] to capture the entire DESI
-   inference cut.
-3. Compare on a *low-z*-stratified target subset (z_qso ∈ [2.0, 2.5]) —
-   this is where the divergence is largest.
-
-**Cost:** included in Tier 1.1 if the baseline z range is already [2.0,
-4.25]. Optional sweep adds ~16 GPU-h.
-
-**Expected gain:** modest at high-z (where the production data already
-trained), substantial at low-z (potentially 10-15 pp completeness gain
-on z_qso < 2.5 targets, since the low-SNR forest is also the low-z
-regime per the τ-EB measurements).
+   baseline trainset — this matches the inference cut z ≥ 1.96.
+2. **Only sweep wider z range if the Ω-kernel low-z residual variance
+   is a measurable problem.** Inspect the trained ω(λ) at the low-z end
+   of the rest grid (~1180-1216 Å rest) vs the high-z end and check for
+   anomalies.
+3. If no anomaly, **drop this Tier and prioritize 1.2 (K-sweep) instead**.
 
 ### 1.4 — Train on LOA + 2LPT hybrid [T] (speculative — discuss before doing)
 
@@ -194,6 +230,34 @@ training.
 
 These are tagged [T+I] because they require BOTH a new trainer output AND
 inference-side plumbing changes. Coordinate with production.
+
+> **Critical clarification (user, 2026-05-13)**: For **sub-DLA detection
+> as a catalog product**, model selection must be **2-way** `[null, subDLA]`
+> — the LLS single-absorber mode with `MAX_DLAS=1, SINGLE_ABSORBER_MODEL=1`.
+> The 3-way `[null, subDLA, DLA]` multi-DLA mode is structured to *treat
+> the sub-DLA model as null-like to improve DLA purity*, NOT to detect
+> sub-DLAs. These are two different scientific questions. Do not conflate
+> them in this PR. The joint DLA+SubDLA sweep tested today (cellA/B/C) is
+> Option B — single DLA model with widened NHI prior [19, 22] or [17.2, 22]
+> + post-hoc NHI binning — also a 2-way mode. See memory
+> `project_subdla_dla_joint_design`.
+
+### 2.0 — NEW: Does sub-DLA [19, 20.3] prior overlap actually IMPROVE DLA detection? [T+I]
+
+**Status: untested.** This is the user's open question (2026-05-13).
+The hypothesis is that extending the sub-DLA prior to [19, 20.3] (with
+overlap into the [20.0, 20.3) bin currently claimed by the DLA model)
+might either (a) help by giving Bayesian selection a smooth handle on
+borderline DLAs vs sub-DLAs, or (b) hurt by stealing probability mass
+from the DLA model.
+
+**Action for the trainer agent:** generate the new sub-DLA sample file
+(see 2.1 below for the command). Then ask the *inference* agent to run
+a small 5k-sample comparison: production multi-DLA mode with old
+sub-DLA prior [19.5, 20] vs new sub-DLA prior [19, 20.3]. Measure DLA
+purity/completeness at SNR > 2, P_DLA ≥ 0.99 on the dla_cat.fits truth.
+If DLA P/C is non-degraded or improved, ship the new sub-DLA file as
+the production default. If degraded, document the failure mode and drop.
 
 ### 2.1 — Extend sub-DLA NHI prior to overlap with DLA [T+I]
 
@@ -297,18 +361,26 @@ infrastructure.
 
 ## Recommended order of operations for the trainer PR
 
-1. **First commit**: Tier 0.1 — fix the v2 preload normalization bug.
-2. **Second commit**: Tier 1.1 — re-train `loa_no_hcd_with_bal` with the
-   fix. This becomes the candidate production v2 model.
-3. **Third commit**: Tier 1.2 — K-rank sweep at K ∈ {30, 50, 64} on the
-   trainset from step 2.
-4. **Fourth commit**: Tier 2.2 — re-tune alpha and produce a new sub-DLA
-   sample file. (Trainer can do this without retraining the GP.)
-5. **Fifth commit** (if there's a follow-up PR): Tier 2.1 — extended
-   sub-DLA NHI prior sample file.
+Updated 2026-05-13 with user's status:
 
-Items 3, 4, 5 are independent of each other — they can be parallelized
-on GreatLakes if you have the budget.
+1. ~~**First commit**: Tier 0.1 — fix the v2 preload normalization bug.~~
+   **DONE in PR #6, awaiting merge.**
+2. **In flight**: Tier 1.1 — `loa_no_hcd_with_bal` retrain with the PR #6
+   fix is **already running on GreatLakes**. This becomes the candidate
+   production v2 model once it converges.
+3. **Next commit**: Tier 1.2 — K-rank sweep at K ∈ {**20, 30, 50, 64**}
+   on the trainset from step 2 (including K=20 per user — historical
+   pre-DESI default; K=30 = current production introduced for DESI).
+4. **Parallel commit (no GP retrain needed)**: Tier 2.1 + 2.0 — generate
+   the new sub-DLA sample file at NHI ∈ [19, 20.3], 10k samples; ask the
+   inference team to run the 5k smoke test confirming DLA detection is
+   non-degraded.
+5. **Optional follow-up**: Tier 2.2 — re-tune α mixture weight; only do
+   if Tier 2.1's smoke test is positive (no point fine-tuning a prior
+   that's about to be replaced).
+
+Items 3, 4 are independent — they can be parallelized on GreatLakes if
+you have the budget.
 
 After each item, run the 200-target stratified P/C comparison
 (`examples/molly_faithful_pc_plots.py` against the truth catalog) and
