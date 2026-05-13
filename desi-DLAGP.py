@@ -233,6 +233,23 @@ def parse(options=None):
              '"dla": match the validated diagnostic at higher cost.',
     )
 
+    # Multi-DLA early-stop policy
+    # (see docs/notes/2026-05-12_multidla_early_stop_bug.md)
+    _early_stop_default = os.environ.get("EARLY_STOP_MODE", "baseline")
+    if _early_stop_default not in ("baseline", "A", "D"):
+        _early_stop_default = "baseline"
+    parser.add_argument(
+        "--early_stop_mode",
+        choices=["baseline", "A", "D"], default=_early_stop_default,
+        help='Multi-DLA early-stop policy. "baseline" (default) keeps the '
+             'historical penalized-likelihood-vs-null heuristic. "A" disables '
+             'the null-vs-current early-stop entirely (max_dlas / NaN / lik-decreased '
+             'early-stops still apply). "D" compares the PRE-Occam likelihood to '
+             'null instead of the penalized one. Default also reads from env '
+             'EARLY_STOP_MODE.',
+        dest="early_stop_mode",
+    )
+
     # Parameter-related arguments
     # These are the values used in the trained GP model, don't change them unless you change the trained model
     parser.add_argument(
@@ -544,6 +561,7 @@ def main(args=None):
         "tau_eb_apply_hcd_mask": bool(args.tau_eb_apply_hcd_mask),
         "tau_eb_mask_threshold_sigma": float(args.tau_eb_mask_threshold_sigma),
         "tau_eb_objective": args.tau_eb_objective,
+        "early_stop_mode": args.early_stop_mode,
     }
 
     # Set up for nested multiprocessing

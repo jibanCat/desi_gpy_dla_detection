@@ -310,6 +310,7 @@ class DLAGP(NullGP):
         prev_beta: float = 3.65,
         min_z_separation: float = 3000.0,
         broadening: bool = True,
+        early_stop_mode: str = "baseline",
     ):
         super().__init__(
             params,
@@ -330,6 +331,21 @@ class DLAGP(NullGP):
         self.dla_samples = dla_samples
 
         self.broadening = broadening
+
+        # Multi-DLA early-stop policy. See parallel_log_model_evidences for details.
+        # See docs/notes/2026-05-12_multidla_early_stop_bug.md for the bug and the
+        # rationale for variants A and D.
+        # Values:
+        #   "baseline" : current behavior — stop when penalized log_likelihoods_dla[k] < null
+        #   "A"        : disable null-vs-current early stop entirely; always evaluate up to max_dlas
+        #                (max_dlas / NaN / "lik decreased" early-stops are still active)
+        #   "D"        : compare PRE-Occam likelihood (max_log_lik + log mean(probs)) to null
+        #                instead of the Occam-penalized log_likelihoods_dla[k]
+        if early_stop_mode not in ("baseline", "A", "D"):
+            raise ValueError(
+                f"early_stop_mode must be one of 'baseline', 'A', 'D'; got {early_stop_mode!r}"
+            )
+        self.early_stop_mode = early_stop_mode
 
         # Initialize a cache for Voigt profiles
         self.voigt_cache = {}
@@ -798,11 +814,37 @@ class DLAGP(NullGP):
                 ):
                     break
                 # If null_evidence is provided and the current log likelihood is less than it,
-                # stop further computation
-                if null_evidence is not None:
-                    if log_likelihoods_dla[num_dlas] < null_evidence:
+                # stop further computation.
+                #
+                # Variants (see docs/notes/2026-05-12_multidla_early_stop_bug.md):
+                #   "baseline" : compare penalized log_likelihoods_dla[k] to null_evidence (original buggy heuristic).
+                #   "A"        : skip this null-vs-current early-stop entirely; always
+                #                evaluate up to max_dlas. Other early-stops (max_dlas,
+                #                NaN, lik decreased from prev k) still apply.
+                #   "D"        : compare PRE-Occam likelihood (no `- lognorm*k` term)
+                #                to null_evidence. The final log_likelihoods_dla[k]
+                #                returned downstream is unchanged — only the stopping
+                #                test uses the un-penalized signal-vs-null comparison.
+                early_stop_mode = getattr(self, "early_stop_mode", "baseline")
+                if early_stop_mode != "A" and (null_evidence is not None):
+                    if early_stop_mode == "baseline":
+                        stop_lik = log_likelihoods_dla[num_dlas]
+                    else:  # "D"
+                        # Pre-Occam likelihood — matches the "No truncation" branch
+                        # formula minus the `- lognorm * num_dlas` Occam term.
+                        # We use the same max_log_likelihood + log mean(probs) as
+                        # the (truncated or non-truncated) integral estimator that
+                        # was already computed above for this k.
+                        stop_lik = (
+                            max_log_likelihood
+                            + np.log(np.nanmean(sample_probabilities))
+                        )
+                    if stop_lik < null_evidence:
                         log.info(
-                            f"Stopping early at {num_dlas + 1} DLAs because the log likelihood {log_likelihoods_dla[num_dlas]} is less than the null model evidence {null_evidence}."
+                            f"Stopping early at {num_dlas + 1} DLAs "
+                            f"(mode={early_stop_mode}) because the log likelihood "
+                            f"{stop_lik} is less than the null model evidence "
+                            f"{null_evidence}."
                         )
                         break
                 # If log likelihood is smaller than the previous one by 10 times,
@@ -1049,6 +1091,7 @@ class DLAGPMAT(DLAGP):
         broadening: bool = True,
         prev_tau_0: float = 0.0023,
         prev_beta: float = 3.65,
+        early_stop_mode: str = "baseline",
     ):
         # See NullGPMAT for the rationale: v2 trained .h5 carries its own
         # normalization region; mutate params in place if present so set_data
@@ -1097,4 +1140,5 @@ class DLAGPMAT(DLAGP):
             prev_beta=prev_beta,
             min_z_separation=min_z_separation,
             broadening=broadening,
+            early_stop_mode=early_stop_mode,
         )

@@ -106,7 +106,8 @@ if [ "$DRY_RUN" -ne 1 ]; then
                  NORMALIZATION_MIN_LAMBDA NORMALIZATION_MAX_LAMBDA \
                  MIN_LAMBDA MAX_LAMBDA NUM_FOREST_LINES NUM_LINES \
                  MAX_NOISE_VARIANCE BATCH_SIZE MAX_WORKERS BALMASK \
-                 OUTER_MAX_INDEX OUTER_STEP OUTER_WINDOW; do
+                 OUTER_MAX_INDEX OUTER_STEP OUTER_WINDOW \
+                 ENABLE_TAU_EB TAU_EB_OBJECTIVE EARLY_STOP_MODE; do
             echo "- \`$v\` = \`${!v:-(unset)}\`"
         done
         echo
@@ -195,6 +196,11 @@ build_cmd() {
         if [ "${TAU_EB_APPLY_HCD_MASK:-0}" = "1" ]; then
             cmd+=(--tau_eb_apply_hcd_mask 1)
         fi
+    fi
+    # Multi-DLA early-stop policy
+    # (see docs/notes/2026-05-12_multidla_early_stop_bug.md)
+    if [ -n "${EARLY_STOP_MODE:-}" ]; then
+        cmd+=(--early_stop_mode "${EARLY_STOP_MODE}")
     fi
     printf '%q ' "${cmd[@]}"
 }

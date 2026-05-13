@@ -335,6 +335,7 @@ class DLAHolder:
         tau_eb_apply_hcd_mask: bool = False,
         tau_eb_mask_threshold_sigma: float = 1.5,
         tau_eb_objective: str = "null",
+        early_stop_mode: str = "baseline",
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -391,6 +392,14 @@ class DLAHolder:
         self.tau_eb_apply_hcd_mask = bool(tau_eb_apply_hcd_mask)
         self.tau_eb_mask_threshold_sigma = float(tau_eb_mask_threshold_sigma)
         self.tau_eb_objective = tau_eb_objective
+
+        # Multi-DLA early-stop policy (see DLAGP for documentation).
+        # See docs/notes/2026-05-12_multidla_early_stop_bug.md.
+        if early_stop_mode not in ("baseline", "A", "D"):
+            raise ValueError(
+                f"early_stop_mode must be one of 'baseline', 'A', 'D'; got {early_stop_mode!r}"
+            )
+        self.early_stop_mode = early_stop_mode
 
         self.params = params  # Pass in the Parameters object here
         if params_subdla is None:
@@ -493,6 +502,7 @@ class DLAHolder:
             broadening=self.broadening,
             prev_tau_0=prev_tau_0_eff,
             prev_beta=self.prev_beta,
+            early_stop_mode=self.early_stop_mode,
         )
         if self.single_absorber_model:
             subdla_gp = None
