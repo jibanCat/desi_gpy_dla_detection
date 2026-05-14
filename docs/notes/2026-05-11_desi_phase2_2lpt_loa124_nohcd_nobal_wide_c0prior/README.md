@@ -1,14 +1,20 @@
 # Phase 2 DESI trained GP — model card
 
-> 🚫 **DO NOT USE FOR PRODUCTION INFERENCE.** DLA-recovery test on
-> canonical TID 120046865 (truth log_NHI = 21.26) returned
-> p_DLA = 0.04 and NaN for 2+ DLA hypotheses. The `log_c_0`
-> prior at default strength suppresses DLA-likelihood
-> contributions. See
-> `docs/notes/2026-05-13_step_c_dla_recovery/findings.md`
-> + the c0prior failure investigation under
-> `docs/notes/2026-05-14_c0prior_failure_investigation/` (if
-> present).
+> ⚠ **Not preferred for production — use `_m` instead.** On a
+> 10-target random sample of strong DLAs in 2lpt loa-124 this
+> model performed identically to `_m` (7/10 detected, same 3/10
+> missed). But on canonical TID 120046865 (truth log_NHI=21.26)
+> it gave p_DLA = 0.042 vs `_m`'s 0.755 — an outlier in the gap
+> between the two models' detection thresholds. Root cause: the
+> log_c_0 prior anchoring failed (c_0 still drifted to 0.020),
+> but the slower drift allowed M to balloon — ‖M‖² is 13×
+> larger than `_m`'s (21,317 vs 1,648), which widens the
+> truncated-marginal QMC prior envelope and drags borderline
+> evidences below null. Multi-DLA NaN posteriors are the
+> production code's deliberate early-stop (`dla_gp.py:790-810`),
+> NOT a Cholesky failure — both models hit the same NaN for
+> k≥3 on this target. Full analysis:
+> `docs/notes/2026-05-14_c0prior_failure_investigation/findings.md`.
 
 > ⚠ **Pre-reorder caveat**: this model was trained BEFORE the
 > 2026-05-13 `dataset.py` reorder (commit aa36205). It carries

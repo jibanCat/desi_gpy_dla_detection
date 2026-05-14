@@ -65,15 +65,31 @@ check that the corr-noise debug arc hasn't broken inference:
 | v1 production (epoch 920) | 0.52 | 21.53 | +0.27 dex | ✓ historical baseline (matches v1 +0.27 dex bias) |
 | 2lpt loa-0 _m | **0.70** | 21.52 | +0.25 dex | ✓ passes (p_DLA > 0.5, MAP ±0.5 dex) |
 | 2lpt loa-124 _m | **0.76** | 21.52 | +0.25 dex | ✓ passes |
-| 2lpt loa-124 c0prior | **0.04** | NaN | — | 🚫 **DETECTION COLLAPSES — DO NOT USE FOR PRODUCTION** |
+| 2lpt loa-124 c0prior | 0.04 | NaN | — | ⚠ **outlier on this target — use `_m` instead** (see below) |
 | Smoke post-reorder (50 iter only) | 0.85 | 21.63 | +0.36 dex | undertrained but detects (sanity only) |
 
 **Headline**: the two main `_m` models pass — the corr-noise debug arc is
-inference-safe. The `c0prior` variant breaks DLA detection at default
-`--log-c-0-prior-sigma` strength. Mechanism: the log_c_0 prior appears
-to suppress signal-mode contributions in the DLA likelihood; root cause
-not yet investigated. Until understood, the c0prior model is **not
-production-ready**.
+inference-safe.
+
+**Update 2026-05-14 on the c0prior model** (after focused investigation,
+`docs/notes/2026-05-14_c0prior_failure_investigation/findings.md`):
+
+- On a 10-target random sample of strong 2lpt-loa-124 DLAs the c0prior
+  model performs **identically to `_m`** (7/10 detected, same 3/10 missed).
+- The canonical-TID 0.04 vs 0.76 divergence is an outlier in a narrow
+  gap between the two models' truncated-marginal thresholds; not a
+  systematic detection failure.
+- The log_c_0 prior **failed to anchor c_0** (c_0 still drifted from 0.1
+  → 0.020, vs `_m`'s 0.024 — endpoints differ by only 0.17 dex).
+- Real difference: norm band [1310, 1325] vs `_m`'s [1425, 1475] + 13×
+  inflated `‖M‖_F²` (21317 vs 1648). The wider M envelope drags
+  borderline QMC marginals below null.
+- Multi-DLA NaN is the production pipeline's deliberate early-stop at
+  `gpy_dla_detection/dla_gp.py:790-810`, **NOT** a Cholesky failure —
+  both models hit it for k ≥ 3 on this target.
+- **Recommendation: use `_m` for production**, drop the c0prior recipe.
+  If you want to fix the (c_0, M) gauge degeneracy in the future, prefer
+  reparameterisation or direct L2 on M over a weak Gaussian prior on log_c_0.
 
 ⚠ **Pre-reorder caveat**: all 6 carry corr(M·M^T) mean adj-diff ≈ 0.004,
 ~7× rougher than v1 production. Root cause: the mask order in the

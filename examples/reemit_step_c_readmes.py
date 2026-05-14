@@ -103,18 +103,24 @@ def _warning_banner(out_dir_name: str, c0_prior_sigma) -> str:
     model's production readiness. Pulled from
     docs/production_models.md and docs/notes/2026-05-13_step_c_dla_recovery/."""
     banners = []
-    # c0prior collapse — top priority
+    # c0prior caveat — updated 2026-05-14 with investigation results
     if c0_prior_sigma is not None or "c0prior" in out_dir_name:
         banners.append(
-            "> 🚫 **DO NOT USE FOR PRODUCTION INFERENCE.** DLA-recovery test on\n"
-            "> canonical TID 120046865 (truth log_NHI = 21.26) returned\n"
-            "> p_DLA = 0.04 and NaN for 2+ DLA hypotheses. The `log_c_0`\n"
-            "> prior at default strength suppresses DLA-likelihood\n"
-            "> contributions. See\n"
-            "> `docs/notes/2026-05-13_step_c_dla_recovery/findings.md`\n"
-            "> + the c0prior failure investigation under\n"
-            "> `docs/notes/2026-05-14_c0prior_failure_investigation/` (if\n"
-            "> present)."
+            "> ⚠ **Not preferred for production — use `_m` instead.** On a\n"
+            "> 10-target random sample of strong DLAs in 2lpt loa-124 this\n"
+            "> model performed identically to `_m` (7/10 detected, same 3/10\n"
+            "> missed). But on canonical TID 120046865 (truth log_NHI=21.26)\n"
+            "> it gave p_DLA = 0.042 vs `_m`'s 0.755 — an outlier in the gap\n"
+            "> between the two models' detection thresholds. Root cause: the\n"
+            "> log_c_0 prior anchoring failed (c_0 still drifted to 0.020),\n"
+            "> but the slower drift allowed M to balloon — ‖M‖² is 13×\n"
+            "> larger than `_m`'s (21,317 vs 1,648), which widens the\n"
+            "> truncated-marginal QMC prior envelope and drags borderline\n"
+            "> evidences below null. Multi-DLA NaN posteriors are the\n"
+            "> production code's deliberate early-stop (`dla_gp.py:790-810`),\n"
+            "> NOT a Cholesky failure — both models hit the same NaN for\n"
+            "> k≥3 on this target. Full analysis:\n"
+            "> `docs/notes/2026-05-14_c0prior_failure_investigation/findings.md`."
         )
     # Pre-reorder corr roughness — applies to all 2026-05-11_* dirs trained
     # under the OLD mask-then-normalize pipeline (everything before commit

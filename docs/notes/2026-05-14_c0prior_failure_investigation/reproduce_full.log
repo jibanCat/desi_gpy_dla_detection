@@ -1,0 +1,29 @@
+INFO:spectra.py:453:read_spectra: iotime 0.095 sec to read spectra from:  spectra-16-789.fits at 2026-05-14T11:30:44.485294
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+  → overriding params.normalization window from .h5: [1425.0, 1475.0] Å → [1310.0, 1325.0] Å
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 120046865) zQSO: 2.96
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.849
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.078
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.616
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -3029.930
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -3039.376873854332 is less than the null model evidence -3027.477131122746.
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -3039.377
+INFO:dla_gp.py:804:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -3030.5384730233104 is less than the null model evidence -3027.477123899982.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -3030.538
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 120046865)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.042
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.958
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 120046865), time spent: 0m 19s
+
+elapsed: 18.6s
+p_dla = 0.04159735054526392
+MAP z = nan
+MAP log_NHI = nan
+posteriors = [0.9583957271636734, 6.922291285127275e-06, 0.04159735054526392, nan, nan, nan]

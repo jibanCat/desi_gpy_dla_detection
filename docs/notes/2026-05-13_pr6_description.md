@@ -7,7 +7,7 @@
 | dataset.py math vs MATLAB | ✓ correct, NaN-safe, MATLAB-equivalent reorder | `docs/notes/2026-05-13_code_review_dataset_math.md` |
 | PR diff (5 commits, 31 files) | ✓ no critical/high; h5 manifest is purely additive | `docs/notes/2026-05-13_code_review_pr_diff.md` |
 | β-drift puzzle | no bug — data prefers β<3.62 under σ=0.04; v1 also β=2.41 on real LOA | `docs/notes/2026-05-13_beta_drift_investigation/findings.md` |
-| Inference safety (DLA-recovery on canonical TID) | 2/3 main models pass; **c0prior collapses** (flagged) | `docs/notes/2026-05-13_step_c_dla_recovery/findings.md` |
+| Inference safety (DLA-recovery on canonical TID) | 2/3 main models pass; c0prior is an outlier on this target (not a systematic failure — see 2026-05-14 investigation) | `docs/notes/2026-05-13_step_c_dla_recovery/findings.md` + `docs/notes/2026-05-14_c0prior_failure_investigation/findings.md` |
 
 In flight overnight: SLURM 50087967, 50087968 — fresh post-reorder LOA `_m_normmask` at 3000 iter (land ~2026-05-15 AM).
 
@@ -69,7 +69,13 @@ After fix, the probe gives smoothness=0.0130 (matches CLEAN) for all 5 injection
 - **README templating fix** (`tests/phase2_train_desi.py:358` hard-codes `[1310, 1325]`) — already noted in `docs/production_models.md`; one-line fix
 - **Saclay panel error** in `examples/plot_pca_init_corr_multi.py` — separate follow-up
 - **Production retrain at 3000 iter** of post-reorder LOA — in flight (50087967/68)
-- **c0prior gauge-analysis investigation** — c0prior model collapses DLA detection (`docs/notes/2026-05-13_step_c_dla_recovery/findings.md`); mechanism not yet investigated, flagged "not production ready" in `docs/production_models.md`
+- **c0prior production retraining** — investigation 2026-05-14
+  (`docs/notes/2026-05-14_c0prior_failure_investigation/findings.md`)
+  found the c0prior model performs identically to `_m` on 7/10 random
+  strong DLAs but is borderline on the canonical TID. log_c_0 prior
+  anchoring failed; real difference is narrower norm band + 13× inflated
+  `‖M‖²`. Recommendation: drop the c0prior recipe and prefer `_m`. A
+  reparameterisation-based gauge fix is a future-PR experiment.
 
 These are deferred to a follow-up PR.
 
@@ -84,7 +90,7 @@ These are deferred to a follow-up PR.
   - v1 production: p_DLA = 0.52, MAP log NHI = 21.53 (+0.27 dex bias, matches historical)
   - 2lpt loa-0 _m: p_DLA = 0.70, MAP log NHI = 21.52 (+0.25 dex)
   - 2lpt loa-124 _m: p_DLA = 0.76, MAP log NHI = 21.52 (+0.25 dex)
-  - 2lpt loa-124 c0prior: p_DLA = 0.04, NaN — **flagged, do not use for production**
+  - 2lpt loa-124 c0prior: p_DLA = 0.04, NaN on canonical TID — investigation 2026-05-14 shows this is an outlier (7/10 random strong DLAs match `_m`'s detections); prefer `_m` for production. Multi-DLA NaN is the production code's deliberate early-stop (`dla_gp.py:790-810`), not a Cholesky failure.
 
 ## Notes for reviewers
 
