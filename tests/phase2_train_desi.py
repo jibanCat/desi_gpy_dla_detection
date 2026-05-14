@@ -433,29 +433,67 @@ def _git_head_sha() -> str:
         return "unknown"
 
 
-def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1,
+def _git_commit_sha():
+    """Best-effort capture of the current git HEAD SHA for provenance."""
+    try:
+        import subprocess
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        return sha
+    except Exception:
+        return "unknown"
+
+
+def _save_h5(out_path, result, rest, n_spectra, args, vectorized=1,
              initial_M=None, initial_log_omega=None,
              initial_log_c_0=None, initial_log_tau_0=None, initial_log_beta=None):
     """Write learned model in DESI schema (production-loadable).
 
     Schema matches v1 production (`learnlogs/model_epoch_*.h5`) where it
-    overlaps, plus the DESI-loader-required normalization scalars:
+    overlaps, plus the DESI-loader-required normalization scalars, plus a
+    full MATLAB-style training-hyperparameter manifest (`scipy.io.loadmat`-
+    compatible flat 0-d datasets).
 
-      M, mu, log_omega                               trained kernel
-      log_c_0, log_tau_0, log_beta                   trained scalars
-      rest_wavelengths, max_noise_variance           required by loader
-      normalization_min_lambda, normalization_max_lambda  v2-only,
-                                                     auto-applied by NullGPMAT
+    Sections:
 
-    Plus v1-compatible provenance + history (so plot_corr_dr16_comparison
-    and other v1-era scripts work directly on our outputs):
+      1. Trained kernel (v1 schema):
+         M, mu, log_omega, log_c_0, log_tau_0, log_beta,
+         rest_wavelengths
 
-      initial_M, initial_log_omega                   PCA init / data-driven
-      initial_log_c_0, initial_log_tau_0, initial_log_beta   initial scalars
-      loss_history, log_c_0_history, log_tau_0_history, log_beta_history
+      2. Loader-required scalars:
+         max_noise_variance, normalization_min_lambda, normalization_max_lambda
+
+      3. v1 provenance (PCA / data-driven init):
+         initial_M, initial_log_omega,
+         initial_log_c_0, initial_log_tau_0, initial_log_beta
+
+      4. Training history:
+         loss_history, log_c_0_history, log_tau_0_history, log_beta_history
+
+      5. Training-hyperparameter manifest (NEW, MATLAB-faithful):
+         num_forest_lines, k, n_spectra, n_iters, lr,
+         de_forest_tau_0, de_forest_beta,
+         tau_0_prior_mu, tau_0_prior_sigma,
+         beta_prior_mu, beta_prior_sigma,
+         log_c_0_prior_mu, log_c_0_prior_sigma,
+         z_min, z_max, min_snr,
+         pca_random_state, chunk_size,
+         optimizer, normalize_then_mask_order, vectorized,
+         training_release, git_commit_sha, training_timestamp,
+         preload_source
+
+    All scalars saved as 0-d datasets (MATLAB `.mat` flat convention).
+    Strings saved as h5 fixed-length strings.
     """
+    norm_min_runtime = _RUNTIME.get("norm_min_lambda", args.norm_min_lambda)
+    norm_max_runtime = _RUNTIME.get("norm_max_lambda", args.norm_max_lambda)
+    log_c0_sigma = (args.log_c_0_prior_sigma
+                    if args.log_c_0_prior_sigma is not None else float("nan"))
     with h5py.File(out_path, "w") as f:
-        # --- Trained kernel (v1 schema) ---
+        # --- 1. Trained kernel (v1 schema) ---
         f.create_dataset("M", data=np.asarray(result["M"], dtype=np.float64))
         f.create_dataset("mu", data=np.asarray(result["mu"], dtype=np.float64))
         f.create_dataset("log_omega", data=np.asarray(result["log_omega"], dtype=np.float64))
@@ -463,13 +501,11 @@ def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1,
         f.create_dataset("log_tau_0", data=np.float64(result["log_tau_0"]))
         f.create_dataset("log_beta", data=np.float64(result["log_beta"]))
         f.create_dataset("rest_wavelengths", data=np.asarray(rest, dtype=np.float64))
-        # --- Required-for-loader scalars ---
+        # --- 2. Loader-required scalars ---
         f.create_dataset("max_noise_variance", data=np.float64(9.0))
-        f.create_dataset("normalization_min_lambda",
-                         data=np.float64(_RUNTIME.get("norm_min_lambda", 1425.0)))
-        f.create_dataset("normalization_max_lambda",
-                         data=np.float64(_RUNTIME.get("norm_max_lambda", 1475.0)))
-        # --- v1 provenance: initial values (PCA / data-driven init) ---
+        f.create_dataset("normalization_min_lambda", data=np.float64(norm_min_runtime))
+        f.create_dataset("normalization_max_lambda", data=np.float64(norm_max_runtime))
+        # --- 3. v1 provenance: initial values ---
         if initial_M is not None:
             f.create_dataset("initial_M", data=np.asarray(initial_M, dtype=np.float64))
         if initial_log_omega is not None:
@@ -481,7 +517,7 @@ def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1,
             f.create_dataset("initial_log_tau_0", data=np.float64(initial_log_tau_0))
         if initial_log_beta is not None:
             f.create_dataset("initial_log_beta", data=np.float64(initial_log_beta))
-        # --- v1 training history (embedded so .h5 is self-contained) ---
+        # --- 4. Training history ---
         hist = result.get("history", {}) or {}
         if "loss" in hist:
             f.create_dataset("loss_history", data=np.asarray(hist["loss"], dtype=np.float64))
@@ -491,10 +527,43 @@ def _save_h5(out_path, result, rest, n_spectra, n_iters, lr, vectorized=1,
             f.create_dataset("log_tau_0_history", data=np.asarray(hist["log_tau_0"], dtype=np.float64))
         if "log_beta" in hist:
             f.create_dataset("log_beta_history", data=np.asarray(hist["log_beta"], dtype=np.float64))
-        # --- attrs ---
+        # --- 5. Training-hyperparameter manifest (MATLAB-style flat 0-d) ---
+        from datetime import datetime, timezone
+        f.create_dataset("num_forest_lines", data=np.int64(NUM_FOREST_LINES))
+        f.create_dataset("k",                data=np.int64(args.k))
+        f.create_dataset("n_spectra",        data=np.int64(n_spectra))
+        f.create_dataset("n_iters",          data=np.int64(args.n_iters))
+        f.create_dataset("lr",               data=np.float64(args.lr))
+        f.create_dataset("de_forest_tau_0",  data=np.float64(TAU_0_PRIOR_MU))
+        f.create_dataset("de_forest_beta",   data=np.float64(BETA_PRIOR_MU))
+        f.create_dataset("tau_0_prior_mu",   data=np.float64(TAU_0_PRIOR_MU))
+        f.create_dataset("tau_0_prior_sigma", data=np.float64(TAU_0_PRIOR_SIGMA))
+        f.create_dataset("beta_prior_mu",    data=np.float64(BETA_PRIOR_MU))
+        f.create_dataset("beta_prior_sigma", data=np.float64(BETA_PRIOR_SIGMA))
+        f.create_dataset("log_c_0_prior_mu", data=np.float64(LOG_C_0_PRIOR_MU))
+        f.create_dataset("log_c_0_prior_sigma", data=np.float64(log_c0_sigma))
+        f.create_dataset("z_min",            data=np.float64(args.z_min))
+        f.create_dataset("z_max",            data=np.float64(args.z_max))
+        f.create_dataset("min_snr",          data=np.float64(args.min_snr))
+        f.create_dataset("pca_random_state", data=np.int64(0))  # pinned in _pca_init
+        f.create_dataset("chunk_size",       data=np.int64(args.chunk_size))
+        f.create_dataset("vectorized",       data=np.int64(vectorized))
+        # 1 = MATLAB-faithful normalize-then-mask (commit 2026-05-13);
+        # 0 = legacy mask-then-normalize (pre-reorder). Detects which
+        # rejection regime trained this model. See
+        # docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md.
+        f.create_dataset("normalize_then_mask_order", data=np.int64(1))
+        f.create_dataset("optimizer",        data=np.bytes_("Adam"))
+        f.create_dataset("training_release", data=np.bytes_("PR6_StepC"))
+        f.create_dataset("git_commit_sha",   data=np.bytes_(_git_commit_sha()))
+        f.create_dataset("training_timestamp",
+                         data=np.bytes_(datetime.now(timezone.utc).isoformat()))
+        f.create_dataset("preload_source",
+                         data=np.bytes_(str(_RUNTIME.get("preload_source", ""))))
+        # --- legacy attrs (kept for any tooling that already reads them) ---
         f.attrs["n_spectra"] = int(n_spectra)
-        f.attrs["n_iters"] = int(n_iters)
-        f.attrs["lr"] = float(lr)
+        f.attrs["n_iters"] = int(args.n_iters)
+        f.attrs["lr"] = float(args.lr)
         f.attrs["vectorized"] = int(vectorized)
         f.attrs["preload_source"] = str(_RUNTIME.get("preload_source", ""))
     print(f"[saved] {out_path}")
@@ -618,7 +687,7 @@ def main():
 
     # 4. Save: .h5 (DESI schema, primary) + .npz (training history) + README.md.
     out_h5 = args.out_dir / "phase2_result.h5"
-    _save_h5(out_h5, result, rest, ts.n_spectra, args.n_iters, args.lr,
+    _save_h5(out_h5, result, rest, ts.n_spectra, args,
              initial_M=M_init,
              initial_log_omega=log_omega_init,
              initial_log_c_0=float(np.log(INITIAL_C_0)),

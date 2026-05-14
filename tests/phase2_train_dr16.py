@@ -497,8 +497,20 @@ def main():
     # .npz is kept as a training-history record (loss/log_*_history etc.),
     # NOT the learned model — see feedback_learned_model_h5_format.md.
     out_h5 = out_dir / "phase2_result.h5"
+    # Best-effort git SHA for provenance (matches phase2_train_desi)
+    try:
+        import subprocess
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        git_sha = "unknown"
+    from datetime import datetime, timezone
+
     with h5py.File(out_h5, "w") as f:
-        # learned-model schema (matches null_gp DESI branch)
+        # --- 1. Trained kernel (v1 schema, matches null_gp DESI branch) ---
         f.create_dataset("M", data=np.asarray(result["M"], dtype=np.float64))
         f.create_dataset("mu", data=np.asarray(result["mu"], dtype=np.float64))
         f.create_dataset("log_omega", data=np.asarray(result["log_omega"], dtype=np.float64))
@@ -506,12 +518,36 @@ def main():
         f.create_dataset("log_tau_0", data=np.float64(result["log_tau_0"]))
         f.create_dataset("log_beta", data=np.float64(result["log_beta"]))
         f.create_dataset("rest_wavelengths", data=np.asarray(rest, dtype=np.float64))
-        # required scalars for the inference loader (Parameters defaults
-        # at training time on DR16 — matches MATLAB DR16 reference)
+        # --- 2. Loader-required scalars ---
         f.create_dataset("max_noise_variance", data=np.float64(MAX_NV))
-        f.create_dataset("normalization_min_lambda", data=np.float64(1310.0))
-        f.create_dataset("normalization_max_lambda", data=np.float64(1325.0))
-        # training-provenance attributes (not part of inference schema)
+        f.create_dataset("normalization_min_lambda", data=np.float64(1425.0))
+        f.create_dataset("normalization_max_lambda", data=np.float64(1475.0))
+        # Note: MATLAB DR16 (preload_qsos.m) normalizes at [1425, 1475] —
+        # see docs/notes/2026-05-12_training_pipeline_audit_vs_matlab/findings.md.
+        # The earlier [1310, 1325] in this trainer was wrong; this is the
+        # MATLAB-faithful band.
+        # --- 3. Training-hyperparameter manifest (MATLAB-style flat 0-d) ---
+        f.create_dataset("num_forest_lines", data=np.int64(NUM_FOREST_LINES))
+        f.create_dataset("k",                data=np.int64(K))
+        f.create_dataset("n_spectra",        data=np.int64(args.n_spectra))
+        f.create_dataset("n_iters",          data=np.int64(args.n_iters))
+        f.create_dataset("lr",               data=np.float64(args.lr))
+        f.create_dataset("de_forest_tau_0",  data=np.float64(INITIAL_TAU_0))
+        f.create_dataset("de_forest_beta",   data=np.float64(INITIAL_BETA))
+        f.create_dataset("tau_0_prior_mu",   data=np.float64(TAU_0_PRIOR_MU))
+        f.create_dataset("tau_0_prior_sigma", data=np.float64(TAU_0_PRIOR_SIGMA))
+        f.create_dataset("beta_prior_mu",    data=np.float64(BETA_PRIOR_MU))
+        f.create_dataset("beta_prior_sigma", data=np.float64(BETA_PRIOR_SIGMA))
+        f.create_dataset("pca_random_state", data=np.int64(0))  # pinned in _pca_init
+        f.create_dataset("chunk_size",       data=np.int64(getattr(args, "chunk_size", 0)))
+        f.create_dataset("vectorized",       data=np.int64(bool(args.vectorized)))
+        f.create_dataset("normalize_then_mask_order", data=np.int64(1))
+        f.create_dataset("optimizer",        data=np.bytes_("Adam"))
+        f.create_dataset("training_release", data=np.bytes_("PR6_StepA_DR16"))
+        f.create_dataset("git_commit_sha",   data=np.bytes_(git_sha))
+        f.create_dataset("training_timestamp",
+                         data=np.bytes_(datetime.now(timezone.utc).isoformat()))
+        # --- legacy attrs (kept for backward compat) ---
         f.attrs["n_spectra"] = int(args.n_spectra)
         f.attrs["n_iters"] = int(args.n_iters)
         f.attrs["lr"] = float(args.lr)
