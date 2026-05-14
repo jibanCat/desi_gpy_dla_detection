@@ -38,14 +38,22 @@ OUT_DIR = NOTES / "2026-05-12_2lpt_models_vs_v1_analysis"
 OUT = OUT_DIR / "corr_pca_init_multi_dataset.png"
 
 PRELOADS = [
+    # (label, path, (norm_min, norm_max))
+    # Default norm band is MATLAB DR16 [1425, 1475]; Saclay's legacy narrow
+    # grid [850.8, 1420.8] ends below 1425, so it must use the Garnett
+    # band [1310, 1325] instead (which is inside the grid).
     ("2lpt loa-0 wide",
-     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_wide_v2_1778186324/trainset.h5"),
+     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_wide_v2_1778186324/trainset.h5",
+     (1425.0, 1475.0)),
     ("2lpt loa-124 nohcd-nobal wide",
-     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa124_nohcd_nobal_wide_v2_1778186324/trainset.h5"),
+     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa124_nohcd_nobal_wide_v2_1778186324/trainset.h5",
+     (1425.0, 1475.0)),
     ("LOA real (no-DLA + no-BAL) wide",
-     "/scratch/cavestru_root/cavestru0/mfho/loa_wide_v2/loa_no_dla_no_bal_wide/trainset.h5"),
-    ("Saclay mock-0 nohcd-nobal (LEGACY narrow grid)",
-     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/saclay_mock0_nohcd_nobal_normalized/trainset.h5"),
+     "/scratch/cavestru_root/cavestru0/mfho/loa_wide_v2/loa_no_dla_no_bal_wide/trainset.h5",
+     (1425.0, 1475.0)),
+    ("Saclay mock-0 nohcd-nobal\n(LEGACY narrow grid, norm [1310, 1325])",
+     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/saclay_mock0_nohcd_nobal_normalized/trainset.h5",
+     (1310.0, 1325.0)),
 ]
 N_SUB = 30000
 K = 30
@@ -57,14 +65,16 @@ def _corr(M):
     return np.clip(K / np.outer(d, d), -1.0, 1.0)
 
 
-def pca_init_for_preload(path: str, n_sub: int = N_SUB):
+def pca_init_for_preload(path: str, n_sub: int = N_SUB,
+                         norm_min: float = 1425.0,
+                         norm_max: float = 1475.0):
     ts = load_preprocessed_h5(
         path,
         z_min=2.15, z_max=4.25, max_spectra=n_sub,
         max_noise_variance=9.0,
         apply_mask=True, apply_normalize=True,
         apply_de_forest=True, apply_center=True,
-        norm_min_lambda=1425.0, norm_max_lambda=1475.0,
+        norm_min_lambda=norm_min, norm_max_lambda=norm_max,
         de_forest_tau_0=0.00246, de_forest_beta=3.62, de_forest_num_lines=31,
         dtype=torch.float32, working_dtype=np.float32,
     )
@@ -79,7 +89,7 @@ def main():
     fig, axes = plt.subplots(1, 5, figsize=(28, 6.2))
     summary = []
 
-    for ax, (name, path) in zip(axes[:4], PRELOADS):
+    for ax, (name, path, norm_band) in zip(axes[:4], PRELOADS):
         if not Path(path).exists():
             ax.text(0.5, 0.5, f"{name}\n\nNOT FOUND",
                     ha="center", va="center", transform=ax.transAxes,
@@ -89,7 +99,8 @@ def main():
             continue
         try:
             print(f"\nComputing PCA init: {name}")
-            rest, M_init, latent = pca_init_for_preload(path)
+            rest, M_init, latent = pca_init_for_preload(
+                path, norm_min=norm_band[0], norm_max=norm_band[1])
             C = _corr(M_init)
             adj = np.abs(np.diff(C, axis=1)).mean()
             extent = [rest[0], rest[-1], rest[-1], rest[0]]

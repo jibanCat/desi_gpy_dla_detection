@@ -48,6 +48,7 @@ import signal
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -309,7 +310,9 @@ def _train(centered, nv, lya_1pzs, valid_masks, z_qsos, mu, M_init, log_omega_in
 
 def _save_readme(out_dir: Path, result: dict, rest: np.ndarray,
                  n_spectra: int, n_iters: int, lr: float, k: int,
-                 chunk_size: int, device: str, preload: Path) -> Path:
+                 chunk_size: int, device: str, preload: Path,
+                 norm_min_lambda: float, norm_max_lambda: float,
+                 log_c_0_prior_sigma: Optional[float] = None) -> Path:
     """Write a README.md in the output dir documenting the trained model.
 
     Includes: training config, endpoint scalars, DESI schema reference,
@@ -354,9 +357,11 @@ This directory contains a GP model trained by `tests/phase2_train_desi.py`
 | loss path | `spectrum_loss_batch` (training_v3, vectorized, hand-coded grad) | trainer |
 | τ_0 prior | N({TAU_0_PRIOR_MU}, {TAU_0_PRIOR_SIGMA}²) — Turner+2024 | trainer |
 | β prior | N({BETA_PRIOR_MU}, {BETA_PRIOR_SIGMA}²) — Turner+2024 | trainer |
+| log_c_0 prior σ | {log_c_0_prior_sigma if log_c_0_prior_sigma is not None else "(none)"} | `--log-c-0-prior-sigma` |
 | de-forest | τ_0={TAU_0_PRIOR_MU}, β={BETA_PRIOR_MU}, num_lines={NUM_FOREST_LINES} | dataset.py |
-| normalize | per-spectrum median in [1310, 1325] Å rest (Garnett+2017) | dataset.py |
+| normalize | per-spectrum median in [{norm_min_lambda:.2f}, {norm_max_lambda:.2f}] Å rest {"(MATLAB DR16 convention)" if abs(norm_min_lambda - 1425.0) < 1 else "(Garnett+2017 convention)" if abs(norm_min_lambda - 1310.0) < 1 else ""} | `--norm-min-lambda` / `--norm-max-lambda` |
 | max_noise_variance | 9.0 | dataset.py |
+| mask order | normalize-then-mask (MATLAB-faithful since 2026-05-13) | `dataset.py:356-372` |
 | PCA init `random_state` | 0 (pinned, ac7bed8) | `_pca_init` |
 
 ## Endpoint scalars
@@ -708,7 +713,10 @@ def main():
     out_readme = _save_readme(args.out_dir, result, rest,
                               ts.n_spectra, args.n_iters, args.lr,
                               args.k, args.chunk_size, str(device),
-                              args.preload)
+                              args.preload,
+                              norm_min_lambda=args.norm_min_lambda,
+                              norm_max_lambda=args.norm_max_lambda,
+                              log_c_0_prior_sigma=args.log_c_0_prior_sigma)
     print(f"[saved] {out_readme}")
 
     # 5. Endpoint summary

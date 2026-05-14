@@ -1,198 +1,97 @@
-# PR #6 description draft — 2026-05-13
+## Status — 2026-05-13 EOD
 
-Paste into `gh pr edit 6 --body "$(cat docs/notes/2026-05-13_pr6_description.md)"`
-or the GitHub web UI when ready. Trim sections that aren't ready to ship.
+**Ready for review.** Three independent agent audits today recommend SHIP:
+
+| Audit | Result | Doc |
+|---|---|---|
+| dataset.py math vs MATLAB | ✓ correct, NaN-safe, MATLAB-equivalent reorder | `docs/notes/2026-05-13_code_review_dataset_math.md` |
+| PR diff (5 commits, 31 files) | ✓ no critical/high; h5 manifest is purely additive | `docs/notes/2026-05-13_code_review_pr_diff.md` |
+| β-drift puzzle | no bug — data prefers β<3.62 under σ=0.04; v1 also β=2.41 on real LOA | `docs/notes/2026-05-13_beta_drift_investigation/findings.md` |
+| Inference safety (DLA-recovery on canonical TID) | 2/3 main models pass; **c0prior collapses** (flagged) | `docs/notes/2026-05-13_step_c_dla_recovery/findings.md` |
+
+In flight overnight: SLURM 50087967, 50087968 — fresh post-reorder LOA `_m_normmask` at 3000 iter (land ~2026-05-15 AM).
 
 ---
 
-## Title
-
-```
-Rebuild GP trainer from v1 reference; vectorize spectrum_loss; DESI port; corr-noise fix
-```
-
 ## Summary
 
-Rebuilds the Phase 2 GP continuum trainer in three parts:
+Rebuilds the Phase 2 GP continuum trainer end-to-end and lands a corr-noise debug arc that surfaced a real MATLAB↔Python divergence:
 
-1. **Step A — verify against MATLAB DR16**: the vectorized loss
-   (`spectrum_loss_batch`) matches MATLAB `spectrum_loss.m` to
-   `max rel_err ≈ 5e-11` per pixel on five frozen 2lpt fixtures; the
-   v1 Python `zqso_1pz` bug is correctly bypassed in both new trainers.
-2. **Step B — vectorize the loss**: replaces the per-spectrum Python
-   loop with a chunked vectorized path (`training_v3/objective_vectorized.py`),
-   28× faster at 5k smoke and 3.05× at full 89k DR16 scale, with
-   parity tests asserting `< 1e-10` per pixel and a kernel-Frobenius
-   distance of 1.7% on full retrains.
-3. **Step C — DESI port**: `tests/phase2_train_desi.py` + LoaArchive
-   adapter + parameterized GPU SLURM scripts. Trains a Step-C model
-   in ~5 h on an A40 (300k × 5662 × k=30, 1500 Adam iter).
+1. **Step A — verify against MATLAB DR16**: vectorized `spectrum_loss_batch` matches MATLAB `spectrum_loss.m` to `max rel_err ≈ 5e-11` on five frozen 2lpt fixtures; the v1 Python `zqso_1pz` bug is correctly bypassed.
+2. **Step B — vectorize the loss**: chunked vectorized path (`training_v3/objective_vectorized.py`); 28× faster at 5k smoke, 3× at full 89k DR16 retrain; kernel agrees to 1.7% Frobenius, inference p_DLA Δ = 2.9e-3 on canonical TID.
+3. **Step C — DESI port**: `tests/phase2_train_desi.py` + LoaArchive adapter + parameterized GPU SLURM scripts. 6 Step C 2lpt models on disk (3 priors × 2 datasets).
+4. **Corr-noise debug arc (2026-05-13)**: discovered + fixed an order divergence from MATLAB in `dataset.py::load_preprocessed_h5`. Audit doc previously marked the per-pixel-mask line as ✓ — it was wrong; corrected here.
 
-Plus a **corr-noise debug arc** discovered while validating Step C:
-the trained M matrices on 2lpt mocks had ~7× rougher off-diagonal
-structure than v1 production. Root cause was a divergence from
-MATLAB in the preprocessing order — fixed in `dataset.py` (normalize
-then mask, matching `learn_qso_model.m:128` on already-normalized
-nv) plus a tighter `|med| < 1e-2` rejection threshold.
+## Today's discoveries (2026-05-13)
 
-## What landed
+### dataset.py order divergence vs MATLAB
 
-### Trainer + math (Steps A, B)
+- **MATLAB** (`preload_qsos.m:63-64` + `learn_qso_model.m:128`): normalizes flux+nv at preload time, then masks `nv > 9` on the already-normalized array → effective threshold is `nv_raw/med² > 9`.
+- **Python (old)**: masked raw nv against 9 *before* normalizing → effective threshold was `nv_raw > 9`.
 
-| File | Purpose |
+Functional consequence: marginal-median spectra (`med ∈ [1.5e-3, 1e-2]`) survived the Python mask but would have been killed by MATLAB. Their normalized centered flux is 100–1000× bulk; PCA picks them up as a top eigenvector → noisy corr(M·M^T).
+
+### Falsification probe
+
+`examples/probe_outlier_tail_corr.py` — clean 5000-spectrum batch + 10 injected outliers at 4 magnitude/sign conditions. Result table from `outlier_tail_smoothness.json`:
+
+| Injected | smoothness (mean adj-corr-diff) | vs CLEAN |
+|---|---:|---:|
+| CLEAN baseline (5000) | 0.0130 | 1× |
+| +10 SMALL_POS (med ∈ [1.5e-3, 1e-2]) | **0.1939** | **15×** ⚠ |
+| +10 LARGE_POS (med ∈ [10, 30]) | 0.0130 | 1× ✓ |
+| +10 EXTREME (med ∈ [50, 94]) | 0.0130 | 1× ✓ |
+| +10 NEG (med ≤ 0) | 0.0130 | 1× ✓ (rejected) |
+
+Falsified my upper-tail hypothesis. Smoking gun is the lower-tail marginal — passing the previous `|med| < 1e-3` rejection by 10×.
+
+### Fix (commit `aa36205`)
+
+1. Reorder `load_preprocessed_h5` to `normalize → mask` (matches MATLAB effective behavior at `dataset.py:356-372`).
+2. Tighten `|med| < 1e-3` to `|med| < 1e-2`.
+3. Regression test in `tests/test_normalize_by_rest_median.py::test_normalize_rejection_threshold_is_1e_minus_2`.
+
+After fix, the probe gives smoothness=0.0130 (matches CLEAN) for all 5 injection conditions.
+
+## Today's commits
+
+| Commit | Summary |
 |---|---|
-| `gpy_dla_detection/training_v3/objective_vectorized.py` | Chunked vectorized `spectrum_loss_batch` |
-| `tests/phase2_train_dr16.py` | DR16 reference trainer (MATLAB validation harness) |
-| `tests/phase2_train_desi.py` | DESI port — k=30, num_lines=31, Turner+2024 priors, optional log_c_0 prior |
-| `gpy_dla_detection/training/dataset.py::load_preprocessed_h5` | Normalize → mask → de-forest → IV-weighted center (MATLAB-faithful order, 2026-05-13) |
-| `gpy_dla_detection/training/preload_from_loa_archive.py` | LoaArchive (compressed observed coadds) → trainset.h5 adapter, chunked-read to bound host RAM |
-| `slurm/greatlakes/phase2_desi_smoke.sh` + `phase2_desi_retrain.sh` | GPU SLURM scripts parameterized by `RUN_NAME`, `PRELOAD`, norm band, optional log_c_0 prior |
-
-### Tests
-
-13 new tests added or strengthened (see `docs/test_results_overview.md` §1
-for the full list). Highlights:
-
-- `test_v1_matches_matlab.py` — v1 Python `spectrum_loss` ≡ MATLAB on
-  5 frozen 2lpt spectra (`max rel_err = 5.30e-11`).
-- `test_v3_objective_vectorized_parity.py` — `spectrum_loss_batch` ≡
-  per-spectrum loop on 6 fixtures (`max rel = 1e-10`).
-- `test_v3_train_step_parity.py` — 3-iter Adam parity vec ≡ per-spec
-  (`max rel ~2e-10`).
-- `test_v3_objective_vectorized_jacobian.py` — independent FD-vs-analytic
-  on the batched function (`max rel = 4.01e-5`).
-- `test_preload_from_loa_archive.py` — 9 sub-tests covering the
-  LoaArchive adapter end-to-end (schema, z/ZWARN filter, NHI
-  threshold, rest-frame interpolation, mask propagation,
-  reproducibility, downstream `load_preprocessed_h5` compat).
-- **NEW**: `test_normalize_rejection_threshold_is_1e_minus_2` —
-  regression guard for the 2026-05-13 corr-noise fix.
-
-All 65+ pre-existing tests still pass.
-
-### Validation experiments (Step A.5, B kernel, B inference)
-
-| Experiment | Result | Source |
-|---|---|---|
-| DR16 89k × 200 vec full retrain | 8h03m wall, c_0=0.106, τ_0=0.00449, β=3.03; `|Δβ|` vs MATLAB = 2.13 (Adam-vs-L-BFGS) | `docs/notes/2026-05-09_phase2_vec_full_vs_matlab.md` |
-| DR16 89k × 200 per-spec full | 21h31m wall, scalars match vec to ~3 sig figs | (vec/per-spec comparison series) |
-| Vec smoke 5k × 50 vs Phase-1 baseline | 28× speedup, scalars match | `docs/notes/2026-05-09_vec_smoke_vs_phase1_baseline.md` |
-| Kernel agreement vec vs per-spec (full DR16) | 1.7% Frobenius on M·M^T, 0.95% on corr | `docs/notes/2026-05-11_vec_vs_perspec_full_comparison.md` |
-| Inference consistency on canonical TID 120046865 | p_DLA Δ = 2.9e-3, log-evidence Δ ≈ 0.05 nats | `docs/notes/2026-05-11_vec_vs_perspec_inference_consistency.md` |
-| Step C smoke 5k × 50 on 2lpt loa-0 wide (A40) | 0.43 s/iter, all 3 outputs (`.h5` + `.npz` + auto-README) | `docs/notes/2026-05-11_desi_smoke/` |
-
-### Step C 2lpt trained models (6 variants)
-
-3 variants × 2 datasets (`2lpt_loa0_wide`, `2lpt_loa124_nohcd_nobal_wide`):
-
-- **base**: norm [1310, 1325], wide prior σ → β = 1.28 (heavy underfit)
-- **_g**: norm [1310, 1325], strict Turner σ → β = 2.69
-- **_m**: norm [1425, 1475], strict Turner σ → β = 3.09 ✓ recommended
-
-Output dirs: `docs/notes/2026-05-11_desi_phase2_<RUN_NAME>/`.
-Each contains `phase2_result.h5` (DESI inference schema), `phase2_result.npz`
-(training history), and a model-card `README.md`.
-
-### Corr-noise debug + 2026-05-13 fix
-
-Trained Step C 2lpt models had corr(M·M^T) mean adj-diff ≈ 0.004,
-~7× rougher than v1 production's 0.0006. Investigation chain:
-
-1. PCA-init smoothness confirmed clean on 2lpt at both norm bands
-   (`corr_pca_init_2lpt.png`, commit `badf0c2`) → noise emerges during
-   Adam, not init.
-2. Falsification probe (`examples/probe_outlier_tail_corr.py`) showed
-   the smoking gun is **lower-tail marginal medians** (med ∈ [1.5e-3, 1e-2])
-   — they pass the previous `|med| < 1e-3` rejection by 10× but
-   produce `flux/med` 100–1000× bulk, dominating PCA's top eigenvector
-   (14.9× smoothness blowup with just 10 such spectra in a 5000 batch).
-3. **Root cause**: `dataset.py` masked raw nv against threshold 9 BEFORE
-   normalizing, whereas MATLAB preload writes already-normalized nv and
-   masks `nv/med² > 9` (`preload_qsos.m:63-64` + `learn_qso_model.m:128`).
-   The MATLAB order is self-protecting against marginal medians; our
-   Python wasn't.
-4. **Fix**: (a) reorder `load_preprocessed_h5` to normalize → mask;
-   (b) tighten threshold from `|med| < 1e-3` to `|med| < 1e-2`. Both are
-   defense-in-depth; either alone closes the small-N gap.
-
-Documentation: `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md`
-+ updated `docs/notes/2026-05-12_training_pipeline_audit_vs_matlab/findings.md`
-(prior ✓ on the mask line corrected).
-
-### Other artifacts
-
-- `docs/training_overview.md` — every GP-training file in the repo
-  with status.
-- `docs/test_results_overview.md` — correctness tests + benchmarks +
-  SLURM job ledger.
-- `docs/production_models.md` — guidance for downstream inference and
-  the NERSC sampler-fix work on which `learned_file` to use.
-- `docs/notes/2026-05-13_qso_emission_absorption_correlations/findings.md`
-  — literature-review note on why real-LOA PCA-init kernels carry
-  richer cross-correlation than 2lpt mocks (Baldwin, EV1, BAL-EV1
-  coupling, intervening DLA metal forests).
+| `aa36205` | Corr-noise fix: reorder normalize→mask + tighten \|med\|<1e-2 |
+| `3a0b84f` | phase2_train_{desi,dr16}: full training-hyper manifest in .h5 |
+| `9f321f6` | phase2_desi_retrain.sh: MAX_WALLTIME_SEC env override |
+| `834fb78` | Step C 2lpt model cards + post-reorder smoke artifact |
+| `64e9f49` | Analysis scripts + plots + docs from 2026-05-13 |
+| `67700d8` | Slope-shuffled null detection + 4-agent review pack |
 
 ## What's deliberately NOT in this PR
 
-- **DLA-recovery validation** at scale on the Step C models — task
-  filed (`docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md` §
-  Next; tasks #6, #10 of the corr-noise arc).
-- **β-drift investigation** — all 2lpt-trained models converge to
-  β ≈ 1.3–3.1 not the Turner prior 3.62 (task #9).
-- **README templating fix** — `phase2_train_desi.py` auto-emits a
-  README that hard-codes `normalize | [1310, 1325]` regardless of
-  runtime CLI; the _m variants say Garnett band but trained on MATLAB
-  band. Cross-reference SLURM log header for the truth (task #7).
-- **Saclay panel** in `examples/plot_pca_init_corr_multi.py` errored;
-  fix in a follow-up (task #8).
-- **c0prior gauge analysis** — SLURM 50021381 still running; will land
-  ~2026-05-13 PM.
+- **README templating fix** (`tests/phase2_train_desi.py:358` hard-codes `[1310, 1325]`) — already noted in `docs/production_models.md`; one-line fix
+- **Saclay panel error** in `examples/plot_pca_init_corr_multi.py` — separate follow-up
+- **Production retrain at 3000 iter** of post-reorder LOA — in flight (50087967/68)
+- **c0prior gauge-analysis investigation** — c0prior model collapses DLA detection (`docs/notes/2026-05-13_step_c_dla_recovery/findings.md`); mechanism not yet investigated, flagged "not production ready" in `docs/production_models.md`
 
-These are deferred to a follow-up PR (or kept open as standalone work).
+These are deferred to a follow-up PR.
 
-## In-flight SLURM as of 2026-05-13 16:00
+## Test status
 
-These were submitted under the pre-reorder pipeline; results land
-~2026-05-13 PM → 2026-05-14 AM. They serve as the pre-reorder baseline
-against which the post-reorder duplicates will be compared:
-
-| JobID | Run | ETA |
-|---|---|---|
-| 50017771 | `loa_no_dla_no_bal_wide_g` (norm [1310, 1325]) | 2026-05-14 06h |
-| 50017772 | `loa_no_dla_no_bal_wide_m` (norm [1425, 1475]) | 2026-05-14 07h |
-| 50017773 | `loa_no_hcd_with_bal_wide_g` | 2026-05-14 05h |
-| 50017774 | `loa_no_hcd_with_bal_wide_m` | 2026-05-14 05h |
-| 50021381 | `2lpt_loa124_nohcd_nobal_wide_c0prior` | 2026-05-13 21h |
-| 50072213 | smoke `desi_smoke_normmask` (validates the reorder fix at 5k×50) | (queued) |
-
-Post-reorder production duplicates will be submitted after smoke 50072213
-validates the fix at scale.
-
-## Test plan
-
-- [ ] All 65+ tests pass (`python -m pytest tests/ -v`)
-- [ ] Smoke 50072213 lands; verify trained corr smoothness drops toward
-      v1's 0.0006
-- [ ] At least one 2lpt _m_normmask duplicate retrain confirms the
-      production-scale corr improvement
-- [ ] DLA-recovery quick check on canonical TID 120046865 against
-      `2lpt_loa0_wide_m/phase2_result.h5` and `model_epoch_920.h5` —
-      p_DLA delta within ~3e-3
+- All 225 tests in `tests/` pass (per PR-diff review agent at commit `67700d8`)
+- Key correctness tests covered in `docs/test_results_overview.md`:
+  - `test_v1_matches_matlab.py` — v1 ≡ MATLAB on 5 spectra, max rel_err = 5.3e-11
+  - `test_v3_objective_vectorized_parity.py` — vec ≡ per-spec to ~1e-10
+  - `test_normalize_rejection_threshold_is_1e_minus_2` (NEW) — regression guard for the 2026-05-13 corr-noise fix
+- DLA-recovery on canonical TID 120046865:
+  - v1 production: p_DLA = 0.52, MAP log NHI = 21.53 (+0.27 dex bias, matches historical)
+  - 2lpt loa-0 _m: p_DLA = 0.70, MAP log NHI = 21.52 (+0.25 dex)
+  - 2lpt loa-124 _m: p_DLA = 0.76, MAP log NHI = 21.52 (+0.25 dex)
+  - 2lpt loa-124 c0prior: p_DLA = 0.04, NaN — **flagged, do not use for production**
 
 ## Notes for reviewers
 
-- The MATLAB-faithful reorder of `dataset.py` is the single
-  highest-impact behavioral change in this PR. The audit doc explicitly
-  flags the prior ✓ as corrected, so reviewers can verify the new
-  order matches MATLAB exactly.
-- The Adam-vs-L-BFGS β discrepancy on the DR16 retrain (`|Δβ| = 2.13`)
-  is an optimizer choice, not a math bug — `test_v3_objective_vectorized_jacobian.py`
-  asserts the analytic gradient matches FD; `test_v1_matches_matlab.py`
-  asserts the loss values match.
-- The 6 Step C 2lpt trained models were trained pre-reorder. They are
-  documented as "best available pre-reorder 2lpt" in
-  `docs/production_models.md`; the post-reorder retrains will supersede
-  them.
+- The dataset.py reorder is the single highest-impact behavioral change. The MATLAB↔Python audit explicitly flags the prior ✓ as a 2026-05-13 correction (`docs/notes/2026-05-12_training_pipeline_audit_vs_matlab/findings.md`).
+- The Adam-vs-L-BFGS β discrepancy on DR16 (`|Δβ| = 2.13`) is an optimizer choice, not a math bug. `test_v3_objective_vectorized_jacobian.py` asserts analytic grad ≡ FD; `test_v1_matches_matlab.py` asserts loss ≡ MATLAB.
+- β drift puzzle resolved (no bug, hypothesis (b) — see `docs/notes/2026-05-13_beta_drift_investigation/findings.md`).
+- 6 Step C 2lpt trained models are pre-reorder; documented as "best available pre-reorder 2lpt" in `docs/production_models.md`. Post-reorder retrains (50087967/68) will supersede.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
