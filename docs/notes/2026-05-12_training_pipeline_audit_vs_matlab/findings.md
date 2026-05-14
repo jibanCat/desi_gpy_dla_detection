@@ -22,8 +22,10 @@ Legend: ✓ MATCH · ⚠ DIFFERS BY DESIGN · 🔴 BUG · 🟡 NOTE/MINOR
 
 | Item | MATLAB | New trainer | Verdict |
 |---|---|---|---|
-| `max_noise_variance` | `9` (`set_parameters.m:38`); applied `learn_qso_model.m:128` | `9.0` (`dataset.py:222`); applied `_mask_high_noise_pixels` | ✓ |
+| `max_noise_variance` | `9` (`set_parameters.m:38`); applied `learn_qso_model.m:128` against the **already-normalized** `nv/med²` from `preload_qsos.m:64` | `9.0` (`dataset.py:222`); applied `_mask_high_noise_pixels` **AFTER** `_normalize_by_rest_median` (reordered 2026-05-13) → also matches `nv/med² > 9` | ✓ (post 2026-05-13 reorder) |
 | NaN/inf masking | implicit via NaN propagation | `valid_masks = isfinite(centered) & isfinite(nv) & (nv>0)`, sanitized to 0/1 for vec path | ✓ (different mechanism, identical result) |
+
+🟡 **Correction landed 2026-05-13**: this row originally read ✓ but was wrong. MATLAB normalizes at preload time and masks the already-normalized array; we used to mask raw nv then normalize, so spectra with `med ∈ [1.5e-3, 1e-2]` slipped through where MATLAB would have NaN'd them via `nv_raw/med² ≫ 9`. The training-time order in `dataset.py::load_preprocessed_h5` was swapped to normalize→mask, matching MATLAB's effective behavior. The discovery + falsifying probe is documented in `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md` and `examples/probe_outlier_tail_corr.py`.
 
 ## 3. Normalization
 

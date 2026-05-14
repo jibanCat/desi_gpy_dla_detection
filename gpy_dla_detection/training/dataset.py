@@ -160,21 +160,31 @@ def _normalize_by_rest_median(
                                  category=RuntimeWarning,
                                  message="All-NaN slice encountered")
         medians = np.nanmedian(fluxes[:, norm_mask], axis=1)  # (N,)
-    # Spectra with median == 0, NaN, negative, or |median| < 1e-3 are
-    # unusable — divide-by-tiny-median produces |flux| > 1e3 outliers
-    # that contaminate the downstream PCA init (verified on 2lpt v2 wide
-    # preloads 2026-05-12: ~1500 spectra had median ≤ 0 → trained M's
-    # corr matrix went noisy from iter 0; see
-    # docs/notes/2026-05-12_2lpt_corr_noise_debug/).
-    bad = ~np.isfinite(medians) | (medians <= 0) | (np.abs(medians) < 1e-3)
+    # Spectra with median == 0, NaN, negative, or |median| < 1e-2 are
+    # unusable — divide-by-tiny-median produces |flux| > 100 outliers
+    # whose centered values then become a high-variance direction PCA
+    # locks onto. Verified on 2lpt v2 wide preloads:
+    #   - lower-tail rejection ≤0 / |·|<1e-3 (commit 3e76056, 2026-05-12)
+    #     caught the obvious cases.
+    #   - The probe at examples/probe_outlier_tail_corr.py (2026-05-13)
+    #     showed 10 spectra with med ∈ [1.5e-3, 1e-2] — passing the
+    #     previous threshold by ~10× — still bumped PCA-init corr
+    #     smoothness 14.9× (0.0130 → 0.1939) when injected into a
+    #     5000-spectrum batch. Upper-tail medians (med ∈ [10, 100])
+    #     did NOT contaminate (calibration invariance of IV centering).
+    # Threshold widened to 1e-2 to capture the [1e-3, 1e-2] marginal tail.
+    # See docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md.
+    bad = ~np.isfinite(medians) | (medians <= 0) | (np.abs(medians) < 1e-2)
     n_bad = int(bad.sum())
     if n_bad > 0:
         n_neg = int((medians <= 0).sum())
         n_tiny = int(((medians > 0) & (np.abs(medians) < 1e-3)).sum())
+        n_marginal = int(((medians >= 1e-3) & (np.abs(medians) < 1e-2)).sum())
         n_nan = int((~np.isfinite(medians)).sum())
         print(f"[dataset] normalize: {n_bad} of {len(medians)} spectra have bad "
               f"median in [{norm_min_lambda}, {norm_max_lambda}] (NaN={n_nan}, "
-              f"≤0={n_neg}, |·|<1e-3={n_tiny}); these will be zeroed out.")
+              f"≤0={n_neg}, |·|<1e-3={n_tiny}, "
+              f"[1e-3, 1e-2)={n_marginal}); these will be zeroed out.")
     safe_med = np.where(bad, 1.0, medians)  # avoid div-by-zero; we'll zero them below
     fluxes_normed = fluxes / safe_med[:, None]
     nv_normed = noise_variances / (safe_med[:, None] ** 2)
@@ -324,18 +334,25 @@ def load_preprocessed_h5(
     print(f"[dataset] {h5_path.name}: {n_total} total → {n_filtered} after "
           f"z/SNR/catalog filter → {n_kept} after max_spectra cap")
 
-    # Train-time preprocessing — mirrors the legacy SpectrumProcessor pipeline:
-    # 1. mask high-noise pixels (`SpectrumProcessor.mask_noisy_pixels`)
-    # 2. normalize per-spectrum by median in [norm_min_lambda, norm_max_lambda]
-    #    (`SpectrumProcessor.normalize_spectra`) — Garnett+2017 [1310, 1325]
-    # 3. de-forest at fixed Turner+2024 (`SpectrumProcessor.de_forest_spectra`)
-    # 4. inverse-variance-weighted mean centering (`SpectrumProcessor.center_fluxes`)
-    if apply_mask:
-        fluxes, noise_variance = _mask_high_noise_pixels(
-            fluxes, noise_variance, max_noise_variance
-        )
-        print(f"[dataset] mask: max_noise_variance={max_noise_variance}")
-
+    # Train-time preprocessing — mirrors MATLAB DR16 (`preload_qsos.m` +
+    # `learn_qso_model.m`):
+    # 1. normalize per-spectrum by median in [norm_min_lambda, norm_max_lambda]
+    #    (`preload_qsos.m:63-64` writes normalized arrays into the .mat) —
+    #    Garnett+2017 [1310, 1325]
+    # 2. mask high-noise pixels against the NORMALIZED nv
+    #    (`learn_qso_model.m:128` runs `nv > 9` on the pre-normalized arrays
+    #    it reads from the preload; the effective threshold is `nv_raw/med² > 9`)
+    # 3. de-forest at fixed Turner+2024
+    # 4. inverse-variance-weighted mean centering
+    #
+    # ORDERING NOTE (2026-05-13): we previously masked-then-normalized,
+    # which let marginal-median spectra (med ∈ [1e-3, 1e-2]) slip through:
+    # raw nv passes the threshold normally, but after normalize their
+    # centered values are 100-1000× bulk and dominate PCA. MATLAB is
+    # self-protecting against these because mask runs on already-normalized
+    # nv (which for a med=0.005 spectrum is ~400× larger → all pixels
+    # masked). See `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md`
+    # and `examples/probe_outlier_tail_corr.py`.
     if apply_normalize:
         fluxes, noise_variance, _meds = _normalize_by_rest_median(
             fluxes, noise_variance, rest_wave,
@@ -345,6 +362,14 @@ def load_preprocessed_h5(
         print(f"[dataset] normalize: per-spectrum median in "
               f"[{norm_min_lambda}, {norm_max_lambda}] Å rest "
               f"(Garnett+2017 convention)")
+
+    if apply_mask:
+        fluxes, noise_variance = _mask_high_noise_pixels(
+            fluxes, noise_variance, max_noise_variance
+        )
+        print(f"[dataset] mask: max_noise_variance={max_noise_variance} "
+              f"(applied to normalized nv = nv_raw/med²; matches MATLAB "
+              f"learn_qso_model.m:128)")
 
     if apply_de_forest:
         fluxes, noise_variance = _de_forest_batch(
