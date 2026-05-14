@@ -85,6 +85,7 @@ echo "[resume-local] EARLY_STOP_MODE=${EARLY_STOP_MODE:-(unset)}  ENABLE_TAU_EB=
              DLA_SAMPLES_FILE NUM_DLA_SAMPLES \
              SUB_DLA_SAMPLES_FILE NUM_SUBDLA_SAMPLES \
              MAX_DLAS SINGLE_ABSORBER_MODEL FILTER_LOW_LIKELIHOOD \
+             FILTER_N_INITIAL_FLOOR FILTER_EMPTY_MASK_FALLTHROUGH \
              PREV_TAU_0 PREV_BETA DLAMBDA K \
              ENABLE_TAU_EB TAU_EB_OBJECTIVE EARLY_STOP_MODE; do
         echo "- \`$v\` = \`${!v:-(unset)}\`"
@@ -127,6 +128,13 @@ build_cmd() {
         if [ "${TAU_EB_APPLY_HCD_MASK:-0}" = "1" ]; then cmd+=(--tau_eb_apply_hcd_mask 1); fi
     fi
     if [ -n "${EARLY_STOP_MODE:-}" ]; then cmd+=(--early_stop_mode "${EARLY_STOP_MODE}"); fi
+    # FILTER=1 knobs (see docs/notes/2026-05-13_filter1_knob_tuning.md)
+    if [ -n "${FILTER_N_INITIAL_FLOOR:-}" ]; then
+        cmd+=(--filter_n_initial_floor "${FILTER_N_INITIAL_FLOOR}")
+    fi
+    if [ "${FILTER_EMPTY_MASK_FALLTHROUGH:-0}" = "1" ]; then
+        cmd+=(--filter_empty_mask_fallthrough 1)
+    fi
     printf '%q ' "${cmd[@]}"
 }
 

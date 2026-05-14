@@ -192,6 +192,25 @@ def parse(options=None):
         dest="filter_low_likelihood"
     )
 
+    # FILTER=1 knobs — see docs/notes/2026-05-13_filter1_knob_tuning.md
+    parser.add_argument(
+        "--filter_n_initial_floor",
+        type=int, default=5000,
+        help="Knob 1: minimum size of the FILTER=1 coarse-scan budget. The actual "
+             "n_initial = max(num_dla_samples // 20, this_floor). Default 5000 "
+             "matches the historical hardcoded value. Raise to widen coarse "
+             "coverage when weak-DLA recall is the issue.",
+        dest="filter_n_initial_floor",
+    )
+    parser.add_argument(
+        "--filter_empty_mask_fallthrough",
+        type=int, default=0,
+        help="Knob 4: 1 = when the FILTER=1 coarse-scan yields an empty valid_mask, "
+             "fall through to the FILTER=0 full-sample path instead of early-stopping "
+             "with only the coarse samples. 0 (default) preserves historical early-stop.",
+        dest="filter_empty_mask_fallthrough",
+    )
+
     # single absorber model only
     parser.add_argument(
         "--single_absorber_model",
@@ -555,6 +574,8 @@ def main(args=None):
         "batch_size": args.batch_size,
         "figure_dir": args.figure_dir,
         "filter_low_likelihood": bool(args.filter_low_likelihood),
+        "filter_n_initial_floor": int(args.filter_n_initial_floor),
+        "filter_empty_mask_fallthrough": bool(args.filter_empty_mask_fallthrough),
         "single_absorber_model": bool(args.single_absorber_model),  # single absorber model only
         "enable_tau_eb": bool(args.enable_tau_eb),
         "tau_eb_factors": tuple(args.tau_eb_factors),

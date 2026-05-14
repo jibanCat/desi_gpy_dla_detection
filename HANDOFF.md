@@ -1,3 +1,43 @@
+# Handoff — 2026-05-13 21:30 PT (evening session, jupyter 52933605)
+
+> **Evening session update (this top block)**: ran the FILTER=1 knob 2×2
+> ablation, finished FILTER=0 to all 8 slices, wrote a `cellC` mechanism
+> verdict, and built an aggregator P-vs-C plot. **Headline: the 2×2 ablation
+> mostly refuted the knob-tuning hypothesis**. Knob 1 (`n_initial`=10k) gives
+> only +0.6pp C vs baseline; knob 4 (empty-mask fall-through) is essentially
+> a no-op. FILTER=0 (full 8 slices) gives +4pp C / −3pp P vs baseline — much
+> smaller than the s1+s3-slice teaser (+12pp) implied. **Implication**:
+> cellC's headline +7pp C / −2pp P stands as the best lever — and is *not*
+> reproducible via FILTER=1 knob tuning. The completeness ceiling difference
+> between FILTER=0 and FILTER=1 must come from something *other* than the
+> coarse-scan-miss / early-stop mechanism in the original knob doc.
+>
+> See [`docs/notes/2026-05-13_cellC_mechanism_verdict.md`](docs/notes/2026-05-13_cellC_mechanism_verdict.md)
+> for why cellC works (posterior-arithmetic dominance, not sample density).
+> Uncommitted code changes in `desi-DLAGP.py`, `dlasearch.py`,
+> `run_bayes_select.py`, `bayesian_model_selection.py`, `dla_gp.py`,
+> `slurm/resume_local.sh` plumb two new flags `--filter_n_initial_floor`
+> and `--filter_empty_mask_fallthrough`. Tests pass (80 pre-existing).
+>
+> **PR follow-ups for `production_533` (next session, in order)**:
+>
+> 1. Commit the knob-plumbing code (5 src files + resume_local.sh patch + 1
+>    code-path fix for the empty-after-exclusion edge case in `dla_gp.py:691`).
+> 2. Commit the cellC verdict note + this handoff update.
+> 3. Add the `--filter_n_initial_floor` / `--filter_empty_mask_fallthrough`
+>    documentation to the production runbook.
+> 4. Decide: ship cellC as the default? Verdict note recommends "flag, not
+>    default" pending Saclay + 2LPT + real-LOA cross-validation.
+> 5. Add Sub-DLA P/C eval (Option B from `project_subdla_dla_joint_design`):
+>    re-run `molly_faithful_pc_plots.py` with `--nhi-min 19.0` + truth filter
+>    `NHI ∈ [19.0, 20.3]` on cellA/B/C to populate the (DLA, sub-DLA) ×
+>    (cell) 2×3 table.
+> 6. Cross-validate cellC on Saclay mock + 2LPT before promoting.
+> 7. Drop the "knob 4 helps" hypothesis from `docs/notes/2026-05-13_filter1_knob_tuning.md`
+>    or add a "refuted by 2×2 ablation" callout.
+>
+> ---
+
 # Handoff — 2026-05-13 14:40 PT (jupyter 52907557 expires 15:44 PT)
 
 > Big session. Var[Δ_marg] verdict landed, all 5 yesterday-in-flight runs
@@ -53,6 +93,10 @@
 | joint cellA: SINGLE_ABS=1, md=3, NHI[19,23], PW50k | 0.7906 | 0.8392 | 2668 | 618 | −5pp P, +8pp C |
 | joint cellB: SINGLE_ABS=1, md=4, NHI[19,23], PW50k | 0.7950 | 0.8392 | 2912 | 618 | similar to A |
 | **joint cellC**: SINGLE_ABS=1, md=3, NHI[17.2,22], LLS50k | **0.8256** | **0.8304** | 3268 | 618 | **−2pp P, +7pp C — best yet** |
+| **FILTER=0** (full 8 slices, evening) | 0.8166 | 0.8070 | 1922 | 618 | **−2.9pp P, +4.1pp C** (small-sample teaser was misleading) |
+| **k1=10k k4=off** (knob 1 only) | 0.8516 | 0.7719 | 1305 | 618 | +0.6pp P, +0.6pp C (≈ tie w/ baseline) |
+| **k1=5k k4=on** (knob 4 only) | 0.8506 | 0.7661 | 1250 | 618 | +0.5pp P, **0pp C** (knob 4 is a no-op) |
+| **k1=10k k4=on** (both knobs) | 0.8511 | 0.7690 | 1310 | 618 | +0.6pp P, +0.3pp C (knob 1 dominates) |
 
 **Source**: `examples/molly_faithful_pc_plots.py` against London mock-0
 `dla_cat.fits` (NHI≥20.3 truth). Per-variant log files:
@@ -299,10 +343,78 @@ No new memory items added today; existing memory items still load-bearing:
    baseline?** Today's evidence (0.83/0.83 vs baseline 0.85/0.77)
    strongly favors it. Validate on full London 26k + Saclay + 2LPT + real
    LOA before claiming.
-2. **FILTER=1 knob 2×2**: which knob actually matters? Run today's
-   ablation matrix to find out.
+2. ~~**FILTER=1 knob 2×2**: which knob actually matters? Run today's
+   ablation matrix to find out.~~ **Done (evening session)**: knob 1 alone
+   gives ~+0.6pp C, knob 4 is a no-op. **The 2×2 refuted the knob-tuning
+   hypothesis as the dominant explanation for the FILTER=0 / FILTER=1 gap.**
+   See evening-session top block + `aggregate_pc_scatter.py` plot.
 3. **Sub-DLA P/C from cellA/B/C** — what's the [19, 20.3] truth match
    look like? This is the "is cellC also a usable sub-DLA catalog"
    question.
 4. **EARLY_STOP_MODE A or D for production**? Today's data says +1 pp C
    for both, modest. Probably defer until cellC / FILTER=1 tuning lands.
+5. **What IS the FILTER=0 vs FILTER=1 completeness gap if not knob 1/4?**
+   The 2×2 cells leave a ~3pp completeness ceiling between FILTER=1 (best:
+   k1=10k k4=off, C=0.772) and FILTER=0 (C=0.807). Mechanisms not yet
+   tested: the `z_tol=0.02` knob 2, the `null_evidence` threshold knob 3,
+   or the truncated-correction estimator (knob 5) at multi-DLA branches.
+
+## Evening-session P/C table (canonical molly_faithful eval, SNR>2, P_DLA≥0.99, lyb-veto, no-BAL, λ_rf∈[911,1216], NHI≥20.3)
+
+| Variant | Purity | Completeness | cat rows post-cuts | truth |
+|---|---:|---:|---:|---:|
+| baseline FILTER=1 (reference) | 0.8452 | 0.7661 | 1242 | 618 |
+| FILTER=0 (this session, full 8 slices) | 0.8166 | **0.8070** | 1922 | 618 |
+| k1=5k k4=on  (knob 4 only) | 0.8506 | 0.7661 | 1250 | 618 |
+| k1=10k k4=off (knob 1 only — BEST knob) | **0.8516** | 0.7719 | 1305 | 618 |
+| k1=10k k4=on (both knobs) | 0.8511 | 0.7690 | 1310 | 618 |
+| cellC (for comparison) | 0.8256 | 0.8304 | 3268 | 618 |
+
+Per-variant per-slice tables: each variant's `pc_snr2_pdla99.md` in its outdir.
+
+## Node-hour cost — FILTER=0 vs FILTER=1
+
+8-slice wall time (one slice processes ~600 spectra, 8 workers per slice):
+
+| Variant | Min/slice (avg) | Min/slice (max) | Total compute (8 slices × 8 workers) |
+|---|---:|---:|---:|
+| baseline FILTER=1 (ran solo) | 27.6 min | 38.5 min | ~29 core-hours |
+| **FILTER=0** (full, contention) | **102.5 min** | 138 min | **~109 core-hours** |
+| k1=5k k4=on (contention) | 87.3 min | 112 min | ~93 core-hours |
+| k1=10k k4=off (contention) | 56.9 min | 77 min | ~61 core-hours |
+| k1=10k k4=on (contention) | 94.6 min | 119 min | ~101 core-hours |
+
+**Caveats** (important — read before quoting numbers):
+- Baseline FILTER=1 ran solo on the node. The 4 new variants ran *concurrently*
+  (3 cells × 8 slices × 8 workers + FILTER=0 6 slices = ~240 cores active on
+  256-core node). The 2×2 wall times are contention-inflated by ~2-3×.
+- Knob 1 = 10k cells (k1_10k_*) ran faster than knob 4 alone (k1_5k_k4_on)
+  despite doing more coarse-scan work — counterintuitive. Likely a slice-by-slice
+  contention artifact, NOT a real per-spectrum cost ordering.
+- **Best estimate of true cost ratio FILTER=0 / FILTER=1** (factoring out
+  contention) ≈ 2–3×. For a 1M-spectrum production run this is roughly
+  **~50 node-hours extra** to move from FILTER=1 to FILTER=0 (the baseline
+  was ~29 node-hours/5k → ~5800 node-hours/1M).
+
+Re-running any single cell *solo* on a fresh jupyter would be the clean way to
+get the per-cell base cost. ~30-40 min per cell. Not done this session.
+
+## Files added/modified this evening (uncommitted)
+
+| File | Purpose |
+|---|---|
+| `desi-DLAGP.py` | `--filter_n_initial_floor`, `--filter_empty_mask_fallthrough` CLI flags |
+| `dlasearch.py` | Plumb new flags to `DLAHolder` (both `hpx` and `mock` ctors) |
+| `run_bayes_select.py` | `DLAHolder.__init__` accepts + stores knobs; `_process_spectrum` propagates them; both `bayes.model_selection` calls pass them |
+| `gpy_dla_detection/bayesian_model_selection.py` | `model_selection()` signature + both `parallel_log_model_evidences()` calls forward the knobs |
+| `gpy_dla_detection/dla_gp.py` | `parallel_log_model_evidences()` accepts `filter_n_initial_floor` (knob 1, line 575) + `filter_empty_mask_fallthrough` (knob 4, line 639); also handles the **edge case** where the non-empty valid_mask becomes empty after `valid_mask[:n_initial]=False` (more common with knob 1 ≥ 10k) — falls through to FILTER fix #5 1-DLA-only evidence with a warning |
+| `slurm/resume_local.sh` | Pass `FILTER_N_INITIAL_FLOOR` + `FILTER_EMPTY_MASK_FALLTHROUGH` env vars as CLI flags |
+| `examples/aggregate_pc_scatter.py` | NEW — sweep P_DLA cuts across multiple variants → one scatter plot, modeled on Molly's notebook |
+| `docs/notes/2026-05-13_cellC_mechanism_verdict.md` | NEW — 5-section verdict on why cellC works: posterior-arithmetic dominance over sample-density penalty; ship as flag not default |
+| `HANDOFF.md` (this file) | Evening-session top block + open-questions update + node-hour table |
+
+Outputs (all under `/pscratch/sd/j/jibancat/prod533_5k_20260511/`):
+
+- `london_v3_loa124_pw14_tau_eb_filter0/` — full 8-slice FILTER=0 + `pc_snr2_pdla99.md`
+- `filter1_knob_2x2/{k1_5k_k4_on,k1_10k_k4_off,k1_10k_k4_on}/` — 2×2 ablation cells, each 8 slices + `pc_snr2_pdla99.md`
+- `figures/pc_scatter/purity_vs_completeness_all_variants.{png,tsv}` — aggregator output (11 variants)

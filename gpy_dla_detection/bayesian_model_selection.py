@@ -83,6 +83,8 @@ class BayesModelSelect:
         batch_size: int = 100,
         executor=None,
         filter_low_likelihood: bool = False,
+        filter_n_initial_floor: int = 5000,
+        filter_empty_mask_fallthrough: bool = False,
     ) -> np.ndarray:
         """
         Perform Bayesian model selection for a list of models.
@@ -162,6 +164,8 @@ class BayesModelSelect:
                         executor=executor,
                         null_evidence=null_evidence,
                         filter_low_likelihood=filter_low_likelihood,
+                        filter_n_initial_floor=filter_n_initial_floor,
+                        filter_empty_mask_fallthrough=filter_empty_mask_fallthrough,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
 
@@ -188,6 +192,8 @@ class BayesModelSelect:
                         executor=executor,
                         null_evidence=null_evidence,
                         filter_low_likelihood=filter_low_likelihood,
+                        filter_n_initial_floor=filter_n_initial_floor,
+                        filter_empty_mask_fallthrough=filter_empty_mask_fallthrough,
                     )
                     log_likelihoods.append(log_likelihoods_dla)
                     for j in range(num_dlas):

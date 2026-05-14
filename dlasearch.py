@@ -124,6 +124,8 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
             filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+            filter_n_initial_floor=model_params.get("filter_n_initial_floor", 5000),
+            filter_empty_mask_fallthrough=model_params.get("filter_empty_mask_fallthrough", False),
             single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
             enable_tau_eb=model_params.get("enable_tau_eb", False),
             tau_eb_factors=model_params.get("tau_eb_factors", (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)),
@@ -239,6 +241,8 @@ def dlasearch_mock(specfile, catalog, model_params):
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
             filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+            filter_n_initial_floor=model_params.get("filter_n_initial_floor", 5000),
+            filter_empty_mask_fallthrough=model_params.get("filter_empty_mask_fallthrough", False),
             single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
             enable_tau_eb=model_params.get("enable_tau_eb", False),
             tau_eb_factors=model_params.get("tau_eb_factors", (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)),

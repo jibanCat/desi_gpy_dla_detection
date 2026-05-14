@@ -508,6 +508,8 @@ class DLAGP(NullGP):
         executor=None,
         null_evidence: Optional[float] = None,
         filter_low_likelihood: bool = False,
+        filter_n_initial_floor: int = 5000,
+        filter_empty_mask_fallthrough: bool = False,
     ) -> np.ndarray:
         """
         Parallelized version of the log model evidences computation using process-based parallelization.
@@ -572,7 +574,10 @@ class DLAGP(NullGP):
         # and then you only sample the regions of high likelihood
         # 
         # Step 1: only use a small subset of QMC samples for the initial scan
-        n_initial = max(int(self.params.num_dla_samples // 20) , 5000)  # only scan the first 5000 samples
+        # FILTER=1 knob 1: coarse-scan budget floor.
+        # n_initial = max(num_dla_samples // 20, filter_n_initial_floor).
+        # Default 5000 reproduces the historical hardcoded floor.
+        n_initial = max(int(self.params.num_dla_samples // 20), int(filter_n_initial_floor))
         initial_logL = np.empty(n_initial)
         initial_logL[:] = np.nan
         # # Select slice of samples for initial scan
@@ -631,63 +636,90 @@ class DLAGP(NullGP):
                     logL_null=null_evidence,
                 ) # this is boolean mask of the full 100000 samples
 
-                # ========== Early stopping if initial scan returns no valid regions ==========
+                # ========== Step 4: handle valid_mask ==========
+                # Knob 4 (filter_empty_mask_fallthrough):
+                #   False (default) — historical early-stop: return 1-DLA
+                #                     evidence estimated from the coarse scan,
+                #                     no multi-DLA exploration.
+                #   True            — fall through to the FILTER=0 full-sample
+                #                     path so the 1-DLA marginal is computed
+                #                     from num_dla_samples instead of n_initial.
+                # See docs/notes/2026-05-13_filter1_knob_tuning.md.
                 if np.sum(valid_mask) == 0:
+                    if not filter_empty_mask_fallthrough:
+                        log.warning(
+                            "No valid regions found in the initial scan. Returning NaN for all log likelihoods."
+                        )
+                        # Save the approximated log likelihoods for 1 DLA model
+                        max_log_likelihood = np.nanmax(sample_log_likelihoods[:, init_num_dla])
+                        sample_probabilities[:] = np.exp(
+                            sample_log_likelihoods[:, init_num_dla] - max_log_likelihood
+                        )
+                        log_likelihoods_dla[init_num_dla] = (
+                            max_log_likelihood
+                            + np.log(np.nanmean(sample_probabilities))
+                            - lognorm * init_num_dla
+                        )
+                        log.info(
+                            f"Stopping early at {init_num_dla + 1} DLAs because the log likelihood {log_likelihoods_dla[init_num_dla]} is less than the null model evidence {null_evidence}."
+                        )
+                        # Store results for future use
+                        self.sample_log_likelihoods = sample_log_likelihoods
+                        self.base_sample_inds = base_sample_inds
+
+                        return log_likelihoods_dla
+
+                    # Knob 4 = True: fall through to FILTER=0 full-sample path.
                     log.warning(
-                        "No valid regions found in the initial scan. Returning NaN for all log likelihoods."
+                        "Empty valid_mask — knob 4: falling through to full-sample (FILTER=0) path."
                     )
-                    # Save the approximated log likelihoods for 1 DLA model
-                    max_log_likelihood = np.nanmax(sample_log_likelihoods[:, init_num_dla])
-                    sample_probabilities[:] = np.exp(
-                        sample_log_likelihoods[:, init_num_dla] - max_log_likelihood
-                    )
-                    log_likelihoods_dla[init_num_dla] = (
-                        max_log_likelihood
-                        + np.log(np.nanmean(sample_probabilities))
-                        - lognorm * init_num_dla
-                    )
-                    log.info(
-                        f"Stopping early at {init_num_dla + 1} DLAs because the log likelihood {log_likelihoods_dla[init_num_dla]} is less than the null model evidence {null_evidence}."
-                    )
-                    # break the try block to avoid further processing
-                    # Store results for future use
-                    self.sample_log_likelihoods = sample_log_likelihoods
-                    self.base_sample_inds = base_sample_inds
-
-                    return log_likelihoods_dla
-
-                # Step 4: Filter the batch indices based on the valid mask,
-                #         so this is filtered both lognhi and z_dla
-                # 
-                # Avoid using initial scan samples again for refined sampling
-                _valid_mask = valid_mask.copy() # retain the original mask
-                valid_mask[:n_initial] = False  # Exclude the initial scan samples
-                indices = np.where(valid_mask)[0]
-                batch_size = int(len(indices) / max_workers)
-                if batch_size * max_workers < len(indices):
-                    batch_size += 1
-                batches = [
-                    indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
-                ]
-                # Estimate average log-likelihood in the rejected region (logL < null_evidence)
-                # If few values, fallback to minimum or null_evidence
-                # below_null = initial_logL[initial_logL < null_evidence]
-                # 
-                # this should be the samples out side of the valid mask
-                below_null = initial_logL[~_valid_mask[:n_initial]]
-
-                if below_null.size > 5:
-                    max_log_below_null = np.nanmax(below_null)
-                    probabilities_below_null = np.exp(
-                        below_null - max_log_below_null
-                    )
-                    log_initial_logL = (
-                        max_log_below_null
-                        + np.log(np.nanmean(probabilities_below_null))
-                    )
+                    filter_low_likelihood = False  # local override suppresses truncated-correction below
+                    indices = list(range(self.params.num_dla_samples))
+                    batches = [
+                        indices[i : i + batch_size]
+                        for i in range(0, len(indices), batch_size)
+                    ]
                 else:
-                    log.warning(f"Only {below_null.size} samples in low-likelihood region; correction may be unreliable.")                    
-                    log_initial_logL = null_evidence 
+                    # Non-empty valid_mask — historical FILTER=1 refinement path.
+                    # Step 4: Filter the batch indices based on the valid mask,
+                    # so this is filtered on both lognhi and z_dla.
+                    # Avoid using initial scan samples again for refined sampling.
+                    _valid_mask = valid_mask.copy() # retain the original mask
+                    valid_mask[:n_initial] = False  # Exclude the initial scan samples
+                    indices = np.where(valid_mask)[0]
+                    if len(indices) > 0:
+                        batch_size = max(int(np.ceil(len(indices) / max_workers)), 1)
+                        batches = [
+                            indices[i : i + batch_size] for i in range(0, len(indices), batch_size)
+                        ]
+                    else:
+                        # Edge case (more common with larger filter_n_initial_floor):
+                        # all valid_mask hits lay within the first n_initial samples
+                        # so nothing is left to refine on. The 1-DLA evidence then
+                        # comes from initial_logL via FILTER fix #5 below; multi-DLA
+                        # log evidences will be NaN (no samples), which triggers the
+                        # downstream early-stop.
+                        batches = []
+                        log.warning(
+                            f"All valid_mask hits in initial scan (n_initial={n_initial}); "
+                            "skipping refinement, 1-DLA evidence from initial_logL only."
+                        )
+                    # Estimate average log-likelihood in the rejected region
+                    # (samples outside the valid mask).
+                    below_null = initial_logL[~_valid_mask[:n_initial]]
+
+                    if below_null.size > 5:
+                        max_log_below_null = np.nanmax(below_null)
+                        probabilities_below_null = np.exp(
+                            below_null - max_log_below_null
+                        )
+                        log_initial_logL = (
+                            max_log_below_null
+                            + np.log(np.nanmean(probabilities_below_null))
+                        )
+                    else:
+                        log.warning(f"Only {below_null.size} samples in low-likelihood region; correction may be unreliable.")
+                        log_initial_logL = null_evidence
 
             # ========= Not adaptive truncated sampling =========
             # this is a safegard for the case we want the original sampling

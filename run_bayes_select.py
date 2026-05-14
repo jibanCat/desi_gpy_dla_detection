@@ -57,6 +57,8 @@ def process_single_spectrum(
     snr_blue: float = None,
     snr_red: float = None,
     filter_low_likelihood: bool = False,
+    filter_n_initial_floor: int = 5000,
+    filter_empty_mask_fallthrough: bool = False,
     single_absorber_model: bool = False,
 ):
     """
@@ -132,6 +134,8 @@ def process_single_spectrum(
             max_workers=max_workers,
             batch_size=batch_size,
             filter_low_likelihood=filter_low_likelihood,
+            filter_n_initial_floor=filter_n_initial_floor,
+            filter_empty_mask_fallthrough=filter_empty_mask_fallthrough,
         )
     else:
         # Set data for the Null, DLA, and Sub-DLA models
@@ -147,6 +151,8 @@ def process_single_spectrum(
             max_workers=max_workers,
             batch_size=batch_size,
             filter_low_likelihood=filter_low_likelihood,
+            filter_n_initial_floor=filter_n_initial_floor,
+            filter_empty_mask_fallthrough=filter_empty_mask_fallthrough,
         )
 
     # Store basic results
@@ -329,6 +335,8 @@ class DLAHolder:
         figure_dir: str = "figures/",
         params_subdla=None,
         filter_low_likelihood: bool = False,
+        filter_n_initial_floor: int = 5000,
+        filter_empty_mask_fallthrough: bool = False,
         single_absorber_model: bool = False,
         enable_tau_eb: bool = False,
         tau_eb_factors: tuple = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
@@ -382,6 +390,12 @@ class DLAHolder:
 
         # Filter low likelihood samples
         self.filter_low_likelihood = filter_low_likelihood
+        # FILTER=1 knobs (see docs/notes/2026-05-13_filter1_knob_tuning.md).
+        # Defaults reproduce historical behavior:
+        #   n_initial = max(num_dla_samples // 20, 5000)
+        #   empty valid_mask → early-stop with 1-DLA evidence from coarse samples
+        self.filter_n_initial_floor = int(filter_n_initial_floor)
+        self.filter_empty_mask_fallthrough = bool(filter_empty_mask_fallthrough)
 
         # Single absorber model flag: No Sub-DLA model, only Null and DLA models
         self.single_absorber_model = single_absorber_model
@@ -551,6 +565,8 @@ class DLAHolder:
             self.batch_size,
             self.figure_dir,
             filter_low_likelihood=self.filter_low_likelihood,
+            filter_n_initial_floor=self.filter_n_initial_floor,
+            filter_empty_mask_fallthrough=self.filter_empty_mask_fallthrough,
             single_absorber_model=self.single_absorber_model,
         )
         # Clean up to free memory
