@@ -55,6 +55,26 @@ iter, lr=0.005, k=30, num_lines=31, PCA init, hand-coded gradient via
 Same 3 variants exist for `2lpt_loa124_nohcd_nobal_wide` (HCD+BAL masked).
 Endpoint scalars there are within ~10% of the loa-0 numbers above.
 
+### DLA-recovery on canonical TID 120046865 (truth log_NHI = 21.263)
+
+Per `docs/notes/2026-05-13_step_c_dla_recovery/findings.md` — operational
+check that the corr-noise debug arc hasn't broken inference:
+
+| Model | p_DLA | MAP log NHI | Δ vs truth | Status |
+|---|---:|---:|---:|---|
+| v1 production (epoch 920) | 0.52 | 21.53 | +0.27 dex | ✓ historical baseline (matches v1 +0.27 dex bias) |
+| 2lpt loa-0 _m | **0.70** | 21.52 | +0.25 dex | ✓ passes (p_DLA > 0.5, MAP ±0.5 dex) |
+| 2lpt loa-124 _m | **0.76** | 21.52 | +0.25 dex | ✓ passes |
+| 2lpt loa-124 c0prior | **0.04** | NaN | — | 🚫 **DETECTION COLLAPSES — DO NOT USE FOR PRODUCTION** |
+| Smoke post-reorder (50 iter only) | 0.85 | 21.63 | +0.36 dex | undertrained but detects (sanity only) |
+
+**Headline**: the two main `_m` models pass — the corr-noise debug arc is
+inference-safe. The `c0prior` variant breaks DLA detection at default
+`--log-c-0-prior-sigma` strength. Mechanism: the log_c_0 prior appears
+to suppress signal-mode contributions in the DLA likelihood; root cause
+not yet investigated. Until understood, the c0prior model is **not
+production-ready**.
+
 ⚠ **Pre-reorder caveat**: all 6 carry corr(M·M^T) mean adj-diff ≈ 0.004,
 ~7× rougher than v1 production. Root cause: the mask order in the
 training-time preprocessing was reversed vs MATLAB, letting marginal-

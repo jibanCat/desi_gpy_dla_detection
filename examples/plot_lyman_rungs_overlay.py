@@ -171,94 +171,131 @@ LABEL_SKIP = {
     "Lyε",
 }
 NOT_DETECTED_STYLE = dict(color="gray", linestyle="-", lw=0.6, alpha=0.5)
-DETECTION_Z_THRESHOLD = 1.5   # z = (on_med - off_med) / (1.4826 * MAD(off))
-                              # Lowered from 3.0 → 1.5 (2026-05-13): the rungs
-                              # are physically subtle (sub-leading in the
-                              # kernel after de-forest + k=30 truncation), so
-                              # 3σ rejected even visible features like
-                              # Lyβ·Lyα on LOA (z = 1.2). 1.5σ is a meaningful
-                              # detection but inclusive enough to catch the
-                              # real rung structure.
-TRIM_DIAG = 10.0              # Å — skip rung pixels within this distance of main diagonal
-PERP_OFFSETS_ANG = (15.0, 25.0, 35.0)  # perpendicular off-rung sample distances
+DETECTION_Z_THRESHOLD = 1.5
+TRIM_DIAG = 10.0
+# Null hypothesis: random (λ_short, λ_long) pairs that don't sit on any
+# physical line. Per-panel pre-compute; physical rungs tested vs this null.
+N_NULL = 300
+NULL_AVOID_TOL_ANG = 5.0     # reject random λ within this of any physical line
+NULL_RNG_SEED = 0
 
 
 def _short_label(label: str) -> str:
     return label.replace("(", " ").replace(")", "").replace("Lyα·", "").replace("·Lyα", "")
 
 
-def _detect_feature(C, rest, λs, λl, n_samples=50,
-                    perp_offsets=PERP_OFFSETS_ANG,
-                    trim_diag=TRIM_DIAG, z_threshold=DETECTION_Z_THRESHOLD):
-    """Z-score feature detection along a rung.
+WINDOW_SIZE = 5  # rolling-window length for localized-feature detection
 
-    On-rung samples: corr(λs·X, λl·X) for X spanning the valid range.
-    Off-rung samples: same X values, but offset perpendicular to the rung
-    by ±perp_offsets (so we sample a thicker neighborhood, not a thin line).
-    Scale: 1.4826·MAD(off_samples) ≈ σ for Gaussian — robust to forest
-    outliers. z = (median(on) − median(off)) / scale; detect if z > 3.
 
-    Pixels within trim_diag Å of the main diagonal are dropped (corr ≈ 1
-    there biases both on- and off-rung sampling).
-
-    Returns dict(detected, z, strength, on_med, off_med, n_off).
-    """
+def _on_rung_stats(C, rest, λs, λl, n_samples=80, trim_diag=TRIM_DIAG,
+                   window=WINDOW_SIZE):
+    """Two statistics along the rung (λs·X, λl·X) for valid X:
+      - `median`     : median of all on-rung samples (global feature)
+      - `max_window` : max over rolling-window medians of size `window`
+                       (catches localized features near emission peaks
+                       that would be washed out by the whole-rung median)
+    Pixels within trim_diag Å of the main diagonal are dropped.
+    Returns dict with NaN values if rung is out of range or too short."""
     rest_min, rest_max = rest[0], rest[-1]
+    NULL = dict(median=float("nan"), max_window=float("nan"))
     x_min = max(rest_min / λs, rest_min / λl)
     x_max = min(1.0, rest_max / λs, rest_max / λl)
-    NULL = dict(detected=False, z=float("-inf"), strength=0.0,
-                on_med=0.0, off_med=0.0, n_off=0)
     if x_max <= x_min:
         return NULL
-
     Xs = np.linspace(x_min, x_max, n_samples)
     cols = Xs * λs
     rows = Xs * λl
     keep = np.abs(rows - cols) > trim_diag
-    if keep.sum() < 5:
+    if keep.sum() < window + 3:
         return NULL
     cols, rows = cols[keep], rows[keep]
-
-    slope = λl / λs
-    norm = np.sqrt(1.0 + slope * slope)
-    perp_dcol = -slope / norm
-    perp_drow = 1.0 / norm
-
-    def _sample(c, r):
-        i = np.clip(np.searchsorted(rest, c), 0, len(rest) - 1)
-        j = np.clip(np.searchsorted(rest, r), 0, len(rest) - 1)
-        return C[j, i]
-
-    on_rung = _sample(cols, rows)
-
-    off_samples = []
-    for off in perp_offsets:
-        for sign in (+1, -1):
-            ccol = cols + sign * off * perp_dcol
-            crow = rows + sign * off * perp_drow
-            valid = ((ccol >= rest_min) & (ccol <= rest_max) &
-                     (crow >= rest_min) & (crow <= rest_max))
-            if valid.any():
-                off_samples.extend(_sample(ccol[valid], crow[valid]).tolist())
-    if len(off_samples) < 8:
-        return NULL
-
-    off_samples = np.asarray(off_samples)
-    on_med = float(np.median(on_rung))
-    off_med = float(np.median(off_samples))
-    mad = float(np.median(np.abs(off_samples - off_med)))
-    scale = 1.4826 * mad
-    if scale < 1e-6:
-        scale = float(np.std(off_samples)) or 1e-6
-    z = (on_med - off_med) / scale
-    return dict(detected=(z > z_threshold),
-                z=float(z), strength=on_med - off_med,
-                on_med=on_med, off_med=off_med, n_off=len(off_samples))
+    i = np.clip(np.searchsorted(rest, cols), 0, len(rest) - 1)
+    j = np.clip(np.searchsorted(rest, rows), 0, len(rest) - 1)
+    on_rung = C[j, i]
+    med = float(np.median(on_rung))
+    # Rolling-window median, then take the max → localized feature
+    if len(on_rung) >= window:
+        from numpy.lib.stride_tricks import sliding_window_view
+        win_meds = np.median(sliding_window_view(on_rung, window), axis=1)
+        max_w = float(np.max(win_meds))
+    else:
+        max_w = float(np.max(on_rung))
+    return dict(median=med, max_window=max_w)
 
 
-def overlay_rungs(ax, rest, C, rungs, annotate=True):
-    """Draw each rung in the lower-triangle half. For each rung, sample
-    corr along its path and compare to perpendicular off-rung background.
+def _on_rung_median(C, rest, λs, λl, n_samples=50, trim_diag=TRIM_DIAG):
+    """Back-compat helper used by callers that only want the median."""
+    return _on_rung_stats(C, rest, λs, λl, n_samples=n_samples,
+                          trim_diag=trim_diag)["median"]
+
+
+def _compute_null_distribution(C, rest, n_null=N_NULL,
+                               avoid_tol=NULL_AVOID_TOL_ANG,
+                               rng_seed=NULL_RNG_SEED):
+    """Per-panel null: many random (λ_short, λ_long) pairs that avoid all
+    physical lines (within ±avoid_tol Å) AND don't accidentally match a
+    physical slope (within 0.5%). For each pair, compute BOTH the
+    whole-rung median and the max-rolling-window median. The two
+    resulting distributions give non-parametric baselines for global vs
+    localized rung features.
+
+    Returns dict(medians=array(n_null), max_windows=array(n_null))."""
+    physical = list(LYMAN.values()) + list(QQ_METALS.values()) + list(REAL_ONLY_METALS.values())
+    physical_slopes = sorted({physical[j] / physical[i]
+                              for i in range(len(physical))
+                              for j in range(i + 1, len(physical))
+                              if physical[j] > physical[i]})
+    rest_min, rest_max = rest[0], rest[-1]
+    rng = np.random.default_rng(rng_seed)
+    meds, maxws = [], []
+    tries = 0
+    max_tries = n_null * 50
+    while len(meds) < n_null and tries < max_tries:
+        tries += 1
+        a = rng.uniform(rest_min + 30.0, rest_max - 60.0)
+        b = rng.uniform(a + 30.0, rest_max - 5.0)
+        if any(abs(a - x) < avoid_tol or abs(b - x) < avoid_tol for x in physical):
+            continue
+        slope = b / a
+        if any(abs(slope - ps) / ps < 0.005 for ps in physical_slopes):
+            continue
+        s = _on_rung_stats(C, rest, a, b)
+        if np.isnan(s["median"]) or np.isnan(s["max_window"]):
+            continue
+        meds.append(s["median"])
+        maxws.append(s["max_window"])
+    return dict(medians=np.asarray(meds), max_windows=np.asarray(maxws))
+
+
+def _detect_feature(C, rest, λs, λl, null_dist):
+    """Test physical rung against the per-panel null in TWO regimes:
+      z_global   = (on_rung_median  − mean(null_med)) / std(null_med)
+      z_local    = (on_rung_maxwin − mean(null_maxw)) / std(null_maxw)
+    Detect if either z > DETECTION_Z_THRESHOLD — captures both global
+    rung features and localized bumps near emission peaks.
+
+    Returns dict(detected, z, z_global, z_local, on_med, on_max_w)."""
+    s = _on_rung_stats(C, rest, λs, λl)
+    if np.isnan(s["median"]) or np.isnan(s["max_window"]):
+        return dict(detected=False, z=float("-inf"),
+                    z_global=float("-inf"), z_local=float("-inf"),
+                    on_med=float("nan"), on_max_w=float("nan"))
+    med_null = null_dist["medians"]
+    maxw_null = null_dist["max_windows"]
+    z_g = ((s["median"] - float(np.mean(med_null))) /
+           max(float(np.std(med_null)), 1e-6))
+    z_l = ((s["max_window"] - float(np.mean(maxw_null))) /
+           max(float(np.std(maxw_null)), 1e-6))
+    z = max(z_g, z_l)
+    return dict(detected=(z > DETECTION_Z_THRESHOLD),
+                z=float(z), z_global=float(z_g), z_local=float(z_l),
+                on_med=s["median"], on_max_w=s["max_window"])
+
+
+def overlay_rungs(ax, rest, C, rungs, null_meds, annotate=True):
+    """Draw each rung in the lower-triangle half. Detection vs the
+    per-panel null distribution of random-pair on-rung medians /
+    max-windows (approach C: slope-shuffled null).
     Detected features get the category's color + label; non-detections
     fade to NOT_DETECTED_STYLE (gray @ alpha=0.5, no label).
 
@@ -277,9 +314,11 @@ def overlay_rungs(ax, rest, C, rungs, annotate=True):
         Xs = np.array([x_min, x_max])
         col = Xs * λs
         row = Xs * λl
-        det = _detect_feature(C, rest, λs, λl)
-        detections.append((cat, label, λl / λs, det["strength"], det["z"],
-                           det["detected"]))
+        det = _detect_feature(C, rest, λs, λl, null_meds)
+        detections.append((cat, label, λl / λs,
+                           det["on_med"] - det.get("null_mean", 0.0)
+                           if "null_mean" in det else det["on_med"],
+                           det["z"], det["detected"]))
         if det["detected"]:
             kw = STYLE[cat]
         else:
@@ -308,7 +347,13 @@ def overlay_rungs(ax, rest, C, rungs, annotate=True):
 def render_panel(ax, name, rest, C, rungs):
     extent = [rest[0], rest[-1], rest[-1], rest[0]]
     im = ax.imshow(C, cmap="RdBu_r", vmin=-1, vmax=1, extent=extent, aspect="auto")
-    detections = overlay_rungs(ax, rest=rest, C=C, rungs=rungs)
+    # Pre-compute the null distribution once per panel
+    null_dist = _compute_null_distribution(C, rest)
+    print(f"  null: n={len(null_dist['medians'])}, "
+          f"median μ={np.mean(null_dist['medians']):+.3f}/σ={np.std(null_dist['medians']):.3f}, "
+          f"max_window μ={np.mean(null_dist['max_windows']):+.3f}/σ={np.std(null_dist['max_windows']):.3f}")
+    detections = overlay_rungs(ax, rest=rest, C=C, rungs=rungs,
+                               null_meds=null_dist)
     # Mark Lyman line positions as faint tick lines
     for label, lw_pos in LYMAN.items():
         if rest[0] <= lw_pos <= rest[-1]:
@@ -380,7 +425,7 @@ def main():
         plt.Line2D([0], [0], **STYLE["real_only"],
                    label="Real-universe metals (NV/OVI/CII/Fe II/Al II/SiII 1304-1526) — DETECTED (real LOA only)"),
         plt.Line2D([0], [0], **NOT_DETECTED_STYLE,
-                   label=f"NOT detected (z = (on_med − off_med)/(1.4826·MAD) ≤ {DETECTION_Z_THRESHOLD:.1f})"),
+                   label=f"NOT detected (z vs random-pair null ≤ {DETECTION_Z_THRESHOLD:.1f})"),
     ]
     fig.legend(handles=legend_elements, loc="lower center", ncol=1,
                bbox_to_anchor=(0.5, -0.05), fontsize=10, frameon=False)
@@ -414,8 +459,12 @@ def main():
 
     print()
     print("=" * 110)
-    print("Detection table — z = (median(on-rung) − median(off-rung)) / (1.4826·MAD(off-rung))")
-    print(f"Off-rung sampled at perpendicular offsets {PERP_OFFSETS_ANG} Å (each ±). "
+    print("Detection table — slope-shuffled null hypothesis.")
+    print(f"z = max(z_global, z_local) where z_global = (on_rung_med - mean(null_med)) / std(null_med)")
+    print(f"and z_local = (on_rung_max_window - mean(null_maxwin)) / std(null_maxwin).")
+    print(f"Null: {N_NULL} random (λ_short, λ_long) pairs avoiding physical "
+          f"lines (±{NULL_AVOID_TOL_ANG} Å) and physical slopes (±0.5%). "
+          f"Window size = {WINDOW_SIZE} samples. "
           f"Threshold: z > {DETECTION_Z_THRESHOLD}. 'D' = detected, '·' = below.")
     print("=" * 110)
     header_cols = "  ".join(f"{name[:14]:>14s}" for name in panel_names)
