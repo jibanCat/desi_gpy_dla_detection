@@ -1,8 +1,14 @@
 # CLAUDE.md — Session Handoff & Project Memory
 
 > **Written**: 2026-04-17, after PR #2 merged into `desi_y3`.
-> **Next session**: GreatLakes HPC (University of Michigan).
+> **Last session**: 2026-05-11, switched to NERSC (Perlmutter), production_533 branch.
 > Read this file in full before starting any work.
+
+> **NERSC write-permission rules**: read [`docs/nersc_write_permissions.md`](docs/nersc_write_permissions.md)
+> *before* the first `Write`/`Edit`/`Bash` that creates files. Only
+> `/pscratch/sd/j/jibancat/`, `/global/homes/j/jibancat/`, and
+> `/global/cfs/cdirs/desicollab/users/jibancat/` are writable; everything else
+> on `/global/cfs/cdirs/` is read-only.
 
 ---
 

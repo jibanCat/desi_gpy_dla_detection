@@ -86,15 +86,65 @@
   These were run with `SINGLE_ABSORBER_MODEL=1` so the model is 2-way
   [null, k-DLA-with-widened-prior].
 
-### What about NHI-bin-stratified completeness?
+### NHI-bin-stratified completeness — cellC vs baseline
 
-The full per-bin tables are in each variant's `pc_snr2_pdla99.md`. For
-the regression bin [20.3, 20.6):
-- baseline: 0.604 (n_truth=144)
-- NFL=31: 0.604 (n_truth=144) — no change
-- early_stop A/D: not yet broken out
-- FILTER=0 (s1+s3 only, n_truth=10): 0.80 (Δ=+0.20)
-- cellC: not yet broken out — TODO for next session
+Computed via `_nhi_bin_compare.py` (which reuses molly_faithful helpers).
+Same operating point: SNR>2, P_DLA≥0.99, lyb-veto, no-BAL, λ_rf ∈ [911, 1216].
+Counts here are post-all-cuts (the molly `n_*_post_cuts` are pre-P_DLA-cut,
+so they're larger; the per-bin C ratios are correct either way).
+
+**Completeness per truth-NHI bin:**
+
+| Bin | baseline | cellC [17.2, 22] | Δ |
+|---|---:|---:|---:|
+| [20.3, 20.5) | 62/108 = **0.574** | 76/108 = **0.704** | **+0.130** |
+| [20.5, 21.0) | 129/158 = 0.816 | 138/158 = 0.873 | +0.057 |
+| [21.0, 21.5) | 58/62  = 0.935 | 57/62  = 0.919 | −0.016 |
+| [21.5, 22.0) | 13/14  = 0.929 | 13/14  = 0.929 | 0.000  |
+| **overall**  | 262/342 = **0.766** | 284/342 = **0.830** | **+0.064** |
+
+**Purity per predicted-NHI bin** (using cat NHI for the bin assignment):
+
+| Bin | baseline | cellC [17.2, 22] | Δ |
+|---|---:|---:|---:|
+| [20.3, 20.5) | 42/72  = 0.583 | 57/95  = 0.600 | +0.017 |
+| [20.5, 21.0) | 136/146 = 0.932 | 139/152 = 0.914 | −0.018 |
+| [21.0, 21.5) | 63/70  = 0.900 | 66/74  = 0.892 | −0.008 |
+| [21.5, 22.0) | 21/22  = 0.955 | 22/23  = 0.957 | +0.002 |
+| **overall**  | 262/310 = **0.845** | 284/344 = **0.826** | **−0.019** |
+
+**The cellC win is concentrated almost entirely in the [20.3, 20.5)
+regression bin** (+13 pp completeness). Mid-NHI [20.5, 21.0) picks up
+another +6 pp. Strong DLAs (NHI ≥ 21.0) are flat — those weren't broken.
+Purity drops a uniform ~2 pp because the wider NHI prior +
+`single_absorber_model=1` admits more cat candidates per spectrum; some
+are spurious. Notably the weakest bin's purity actually *rises* slightly
+(0.58 → 0.60).
+
+**Why this maps onto the FILTER=1 knob-tuning story**: cellC uses the
+SAME FILTER=1 algorithm with a wider NHI prior `[17.2, 22]` plus
+`single_absorber_model=1`. The wider prior gives the FILTER=1 coarse
+5000-sample scan a better chance of finding a sample near a weak truth's
+high-likelihood mode → fewer spectra hit the "early-stop on empty
+valid_mask" branch (`dla_gp.py:635`). This is mechanistically the same
+fix as knob 1 (`n_initial` floor) and knob 4 (empty-mask fall-through)
+in [`docs/notes/2026-05-13_filter1_knob_tuning.md`](docs/notes/2026-05-13_filter1_knob_tuning.md).
+Cell C achieves the fix "for free" by widening the prior support; tuning
+the FILTER=1 knobs directly should achieve the same [20.3, 20.5) recovery
+**without** the −2 pp purity hit, because the knob tuning fixes the
+coarse-scan miss without changing the prior support.
+
+The script `_nhi_bin_compare.py` at the repo root is the analysis tool
+that produced these tables. Untracked (matches the `_*.py` scratch
+convention from earlier sessions). Re-run with the same DESI env preamble.
+
+Other variants' per-bin completeness in [20.3, 20.5) for reference:
+- early_stop_A: 0.602 (modest +3 pp vs baseline)
+- early_stop_D: 0.593 (modest +2 pp)
+- NFL=31: 0.574 (=baseline, no effect — confirms NFL is irrelevant)
+- FILTER=0 (s1+s3 only, n_truth=6 in this bin): 0.833 (suggestive, undersized)
+- cellA [19,23] md3: 0.722
+- cellB [19,23] md4: 0.694
 
 ---
 
