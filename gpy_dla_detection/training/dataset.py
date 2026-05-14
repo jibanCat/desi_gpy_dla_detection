@@ -359,9 +359,17 @@ def load_preprocessed_h5(
             norm_min_lambda=norm_min_lambda,
             norm_max_lambda=norm_max_lambda,
         )
+        # Auto-detect convention label from the band values; default to a
+        # generic "(custom)" if the band doesn't match a known one.
+        if abs(norm_min_lambda - 1425.0) < 1 and abs(norm_max_lambda - 1475.0) < 1:
+            _band_label = "(MATLAB DR16 convention)"
+        elif abs(norm_min_lambda - 1310.0) < 1 and abs(norm_max_lambda - 1325.0) < 1:
+            _band_label = "(Garnett+2017 convention)"
+        else:
+            _band_label = "(custom)"
         print(f"[dataset] normalize: per-spectrum median in "
               f"[{norm_min_lambda}, {norm_max_lambda}] Å rest "
-              f"(Garnett+2017 convention)")
+              f"{_band_label}")
 
     if apply_mask:
         fluxes, noise_variance = _mask_high_noise_pixels(

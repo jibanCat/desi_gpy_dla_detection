@@ -75,7 +75,7 @@ These are deferred to a follow-up PR.
 
 ## Test status
 
-- All 225 tests in `tests/` pass (per PR-diff review agent at commit `67700d8`)
+- All 224 tests in `tests/` pass (per PR-diff review agent at commit `67700d8`); 1 pre-existing failure unrelated to this PR (`learn_qso_model.py:433` tensor.copy()), 3 environmental skips
 - Key correctness tests covered in `docs/test_results_overview.md`:
   - `test_v1_matches_matlab.py` — v1 ≡ MATLAB on 5 spectra, max rel_err = 5.3e-11
   - `test_v3_objective_vectorized_parity.py` — vec ≡ per-spec to ~1e-10

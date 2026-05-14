@@ -1,5 +1,25 @@
 # Phase 2 DESI trained GP — model card
 
+> 🚫 **DO NOT USE FOR PRODUCTION INFERENCE.** DLA-recovery test on
+> canonical TID 120046865 (truth log_NHI = 21.26) returned
+> p_DLA = 0.04 and NaN for 2+ DLA hypotheses. The `log_c_0`
+> prior at default strength suppresses DLA-likelihood
+> contributions. See
+> `docs/notes/2026-05-13_step_c_dla_recovery/findings.md`
+> + the c0prior failure investigation under
+> `docs/notes/2026-05-14_c0prior_failure_investigation/` (if
+> present).
+
+> ⚠ **Pre-reorder caveat**: this model was trained BEFORE the
+> 2026-05-13 `dataset.py` reorder (commit aa36205). It carries
+> corr(M·M^T) mean-adj-diff ≈ 0.004, ~7× rougher than v1
+> production. Inference impact: the `_m` variants (norm
+> [1425, 1475]) pass DLA recovery on the canonical strong-DLA
+> target with p_DLA > 0.7 and MAP log_NHI within 0.25 dex of
+> truth. Post-reorder retrains landing 2026-05-15 AM will
+> supersede. See
+> `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md`.
+
 This directory contains a GP model trained by `tests/phase2_train_desi.py`
 (PR #6 corrected trainer; PCA init + hand-coded gradient via
 `gpy_dla_detection/training_v3/objective_vectorized.spectrum_loss_batch`).

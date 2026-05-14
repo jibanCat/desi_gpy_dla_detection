@@ -98,6 +98,44 @@ def read_h5_scalars(h5_path: Path) -> dict:
     return d
 
 
+def _warning_banner(out_dir_name: str, c0_prior_sigma) -> str:
+    """Return a 🚫 / ⚠ banner block reflecting what's known about this
+    model's production readiness. Pulled from
+    docs/production_models.md and docs/notes/2026-05-13_step_c_dla_recovery/."""
+    banners = []
+    # c0prior collapse — top priority
+    if c0_prior_sigma is not None or "c0prior" in out_dir_name:
+        banners.append(
+            "> 🚫 **DO NOT USE FOR PRODUCTION INFERENCE.** DLA-recovery test on\n"
+            "> canonical TID 120046865 (truth log_NHI = 21.26) returned\n"
+            "> p_DLA = 0.04 and NaN for 2+ DLA hypotheses. The `log_c_0`\n"
+            "> prior at default strength suppresses DLA-likelihood\n"
+            "> contributions. See\n"
+            "> `docs/notes/2026-05-13_step_c_dla_recovery/findings.md`\n"
+            "> + the c0prior failure investigation under\n"
+            "> `docs/notes/2026-05-14_c0prior_failure_investigation/` (if\n"
+            "> present)."
+        )
+    # Pre-reorder corr roughness — applies to all 2026-05-11_* dirs trained
+    # under the OLD mask-then-normalize pipeline (everything before commit
+    # aa36205 on 2026-05-13).
+    if "2026-05-11_desi_phase2_2lpt_" in out_dir_name:
+        banners.append(
+            "> ⚠ **Pre-reorder caveat**: this model was trained BEFORE the\n"
+            "> 2026-05-13 `dataset.py` reorder (commit aa36205). It carries\n"
+            "> corr(M·M^T) mean-adj-diff ≈ 0.004, ~7× rougher than v1\n"
+            "> production. Inference impact: the `_m` variants (norm\n"
+            "> [1425, 1475]) pass DLA recovery on the canonical strong-DLA\n"
+            "> target with p_DLA > 0.7 and MAP log_NHI within 0.25 dex of\n"
+            "> truth. Post-reorder retrains landing 2026-05-15 AM will\n"
+            "> supersede. See\n"
+            "> `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md`."
+        )
+    if not banners:
+        return ""
+    return "\n\n".join(banners) + "\n\n"
+
+
 def re_emit_readme(out_dir: Path, norm_min: float, norm_max: float,
                    slurm_job_id: str | None = None) -> str:
     h5 = out_dir / "phase2_result.h5"
@@ -110,9 +148,10 @@ def re_emit_readme(out_dir: Path, norm_min: float, norm_max: float,
     c0_prior_sigma = sc.get("log_c_0_prior_sigma", None)
     if c0_prior_sigma is not None and np.isnan(c0_prior_sigma):
         c0_prior_sigma = None
+    banner = _warning_banner(out_dir.name, c0_prior_sigma)
     body = f"""# Phase 2 DESI trained GP — model card
 
-This directory contains a GP model trained by `tests/phase2_train_desi.py`
+{banner}This directory contains a GP model trained by `tests/phase2_train_desi.py`
 (PR #6 corrected trainer; PCA init + hand-coded gradient via
 `gpy_dla_detection/training_v3/objective_vectorized.spectrum_loss_batch`).
 

@@ -1,5 +1,15 @@
 # Phase 2 DESI trained GP — model card
 
+> ⚠ **Pre-reorder caveat**: this model was trained BEFORE the
+> 2026-05-13 `dataset.py` reorder (commit aa36205). It carries
+> corr(M·M^T) mean-adj-diff ≈ 0.004, ~7× rougher than v1
+> production. Inference impact: the `_m` variants (norm
+> [1425, 1475]) pass DLA recovery on the canonical strong-DLA
+> target with p_DLA > 0.7 and MAP log_NHI within 0.25 dex of
+> truth. Post-reorder retrains landing 2026-05-15 AM will
+> supersede. See
+> `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md`.
+
 This directory contains a GP model trained by `tests/phase2_train_desi.py`
 (PR #6 corrected trainer; PCA init + hand-coded gradient via
 `gpy_dla_detection/training_v3/objective_vectorized.spectrum_loss_batch`).
