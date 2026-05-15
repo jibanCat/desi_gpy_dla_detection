@@ -34,11 +34,11 @@ This directory contains a GP model trained by `tests/phase2_train_desi.py`
 
 | Parameter | Value |
 |---|---|
-| n_spectra | -1 |
+| n_spectra | 236,755 |
 | n_pix (rest) | 5662 |
 | rest grid | [850.75, 1700.00] Å, dλ=0.1500 |
-| n_iters (Adam) | -1 |
-| lr | nan |
+| n_iters (Adam) | 1500 |
+| lr | 0.005 |
 | normalize | per-spectrum median in **[1425.00, 1475.00] Å rest** (MATLAB DR16 convention) |
 | log_c_0 prior σ | (none) |
 | SLURM job | (not tracked) |

@@ -84,8 +84,14 @@ def read_h5_scalars(h5_path: Path) -> dict:
             if k in f:
                 d[k.replace("log_", "")] = float(np.exp(f[k][()]))
         for k in ("n_spectra", "n_iters", "lr", "log_c_0_prior_sigma"):
+            # Pre-2026-05-13 (.h5 manifest commit 3a0b84f), these fields
+            # lived only in f.attrs; the manifest commit promoted them to
+            # 0-d datasets. Read either, prefer dataset.
             if k in f:
                 v = f[k][()]
+                d[k] = (float(v) if hasattr(v, "__float__") else v)
+            elif k in f.attrs:
+                v = f.attrs[k]
                 d[k] = (float(v) if hasattr(v, "__float__") else v)
         d["rest_min"] = float(f["rest_wavelengths"][0])
         d["rest_max"] = float(f["rest_wavelengths"][-1])

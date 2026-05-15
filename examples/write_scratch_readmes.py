@@ -168,7 +168,9 @@ def write_readme(scratch_dir: Path):
         status_tag = "✓ COMPLETED" + (" (POST-reorder)" if is_post else " (PRE-reorder)")
     elif state == "TIMEOUT":
         status_tag = "⚠ TIMEOUT — last checkpoint preserved"
-    elif state == "CANCELLED":
+    elif state and state.startswith("CANCELLED"):
+        # sacct returns "CANCELLED" for self-cancel, "CANCELLED by <uid>"
+        # for admin-cancelled; match the prefix to catch both.
         status_tag = "🚫 CANCELLED"
     elif state is None:
         status_tag = "❓ UNKNOWN (no recent SLURM record)"

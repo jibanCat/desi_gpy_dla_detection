@@ -115,34 +115,42 @@ the corr-noise debug arc.
 | Strict Turner+2024 prior σ; β=3.09 is closest to the prior 3.62 | β |
 | Loss endpoint highest of the 3 (less overfit to forest physics) | log p(D \| Adam) = 8.83e8 |
 
-## In flight (will land 2026-05-14)
+## Pre-reorder LOA runs (TIMED OUT 2026-05-13, superseded by post-reorder)
 
-All on the **pre-reorder** pipeline. They serve as a baseline; the
-post-reorder versions (forthcoming) will be the comparison.
+The first wave of LOA training (50017771-74) hit the 12h SLURM kill
+before saving a final .h5. Last checkpoints preserved on scratch
+(iter 699-799 of 1500). Status:
 
-| JobID | Run name | ETA | What it tests |
-|---|---|---|---|
-| 50017771 | `loa_no_dla_no_bal_wide_g` (norm [1310, 1325]) | 2026-05-14 06h | LOA real, _g variant |
-| 50017772 | `loa_no_dla_no_bal_wide_m` (norm [1425, 1475]) | 2026-05-14 07h | LOA real, _m variant — **likely the cleanest pre-reorder LOA** |
-| 50017773 | `loa_no_hcd_with_bal_wide_g` (norm [1310, 1325]) | 2026-05-14 05h | LOA real, HCD-masked + BAL-included |
-| 50017774 | `loa_no_hcd_with_bal_wide_m` (norm [1425, 1475]) | 2026-05-14 05h | same, _m |
-| 50021381 | `2lpt_loa124_nohcd_nobal_wide_c0prior` (norm [1310, 1325]) | 2026-05-13 21h | log_c_0 prior — tests gauge-collapse hypothesis |
+| JobID | Run name | Final state | Last iter |
+|---|---|---|---:|
+| 50017771 | `loa_no_dla_no_bal_wide_g` | TIMEOUT | 699 |
+| 50017772 | `loa_no_dla_no_bal_wide_m` | TIMEOUT | 699 |
+| 50017773 | `loa_no_hcd_with_bal_wide_g` | TIMEOUT | 774 |
+| 50017774 | `loa_no_hcd_with_bal_wide_m` | TIMEOUT | 799 |
+| 50021381 | `2lpt_loa124_nohcd_nobal_wide_c0prior` | COMPLETED (1500 iter) | — |
+| 50072213 | `desi_smoke_normmask` (5k × 50 iter) | COMPLETED | — |
 
-Output dirs: `docs/notes/2026-05-11_desi_phase2_<RUN_NAME>/phase2_result.h5`.
+All superseded by the post-reorder retrains below.
 
-## Forthcoming (post-reorder, queued or about to be submitted)
+## In flight (post-reorder, submitted 2026-05-13/14)
 
-The 2026-05-13 reorder of `dataset.py` (normalize → mask, matching
-MATLAB) plus the median threshold widening (`|med| < 1e-2`) closes the
-corr-noise gap at small scale (probe smoothness drops 0.1939 → 0.0130
-for the SMALL_POS injection). The production-scale validation chain:
+The 2026-05-13 dataset.py reorder + `|med| < 1e-2` threshold closes
+the corr-noise gap at small scale. Six new training runs now in flight
+on the post-reorder pipeline; will replace the pre-reorder Step C
+models as production once they pass DLA-recovery validation:
 
-| JobID | Run name | Status | Purpose |
-|---|---|---|---|
-| 50072213 | `desi_smoke_normmask` (5k × 50 iter) | queued | Smoke — validates the reorder end-to-end at small scale on GPU |
-| TBD | `2lpt_loa124_nohcd_nobal_wide_g_normmask` (norm [1310, 1325]) | will submit after smoke | 2lpt retrain at [1310, 1325] with fixed pipeline — sibling to the in-flight c0prior |
-| TBD | `2lpt_loa124_nohcd_nobal_wide_m_normmask` (norm [1425, 1475]) | will submit after smoke | 2lpt retrain at [1425, 1475] with fixed pipeline |
-| TBD | LOA `_m_normmask` | optional | If 2lpt _m_normmask shows kernel smoothness ≈ v1's 0.0006, queue a full LOA retrain. |
+| JobID | Run name | n_iter | ETA |
+|---|---|---:|---|
+| 50087967 | `loa_no_dla_no_bal_wide_m_normmask_3000iter` | 3000 | 2026-05-15 ~06h |
+| 50087968 | `loa_no_hcd_with_bal_wide_m_normmask_3000iter` | 3000 | 2026-05-15 ~09h |
+| 50212621 | `2lpt_loa124_nohcd_nobal_wide_m_normmask` | 1500 | 2026-05-14 evening |
+| 50212863 | `2lpt_loa0_wide_g_normmask` | 1500 | 2026-05-14 evening |
+| 50212866 | `2lpt_loa0_wide_m_normmask` | 1500 | 2026-05-14 evening |
+| 50212867 | `2lpt_loa124_nohcd_nobal_wide_g_normmask` | 1500 | 2026-05-14 evening |
+
+Output dirs: `docs/notes/2026-05-1[34]_desi_phase2_<RUN_NAME>/`.
+Live ETA + last-checkpoint-iter + sacct state in each scratch dir's
+`README.md` (`/scratch/.../phase2_desi/<run>/README.md`).
 
 ## Known caveats (apply to all current models)
 
@@ -163,13 +171,11 @@ for the SMALL_POS injection). The production-scale validation chain:
    models can still be used for 2lpt inference because c_0 is part of
    the per-mock calibration.
 
-4. **README templating bug** — the auto-emitted `README.md` in each
-   `docs/notes/2026-05-11_desi_phase2_*/` hard-codes
-   `normalize | per-spectrum median in [1310, 1325]` regardless of the
-   actual runtime `--norm-min-lambda`/`--norm-max-lambda`. The _m
-   variants were trained on [1425, 1475] despite the README claim.
-   Cross-reference the SLURM log header for the truth. Fix pending
-   (task #7).
+4. **README templating bug — FIXED 2026-05-14** (commits `660ee34` +
+   `c38dc57`): `phase2_train_desi.py::_save_readme` now interpolates
+   the runtime `--norm-min-lambda`/`--norm-max-lambda` correctly, and
+   `examples/reemit_step_c_readmes.py` re-emitted all 8 existing
+   READMEs with the correct band + status header.
 
 5. **Rest grid mismatch with v1** — Step C 2lpt models are on the
    "wide v2" rest grid `[850.75, 1700]`, n_pix=5662, dλ=0.15. v1
