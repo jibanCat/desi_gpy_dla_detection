@@ -82,13 +82,16 @@ def parse_header(log_path: Path) -> dict:
 
 
 def latest_checkpoint_iter(scratch_dir: Path) -> tuple[int | None, Path | None]:
-    """Highest iter number among phase2_desi_checkpoint_iter*.pt files."""
+    """Highest iter number among phase2_desi_checkpoint_*.pt files. Includes
+    the regular iter*.pt saves, plus _final_iter*.pt and _walltime_exit_iter*.pt
+    written by the trainer at exit; the final-iter saves can exceed the last
+    regular save by up to chunk_size iterations."""
     ckpt_dir = scratch_dir / "checkpoints"
     if not ckpt_dir.exists():
         return None, None
     best = -1
     best_path = None
-    for p in ckpt_dir.glob("phase2_desi_checkpoint_iter*.pt"):
+    for p in ckpt_dir.glob("phase2_desi_checkpoint_*.pt"):
         m = re.search(r"iter(\d+)", p.name)
         if m:
             it = int(m.group(1))
@@ -161,11 +164,27 @@ def write_readme(scratch_dir: Path):
     # Out_dir mapping (output of `--out-dir`) — may be in cfg or guessable
     out_dir = cfg.get("out_dir", "(not found in log header)")
 
+    # Detect walltime early-exit (trainer handles SLURM walltime as graceful
+    # save+exit; sacct then reports COMPLETED even though n_iters target
+    # wasn't reached). Look for the walltime_exit checkpoint in the dir.
+    ckpt_dir = scratch_dir / "checkpoints"
+    walltime_exit = False
+    if ckpt_dir.exists():
+        walltime_exit = any(ckpt_dir.glob("phase2_desi_checkpoint_walltime_exit_iter*.pt"))
+
     # Tag the model's status header
     if state in ("RUNNING", "PENDING"):
         status_tag = "⏳ IN-FLIGHT"
     elif state == "COMPLETED":
-        status_tag = "✓ COMPLETED" + (" (POST-reorder)" if is_post else " (PRE-reorder)")
+        suffix = " (POST-reorder)" if is_post else " (PRE-reorder)"
+        if walltime_exit and cfg.get("n_iters") and last_iter is not None:
+            try:
+                target = int(cfg["n_iters"])
+                if last_iter < target:
+                    suffix += f" — walltime early-exit at iter {last_iter}/{target}"
+            except ValueError:
+                pass
+        status_tag = "✓ COMPLETED" + suffix
     elif state == "TIMEOUT":
         status_tag = "⚠ TIMEOUT — last checkpoint preserved"
     elif state and state.startswith("CANCELLED"):
