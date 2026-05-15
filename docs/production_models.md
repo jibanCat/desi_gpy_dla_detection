@@ -1,8 +1,12 @@
 # Production model recommendations
 
+> 🟢 **Quick pick: see `docs/CURRENT_MODELS.md`** for the one-screen
+> "use this model" pointer. This document is the long-form decision
+> matrix with full caveats / endpoint scalars / DLA-recovery numbers.
+>
 > **Audience**: anyone running DLA-detection inference (`desi-DLAGP.py`,
 > `DLAHolder`, the NERSC SLURM stack, the sampler-fix work).
-> **Last updated**: 2026-05-13. Re-update each time a new trained model
+> **Last updated**: 2026-05-14. Re-update each time a new trained model
 > lands or a known caveat changes.
 >
 > See also:
