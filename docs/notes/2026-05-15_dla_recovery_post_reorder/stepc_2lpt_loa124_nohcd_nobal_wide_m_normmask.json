@@ -1,0 +1,32 @@
+{
+  "model": "stepc_2lpt_loa124_nohcd_nobal_wide_m_normmask",
+  "model_path": "/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-14_desi_phase2_2lpt_loa124_nohcd_nobal_wide_m_normmask/phase2_result.h5",
+  "kind": "stepc_2lpt_normmask",
+  "status": "ok",
+  "target_id": 120046865,
+  "z_qso": 2.9619851112365723,
+  "truth_log_nhi": 21.263,
+  "p_dla": 0.7618712762204453,
+  "map_z_dla": 2.7749622965709904,
+  "map_log_nhi": 21.516873770938457,
+  "delta_log_nhi": 0.25387377093845487,
+  "model_posteriors": [
+    0.2381247382284414,
+    3.98555098623877e-06,
+    0.761869523937282,
+    1.7522831632720515e-06,
+    NaN,
+    NaN
+  ],
+  "elapsed_s": 30.720672130584717,
+  "model_info": {
+    "k": 30,
+    "rest_min": 850.75,
+    "rest_max": 1700.0,
+    "n_pix": 5662,
+    "d_lambda": 0.1500244140625,
+    "norm_min": 1425.0,
+    "norm_max": 1475.0,
+    "max_nv": 9.0
+  }
+}

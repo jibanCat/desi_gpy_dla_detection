@@ -1,0 +1,32 @@
+{
+  "model": "v1_production_epoch920",
+  "model_path": "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5",
+  "kind": "v1",
+  "status": "ok",
+  "target_id": 120046865,
+  "z_qso": 2.9619851112365723,
+  "truth_log_nhi": 21.263,
+  "p_dla": 0.519535038455631,
+  "map_z_dla": 2.7748253414605037,
+  "map_log_nhi": 21.529066878872136,
+  "delta_log_nhi": 0.26606687887213454,
+  "model_posteriors": [
+    0.4804617784214756,
+    3.1831227023075984e-06,
+    0.5195336989936916,
+    1.3394619393417477e-06,
+    NaN,
+    NaN
+  ],
+  "elapsed_s": 22.678064823150635,
+  "model_info": {
+    "k": 30,
+    "rest_min": 850.9000244140625,
+    "rest_max": 1420.5999755859375,
+    "n_pix": 3798,
+    "d_lambda": 0.1500244140625,
+    "norm_min": null,
+    "norm_max": null,
+    "max_nv": 9.0
+  }
+}

@@ -30,11 +30,14 @@ REPO = Path(__file__).resolve().parent.parent
 NOTES = REPO / "docs" / "notes"
 
 # Models in evaluation order. (label, h5_path, kind)
-# kind ∈ {"v1", "stepc_2lpt", "stepc_2lpt_c0prior", "smoke_postreorder"}
+# kind ∈ {"v1", "stepc_2lpt", "stepc_2lpt_c0prior", "smoke_postreorder",
+#         "stepc_2lpt_normmask", "stepc_loa_normmask"}
 MODELS = [
+    # Reference: production
     ("v1_production_epoch920",
      "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5",
      "v1"),
+    # Pre-reorder 2lpt _m (kept as "before" baseline)
     ("stepc_2lpt_loa0_wide_m",
      str(NOTES / "2026-05-11_desi_phase2_2lpt_loa0_wide_m" / "phase2_result.h5"),
      "stepc_2lpt"),
@@ -44,6 +47,28 @@ MODELS = [
     ("stepc_2lpt_loa124_nohcd_nobal_wide_c0prior",
      str(NOTES / "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_c0prior" / "phase2_result.h5"),
      "stepc_2lpt_c0prior"),
+    # 2026-05-14 post-reorder 2lpt _normmask retrains
+    ("stepc_2lpt_loa0_wide_m_normmask",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa0_wide_m_normmask" / "phase2_result.h5"),
+     "stepc_2lpt_normmask"),
+    ("stepc_2lpt_loa0_wide_g_normmask",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa0_wide_g_normmask" / "phase2_result.h5"),
+     "stepc_2lpt_normmask"),
+    ("stepc_2lpt_loa124_nohcd_nobal_wide_m_normmask",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa124_nohcd_nobal_wide_m_normmask" / "phase2_result.h5"),
+     "stepc_2lpt_normmask"),
+    ("stepc_2lpt_loa124_nohcd_nobal_wide_g_normmask",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa124_nohcd_nobal_wide_g_normmask" / "phase2_result.h5"),
+     "stepc_2lpt_normmask"),
+    # 2026-05-13 post-reorder LOA _m_normmask_3000iter (real-data trained,
+    # tested out-of-distribution on 2lpt mock)
+    ("stepc_loa_no_dla_no_bal_wide_m_normmask_3000iter",
+     str(NOTES / "2026-05-13_desi_phase2_loa_no_dla_no_bal_wide_m_normmask_3000iter" / "phase2_result.h5"),
+     "stepc_loa_normmask"),
+    ("stepc_loa_no_hcd_with_bal_wide_m_normmask_3000iter",
+     str(NOTES / "2026-05-13_desi_phase2_loa_no_hcd_with_bal_wide_m_normmask_3000iter" / "phase2_result.h5"),
+     "stepc_loa_normmask"),
+    # Smoke (50 iter, undertrained — informational)
     ("smoke_postreorder_50iter",
      str(NOTES / "2026-05-13_desi_smoke_normmask" / "phase2_result.h5"),
      "smoke_postreorder"),
@@ -54,7 +79,7 @@ TRUTH_LOG_NHI = 21.263
 SPEC_PATH = "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/7/789/spectra-16-789.fits"
 ZCAT_PATH = "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits"
 DATA_ROOT = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection"
-OUT_DIR = NOTES / "2026-05-13_step_c_dla_recovery"
+OUT_DIR = NOTES / "2026-05-15_dla_recovery_post_reorder"
 
 # v1 production reference numbers from the canonical-TID fixture; see
 # tests/fixtures/2lpt_frozen/short_retrain/canonical_tid_summary.md.
@@ -237,9 +262,17 @@ def _verdict(results):
       3. Smoke (50 iter) is undertrained — informational only.
     """
     bullets = []
+    # In-distribution 2lpt models (pre-reorder + c0prior + post-reorder _normmask).
+    # All trained on 2lpt mock, tested against canonical 2lpt TID = fair test.
     stepc = [r for r in results
-             if r.get("kind") in ("stepc_2lpt", "stepc_2lpt_c0prior")
+             if r.get("kind") in ("stepc_2lpt", "stepc_2lpt_c0prior",
+                                  "stepc_2lpt_normmask")
              and r.get("status") == "ok"]
+    # LOA-trained post-reorder models tested on a 2lpt mock = OUT-of-distribution
+    # smoke test. Recovery here is bonus signal, not a strict pass/fail.
+    stepc_loa = [r for r in results
+                 if r.get("kind") == "stepc_loa_normmask"
+                 and r.get("status") == "ok"]
 
     # 1a. Strict bar: p_DLA > 0.9
     strict = [r for r in stepc if r["p_dla"] > 0.9]
@@ -303,7 +336,27 @@ def _verdict(results):
                        f"by design — agreement with v1 reference is a happy accident, "
                        f"not pass/fail signal for the corr-noise fix.")
 
-    # 5. Overall corr-noise verdict
+    # 5. LOA-trained post-reorder models (out-of-distribution test)
+    if stepc_loa:
+        loa_strong = [r for r in stepc_loa if _is_strong_detection(r)]
+        loa_ops = [r for r in stepc_loa if r["p_dla"] > 0.5]
+        bullets.append(
+            f"INFO (LOA OOD): LOA-trained `_normmask_3000iter` models on this "
+            f"2lpt canonical TID — {len(loa_ops)}/{len(stepc_loa)} cross p_DLA>0.5, "
+            f"{len(loa_strong)}/{len(stepc_loa)} pass both p_DLA>0.5 AND "
+            f"|Δ NHI|≤0.5dex. This is an OUT-of-distribution test (real-LOA "
+            f"model, mock-2lpt target). For in-distribution recovery on real "
+            f"LOA data, see future LOA-target recovery tests."
+        )
+        for r in stepc_loa:
+            bullets.append(
+                f"  - `{r['model']}`: p_DLA={r['p_dla']:.4f}, "
+                f"MAP log NHI={r['map_log_nhi']:.3f} "
+                f"(Δ={r['delta_log_nhi']:+.3f} dex), "
+                f"posteriors[noDLA,subDLA,1DLA,2DLA,...]={r['model_posteriors']}"
+            )
+
+    # 6. Overall corr-noise verdict
     strong = [r for r in stepc if _is_strong_detection(r)]
     if stepc:
         if len(strong) == len(stepc):
@@ -337,10 +390,12 @@ def main():
                                 traceback=tb))
 
     # Build findings.md
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
     md = []
-    md.append(f"# DLA-recovery test: Step C 2lpt models on canonical TID")
+    md.append(f"# DLA-recovery test: Step C 2lpt + post-reorder models on canonical TID")
     md.append("")
-    md.append(f"Date: 2026-05-13. Target: TID {TARGET_ID}, log_NHI = {TRUTH_LOG_NHI}.")
+    md.append(f"Date: {today}. Target: TID {TARGET_ID}, log_NHI = {TRUTH_LOG_NHI}.")
     md.append("")
     md.append("## Setup")
     md.append("")
@@ -426,12 +481,13 @@ def main():
     md.append("  post-reorder pipeline end-to-end). Detection at p_DLA > 0.9 is not")
     md.append("  expected and any number here is reported for completeness, not as a")
     md.append("  pass/fail signal for the corr-noise fix.")
-    md.append("- All Step C 2lpt models are pre-reorder; they share the corr(M·M^T)")
-    md.append("  roughness caveat described in")
+    md.append("- The `2026-05-11_*` Step C 2lpt models (kinds `stepc_2lpt`, `stepc_2lpt_c0prior`)")
+    md.append("  are PRE-reorder; they share the corr(M·M^T) roughness caveat described in")
     md.append("  `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md` (mean adj-diff")
-    md.append("  ≈ 0.004 vs v1 production's 0.0006). This is a kernel-level effect; the")
-    md.append("  per-spectrum recovery test here probes whether it propagates to p_DLA")
-    md.append("  on a strong in-domain DLA.")
+    md.append("  ≈ 0.004 vs v1 production's 0.0006). The 2026-05-14 `*_normmask` retrains")
+    md.append("  (kinds `stepc_2lpt_normmask`, `stepc_loa_normmask`) are POST-reorder")
+    md.append("  (dataset.py normalize→mask order + `|med| < 1e-2` threshold, commit aa36205+);")
+    md.append("  these supersede the 2026-05-11 batch.")
     md.append("- v1 production was trained on real DESI Y3 LOA spectra (different rest")
     md.append("  grid: [850.90, 1420.60]); inference on a 2lpt mock is still well-")
     md.append("  defined because the loader truncates/extends to the trained grid and")

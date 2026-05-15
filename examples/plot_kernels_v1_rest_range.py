@@ -32,30 +32,36 @@ V1_REST_MIN = 850.90
 
 ENTRIES = [
     # (display_name, path, kind)
+    # Reference
     ("v1 production\n(real LOA, epoch 920) — reference",
      "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5",
      "h5"),
-    ("2lpt loa-0 wide _m\n[1425/1475] norm, strict Turner",
+    # Pre-reorder 2lpt _m baselines (kept as "before" references)
+    ("2lpt loa-0 wide _m\n[1425/1475] norm, PRE-reorder",
      str(NOTES / "2026-05-11_desi_phase2_2lpt_loa0_wide_m" / "phase2_result.h5"),
      "h5"),
-    ("2lpt loa-124 _m\n[1425/1475] norm, strict Turner",
+    ("2lpt loa-124 _m\n[1425/1475] norm, PRE-reorder",
      str(NOTES / "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_m" / "phase2_result.h5"),
      "h5"),
-    ("2lpt loa-124 _c0prior\n+log_c_0 prior, [1310/1325]",
-     str(NOTES / "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_c0prior" / "phase2_result.h5"),
+    # 2026-05-14 post-reorder retrains — 5 new models
+    ("2lpt loa-0 _m_normmask\n[1425/1475], POST-reorder",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa0_wide_m_normmask" / "phase2_result.h5"),
      "h5"),
-    ("smoke 2026-05-13\npost-reorder, 5k×50",
-     str(NOTES / "2026-05-13_desi_smoke_normmask" / "phase2_result.h5"),
+    ("2lpt loa-0 _g_normmask\n[1310/1325], POST-reorder",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa0_wide_g_normmask" / "phase2_result.h5"),
      "h5"),
-    ("LOA no-DLA-no-BAL _g\niter 699 ckpt (TIMEOUT)",
-     "/scratch/cavestru_root/cavestru0/mfho/phase2_desi/loa_no_dla_no_bal_wide_g/checkpoints/phase2_desi_checkpoint_iter0699.pt",
-     "pt"),
-    ("LOA no-DLA-no-BAL _m\niter 699 ckpt (TIMEOUT)",
-     "/scratch/cavestru_root/cavestru0/mfho/phase2_desi/loa_no_dla_no_bal_wide_m/checkpoints/phase2_desi_checkpoint_iter0699.pt",
-     "pt"),
-    ("LOA no-HCD-with-BAL _m\niter 799 ckpt (TIMEOUT)",
-     "/scratch/cavestru_root/cavestru0/mfho/phase2_desi/loa_no_hcd_with_bal_wide_m/checkpoints/phase2_desi_checkpoint_iter0799.pt",
-     "pt"),
+    ("2lpt loa-124 _m_normmask\n[1425/1475], POST-reorder",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa124_nohcd_nobal_wide_m_normmask" / "phase2_result.h5"),
+     "h5"),
+    ("2lpt loa-124 _g_normmask\n[1310/1325], POST-reorder",
+     str(NOTES / "2026-05-14_desi_phase2_2lpt_loa124_nohcd_nobal_wide_g_normmask" / "phase2_result.h5"),
+     "h5"),
+    ("LOA no-DLA-no-BAL _m_normmask_3000iter\n[1425/1475], POST-reorder, walltime@2243/3000",
+     str(NOTES / "2026-05-13_desi_phase2_loa_no_dla_no_bal_wide_m_normmask_3000iter" / "phase2_result.h5"),
+     "h5"),
+    ("LOA no-HCD-with-BAL _m_normmask_3000iter\n[1425/1475], POST-reorder, walltime@2461/3000",
+     str(NOTES / "2026-05-13_desi_phase2_loa_no_hcd_with_bal_wide_m_normmask_3000iter" / "phase2_result.h5"),
+     "h5"),
 ]
 
 
@@ -98,8 +104,8 @@ def _corr(M):
 
 def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    rows, cols = 2, 4
-    fig, axes = plt.subplots(rows, cols, figsize=(22, 12))
+    rows, cols = 3, 3
+    fig, axes = plt.subplots(rows, cols, figsize=(18, 16))
     axes_flat = axes.flatten()
 
     for ax, (name, path, kind) in zip(axes_flat, ENTRIES):
