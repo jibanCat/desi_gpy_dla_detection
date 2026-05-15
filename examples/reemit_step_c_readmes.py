@@ -98,11 +98,36 @@ def read_h5_scalars(h5_path: Path) -> dict:
     return d
 
 
+# Per-model status. If absent → don't emit a status header (defaults clean).
+# Update this table as new training runs land or supersede existing ones.
+MODEL_STATUS = {
+    # 2026-05-11 batch: pre-reorder pipeline (all carry the corr-noise caveat)
+    "2026-05-11_desi_phase2_2lpt_loa0_wide":              ("⚠ SUPERSEDED", "pre-reorder + wide-σ collapse (β=1.28); deprecated. See 2026-05-14 `_m_normmask` post-reorder retrain when it lands."),
+    "2026-05-11_desi_phase2_2lpt_loa0_wide_g":            ("⚠ SUPERSEDED", "pre-reorder + Garnett norm band [1310, 1325]; prefer `_m` ([1425, 1475] = MATLAB) once its post-reorder retrain (50212863) lands."),
+    "2026-05-11_desi_phase2_2lpt_loa0_wide_m":            ("⚠ SUPERSEDED",  "pre-reorder pipeline; **passes DLA recovery** (p_DLA=0.70 on canonical TID). Post-reorder retrain in flight (50212866) — see `docs/notes/2026-05-14_desi_phase2_2lpt_loa0_wide_m_normmask/`."),
+    "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide": ("⚠ SUPERSEDED", "pre-reorder + wide-σ collapse (β=1.45); deprecated."),
+    "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_g":       ("⚠ SUPERSEDED", "pre-reorder + Garnett band; prefer `_m` once post-reorder retrain (50212867) lands."),
+    "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_m":       ("⚠ SUPERSEDED",  "pre-reorder; **passes DLA recovery** (p_DLA=0.76). Post-reorder retrain in flight (50212621)."),
+    "2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_c0prior": ("🚫 NOT PREFERRED", "outlier on canonical TID; equivalent to `_m` on 10-target sample (7/10 match). Prefer `_m`. See `docs/notes/2026-05-14_c0prior_failure_investigation/`."),
+    # 2026-05-13 smoke (post-reorder, but only 5k × 50 iter)
+    "2026-05-13_desi_smoke_normmask": ("ℹ SMOKE",  "5k×50 iter sanity check of the 2026-05-13 dataset.py reorder. NOT a production model; do not use for inference."),
+}
+
+
 def _warning_banner(out_dir_name: str, c0_prior_sigma) -> str:
     """Return a 🚫 / ⚠ banner block reflecting what's known about this
     model's production readiness. Pulled from
     docs/production_models.md and docs/notes/2026-05-13_step_c_dla_recovery/."""
     banners = []
+    # Per-model status header — read by anyone browsing the model folder
+    # to know at-a-glance whether this is current or superseded.
+    status = MODEL_STATUS.get(out_dir_name)
+    if status is not None:
+        tag, msg = status
+        banners.append(
+            f"> **STATUS: {tag}**. {msg}\n>\n"
+            f"> See `docs/CURRENT_MODELS.md` for the current top pick per use case."
+        )
     # c0prior caveat — updated 2026-05-14 with investigation results
     if c0_prior_sigma is not None or "c0prior" in out_dir_name:
         banners.append(

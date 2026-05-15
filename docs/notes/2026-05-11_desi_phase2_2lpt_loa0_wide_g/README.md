@@ -1,5 +1,9 @@
 # Phase 2 DESI trained GP — model card
 
+> **STATUS: ⚠ SUPERSEDED**. pre-reorder + Garnett norm band [1310, 1325]; prefer `_m` ([1425, 1475] = MATLAB) once its post-reorder retrain (50212863) lands.
+>
+> See `docs/CURRENT_MODELS.md` for the current top pick per use case.
+
 > ⚠ **Pre-reorder caveat**: this model was trained BEFORE the
 > 2026-05-13 `dataset.py` reorder (commit aa36205). It carries
 > corr(M·M^T) mean-adj-diff ≈ 0.004, ~7× rougher than v1

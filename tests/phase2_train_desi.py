@@ -328,6 +328,12 @@ def _save_readme(out_dir: Path, result: dict, rest: np.ndarray,
 
     body = f"""# Phase 2 DESI trained GP — model card
 
+> **STATUS: ✓ post-reorder pipeline** (`dataset.py` normalize→mask order,
+> `|med| < 1e-2` threshold). Training freshly completed.
+> See `docs/CURRENT_MODELS.md` for the current top pick per use case;
+> update that doc + re-run `examples/reemit_step_c_readmes.py` once
+> this model has been DLA-recovery-validated to mark it CURRENT.
+
 This directory contains a GP model trained by `tests/phase2_train_desi.py`
 (PR #6 corrected trainer; PCA init + hand-coded gradient via
 `gpy_dla_detection/training_v3/objective_vectorized.spectrum_loss_batch`).

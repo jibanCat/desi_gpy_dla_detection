@@ -1,5 +1,9 @@
 # Phase 2 DESI trained GP — model card
 
+> **STATUS: 🚫 NOT PREFERRED**. outlier on canonical TID; equivalent to `_m` on 10-target sample (7/10 match). Prefer `_m`. See `docs/notes/2026-05-14_c0prior_failure_investigation/`.
+>
+> See `docs/CURRENT_MODELS.md` for the current top pick per use case.
+
 > ⚠ **Not preferred for production — use `_m` instead.** On a
 > 10-target random sample of strong DLAs in 2lpt loa-124 this
 > model performed identically to `_m` (7/10 detected, same 3/10

@@ -1,5 +1,9 @@
 # Phase 2 DESI trained GP — model card
 
+> **STATUS: ℹ SMOKE**. 5k×50 iter sanity check of the 2026-05-13 dataset.py reorder. NOT a production model; do not use for inference.
+>
+> See `docs/CURRENT_MODELS.md` for the current top pick per use case.
+
 This directory contains a GP model trained by `tests/phase2_train_desi.py`
 (PR #6 corrected trainer; PCA init + hand-coded gradient via
 `gpy_dla_detection/training_v3/objective_vectorized.spectrum_loss_batch`).
