@@ -716,6 +716,24 @@ def main():
              n_spectra=ts.n_spectra, n_iters=args.n_iters, lr=args.lr)
     print(f"[saved] {out_npz} (training-history record)")
 
+    # 4b. Mirror .h5 + .npz into the scratch checkpoint dir's parent so the
+    # whole training artifact (checkpoints + final model) lives in one
+    # place for NERSC transfer / off-cluster archival. checkpoint_dir
+    # is `.../phase2_desi/<run_name>/checkpoints/`; we want
+    # `.../phase2_desi/<run_name>/phase2_result.{h5,npz}` alongside it.
+    try:
+        import shutil
+        scratch_parent = args.checkpoint_dir.parent
+        scratch_h5 = scratch_parent / "phase2_result.h5"
+        scratch_npz = scratch_parent / "phase2_result.npz"
+        scratch_parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(out_h5, scratch_h5)
+        shutil.copy2(out_npz, scratch_npz)
+        print(f"[saved] {scratch_h5} (scratch mirror, for transfer)")
+        print(f"[saved] {scratch_npz} (scratch mirror)")
+    except Exception as e:
+        print(f"[warn] scratch mirror skipped: {type(e).__name__}: {e}")
+
     out_readme = _save_readme(args.out_dir, result, rest,
                               ts.n_spectra, args.n_iters, args.lr,
                               args.k, args.chunk_size, str(device),
