@@ -1,3 +1,40 @@
+## Status — 2026-05-15 update: validation complete, mergeable
+
+The post-reorder retrains that were "in flight overnight" on 2026-05-13
+have all landed and been validated. The PR's validation chain is complete.
+
+### Post-reorder retrains — all 6 landed
+All 6 post-reorder `_normmask` retrains completed (2 LOA 3000-iter,
+4 2lpt 1500-iter). The LOA runs hit SLURM walltime (iter 2243 / 2461 of
+3000) but the trainer exits gracefully and writes the final model.
+β endpoints moved toward the Turner prior (μ=3.62) — LOA `_m` reached
+β=3.57, the closest any model has come.
+
+### Validation — DLA-recovery
+- **2lpt `_m_normmask`** (canonical-TID recovery): p_DLA 0.72–0.76, all
+  pass — slightly better than the pre-reorder `_m` baselines.
+- **`_g_normmask`** variants: fail recovery (p_DLA 0.10–0.14, Garnett
+  norm band) — added to the AVOID list in `docs/CURRENT_MODELS.md`.
+- **LOA `loa_no_dla_no_bal_wide_m_normmask_3000iter`** — in-distribution
+  validated on REAL LOA (`examples/dla_recovery_real_loa.py`, new): on
+  100 strong DLAs v1 production confidently detected, the new model
+  recovers 96% at p_DLA > 0.5 / 93% at p_DLA > 0.97, MAP log N_HI bias
+  −0.04 dex vs v1. See
+  `docs/notes/2026-05-15_dla_recovery_real_loa/findings_summary.md`.
+
+### Diagnostics
+- Kernel corr-matrix comparison (`examples/plot_kernels_v1_rest_range.py`)
+  updated: per-model normalization-band blanking + Ly/metal
+  cross-correlation markers.
+- `docs/CURRENT_MODELS.md` records the validated top picks per use case.
+
+### Net
+All in-PR validation is complete — the LOA candidate is validated against
+v1 production on real spectra, the 2lpt models against mock truth. The PR
+is mergeable (0 commits behind `desi_y3`).
+
+---
+
 ## Status — 2026-05-13 EOD
 
 **Ready for review.** Three independent agent audits today recommend SHIP:
