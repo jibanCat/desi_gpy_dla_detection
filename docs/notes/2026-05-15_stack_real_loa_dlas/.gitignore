@@ -1,0 +1,6 @@
+# Generated stacking outputs — real-data composites / figures, keep local
+# only. LINE_LIST_REFERENCES.md (and this .gitignore) stay tracked.
+*.png
+*.npz
+counts.txt
+zhist_summary.txt
