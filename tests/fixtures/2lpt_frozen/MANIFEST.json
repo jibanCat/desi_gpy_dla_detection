@@ -1,0 +1,75 @@
+{
+  "source_trainset": "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_wide_v2_1778186324/trainset.h5",
+  "bal_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits",
+  "n_strat": 1300,
+  "n_pix": 5662,
+  "k": 30,
+  "c_0": 0.1,
+  "tau_0": 0.00246,
+  "beta": 3.62,
+  "deforest_tau_0": 0.00246,
+  "deforest_beta": 3.62,
+  "num_forest_lines": 31,
+  "spectra": [
+    {
+      "target_id": 270143607,
+      "row_idx": 256990,
+      "z_qso": 2.6212573051452637,
+      "snr_forest": 8.002816820667343,
+      "snr_redside": 12.81183294194409,
+      "tier": "high",
+      "z_target": 2.6,
+      "snr_target": 8.0
+    },
+    {
+      "target_id": 250027833,
+      "row_idx": 212946,
+      "z_qso": 2.897459030151367,
+      "snr_forest": 3.0032683214568365,
+      "snr_redside": 5.401201351640237,
+      "tier": "med",
+      "z_target": 2.9,
+      "snr_target": 3.0
+    },
+    {
+      "target_id": 40000430,
+      "row_idx": 32717,
+      "z_qso": 3.200162649154663,
+      "snr_forest": 1.0001431974615689,
+      "snr_redside": 2.3496732128448192,
+      "tier": "low",
+      "z_target": 3.2,
+      "snr_target": 1.0
+    },
+    {
+      "target_id": 220250636,
+      "row_idx": 202000,
+      "z_qso": 3.5065717697143555,
+      "snr_forest": 3.9984176079233738,
+      "snr_redside": 6.623078418212715,
+      "tier": "med-hi",
+      "z_target": 3.5,
+      "snr_target": 4.0
+    },
+    {
+      "target_id": 180021938,
+      "row_idx": 170873,
+      "z_qso": 3.797738552093506,
+      "snr_forest": 2.001348284119959,
+      "snr_redside": 4.421431133922734,
+      "tier": "med",
+      "z_target": 3.8,
+      "snr_target": 2.0
+    },
+    {
+      "target_id": 120046865,
+      "row_idx": 122197,
+      "z_qso": 2.9619851112365723,
+      "snr_forest": 0.5728491295227572,
+      "snr_redside": 1.5351264585966709,
+      "tier": "canonical",
+      "z_target": 2.96,
+      "snr_target": 0.5728491295227572
+    }
+  ]
+}

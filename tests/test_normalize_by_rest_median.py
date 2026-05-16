@@ -123,6 +123,50 @@ def test_normalize_handles_bad_spectra():
     assert np.isnan(meds[1])
 
 
+def test_normalize_rejection_threshold_is_1e_minus_2():
+    """The rejection threshold is `|median| < 1e-2`, not 1e-3.
+
+    Driven by `examples/probe_outlier_tail_corr.py` (2026-05-13): a 5000-
+    spectrum batch with 10 injected spectra at med ∈ [1.5e-3, 1e-2] —
+    which passed the previous `|med| < 1e-3` rule — bumped the PCA-init
+    corr(M·M^T) smoothness 14.9× (0.013 → 0.194). Their normalized flux
+    becomes 100-1000× the bulk scale, dominates the PCA top mode, and
+    poisons the kernel. See `docs/notes/2026-05-12_2lpt_corr_noise_debug/findings.md`.
+
+    Test:
+      - spectrum 0: median = 0.005 (marginal, was passing before fix) → REJECT
+      - spectrum 1: median = -0.5  (negative)                          → REJECT
+      - spectrum 2: median = 0.02  (just above new threshold)          → KEEP
+      - spectrum 3: median = 100   (upper tail, calibration-invariant) → KEEP
+    """
+    rest = np.linspace(900, 1400, 1001)
+    n_pix = len(rest)
+    n_spec = 4
+    medians = np.array([0.005, -0.5, 0.02, 100.0])
+    fluxes = np.broadcast_to(medians[:, None], (n_spec, n_pix)).copy()
+    noise_variances = np.ones_like(fluxes) * 0.01
+
+    fluxes_n, nv_n, meds = _normalize_by_rest_median(
+        fluxes, noise_variances, rest,
+        norm_min_lambda=1310.0, norm_max_lambda=1325.0,
+    )
+    # Marginal positive median: rejected (was passing pre-fix)
+    assert np.all(np.isnan(fluxes_n[0])), (
+        "spectrum 0 (med=0.005) should be rejected at the 1e-2 threshold "
+        "— this is the regression guard for the corr-noise fix")
+    # Negative median: rejected (unchanged from previous rule)
+    assert np.all(np.isnan(fluxes_n[1]))
+    # Just above threshold: kept
+    assert not np.any(np.isnan(fluxes_n[2])), (
+        "spectrum 2 (med=0.02) should NOT be rejected — it's above the threshold")
+    np.testing.assert_allclose(fluxes_n[2], 1.0, rtol=1e-6)
+    # Upper-tail median: kept (probe showed this does not contaminate)
+    assert not np.any(np.isnan(fluxes_n[3])), (
+        "spectrum 3 (med=100) should NOT be rejected — calibration invariance "
+        "of IV-weighted centering means upper-tail medians are harmless")
+    np.testing.assert_allclose(fluxes_n[3], 1.0, rtol=1e-6)
+
+
 def test_normalize_window_outside_grid_raises():
     """Window outside the rest grid → ValueError with clear message."""
     rest = np.linspace(900, 1300, 401)  # ends at 1300

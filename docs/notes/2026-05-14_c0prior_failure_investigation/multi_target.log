@@ -1,0 +1,519 @@
+
+=== c0prior (/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_c0prior/phase2_result.h5) ===
+  TID=180058672 truth_NHI=20.789 ...INFO:spectra.py:453:read_spectra: iotime 0.385 sec to read spectra from:  spectra-16-1181.fits at 2026-05-14T11:11:35.816910
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+  → overriding params.normalization window from .h5: [1425.0, 1475.0] Å → [1310.0, 1325.0] Å
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 180058672) zQSO: 2.42
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.921
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.041
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.267
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -431.904
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -355.961
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.1316 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -320.92394621464524 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -296.347
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -320.924
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 180058672)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.17706601]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00077324]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.80406315]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.06054744]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): -0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 180058672), time spent: 0m 37s
+ p_DLA=1.0000  ΔNHI=+0.015  (37.4s)
+  TID=350004868 truth_NHI=20.992 ...INFO:spectra.py:453:read_spectra: iotime 0.395 sec to read spectra from:  spectra-16-2301.fits at 2026-05-14T11:12:13.617551
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 350004868) zQSO: 3.16
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.823
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.091
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.455
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1037.072
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -936.691
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0563 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -821.5864858711584 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -770.155
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -821.586
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 350004868)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.54049953]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00031882]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [21.03715418]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.0171739]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 350004868), time spent: 0m 46s
+ p_DLA=1.0000  ΔNHI=+0.045  (45.8s)
+  TID=160221272 truth_NHI=20.712 ...INFO:spectra.py:453:read_spectra: iotime 0.312 sec to read spectra from:  spectra-16-1053.fits at 2026-05-14T11:12:59.726164
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 160221272) zQSO: 3.40
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.804
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.101
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.356
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1250.569
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1183.904
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -1192.6590215040007 is less than the null model evidence -1183.8425744854148.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1192.659
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 160221272)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 1.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 160221272), time spent: 0m 37s
+ p_DLA=0.0001  ΔNHI=+nan  (37.5s)
+  TID=40194438 truth_NHI=21.074 ...INFO:spectra.py:453:read_spectra: iotime 0.398 sec to read spectra from:  spectra-16-266.fits at 2026-05-14T11:13:37.649955
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 40194438) zQSO: 3.03
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.839
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.083
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.550
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1322.936
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1214.438
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0715 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -990.355930339366 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -990.023
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -990.356
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 40194438)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.86255458]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00059959]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [21.22188024]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.03087]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 40194438), time spent: 1m 10s
+ p_DLA=1.0000  ΔNHI=+0.148  (70.4s)
+  TID=300075262 truth_NHI=20.671 ...INFO:spectra.py:453:read_spectra: iotime 0.401 sec to read spectra from:  spectra-16-1976.fits at 2026-05-14T11:14:48.474743
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 300075262) zQSO: 3.31
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.809
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.098
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.380
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1362.717
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1312.655
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0564 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -1301.6260339446053 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1284.703
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -1301.626
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 300075262)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.43258723]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00110495]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.66360562]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.06589498]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 300075262), time spent: 0m 48s
+ p_DLA=1.0000  ΔNHI=-0.007  (48.1s)
+  TID=170022839 truth_NHI=20.951 ...INFO:spectra.py:453:read_spectra: iotime 0.454 sec to read spectra from:  spectra-16-1148.fits at 2026-05-14T11:15:37.052898
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 170022839) zQSO: 2.26
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.947
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.027
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.655
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -199.172
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -216.01878123008183 is less than the null model evidence -195.57189965663244.
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -216.019
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -232.67667502490121 is less than the null model evidence -195.5718996552305.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -232.677
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 170022839)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 1.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 170022839), time spent: 0m 5s
+ p_DLA=0.0000  ΔNHI=+nan  (4.9s)
+  TID=270119597 truth_NHI=20.681 ...INFO:spectra.py:453:read_spectra: iotime 0.374 sec to read spectra from:  spectra-16-1750.fits at 2026-05-14T11:15:42.400130
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 270119597) zQSO: 2.47
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.914
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.045
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.173
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -430.196
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -388.911
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.1067 for 2 DLAs.
+INFO:dla_gp.py:804:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -400.6548632292907 is less than the null model evidence -388.84919727732415.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -376.093
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -400.655
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 270119597)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.03112306]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00111282]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.48261739]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.0909685]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 270119597), time spent: 0m 42s
+ p_DLA=1.0000  ΔNHI=-0.198  (41.6s)
+  TID=390002315 truth_NHI=20.759 ...INFO:spectra.py:453:read_spectra: iotime 0.403 sec to read spectra from:  spectra-16-2559.fits at 2026-05-14T11:16:24.408071
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 390002315) zQSO: 3.18
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.821
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.092
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.442
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1289.174
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1134.436
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0504 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -1028.0707313068206 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -964.862
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -1028.071
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 390002315)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.98340341]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00024717]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.77869439]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.02419465]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 390002315), time spent: 0m 45s
+ p_DLA=1.0000  ΔNHI=+0.020  (45.4s)
+  TID=170146976 truth_NHI=20.701 ...INFO:spectra.py:453:read_spectra: iotime 0.376 sec to read spectra from:  spectra-16-1125.fits at 2026-05-14T11:17:10.204024
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 170146976) zQSO: 3.00
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.843
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.081
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.577
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -837.469
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -804.916
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -817.5592556990246 is less than the null model evidence -804.8547826269761.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -817.559
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 170146976)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 1.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 170146976), time spent: 0m 28s
+ p_DLA=0.0000  ΔNHI=+nan  (27.6s)
+  TID=180163996 truth_NHI=20.622 ...INFO:spectra.py:453:read_spectra: iotime 0.380 sec to read spectra from:  spectra-16-1170.fits at 2026-05-14T11:17:38.202801
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 180163996) zQSO: 2.58
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.898
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.053
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.006
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -590.636
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -529.821
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0814 for 2 DLAs.
+INFO:dla_gp.py:804:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -534.025807346136 is less than the null model evidence -529.7595449685032.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -479.516
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -534.026
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 180163996)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.49009275]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00039053]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.58317627]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.03691999]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 180163996), time spent: 0m 36s
+ p_DLA=1.0000  ΔNHI=-0.039  (35.8s)
+
+=== m_baseline (/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-11_desi_phase2_2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5) ===
+  TID=180058672 truth_NHI=20.789 ...INFO:spectra.py:453:read_spectra: iotime 0.113 sec to read spectra from:  spectra-16-1181.fits at 2026-05-14T11:18:14.296223
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 180058672) zQSO: 2.42
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.921
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.041
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.267
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -541.121
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -460.027
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.1316 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -422.10563082648713 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -397.134
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -422.106
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 180058672)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.17711696]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00077091]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.8071153]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.05752556]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 180058672), time spent: 0m 36s
+ p_DLA=1.0000  ΔNHI=+0.018  (35.7s)
+  TID=350004868 truth_NHI=20.992 ...INFO:spectra.py:453:read_spectra: iotime 0.113 sec to read spectra from:  spectra-16-2301.fits at 2026-05-14T11:18:50.134103
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 350004868) zQSO: 3.16
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.823
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.091
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.455
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1356.138
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1252.876
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0554 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -1135.939633301362 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1094.203
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -1135.940
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 350004868)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.54100049]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00034413]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [21.01325039]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.02058774]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 350004868), time spent: 0m 46s
+ p_DLA=1.0000  ΔNHI=+0.021  (45.9s)
+  TID=160221272 truth_NHI=20.712 ...INFO:spectra.py:453:read_spectra: iotime 0.094 sec to read spectra from:  spectra-16-1053.fits at 2026-05-14T11:19:36.187899
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 160221272) zQSO: 3.40
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.804
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.101
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.356
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1669.023
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1592.112
+INFO:dla_gp.py:804:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -1599.6390696823823 is less than the null model evidence -1592.0506939665247.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1599.639
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 160221272)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 1.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 160221272), time spent: 0m 40s
+ p_DLA=0.0005  ΔNHI=+nan  (39.6s)
+  TID=40194438 truth_NHI=21.074 ...INFO:spectra.py:453:read_spectra: iotime 0.128 sec to read spectra from:  spectra-16-266.fits at 2026-05-14T11:20:15.895189
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 40194438) zQSO: 3.03
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.839
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.083
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.550
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1629.746
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1520.911
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0712 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -1305.4203210548185 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1304.854
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -1305.420
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 40194438)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.86255458]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00064416]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [21.22188024]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.04202115]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 40194438), time spent: 1m 2s
+ p_DLA=1.0000  ΔNHI=+0.148  (62.1s)
+  TID=300075262 truth_NHI=20.671 ...INFO:spectra.py:453:read_spectra: iotime 0.121 sec to read spectra from:  spectra-16-1976.fits at 2026-05-14T11:21:18.176158
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 300075262) zQSO: 3.31
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.809
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.098
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.380
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1747.364
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1697.754
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0555 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -1689.3784997113291 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1671.834
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -1689.378
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 300075262)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.43267684]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.0011184]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.63110666]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.07060419]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 300075262), time spent: 0m 45s
+ p_DLA=1.0000  ΔNHI=-0.040  (44.6s)
+  TID=170022839 truth_NHI=20.951 ...INFO:spectra.py:453:read_spectra: iotime 0.122 sec to read spectra from:  spectra-16-1148.fits at 2026-05-14T11:22:02.925458
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 170022839) zQSO: 2.26
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.947
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.027
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.655
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -309.580
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -325.410833674303 is less than the null model evidence -305.9798756944628.
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -325.411
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -343.19389733419257 is less than the null model evidence -305.97987569059075.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -343.194
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 170022839)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 1.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 170022839), time spent: 0m 6s
+ p_DLA=0.0000  ΔNHI=+nan  (5.9s)
+  TID=270119597 truth_NHI=20.681 ...INFO:spectra.py:453:read_spectra: iotime 0.150 sec to read spectra from:  spectra-16-1750.fits at 2026-05-14T11:22:08.957789
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 270119597) zQSO: 2.47
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.914
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.045
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.173
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -559.581
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -516.039
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.1083 for 2 DLAs.
+INFO:dla_gp.py:804:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -527.692138605137 is less than the null model evidence -515.9777148673747.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -502.954
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -527.692
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 270119597)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.03112306]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00110482]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.48261739]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.08987739]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 270119597), time spent: 0m 50s
+ p_DLA=1.0000  ΔNHI=-0.198  (50.3s)
+  TID=390002315 truth_NHI=20.759 ...INFO:spectra.py:453:read_spectra: iotime 0.118 sec to read spectra from:  spectra-16-2559.fits at 2026-05-14T11:22:59.445408
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 390002315) zQSO: 3.18
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.821
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.092
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.442
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1575.548
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1432.056
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0504 for 2 DLAs.
+INFO:dla_gp.py:815:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -1351.8396385085327 is less than the previous one.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1280.622
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -1351.840
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 390002315)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.98340341]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00031395]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.77869439]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.0324852]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 390002315), time spent: 0m 41s
+ p_DLA=1.0000  ΔNHI=+0.020  (41.3s)
+  TID=170146976 truth_NHI=20.701 ...INFO:spectra.py:453:read_spectra: iotime 0.111 sec to read spectra from:  spectra-16-1125.fits at 2026-05-14T11:23:40.916197
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 170146976) zQSO: 3.00
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.843
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.081
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -2.577
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -1226.102
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -1193.348
+WARNING:dla_gp.py:620:parallel_log_model_evidences: No valid regions found in the initial scan. Returning NaN for all log likelihoods.
+INFO:dla_gp.py:633:parallel_log_model_evidences: Stopping early at 1 DLAs because the log likelihood -1206.8384872221811 is less than the null model evidence -1193.2869105497855.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -1206.838
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 170146976)
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 0.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 1.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 170146976), time spent: 0m 28s
+ p_DLA=0.0000  ΔNHI=+nan  (27.6s)
+  TID=180163996 truth_NHI=20.622 ...INFO:spectra.py:453:read_spectra: iotime 0.117 sec to read spectra from:  spectra-16-1170.fits at 2026-05-14T11:24:08.620200
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+DESI GP model detected.
+DESI DLA model detected.
+DESI SubDLA model detected.
+INFO:run_bayes_select.py:514:process_qso: Processing spectrum 1/1 (ID: 180163996) zQSO: 2.58
+INFO:bayesian_model_selection.py:121:model_selection:  ...     p( no DLA | z_QSO)     : 0.898
+INFO:bayesian_model_selection.py:124:model_selection:  ...     p( subDLA | z_QSO)     : 0.053
+INFO:bayesian_model_selection.py:125:model_selection:  ...     p(   DLA | z_QSO)        : -3.006
+INFO:bayesian_model_selection.py:145:model_selection:  ...     log p(D | z_QSO, no DLA)     : -686.746
+INFO:bayesian_model_selection.py:178:model_selection:  ...     log p(D | z_QSO, 1 subDLAs) : -631.906
+INFO:dla_gp.py:776:parallel_log_model_evidences: Fraction of prior retained: 0.0814 for 2 DLAs.
+INFO:dla_gp.py:804:parallel_log_model_evidences: Stopping early at 2 DLAs because the log likelihood -635.3935874051757 is less than the null model evidence -631.8444378631983.
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 1 DLAs) : -577.521
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 2 DLAs) : -635.394
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 3 DLAs) : nan
+INFO:bayesian_model_selection.py:194:model_selection:  ...     log p(D | z_QSO, 4 DLAs) : nan
+INFO:run_bayes_select.py:246:process_single_spectrum: Results for spectrum 1/1 (ID: 180163996)
+INFO:run_bayes_select.py:250:process_single_spectrum:  ...     MAP z_DLA: [2.49001716]
+INFO:run_bayes_select.py:251:process_single_spectrum:  ...     z_DLA errors: [0.00038986]
+INFO:run_bayes_select.py:252:process_single_spectrum:  ...     MAP log N_HI: [20.60235335]
+INFO:run_bayes_select.py:253:process_single_spectrum:  ...     log N_HI errors: [0.03654436]
+INFO:run_bayes_select.py:255:process_single_spectrum:  ...     p(DLA): 1.000
+INFO:run_bayes_select.py:256:process_single_spectrum:  ...     p(no DLAs): 0.000
+INFO:run_bayes_select.py:553:process_qso: Processed spectrum 1/1 (ID: 180163996), time spent: 0m 39s
+ p_DLA=1.0000  ΔNHI=-0.020  (38.6s)
+
+wrote /home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-14_c0prior_failure_investigation/multi_target_results.json
+
+=== SUMMARY ===
+        TID   NHI_t     c0p p   c0p ΔN       m p     m ΔN
+  180058672  20.789    1.0000   +0.015    1.0000   +0.018
+  350004868  20.992    1.0000   +0.045    1.0000   +0.021
+  160221272  20.712    0.0001     +nan    0.0005     +nan
+   40194438  21.074    1.0000   +0.148    1.0000   +0.148
+  300075262  20.671    1.0000   -0.007    1.0000   -0.040
+  170022839  20.951    0.0000     +nan    0.0000     +nan
+  270119597  20.681    1.0000   -0.198    1.0000   -0.198
+  390002315  20.759    1.0000   +0.020    1.0000   +0.020
+  170146976  20.701    0.0000     +nan    0.0000     +nan
+  180163996  20.622    1.0000   -0.039    1.0000   -0.020

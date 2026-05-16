@@ -1,0 +1,58 @@
+{
+  "preload": "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/v2_runs/2lpt_loa0_wide_v2_1778186324/trainset.h5",
+  "norm_band": [
+    1310.0,
+    1325.0
+  ],
+  "n_clean": 5000,
+  "n_outlier_per_pool": 10,
+  "pools": {
+    "small_pos": [
+      0.0015,
+      0.01
+    ],
+    "large_pos": [
+      10.0,
+      30.0
+    ],
+    "extreme": [
+      50.0,
+      1000000.0
+    ],
+    "neg_ctrl": [
+      -1000000.0,
+      0.0
+    ]
+  },
+  "clean_med_range": [
+    0.5,
+    2.0
+  ],
+  "results": {
+    "clean": {
+      "n_spec": 5000,
+      "n_rejected_by_normalize": 0,
+      "smoothness_adj_diff": 0.013003965839743614
+    },
+    "small_pos": {
+      "n_spec": 5010,
+      "n_rejected_by_normalize": 10,
+      "smoothness_adj_diff": 0.013003836385905743
+    },
+    "large_pos": {
+      "n_spec": 5010,
+      "n_rejected_by_normalize": 0,
+      "smoothness_adj_diff": 0.012999494560062885
+    },
+    "extreme": {
+      "n_spec": 5010,
+      "n_rejected_by_normalize": 0,
+      "smoothness_adj_diff": 0.01299257855862379
+    },
+    "neg_ctrl": {
+      "n_spec": 5010,
+      "n_rejected_by_normalize": 10,
+      "smoothness_adj_diff": 0.013003836385905743
+    }
+  }
+}
