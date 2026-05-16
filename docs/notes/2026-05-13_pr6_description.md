@@ -103,9 +103,11 @@ After fix, the probe gives smoothness=0.0130 (matches CLEAN) for all 5 injection
 
 ## What's deliberately NOT in this PR
 
-- **README templating fix** (`tests/phase2_train_desi.py:358` hard-codes `[1310, 1325]`) — already noted in `docs/production_models.md`; one-line fix
-- **Saclay panel error** in `examples/plot_pca_init_corr_multi.py` — separate follow-up
-- **Production retrain at 3000 iter** of post-reorder LOA — in flight (50087967/68)
+> **2026-05-15 update**: three items previously listed here are now done
+> and IN this PR — the README templating fix and the Saclay panel norm
+> band (both commit `660ee34`), and the post-reorder LOA 3000-iter
+> retrains (landed + validated). Only c0prior remains deferred.
+
 - **c0prior production retraining** — investigation 2026-05-14
   (`docs/notes/2026-05-14_c0prior_failure_investigation/findings.md`)
   found the c0prior model performs identically to `_m` on 7/10 random
