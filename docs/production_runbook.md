@@ -73,14 +73,26 @@ P/C-comparable to post-fix sweeps.
 
 ### Expected P/C (2-way, post-patch, London-0 5k, default p_DLA ≥ 0.99)
 
-| Config | Purity | Completeness |
-|---|---:|---:|
-| cellC baseline C0 (MAX_LAMBDA=1216.75) | 0.779 | 0.877 |
-| **MAX_LAMBDA=1250 (lambda_fine F2)** | **0.838** | **0.830** |
-| C7 (PW 100k) | 0.776 | 0.892 |
+Authoritative numbers, read from each sweep's current `HEADLINE.tsv`
+(fixed molly recipe, n_truth=581, all on the β-collapsed baseline model):
 
-These are on the β-collapsed baseline model; the production model swap may
-shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
+| Config | Purity | Completeness | source |
+|---|---:|---:|---|
+| cellC C0 baseline (MAX_LAMBDA=1216.75, PW 50k) | 0.814 | 0.799 | `cellC_knob_sweep/HEADLINE.tsv` |
+| cellC C7 (PW 100k) | 0.832 | 0.814 | `cellC_knob_sweep/HEADLINE.tsv` |
+| **MAX_LAMBDA=1250 (lambda_fine F2, PW 50k)** | **0.838** | **0.830** | `lambda_fine_sweep/HEADLINE.tsv` |
+
+> **Do not cite the HANDOFF's old "post-patch C0 = 0.779/0.877"** — it is
+> obsolete. That number came from a 2026-05-14 cellC run that was
+> superseded by a 2026-05-15 re-run, and predates the molly BAL-recipe fix
+> (drop-ALL-`bal_cat` vs BI_CIV>0, which raises C ~+4pp and moves n_truth
+> 618→581). Verified 2026-05-17 by re-evaluating C0 under both recipes.
+> The HEADLINE P/C is the **pre-DLAFLAG** figure; the `DLAFLAG==0` "clean
+> catalog" view is much smaller (~15% of rows survive — the NHI-consistency
+> gate flags ~79% at default `k`).
+
+These are on the β-collapsed baseline GP model; the production model swap
+may shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
 
 ### Open items before the 1M production launch
 
