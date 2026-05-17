@@ -354,13 +354,52 @@ this scheme.
 NO production P/C measurement yet. **Keep `baseline` for production until A/D
 P/C are published.** Track `prod533_5k_20260511/early_stop_fix_test/RESULTS.md`.
 
-### 3.6 BAL handling
+### 3.6 FILTER=1 truncated-sampler knobs (new; commit `2e3642b`)
+
+These two CLI flags expose the internals of the FILTER=1 coarse-then-refine
+scheme in `gpy_dla_detection/dla_gp.py`. Defaults reproduce historical
+behavior bit-for-bit.
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `--filter_n_initial_floor` | `5000` | Floor on the coarse-scan budget. Code: `n_initial = max(NUM_DLA_SAMPLES // 20, floor)`. At 50k samples (current production) the floor binds; raising it to 10k doubles coarse-scan coverage. |
+| `--filter_empty_mask_fallthrough` | `0` (off) | If `1`: when the coarse scan returns no winners (`valid_mask.sum() == 0`), fall through to FILTER=0 (evaluate all `NUM_DLA_SAMPLES`) instead of early-stopping with the 5000-sample 1-DLA marginal. Bounds FILTER=1 completeness from below by FILTER=0 at the price of full-sample cost on unlucky spectra. |
+
+**2×2 ablation result (London v3 8f, 5k window, evening 2026-05-13)**:
+
+| n_initial floor | empty-mask fall-through | Purity | Completeness | Δ vs baseline |
+|---|---|---:|---:|---|
+| 5000 (baseline) | OFF | 0.8452 | 0.7661 | reference |
+| 10000 | OFF | 0.8516 | 0.7719 | +0.6 pp P, +0.6 pp C |
+| 5000 | ON | 0.8506 | 0.7661 | +0.5 pp P, **0 pp C** (knob 4 no-op) |
+| 10000 | ON | 0.8511 | 0.7690 | +0.6 pp P, +0.3 pp C |
+
+The 2×2 substantially **refuted** the knob-tuning hypothesis from
+`docs/notes/2026-05-13_filter1_knob_tuning.md`: knob 1 alone gives only
++0.6 pp completeness, knob 4 is essentially a no-op. The remaining FILTER=0
+vs FILTER=1 gap (~3 pp C at the cost of 2–3× node-hours) must come from
+something other than coarse-scan miss / empty-mask early-stop.
+
+**Recommendation**: keep defaults (`--filter_n_initial_floor 5000`,
+`--filter_empty_mask_fallthrough 0`) for production. The cellC route
+(§2.3, 2-way model) recovers the [20.3, 20.5) regression bin far more
+effectively than these knobs and at no extra compute. The knobs remain
+useful as a debugging tool: setting `--filter_empty_mask_fallthrough 1`
+should converge FILTER=1 to FILTER=0 results in the limit `n_initial → NUM_DLA_SAMPLES`.
+
+Plumbing: flags propagate `desi-DLAGP.py` → `dlasearch.py` → `DLAHolder` →
+`BayesModelSelect.model_selection` → `DLAGP.parallel_log_model_evidences`.
+`slurm/resume_local.sh` forwards via env vars `FILTER_N_INITIAL_FLOOR` and
+`FILTER_EMPTY_MASK_FALLTHROUGH`; `slurm/run_local.sh` forwards extra args
+directly to `desi-DLAGP.py`.
+
+### 3.7 BAL handling
 
 | Knob | Default | Meaning |
 |---|---|---|
 | `BALMASK` | `false` | If `true`: pass `--balmask`, masks BAL absorption pixels. Production has NEVER used BAL masking; BAL exclusion is applied at eval time only. |
 
-### 3.7 Parallelism
+### 3.8 Parallelism
 
 | Knob | Default | Meaning |
 |---|---|---|

@@ -1,5 +1,28 @@
 # FILTER=1 knob tuning — make FILTER=1's completeness match FILTER=0
 
+> **UPDATE 2026-05-13 evening — hypothesis substantially REFUTED by the 2×2
+> ablation.** The 2×2 (`n_initial ∈ {5k, 10k}` × `empty-mask-fallthrough ∈
+> {off, on}`) on London v3 8f 5k showed knob 1 alone gives only **+0.6 pp
+> completeness** vs baseline, knob 4 is essentially a **no-op** (empty-mask
+> branch is too rare to move the headline metric). Both knobs together: +0.3
+> pp C. The FILTER=0 / FILTER=1 completeness gap of ~3 pp therefore does
+> NOT come from coarse-scan miss (knob 1) or empty-mask early-stop (knob 4)
+> as conjectured below. The remaining gap is unexplained — knobs 2 (`z_tol`),
+> 3 (`null_threshold_delta`), and 5 (truncated-region estimator for `num_dlas
+> ≥ 1`) are not yet tested. See `HANDOFF.md` 2026-05-13 21:30 evening top
+> block and `docs/notes/2026-05-13_cellC_mechanism_verdict.md` for the
+> alternative (cellC's posterior-arithmetic) that actually does close the gap.
+>
+> The knob-plumbing CLI flags `--filter_n_initial_floor` and
+> `--filter_empty_mask_fallthrough` landed in commit `2e3642b` and remain
+> useful as debugging tools; the production runbook §3.6 documents the
+> recommendation to keep defaults.
+>
+> The rest of this note is preserved as the original (now-superseded)
+> investigation plan.
+
+---
+
 > **Written 2026-05-13 after user reframe**: "The goal is to tune the knobs in
 > filter=1 so that the completeness match to filter=0, because the underlying
 > integration math should be the same."
