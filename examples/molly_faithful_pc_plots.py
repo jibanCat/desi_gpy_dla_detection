@@ -3,6 +3,7 @@ purity/completeness notebook plots for the DLA-mode catalog.
 
 Recipe transcribed from
   /pscratch/sd/j/jibancat/molly/read_in_each_plots_saclay-Y3-Learned.ipynb
+  /pscratch/sd/j/jibancat/molly/read_in_each_up_match_new_cats_2509.ipynb
 
 Differences from gp_native_pc_plots.py (which is "inspired by" molly):
   * predicted NHI column   = "NHI"        (molly uses NHI_TMP for template, NHI for GP)
@@ -12,9 +13,19 @@ Differences from gp_native_pc_plots.py (which is "inspired by" molly):
   * truth-matching         = per-TARGETID, |Δz|/(1+z) < 0.01, greedy (cell 12 of molly's nb)
   * Z range cut            = z_qso ∈ [2.0, 4.25]
   * λ_rf range cut         = [1025, 1216] Å (cell 21; "OmegaDLA" cuts)
-  * BAL removal            = TARGETID ∈ bal_cat → dropped from BOTH cat AND truth
+  * BAL removal (default)  = TARGETID ∈ bal_cat → dropped from BOTH cat AND truth
+                             (use --bal-bi-civ-only to restrict to BI_CIV>0 rows)
   * truth-NHI floor        = NHI > 20.3
   * snr_min, nhi_min       = 6.0, 20.3 (cell 41)
+
+Per-QSO SNR_REDSIDE/Z_QSO source (used by the truth catalog and as fallback for
+detections that lack SNR_REDSIDE) is resolved in this priority:
+  1. --snr-cat / --zcat external FITS (molly's canonical source — full mock)
+  2. mockdir/snr_cat.fits and mockdir/zcat.fits (Saclay/2LPT have these inline)
+  3. processed-spectra-16-*.h5 in catalog-dir (legacy fallback; inference output)
+With (3) the lookup only covers spectra that this run processed, so it MUST NOT
+be used to evaluate a different catalog (e.g. legacy production runs against a
+fresh 5k slice's processed dir).
 
 Four plot panels:
   (1) purity & completeness vs P(DLA) cut (a P_DLA in {1 - 10**log_pdla} for
@@ -50,13 +61,12 @@ import h5py
 import fitsio
 from astropy.table import Table, vstack
 
-# Reuse load + match helpers
+# Reuse load helper. NOTE: gp_native's `match_truth_to_cat` iterates truth in
+# descending-NHI order with closest-z tie-break, which inflates P by ~3pp vs
+# molly's notebook (audit 2026-05-15). Use `match_truth_to_cat_molly` defined
+# below — cat in input order, closest-NHI tie-break — for faithful results.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gp_native_pc_plots import (
-    load_catalog_dir,
-    apply_bal_cut as _apply_bal_cut,
-    match_truth_to_cat,
-)
+from gp_native_pc_plots import load_catalog_dir
 
 LYA = 1215.67
 SPEED_C = 299792.458  # km/s
@@ -75,7 +85,12 @@ def parse_args():
     p.add_argument("--bal-cat", default=None,
                    help="bal_cat.fits with BI_CIV column (and TARGETID).")
     p.add_argument("--no-bal", action="store_true",
-                   help="Exclude BAL TIDs from BOTH cat and truth (molly convention).")
+                   help="Exclude BAL TIDs from BOTH cat and truth (molly convention). "
+                        "Default: drop ALL bal_cat TIDs. With --bal-bi-civ-only, "
+                        "drop only rows where BI_CIV > 0.")
+    p.add_argument("--bal-bi-civ-only", action="store_true",
+                   help="When --no-bal is set, restrict BAL TIDs to BI_CIV>0 rows. "
+                        "Pre-2026-05-15 default; molly drops ALL bal_cat TIDs.")
     p.add_argument("--truth-nhi-min", type=float, default=20.3,
                    help="Truth NHI floor (default 20.3).")
     p.add_argument("--dz-rel", type=float, default=0.01,
@@ -91,16 +106,28 @@ def parse_args():
                    help="Apply postprocess.lyb_veto.flag_lybeta and drop LYBETA_FLAG rows.")
     p.add_argument("--lyb-veto-dz", type=float, default=0.005,
                    help="dz_match for lyb_veto (default 0.005).")
-    p.add_argument("--snr-min", type=float, default=6.0,
-                   help="Min S2N_RED (default 6.0).")
+    p.add_argument("--snr-min", type=float, default=2.0,
+                   help="Min S2N_RED (default 2.0 — molly's canonical headline).")
     p.add_argument("--nhi-min", type=float, default=20.3,
                    help="Min predicted/truth log NHI for headline numbers (default 20.3).")
     p.add_argument("--gp-conf", type=float, default=0.99,
                    help="Fixed P_DLA cut for 1D + 2D plots (molly used 0.99 for Saclay DLA).")
     p.add_argument("--zcat", default=None,
-                   help="Optional zcat.fits for Z_QSO lookup (if not in mockdir).")
+                   help="Optional zcat.fits for Z_QSO lookup (canonical source). "
+                        "Falls back to mockdir/zcat.fits, then processed h5.")
+    p.add_argument("--snr-cat", default=None,
+                   help="Optional snr_cat.fits with SNR_REDSIDE column (canonical "
+                        "per-QSO SNR source — molly's recipe). Falls back to "
+                        "mockdir/snr_cat.fits, then processed h5.")
     p.add_argument("--mockdir", default=None,
-                   help="If --zcat unset, look for zcat.fits in this MOCKDIR.")
+                   help="If --zcat / --snr-cat unset, look for zcat.fits / snr_cat.fits "
+                        "in this MOCKDIR.")
+    p.add_argument("--restrict-truth-to-processed", action="store_true",
+                   help="When using --snr-cat (full-mock scope), additionally "
+                        "intersect with the set of TIDs the run processed (from "
+                        "processed-spectra-16-*.h5). Required for 5k-slice runs "
+                        "so completeness denominator stays in scope; OFF by "
+                        "default (molly's full-mock recipe).")
     p.add_argument("--out", required=True,
                    help="Output dir for PNGs + summary tsv.")
     p.add_argument("--title", default=None,
@@ -111,23 +138,92 @@ def parse_args():
 # -----------------------------------------------------------------------------
 # Per-QSO SNR_REDSIDE lookup from processed h5 files
 # -----------------------------------------------------------------------------
-def build_per_qso_snr(catalog_dir: str) -> dict[int, tuple[float, float]]:
-    """Build TARGETID → (snr_redside, z_qso) from processed-spectra-16-*.h5.
+def build_per_qso_snr(catalog_dir: str,
+                      snr_cat_path: str | None = None,
+                      zcat_path: str | None = None,
+                      mockdir: str | None = None,
+                      restrict_to_processed: bool = False,
+                      ) -> dict[int, tuple[float, float]]:
+    """Build TARGETID → (snr_redside, z_qso).
 
-    The processed h5 files have:
-      - target_ids : (N,) int64
-      - snrs       : (N,) float64  → red-side SNR (matches dlacat.SNR_REDSIDE)
-      - z_qsos     : (N,) float64
+    Resolution priority (matches molly's notebook recipe):
+      1. external snr_cat FITS (SNR_REDSIDE col) + external zcat FITS (Z col)
+      2. mockdir/snr_cat.fits + mockdir/zcat.fits (Saclay/2LPT inline)
+      3. processed-spectra-16-*.h5 in catalog-dir (legacy fallback; only covers
+         spectra processed by THIS run — must not be used to evaluate a
+         different catalog)
+
+    Always loads from a single source; never mixes. The legacy h5 fallback
+    fires only when neither (1) nor (2) yields readable files.
     """
+    # Priority 1: explicit --snr-cat + --zcat
+    snr_p, zcat_p = snr_cat_path, zcat_path
+    # Priority 2: mockdir defaults
+    if (snr_p is None or zcat_p is None) and mockdir:
+        if snr_p is None:
+            cand = os.path.join(mockdir, "snr_cat.fits")
+            if os.path.exists(cand):
+                snr_p = cand
+        if zcat_p is None:
+            cand = os.path.join(mockdir, "zcat.fits")
+            if os.path.exists(cand):
+                zcat_p = cand
+
+    if snr_p and zcat_p and os.path.exists(snr_p) and os.path.exists(zcat_p):
+        snr_t = fitsio.read(snr_p, ext=1, columns=["TARGETID", "SNR_REDSIDE"])
+        zc_t = fitsio.read(zcat_p, ext=1, columns=["TARGETID", "Z"])
+        snr_map = {int(r["TARGETID"]): float(r["SNR_REDSIDE"]) for r in snr_t}
+        zq_map = {int(r["TARGETID"]): float(r["Z"]) for r in zc_t}
+        # Optional intersection with the processed-h5 TID set — needed for 5k
+        # slice runs (completeness denominator must stay in the slice's scope)
+        # but WRONG for full-mock evals (molly's recipe uses full snr_cat;
+        # un-processed QSOs still count toward "the production should have
+        # processed them" completeness).
+        processed_tids: set[int] | None = None
+        if restrict_to_processed:
+            h5_paths = sorted(glob.glob(os.path.join(catalog_dir, "processed",
+                                                     "processed-spectra-16-*.h5")))
+            if not h5_paths:
+                h5_paths = sorted(glob.glob(os.path.join(catalog_dir,
+                                                         "processed-spectra-16-*.h5")))
+            if h5_paths:
+                processed_tids = set()
+                for p in h5_paths:
+                    with h5py.File(p, "r") as f:
+                        processed_tids.update(int(t) for t in f["target_ids"][:])
+                print(f"[snr] processed-set scope: {len(processed_tids)} TIDs "
+                      f"from {len(h5_paths)} h5 files in catalog-dir "
+                      f"(restricting truth to this scope)")
+            else:
+                print(f"[snr] WARNING: --restrict-truth-to-processed set but no "
+                      f"processed-spectra-16-*.h5 found in {catalog_dir}; "
+                      f"falling back to full snr_cat scope")
+        lookup: dict[int, tuple[float, float]] = {}
+        for t, s in snr_map.items():
+            z = zq_map.get(t)
+            if z is None:
+                continue
+            if processed_tids is not None and t not in processed_tids:
+                continue
+            lookup[t] = (s, z)
+        scope = ("intersected with processed h5"
+                 if processed_tids is not None else "full snr_cat (molly recipe)")
+        print(f"[snr] built per-QSO lookup from external snr_cat+zcat ({scope}): "
+              f"{len(lookup)} TIDs ({snr_p}, {zcat_p})")
+        return lookup
+
+    # Priority 3: legacy fallback to processed h5
     paths = sorted(glob.glob(os.path.join(catalog_dir, "processed",
                                           "processed-spectra-16-*.h5")))
     if not paths:
-        # fallback: maybe outdir uses old layout
         paths = sorted(glob.glob(os.path.join(catalog_dir,
                                               "processed-spectra-16-*.h5")))
     if not paths:
-        raise SystemExit(f"[error] no processed-spectra-16-*.h5 in {catalog_dir}")
-    lookup: dict[int, tuple[float, float]] = {}
+        raise SystemExit(
+            f"[error] no per-QSO SNR source: neither --snr-cat / --zcat nor "
+            f"mockdir snr_cat/zcat resolved, and no processed-spectra-16-*.h5 "
+            f"in {catalog_dir}")
+    lookup = {}
     for p in paths:
         with h5py.File(p, "r") as f:
             tids = np.asarray(f["target_ids"][:], dtype=np.int64)
@@ -135,7 +231,9 @@ def build_per_qso_snr(catalog_dir: str) -> dict[int, tuple[float, float]]:
             zq = np.asarray(f["z_qsos"][:], dtype=float)
         for t, s, z in zip(tids, snrs, zq):
             lookup[int(t)] = (float(s), float(z))
-    print(f"[snr] built per-QSO lookup: {len(lookup)} TIDs from {len(paths)} h5 files")
+    print(f"[snr] built per-QSO lookup from processed h5: {len(lookup)} TIDs "
+          f"from {len(paths)} h5 files (LEGACY FALLBACK — only spectra processed "
+          f"by this run are present; cat TIDs not in the h5 will be dropped)")
     return lookup
 
 
@@ -190,6 +288,72 @@ def load_truth_molly(path: str, nhi_min: float,
         print(f"[snr] dropping {(~keep).sum()} truth rows with no SNR/Z_QSO")
     tr = tr[keep]
     return tr
+
+
+# -----------------------------------------------------------------------------
+# Molly's matcher (notebook cell `match_detections_to_dla_cat`, L259-313)
+# -----------------------------------------------------------------------------
+def match_truth_to_cat_molly(cat: Table, truth: Table, dz_rel: float
+                              ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Molly-faithful greedy 1-to-1 matcher.
+
+    Iterates **cat in input order** (gp_native iterates truth in descending NHI).
+    For each cat row, finds truth candidates with same TID and
+    |Δz|/(1+z_truth) < dz_rel that haven't been matched yet, then breaks ties
+    by minimum |NHI_pred − NHI_truth| (gp_native uses minimum |Δz|).
+
+    Returns (cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched). Matches the
+    behavior of legacy_baseline/_molly_exact_recipe.py:71-117 verbatim;
+    audit 2026-05-15 found this version reproduces molly's notebook on the
+    legacy 5k catalog, while gp_native.match_truth_to_cat overcounts TPs
+    by ~3pp purity.
+    """
+    from collections import defaultdict
+
+    cat_is_TP = np.zeros(len(cat), dtype=bool)
+    cat_NHI_TR = np.full(len(cat), np.nan)
+    cat_Z_TR = np.full(len(cat), np.nan)
+    truth_matched = np.zeros(len(truth), dtype=bool)
+
+    c_tid = np.asarray(cat["TARGETID"], dtype=np.int64)
+    c_z = np.asarray(cat["Z_DLA"], dtype=float)
+    c_nhi = np.asarray(cat["NHI"], dtype=float)
+    t_tid = np.asarray(truth["TARGETID"], dtype=np.int64)
+    # truth Z column may be Z_TRUTH (gp_native alias) or Z_DLA
+    t_z = np.asarray(truth["Z_TRUTH"] if "Z_TRUTH" in truth.colnames
+                     else truth["Z_DLA"], dtype=float)
+    t_nhi = np.asarray(truth["NHI"], dtype=float)
+
+    truth_by_tid: dict[int, list[int]] = defaultdict(list)
+    for j, t in enumerate(t_tid):
+        truth_by_tid[int(t)].append(j)
+
+    for ci in range(len(cat)):
+        tid = int(c_tid[ci])
+        idx_list = truth_by_tid.get(tid)
+        if not idx_list:
+            continue
+        idx_arr = np.asarray(idx_list, dtype=int)
+        zdiff = np.abs(c_z[ci] - t_z[idx_arr]) / (1.0 + t_z[idx_arr])
+        close = zdiff < dz_rel
+        if not close.any():
+            continue
+        cand = idx_arr[close]
+        un = ~truth_matched[cand]
+        if not un.any():
+            continue
+        cand_un = cand[un]
+        if cand_un.size == 1:
+            j = int(cand_un[0])
+        else:
+            order = np.argsort(np.abs(c_nhi[ci] - t_nhi[cand_un]))
+            j = int(cand_un[order[0]])
+        cat_is_TP[ci] = True
+        cat_NHI_TR[ci] = t_nhi[j]
+        cat_Z_TR[ci] = t_z[j]
+        truth_matched[j] = True
+
+    return cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched
 
 
 # -----------------------------------------------------------------------------
@@ -356,7 +520,9 @@ def plot_pc_vs_pdla(cat, tp, mock_cat, good_mask, out_png, title,
     setup_mpl()
     import matplotlib.pyplot as plt
 
-    log_pdla = np.array([-1., -2., -3., -4., -5., -6., -7., -8.])
+    # Molly's notebook starts at -0.5 (cell 1432) — prepend so the curve
+    # matches her published P/C-vs-cut figure.
+    log_pdla = np.array([-0.5, -1., -2., -3., -4., -5., -6., -7., -8.])
     pdla_min = 1. - 10.**log_pdla
 
     pur = np.empty(len(pdla_min))
@@ -559,22 +725,37 @@ def main():
     cat["S2N_RED"] = np.asarray(cat["SNR_REDSIDE"], dtype=float)
 
     # ---- Per-QSO SNR lookup + truth load -----------------------------------
-    qso_lookup = build_per_qso_snr(args.catalog_dir)
-    zcat_default = (os.path.join(args.mockdir, "zcat.fits")
-                    if args.mockdir else args.zcat)
+    qso_lookup = build_per_qso_snr(args.catalog_dir,
+                                   snr_cat_path=args.snr_cat,
+                                   zcat_path=args.zcat,
+                                   mockdir=args.mockdir,
+                                   restrict_to_processed=args.restrict_truth_to_processed)
+    zcat_default = args.zcat or (os.path.join(args.mockdir, "zcat.fits")
+                                 if args.mockdir else None)
     truth = load_truth_molly(args.truth, args.truth_nhi_min, qso_lookup, zcat_default)
 
     # ---- BAL exclusion (cat + truth) ---------------------------------------
+    # Default: drop ALL TIDs in bal_cat (molly recipe). With --bal-bi-civ-only,
+    # restrict to BI_CIV>0 rows (pre-2026-05-15 default).
     bal_tids: set[int] | None = None
     if args.no_bal:
         if not args.bal_cat:
             raise SystemExit("--no-bal requires --bal-cat path")
-        bal = fitsio.read(args.bal_cat, ext=1, columns=["TARGETID", "BI_CIV"])
-        bal_tids = set(int(r["TARGETID"]) for r in bal if r["BI_CIV"] > 0)
-        print(f"[bal] {len(bal_tids)} BAL TIDs")
+        if args.bal_bi_civ_only:
+            bal = fitsio.read(args.bal_cat, ext=1, columns=["TARGETID", "BI_CIV"])
+            bal_tids = set(int(r["TARGETID"]) for r in bal if r["BI_CIV"] > 0)
+            print(f"[bal] BI_CIV>0 only: {len(bal_tids)} BAL TIDs")
+        else:
+            bal = fitsio.read(args.bal_cat, ext=1, columns=["TARGETID"])
+            bal_tids = set(int(r["TARGETID"]) for r in bal)
+            print(f"[bal] all bal_cat TIDs (molly recipe): {len(bal_tids)} BAL TIDs")
 
     # ---- Truth-match BEFORE cuts (so cat has Z_TRUE/NHI_TRUE) --------------
-    cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched = match_truth_to_cat(
+    # 2026-05-15 patch: switched from gp_native.match_truth_to_cat (truth-NHI-
+    # descending iter, closest-z tie-break) to match_truth_to_cat_molly (cat
+    # input-order iter, closest-NHI tie-break). The old matcher overcounted
+    # TPs by ~3pp purity vs molly's notebook on the legacy catalog.
+    cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched = match_truth_to_cat_molly(
         cat, truth, args.dz_rel
     )
     cat["NHI_TRUE"] = cat_NHI_TR
