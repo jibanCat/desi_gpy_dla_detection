@@ -83,13 +83,23 @@ Authoritative numbers, read from each sweep's current `HEADLINE.tsv`
 | **MAX_LAMBDA=1250 (lambda_fine F2, PW 50k)** | **0.838** | **0.830** | `lambda_fine_sweep/HEADLINE.tsv` |
 
 > **Do not cite the HANDOFF's old "post-patch C0 = 0.779/0.877"** — it is
-> obsolete. That number came from a 2026-05-14 cellC run that was
-> superseded by a 2026-05-15 re-run, and predates the molly BAL-recipe fix
-> (drop-ALL-`bal_cat` vs BI_CIV>0, which raises C ~+4pp and moves n_truth
-> 618→581). Verified 2026-05-17 by re-evaluating C0 under both recipes.
-> The HEADLINE P/C is the **pre-DLAFLAG** figure; the `DLAFLAG==0` "clean
-> catalog" view is much smaller (~15% of rows survive — the NHI-consistency
-> gate flags ~79% at default `k`).
+> obsolete (a 2026-05-14 run superseded by a 05-15 re-run, pre-BAL-recipe-fix).
+>
+> **⚠ DLAFLAG-gating caveat (2026-05-17, verified in code).** The molly
+> headline P/C **is** gated: `purity_min`/`completeness_min` apply
+> `good_mask = (DLAFLAG == 0) & ~LYBETA_FLAG`. **The gate is applied
+> INCONSISTENTLY across sweeps** — `lambda_range`'s catalogs were never
+> postprocessed (DLAFLAG all 0 → un-gated P/C), while `cellC`, `lambda_fine`,
+> `min_z`, `nhi`, `gp_range` catalogs were run through `add_dla_flags.py`
+> (DLAFLAG-gated). So `lambda_range L0` (0.772/0.817, un-gated) and
+> `cellC C0` (0.814/0.799, gated) are the **same config** — the difference
+> is the gate. The numbers in this table are **gated** (cellC, lambda_fine).
+> Cross-sweep P/C is therefore only loosely comparable until all sweeps are
+> re-evaluated under one consistent DLAFLAG policy.
+>
+> The gate is dominated by `NHI_INCONSISTENT` (bit 5): at the default
+> `k = 0.5` it flags **~79–86% of catalog rows**. `k` has **not** been
+> validated against an `NHI_ERR` calibration — see the open item below.
 
 These are on the β-collapsed baseline GP model; the production model swap
 may shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
@@ -101,6 +111,15 @@ may shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
 3. `model_sweep` (job 53077686) — pick the production GP model.
 4. `p_DLA` cut convention — 0.99 vs tightened (HANDOFF "Priority 1").
 5. QMC sample count — 50k vs 100k.
+6. **DLAFLAG-gating consistency + NHI-gate `k`** — the molly headline P/C is
+   `DLAFLAG==0`-gated, but the gate was applied inconsistently across sweeps
+   (see the caveat above). Needed: (a) re-evaluate every sweep under ONE
+   DLAFLAG policy so the numbers are comparable; (b) decide the production
+   `NHI_INCONSISTENT` `k` — an old k-sweep (`cellC/_nhi_gate_k*`, n_truth=618)
+   shows k 0→1 trades C↔P monotonically (0.826/0.830 → 0.878/0.781), but
+   `k` was never validated against an `NHI_ERR` calibration and the flag's
+   usefulness is unproven. Until decided, treat `NHI_INCONSISTENT` as
+   provisional and report P/C both with and without it.
 
 ---
 
