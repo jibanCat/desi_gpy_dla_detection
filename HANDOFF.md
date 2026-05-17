@@ -29,17 +29,32 @@ MIN_LAMBDA=911.75, MIN_Z_SEPARATION=3000, NHI prior [17.2, 22.5],
 convention (default 0.99 vs tightened — see 05-14 §"Priority 1") and
 final PW count (50k vs 100k, ~1pp).
 
-## In flight — MAX_LAMBDA=1250 cross-validation
+## In flight — 3 sweeps submitted 2026-05-17 (all `-q regular`)
 
-Sweep `lambda1250_crossval/` (job **53076988**, `-q regular`, submitted
-2026-05-17). 4 cells = paired 1216.75-vs-1250 baseline on Saclay-0 and
-2LPT-0, all at 50k PW (isolates the MAX_LAMBDA effect per mock).
-Auto-evals on completion. Watch:
-`/pscratch/sd/j/jibancat/prod533_5k_20260511/lambda1250_crossval/_chain.log`
-for `ALL_DONE` then `EVAL_DONE`; results in `HEADLINE.tsv`.
-**Pickup**: if L_saclay > B_saclay and L_2lpt > B_2lpt on the Pareto
-front, 1250 is confirmed for production; if not, revisit before the 1M
-run.
+All under `/pscratch/sd/j/jibancat/prod533_5k_20260511/`, auto-eval on
+completion (watch each dir's `_chain.log` → `EVAL_DONE`, then `HEADLINE.tsv`).
+
+1. **`lambda1250_crossval/`** (job `53076988`) — MAX_LAMBDA=1250 off-dist
+   validation. 4 cells = paired 1216.75-vs-1250 on Saclay-0 + 2LPT-0, 50k
+   PW. **Pickup**: if L_saclay>B_saclay and L_2lpt>B_2lpt on the Pareto
+   front, 1250 is confirmed; append result to
+   `docs/notes/2026-05-16_lambda_fine_and_gp_range.md`.
+
+2. **`min_z_separation_sweep_50k/`** (jobs `53077531/533/534/535` + eval
+   `53077536`) — MIN_Z_SEPARATION re-sweep at **50k spectra** (10× the 5k
+   slice) to resolve M0-M3 above the noise floor; matters for downstream
+   DLA-clustering. Run at MAX_LAMBDA=1250. **Pickup**: fill in
+   `docs/notes/2026-05-15_min_z_separation_smoke.md` (or a new 50k note);
+   if M1 (2000 km/s) holds its +2pp purity at 50k, reconsider the knob.
+
+3. **`model_sweep/`** (job `53077686`) — 5 cells, baseline + 4 PR6
+   `phase2_desi` trained GP models (V1 2lpt_loa124_m, V2 2lpt_loa0_m,
+   V3 real-LOA no-dla, V4 real-LOA with-bal), current best config.
+   **Key context**: the V0 baseline is the β-collapsed deprecated model
+   (β=1.45, Garnett norm band) — see memory
+   `project_baseline_model_beta_collapse`. **Pickup**: write a sweep note;
+   if a healthy `_m` model wins, the 1M run should switch to it (and OFF
+   the β-collapsed baseline).
 
 ## Sweep notes written/refreshed this session
 

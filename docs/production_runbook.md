@@ -14,7 +14,88 @@
 > CLI. You will silently lose τ-EB in production unless you patch them or use
 > `slurm/run_local.sh` (which does forward them). See §10.1.
 
+---
+
+## Current production decisions (2026-05-17)
+
+> This section consolidates the 2026-05-14 → 2026-05-17 work (the
+> `dla_gp.py` +log(N) bias fix and the cellC/cellD/lambda/min_z/nhi/model
+> knob sweeps) into one authoritative table. **It supersedes the
+> "v3 high-purity stack" framing in the §"KNOWN REGRESSION" callout and
+> §0 below** — the +log(N) patch rebalanced P/C and the
+> regression framing predates it. Where this section and an older one
+> disagree, this section wins. Per-knob evidence is in
+> `docs/notes/2026-05-1{4,5,6}_*.md`.
+
+### The recommended production configuration
+
+**Family**: 2-way **single-absorber** model over NHI [17.2, 22.5] — the
+cellC family. Chosen for the CDDF LLS use case: the single catalog is
+directly usable for LLS / sub-DLA / DLA after post-hoc NHI cuts, with no
+lossy 3-way channel split (3-way loses completeness — see
+`2026-05-16_subdla_3way_sweep.md` and memory `project_subdla_dla_joint_design`).
+
+| Knob | Production value | Status | Evidence |
+|---|---|---|---|
+| `SINGLE_ABSORBER_MODEL` | **1** (2-way) | firm | `2026-05-16_config_confirmations.md` — +12.6pp P / +21.4pp C vs mode 0 |
+| `MAX_DLAS` | **3** | firm | cellC sweep — MAX_DLAS≥4 does not Pareto-improve |
+| NHI prior | **[17.2, 22.5]** (`pw_samples_a3_172_225_*.mat`) | firm | `2026-05-15_nhi_prior_extension.md` — P/C-neutral, fixes high-NHI clipping |
+| `MAX_LAMBDA` | **1250** | confirm pending | `2026-05-16_lambda_fine_and_gp_range.md` — F2 Pareto-best; `lambda1250_crossval` validates on Saclay/2LPT |
+| `MIN_LAMBDA` | **911.75** | firm | gp_range — blue-side moves inert-to-bad |
+| `MIN_Z_SEPARATION` | **3000 km/s** | confirm pending | `2026-05-15_min_z_separation_smoke.md` — inert at 5k; `min_z_separation_sweep_50k` re-tests |
+| `FILTER_LOW_LIKELIHOOD` | **1** | firm | cellC family runs FILTER=1 |
+| +log(N) evidence patch | **ON** (in `dla_gp.py`) | firm, merged | `2026-05-14_log_evidence_bias_fix.md`; A/B `2026-05-16_logn_patch_ab.md` |
+| `ENABLE_TAU_EB` / objective | **1** / `null` | firm | PR #5 |
+| `EARLY_STOP_MODE` | **baseline** | firm | variants A/D not promoted |
+| QMC `NUM_DLA_SAMPLES` | **50k or 100k** | open | 50k↔100k ≈ 1pp (within noise); pick on cost |
+| `LEARNED_FILE` (GP model) | **a healthy phase2_desi `_m` model** — NOT the current baseline | decision pending | the current baseline is β-collapsed (β=1.45); `model_sweep` picks the winner |
+| BAL | included at inference, excluded at eval | firm | no `--balmask` |
+| `p_DLA` catalog cut | **0.99** (default) | open | post-patch this is a looser cut; tightening to log-BF ≥ 15.4 recovers the pre-patch operating point — see HANDOFF "Priority 1" |
+
+### ⚠ The current sweep baseline GP model is β-collapsed — do NOT ship it
+
+`null_gp_test/converted/2lpt_loa124_nohcd_nobal_wide.h5`, used as the
+baseline in every 5k sweep, is the **deprecated β=1.45 model** (Turner+2024
+prior is 3.62) and forces the Garnett norm band [1310,1325]. The 1M
+production run must use a **healthy phase2_desi `_m` model** (β ≈ 2.97–3.57,
+MATLAB norm band [1425,1475]). The `model_sweep` (job 53077686) picks the
+winner among 4 `_m` candidates. See memory `project_baseline_model_beta_collapse`.
+
+### Eval recipe (the "fixed molly recipe", 2026-05-15)
+
+P/C is measured with `examples/molly_faithful_pc_plots.py`: SNR_RED > 2,
+`p_DLA ≥ 0.99`, lyb-veto on, **drop ALL `bal_cat` TIDs** (`--no-bal`),
+λ_rf ∈ [911, 1216] Å, NHI ≥ 20.3 truth + predicted, external
+`--snr-cat`/`--zcat`, `--restrict-truth-to-processed`. This recipe
+(post-`2026-05-15_molly_eval_recipe_fix.md`) gives **n_truth = 581** on a
+London-0 5k slice. Pre-fix sweeps (cellC/cellD, n_truth = 618) are **not**
+P/C-comparable to post-fix sweeps.
+
+### Expected P/C (2-way, post-patch, London-0 5k, default p_DLA ≥ 0.99)
+
+| Config | Purity | Completeness |
+|---|---:|---:|
+| cellC baseline C0 (MAX_LAMBDA=1216.75) | 0.779 | 0.877 |
+| **MAX_LAMBDA=1250 (lambda_fine F2)** | **0.838** | **0.830** |
+| C7 (PW 100k) | 0.776 | 0.892 |
+
+These are on the β-collapsed baseline model; the production model swap may
+shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
+
+### Open items before the 1M production launch
+
+1. `lambda1250_crossval` (job 53076988) — confirm MAX_LAMBDA=1250 on Saclay/2LPT.
+2. `min_z_separation_sweep_50k` (jobs 53077531-535) — confirm MIN_Z_SEPARATION at 50k spectra.
+3. `model_sweep` (job 53077686) — pick the production GP model.
+4. `p_DLA` cut convention — 0.99 vs tightened (HANDOFF "Priority 1").
+5. QMC sample count — 50k vs 100k.
+
+---
+
 > **⚠ KNOWN REGRESSION — read before adopting the v3 stack as "baseline":**
+> *(2026-05-17: superseded — see "Current production decisions" above. The
+> +log(N) patch rebalanced P/C; this callout predates it and is kept only
+> for the FILTER=1 [20.3,20.6) root-cause history.)*
 >
 > The "high-purity stack" documented in §0 (v3 GP + PW14 50k + τ-EB, FILTER=1)
 > gives **~+9 pp purity** versus the historical baseline (`model_epoch_920` +
