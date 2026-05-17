@@ -453,9 +453,14 @@ class DLAGP(NullGP):
                 sample_log_likelihoods[:, num_dlas] - max_log_likelihood
             )
 
+            # Bias fix (2026-05-14): per-sample log-likelihoods at line 425-429
+            # carry a -log(num_dla_samples) shift; the MC integral estimator
+            # `max + log mean(probs)` is therefore biased by -log(N). Adding
+            # +log(N) (i.e., +lognorm) recovers an unbiased log evidence.
             log_likelihoods_dla[num_dlas] = (
                 max_log_likelihood
                 + np.log(np.nanmean(sample_probabilities))
+                + lognorm
                 - lognorm * num_dlas
             )  # occams razor for more DLA parameters
 
@@ -655,9 +660,16 @@ class DLAGP(NullGP):
                         sample_probabilities[:] = np.exp(
                             sample_log_likelihoods[:, init_num_dla] - max_log_likelihood
                         )
+                        # Bias fix (2026-05-14): per-sample log-likelihoods carry
+                        # a -log(num_dla_samples) shift from process_sample
+                        # (line 212-214). The MC integral estimator
+                        # `max + log mean(probs)` is `log mean(exp(L_i)) - log(N)`,
+                        # so we add +log(N) to recover an unbiased estimate.
+                        # See docs/notes/2026-05-14_log_evidence_bias_fix.md.
                         log_likelihoods_dla[init_num_dla] = (
                             max_log_likelihood
                             + np.log(np.nanmean(sample_probabilities))
+                            + np.log(self.params.num_dla_samples)
                             - lognorm * init_num_dla
                         )
                         log.info(
@@ -713,9 +725,11 @@ class DLAGP(NullGP):
                         probabilities_below_null = np.exp(
                             below_null - max_log_below_null
                         )
+                        # Bias fix (2026-05-14): +log(N) — same reason as above.
                         log_initial_logL = (
                             max_log_below_null
                             + np.log(np.nanmean(probabilities_below_null))
+                            + np.log(self.params.num_dla_samples)
                         )
                     else:
                         log.warning(f"Only {below_null.size} samples in low-likelihood region; correction may be unreliable.")
@@ -793,8 +807,11 @@ class DLAGP(NullGP):
                         and not np.all(np.isnan(initial_logL))):
                     initial_max_L = np.nanmax(initial_logL)
                     initial_probs = np.exp(initial_logL - initial_max_L)
+                    # Bias fix (2026-05-14): +log(N) — see early-stop branch above.
                     log_likelihoods_dla[num_dlas] = (
-                        initial_max_L + np.log(np.nanmean(initial_probs))
+                        initial_max_L
+                        + np.log(np.nanmean(initial_probs))
+                        + np.log(self.params.num_dla_samples)
                     )
                     # Skip the multi-DLA truncated-correction branch — early-stop
                     # check below still applies normally.
@@ -813,7 +830,14 @@ class DLAGP(NullGP):
                     #   log Z ≈ log( w * exp(log_Z_A) + (1 - w) * exp(log_Z_B) )
                     #
                     # log_Z_A is estimated from the retained high-likelihood region:
-                    log_Z_trunc = np.log(np.nanmean(sample_probabilities[_valid_mask])) + max_log_likelihood
+                    # Bias fix (2026-05-14): +log(N) on log_Z_trunc; the rejected-region
+                    # log_initial_logL above is also corrected, so the partition formula
+                    # below combines two consistently-unbiased pieces.
+                    log_Z_trunc = (
+                        np.log(np.nanmean(sample_probabilities[_valid_mask]))
+                        + max_log_likelihood
+                        + np.log(self.params.num_dla_samples)
+                    )
 
                     # log_Z_B is approximated from the mean log-likelihood of the *rejected* region
                     # (e.g. those from the initial scan with logL < null_evidence), stored as log_initial_logL
@@ -833,10 +857,12 @@ class DLAGP(NullGP):
                         - lognorm * num_dlas
                     )
                 else:
-                    # No truncation: standard marginal likelihood estimate from unweighted average
+                    # No truncation: standard marginal likelihood estimate from unweighted average.
+                    # Bias fix (2026-05-14): +log(N) — see early-stop branch above.
                     log_likelihoods_dla[num_dlas] = (
                         max_log_likelihood
                         + np.log(np.nanmean(sample_probabilities))
+                        + np.log(self.params.num_dla_samples)
                         - lognorm * num_dlas
                     )
 
@@ -864,12 +890,12 @@ class DLAGP(NullGP):
                     else:  # "D"
                         # Pre-Occam likelihood — matches the "No truncation" branch
                         # formula minus the `- lognorm * num_dlas` Occam term.
-                        # We use the same max_log_likelihood + log mean(probs) as
-                        # the (truncated or non-truncated) integral estimator that
-                        # was already computed above for this k.
+                        # Bias fix (2026-05-14): include +log(N) so the comparison
+                        # is on the same scale as the patched evidence formulas.
                         stop_lik = (
                             max_log_likelihood
                             + np.log(np.nanmean(sample_probabilities))
+                            + np.log(self.params.num_dla_samples)
                         )
                     if stop_lik < null_evidence:
                         log.info(
