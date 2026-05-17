@@ -34,7 +34,7 @@ fi
 
 CONFIG_PATH="$1"; shift
 START_OVERRIDE="" ; END_OVERRIDE="" ; WINDOW_OVERRIDE="" ; OUTDIR_OVERRIDE=""
-WORKERS_OVERRIDE="" ; PARALLEL_FILES=4 ; DRY_RUN=0
+WORKERS_OVERRIDE="" ; PARALLEL_FILES=4 ; DRY_RUN=0 ; POSTPROCESS=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -44,6 +44,7 @@ while [ $# -gt 0 ]; do
         --window)         WINDOW_OVERRIDE="$2"; shift 2 ;;
         --max-workers)    WORKERS_OVERRIDE="$2"; shift 2 ;;
         --parallel-files) PARALLEL_FILES="$2"; shift 2 ;;
+        --no-postprocess) POSTPROCESS=0; shift ;;
         --dry-run)        DRY_RUN=1; shift ;;
         *) echo "[run-local] unknown arg: $1" >&2; exit 2 ;;
     esac
@@ -202,6 +203,14 @@ build_cmd() {
     if [ -n "${EARLY_STOP_MODE:-}" ]; then
         cmd+=(--early_stop_mode "${EARLY_STOP_MODE}")
     fi
+    # FILTER=1 truncated-sampler knobs
+    # (see docs/notes/2026-05-13_filter1_knob_tuning.md and runbook §3.6)
+    if [ -n "${FILTER_N_INITIAL_FLOOR:-}" ]; then
+        cmd+=(--filter_n_initial_floor "${FILTER_N_INITIAL_FLOOR}")
+    fi
+    if [ "${FILTER_EMPTY_MASK_FALLTHROUGH:-0}" = "1" ]; then
+        cmd+=(--filter_empty_mask_fallthrough 1)
+    fi
     printf '%q ' "${cmd[@]}"
 }
 
@@ -240,3 +249,28 @@ while [ $i -lt $TOTAL ]; do
 done
 
 echo "[run-local] all done."
+
+# --- Postprocess: add downstream catalog flags to dlacat-*.fits -------------
+# Runs add_dla_flags.py over the OUTDIR so the shipped catalog carries
+# LYBETA / BAL / NHI-consistency flags folded into DLAFLAG. Skip with
+# --no-postprocess (e.g. for partial debug passes). Mock runs resolve the
+# BAL catalog from MOCKDIR; if not found, the BAL flag is skipped.
+if [ "$DRY_RUN" -ne 1 ] && [ "$POSTPROCESS" -eq 1 ]; then
+    bal_path=""
+    if [ -n "${MOCKDIR:-}" ] && [ -f "${MOCKDIR}/bal_cat.fits" ]; then
+        bal_path="${MOCKDIR}/bal_cat.fits"
+    fi
+    pp_args=(--catalog-dir "$OUTDIR")
+    if [ -n "$bal_path" ]; then
+        pp_args+=(--bal-cat "$bal_path")
+    else
+        echo "[run-local] postprocess: no bal_cat.fits under MOCKDIR — skipping BAL_FLAG"
+        pp_args+=(--no-bal-flag)
+    fi
+    echo "[run-local] $(date +%H:%M:%S) postprocess: add_dla_flags.py ${pp_args[*]}"
+    if python "${REPO_ROOT}/tools/postprocess/add_dla_flags.py" "${pp_args[@]}"; then
+        echo "[run-local] postprocess done — dlacat-*.fits now carry DLAFLAG flags."
+    else
+        echo "[run-local] WARNING: postprocess failed; dlacat-*.fits are un-flagged." >&2
+    fi
+fi
