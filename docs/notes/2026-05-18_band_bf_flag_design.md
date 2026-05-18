@@ -89,13 +89,64 @@ borderline classification? Range sensitivity, interval/partial Bayes
 factors, Savage–Dickey, ROPE, the Lindley–Bartlett paradox, etc. — see
 the companion literature review (separate agent). Feeds Q2.
 
-## 3. Decision
+## 3. Findings (2026-05-18) — Q1–Q5 answered
 
-`BAND_LOGBF` is **deferred** — do not add it to `dlacat.fits` until Q1–Q5
-are resolved. Two agents are dispatched 2026-05-18:
-- a literature-review agent (Q5);
-- a methodology agent (Q1–Q4, compute on a debug node) → writes to
-  `band_bf_research/`.
-The flag spec (column name, exact band definition, local-posterior
-window, threshold, one scalar vs a profile) will be finalised here once
-both report.
+Methodology agent → `band_bf_research/FINDINGS.md`; literature agent →
+`~/band_bf_literature_review.md`.
+
+- **Q1 (local vs global): LOCAL wins.** Restricting the band evidence to
+  QMC samples with |z_DLA_sample − Z_DLA| ≤ **0.02** lifts AUC 0.726 →
+  **0.759**. Wider windows revert toward the contaminated global value;
+  narrower starve the sample. Use the local, per-absorber posterior.
+- **Q2 (band pair): one scalar, edges don't matter if anchored at 20.3.**
+  Wide/nominal/high-wide all tie at AUC 0.759; the split must sit at
+  20.3 and bands must not be starved. A nested-band *profile* / LDA does
+  **not** beat the single scalar (ratios near-collinear).
+- **Q3 (both directions): the band-BF is purity-only, with NO
+  completeness cost.** Sub-DLA→DLA AUC 0.759. DLA→sub-DLA: out of
+  jurisdiction — 332/338 (98%) of missed DLAs produced *no detection at
+  all*, and the band-BF only re-scores existing detections. So it cannot
+  rescue boundary FNs, but it also cannot *create* them.
+- **Q4 (bias/scatter paradox): RESOLVED — hypothesis confirmed.** The
+  mean NHI bias near the floor is small (~0–0.06 dex) but the **scatter
+  is σ ≈ 0.35–0.42 dex — ~3× the reported `NHI_ERR`** (median 0.11).
+  Two-way leakage across 20.3: sub-DLA→DLA 36.6%, DLA→sub-DLA 16.8%. It
+  is **scatter-driven symmetric boundary leakage with a ~3×
+  under-estimated NHI posterior width**, not a mean bias. "75% of FPs
+  are sub-DLAs" and "bias ≈ 0" are the up-scatter tail and the
+  centred-but-wide error of the *same* scatter.
+- **Q5 (statistics): the prototype statistic is not formally a Bayes
+  factor.** Per the encompassing-prior / Savage–Dickey result, an
+  interval BF is (posterior mass in band) / (**prior** mass in band) —
+  so the correct statistic uses the per-band **mean** exp(L) (or
+  equivalently the local posterior mass `P(NHI ≥ 20.3 | local data)`),
+  not the **sum** the prototype used. The literature also flags:
+  marginal-likelihood ratios are range-sensitive (Lindley–Bartlett);
+  fix band edges on physical grounds; expect a ROPE-style "undecided"
+  zone near 20.3; propagate the QMC error.
+
+## 4. Decision & the one remaining step
+
+**The discriminator is real and worth shipping** — local, single scalar,
+AUC 0.759, ~2:1-favourable purity trade, *zero* completeness cost (Q3).
+But **it must be re-expressed in the statistically-sound form before it
+becomes a column**: the **prior-mass-corrected** statistic — i.e. the
+local posterior mass `P(NHI ≥ 20.3 | local data)` (bounded [0,1],
+range-stable, a genuine probability), not the raw `log(Z_A/Z_B)`. The
+AUC is rank-based so the *discrimination* should carry over, but the
+threshold and interpretation only make sense in the corrected form.
+
+**Remaining step**: one more debug-node test — recompute on the local
+posterior using the prior-mass-corrected statistic `P(NHI ≥ 20.3 |
+local)`, confirm the AUC, and set the threshold + a ROPE "undecided"
+band. Then finalise the flag spec:
+- `P_DLA_LOCAL` (float32) — local posterior mass `P(NHI ≥ 20.3)` for the
+  absorber, from QMC samples within ±0.02 in z_DLA. Informational column,
+  **not** folded into `DLAFLAG` (like `NHI_CONSISTENCY_FLAG`).
+- Downstream: a higher-purity boundary cut + an "undecided" flag for
+  objects whose local posterior straddles 20.3.
+
+`BAND_LOGBF`/`P_DLA_LOCAL` stays **deferred** until that final test
+confirms the corrected form. It is a partial, no-cost-to-completeness
+purity proxy — **not** a route to 85/85; the root cause (3× under-
+estimated NHI posterior width) needs a model-side fix.
