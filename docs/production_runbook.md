@@ -169,16 +169,21 @@ items).
 
 **Still open / the real blocker:**
 
-1. **The 85/85 target is not met and is not a tuning problem.** The
-   production config tops out at **~0.80 P / 0.86 C** — ~4.6pp short on
-   purity. The p_DLA-cut sweep (`2026-05-17_pdla_cut_sweep.md`), the
-   model sweep (`2026-05-18_model_sweep.md`), and the lambda/PW/min_z
-   sweeps **all** confirm the purity ceiling is robust to knobs, model
-   file, and cut. Closing the gap needs **structural work** — the
-   NHI-bias / `NHI_ERR` recalibration (`NHI_pred` biased +0.06 dex,
-   `NHI_ERR` under-estimated ~1.4×; `2026-05-17_nhi_flag_investigation.md`)
-   or an inference-side change. This is the headline pre-launch decision:
-   **launch the 1M run at ~0.80/0.86 now, or hold for the purity work?**
+1. **The 85/85 gap is now diagnosed — and it has one concrete fix.**
+   The production config tops out at **~0.80 P / 0.86 C**, ~4.6pp short on
+   purity. The FN/FP deep-dive (`2026-05-18_fn_fp_deepdive.md`, job
+   53133896) pins the cause: **75% of false positives are *real* sub-DLAs
+   (19.0–20.3) whose predicted NHI is over-estimated past the 20.3 floor**
+   — only ~6% of FPs are genuinely spurious. Threshold knobs (p_DLA cut,
+   NHI cut) only slide P↔C along this 20.3–20.6 boundary, which is why the
+   model / p_DLA / lambda / PW sweeps all stalled ~3–5pp short.
+   **The one lever that moves the joint frontier is an NHI-debias pass**
+   (τ-EB-style; closed ~65% of the DLA-regime NHI bias in earlier PR #5
+   work) — it reclassifies ~50 of the 68 FPs back to sub-DLA *without* a
+   completeness cost. **Recommended pre-1M-launch work item.** The
+   pre-launch decision: launch at ~0.80/0.86 now, or first do the
+   NHI-debias pass and re-measure (the only identified path to ~85% P
+   without a P↔C trade).
 2. `p_DLA` cut convention — 0.99 is the completeness-rich default; any
    tightening just trades down the same frontier (no 85/85 point exists).
    Pick 0.99 unless a purity-priority subset catalog is wanted.
