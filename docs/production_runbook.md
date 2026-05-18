@@ -103,7 +103,14 @@ may shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
 1. `lambda1250_crossval` (job 53076988) — confirm MAX_LAMBDA=1250 on Saclay/2LPT.
 2. `min_z_separation_sweep_50k` (jobs 53077531-535) — confirm MIN_Z_SEPARATION at 50k spectra.
 3. `model_sweep` (job 53077686) — pick the production GP model.
-4. `p_DLA` cut convention — 0.99 vs tightened (HANDOFF "Priority 1").
+4. `p_DLA` cut convention — 0.99 vs tightened. **Bounded by the
+   2026-05-17 p_DLA-cut sweep** (`docs/notes/2026-05-17_pdla_cut_sweep.md`,
+   job 53089164): on the current β-collapsed baseline model **no p_DLA cut
+   reaches 85/85** — purity caps at ~0.83 (F2) / ~0.82 (C7), ~3pp short.
+   The p_DLA cut is a genuine purity lever (~+2–3pp) but cannot close the
+   gap alone; 85/85 needs the GP-model swap (`model_sweep`) to lift the
+   frontier. Re-run the p_DLA sweep on the model-swap winner to pick the
+   final cut.
 5. QMC sample count — 50k vs 100k.
 6. **DLAFLAG-gating consistency** — ✅ DONE (2026-05-17, sbatch `53087827`).
    All 12 sweeps re-postprocessed under the new DLAFLAG schema and
