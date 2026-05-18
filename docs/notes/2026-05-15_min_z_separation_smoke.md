@@ -128,12 +128,34 @@ detection at this operating point.
 
 So the knob is **inert at production scale**: the multi-DLA NaN-masking it
 controls rarely changes the MAP k-model after the p_DLA≥0.99 cut.
-**Keep MIN_Z_SEPARATION = 3000 km/s.** (The `min_z_separation_sweep_50k`
-re-run at 10× statistics will give the definitive word, but the 5k
-refreshed result already shows nothing to chase.)
+**Keep MIN_Z_SEPARATION = 3000 km/s.**
 
 The knob is also free in compute (identical 44.6–44.7 min wall across all
 cells — it is a numpy mask), so there is no cost argument either way.
+
+## 50k re-sweep — DONE (confirms NO-CHANGE)
+
+The user asked for a 10×-larger re-run to push the M0–M3 differences above
+the noise floor (MIN_Z_SEPARATION matters for downstream DLA-clustering).
+`min_z_separation_sweep_50k` (jobs 53077531/533/534/535, completed
+2026-05-18) ran M0–M3 on a **50k-spectrum** London-0 slice (n_truth=5681,
+~10× the 5k slice), new DLAFLAG convention.
+
+| Cell | MIN_Z_SEPARATION | P | C | n_cat | node_h |
+|------|-----------------:|---:|---:|---:|---:|
+| M0 | 3000 km/s (baseline) | 0.7922 | 0.8434 | 43350 | 2.12 |
+| M1 | 2000 km/s | 0.7972 | 0.8434 | 43445 | 2.17 |
+| M2 | 1000 km/s | 0.7921 | 0.8405 | 43480 | 2.20 |
+| M3 | 0 km/s | 0.7985 | 0.8478 | 43399 | 2.23 |
+
+**Verdict holds — NO-CHANGE, now definitive.** Even at 10× statistics the
+M0–M3 spread is **0.6pp on purity** (0.792–0.799) and **0.7pp on
+completeness** (0.840–0.848) — still within the run-to-run noise floor.
+M3 (0 km/s) is nominally the best cell but by an amount indistinguishable
+from noise. MIN_Z_SEPARATION has **no resolvable effect on headline P/C**;
+keep the production default 3000 km/s. (A genuine close-pair / DLA-pair
+resolution effect, if any, would need a clustering-specific metric, not
+P/C — but it does not show up in the catalog headline.)
 
 ## Files
 

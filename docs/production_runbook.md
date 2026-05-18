@@ -37,29 +37,64 @@ lossy 3-way channel split (3-way loses completeness — see
 
 | Knob | Production value | Status | Evidence |
 |---|---|---|---|
-| `SINGLE_ABSORBER_MODEL` | **1** (2-way) | firm | `2026-05-16_config_confirmations.md` — +12.6pp P / +21.4pp C vs mode 0 |
+| `LEARNED_FILE` (GP model) | **`2lpt_loa124_nohcd_nobal_wide_m`** (`phase2_desi/.../phase2_result.h5`) | **firm** | `2026-05-18_model_sweep.md` — V1 wins (0.804/0.864); MUST replace the deprecated β-collapsed baseline |
+| `SINGLE_ABSORBER_MODEL` | **1** (2-way) | firm | `2026-05-16_config_confirmations.md` — single-absorber ≫ multi-DLA mode |
 | `MAX_DLAS` | **3** | firm | cellC sweep — MAX_DLAS≥4 does not Pareto-improve |
-| NHI prior | [17.2, 22.5] (`pw_samples_a3_172_225_*.mat`) | **provisional** | `2026-05-15_nhi_prior_extension.md` — refreshed 5k smoke shows a marginal ~1pp P/C cost (not the "free" gated result); fixes high-NHI clipping but re-check at scale |
-| `MAX_LAMBDA` | **1250** | confirm pending | `2026-05-16_lambda_fine_and_gp_range.md` — F2 Pareto-best; `lambda1250_crossval` validates on Saclay/2LPT |
+| `MAX_LAMBDA` | **1250** | firm (London-strong, Saclay-mild, 2LPT-neutral) | `2026-05-16_lambda_fine_and_gp_range.md` §4 — cross-mock validated; safe everywhere |
 | `MIN_LAMBDA` | **911.75** | firm | gp_range — blue-side moves inert-to-bad |
-| `MIN_Z_SEPARATION` | **3000 km/s** | confirm pending | `2026-05-15_min_z_separation_smoke.md` — inert at 5k; `min_z_separation_sweep_50k` re-tests |
+| `MIN_Z_SEPARATION` | **3000 km/s** | firm | `2026-05-15_min_z_separation_smoke.md` — inert; confirmed NO-CHANGE at 50k (M0–M3 spread ≤0.7pp) |
 | `FILTER_LOW_LIKELIHOOD` | **1** | firm | cellC family runs FILTER=1 |
 | +log(N) evidence patch | **ON** (in `dla_gp.py`) | firm, merged | `2026-05-14_log_evidence_bias_fix.md`; A/B `2026-05-16_logn_patch_ab.md` |
 | `ENABLE_TAU_EB` / objective | **1** / `null` | firm | PR #5 |
 | `EARLY_STOP_MODE` | **baseline** | firm | variants A/D not promoted |
-| QMC `NUM_DLA_SAMPLES` | **50k or 100k** | open | 50k↔100k ≈ 1pp (within noise); pick on cost |
-| `LEARNED_FILE` (GP model) | **a healthy phase2_desi `_m` model** — NOT the current baseline | decision pending | the current baseline is β-collapsed (β=1.45); `model_sweep` picks the winner |
+| QMC `NUM_DLA_SAMPLES` | **50k** | firm-ish | 50k↔100k ≈ 1pp (within noise); 50k chosen on cost (~2× cheaper) |
+| NHI prior | [17.2, 22.0] (`pw_samples_a3_172_220_50000.mat`) | firm; [17.2,22.5] extension provisional | `2026-05-15_nhi_prior_extension.md` — the 22.5 extension showed a marginal ~1pp P/C cost; default to [17.2,22.0], re-check the extension at scale |
 | BAL | included at inference, excluded at eval | firm | no `--balmask` |
-| `p_DLA` catalog cut | **0.99** (default) | open | post-patch this is a looser cut; tightening to log-BF ≥ 15.4 recovers the pre-patch operating point — see HANDOFF "Priority 1" |
+| `p_DLA` catalog cut | **0.99** (default) | open | `2026-05-17_pdla_cut_sweep.md` — no cut reaches 85/85; 0.99 is the completeness-rich default |
 
-### ⚠ The current sweep baseline GP model is β-collapsed — do NOT ship it
+### Recommended production configuration ("best baseline") + runtime
+
+The full config to launch the 1M-QSO production run with:
+
+```
+LEARNED_FILE      = .../phase2_desi/2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5
+SINGLE_ABSORBER_MODEL = 1      MAX_DLAS = 3      FILTER_LOW_LIKELIHOOD = 1
+MAX_LAMBDA = 1250   MIN_LAMBDA = 911.75   MIN_Z_SEPARATION = 3000
+NUM_DLA_SAMPLES = 50000   DLA_SAMPLES_FILE = pw_samples_a3_172_220_50000.mat
+ENABLE_TAU_EB = 1   TAU_EB_OBJECTIVE = null   EARLY_STOP_MODE = baseline
++log(N) patch ON (in dla_gp.py)   p_DLA cut = 0.99 at catalog time
+```
+
+**Expected P/C** (London-0 5k, this exact config = `model_sweep` V1):
+**0.804 purity / 0.864 completeness**. Saclay/2LPT land within ~1–2pp.
+This is **below the 85/85 target on purity** (~4.6pp short) — see "Open
+items"; no tested knob/model/cut closes that gap.
+
+**Runtime** — measured from `model_sweep` V1: **6766 spectra in 50.0 min
+on 64 cores** = 0.208 node-hours. Scaling:
+
+| dataset | QSOs (approx) | node-hours | wall on N nodes |
+|---|---|---|---|
+| 5k-slice validation | ~6.8k | 0.21 | ~50 min, 1/4 node |
+| one full mock (London/Saclay/2LPT) | ~1.2M | **~37 nh** | ~9 h on 4 nodes |
+| **real DESI Y3 LOA (headline run)** | **~1M** | **~31 nh** | **~8 h on 4 nodes, or ~2 h on 16** |
+
+≈ **31 node-hours per 1M QSOs** at PW 50k. PW 100k would be ~1.5–1.8×
+(~50 nh). τ-EB `null` is the cheap objective and is included in this
+number. See §4 for the older per-dataset breakdown (now superseded by
+this measured figure).
+
+### ⚠ Do NOT ship the β-collapsed sweep baseline model — use V1
 
 `null_gp_test/converted/2lpt_loa124_nohcd_nobal_wide.h5`, used as the
 baseline in every 5k sweep, is the **deprecated β=1.45 model** (Turner+2024
-prior is 3.62) and forces the Garnett norm band [1310,1325]. The 1M
-production run must use a **healthy phase2_desi `_m` model** (β ≈ 2.97–3.57,
-MATLAB norm band [1425,1475]). The `model_sweep` (job 53077686) picks the
-winner among 4 `_m` candidates. See memory `project_baseline_model_beta_collapse`.
+prior is 3.62) and forces the Garnett norm band [1310,1325]. **The
+production model is the `model_sweep` winner — V1,
+`phase2_desi/2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5`** (healthy
+β, MATLAB norm band). Note `2026-05-18_model_sweep.md`: the swap is only a
+*mild* improvement (+0.4pp P / +2.2pp C) — the β-collapse was not the
+purity-frontier limiter — but the deprecated model must not ship
+regardless. See memory `project_baseline_model_beta_collapse`.
 
 ### Eval recipe (the "fixed molly recipe", 2026-05-15)
 
@@ -80,43 +115,51 @@ molly recipe, n_truth=581, β-collapsed baseline GP model.
 
 | Config | Purity | Completeness | source |
 |---|---:|---:|---|
-| cellC C0 baseline (MAX_LAMBDA=1216.75, PW 50k) | 0.780 | 0.836 | `cellC_knob_sweep/HEADLINE.tsv` |
-| cellC C7 (PW 100k) | 0.791 | 0.855 | `cellC_knob_sweep/HEADLINE.tsv` |
-| **MAX_LAMBDA=1250 (lambda_fine F2, PW 50k)** | **0.810** | **0.870** | `lambda_fine_sweep/HEADLINE.tsv` |
+| **production config — V1 model + MAX_LAMBDA=1250 (PW 50k)** | **0.804** | **0.864** | `model_sweep/HEADLINE.tsv` (V1) |
+| same config, β-collapsed baseline model (for reference) | 0.800 | 0.842 | `model_sweep/HEADLINE.tsv` (V0) |
+| cellC C0 (β-collapsed, MAX_LAMBDA=1216.75, PW 50k) | 0.780 | 0.836 | `cellC_knob_sweep/HEADLINE.tsv` |
+| cellC C7 (β-collapsed, PW 100k) | 0.791 | 0.855 | `cellC_knob_sweep/HEADLINE.tsv` |
+
+The headline production number is **V1 = 0.804 / 0.864** (London-0 5k).
+Saclay/2LPT land within ~1–2pp. This is **~4.6pp short of the 85% purity
+target** — no tested model, knob, or p_DLA cut closes that gap (see Open
+items).
 
 > **History (for anyone reading older docs):** earlier drafts quoted
 > NHI-gated numbers (e.g. C0 = 0.814/0.799) or the obsolete HANDOFF
-> "0.779/0.877". Both are superseded. The current numbers above are
-> un-NHI-gated (NHI_INCONSISTENT is now informational-only) — lower
-> purity, higher completeness, because the NHI gate had been inflating
-> purity. Purity toward the 85% target is raised separately via the
-> p_DLA cut (see open items). All sweeps are now gated identically
-> (LYBETA/BAL only), so
-> cross-sweep P/C is directly comparable; `lambda_range L0` and `cellC C0`
-> (same config) now agree within run-to-run noise (~1pp).
-
-These are on the β-collapsed baseline GP model; the production model swap
-may shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
+> "0.779/0.877" — both superseded. Current numbers are un-NHI-gated
+> (NHI_INCONSISTENT informational-only) and all sweeps are gated
+> identically (LYBETA/BAL only), so cross-sweep P/C is directly
+> comparable.
 
 ### Open items before the 1M production launch
 
-1. `lambda1250_crossval` (job 53076988) — confirm MAX_LAMBDA=1250 on Saclay/2LPT.
-2. `min_z_separation_sweep_50k` (jobs 53077531-535) — confirm MIN_Z_SEPARATION at 50k spectra.
-3. `model_sweep` (job 53077686) — pick the production GP model.
-4. `p_DLA` cut convention — 0.99 vs tightened. **Bounded by the
-   2026-05-17 p_DLA-cut sweep** (`docs/notes/2026-05-17_pdla_cut_sweep.md`,
-   job 53089164): on the current β-collapsed baseline model **no p_DLA cut
-   reaches 85/85** — purity caps at ~0.83 (F2) / ~0.82 (C7), ~3pp short.
-   The p_DLA cut is a genuine purity lever (~+2–3pp) but cannot close the
-   gap alone; 85/85 needs the GP-model swap (`model_sweep`) to lift the
-   frontier. Re-run the p_DLA sweep on the model-swap winner to pick the
-   final cut.
-5. QMC sample count — 50k vs 100k.
-6. **DLAFLAG-gating consistency** — ✅ DONE (2026-05-17, sbatch `53087827`).
-   All 12 sweeps re-postprocessed under the new DLAFLAG schema and
-   re-evaluated; every cell is now gated identically (LYBETA/BAL only) and
-   the P/C tables / scatter are consistent and paper-citable. The
-   `NHI_INCONSISTENT` `k` sub-question is also resolved (see below).
+**Resolved 2026-05-17/18** (all the knob sweeps have landed):
+- ✅ `lambda1250_crossval` + `lambdamax_crossmock` — MAX_LAMBDA=1250 is
+  London-strong / Saclay-mild / 2LPT-neutral; kept (safe everywhere).
+- ✅ `min_z_separation_sweep_50k` — MIN_Z_SEPARATION inert at 50k; keep 3000.
+- ✅ `model_sweep` — production model = V1 `2lpt_loa124_nohcd_nobal_wide_m`.
+- ✅ QMC sample count — 50k (100k is ~1pp, not worth ~2× cost).
+- ✅ DLAFLAG-gating consistency (sbatch `53087827`) — all sweeps
+  re-evaluated under one convention; tables/scatter paper-citable.
+
+**Still open / the real blocker:**
+
+1. **The 85/85 target is not met and is not a tuning problem.** The
+   production config tops out at **~0.80 P / 0.86 C** — ~4.6pp short on
+   purity. The p_DLA-cut sweep (`2026-05-17_pdla_cut_sweep.md`), the
+   model sweep (`2026-05-18_model_sweep.md`), and the lambda/PW/min_z
+   sweeps **all** confirm the purity ceiling is robust to knobs, model
+   file, and cut. Closing the gap needs **structural work** — the
+   NHI-bias / `NHI_ERR` recalibration (`NHI_pred` biased +0.06 dex,
+   `NHI_ERR` under-estimated ~1.4×; `2026-05-17_nhi_flag_investigation.md`)
+   or an inference-side change. This is the headline pre-launch decision:
+   **launch the 1M run at ~0.80/0.86 now, or hold for the purity work?**
+2. `p_DLA` cut convention — 0.99 is the completeness-rich default; any
+   tightening just trades down the same frontier (no 85/85 point exists).
+   Pick 0.99 unless a purity-priority subset catalog is wanted.
+3. NHI prior [17.2, 22.5] extension — provisional (marginal ~1pp cost at
+   5k); decide with a larger-scale E0/E1 re-check, or default to [17.2,22.0].
 
 ### DLAFLAG / NHI_INCONSISTENT — decided 2026-05-17
 

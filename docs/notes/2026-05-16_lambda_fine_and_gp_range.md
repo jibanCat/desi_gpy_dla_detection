@@ -95,3 +95,36 @@ before locking it in.
 
 Cost: extending the window to 1250 adds ~14% pixels to the Woodbury
 inversion; wall impact is small (O(n_px²) on a sub-dominant term).
+
+## 4. Cross-mock validation — DONE (2026-05-18)
+
+The London-0 result above is strong, but two cross-mock sweeps
+(`lambda1250_crossval`, job 53076988; `lambdamax_crossmock`, job 53104596)
+show **it does not fully generalize**. MAX_LAMBDA curve per mock, new
+DLAFLAG convention, same 2-way config:
+
+| MAX_LAMBDA | London-0 | Saclay-0 | 2LPT-0 |
+|---:|---|---|---|
+| 1216.75 | 0.772 / 0.817 | 0.796 / 0.866 | 0.798 / 0.854 |
+| 1250 | 0.810 / 0.870 | 0.810 / 0.855 | 0.794 / 0.850 |
+| 1300 | 0.809 / 0.851 | 0.809 / 0.862 | 0.798 / 0.838 |
+| 1360 | — | 0.806 / 0.862 | 0.785 / 0.838 |
+
+- **London-0**: strong Pareto win (1216.75→1250 = +3.8pp P / +5.3pp C).
+- **Saclay-0**: mild positive — 1216.75→1250 gains +1.4pp P for −1.1pp C;
+  1250–1360 all cluster ~0.81 / 0.86. Red extension helps purity a little.
+- **2LPT-0**: **neutral-to-negative** — 1250 is −0.4pp P / −0.4pp C vs
+  1216.75, and pushing to 1300/1360 drops completeness further
+  (0.854 → 0.838). The red extension does not help 2LPT.
+
+**Odd point worth noting**: 2LPT is the *worst* mock for the red
+extension even though the GP model (`2lpt_loa124_nohcd_nobal_wide`) was
+trained on a 2LPT mock — one would expect best in-distribution behaviour
+there. Not explained; flagged for follow-up (possibly a 2LPT
+training-vs-test version mismatch, or the β-collapsed baseline interacting
+with the 2LPT continuum shape).
+
+**Production stance**: MAX_LAMBDA=1250 is still a **safe** production
+value — it is a strong win on London, a mild win on Saclay, and only
+marginally negative on 2LPT (within ~0.5pp). But the headline "+3.8/+5.3pp"
+is London-0-specific; do not advertise it as a universal gain.
