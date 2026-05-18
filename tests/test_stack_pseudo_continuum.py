@@ -51,7 +51,7 @@ def make_mock_composite(rest_grid, *, inject=True, seed=0):
         specs = [(1031.91, 0.20, 1.0), (1063.18, 0.12, 1.0), (1143.23, 0.10, 1.0),
                  (1190.42, 0.18, 1.0), (1260.42, 0.22, 1.0), (1334.53, 0.15, 1.0),
                  (1393.76, 0.25, 1.0), (1548.20, 0.35, 1.0),
-                 (1117.0, 0.20, 1.0), (1480.0, 0.28, 10.0)]
+                 (1117.0, 0.20, 1.0), (1480.0, 0.28, 4.0)]
         for lam0, depth, wmult in specs:
             sig = lam0 * SIGMA_V / _C_KM_S * wmult
             absorption += depth * np.exp(-0.5 * ((lam - lam0) / sig) ** 2)
@@ -140,17 +140,14 @@ def test_pcont_lines_survive_normalization():
 
 
 def test_rejection_removes_broad_unmasked_feature(monkeypatch):
-    """The broad 1480 A feature is absent from METAL_LINES, so the static
-    mask misses it and a 15 A-knot spline WOULD bend toward it. Only the
-    iterative rejection loop removes it — verified differentially against
-    a rejection-disabled (MAX_REJECT_ITER=0) fit.
+    """The broad 1480 A feature (wmult=4, FWHM ~5 A) is absent from
+    METAL_LINES, so the static mask misses it and a 15 A-knot spline WOULD
+    bend toward it. Only the iterative rejection loop removes it — verified
+    differentially against a rejection-disabled (MAX_REJECT_ITER=0) fit.
 
-    NOTE (DONE_WITH_CONCERNS): with wmult=10 (FWHM ~12 A) the spline fully
-    absorbs the feature (it spans > one knot interval), so both rejection-on
-    and rejection-off produce identical dev=0.2181 and gap=0.0000.  The
-    differential assertion is therefore OMITTED — the fixture needs a narrower
-    width (wmult=3-5, FWHM ~4-6 A) to produce a measurable gap.  Only the
-    dev_on plausibility check is kept.  Observed: dev_on=0.2181 dev_off=0.2181.
+    With wmult=4 the feature is narrow enough that rejection reliably removes
+    it (dev_on~0.031) while the rejection-off spline bends toward it
+    (dev_off~0.103), giving a gap of ~0.07.
     """
     rg = _rest_grid()
     curve, counts, P_true, _ = make_mock_composite(rg)
@@ -161,10 +158,11 @@ def test_rejection_removes_broad_unmasked_feature(monkeypatch):
     dev_on = abs(P_on[i] / P_true[i] - 1.0)
     dev_off = abs(P_off[i] / P_true[i] - 1.0)
     print(f"dev_on={dev_on:.4f}  dev_off={dev_off:.4f}")
-    # With wmult=10 the spline follows the feature regardless of rejection:
-    # gap is 0.0000.  The only meaningful check is that neither path diverges
-    # completely from truth (sanity guard, not a rejection-efficacy test).
-    assert dev_on < 0.30, f"continuum diverged badly at 1480: dev_on={dev_on:.4f}"
+    # observed (seed=0, wmult=4): dev_on~0.031, dev_off~0.103
+    assert dev_on < 0.055, f"rejection-on continuum dips at 1480: {dev_on}"
+    assert dev_off > dev_on + 0.035, (
+        f"disabling rejection did not measurably worsen the fit: "
+        f"on={dev_on:.4f} off={dev_off:.4f}")
 
 
 def test_rejection_actually_rejects():
