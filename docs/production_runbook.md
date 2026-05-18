@@ -169,21 +169,30 @@ items).
 
 **Still open / the real blocker:**
 
-1. **The 85/85 gap is now diagnosed — and it has one concrete fix.**
-   The production config tops out at **~0.80 P / 0.86 C**, ~4.6pp short on
-   purity. The FN/FP deep-dive (`2026-05-18_fn_fp_deepdive.md`, job
-   53133896) pins the cause: **75% of false positives are *real* sub-DLAs
-   (19.0–20.3) whose predicted NHI is over-estimated past the 20.3 floor**
-   — only ~6% of FPs are genuinely spurious. Threshold knobs (p_DLA cut,
-   NHI cut) only slide P↔C along this 20.3–20.6 boundary, which is why the
-   model / p_DLA / lambda / PW sweeps all stalled ~3–5pp short.
-   **The one lever that moves the joint frontier is an NHI-debias pass**
-   (τ-EB-style; closed ~65% of the DLA-regime NHI bias in earlier PR #5
-   work) — it reclassifies ~50 of the 68 FPs back to sub-DLA *without* a
-   completeness cost. **Recommended pre-1M-launch work item.** The
-   pre-launch decision: launch at ~0.80/0.86 now, or first do the
-   NHI-debias pass and re-measure (the only identified path to ~85% P
-   without a P↔C trade).
+1. **The 85/85 gap is diagnosed; no cheap fix reaches it.** Production
+   tops out at **~0.80 P / 0.86 C**, ~4.6pp short on purity. The FN/FP
+   deep-dive (`2026-05-18_fn_fp_deepdive.md`) pins the cause: **75% of
+   false positives are *real* sub-DLAs (19.0–20.3) with NHI over-estimated
+   past the 20.3 floor**. Two fixes were then tested
+   (`2026-05-18_boundary_purity_tests.md`):
+   - **NHI-debias (post-hoc point-estimate correction) — REFUTED.** The
+     +0.06 dex bias is carried by the *strong-DLA* end; near the 20.3
+     floor it is ≈0, so a debias pushes nothing across the boundary. CV-
+     confirmed: it is just another 1:1 P↔C trade, the frontier does not
+     move. Drop it from the critical path (still worth doing for N_HI/CDDF
+     accuracy, separately).
+   - **Band Bayes factor — modestly useful.** `log(Z[20.3,20.6]/Z[20.0,
+     20.3])` from the QMC samples discriminates true DLAs from
+     over-estimated sub-DLAs at AUC 0.726; a `≥+0.5` cut gives ~+11pp
+     borderline purity at a ~2:1-favourable trade — the best lever found,
+     but not enough for 85/85 alone. **Action: add `BAND_LOGBF` as an
+     informational `dlacat` column** (not a `DLAFLAG` gate).
+   - The real frontier-mover is a **model-side** change — a sharper NHI
+     posterior at the DLA/sub-DLA boundary, or a joint sub-DLA+DLA forward
+     model — i.e. a development effort, not a knob.
+   **Pre-launch decision**: launch the 1M run at ~0.80/0.86 now (shipping
+   `BAND_LOGBF` so downstream can take a higher-purity boundary cut), or
+   invest in the model-side NHI-posterior work first.
 2. `p_DLA` cut convention — 0.99 is the completeness-rich default; any
    tightening just trades down the same frontier (no 85/85 point exists).
    Pick 0.99 unless a purity-priority subset catalog is wanted.
