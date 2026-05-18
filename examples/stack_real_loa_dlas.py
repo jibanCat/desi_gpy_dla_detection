@@ -854,6 +854,9 @@ def fit_pseudo_continuum(rest_grid, curve, counts, return_info=False):
     if spl is None:
         return (P, info) if return_info else P
     x = rest_grid[ok]
+    # Evaluate P only over the post-rejection fitted-pixel span (not the
+    # full 945-1600 A): clamping to [x[0], x[-1]] avoids cubic extrapolation
+    # past the data if rejection trims the blue/red edge.
     inside = (rest_grid >= max(PCONT_LAMBDA_MIN, x[0])) & (rest_grid <= x[-1])
     P[inside] = spl(rest_grid[inside])
     info["n_rejected"] = int(fit_ok0.sum() - ok.sum())
