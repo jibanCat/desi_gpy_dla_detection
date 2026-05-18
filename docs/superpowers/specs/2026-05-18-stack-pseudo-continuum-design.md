@@ -245,8 +245,10 @@ On the real log-λ rest grid (700–1600 Å):
    (≈8–10 drawn from `METAL_LINES`, spanning forest + redward: CIV,
    SiIV, SiII, FeII, OVI, …), each with a known central depth (0.05–0.4)
    and width `σ_stack(λ)`. Mock flux `C = P_true · (1 − Σ Gaussians)`.
-3. **Two extra *weak* lines NOT in the mask table** — to exercise the
-   rejection loop.
+3. **Two extra lines NOT in the mask table** — moderate depth (deep
+   enough to trip the 5σ rejection threshold), to exercise the rejection
+   loop. A *shallow* unmasked line would be absorbed by spline stiffness
+   alone and never reach the rejection step.
 4. **Counts** array — realistic (~300–800), lower at the blue edge; a
    few pixels forced to 0 / NaN to exercise coverage masking.
 5. **Noise** — per-pixel Gaussian, σ_pix known (~0.01–0.03)·/√counts.

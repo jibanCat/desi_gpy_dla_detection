@@ -138,7 +138,7 @@ def make_mock_composite(rest_grid, *, inject=True, seed=0):
         specs = [(1031.91, 0.20), (1063.18, 0.12), (1143.23, 0.10),
                  (1190.42, 0.18), (1260.42, 0.22), (1334.53, 0.15),
                  (1393.76, 0.25), (1548.20, 0.35),
-                 (1117.0, 0.06), (1450.0, 0.05)]  # last 2: NOT in METAL_LINES
+                 (1117.0, 0.20), (1450.0, 0.18)]  # last 2: NOT in METAL_LINES
         for lam0, depth in specs:
             sig = lam0 * SIGMA_V / _C_KM_S
             absorption += depth * np.exp(-0.5 * ((lam - lam0) / sig) ** 2)
