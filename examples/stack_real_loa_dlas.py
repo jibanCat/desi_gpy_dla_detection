@@ -934,18 +934,6 @@ def plot_overview(rest_grid, per_bin, bins, fname, subtitle,
     print(f"[saved] {OUT_DIR / fname}", flush=True)
 
 
-def _local_continuum_norm(x, y, lines, core_half=2.5):
-    """Divide y by a linear fit to the in-window continuum (line cores
-    within ±core_half Å excluded). Reveals few-% lines on a sloped base."""
-    cont_mask = np.isfinite(y)
-    for _, ln_w in lines:
-        cont_mask &= np.abs(x - ln_w) > core_half
-    if cont_mask.sum() >= 5:
-        coef = np.polyfit(x[cont_mask], y[cont_mask], 1)
-        return y / np.polyval(coef, x)
-    med = np.nanmedian(y)
-    return y / med if (med and np.isfinite(med)) else y
-
 
 def plot_metal_zoom(rest_grid, per_bin, bins, fname, suptitle,
                     exclude=frozenset()):
@@ -967,7 +955,8 @@ def plot_metal_zoom(rest_grid, per_bin, bins, fname, suptitle,
             if (lo, hi) not in per_bin:
                 continue
             bs = per_bin[(lo, hi)]
-            y = _local_continuum_norm(x, bs.curve[sel].astype(np.float64), lines)
+            P = fit_pseudo_continuum(rest_grid, bs.curve, bs.counts)
+            y = (bs.curve / P)[sel]
             ax.plot(x, y, color=BIN_COLOR[(lo, hi)], lw=1.3, alpha=0.85,
                     label=f"NHI [{lo:.1f},{hi:.1f})")
             if np.isfinite(y).any():
@@ -1086,6 +1075,10 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
         print(f"[skip] no combined stack for {name}", flush=True)
         return
     rc, rn, cc, cn, n = combined[name]
+    P_real = fit_pseudo_continuum(rest_grid, rc, rn)
+    P_ctrl = fit_pseudo_continuum(rest_grid, cc, cn)
+    norm_real = rc / P_real
+    norm_ctrl = cc / P_ctrl
     panels = _filtered_panels(exclude)
     n_panels = len(panels)
     ncols = 4
@@ -1097,8 +1090,8 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
         lo_w, hi_w = center - half, center + half
         sel = (rest_grid >= lo_w) & (rest_grid <= hi_w)
         x = rest_grid[sel]
-        y_real = _local_continuum_norm(x, rc[sel].astype(np.float64), lines)
-        y_ctrl = _local_continuum_norm(x, cc[sel].astype(np.float64), lines)
+        y_real = norm_real[sel]
+        y_ctrl = norm_ctrl[sel]
         ax.plot(x, y_real, color="#d62728", lw=1.5, alpha=0.9, label="real")
         ax.plot(x, y_ctrl, color="#888888", lw=1.3, alpha=0.8,
                 label="z-scrambled control")
