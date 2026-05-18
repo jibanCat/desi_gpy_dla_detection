@@ -163,3 +163,32 @@ def test_spline_does_not_follow_masked_lines():
         if not np.isfinite(P[i]):
             continue
         assert abs(P[i] / P_true[i] - 1.0) < 0.04, f"spline dipped at {lam0}"
+
+
+def test_all_nan_input_returns_all_nan():
+    rg = _rest_grid()
+    curve = np.full(len(rg), np.nan)
+    counts = np.zeros(len(rg))
+    P = fit_pseudo_continuum(rg, curve, counts)
+    assert np.all(np.isnan(P))
+
+
+def test_low_coverage_pixels_excluded():
+    """A pixel block with counts < 50 must not break the fit and must be
+    excluded from fit_ok."""
+    rg = _rest_grid()
+    curve, counts, _, _ = make_mock_composite(rg)
+    counts = counts.copy()
+    counts[(rg > 1300.0) & (rg < 1320.0)] = 10.0  # below the 50 floor
+    fit_ok = _continuum_mask(rg, curve, counts)
+    assert not fit_ok[(rg > 1301.0) & (rg < 1319.0)].any()
+    P = fit_pseudo_continuum(rg, curve, counts)
+    assert np.isfinite(P[(rg > 1340.0) & (rg < 1360.0)]).all()
+
+
+def test_determinism():
+    rg = _rest_grid()
+    curve, counts, _, _ = make_mock_composite(rg, seed=3)
+    P1 = fit_pseudo_continuum(rg, curve, counts)
+    P2 = fit_pseudo_continuum(rg, curve, counts)
+    np.testing.assert_array_equal(np.nan_to_num(P1), np.nan_to_num(P2))
