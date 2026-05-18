@@ -39,7 +39,7 @@ lossy 3-way channel split (3-way loses completeness — see
 |---|---|---|---|
 | `LEARNED_FILE` (GP model) | **`2lpt_loa124_nohcd_nobal_wide_m`** (`phase2_desi/.../phase2_result.h5`) | **firm** | `2026-05-18_model_sweep.md` — V1 wins (0.804/0.864); MUST replace the deprecated β-collapsed baseline |
 | `SINGLE_ABSORBER_MODEL` | **1** (2-way) | firm | `2026-05-16_config_confirmations.md` — single-absorber ≫ multi-DLA mode |
-| `MAX_DLAS` | **3** | firm | cellC sweep — MAX_DLAS≥4 does not Pareto-improve |
+| `MAX_DLAS` | **3** | firm | London-0 truth: only **0.05%** of NHI≥20.3 QSOs have >3 classical DLAs (50 of ~101k); cellC C1/C2 (MAX_DLAS 4/5) show no P/C gain. *(Caveat: ~6% of QSOs have >3 absorbers counting sub-DLAs — see note below.)* |
 | `MAX_LAMBDA` | **1250** | firm (London-strong, Saclay-mild, 2LPT-neutral) | `2026-05-16_lambda_fine_and_gp_range.md` §4 — cross-mock validated; safe everywhere |
 | `MIN_LAMBDA` | **911.75** | firm | gp_range — blue-side moves inert-to-bad |
 | `MIN_Z_SEPARATION` | **3000 km/s** | firm | `2026-05-15_min_z_separation_smoke.md` — inert; confirmed NO-CHANGE at 50k (M0–M3 spread ≤0.7pp) |
@@ -47,10 +47,10 @@ lossy 3-way channel split (3-way loses completeness — see
 | +log(N) evidence patch | **ON** (in `dla_gp.py`) | firm, merged | `2026-05-14_log_evidence_bias_fix.md`; A/B `2026-05-16_logn_patch_ab.md` |
 | `ENABLE_TAU_EB` / objective | **1** / `null` | firm | PR #5 |
 | `EARLY_STOP_MODE` | **baseline** | firm | variants A/D not promoted |
-| QMC `NUM_DLA_SAMPLES` | **50k** | firm-ish | 50k↔100k ≈ 1pp (within noise); 50k chosen on cost (~2× cheaper) |
-| NHI prior | [17.2, 22.0] (`pw_samples_a3_172_220_50000.mat`) | firm; [17.2,22.5] extension provisional | `2026-05-15_nhi_prior_extension.md` — the 22.5 extension showed a marginal ~1pp P/C cost; default to [17.2,22.0], re-check the extension at scale |
+| QMC `NUM_DLA_SAMPLES` | **100k** | **revised 2026-05-18** | refreshed cellC: C7 (100k) is **+1.1pp P / +1.9pp C** over C0 (50k) — above the ~0.6pp noise floor, *not* "within noise" as an earlier draft said. Worth the ~1.5–1.8× QMC cost for the 85/85 push. (V1 was measured at 50k; re-measure at 100k.) |
+| NHI prior | **[17.2, 22.5]** (`pw_samples_a3_172_225_100000.mat`) | firm | extends the ceiling so rare NHI>22 DLAs are not clipped low. `2026-05-15_nhi_prior_extension.md` showed a ~1pp 5k P/C "cost" but that is within the noise floor — the modelling-correctness argument (no hard clip) governs. |
 | BAL | included at inference, excluded at eval | firm | no `--balmask` |
-| `p_DLA` catalog cut | **0.99** (default) | open | `2026-05-17_pdla_cut_sweep.md` — no cut reaches 85/85; 0.99 is the completeness-rich default |
+| `p_DLA` catalog cut | **0.99** | convention (not optimized) | `2026-05-17_pdla_cut_sweep.md` gives the full P/C-vs-cut frontier; no cut reaches 85/85, so the cut is a free P↔C slide. 0.99 is the historical, completeness-rich end — keep it unless a purity-priority subset is wanted. |
 
 ### Recommended production configuration ("best baseline") + runtime
 
@@ -60,29 +60,53 @@ The full config to launch the 1M-QSO production run with:
 LEARNED_FILE      = .../phase2_desi/2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5
 SINGLE_ABSORBER_MODEL = 1      MAX_DLAS = 3      FILTER_LOW_LIKELIHOOD = 1
 MAX_LAMBDA = 1250   MIN_LAMBDA = 911.75   MIN_Z_SEPARATION = 3000
-NUM_DLA_SAMPLES = 50000   DLA_SAMPLES_FILE = pw_samples_a3_172_220_50000.mat
+NUM_DLA_SAMPLES = 100000   DLA_SAMPLES_FILE = pw_samples_a3_172_225_100000.mat   (NHI [17.2,22.5])
 ENABLE_TAU_EB = 1   TAU_EB_OBJECTIVE = null   EARLY_STOP_MODE = baseline
 +log(N) patch ON (in dla_gp.py)   p_DLA cut = 0.99 at catalog time
 ```
 
-**Expected P/C** (London-0 5k, this exact config = `model_sweep` V1):
-**0.804 purity / 0.864 completeness**. Saclay/2LPT land within ~1–2pp.
-This is **below the 85/85 target on purity** (~4.6pp short) — see "Open
-items"; no tested knob/model/cut closes that gap.
+**Expected P/C**: the closest measured cell is `model_sweep` V1 at
+**PW 50k / NHI [17.2,22] = 0.804 / 0.864** (London-0 5k). The production
+config above moves to **PW 100k** (cellC C7-vs-C0 ⇒ ~+1.1pp P / +1.9pp C)
+and the **[17.2,22.5]** prior — so expect roughly **~0.81 / ~0.88**, but
+this exact combination has **not been measured as one cell**. A single
+validation run of the final config is recommended before the 1M launch.
+Either way it is **below the 85/85 target on purity** — see "Open items";
+no tested knob/model/cut closes that gap.
 
 **Runtime** — measured from `model_sweep` V1: **6766 spectra in 50.0 min
-on 64 cores** = 0.208 node-hours. Scaling:
+on 64 cores** = 0.208 node-hours at **PW 50k**. PW 100k (the production
+choice) scales the QMC integral ~1.5–1.8× → ~0.34 nh per 6.8k.
 
-| dataset | QSOs (approx) | node-hours | wall on N nodes |
+| dataset | QSOs | node-hours @PW50k | node-hours @PW100k |
 |---|---|---|---|
-| 5k-slice validation | ~6.8k | 0.21 | ~50 min, 1/4 node |
-| one full mock (London/Saclay/2LPT) | ~1.2M | **~37 nh** | ~9 h on 4 nodes |
-| **real DESI Y3 LOA (headline run)** | **~1M** | **~31 nh** | **~8 h on 4 nodes, or ~2 h on 16** |
+| 5k-slice validation | ~6.8k | 0.21 | ~0.34 |
+| one full mock (London/Saclay/2LPT) | ~1.2M | ~37 | **~60** |
+| **real DESI Y3 LOA (headline run)** | **~1M** | ~31 | **~50** |
+| **full suite** (3 mocks + real LOA) | — | ~140 | **~230** |
 
-≈ **31 node-hours per 1M QSOs** at PW 50k. PW 100k would be ~1.5–1.8×
-(~50 nh). τ-EB `null` is the cheap objective and is included in this
-number. See §4 for the older per-dataset breakdown (now superseded by
+At the production PW 100k: ≈ **50 node-hours per 1M QSOs** (~13 h on
+4 nodes, ~3 h on 16). τ-EB `null` (the cheap objective) is included.
+See §4 for the older per-dataset breakdown (now superseded by
 this measured figure).
+
+### Note on MAX_DLAS = 3
+
+Checked against London-0 truth (`dla_cat.fits`, 2026-05-18):
+
+- **Classical DLAs (NHI ≥ 20.3)**: of ~101k QSOs with ≥1 classical DLA,
+  only **50 (0.05%)** have more than 3. For the headline NHI≥20.3 catalog,
+  MAX_DLAS=3 misses essentially nothing.
+- **All absorbers (any NHI, incl. sub-DLAs/LLS)**: of 461k DLA-bearing
+  QSOs, **6.1%** have more than 3 absorbers. The 2-way single-absorber
+  model searches the full [17.2, 22] range, so on a multi-absorber
+  sightline MAX_DLAS=3 caps the recursion before all absorbers are found.
+
+Empirically this does not cost headline P/C: the cellC sweep cells C1
+(MAX_DLAS=4) and C2 (MAX_DLAS=5) show **no Pareto improvement** over
+C0 (MAX_DLAS=3) — slightly lower purity, equal completeness. So MAX_DLAS=3
+is kept. The 6% multi-absorber population is a candidate explanation for
+some missed DLAs — see the FN/FP deep-dive (`fn_fp_deepdive/FINDINGS.md`).
 
 ### ⚠ Do NOT ship the β-collapsed sweep baseline model — use V1
 
