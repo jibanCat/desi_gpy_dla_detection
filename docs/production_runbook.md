@@ -111,15 +111,23 @@ may shift them. The 1M-run numbers should be re-quoted after `model_sweep`.
 3. `model_sweep` (job 53077686) — pick the production GP model.
 4. `p_DLA` cut convention — 0.99 vs tightened (HANDOFF "Priority 1").
 5. QMC sample count — 50k vs 100k.
-6. **DLAFLAG-gating consistency + NHI-gate `k`** — the molly headline P/C is
-   `DLAFLAG==0`-gated, but the gate was applied inconsistently across sweeps
-   (see the caveat above). Needed: (a) re-evaluate every sweep under ONE
-   DLAFLAG policy so the numbers are comparable; (b) decide the production
-   `NHI_INCONSISTENT` `k` — an old k-sweep (`cellC/_nhi_gate_k*`, n_truth=618)
-   shows k 0→1 trades C↔P monotonically (0.826/0.830 → 0.878/0.781), but
-   `k` was never validated against an `NHI_ERR` calibration and the flag's
-   usefulness is unproven. Until decided, treat `NHI_INCONSISTENT` as
-   provisional and report P/C both with and without it.
+6. **DLAFLAG-gating consistency** — the molly headline P/C is `DLAFLAG==0`-gated,
+   but the gate was applied inconsistently across sweeps (see the caveat
+   above). Still needed: re-evaluate every sweep under ONE DLAFLAG policy so
+   the numbers are comparable. *(The `NHI_INCONSISTENT` `k` sub-question is
+   now resolved — see below.)*
+
+### DLAFLAG / NHI_INCONSISTENT — decided 2026-05-17
+
+The `NHI_INCONSISTENT` gate was investigated (`docs/notes/2026-05-17_nhi_flag_investigation.md`,
+sbatch job 53078990). Result: the flag *is* FP-enriched (~3× the FP-rate of
+kept rows) but **not a clean filter** — 41% of flagged rows are real DLAs and
+every k>0 trades completeness for purity. **Decision: NHI gate OFF (k=0)** for
+the production headline under the completeness-first directive; keep
+`NHI_CONSISTENCY_FLAG` as an informational column only. Separately, the
+investigation found `NHI_pred` biased **+0.06 dex high** and `NHI_ERR`
+**under-estimated ~1.4×** — that is the scope of the deferred NHI-bias task,
+to revisit after the GP-model swap.
 
 ---
 
