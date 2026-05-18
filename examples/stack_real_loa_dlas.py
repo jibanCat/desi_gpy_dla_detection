@@ -166,6 +166,27 @@ MIN_GOOD_PIX = 100
 # this (Å, absorber rest) fell in a masked gap np.interp bridged → NaN.
 MAX_INTERP_GAP = 2.0
 
+# --- pseudo-continuum fit (post-stack) ------------------------------------
+# A masked fixed-knot cubic spline fit to each composite, divided out so
+# metal lines sit on a flat baseline. See
+# docs/superpowers/specs/2026-05-18-stack-pseudo-continuum-design.md
+_C_KM_S = 299792.458
+PCONT_LAMBDA_MIN = 945.0     # blue end of the spline fit (Å); below this
+                             # the Lyman-series crowding / 912 Å break make
+                             # the pseudo-continuum undefined.
+SIGMA_V = 100.0              # stacked metal-line width budget (km/s):
+                             # DESI LSF ~30 ⊕ z_DLA error ~50 (catalog
+                             # Z_DLA_ERR median 6.2e-4 → 47 km/s at z=3)
+                             # ⊕ metal velocity structure ~80, in quadrature.
+K_MASK_SIGMA = 3.0           # metal mask half-width = K_MASK_SIGMA·σ_stack(λ)
+HI_MASK_HALF = {             # H I core+near-wing mask half-widths (Å)
+    "Lyα": 25.0, "Lyβ": 15.0, "Lyγ": 8.0, "Ly4": 5.0, "Ly5": 5.0,
+}
+KNOT_SPACING = 15.0          # interior knot spacing (Å)
+SPLINE_ORDER = 3             # cubic
+REJECT_SIGMA = 5.0           # iterative-rejection threshold (robust σ)
+MAX_REJECT_ITER = 10         # rejection iteration cap
+
 # Diagnostic metal lines (vacuum rest-frame Å). Lyman series + the strong
 # low/intermediate-ion metals in the 1025–1216 Å forest region + the
 # clean red-side diagnostics.
@@ -741,6 +762,29 @@ def load_curves():
                            d[f"comb_ctrl_{name}"], d[f"comb_ctrlcnt_{name}"],
                            int(d[f"comb_n_{name}"]))
     return rest_grid, per_bin, combined
+
+
+# ---------------------------------------------------------------------------
+# pseudo-continuum
+# ---------------------------------------------------------------------------
+
+_HI_KEYS = frozenset(HI_MASK_HALF)  # METAL_LINES keys that are H I lines
+
+
+def _continuum_mask(rest_grid, curve, counts):
+    """Boolean `fit_ok` — pixels usable for the pseudo-continuum fit:
+    finite, well-covered (≥50 spectra), redward of PCONT_LAMBDA_MIN, and
+    outside every line's mask window. Metal masks are wavelength-scaled
+    (K_MASK_SIGMA × σ_stack(λ)); H I lines use the wider HI_MASK_HALF."""
+    fit_ok = (np.isfinite(curve) & (np.asarray(counts) >= 50)
+              & (rest_grid >= PCONT_LAMBDA_MIN))
+    for name, w in METAL_LINES.items():
+        if name in _HI_KEYS:
+            half = HI_MASK_HALF[name]
+        else:
+            half = K_MASK_SIGMA * w * SIGMA_V / _C_KM_S
+        fit_ok = fit_ok & (np.abs(rest_grid - w) > half)
+    return fit_ok
 
 
 # ---------------------------------------------------------------------------
