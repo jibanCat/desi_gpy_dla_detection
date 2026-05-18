@@ -88,8 +88,13 @@ DLACAT = "/scratch/cavestru_root/cavestru0/mfho/nersc/desi-loa-gpdla-20251229-y3
 LOA_ARCHIVE = "/scratch/cavestru_root/cavestru0/mfho/nersc/loa_archives/loa_full_z2_noR_v2.h5"
 BAL_CATALOG = "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/QSO_cat_loa_main_dark_healpix_v3-altbal.fits"
 OUT_DIR = Path(__file__).resolve().parent.parent / "docs/notes/2026-05-15_stack_real_loa_dlas"
-OUT_DIR.mkdir(parents=True, exist_ok=True)
 NPZ_PATH = OUT_DIR / "stack_curves.npz"
+
+
+def _ensure_outdir():
+    """Create the output directory. Called from main() — kept out of
+    module import so tests can import the pure functions side-effect-free."""
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Rest-frame stack grid: log-λ, 700–1600 Å (floor extended from 900 → 700
 # to reach blueward of the 911.76 Å Lyman limit), dλ ~ 0.6 Å at 1200 Å.
@@ -1052,6 +1057,7 @@ def render_all(rest_grid, per_bin, combined):
 
 
 def main():
+    _ensure_outdir()
     # `--zhist-only`: just the per-bin redshift diagnostics (catalog-only,
     # runs in seconds — no spectrum reads).
     if "--zhist-only" in sys.argv:
