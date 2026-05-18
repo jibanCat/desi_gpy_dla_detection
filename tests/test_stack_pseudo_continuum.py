@@ -45,7 +45,9 @@ def make_mock_composite(rest_grid, *, inject=True, seed=0):
         specs = [(1031.91, 0.20), (1063.18, 0.12), (1143.23, 0.10),
                  (1190.42, 0.18), (1260.42, 0.22), (1334.53, 0.15),
                  (1393.76, 0.25), (1548.20, 0.35),
-                 (1117.0, 0.06), (1450.0, 0.05)]  # last 2: NOT in METAL_LINES
+                 (1117.0, 0.20), (1450.0, 0.18)]  # last 2: NOT in METAL_LINES —
+                 # moderate depth so the static mask misses them and the
+                 # rejection loop must remove them
         for lam0, depth in specs:
             sig = lam0 * SIGMA_V / _C_KM_S
             absorption += depth * np.exp(-0.5 * ((lam - lam0) / sig) ** 2)
@@ -125,3 +127,39 @@ def test_pcont_lines_survive_normalization():
         core = np.abs(rg - lam0) < 2.0 * sig
         measured = 1.0 - np.nanmin(norm[core])
         assert measured > 0.6 * depth, f"line {lam0} eaten: {measured} vs {depth}"
+
+
+def test_rejection_catches_unmasked_lines():
+    """1117 Å and 1450 Å are injected but NOT in METAL_LINES, so the
+    static mask misses them — the rejection loop must keep the continuum
+    from dipping into them."""
+    rg = _rest_grid()
+    curve, counts, P_true, _ = make_mock_composite(rg)
+    P = fit_pseudo_continuum(rg, curve, counts)
+    for lam0 in (1117.0, 1450.0):
+        i = np.argmin(np.abs(rg - lam0))
+        rel = abs(P[i] / P_true[i] - 1.0)
+        assert rel < 0.03, f"continuum dipped into unmasked line {lam0}: {rel}"
+
+
+def test_rejection_actually_rejects():
+    rg = _rest_grid()
+    curve, counts, _, _ = make_mock_composite(rg)
+    _P, info = fit_pseudo_continuum(rg, curve, counts, return_info=True)
+    assert info["n_rejected"] > 0
+    assert info["n_iter"] >= 1
+
+
+def test_spline_does_not_follow_masked_lines():
+    """At each masked injected line centre the spline must stay on the
+    truth continuum, not dip toward the absorption."""
+    rg = _rest_grid()
+    curve, counts, P_true, lines = make_mock_composite(rg)
+    P = fit_pseudo_continuum(rg, curve, counts)
+    for lam0, _depth, _sig in lines:
+        if lam0 < 1000.0 or lam0 in (1117.0, 1450.0):
+            continue
+        i = np.argmin(np.abs(rg - lam0))
+        if not np.isfinite(P[i]):
+            continue
+        assert abs(P[i] / P_true[i] - 1.0) < 0.04, f"spline dipped at {lam0}"
