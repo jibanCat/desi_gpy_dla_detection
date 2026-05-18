@@ -65,6 +65,7 @@ Outputs (docs/notes/2026-05-15_stack_real_loa_dlas/)
   stack_dla.png / stack_metal_zoom_dla.png          — DLA [20.3, 23)
   stack_lyman_limit.png                             — LL break recovery
   stack_bal_compare.png                             — non-BAL vs BAL
+  stack_pseudo_continuum_qc.png                     — continuum-fit QC
   stack_control_lls.png / stack_control_subdla.png  — real vs control
   stack_curves.npz                                  — cached curves + provenance
 """
@@ -1127,6 +1128,52 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
     print(f"[saved] {OUT_DIR / fname}", flush=True)
 
 
+def plot_pseudo_continuum_qc(rest_grid, per_bin, fname):
+    """QC: per production NHI bin, the raw composite with its fitted
+    pseudo-continuum overlaid, masked regions shaded, knot count + fit
+    RMS in the panel title. The eyeball check that the fit is sane."""
+    bins = [b for b in NHI_BINS_PROD if b in per_bin]
+    n_panels = len(bins)
+    ncols = 2
+    nrows = (n_panels + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(18, 4.2 * nrows))
+    axes = np.atleast_1d(axes).flatten()
+    for ax, (lo, hi) in zip(axes, bins):
+        bs = per_bin[(lo, hi)]
+        P, info = fit_pseudo_continuum(rest_grid, bs.curve, bs.counts,
+                                       return_info=True)
+        fit_ok = _continuum_mask(rest_grid, bs.curve, bs.counts)
+        ax.plot(rest_grid, bs.curve, color="#444444", lw=0.8, alpha=0.8,
+                label="composite")
+        ax.plot(rest_grid, P, color="#d62728", lw=1.5, alpha=0.9,
+                label="pseudo-continuum")
+        # shade the masked (non-fit) regions redward of the fit floor
+        masked = (~fit_ok) & (rest_grid >= PCONT_LAMBDA_MIN)
+        ax.fill_between(rest_grid, 0, 1, where=masked, transform=ax.get_xaxis_transform(),
+                        color="grey", alpha=0.12, step="mid")
+        ax.axvline(PCONT_LAMBDA_MIN, color="navy", lw=0.8, ls=":", alpha=0.7)
+        ax.axhline(1.0, color="k", lw=0.5, alpha=0.3)
+        ax.set_xlim(REST_LAMBDA_MIN, REST_LAMBDA_MAX)
+        ax.set_ylim(0.0, 1.7)
+        ax.set_title(f"log NHI [{lo:.1f}, {hi:.1f})  n={bs.n}  "
+                     f"knots={info['n_knots']}  rejected={info['n_rejected']}  "
+                     f"RMS={info['rms']:.3f}", fontsize=9)
+        ax.set_xlabel("absorber rest-frame λ [Å]", fontsize=8)
+        ax.set_ylabel("stacked flux", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.legend(loc="lower right", fontsize=7, framealpha=0.9)
+        ax.grid(alpha=0.2)
+    for ax in axes[n_panels:]:
+        ax.set_visible(False)
+    fig.suptitle("Pseudo-continuum QC — masked fixed-knot cubic spline "
+                 "(grey = masked from the fit; dotted = 945 Å fit floor).",
+                 fontsize=11, y=1.0)
+    fig.tight_layout(rect=[0, 0, 1, 0.99])
+    fig.savefig(OUT_DIR / fname, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[saved] {OUT_DIR / fname}", flush=True)
+
+
 def render_all(rest_grid, per_bin, combined):
     prod = prod_bins_view(per_bin)
 
@@ -1161,6 +1208,7 @@ def render_all(rest_grid, per_bin, combined):
     # Lyman limit break recovery + BAL comparison.
     plot_lyman_limit(rest_grid, per_bin, "stack_lyman_limit.png")
     plot_bal_compare(rest_grid, per_bin, "stack_bal_compare.png")
+    plot_pseudo_continuum_qc(rest_grid, prod, "stack_pseudo_continuum_qc.png")
 
     # Decisive real-vs-control plots.
     for name in CONTROL_CATEGORIES:
