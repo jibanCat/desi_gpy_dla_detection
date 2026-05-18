@@ -79,6 +79,7 @@ from pathlib import Path
 import numpy as np
 from numpy.lib import recfunctions as rfn
 import h5py
+from scipy.interpolate import LSQUnivariateSpline
 from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
@@ -785,6 +786,80 @@ def _continuum_mask(rest_grid, curve, counts):
             half = K_MASK_SIGMA * w * SIGMA_V / _C_KM_S
         fit_ok = fit_ok & (np.abs(rest_grid - w) > half)
     return fit_ok
+
+
+def _safe_lsq_spline(x, y, w, knots):
+    """LSQUnivariateSpline that thins knots until the Schoenberg-Whitney
+    condition is satisfied — on ValueError it drops the knot in the
+    sparsest interval and retries. Falls back to a single polynomial
+    piece (no interior knots) if all knots fail."""
+    knots = list(knots)
+    for _ in range(len(knots) + 1):
+        if not knots:
+            return LSQUnivariateSpline(x, y, t=[], k=SPLINE_ORDER, w=w)
+        try:
+            return LSQUnivariateSpline(x, y, t=knots, k=SPLINE_ORDER, w=w)
+        except ValueError:
+            near = [int(np.sum(np.abs(x - t) <= KNOT_SPACING)) for t in knots]
+            knots.pop(int(np.argmin(near)))
+    return LSQUnivariateSpline(x, y, t=[], k=SPLINE_ORDER, w=w)
+
+
+def fit_pseudo_continuum(rest_grid, curve, counts, return_info=False):
+    """Masked fixed-knot cubic spline + Schlegel-style iterative
+    sigma-rejection. Returns P(λ) — the pseudo-continuum — NaN below
+    PCONT_LAMBDA_MIN and where the fit is degenerate. With
+    return_info=True also returns a diagnostics dict.
+
+    The knot vector, spline order and weight definition are fixed across
+    rejection iterations; only the set of fitted pixels shrinks."""
+    rest_grid = np.asarray(rest_grid, float)
+    curve = np.asarray(curve, float)
+    counts = np.asarray(counts, float)
+    n_pix = len(rest_grid)
+    P = np.full(n_pix, np.nan)
+    info = {"n_knots": 0, "n_iter": 0, "n_rejected": 0, "rms": np.nan}
+
+    fit_ok0 = _continuum_mask(rest_grid, curve, counts)
+    if int(fit_ok0.sum()) < 4 * SPLINE_ORDER:
+        return (P, info) if return_info else P
+
+    weights = np.sqrt(np.maximum(counts, 0.0))
+    ok = fit_ok0.copy()
+    spl = None
+    for it in range(MAX_REJECT_ITER + 1):
+        x, y, w = rest_grid[ok], curve[ok], weights[ok]
+        if len(x) < 4 * SPLINE_ORDER:
+            break
+        cand = np.arange(x[0] + KNOT_SPACING, x[-1] - KNOT_SPACING / 2.0,
+                         KNOT_SPACING)
+        knots = np.array([k for k in cand
+                          if np.any(np.abs(x - k) <= KNOT_SPACING)])
+        knots = knots[(knots > x[0]) & (knots < x[-1])]
+        spl = _safe_lsq_spline(x, y, w, knots)
+        info["n_knots"] = len(spl.get_knots()) - 2  # minus the 2 endpoints
+        info["n_iter"] = it
+        resid = y - spl(x)
+        med = np.median(resid)
+        sigma = 1.4826 * np.median(np.abs(resid - med))
+        if sigma <= 0:
+            break
+        new_bad = np.abs(resid - med) > REJECT_SIGMA * sigma
+        if not new_bad.any():
+            break
+        ok_idx = np.where(ok)[0]
+        ok[ok_idx[new_bad]] = False
+
+    if spl is None:
+        return (P, info) if return_info else P
+    x = rest_grid[ok]
+    inside = (rest_grid >= max(PCONT_LAMBDA_MIN, x[0])) & (rest_grid <= x[-1])
+    P[inside] = spl(rest_grid[inside])
+    info["n_rejected"] = int(fit_ok0.sum() - ok.sum())
+    clean = fit_ok0 & np.isfinite(P)
+    if clean.any():
+        info["rms"] = float(np.sqrt(np.nanmean((curve[clean] / P[clean] - 1.0) ** 2)))
+    return (P, info) if return_info else P
 
 
 # ---------------------------------------------------------------------------

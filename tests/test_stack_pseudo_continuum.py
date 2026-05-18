@@ -72,3 +72,56 @@ def test_continuum_mask_excludes_lines_and_blue_end():
     assert fit_ok[clean]
     # the coverage hole [1080,1090] is excluded
     assert not fit_ok[(rg > 1081.0) & (rg < 1089.0)].any()
+
+
+from examples.stack_real_loa_dlas import fit_pseudo_continuum  # noqa: E402
+
+
+def _offline_mask(rest_grid, lines, pad_sigma=6.0):
+    """Pixels far from every injected line and away from the 945 Å edge."""
+    ok = rest_grid >= 960.0
+    for lam0, _depth, sig in lines:
+        ok = ok & (np.abs(rest_grid - lam0) > pad_sigma * sig)
+    return ok
+
+
+def test_pcont_nan_below_945_finite_above():
+    rg = _rest_grid()
+    curve, counts, _, _ = make_mock_composite(rg)
+    P = fit_pseudo_continuum(rg, curve, counts)
+    assert np.all(np.isnan(P[rg < PCONT_LAMBDA_MIN]))
+    mid = (rg > 1000.0) & (rg < 1550.0)
+    assert np.isfinite(P[mid]).mean() > 0.99
+
+
+def test_pcont_recovers_truth_off_lines():
+    rg = _rest_grid()
+    curve, counts, P_true, lines = make_mock_composite(rg)
+    P = fit_pseudo_continuum(rg, curve, counts)
+    off = _offline_mask(rg, lines) & np.isfinite(P) & (counts >= 50)
+    rel = np.abs(P[off] / P_true[off] - 1.0)
+    assert np.nanmedian(rel) < 0.02
+    assert np.nanpercentile(rel, 95) < 0.04
+
+
+def test_pcont_null_case_flat():
+    rg = _rest_grid()
+    curve, counts, _, _ = make_mock_composite(rg, inject=False)
+    P = fit_pseudo_continuum(rg, curve, counts)
+    norm = curve / P
+    ok = np.isfinite(norm) & (rg > 960.0) & (rg < 1590.0)
+    assert abs(np.nanmedian(norm[ok]) - 1.0) < 0.01
+    assert np.nanstd(norm[ok]) < 0.05
+
+
+def test_pcont_lines_survive_normalization():
+    rg = _rest_grid()
+    curve, counts, _, lines = make_mock_composite(rg)
+    P = fit_pseudo_continuum(rg, curve, counts)
+    norm = curve / P
+    for lam0, depth, sig in lines:
+        if lam0 < PCONT_LAMBDA_MIN:
+            continue
+        core = np.abs(rg - lam0) < 2.0 * sig
+        measured = 1.0 - np.nanmin(norm[core])
+        assert measured > 0.6 * depth, f"line {lam0} eaten: {measured} vs {depth}"
