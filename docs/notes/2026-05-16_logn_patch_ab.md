@@ -27,31 +27,33 @@ measured ~0.3pp run-to-run noise floor, not a single draw.
 
 ## Results
 
+Refreshed 2026-05-17 (new DLAFLAG convention — NHI_INCONSISTENT no longer gated).
+
 | cell | arm | P | C | n_cat |
 |---|---|---:|---:|---:|
-| P0 | patch-OFF | 0.8403 | 0.7492 | 2808 |
-| P1 | patch-OFF | 0.8448 | 0.7585 | 2812 |
-| P2 | patch-OFF | 0.8472 | 0.7554 | 2809 |
-| G0 | patch-ON | 0.8280 | 0.8050 | 4519 |
-| G1 | patch-ON | 0.8301 | 0.8019 | 4517 |
-| G2 | patch-ON | 0.8275 | 0.8019 | 4520 |
+| P0 | patch-OFF | 0.8179 | 0.7926 | 2808 |
+| P1 | patch-OFF | 0.8045 | 0.7771 | 2812 |
+| P2 | patch-OFF | 0.8103 | 0.7802 | 2809 |
+| G0 | patch-ON | 0.7913 | 0.8452 | 4519 |
+| G1 | patch-ON | 0.7901 | 0.8390 | 4517 |
+| G2 | patch-ON | 0.7855 | 0.8390 | 4520 |
 
-**Per-arm means** (`VERDICT.txt`):
+**Per-arm means:**
 
 | arm | n | purity | completeness | n_cat |
 |---|---:|---:|---:|---:|
-| patch-OFF | 3 | 0.8441 | 0.7544 | ~2810 |
-| patch-ON  | 3 | 0.8285 | 0.8029 | ~4519 |
-| **Δ (ON − OFF)** | | **−1.56 pp** | **+4.85 pp** | **+1709 (+61%)** |
+| patch-OFF | 3 | 0.8109 | 0.7833 | ~2810 |
+| patch-ON  | 3 | 0.7890 | 0.8411 | ~4519 |
+| **Δ (ON − OFF)** | | **−2.2 pp** | **+5.8 pp** | **+1709 (+61%)** |
 
 ## Interpretation
 
 The patch raises `log_evidence(DLA)` by `+log(N)` uniformly, inflating
 every DLA-vs-null Bayes factor, so more spectra cross the p_DLA≥0.99 cut.
-n_cat grows +61% (2810→4519), completeness rises +4.85pp, purity falls
-−1.56pp. This is the predicted direction and the within-arm spread
-(P: 0.840–0.847 OFF, 0.828–0.830 ON; C: 0.749–0.759 OFF, 0.802–0.805 ON)
-is ~1pp — so the −1.56/+4.85 shift is unambiguously real, not noise.
+n_cat grows +61% (2810→4519), completeness rises +5.8pp, purity falls
+−2.2pp. This is the predicted direction and the within-arm spread
+(P: 0.80–0.82 OFF, 0.786–0.791 ON; C: 0.777–0.793 OFF, 0.839–0.845 ON)
+is ~1–2pp — so the −2.2/+5.8 shift is unambiguously real, not noise.
 
 The patch is **net-favourable for the CDDF LLS use case**, where
 completeness matters: it buys ~3× more recall headroom per pp of purity

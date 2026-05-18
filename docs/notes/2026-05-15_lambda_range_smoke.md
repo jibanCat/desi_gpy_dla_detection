@@ -5,7 +5,7 @@
 > strict Pareto improvement; the optimum is near 1260 Å. Refined by the
 > follow-up `lambda_fine_sweep` (see `2026-05-15_lambda_fine_sweep.md`),
 > which found `MAX_LAMBDA=1250` (F2) is the Pareto-best point at
-> P=0.838 / C=0.830.
+> P=0.810 / C=0.870 (refreshed 2026-05-17, new DLAFLAG convention).
 >
 > **Sweep root**: `/pscratch/sd/j/jibancat/prod533_5k_20260511/lambda_range_sweep/`
 >
@@ -113,37 +113,37 @@ C0 (post-patch) at the same operating point: **P=0.7792, C=0.8772**
 sampling noise — it is a literal copy of C0 except living in a
 different directory.
 
-## P/C table — DONE
+## P/C table — DONE (refreshed 2026-05-17, new DLAFLAG convention)
 
 Source: `lambda_range_sweep/HEADLINE.tsv`. n_truth = 581 (fixed recipe).
-Wall-time was not logged (ran on the jupyter node, no start/end stamps).
+**Refreshed 2026-05-17** under the new DLAFLAG convention (NHI_INCONSISTENT
+no longer gated). L3 changed materially (it had been NHI-gated; L0–L2 were
+already un-gated, so they are unchanged).
 
 | Cell | knob | P | C | ΔP vs L0 | ΔC vs L0 | n_cat |
 |------|------|---:|---:|---:|---:|---:|
 | L0   | MAX_LAMBDA=1216.75 (baseline) | 0.7719 | 0.8173 | ref | ref | 4661 |
-| L1   | MAX_LAMBDA=1260 | **0.8118** | **0.8545** | **+4.0** | **+3.7** | 4231 |
+| L1   | MAX_LAMBDA=1260 | 0.8118 | **0.8545** | +4.0 | **+3.7** | 4231 |
 | L2   | MAX_LAMBDA=1300 | 0.8088 | 0.8514 | +3.7 | +3.4 | 4208 |
-| L3   | MAX_LAMBDA=1380 | 0.8250 | 0.8173 | +5.3 | 0.0 | 4224 |
+| L3   | MAX_LAMBDA=1380 | 0.8017 | 0.8514 | +3.0 | +3.4 | 4224 |
 
 ## Verdict — HELPS
 
 Extending the GP modeling window redward of Lyα **strictly Pareto-improves**
-P/C. L1 (1260) and L2 (1300) both gain ~+4pp purity *and* ~+3.5pp
+P/C. L1/L2/L3 (1260–1380) all gain ~+3–4pp purity *and* ~+3.4–3.7pp
 completeness over L0 — the hypothesis's "clean continuum + trained mu/M"
 branch wins; the per-quasar emission-line-variance branch does not dominate
-out to ~1300 Å. n_cat *drops* ~9% (4661→4231) while completeness *rises*,
-i.e. the extra red-side constraint kills false positives without losing
-true DLAs.
+even out to ~1380 Å. n_cat *drops* ~9% (4661→4231) while completeness
+*rises*, i.e. the extra red-side constraint kills false positives without
+losing true DLAs.
 
-L3 (1380) is the stress case: purity climbs further (+5.3pp) but
-completeness falls back to baseline — pushing past the OI 1302 / SiII 1304
-/ CII 1335 lines starts trading recall for precision, exactly the predicted
-emission-line-variance regime. So the optimum is **interior**, near
-1260–1300.
+(An earlier draft read L3 as a recall-fall-off "stress case" — that was a
+DLAFLAG-gating artifact. Post-refresh, L3 completeness is 0.851, the same
+as L1/L2; there is no interior fall-off out to 1380.)
 
 The follow-up `lambda_fine_sweep` (1228–1300 in fine steps) located the
-balanced optimum at **MAX_LAMBDA=1250 (F2): P=0.838 / C=0.830** — the
-recommended production value (carried into `lambda1250_crossval`).
+balanced optimum at **MAX_LAMBDA=1250 (F2): P=0.810 / C=0.870** (refreshed)
+— the recommended production value (carried into `lambda1250_crossval`).
 
 ## Files
 

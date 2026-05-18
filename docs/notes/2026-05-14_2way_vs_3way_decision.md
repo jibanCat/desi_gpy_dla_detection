@@ -1,5 +1,12 @@
 # 2-way vs 3-way model decision — 2026-05-14
 
+> ⚠ **SUPERSEDED (2026-05-17).** This pre-+log(N)-patch note recommended the
+> 3-way model; that recommendation was **reversed** by the post-patch work.
+> Current decision: **2-way (cellC family)** — see
+> `docs/notes/2026-05-16_subdla_3way_sweep.md` and the runbook "Current
+> production decisions". The D1+D4 "Pareto-dominance" below was a
+> −log(N)-bias artifact. History only.
+
 > **Recommendation: ship the 3-way model with the D1+D4 knob stack
 > (MAX_DLAS=4 + NHI prior [19, 23]) as the production default.** It is
 > Pareto-comparable to the 2-way cellC family on classical-DLA P/C,

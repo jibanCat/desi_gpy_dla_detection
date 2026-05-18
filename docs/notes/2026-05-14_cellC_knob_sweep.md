@@ -1,5 +1,10 @@
 # cellC knob sweep — 2026-05-14 (London-0 5k validation)
 
+> ⚠ **SUPERSEDED (2026-05-17).** This note describes the *pre-+log(N)-patch*
+> cellC sweep; its numbers are obsolete (pre-patch, and pre-DLAFLAG-convention
+> fix). For current cellC P/C see `cellC_knob_sweep/HEADLINE.tsv` (refreshed
+> 2026-05-17) and the runbook "Current production decisions". History only.
+
 > **Status: COMPLETE.** All 8 cells ran on jupyter `nid004213` (concurrent),
 > evaluated against London-0 truth. **Bottom line: no knob Pareto-dominates
 > the cellC baseline** (P=0.8256, C=0.8304). Closest contender is PW 80k

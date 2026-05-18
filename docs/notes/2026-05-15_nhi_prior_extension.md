@@ -4,13 +4,15 @@
 **Branch**: `production_533`
 **Sweep dir**: `/pscratch/sd/j/jibancat/prod533_5k_20260511/nhi_prior_ext_sweep/`
 
-> **Status**: DONE (job 53013668, completed 2026-05-15 18:18; results filled
-> in 2026-05-17). **Verdict: NO-CHANGE on P/C, ADOPT anyway.** Extending the
-> prior ceiling to 22.5 leaves headline P/C byte-identical (0.8275 / 0.8019)
-> and is near cost-neutral (+3% wall) — a 5k London-0 slice has too few
-> NHI>22 DLAs to move the metric. Recommended for production because it
-> removes the NHI-clipping bias on the rare high-NHI tail at no measured
-> cost. See "Verdict" / "Execution status" below.
+> **Status**: DONE (job 53013668; results refreshed 2026-05-17 under the
+> new DLAFLAG convention). **Verdict: marginal P/C cost — provisional.**
+> Refreshed: E1 (extended prior [17.2,22.5]) is −1.3pp purity / −0.9pp
+> completeness vs E0 on the 5k slice (near the noise floor; the
+> pre-refresh "byte-identical" result was a DLAFLAG-gating artifact). The
+> extension still fixes a real modelling defect (NHI clipping above 22.0),
+> but it is no longer the "free" change the gated eval implied —
+> **re-check at larger scale before committing the DLA_SAMPLES_FILE
+> swap.** See §6.
 
 ## 1. Motivation
 
@@ -119,43 +121,47 @@ Identical model, `MAX_DLAS=3`, `SINGLE_ABSORBER_MODEL=1`,
 (`P_DLA≥0.99`, `SNR>2`, `λ_rf ∈ [911,1216]`, lyb-veto, no-BAL, NHI≥20.3 truth +
 predicted, `--restrict-truth-to-processed`).
 
-### Headline P/C — DONE
+### Headline P/C — DONE (refreshed 2026-05-17, new DLAFLAG convention)
 
-Source: `nhi_prior_ext_sweep/HEADLINE.tsv`.
+Source: `nhi_prior_ext_sweep/HEADLINE.tsv`. Numbers refreshed 2026-05-17
+(NHI_INCONSISTENT no longer gated).
 
 | cell | knob                 | purity | completeness | n_cat | n_truth | wall_min | node_h |
-|------|----------------------|--------|--------------|-------|---------|---------:|-------:|
-| E0   | NHI [17.2, 22.0]     | 0.8275 | 0.8019       | 4520  | 581     | 52.4 | 0.437 |
-| E1   | NHI [17.2, 22.5]     | 0.8275 | 0.8019       | 4790  | 581     | 54.2 | 0.452 |
+|------|----------------------|-------:|-------------:|------:|--------:|---------:|-------:|
+| E0   | NHI [17.2, 22.0]     | 0.7907 | 0.8421       | 4520  | 581     | 52.4 | 0.437 |
+| E1   | NHI [17.2, 22.5]     | 0.7775 | 0.8328       | 4790  | 581     | 54.2 | 0.452 |
 
-Headline P and C are **byte-identical** between E0 and E1. The raw catalog
-count rises (+270 rows, +6%) but those extra rows do not change either
-metric after the eval recipe's 3000 km/s proximity collar and the
-NHI≥20.3-predicted cut — i.e. the extended-prior support occasionally adds a
-sample near an already-detected absorber, but no headline detection flips.
+E1 (extended prior) is **−1.3pp purity and −0.9pp completeness** vs E0.
+(The pre-refresh gated eval showed the two as byte-identical — that was a
+DLAFLAG-gating artifact; un-gated, a small difference appears.) The raw
+catalog count rises +270 rows (+6%) with the extended prior.
 
 ### Per-SNR-bin P/C
 
-No measurable per-SNR or per-NHI movement either: with P/C identical to 4 dp
-overall, the [22.0, 22.5] tail simply has too little support in a 5k
-London-0 slice (London-0 truth tops out near logNHI≈22.47, and DLAs above
-22.0 are a sub-percent population). The high-NHI×high-SNR recovery the
-hypothesis predicted is below this slice's sensitivity — it would need a
-much larger slice (or the 1M production catalog) to register.
+The [22.0, 22.5] tail is a sub-percent population in a 5k London-0 slice
+(London-0 truth tops out near logNHI≈22.47), so the hypothesised
+high-NHI×high-SNR *recovery* is below this slice's sensitivity. What the
+refreshed eval does show is a small *net* cost — the extended prior's extra
+support mostly adds marginal low-NHI catalog rows here, not high-NHI wins.
 
-## 6. Verdict + production recommendation — NO-CHANGE on P/C, ADOPT anyway
+## 6. Verdict + production recommendation — marginal P/C cost; adopt for modelling correctness, re-check at scale
 
-The extension is **P/C-neutral and near cost-neutral** (+3% wall, 52.4 →
-54.2 min; same 100k sample count). It is **not** harmful and it removes a
-known *modelling* defect: with the hard 22.0 ceiling, the rare real DLAs
-above 22.0 have no prior support and their NHI is pinned low at the 22.0
-edge. The 5k smoke test cannot *see* that defect (too few such DLAs) but it
-confirms adopting the fix costs nothing.
+Refreshed result: the extension is **not** P/C-neutral — it costs ~1pp on
+both purity and completeness on the 5k slice (near, but not clearly below,
+the ~1pp noise floor). It is near cost-neutral in wall time (+3%).
 
-**Recommendation**: swap the production `DLA_SAMPLES_FILE` to
-`pw_samples_a3_172_225_100000.mat` for the 1M run. The benefit (unbiased
-NHI for the high-NHI tail) only materialises at production scale; the smoke
-test's job here was to rule out a P/C regression, and it did.
+The case for adopting it is now purely the **modelling defect** it fixes:
+with the hard 22.0 ceiling, rare real DLAs above 22.0 have no prior support
+and their NHI is pinned low at the 22.0 edge. That benefit is real but
+invisible at 5k.
+
+**Recommendation (revised):** the extension is defensible for modelling
+correctness, but the refreshed 5k smoke shows a marginal P/C cost rather
+than the "free" result the gated eval suggested — and under the
+completeness-first directive a −0.9pp completeness is not free. **Re-check
+E0 vs E1 at larger scale (or on the 1M catalog) before committing the
+`DLA_SAMPLES_FILE` swap.** This downgrades the runbook's "firm" status for
+the [17.2, 22.5] prior to "provisional — pending a scale re-check".
 
 ## 7. Execution status
 

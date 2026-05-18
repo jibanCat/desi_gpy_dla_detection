@@ -18,9 +18,9 @@ London-0 5k, fixed molly recipe n_truth=581):**
 | **MAX_LAMBDA** | **1250** (was 1216.75) | lambda_fine F2: P=0.838/C=0.830, Pareto-best |
 | MIN_LAMBDA | keep 911.75 | gp_range: blue moves inert-to-bad |
 | MIN_Z_SEPARATION | keep 3000 km/s | min_z sweep: ≤noise, inert |
-| NHI prior ceiling | extend to 22.5 | nhi_prior: P/C-neutral, cost-neutral, fixes high-NHI clipping |
+| NHI prior ceiling | extend to 22.5 (provisional) | nhi_prior: refreshed 5k smoke shows ~1pp P/C cost; fixes high-NHI clipping but re-check at scale |
 | SINGLE_ABSORBER_MODEL | keep 1 | single_absorber: +12.6pp P, +21.4pp C vs mode 0 |
-| +log(N) patch | keep ON | logn_patch A/B: −1.6pp P / +4.9pp C, favours CDDF LLS |
+| +log(N) patch | keep ON | logn_patch A/B: −2.2pp P / +5.8pp C, favours CDDF LLS |
 | 2-way vs 3-way | **2-way** (cellC) | subdla_3way: all 3-way cells lose completeness |
 
 **The 1M production config** = 2-way single-absorber, MAX_LAMBDA=1250,
@@ -62,9 +62,9 @@ completion (watch each dir's `_chain.log` → `EVAL_DONE`, then `HEADLINE.tsv`).
 |---|---|---|
 | `2026-05-15_lambda_range_smoke.md` | lambda_range L0-L3 | HELPS — red extension Pareto-improves |
 | `2026-05-15_min_z_separation_smoke.md` | min_z M0-M3 | NO-CHANGE — keep 3000 km/s |
-| `2026-05-15_nhi_prior_extension.md` | nhi E0/E1 | NO-CHANGE on P/C, ADOPT (fixes clipping) |
+| `2026-05-15_nhi_prior_extension.md` | nhi E0/E1 | provisional — refreshed: ~1pp P/C cost; re-check at scale |
 | `2026-05-16_lambda_fine_and_gp_range.md` | lambda_fine F0-F5 + gp_range | **MAX_LAMBDA=1250** |
-| `2026-05-16_logn_patch_ab.md` | logn_patch P/G arms | patch confirmed: −1.6/+4.9pp |
+| `2026-05-16_logn_patch_ab.md` | logn_patch P/G arms | patch confirmed: −2.2/+5.8pp |
 | `2026-05-16_subdla_3way_sweep.md` | subdla U0-U3 | 2-way confirmed over 3-way |
 | `2026-05-16_config_confirmations.md` | v1_model, single_absorber, determinism | noise floor ~0.3pp; v1-model swap not a headline win |
 

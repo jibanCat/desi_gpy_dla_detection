@@ -1,14 +1,14 @@
 # 2026-05-15 — MIN_Z_SEPARATION smoke test
 
-> **Status**: DONE (job 53018910, completed 2026-05-16 01:21; results filled
-> in 2026-05-17). **Verdict: NO-CHANGE (do not retune).** Loosening
-> MIN_Z_SEPARATION below 3000 km/s moves P/C by ≤ ~2pp and the M1/M2/M3
-> spread is within the ~1pp run-to-run noise floor — keep the production
-> default 3000 km/s.
+> **Status**: DONE (job 53018910; results refreshed 2026-05-17 under the
+> new DLAFLAG convention). **Verdict: NO-CHANGE (do not retune).** The
+> M0–M3 spread is ≤0.7pp P / 0.6pp C — entirely within the ~1pp
+> run-to-run noise floor. Keep the production default 3000 km/s.
 >
 > **Sweep root**: `/pscratch/sd/j/jibancat/prod533_5k_20260511/min_z_separation_sweep/`
 >
-> Evaluated with the fixed molly recipe (n_truth = 581).
+> Evaluated with the fixed molly recipe (n_truth = 581); numbers
+> refreshed 2026-05-17 (NHI_INCONSISTENT no longer gated).
 
 ## Hypothesis
 
@@ -103,34 +103,34 @@ Wall-time per cell ≈ 90 min, identical to cellC C0 cadence — the knob is
 free in inference cost (it's a numpy mask). 4 cells in parallel × 64 cores
 each = 256 cores = full jupyter node. Total ≈ 90 min wall + ~5 min eval.
 
-## P/C table — DONE
+## P/C table — DONE (refreshed 2026-05-17, new DLAFLAG convention)
 
-Source: `min_z_separation_sweep/HEADLINE.tsv`. n_truth = 581.
+Source: `min_z_separation_sweep/HEADLINE.tsv`. n_truth = 581. Numbers
+refreshed 2026-05-17 (NHI_INCONSISTENT no longer gated).
 
 | Cell | knob (km/s) | P | C | ΔP vs M0 | ΔC vs M0 | n_cat | wall_min | node_h |
 |------|------------:|---:|---:|---:|---:|---:|---:|---:|
-| M0   | 3000 (baseline) | 0.7962 | 0.7864 | ref | ref | 4663 | 44.7 | 0.186 |
-| M1   | 2000 | 0.8190 | 0.7988 | +2.3 | +1.2 | 4682 | 44.7 | 0.186 |
-| M2   | 1000 | 0.8037 | 0.7988 | +0.8 | +1.2 | 4678 | 44.6 | 0.186 |
-| M3   | 0    | 0.8037 | 0.7988 | +0.8 | +1.2 | 4685 | 44.6 | 0.186 |
+| M0   | 3000 (baseline) | 0.7775 | 0.8328 | ref | ref | 4663 | 44.7 | 0.186 |
+| M1   | 2000 | 0.7843 | 0.8328 | +0.7 | 0.0 | 4682 | 44.7 | 0.186 |
+| M2   | 1000 | 0.7797 | 0.8328 | +0.2 | 0.0 | 4678 | 44.6 | 0.186 |
+| M3   | 0    | 0.7784 | 0.8266 | +0.1 | −0.6 | 4685 | 44.6 | 0.186 |
 
 ## Verdict — NO-CHANGE
 
-Loosening MIN_Z_SEPARATION has a **small, non-monotone** effect. M1 (2000)
-is nominally the best cell (+2.3pp P, +1.2pp C) but M2 and M3 are
-*identical* to each other (0.8037 / 0.7988) and the M1→M2→M3 spread on
-purity (0.819 → 0.804 → 0.804) is ~1.5pp — at or below the ~1pp run-to-run
-noise floor established by `determinism_sweep` (C7 replicates span 0.3pp P /
-0.3pp C). n_cat barely moves (4663 → 4685, +0.5%), confirming the knob only
-touches k≥2 inner evidences and almost never flips a headline detection at
-this operating point.
+Loosening MIN_Z_SEPARATION has **no resolvable effect**. On the refreshed
+numbers the M0–M3 spread is 0.7pp on purity (0.777–0.784) and 0.6pp on
+completeness (0.827–0.833) — entirely within the ~1pp run-to-run noise
+floor (`determinism_sweep`). The earlier draft's "M1 looks +2.3pp better"
+hint was a DLAFLAG-gating artifact; post-refresh M1 is +0.7pp P / 0.0pp C
+vs M0 — noise. n_cat barely moves (4663 → 4685, +0.5%), confirming the
+knob only touches k≥2 inner evidences and almost never flips a headline
+detection at this operating point.
 
 So the knob is **inert at production scale**: the multi-DLA NaN-masking it
-controls rarely changes the MAP k-model after the p_DLA≥0.99 cut. There is a
-*hint* that 2000 km/s is marginally better, but it is not separated from
-noise and not worth a production change. **Keep MIN_Z_SEPARATION = 3000
-km/s.** If revisited, M1 (2000) would need a 50k replicate to confirm the
-+2.3pp P is real.
+controls rarely changes the MAP k-model after the p_DLA≥0.99 cut.
+**Keep MIN_Z_SEPARATION = 3000 km/s.** (The `min_z_separation_sweep_50k`
+re-run at 10× statistics will give the definitive word, but the 5k
+refreshed result already shows nothing to chase.)
 
 The knob is also free in compute (identical 44.6–44.7 min wall across all
 cells — it is a numpy mask), so there is no cost argument either way.

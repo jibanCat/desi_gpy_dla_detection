@@ -1,5 +1,11 @@
 # 3-way knob sweep (D1-D8) — 2026-05-14 (London-0 5k validation)
 
+> ⚠ **SUPERSEDED (2026-05-17).** Pre-+log(N)-patch sweep; its "D1+D4
+> Pareto-dominate" conclusion was later shown to be a −log(N)-bias artifact
+> (see HANDOFF). Numbers obsolete twice over (pre-patch, pre-DLAFLAG-fix).
+> Current 3-way P/C: `cellD_knob_sweep/HEADLINE.tsv` (refreshed 2026-05-17).
+> History only.
+
 > **Status: COMPLETE.** 8 cells ran concurrently on jupyter `nid004213`,
 > evaluated against London-0 truth. **Bottom line: D1 (MAX_DLAS=4) and D4
 > (NHI prior [19, 23]) BOTH Pareto-dominate the 3-way production baseline.**

@@ -19,17 +19,19 @@ Three byte-identical C7-config replicates.
 
 | Cell | P | C |
 |---|---:|---:|
-| G0 | 0.8280 | 0.8050 |
-| G1 | 0.8301 | 0.8019 |
-| G2 | 0.8275 | 0.8019 |
-| **spread** | **0.26 pp** | **0.31 pp** |
+| G0 | 0.7913 | 0.8452 |
+| G1 | 0.7901 | 0.8390 |
+| G2 | 0.7855 | 0.8390 |
+| **spread** | **0.58 pp** | **0.62 pp** |
 
-Within a single sbatch batch the 5k-slice P/C scatter is **≤ ~0.3pp**.
+*(Refreshed 2026-05-17, new DLAFLAG convention.)*
+
+Within a single sbatch batch the 5k-slice P/C scatter is **≤ ~0.6pp**.
 The pipeline is *not* bit-deterministic (τ-EB seed search + QMC Monte
 Carlo integration introduce run-to-run variation), but the scatter is
 small. Note: an earlier observation (memory `project_5k_noise_floor`)
 saw ~1.2pp across *four* runs spanning different batches — so treat
-**~0.3pp as the within-batch floor and ~1pp as the cross-batch floor**.
+**~0.6pp as the within-batch floor and ~1pp as the cross-batch floor**.
 Any sweep delta below ~1pp should be treated as noise; finalist configs
 need a 50k replicate to resolve sub-pp differences. These G0/G1/G2 cells
 double as the patch-ON arm of `2026-05-16_logn_patch_ab.md`.
@@ -38,12 +40,14 @@ double as the patch-ON arm of `2026-05-16_logn_patch_ab.md`.
 
 | Cell | knob | P | C | n_cat |
 |---|---|---:|---:|---:|
-| S0 | SINGLE_ABSORBER_MODEL=0 (multi-DLA / legacy-style) | 0.7127 | 0.5913 | 2338 |
-| S1 | SINGLE_ABSORBER_MODEL=1 (2-way single-absorber, =C7) | 0.8387 | 0.8050 | 4516 |
+| S0 | SINGLE_ABSORBER_MODEL=0 (multi-DLA / legacy-style) | 0.7021 | 0.6130 | 2338 |
+| S1 | SINGLE_ABSORBER_MODEL=1 (2-way single-absorber, =C7) | 0.7880 | 0.8514 | 4516 |
 
-The single-absorber model is **dramatically better**: +12.6pp purity,
-+21.4pp completeness. The legacy-style multi-DLA mode (S0) badly
-under-detects on this recipe (C=0.59). This is a hard confirmation of
+*(Refreshed 2026-05-17, new DLAFLAG convention.)*
+
+The single-absorber model is **dramatically better**: +8.6pp purity,
++23.8pp completeness. The legacy-style multi-DLA mode (S0) badly
+under-detects on this recipe (C=0.61). This is a hard confirmation of
 the production choice `SINGLE_ABSORBER_MODEL=1` for the cellC family —
 no ambiguity, no retune needed.
 
@@ -55,18 +59,21 @@ production model `learnlogs/model_epoch_920.h5`.
 
 | Catalog | P | C | n_cat |
 |---|---:|---:|---:|
-| V0 (v1 model_epoch_920) | 0.8377 | 0.7988 | 3499 |
-| C7 (2lpt research model) | 0.8323 | 0.8142 | — |
-| LEGACY (v1 920, NHI [20,23]) | 0.7884 | 0.8421 | — |
+| V0 (v1 model_epoch_920) | 0.7895 | 0.8359 | 3499 |
+| C7 (2lpt research model) | 0.7908 | 0.8545 | — |
+| LEGACY (v1 920, NHI [20,23]) | 0.7884 | 0.8421 | — *(not refreshed; separate legacy catalog)* |
+
+*(V0 and C7 refreshed 2026-05-17, new DLAFLAG convention. LEGACY is the
+external legacy_baseline catalog, not part of the refresh.)*
 
 **Motivation** (see `v1_model_test/README.md`): the high-SNR deep-dive
 found C7 losing ~9pp completeness at SNR>10 vs the legacy v1-model
 catalog. V0 tests whether the model swap recovers that loss.
 
 **Headline result**: V0 does **not** recover completeness — its headline
-C (0.799) is slightly *below* C7 (0.814) and well below LEGACY (0.842).
-V0's purity is marginally above C7. So at the headline operating point
-the v1 vs 2lpt model swap is roughly P/C-neutral-to-slightly-worse on
+C (0.836) is slightly *below* C7 (0.855); its purity (0.790) is
+essentially equal to C7 (0.791). So at the headline operating point the
+v1 vs 2lpt model swap is roughly P/C-neutral-to-slightly-worse on
 completeness.
 
 **Caveat**: the deep-dive's concern was specifically the **SNR>10 bin**,

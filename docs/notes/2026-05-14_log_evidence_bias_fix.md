@@ -64,8 +64,9 @@ recovers the pre-patch P/C within ~1pp.
 ## Validation
 
 - **A/B test**: `docs/notes/2026-05-16_logn_patch_ab.md` — 3 patch-OFF
-  vs 3 patch-ON replicates, measured Δ = −1.6pp P / +4.9pp C, well above
-  the ~0.3pp noise floor; direction and magnitude as predicted.
+  vs 3 patch-ON replicates, measured Δ = −2.2pp P / +5.8pp C (refreshed
+  2026-05-17, new DLAFLAG convention), well above the ~1pp noise floor;
+  direction and magnitude as predicted.
 - **Tests**: 94 network-free tests pass (`test_cddf_mock`,
   `test_cddf_calibration`, `test_generate_samples`, `test_voigt_v2_parity`,
   `test_lyb_veto`, `test_smoke_target_contamination`, `test_tau_eb_wiring`).

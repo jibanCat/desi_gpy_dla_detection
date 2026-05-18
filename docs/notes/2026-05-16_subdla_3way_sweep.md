@@ -1,9 +1,10 @@
 # 2026-05-16 — sub-DLA / DLA prior-boundary sweep (3-way, subdla_3way_sweep)
 
-> **Status**: DONE (job 53018972, completed 2026-05-16 01:32).
+> **Status**: DONE (job 53018972; results refreshed 2026-05-17, new
+> DLAFLAG convention).
 > **Verdict: confirms the 2-way cellC family is the right production
 > choice.** A clean non-overlapping 20.3 split (U3) reaches very high
-> purity (0.946) but loses completeness (0.703) — the 3-way models all
+> purity (0.931) but loses completeness (0.709) — the 3-way models all
 > trade away recall, and none beats the 2-way C7/F2 operating point on
 > the P/C frontier for the CDDF LLS use case.
 >
@@ -29,16 +30,18 @@ truth+predicted, n_truth=581).
 
 | Cell | knob | P | C | n_cat |
 |---|---|---:|---:|---:|
-| U0 | subDLA [19.1,20.0] DLA [19,22] (baseline) | 0.8514 | 0.7276 | 1418 |
-| U1 | subDLA [18.0,20.0] DLA [19,22] | 0.8464 | 0.7337 | 1148 |
-| U2 | subDLA [17.2,20.0] DLA [19,22] | 0.8380 | 0.7368 | 1174 |
-| U3 | subDLA [17.2,20.3] DLA [20.3,22] (clean 20.3 split) | **0.9458** | 0.7028 | 1002 |
+| U0 | subDLA [19.1,20.0] DLA [19,22] (baseline) | 0.8421 | 0.7430 | 1418 |
+| U1 | subDLA [18.0,20.0] DLA [19,22] | 0.8385 | 0.7554 | 1148 |
+| U2 | subDLA [17.2,20.0] DLA [19,22] | 0.8271 | 0.7554 | 1174 |
+| U3 | subDLA [17.2,20.3] DLA [20.3,22] (clean 20.3 split) | **0.9309** | 0.7090 | 1002 |
+
+*(Refreshed 2026-05-17, new DLAFLAG convention.)*
 
 ## Interpretation
 
 Widening the sub-DLA prior downward (U0→U1→U2) slightly *lowers* purity
 and slightly *raises* completeness, but every 3-way cell sits well below
-the 2-way frontier on completeness (0.70–0.74 vs C7 ≈ 0.81, F2 ≈ 0.83).
+the 2-way frontier on completeness (0.71–0.76 vs C7 ≈ 0.855, F2 ≈ 0.870).
 The separate sub-DLA channel siphons evidence away from the DLA channel,
 so genuine DLAs near the 20.3 boundary are sometimes classified as
 sub-DLAs and drop out of the NHI≥20.3 evaluation — a structural recall
@@ -46,9 +49,9 @@ cost of the 3-way design.
 
 **U3 (clean 20.3 split)** is the standout on purity: a DLA prior whose
 lower edge *exactly* equals the eval cut (20.3) produces a near-pure
-catalog (P=0.946) — almost no NHI<20.3 contaminants survive because the
+catalog (P=0.931) — almost no NHI<20.3 contaminants survive because the
 prior gives them no DLA-channel support. But it is the *worst* on
-completeness (0.703) and smallest catalog (n_cat=1002): absorbers truly
+completeness (0.709) and smallest catalog (n_cat=1002): absorbers truly
 near 20.3 straddle the prior boundary and are lost to the sub-DLA
 channel.
 
