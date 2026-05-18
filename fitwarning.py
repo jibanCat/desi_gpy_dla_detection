@@ -15,14 +15,22 @@ the "clean" production catalog for population statistics, dN/dX, f(N,z),
 
 For finer-grained filtering, the individual boolean flag columns
 (LYBETA_FLAG, BAL_FLAG, NHI_CONSISTENCY_FLAG, …) are kept alongside
-the bitmask. PDLA_SATURATED_FLAG is informational (high-confidence
-detection, NOT a quality warning) and is NOT folded into DLAFLAG.
+the bitmask. PDLA_SATURATED_FLAG and NHI_CONSISTENCY_FLAG are
+informational — they are *selection knobs*, NOT quality warnings — and
+are deliberately NOT folded into DLAFLAG, so `DLAFLAG == 0` stays a
+meaningful "clean catalog" (it is not swamped by a tunable cut).
 
 Schema history:
   prior to 2026-05-15: bits 0-2 reserved for template-DLA-fit boundary
     warnings (ZBOUNDARY_COARSE, ZBOUNDARY_REFINE, NHIBOUNDARY_REFINE)
     that were never actually set by the GP-DLA inference code. Removed
     in 2026-05-15 reshuffle; bits renumbered compactly.
+  2026-05-17: NHI_INCONSISTENT (bit 5) removed from DLAFLAG. The
+    2026-05-17 NHI-flag investigation found it is a purity-vs-completeness
+    selection knob, not a quality defect (it flagged ~79-86% of rows and
+    silently NHI-gated the headline P/C). It is now informational-only,
+    surfaced solely via the NHI_CONSISTENCY_FLAG column. See
+    docs/notes/2026-05-17_nhi_flag_investigation.md.
 """
 
 
@@ -39,7 +47,7 @@ class DLAFLAG(object):
     BAD_NHIFIT = 2**2         # bad parabola fit to chi2(refined nhi) surface,
                               # also raised on All-NaN slice during processing
 
-    # ---- Postprocess catalog flags (tools/postprocess/add_dla_flags.py) ----
+    # ---- Postprocess flags folded into DLAFLAG (tools/postprocess/add_dla_flags.py) ----
     LYBETA_MISID = 2**3       # likely Lyβ misidentification of a higher-z DLA
                               # on the same LOS
                               # (gpy_dla_detection.postprocess.lyb_veto)
@@ -47,21 +55,27 @@ class DLAFLAG(object):
                               # Stricter than POTENTIAL_BAL (which is the
                               # inference-time region overlap); this is the
                               # "drop-all-bal_cat-TIDs" molly recipe.
-    NHI_INCONSISTENT = 2**5   # NHI - k * NHI_ERR < 20.3 (default k=0.5).
-                              # The lower 1σ of the NHI estimate falls below
-                              # the canonical NHI > 20.3 catalog floor — i.e.
-                              # the DLA is not robustly above the floor.
 
-    # All current postprocess bits OR'd together (handy for "clear
-    # postprocess flags before re-running add_dla_flags.py")
-    _POSTPROCESS_MASK = LYBETA_MISID | BAL_CAT_OVERLAP | NHI_INCONSISTENT
+    # ---- Informational flag — NOT folded into DLAFLAG (its own column) ----
+    NHI_INCONSISTENT = 2**5   # NHI - k * NHI_ERR < 20.3 (default k=0.5):
+                              # the DLA sits near the 20.3 catalog floor.
+                              # This is a *selection knob* (a purity↔
+                              # completeness trade), NOT a quality defect, so
+                              # since 2026-05-17 it is NOT OR'd into DLAFLAG —
+                              # it is surfaced only as the NHI_CONSISTENCY_FLAG
+                              # column. The bit value is retained so
+                              # add_dla_flags.py can clear it from catalogs
+                              # stamped under the pre-2026-05-17 schema.
 
-    # Bits known to have been used by ANY past schema for postprocess flags.
-    # add_dla_flags.py clears these on every run so dlacats produced under an
-    # older schema get cleaned up cleanly when re-postprocessed.
-    # 2026-05-15 first schema used bits 6,7,8 for LYBETA / BAL / NHI; the
-    # renumber to 3,4,5 left those bits set on already-postprocessed catalogs.
-    _LEGACY_POSTPROCESS_BITS = (2**6) | (2**7) | (2**8)
+    # Postprocess bits OR'd into DLAFLAG (NHI_INCONSISTENT deliberately excluded).
+    _POSTPROCESS_MASK = LYBETA_MISID | BAL_CAT_OVERLAP
+
+    # Bits add_dla_flags.py clears before re-stamping, so a catalog produced
+    # under an older schema is cleaned up on re-postprocess. Includes:
+    #   - NHI_INCONSISTENT (bit 5): folded into DLAFLAG pre-2026-05-17.
+    #   - bits 6,7,8: the 2026-05-15 first schema's LYBETA/BAL/NHI positions,
+    #     left set after the renumber to bits 3,4,5.
+    _LEGACY_POSTPROCESS_BITS = NHI_INCONSISTENT | (2**6) | (2**7) | (2**8)
     _ALL_POSTPROCESS_BITS_TO_CLEAR = _POSTPROCESS_MASK | _LEGACY_POSTPROCESS_BITS
 
     # All inference-time bits OR'd together

@@ -16,9 +16,11 @@ Flag columns added (booleans + supporting metadata):
                                 not just BI_CIV>0).
   NHI_CONSISTENCY_FLAG bool   — NHI - k * NHI_ERR < 20.3, i.e. the predicted
                                 NHI's lower 1σ falls below the canonical
-                                catalog cut. With k = 0.5 this drops
-                                weakly-constrained DLAs whose NHI uncertainty
-                                pulls them below 20.3.
+                                catalog cut. Informational only: this is a
+                                purity↔completeness selection knob, NOT a
+                                quality defect, so since 2026-05-17 it is
+                                NOT folded into DLAFLAG (see
+                                docs/notes/2026-05-17_nhi_flag_investigation.md).
   PDLA_SATURATED_FLAG  bool   — P_DLA ≥ 1 - pdla_saturation_threshold (default
                                 ≥ 1 − 1e-7, equivalent to log_BF ≥ 15.4 for
                                 N_DLA_SAMPLES = 50000). Informational only:
@@ -26,15 +28,16 @@ Flag columns added (booleans + supporting metadata):
                                 (high-confidence detection). NOT folded
                                 into DLAFLAG.
 
-DLAFLAG bitmask updates (see gpy_dla_detection/../fitwarning.py for full def):
-  bit 6 (LYBETA_MISID)     ← LYBETA_FLAG
-  bit 7 (BAL_CAT_OVERLAP)  ← BAL_FLAG
-  bit 8 (NHI_INCONSISTENT) ← NHI_CONSISTENCY_FLAG
+DLAFLAG bitmask updates (see fitwarning.py for the full definition):
+  bit 3 (LYBETA_MISID)     ← LYBETA_FLAG
+  bit 4 (BAL_CAT_OVERLAP)  ← BAL_FLAG
+  (NHI_CONSISTENCY_FLAG and PDLA_SATURATED_FLAG are informational — they get
+   their own columns and are NOT folded into DLAFLAG.)
 
 After running this script, downstream consumers can use either:
   cat[cat["DLAFLAG"] == 0]                          # "clean" production cat
-  cat[(cat["DLAFLAG"] & 0x3F) == 0]                 # only inference warnings
   cat[~cat["LYBETA_FLAG"] & ~cat["BAL_FLAG"]]       # finer-grained filtering
+  cat[~cat["NHI_CONSISTENCY_FLAG"]]                 # optional high-purity cut
 
 The script is meant to be the LAST step of the production pipeline:
 
@@ -145,10 +148,19 @@ def _add_pdla_saturated(tbl: Table, threshold: float) -> int:
 
 
 def _update_dlaflag_bitmask(tbl: Table) -> int:
-    """Fold the boolean flag columns into the DLAFLAG bitmask.
+    """Fold the quality flag columns into the DLAFLAG bitmask.
 
-    1. Clear postprocess bits (6, 7, 8) on every row first → idempotent re-run.
-    2. Set each postprocess bit if the corresponding boolean column is True.
+    1. Clear all known postprocess bits (current + legacy schema) first, so a
+       re-run is idempotent and a catalog stamped under an older schema is
+       cleaned up. This INCLUDES the NHI_INCONSISTENT bit (5), which was
+       folded into DLAFLAG before 2026-05-17 — clearing it un-NHI-gates an
+       older catalog on re-postprocess.
+    2. Set LYBETA_MISID / BAL_CAT_OVERLAP from their boolean columns.
+
+    NHI_CONSISTENCY_FLAG is deliberately NOT folded in (it is an
+    informational selection knob, not a quality defect — see fitwarning.py
+    and docs/notes/2026-05-17_nhi_flag_investigation.md). PDLA_SATURATED_FLAG
+    likewise stays out. Both remain as standalone columns.
 
     Returns the number of rows where DLAFLAG changed.
     """
@@ -160,19 +172,18 @@ def _update_dlaflag_bitmask(tbl: Table) -> int:
 
     # Clear ALL known postprocess bits (current + legacy schema). Keeps the
     # inference-time bits intact. The legacy mask handles dlacats that were
-    # postprocessed under an earlier bit numbering and are being re-flagged.
+    # postprocessed under an earlier bit numbering / the pre-2026-05-17
+    # NHI_INCONSISTENT bit and are being re-flagged.
     flag &= ~np.int64(DLAFLAG._ALL_POSTPROCESS_BITS_TO_CLEAR)
 
     # Set postprocess bits from the boolean columns when present.
+    # NHI_CONSISTENCY_FLAG is intentionally excluded — informational only.
     if "LYBETA_FLAG" in tbl.colnames:
         m = np.asarray(tbl["LYBETA_FLAG"], dtype=bool)
         flag[m] |= np.int64(DLAFLAG.LYBETA_MISID)
     if "BAL_FLAG" in tbl.colnames:
         m = np.asarray(tbl["BAL_FLAG"], dtype=bool)
         flag[m] |= np.int64(DLAFLAG.BAL_CAT_OVERLAP)
-    if "NHI_CONSISTENCY_FLAG" in tbl.colnames:
-        m = np.asarray(tbl["NHI_CONSISTENCY_FLAG"], dtype=bool)
-        flag[m] |= np.int64(DLAFLAG.NHI_INCONSISTENT)
 
     tbl["DLAFLAG"] = flag
     return int((flag != before).sum())
@@ -195,9 +206,9 @@ def process_one(path: Path, args, bal_tids: set[int] | None,
     if not args.no_pdla_saturated:
         stats["pdla_saturated"] = _add_pdla_saturated(tbl, args.pdla_saturation)
 
-    # Fold quality flags into DLAFLAG bitmask (excludes informational
-    # PDLA_SATURATED). After this, `cat[cat["DLAFLAG"] == 0]` is the
-    # "clean" downstream filter.
+    # Fold quality flags into DLAFLAG bitmask (excludes the informational
+    # PDLA_SATURATED and NHI_CONSISTENCY flags). After this,
+    # `cat[cat["DLAFLAG"] == 0]` is the "clean" downstream filter.
     stats["dlaflag_changed"] = _update_dlaflag_bitmask(tbl)
     flag = np.asarray(tbl["DLAFLAG"], dtype=np.int64)
     stats["dlaflag_zero"] = int((flag == 0).sum())
@@ -256,7 +267,8 @@ def main():
         n = totals['nhi_consistency_flagged']; tot = totals['n_rows']
         pct = 100.0 * n / tot if tot else 0.0
         print(f"  NHI_CONSISTENCY_FLAG=True  = {n} ({pct:.2f}%)  "
-              f"(k={args.nhi_consistency_k}, floor={args.nhi_consistency_floor})")
+              f"(k={args.nhi_consistency_k}, floor={args.nhi_consistency_floor})  "
+              f"[informational, NOT in DLAFLAG]")
     if not args.no_pdla_saturated:
         n = totals['pdla_saturated']; tot = totals['n_rows']
         pct = 100.0 * n / tot if tot else 0.0
@@ -265,7 +277,8 @@ def main():
     n = totals['dlaflag_zero']; tot = totals['n_rows']
     pct = 100.0 * n / tot if tot else 0.0
     print(f"  DLAFLAG == 0 ('clean')     = {n} ({pct:.2f}%)  "
-          f"[postprocess bits 6-8 + inference bits 0-5 all clear]")
+          f"[inference bits 0-2 + postprocess bits 3-4 all clear; "
+          f"NHI_INCONSISTENT not gated]")
     print(f"[postprocess] done.")
 
 
