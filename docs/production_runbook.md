@@ -88,8 +88,10 @@ molly recipe, n_truth=581, β-collapsed baseline GP model.
 > NHI-gated numbers (e.g. C0 = 0.814/0.799) or the obsolete HANDOFF
 > "0.779/0.877". Both are superseded. The current numbers above are
 > un-NHI-gated (NHI_INCONSISTENT is now informational-only) — lower
-> purity, higher completeness, consistent with the completeness-first
-> directive. All sweeps are now gated identically (LYBETA/BAL only), so
+> purity, higher completeness, because the NHI gate had been inflating
+> purity. Purity toward the 85% target is raised separately via the
+> p_DLA cut (see open items). All sweeps are now gated identically
+> (LYBETA/BAL only), so
 > cross-sweep P/C is directly comparable; `lambda_range L0` and `cellC C0`
 > (same config) now agree within run-to-run noise (~1pp).
 
@@ -115,7 +117,8 @@ The `NHI_INCONSISTENT` gate was investigated (`docs/notes/2026-05-17_nhi_flag_in
 sbatch job 53078990). Result: the flag *is* FP-enriched (~3× the FP-rate of
 kept rows) but **not a clean filter** — 41% of flagged rows are real DLAs and
 every k>0 trades completeness for purity. **Decision: NHI gate OFF (k=0)** for
-the production headline under the completeness-first directive; keep
+the production headline — it is a blunt P↔C knob, and purity toward the
+85/85 target has a cleaner dedicated lever (the p_DLA cut); keep
 `NHI_CONSISTENCY_FLAG` as an informational column only. Separately, the
 investigation found `NHI_pred` biased **+0.06 dex high** and `NHI_ERR`
 **under-estimated ~1.4×** — that is the scope of the deferred NHI-bias task,

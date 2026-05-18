@@ -11,8 +11,8 @@
 > **All numbers refreshed 2026-05-17** under the new DLAFLAG convention
 > (NHI_INCONSISTENT no longer gated — informational only). Purity is
 > ~3pp lower / completeness ~4pp higher than the pre-refresh draft;
-> the MAX_LAMBDA=1250 verdict is unchanged and, under completeness-first,
-> stronger (F2 has the sweep's highest completeness, 0.870).
+> the MAX_LAMBDA=1250 verdict is unchanged — F2 has the sweep's highest
+> completeness (0.870) and a competitive purity (0.810).
 >
 > Sweep roots:
 > `/pscratch/sd/j/jibancat/prod533_5k_20260511/lambda_fine_sweep/`
@@ -80,8 +80,8 @@ Pareto-dominates the historical 1216.75 baseline (+3.8pp P, +5.3pp C).
 
 The completeness column has a clear F2 peak at 1250 (0.870), with
 neighbours 1244/1256 at 0.851 — a ~2pp bump, above the ~1pp determinism
-noise floor. Under the completeness-first directive 1250 is the clear
-pick (top completeness, no purity sacrifice vs neighbours). **1250 is
+noise floor. 1250 is the clear pick — top completeness *and* the highest
+P·C product, with no purity sacrifice vs neighbours. **1250 is
 recommended.**
 
 ## 3. Production recommendation

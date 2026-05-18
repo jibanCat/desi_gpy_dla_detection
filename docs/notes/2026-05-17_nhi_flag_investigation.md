@@ -1,10 +1,12 @@
 # 2026-05-17 — NHI_INCONSISTENT flag investigation
 
 > **Status**: DONE (sbatch job 53078990, debug QOS, 2026-05-17).
-> **Verdict: NHI gate OFF (k=0) for the production headline** under the
-> completeness-first directive. The `NHI_INCONSISTENT` flag is FP-enriched
-> (genuinely discriminating) but not a clean filter, and every k>0 trades
-> completeness for purity. Keep it as an informational column only.
+> **Verdict: NHI gate OFF (k=0) for the production headline.** The
+> `NHI_INCONSISTENT` flag is FP-enriched (genuinely discriminating) but
+> not a clean filter, and every k>0 trades completeness for purity — and
+> purity toward the 85/85 target has a cleaner dedicated lever (the p_DLA
+> cut), so the NHI gate is a redundant blunt knob. Keep it as an
+> informational column only.
 >
 > Investigation dir:
 > `/pscratch/sd/j/jibancat/prod533_5k_20260511/nhi_flag_investigation/`
@@ -14,9 +16,11 @@
 `molly_faithful_pc_plots.py` gates the headline P/C on `DLAFLAG==0`, and
 `DLAFLAG` is dominated by `NHI_INCONSISTENT` (bit 5: `NHI − k·NHI_ERR < 20.3`,
 default k=0.5) — which flags ~79–86% of catalog rows. The gate's `k` had
-never been validated and the flag's usefulness was unproven. The question,
-under the completeness-first directive (memory `feedback_completeness_first`):
-is it a **smart** false-positive filter, or a **blunt** P↔C knob?
+never been validated and the flag's usefulness was unproven. The question
+(target = 85/85 P/C, with the p_DLA cut as the dedicated purity lever —
+memory `feedback_pc_target_8585`): is `NHI_INCONSISTENT` a **smart**
+false-positive filter worth keeping, or a **blunt** P↔C knob made
+redundant by the p_DLA cut?
 
 ## Method
 
@@ -56,11 +60,13 @@ a biased central value — it cannot be made clean by tuning k alone.
 
 ## Verdict
 
-**NHI gate OFF (k=0) for the production headline P/C.** It is a P↔C trade,
-and the completeness-first directive says don't make that trade now. Keep
-`NHI_CONSISTENCY_FLAG` / `NHI_INCONSISTENT` as an **informational column**
-(a 59%-FP-rate subset is a useful handle for a later high-purity cut), but
-do not gate the catalog or the headline metric on it.
+**NHI gate OFF (k=0) for the production headline P/C.** It is a blunt P↔C
+trade, not a clean filter — and purity toward the 85/85 target has a
+dedicated, cleaner lever (the p_DLA cut), which makes the NHI gate
+redundant. Keep `NHI_CONSISTENCY_FLAG` / `NHI_INCONSISTENT` as an
+**informational column** (a 59%-FP-rate subset is a useful handle for a
+later high-purity cut), but do not gate the catalog or the headline
+metric on it.
 
 Re-evaluate this once the GP model is swapped (the β-collapsed baseline may
 itself drive part of the NHI bias) and after the NHI-bias / `NHI_ERR`

@@ -157,10 +157,10 @@ invisible at 5k.
 
 **Recommendation (revised):** the extension is defensible for modelling
 correctness, but the refreshed 5k smoke shows a marginal P/C cost rather
-than the "free" result the gated eval suggested — and under the
-completeness-first directive a −0.9pp completeness is not free. **Re-check
-E0 vs E1 at larger scale (or on the 1M catalog) before committing the
-`DLA_SAMPLES_FILE` swap.** This downgrades the runbook's "firm" status for
+than the "free" result the gated eval suggested — a −1.3pp purity /
+−0.9pp completeness hit is a real (if near-noise) cost against the 85/85
+target. **Re-check E0 vs E1 at larger scale (or on the 1M catalog) before
+committing the `DLA_SAMPLES_FILE` swap.** This downgrades the runbook's "firm" status for
 the [17.2, 22.5] prior to "provisional — pending a scale re-check".
 
 ## 7. Execution status
