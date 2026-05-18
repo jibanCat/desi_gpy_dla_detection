@@ -3,42 +3,81 @@
 Goal: visually verify that low-NHI detections (LLS log NHI < 19, sub-DLA
 19–20.3) show coherent metal-line absorption — the falsifying signature
 for false-positive contamination is no coherent metals at any diagnostic
-wavelength (especially the CIV 1548/1551 doublet, SiIV 1394/1403).
+wavelength (especially the CIV 1548/1551 doublet, SiIV 1394/1403) — and,
+for the LLS, that the composite shows the expected Lyman limit break
+blueward of the 911.76 Å rest-frame H I limit.
 
 Inputs
 ------
 - DLA catalog:  /scratch/.../desi-loa-gpdla-...lls_run-nhi172/dlacat-loa-main-dark.fits
-- Spectra:      /scratch/.../loa_archives/loa_full_z2_noR_v2.h5 (LoaArchive)
+- Spectra:      /scratch/.../loa_archives/loa_full_z2_noR_v2.h5 (LoaArchive HDF5)
+- BAL catalog:  QSO_cat_loa_main_dark_healpix_v3-altbal.fits — BI_CIV per
+                TARGETID. The DLA catalog and the LoaArchive carry no BAL
+                column, so BAL status is joined from here by TARGETID.
 
-Methodology (per docs/notes/2026-05-15_stack_methodology summary):
+Methodology
+-----------
 - median stack, σ-clip 3σ per rest-frame pixel
-- per-spectrum continuum: divide by median in a flat redward window
-  [1410, 1520] Å absorber-rest (fallback [1340, 1380])
-- log-λ grid at native ~0.0001 dex (69 km/s)
+- per-spectrum continuum: divide by the median in a flat redward window
+  [1410, 1520] Å absorber-rest (fallback [1340, 1380]). This is the
+  standard coarse per-spectrum flux normalization done BEFORE stacking
+  (cf. Mas-Ribas+2017, York+2006); the composite-level continuum can be
+  refined post-stack with a masked spline if EWs are needed later.
+- log-λ grid at native ~0.0001 dex (69 km/s), 700–1600 Å absorber rest
 - discard rest-frame pixels with <50 contributing spectra
 - selection: P_DLA > 0.97, SNR_FOREST > 2, DLAFLAG=0, Z_QSO > 3,
   absorber in Lyα forest, not proximate
 
+Bin sets
+--------
+- PRODUCTION: LLS merged to a single [17.2, 19) bin + three sub-DLA bins
+  + two DLA bins. Used for the headline figures.
+- DIAGNOSTIC: the LLS range resolved into three bins [17.2,18) [18,18.5)
+  [18.5,19). Used for the extra LLS-resolved diagnostic figure.
+
+BAL split
+---------
+Every stack is computed twice — non-BAL (BI_CIV = 0) and BAL (BI_CIV > 0)
+— and a comparison figure overlays them per bin. BAL troughs sit near the
+QSO-frame CIV and can mimic absorption; we usually work with the non-BAL
+stack, but the comparison documents how different the BAL sample is.
+
+Lyman limit
+-----------
+With the rest floor at 700 Å the composite reaches well blueward of the
+911.76 Å Lyman limit. A true LLS population shows a coherent flux
+decrement turning on at 912 Å; false positives show no edge. NOTE: at the
+absorber redshifts here (z_abs ≲ z_QSO, z_QSO > 3) the 700–900 Å rest
+region maps to observed λ below the DESI ~3600 Å blue cutoff for all but
+the highest-z absorbers, so the deep-blue pixels are sparsely covered and
+the <50-spectra cut NaN-clips them — the break is best seen in the
+~850–960 Å region, populated by the z_abs ≳ 3 tail.
+
 Control: each LLS / sub-DLA spectrum is ALSO stacked at a scrambled
-redshift z + Δz (Δz random ±[0.04, 0.10]) — real metals locked to the
+redshift z + Δz (Δz random ±[0.15, 0.35]) — real metals locked to the
 absorber redshift survive the real stack and wash out in the control.
 A coherent CIV dip in the real stack but a flat control = real absorbers.
 
-Outputs (docs/notes/2026-05-15_stack_real_loa_dlas/):
-  stack_all.png / stack_metal_zoom_all.png            — all 8 NHI bins
-  stack_lls.png / stack_metal_zoom_lls.png            — LLS [17.2, 19)
-  stack_subdla.png / stack_metal_zoom_subdla.png      — sub-DLA [19, 20.3)
-  stack_dla.png / stack_metal_zoom_dla.png            — DLA [20.3, 23)
-  stack_control_lls.png / stack_control_subdla.png    — real vs control
-  stack_curves.npz                                    — cached curves
+Outputs (docs/notes/2026-05-15_stack_real_loa_dlas/)
+  stack_prod.png / stack_metal_zoom_prod.png        — production bins
+  stack_lls_diag.png / stack_metal_zoom_lls_diag.png — 3 fine LLS bins
+  stack_subdla.png / stack_metal_zoom_subdla.png    — sub-DLA [19, 20.3)
+  stack_dla.png / stack_metal_zoom_dla.png          — DLA [20.3, 23)
+  stack_lyman_limit.png                             — LL break recovery
+  stack_bal_compare.png                             — non-BAL vs BAL
+  stack_control_lls.png / stack_control_subdla.png  — real vs control
+  stack_curves.npz                                  — cached curves + provenance
 """
 from __future__ import annotations
 
+import json
 import sys
 import time
+from collections import namedtuple
 from pathlib import Path
 
 import numpy as np
+from numpy.lib import recfunctions as rfn
 import h5py
 from astropy.io import fits
 import matplotlib
@@ -47,17 +86,22 @@ import matplotlib.pyplot as plt
 
 DLACAT = "/scratch/cavestru_root/cavestru0/mfho/nersc/desi-loa-gpdla-20251229-y3-learned-epoch920-lls_run-nhi172/dlacat-loa-main-dark.fits"
 LOA_ARCHIVE = "/scratch/cavestru_root/cavestru0/mfho/nersc/loa_archives/loa_full_z2_noR_v2.h5"
-OUT_DIR = Path("/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-15_stack_real_loa_dlas")
+BAL_CATALOG = "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/QSO_cat_loa_main_dark_healpix_v3-altbal.fits"
+OUT_DIR = Path(__file__).resolve().parent.parent / "docs/notes/2026-05-15_stack_real_loa_dlas"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 NPZ_PATH = OUT_DIR / "stack_curves.npz"
 
-# Rest-frame stack grid: log-λ, 900–1600 Å, dλ ~ 0.6 Å at 1200 Å
-REST_LAMBDA_MIN = 900.0
+# Rest-frame stack grid: log-λ, 700–1600 Å (floor extended from 900 → 700
+# to reach blueward of the 911.76 Å Lyman limit), dλ ~ 0.6 Å at 1200 Å.
+REST_LAMBDA_MIN = 700.0
 REST_LAMBDA_MAX = 1600.0
 DLOG_LAMBDA = 0.0001  # ~69 km/s, native BOSS/DESI
+LYMAN_LIMIT = 911.76  # H I rest-frame Lyman limit (Å)
 
-# NHI bins spanning the full nhi172 catalog range [17.2, 23].
-# LLS < 19.0, sub-DLA 19.0–20.3, DLA >= 20.3 (canonical threshold).
+# --- bin sets -------------------------------------------------------------
+# DIAGNOSTIC granularity: the LLS range is resolved into 3 bins. This is
+# also the granularity at which spectra are read; the production LLS bin
+# is the pooled union of the 3 fine LLS bins (no extra reads).
 NHI_BINS = [
     (17.2, 18.0),   # LLS low
     (18.0, 18.5),   # LLS mid
@@ -68,31 +112,50 @@ NHI_BINS = [
     (20.3, 21.0),   # DLA mid
     (21.0, 23.0),   # DLA high
 ]
-BIN_COLORS = [
-    "#b0a8d0", "#8c7fc0", "#6a5acd",   # LLS — purples
-    "#1f77b4", "#17becf", "#2ca02c",   # sub-DLA — blue/cyan/green
-    "#ff7f0e", "#d62728",              # DLA — orange/red
-]
-LLS_BINS    = [b for b in NHI_BINS if b[1] <= 19.0]
-SUBDLA_BINS = [b for b in NHI_BINS if b[0] >= 19.0 and b[1] <= 20.3]
-DLA_BINS    = [b for b in NHI_BINS if b[0] >= 20.3]
+LLS_MERGED = (17.2, 19.0)            # single production LLS bin
+# PRODUCTION binning: LLS merged to one bin.
+NHI_BINS_PROD = [LLS_MERGED] + [b for b in NHI_BINS if b[0] >= 19.0]
+
+LLS_BINS_FINE = [b for b in NHI_BINS if b[1] <= 19.0]                 # 3 bins
+SUBDLA_BINS   = [b for b in NHI_BINS if b[0] >= 19.0 and b[1] <= 20.3]  # 3 bins
+DLA_BINS      = [b for b in NHI_BINS if b[0] >= 20.3]                  # 2 bins
+
+# One stable colour per distinct bin (production + fine LLS bins).
+BIN_COLOR = {
+    LLS_MERGED:    "#6a5acd",   # production LLS — indigo
+    (17.2, 18.0):  "#b0a8d0",   # fine LLS — purples
+    (18.0, 18.5):  "#8c7fc0",
+    (18.5, 19.0):  "#6a5acd",
+    (19.0, 19.5):  "#1f77b4",   # sub-DLA — blue/cyan/green
+    (19.5, 20.0):  "#17becf",
+    (20.0, 20.3):  "#2ca02c",
+    (20.3, 21.0):  "#ff7f0e",   # DLA — orange/red
+    (21.0, 23.0):  "#d62728",
+}
+# Bins for which the curves are persisted: all 8 fine bins + merged LLS.
+STORED_BINS = NHI_BINS + [LLS_MERGED]
 # Categories needing a redshift-scrambled control (low-NHI = contamination-prone)
-CONTROL_CATEGORIES = {"lls": LLS_BINS, "subdla": SUBDLA_BINS}
+CONTROL_CATEGORIES = {"lls": LLS_BINS_FINE, "subdla": SUBDLA_BINS}
 
 # Selection
 P_DLA_MIN = 0.97
 SNR_FOREST_MIN = 2.0
 Z_QSO_MIN = 3.0
 Z_DLA_TO_QSO_MARGIN = 0.05    # exclude proximate absorbers
+NHI_MIN = 17.2
+NHI_MAX = 23.0
 LYA = 1215.67
 LYB = 1025.72
 
-# Per-bin sample cap. /scratch HDF5 random reads are slow (~0.4s/row);
-# batch-read sorted rows to amortize.
+# Per-bin sample cap, applied independently to the non-BAL and BAL groups.
+# /scratch HDF5 random reads are slow (~0.4s/row); batch-read sorted rows.
 MAX_PER_BIN = 800
 BATCH_SIZE = 200
 # Continuum-window minimum pixel count + min good pixels per spectrum.
-MIN_CONT_PIX = 5
+# Raised 5 → 30: a continuum from <30 pixels is too noisy to normalize by;
+# such spectra are dropped (counted in n_skip_norm) rather than stacked
+# with a poorly-determined continuum.
+MIN_CONT_PIX = 30
 MIN_GOOD_PIX = 100
 # Output pixels whose bracketing source samples are farther apart than
 # this (Å, absorber rest) fell in a masked gap np.interp bridged → NaN.
@@ -162,16 +225,67 @@ ZOOM_PANELS = [
 ]
 
 # Metal species to suppress (markers + labels + zoom panels) per category.
-# Sub-DLA labels are kept in full — the 20.0–20.3 bin is DLA-like and
-# does show the low-ion metals (FeII / PII), so suppressing them hid
-# real features. CIII is still dropped from DLA-only plots per request.
-# Lyman-series and other species are unaffected.
 EXCLUDE_SPECIES = {
     "all":    frozenset(),
     "lls":    frozenset(),
     "subdla": frozenset(),
     "dla":    frozenset({"CIII"}),
 }
+
+# Per-bin stack: non-BAL curve/counts/n + BAL curve/counts/n.
+BinStack = namedtuple(
+    "BinStack", ["curve", "counts", "n", "curve_bal", "counts_bal", "n_bal"])
+
+
+# ---------------------------------------------------------------------------
+# provenance
+# ---------------------------------------------------------------------------
+
+def provenance_dict() -> dict:
+    """The catalog paths + selection cuts + grid params that define the
+    stack. Embedded in the npz so `--plot-only` can refuse a stale cache."""
+    return {
+        "dlacat": DLACAT,
+        "loa_archive": LOA_ARCHIVE,
+        "bal_catalog": BAL_CATALOG,
+        "p_dla_min": P_DLA_MIN,
+        "snr_forest_min": SNR_FOREST_MIN,
+        "z_qso_min": Z_QSO_MIN,
+        "z_dla_to_qso_margin": Z_DLA_TO_QSO_MARGIN,
+        "nhi_min": NHI_MIN,
+        "nhi_max": NHI_MAX,
+        "max_per_bin": MAX_PER_BIN,
+        "rest_lambda_min": REST_LAMBDA_MIN,
+        "rest_lambda_max": REST_LAMBDA_MAX,
+        "dlog_lambda": DLOG_LAMBDA,
+        "min_cont_pix": MIN_CONT_PIX,
+        "nhi_bins": [list(b) for b in NHI_BINS],
+    }
+
+
+def check_provenance(stored: dict) -> None:
+    """Compare a cached npz's provenance to the current constants. Raise
+    on any mismatch unless `--force-plot` is passed."""
+    current = provenance_dict()
+    mismatches = []
+    for key, cur_val in current.items():
+        old_val = stored.get(key, "<absent>")
+        if old_val != cur_val:
+            mismatches.append(f"  {key}: cached={old_val!r}  current={cur_val!r}")
+    if mismatches:
+        msg = ("cached stack_curves.npz was built with different settings "
+               "than the current script:\n" + "\n".join(mismatches))
+        if "--force-plot" in sys.argv:
+            print(f"[WARN] {msg}\n[WARN] --force-plot given; plotting anyway.",
+                  flush=True)
+        else:
+            raise SystemExit(
+                f"[ERROR] {msg}\n"
+                "Re-run without --plot-only to regenerate, or pass "
+                "--force-plot to plot the stale cache anyway.")
+    else:
+        print("provenance check: cached npz matches current settings.",
+              flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +300,23 @@ def load_catalog():
     return cat
 
 
-def select(cat: np.ndarray) -> np.ndarray:
-    """Purity / SNR / redshift / forest-region selection. NHI floor 17.2."""
+def load_bal_targetids() -> set:
+    """TARGETIDs of QSOs flagged as BAL (BI_CIV > 0) in the altbal QSO
+    catalog. The DLA catalog has no BAL column, so this is the join key."""
+    print(f"loading BAL catalog: {BAL_CATALOG}", flush=True)
+    with fits.open(BAL_CATALOG) as f:
+        d = f["ZCATALOG"].data
+        tid = np.asarray(d["TARGETID"]).astype(np.int64)
+        bi = np.asarray(d["BI_CIV"]).astype(np.float64)
+    is_bal = np.isfinite(bi) & (bi > 0.0)
+    bal = set(int(t) for t in tid[is_bal])
+    print(f"  BAL (BI_CIV > 0): {len(bal)} of {len(tid)} QSOs", flush=True)
+    return bal
+
+
+def select(cat: np.ndarray, bal_tids: set) -> np.ndarray:
+    """Purity / SNR / redshift / forest-region selection. Appends an
+    `IS_BAL` boolean field (BI_CIV > 0, joined from the altbal catalog)."""
     z_qso = cat["Z_QSO"]
     z_dla = cat["Z_DLA"]
     z_dla_lya_obs = (1 + z_dla) * LYA
@@ -203,8 +332,8 @@ def select(cat: np.ndarray) -> np.ndarray:
         & (z_qso > Z_QSO_MIN)
         & in_forest
         & not_proximate
-        & (cat["NHI"] >= 17.2)
-        & (cat["NHI"] <= 23.0)
+        & (cat["NHI"] >= NHI_MIN)
+        & (cat["NHI"] <= NHI_MAX)
     )
     print(f"  P_DLA > {P_DLA_MIN}:        {(cat['P_DLA'] > P_DLA_MIN).sum()}", flush=True)
     print(f"  SNR_FOREST > {SNR_FOREST_MIN}:   {(cat['SNR_FOREST'] > SNR_FOREST_MIN).sum()}", flush=True)
@@ -212,9 +341,16 @@ def select(cat: np.ndarray) -> np.ndarray:
     print(f"  Z_QSO > {Z_QSO_MIN}:        {(z_qso > Z_QSO_MIN).sum()}", flush=True)
     print(f"  in Lyα forest:      {in_forest.sum()}", flush=True)
     print(f"  not proximate:      {not_proximate.sum()}", flush=True)
-    print(f"  NHI ∈ [17.2, 23]:   {((cat['NHI'] >= 17.2) & (cat['NHI'] <= 23.0)).sum()}", flush=True)
+    print(f"  NHI ∈ [{NHI_MIN}, {NHI_MAX}]:  "
+          f"{((cat['NHI'] >= NHI_MIN) & (cat['NHI'] <= NHI_MAX)).sum()}", flush=True)
     print(f"  ALL combined:       {keep.sum()}", flush=True)
-    return cat[keep]
+
+    cat = cat[keep]
+    is_bal = np.array([int(t) in bal_tids for t in cat["TARGETID"]], dtype=bool)
+    print(f"  BAL (BI_CIV > 0):   {is_bal.sum()} of {len(cat)} "
+          f"({100.0 * is_bal.mean():.1f}%)", flush=True)
+    cat = rfn.append_fields(cat, "IS_BAL", is_bal, usemask=False)
+    return cat
 
 
 def dump_zhist(cat):
@@ -241,9 +377,8 @@ def dump_zhist(cat):
             m = (cat["NHI"] >= lo) & (cat["NHI"] < hi)
             if m.sum() == 0:
                 continue
-            color = BIN_COLORS[NHI_BINS.index((lo, hi))]
             ax.hist(qval[m], bins=bins_edges, histtype="step", lw=1.4,
-                    color=color, density=True,
+                    color=BIN_COLOR[(lo, hi)], density=True,
                     label=f"[{lo:.1f},{hi:.1f}) n={int(m.sum())}")
         ax.set_xlabel(qlabel)
         ax.set_ylabel("normalized density")
@@ -267,7 +402,6 @@ def dump_zhist(cat):
         zq = np.median(cat["Z_QSO"][m])
         zd = np.median(cat["Z_DLA"][m])
         ratio = np.median((1 + cat["Z_QSO"][m]) / (1 + cat["Z_DLA"][m]))
-        # QSO Lyα emission position in absorber rest frame
         qso_lya_absframe = LYA * ratio
         summary.append(f"{lo:.2f} {hi:.2f}   {int(m.sum())}   "
                        f"{zq:.4f}  {zd:.4f}  {ratio:.4f}  {qso_lya_absframe:.2f}")
@@ -281,7 +415,7 @@ def dump_zhist(cat):
 # ---------------------------------------------------------------------------
 
 def _resample_spectrum(f, iv, m, wave_obs, z, rest_grid):
-    """Mask bad pixels, shift to rest frame at redshift z, local-continuum
+    """Mask bad pixels, shift to rest frame at redshift z, continuum
     normalize, resample onto rest_grid. Returns resampled array or None.
 
     `f` is consumed (modified in place) — pass a copy if you need it again."""
@@ -291,13 +425,12 @@ def _resample_spectrum(f, iv, m, wave_obs, z, rest_grid):
     rest = wave_obs / (1.0 + z)
     cont = None
     # Primary window [1410, 1520] Å absorber-rest is genuinely flat
-    # continuum: well redward of the QSO Lyα emission bump (~1313 Å in
-    # the absorber frame), clear of strong DLA metal lines (SiIV 1403 /
-    # SiII 1527 just outside), and wide (110 Å ≈ 550 native pixels) so
-    # sky-line masking essentially never leaves < MIN_CONT_PIX good
-    # pixels. [1340, 1380] is a fallback for the rare highly-masked or
-    # very-high-z (z_DLA > 5.5, red edge clipped) case; if both fail the
-    # spectrum is dropped and counted in n_skip_norm.
+    # continuum: well redward of the QSO Lyα emission bump, clear of
+    # strong DLA metal lines (SiIV 1403 / SiII 1527 just outside), and
+    # wide (110 Å ≈ 550 native pixels) so sky-line masking essentially
+    # never leaves < MIN_CONT_PIX good pixels. [1340, 1380] is a fallback
+    # for the rare highly-masked or very-high-z (z_DLA > 5.5, red edge
+    # clipped) case; if both fail the spectrum is dropped.
     for win in [(1410.0, 1520.0), (1340.0, 1380.0)]:
         win_mask = (rest > win[0]) & (rest < win[1]) & np.isfinite(f)
         if win_mask.sum() >= MIN_CONT_PIX:
@@ -334,6 +467,9 @@ def _resample_spectrum(f, iv, m, wave_obs, z, rest_grid):
 def _sigma_clip_median(stack):
     """3σ-clip per pixel, return (median_curve, count_per_pixel).
     Pixels with <50 contributing spectra get NaN."""
+    n_pix = stack.shape[1]
+    if stack.shape[0] == 0:
+        return np.full(n_pix, np.nan), np.zeros(n_pix, dtype=int)
     med = np.nanmedian(stack, axis=0)
     mad = np.nanmedian(np.abs(stack - med), axis=0) * 1.4826
     bad = np.abs(stack - med) > 3 * mad[None, :]
@@ -344,24 +480,41 @@ def _sigma_clip_median(stack):
     return curve, counts
 
 
+def _stack_pair(raw, is_bal):
+    """Split a raw resampled stack into non-BAL and BAL groups, σ-clip
+    median each. Returns a BinStack."""
+    nb = ~is_bal
+    curve, counts = _sigma_clip_median(raw[nb])
+    curve_b, counts_b = _sigma_clip_median(raw[is_bal])
+    return BinStack(curve, counts, int(nb.sum()),
+                    curve_b, counts_b, int(is_bal.sum()))
+
+
 def read_bin_spectra(cat_bin, arch_tid_to_row, archive, rest_grid, bin_name,
                      control_dz=None):
-    """Batch-read a bin's spectra and resample. Returns the raw resampled
-    stack array (n_spec, n_pix); if `control_dz` is given (per-spectrum
-    redshift offset), also returns a control stack resampled at z+Δz.
-
-    Returns (real_stack, control_stack_or_None)."""
+    """Batch-read a bin's spectra and resample. Returns
+    (real_stack, control_stack_or_None, is_bal) — `is_bal` is the BAL
+    flag aligned row-for-row with the returned stacks. The non-BAL and
+    BAL groups are each independently capped at MAX_PER_BIN."""
     flux = archive["flux"]
     ivar = archive["ivar"]
     mask = archive["mask"]
     wave_obs = archive["wavelength"][:]
 
+    # Cap each BAL group independently so the (minority) BAL stack is not
+    # starved by a global cap dominated by non-BAL rows.
     rng = np.random.default_rng(42)
-    if len(cat_bin) > MAX_PER_BIN:
-        sel = rng.choice(len(cat_bin), MAX_PER_BIN, replace=False)
-        cat_bin = cat_bin[sel]
-        if control_dz is not None:
-            control_dz = control_dz[sel]
+    is_bal_full = cat_bin["IS_BAL"].astype(bool)
+    keep_parts = []
+    for grp_mask in (~is_bal_full, is_bal_full):
+        idx = np.where(grp_mask)[0]
+        if len(idx) > MAX_PER_BIN:
+            idx = rng.choice(idx, MAX_PER_BIN, replace=False)
+        keep_parts.append(idx)
+    keep_idx = np.sort(np.concatenate(keep_parts))
+    cat_bin = cat_bin[keep_idx]
+    if control_dz is not None:
+        control_dz = control_dz[keep_idx]
 
     tids = cat_bin["TARGETID"].astype(np.int64)
     row_idx = np.array([arch_tid_to_row.get(int(t), -1) for t in tids],
@@ -372,9 +525,11 @@ def read_bin_spectra(cat_bin, arch_tid_to_row, archive, rest_grid, bin_name,
     row_idx = row_idx[found]
     if control_dz is not None:
         control_dz = control_dz[found]
+    is_bal = cat_bin["IS_BAL"].astype(bool)
     n = len(row_idx)
-    print(f"  bin={bin_name}: {n} spectra to read (skip-no-TID={n_skip_tid})",
-          flush=True)
+    print(f"  bin={bin_name}: {n} spectra to read "
+          f"(non-BAL={int((~is_bal).sum())}, BAL={int(is_bal.sum())}, "
+          f"skip-no-TID={n_skip_tid})", flush=True)
 
     n_pix = len(rest_grid)
     real = np.full((n, n_pix), np.nan, dtype=np.float32)
@@ -417,7 +572,7 @@ def read_bin_spectra(cat_bin, arch_tid_to_row, archive, rest_grid, bin_name,
 
     print(f"  bin={bin_name}: total {time.time()-t_total:.1f}s, "
           f"skip-no-norm={n_skip_norm}", flush=True)
-    return real, ctrl
+    return real, ctrl, is_bal
 
 
 def build_archive_tid_map(archive):
@@ -428,10 +583,12 @@ def build_archive_tid_map(archive):
 
 
 def compute_stacks():
-    """Read the archive, build per-bin stacks + combined LLS/sub-DLA
-    real-vs-control stacks. Slow (~45 min on /scratch)."""
+    """Read the archive, build per-bin stacks (non-BAL + BAL), the
+    production-binned stacks, and the combined LLS/sub-DLA real-vs-control
+    stacks. Slow (~15–30 min on /scratch)."""
     cat = load_catalog()
-    cat = select(cat)
+    bal_tids = load_bal_targetids()
+    cat = select(cat, bal_tids)
     dump_zhist(cat)
 
     rest_grid = 10 ** np.arange(np.log10(REST_LAMBDA_MIN),
@@ -439,7 +596,6 @@ def compute_stacks():
     print(f"rest grid: {rest_grid[0]:.2f}..{rest_grid[-1]:.2f} Å, "
           f"n={len(rest_grid)}", flush=True)
 
-    # Which categories want a control? (low-NHI bins)
     control_bins = set()
     for cat_bins in CONTROL_CATEGORIES.values():
         control_bins.update(cat_bins)
@@ -447,9 +603,9 @@ def compute_stacks():
     with h5py.File(LOA_ARCHIVE, "r") as archive:
         tid_to_row = build_archive_tid_map(archive)
 
-        per_bin = {}             # (lo,hi) -> (curve, counts, n_total)
-        raw_real = {}            # (lo,hi) -> raw real stack array
-        raw_ctrl = {}            # (lo,hi) -> raw control stack array
+        raw_real = {}     # (lo,hi) -> raw real stack array
+        raw_ctrl = {}     # (lo,hi) -> raw control stack array
+        raw_isbal = {}    # (lo,hi) -> BAL flag aligned to raw_real rows
         rng = np.random.default_rng(7)
         for (lo, hi) in NHI_BINS:
             sub = cat[(cat["NHI"] >= lo) & (cat["NHI"] < hi)]
@@ -462,25 +618,43 @@ def compute_stacks():
             if want_ctrl:
                 # Random ±[0.15, 0.35] redshift offset per spectrum. At
                 # z~3 that is ~11000–26000 km/s — far larger than any zoom
-                # panel (a few 1000 km/s), so a real metal line shifts
-                # well clear of its panel and the per-spectrum-random
-                # offsets fully smear it out in the control median.
+                # panel, so a real metal line shifts well clear of its
+                # panel and the per-spectrum-random offsets fully smear it
+                # out in the control median.
                 cdz = (rng.uniform(0.15, 0.35, len(sub))
                        * rng.choice([-1.0, 1.0], len(sub)))
-            real, ctrl = read_bin_spectra(
+            real, ctrl, is_bal = read_bin_spectra(
                 sub, tid_to_row, archive, rest_grid, f"[{lo},{hi})",
                 control_dz=cdz)
-            curve, counts = _sigma_clip_median(real)
-            per_bin[(lo, hi)] = (curve, counts, len(sub))
             raw_real[(lo, hi)] = real
+            raw_isbal[(lo, hi)] = is_bal
             if ctrl is not None:
                 raw_ctrl[(lo, hi)] = ctrl
 
-    # Combined real-vs-control stacks per low-NHI category
+    # Per-bin stacks (non-BAL + BAL) for the 8 fine bins.
+    per_bin = {}
+    for b in NHI_BINS:
+        if b not in raw_real:
+            continue
+        per_bin[b] = _stack_pair(raw_real[b], raw_isbal[b])
+
+    # Production LLS bin = pooled union of the 3 fine LLS bins.
+    lls_raw = [raw_real[b] for b in LLS_BINS_FINE if b in raw_real]
+    lls_bal = [raw_isbal[b] for b in LLS_BINS_FINE if b in raw_isbal]
+    if lls_raw:
+        per_bin[LLS_MERGED] = _stack_pair(np.concatenate(lls_raw, axis=0),
+                                          np.concatenate(lls_bal, axis=0))
+
+    # Combined real-vs-control stacks per low-NHI category (non-BAL only —
+    # the decisive false-positive plot uses the clean sample).
     combined = {}   # name -> (real_curve, real_counts, ctrl_curve, ctrl_counts, n)
     for name, cat_bins in CONTROL_CATEGORIES.items():
-        reals = [raw_real[b] for b in cat_bins if b in raw_real]
-        ctrls = [raw_ctrl[b] for b in cat_bins if b in raw_ctrl]
+        reals, ctrls = [], []
+        for b in cat_bins:
+            if b in raw_real and b in raw_ctrl:
+                nb = ~raw_isbal[b]
+                reals.append(raw_real[b][nb])
+                ctrls.append(raw_ctrl[b][nb])
         if not reals:
             continue
         pooled_real = np.concatenate(reals, axis=0)
@@ -488,18 +662,28 @@ def compute_stacks():
         rc, rn = _sigma_clip_median(pooled_real)
         cc, cn = _sigma_clip_median(pooled_ctrl)
         combined[name] = (rc, rn, cc, cn, len(pooled_real))
-        print(f"combined {name}: {len(pooled_real)} spectra "
+        print(f"combined {name}: {len(pooled_real)} non-BAL spectra "
               f"(real + scrambled control)", flush=True)
 
     # counts log
     with (OUT_DIR / "counts.txt").open("w") as fh:
         fh.write(f"# P_DLA > {P_DLA_MIN}, SNR_FOREST > {SNR_FOREST_MIN}, "
                  f"DLAFLAG=0, Z_QSO > {Z_QSO_MIN}, in-forest, not-proximate\n")
-        fh.write(f"# MAX_PER_BIN={MAX_PER_BIN}\n# NHI_lo NHI_hi n_candidates\n")
+        fh.write(f"# MAX_PER_BIN={MAX_PER_BIN} (per BAL group)\n")
+        fh.write("# NHI_lo NHI_hi n_candidates n_nonbal n_bal\n")
         for (lo, hi) in NHI_BINS:
             n_cand = int(((cat["NHI"] >= lo) & (cat["NHI"] < hi)).sum())
-            fh.write(f"{lo:.2f} {hi:.2f} {n_cand}\n")
+            bs = per_bin.get((lo, hi))
+            n_nb = bs.n if bs else 0
+            n_b = bs.n_bal if bs else 0
+            fh.write(f"{lo:.2f} {hi:.2f} {n_cand} {n_nb} {n_b}\n")
     return rest_grid, per_bin, combined
+
+
+def prod_bins_view(per_bin):
+    """The production-binned subset of `per_bin` (merged LLS + sub-DLA +
+    DLA), in NHI_BINS_PROD order."""
+    return {b: per_bin[b] for b in NHI_BINS_PROD if b in per_bin}
 
 
 # ---------------------------------------------------------------------------
@@ -507,12 +691,16 @@ def compute_stacks():
 # ---------------------------------------------------------------------------
 
 def save_curves(rest_grid, per_bin, combined):
-    payload = {"rest_grid": rest_grid}
-    for (lo, hi), (curve, counts, n_total) in per_bin.items():
+    payload = {"rest_grid": rest_grid,
+               "provenance": np.array(json.dumps(provenance_dict()))}
+    for (lo, hi), bs in per_bin.items():
         key = f"{lo:.2f}_{hi:.2f}"
-        payload[f"curve_{key}"] = curve
-        payload[f"counts_{key}"] = counts
-        payload[f"ntot_{key}"] = np.int64(n_total)
+        payload[f"curve_{key}"] = bs.curve
+        payload[f"counts_{key}"] = bs.counts
+        payload[f"ntot_{key}"] = np.int64(bs.n)
+        payload[f"curvebal_{key}"] = bs.curve_bal
+        payload[f"countsbal_{key}"] = bs.counts_bal
+        payload[f"ntotbal_{key}"] = np.int64(bs.n_bal)
     for name, (rc, rn, cc, cn, n) in combined.items():
         payload[f"comb_real_{name}"] = rc
         payload[f"comb_realcnt_{name}"] = rn
@@ -524,15 +712,22 @@ def save_curves(rest_grid, per_bin, combined):
 
 
 def load_curves():
-    d = np.load(NPZ_PATH)
+    d = np.load(NPZ_PATH, allow_pickle=False)
+    if "provenance" not in d:
+        raise SystemExit(
+            f"[ERROR] cached {NPZ_PATH.name} predates the provenance/BAL "
+            "format — re-run without --plot-only to regenerate.")
+    check_provenance(json.loads(str(d["provenance"])))
     rest_grid = d["rest_grid"]
     per_bin = {}
-    for (lo, hi) in NHI_BINS:
+    for (lo, hi) in STORED_BINS:
         key = f"{lo:.2f}_{hi:.2f}"
         if f"curve_{key}" not in d:
             continue
-        per_bin[(lo, hi)] = (d[f"curve_{key}"], d[f"counts_{key}"],
-                             int(d[f"ntot_{key}"]))
+        per_bin[(lo, hi)] = BinStack(
+            d[f"curve_{key}"], d[f"counts_{key}"], int(d[f"ntot_{key}"]),
+            d[f"curvebal_{key}"], d[f"countsbal_{key}"],
+            int(d[f"ntotbal_{key}"]))
     combined = {}
     for name in CONTROL_CATEGORIES:
         if f"comb_real_{name}" not in d:
@@ -581,18 +776,23 @@ def _draw_metal_labels(ax, y_lo, y_hi, lam_lo, lam_hi, exclude=frozenset()):
 
 def plot_overview(rest_grid, per_bin, bins, fname, subtitle,
                   exclude=frozenset()):
-    """Full 900–1600 Å overview for the given NHI bins."""
+    """Full REST_LAMBDA_MIN–REST_LAMBDA_MAX overview for the given NHI
+    bins (non-BAL stacks)."""
     fig, ax = plt.subplots(figsize=(15, 6))
     for (lo, hi) in bins:
         if (lo, hi) not in per_bin:
             continue
-        color = BIN_COLORS[NHI_BINS.index((lo, hi))]
-        curve, counts, n_total = per_bin[(lo, hi)]
-        n_eff = int(np.nanmedian(counts[counts > 0])) if (counts > 0).any() else 0
-        ax.plot(rest_grid, curve, color=color, lw=1.2, alpha=0.85,
-                label=f"log NHI [{lo:.1f}, {hi:.1f})  n={n_total} "
+        bs = per_bin[(lo, hi)]
+        n_eff = (int(np.nanmedian(bs.counts[bs.counts > 0]))
+                 if (bs.counts > 0).any() else 0)
+        ax.plot(rest_grid, bs.curve, color=BIN_COLOR[(lo, hi)], lw=1.2,
+                alpha=0.85,
+                label=f"log NHI [{lo:.1f}, {hi:.1f})  n={bs.n} "
                       f"(median_pix={n_eff})")
     ax.axhline(1.0, color="k", lw=0.5, alpha=0.4)
+    ax.axvline(LYMAN_LIMIT, color="navy", lw=0.9, ls=":", alpha=0.7)
+    ax.text(LYMAN_LIMIT - 4, 1.62, "Lyman limit 912 Å", rotation=90,
+            fontsize=7, ha="right", va="top", color="navy")
     ax.set_xlim(REST_LAMBDA_MIN, REST_LAMBDA_MAX)
     ax.set_ylim(0.0, 1.7)
     _draw_metal_labels(ax, 0.0, 1.7, REST_LAMBDA_MIN, REST_LAMBDA_MAX, exclude)
@@ -601,7 +801,7 @@ def plot_overview(rest_grid, per_bin, bins, fname, subtitle,
     ax.set_title(
         f"{subtitle} — high-purity (P_DLA > {P_DLA_MIN}), "
         f"SNR_forest > {SNR_FOREST_MIN}, z_QSO > {Z_QSO_MIN}, "
-        "Lyα-forest detection only")
+        "Lyα-forest detection only, non-BAL")
     ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
     ax.grid(alpha=0.2)
     fig.tight_layout()
@@ -642,16 +842,14 @@ def plot_metal_zoom(rest_grid, per_bin, bins, fname, suptitle,
         for (lo, hi) in bins:
             if (lo, hi) not in per_bin:
                 continue
-            color = BIN_COLORS[NHI_BINS.index((lo, hi))]
-            curve, counts, n_total = per_bin[(lo, hi)]
-            y = _local_continuum_norm(x, curve[sel].astype(np.float64), lines)
-            ax.plot(x, y, color=color, lw=1.3, alpha=0.85,
+            bs = per_bin[(lo, hi)]
+            y = _local_continuum_norm(x, bs.curve[sel].astype(np.float64), lines)
+            ax.plot(x, y, color=BIN_COLOR[(lo, hi)], lw=1.3, alpha=0.85,
                     label=f"NHI [{lo:.1f},{hi:.1f})")
             if np.isfinite(y).any():
                 panel_min = min(panel_min, np.nanpercentile(y, 1))
         for ln_name, ln_w in lines:
             ax.axvline(ln_w, color="k", lw=0.7, ls="--", alpha=0.6)
-        # adaptive y-limits: floor at the deepest line (clamped), head at 1.06
         y_lo = max(0.25, panel_min - 0.05)
         ax.set_ylim(y_lo, 1.06)
         for ln_name, ln_w in lines:
@@ -668,6 +866,88 @@ def plot_metal_zoom(rest_grid, per_bin, bins, fname, suptitle,
         ax.set_visible(False)
     axes[0].legend(loc="lower left", fontsize=7, framealpha=0.9)
     fig.suptitle(suptitle, fontsize=11, y=1.0)
+    fig.tight_layout(rect=[0, 0, 1, 0.99])
+    fig.savefig(OUT_DIR / fname, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[saved] {OUT_DIR / fname}", flush=True)
+
+
+def plot_lyman_limit(rest_grid, per_bin, fname):
+    """Lyman limit break recovery: the 740–1050 Å absorber-rest region for
+    the production NHI bins (non-BAL). A true LLS / sub-DLA / DLA
+    population shows a coherent flux decrement turning on at the 911.76 Å
+    Lyman limit; the depth deepens with NHI (and saturates near-black
+    above log NHI ~18). No coherent edge = false positives."""
+    fig, ax = plt.subplots(figsize=(13, 6))
+    lo_w, hi_w = 740.0, 1050.0
+    sel = (rest_grid >= lo_w) & (rest_grid <= hi_w)
+    x = rest_grid[sel]
+    for (lo, hi) in NHI_BINS_PROD:
+        if (lo, hi) not in per_bin:
+            continue
+        bs = per_bin[(lo, hi)]
+        ax.plot(x, bs.curve[sel], color=BIN_COLOR[(lo, hi)], lw=1.4,
+                alpha=0.9, label=f"log NHI [{lo:.1f}, {hi:.1f})  n={bs.n}")
+    # Lyman limit + Lyman-series blanketing band (912–~940 Å, depressed by
+    # converging Lyman-series lines — do NOT read the pre-break level here).
+    ax.axvline(LYMAN_LIMIT, color="navy", lw=1.2, ls=":", alpha=0.85)
+    ax.text(LYMAN_LIMIT, 1.28, "Lyman limit 911.76 Å", rotation=90,
+            fontsize=8, ha="right", va="top", color="navy")
+    ax.axvspan(LYMAN_LIMIT, 945.0, color="grey", alpha=0.12)
+    ax.text(928.0, 1.28, "Lyman-series\nblanketing", fontsize=7,
+            ha="center", va="top", color="dimgrey")
+    ax.axhline(1.0, color="k", lw=0.5, alpha=0.4)
+    ax.set_xlim(lo_w, hi_w)
+    ax.set_ylim(0.0, 1.35)
+    ax.set_xlabel("absorber rest-frame wavelength [Å]")
+    ax.set_ylabel("median stacked flux (norm. to 1 at 1410–1520 Å rest)")
+    ax.set_title(
+        "Lyman limit break recovery — production NHI bins, non-BAL. "
+        "Flux blueward of 912 Å should drop coherently for real H I "
+        "absorbers (deeper / blacker with NHI). Deep-blue pixels are "
+        "sparsely covered (DESI blue cutoff) and NaN-clipped below 50 "
+        "spectra.")
+    ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / fname, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[saved] {OUT_DIR / fname}", flush=True)
+
+
+def plot_bal_compare(rest_grid, per_bin, fname):
+    """Non-BAL vs BAL median stacks, one panel per production NHI bin.
+    BAL troughs sit near the QSO-frame CIV; this documents how different
+    the BAL sample's absorber-frame composite is from the non-BAL one."""
+    bins = [b for b in NHI_BINS_PROD if b in per_bin]
+    n_panels = len(bins)
+    ncols = 3
+    nrows = (n_panels + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(20, 4.8 * nrows))
+    axes = np.atleast_1d(axes).flatten()
+    for ax, (lo, hi) in zip(axes, bins):
+        bs = per_bin[(lo, hi)]
+        ax.plot(rest_grid, bs.curve, color="#1f77b4", lw=1.1, alpha=0.9,
+                label=f"non-BAL  n={bs.n}")
+        ax.plot(rest_grid, bs.curve_bal, color="#d62728", lw=1.1, alpha=0.9,
+                label=f"BAL (BI_CIV>0)  n={bs.n_bal}")
+        ax.axhline(1.0, color="k", lw=0.5, alpha=0.4)
+        ax.axvline(LYMAN_LIMIT, color="navy", lw=0.8, ls=":", alpha=0.6)
+        _draw_metal_labels(ax, 0.0, 1.7, REST_LAMBDA_MIN, REST_LAMBDA_MAX)
+        ax.set_xlim(REST_LAMBDA_MIN, REST_LAMBDA_MAX)
+        ax.set_ylim(0.0, 1.7)
+        ax.set_title(f"log NHI [{lo:.1f}, {hi:.1f})", fontsize=9)
+        ax.set_xlabel("rest-frame λ [Å]", fontsize=8)
+        ax.set_ylabel("median stacked flux", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.legend(loc="lower right", fontsize=7, framealpha=0.9)
+        ax.grid(alpha=0.2)
+    for ax in axes[n_panels:]:
+        ax.set_visible(False)
+    fig.suptitle("Non-BAL vs BAL stacks per production NHI bin. BAL QSOs "
+                 "(BI_CIV > 0) are usually excluded; large non-BAL/BAL "
+                 "differences near CIV/SiIV would justify that.",
+                 fontsize=11, y=1.0)
     fig.tight_layout(rect=[0, 0, 1, 0.99])
     fig.savefig(OUT_DIR / fname, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -720,8 +1000,8 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
     label = {"lls": "LLS [17.2, 19)", "subdla": "sub-DLA [19, 20.3)"}[name]
     fig.suptitle(
         f"Real vs redshift-scrambled control — combined {label}, "
-        f"n={n} spectra. A coherent dip in RED (real) absent in GREY "
-        "(control) confirms the detections are real absorbers, not "
+        f"n={n} non-BAL spectra. A coherent dip in RED (real) absent in "
+        "GREY (control) confirms the detections are real absorbers, not "
         "false positives. CIV 1548/1551 is the decisive panel.",
         fontsize=11, y=1.0)
     fig.tight_layout(rect=[0, 0, 1, 0.99])
@@ -731,22 +1011,41 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
 
 
 def render_all(rest_grid, per_bin, combined):
-    plot_overview(rest_grid, per_bin, NHI_BINS, "stack_all.png",
-                  "Real-LOA LLS / sub-DLA / DLA, all NHI bins",
+    prod = prod_bins_view(per_bin)
+
+    # Production-binned headline figures (LLS merged to one bin).
+    plot_overview(rest_grid, prod, NHI_BINS_PROD, "stack_prod.png",
+                  "Real-LOA production bins (LLS merged / sub-DLA / DLA)",
                   exclude=EXCLUDE_SPECIES["all"])
-    plot_metal_zoom(rest_grid, per_bin, NHI_BINS, "stack_metal_zoom_all.png",
-                    "Metal-line zoom — all NHI bins",
+    plot_metal_zoom(rest_grid, prod, NHI_BINS_PROD, "stack_metal_zoom_prod.png",
+                    "Metal-line zoom — production NHI bins",
                     exclude=EXCLUDE_SPECIES["all"])
+
+    # Diagnostic: LLS resolved into 3 fine bins.
+    plot_overview(rest_grid, per_bin, LLS_BINS_FINE, "stack_lls_diag.png",
+                  "Real-LOA LLS resolved (3 fine bins, log NHI 17.2–19)",
+                  exclude=EXCLUDE_SPECIES["lls"])
+    plot_metal_zoom(rest_grid, per_bin, LLS_BINS_FINE,
+                    "stack_metal_zoom_lls_diag.png",
+                    "Metal-line zoom — LLS resolved (3 fine bins)",
+                    exclude=EXCLUDE_SPECIES["lls"])
+
+    # Sub-DLA / DLA focus figures (production bins).
     for tag, bins, label in [
-        ("lls", LLS_BINS, "Real-LOA LLS only (log NHI 17.2–19)"),
-        ("subdla", SUBDLA_BINS, "Real-LOA sub-DLAs only (log NHI 19–20.3)"),
-        ("dla", DLA_BINS, "Real-LOA DLAs only (log NHI ≥ 20.3)"),
+        ("subdla", SUBDLA_BINS, "Real-LOA sub-DLAs (log NHI 19–20.3)"),
+        ("dla", DLA_BINS, "Real-LOA DLAs (log NHI ≥ 20.3)"),
     ]:
         exc = EXCLUDE_SPECIES[tag]
         plot_overview(rest_grid, per_bin, bins, f"stack_{tag}.png", label,
                       exclude=exc)
         plot_metal_zoom(rest_grid, per_bin, bins, f"stack_metal_zoom_{tag}.png",
                         f"Metal-line zoom — {label}", exclude=exc)
+
+    # Lyman limit break recovery + BAL comparison.
+    plot_lyman_limit(rest_grid, per_bin, "stack_lyman_limit.png")
+    plot_bal_compare(rest_grid, per_bin, "stack_bal_compare.png")
+
+    # Decisive real-vs-control plots.
     for name in CONTROL_CATEGORIES:
         plot_control(rest_grid, combined, name, f"stack_control_{name}.png",
                      exclude=EXCLUDE_SPECIES.get(name, frozenset()))
@@ -757,7 +1056,8 @@ def main():
     # runs in seconds — no spectrum reads).
     if "--zhist-only" in sys.argv:
         cat = load_catalog()
-        cat = select(cat)
+        bal_tids = load_bal_targetids()
+        cat = select(cat, bal_tids)
         dump_zhist(cat)
         return
     if "--plot-only" in sys.argv:
