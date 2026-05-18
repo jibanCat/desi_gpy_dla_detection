@@ -129,6 +129,15 @@ investigation found `NHI_pred` biased **+0.06 dex high** and `NHI_ERR`
 **under-estimated ~1.4×** — that is the scope of the deferred NHI-bias task,
 to revisit after the GP-model swap.
 
+**Implemented 2026-05-17** (commit `2ae3435`): `NHI_INCONSISTENT` is no
+longer folded into `DLAFLAG` — it is now an informational column only
+(`NHI_CONSISTENCY_FLAG`), like `PDLA_SATURATED_FLAG`. `DLAFLAG == 0` now
+means LYBETA/BAL/bad-fit clean and is no longer swamped by the NHI knob,
+so the molly headline P/C is no longer silently NHI-gated. Catalogs
+stamped before this change need a re-postprocess (`add_dla_flags.py`,
+cheap, no inference) to pick up the new schema — folded into the
+open-item-6 consistency re-eval.
+
 ---
 
 > **⚠ KNOWN REGRESSION — read before adopting the v3 stack as "baseline":**
