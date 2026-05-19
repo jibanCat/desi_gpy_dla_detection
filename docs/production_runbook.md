@@ -169,31 +169,34 @@ items).
 
 **Still open / the real blocker:**
 
-1. **The 85/85 gap is fully diagnosed; it is not reachable by any
-   catalog-level knob.** Production tops out at **~0.80 P / 0.86 C**,
-   ~4.6pp short on purity. Cause (FN/FP deep-dive + root-cause study,
-   `2026-05-18_fn_fp_deepdive.md`, `2026-05-18_band_bf_flag_design.md` §6):
-   75% of false positives are *real* sub-DLAs (19.0–20.3) whose recovered
-   NHI scattered past the 20.3 floor. The recovered NHI carries an
-   **irreducible ~0.24 dex scatter** = an SNR-driven **information limit**
-   (58% of borderline cases are SNR<4) **+ an SNR-independent ~0.19 dex
-   model-misspecification floor** (continuum / mean-flux τ_eff / metals /
-   RSD / Voigt-shape — the pull grows 1.5→2.9 with SNR while the error
-   scatter stays flat). The hard 20.3 cut turns that scatter into two-way
-   leakage. Every tested fix — p_DLA cut, NHI-debias, and a 63-config
-   band-Bayes-factor re-sweep — only **slides P↔C along the same
-   frontier**; none moves it (the band-BF AUC 0.726 looked useful but is a
-   ranking metric — by the actual P/C table it is just a frontier slide).
-   `BF_BAND` ships only as an *optional informational column*.
-   - **The real frontier-movers are model-side**: (i) shrink the ~0.19 dex
-     model-misspecification floor via per-spectrum continuum / mean-flux
-     marginalisation (evaluate the τ-EB recipe on σ(dNHI), not mean bias);
-     (ii) propagate that uncertainty into `NHI_ERR` so the posterior is
-     calibrated; (iii) replace the hard DLA/sub-DLA cut with a
-     continuous-NHI catalog + post-hoc bands.
+1. **The 85/85 gap is fully diagnosed — the cause is a specific forward-model
+   gap.** Production tops out at **~0.80 P / 0.86 C**, ~4.6pp short on
+   purity. 75% of false positives are *real* sub-DLAs (19.0–20.3) whose
+   recovered NHI scattered past the 20.3 floor (`2026-05-18_fn_fp_deepdive.md`).
+   The 2026-05-18 overnight investigations (`2026-05-18_band_bf_flag_design.md`
+   §7) pin the mechanism: **the GP forward model has no term for metal lines
+   / Lyα-forest pile-ups that land coincident with the DLA damping wings.**
+   That unmodelled extra wing absorption (~0.1–0.2 in fractional depth) is
+   indistinguishable from a deeper DLA, so the GP launders it into a higher
+   NHI. It explains ~38% of the SNR-2–4 boundary misclassification — 5× any
+   other cause — and produces a narrow-but-biased posterior (MAP error 1.9×
+   the posterior width). **Ruled out as causes**: the Voigt implementation
+   (mock vs GP match to <0.001 dex), continuum placement (sub-percent
+   accurate), τ-EB grid granularity (a 23-pt grid changes nothing), and the
+   "SNR information limit" (SNR_RED 2–4 is the *worst* band, not the best —
+   the earlier "58% SNR<4" used the wrong SNR column). **Not a fix**: any
+   catalog knob — p_DLA cut, NHI-debias, the 63-config + gapped band-BF
+   re-sweeps all just slide P↔C along the same frontier; `BF_BAND` ships
+   only as an optional informational column.
+   - **The fix is model-side**: (i) a **metal-line veto** before/during the
+     DLA fit (mask known foreground CIV/SiIV/FeII via DESI foreground-z
+     catalogs); (ii) a **heavy-tailed wing-residual nuisance term** so
+     `NHI_ERR` becomes calibrated (pull→1) and the catalog flags borderline
+     cases instead of asserting confident wrong NHI; (iii) replace the hard
+     20.3 cut with a continuous-NHI catalog + post-hoc bands.
    **Pre-launch decision**: launch the 1M run at ~0.80/0.86 now, or invest
-   in the model-side NHI work first. No knob closes the gap — that is
-   settled.
+   in the model-side metal-veto work first. No catalog knob closes the gap
+   — that is settled.
 2. `p_DLA` cut convention — 0.99 is the completeness-rich default; any
    tightening just trades down the same frontier (no 85/85 point exists).
    Pick 0.99 unless a purity-priority subset catalog is wanted.

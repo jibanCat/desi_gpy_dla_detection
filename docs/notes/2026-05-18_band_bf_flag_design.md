@@ -244,3 +244,81 @@ hard 20.3 cut with a continuous-NHI catalog + post-hoc bands so the catalog
 stops manufacturing boundary FP/FN. **85/85 at a hard 20.3 cut is
 unreachable by any catalog-level knob.** Full detail:
 `borderline_rootcause/FINDINGS.md`, `bf_band_pc_sweep/FINDINGS.md`.
+
+## 7. Overnight investigations (2026-05-18) — the root cause, pinned
+
+A five-agent batch, all on debug/regular sbatch (no login-node compute).
+
+### 7.1 — SNR 2–4 root cause: it is unmodelled metal/forest wing absorption
+
+`snr24_rootcause/FINDINGS.md` (job 53156351). **This corrects §6b.** The
+"58 % information limit (SNR<4)" framing was wrong — it used the h5 `snrs`
+key (narrow Lyα-window forest SNR), not `SNR_RED`. By `SNR_RED`, the **2–4
+band has the *highest* borderline misclassification rate (37 %)**, not the
+lowest (0–2: 28%, 4–6: 26%, 6–12: 22%, 12+: 19%) — so it is not an SNR
+information limit at all.
+
+**The dominant cause (38 % of SNR-2–4 misclassification, 5× any rival):
+unmodelled extra absorption in the DLA damping wings** — coincident metal
+lines (foreground CIV/SiIV/FeII) and chance Lyα-forest pile-ups. The
+single-Voigt forward model (continuum + Lyα forest + one Voigt DLA) has no
+term for them, so the GP launders the extra wing absorption into a higher
+NHI and pushes the absorber across 20.3. Quantified by `voigt_wing_deficit`
+(observed flux vs a Voigt at the *true* NHI, in the 3–15 Å wings):
+misclassified −0.158 vs correct −0.066 — the misclassified wings are 2.4×
+darker than the true NHI warrants. Continuum placement is **ruled out**
+(GP normalisation sub-percent accurate, uncorrelated with dNHI). The
+posterior is narrow-but-biased (MAP error 1.9× the posterior width) — the
+calibration signature of a systematic the likelihood treats as real DLA
+opacity. **This is the concrete identity of the ~0.19 dex
+"model-misspecification floor" of §6b.**
+
+### 7.2 — gapped-band BF (`gapped_band_bf/`, job 53155536): no help
+
+11 band-pair configs with the bands placed *away* from 20.3 (gap straddling
+the posterior peak). Best gapped AUC 0.777 vs the touching control 0.782 —
+*worse*; every config is still a ≤1:1 P↔C slide. The premise (peak-location
+degeneracy) is refuted: it is the genuine posterior *overlap*, not the peak
+location, that bounds the trade.
+
+### 7.3 — mock vs GP Voigt (`voigt_compare/`, job 53155493): match — ruled out
+
+The DESI mock injects DLAs (`quickquasars` → `desisim.dla` → `linetools`
+`voigt_tau`) with an exact `wofz` Voigt, *same* Lyα f=0.4164 and Γ=6.265e8
+as the GP detector (`ctypes_voigt.c`/libcerf). Differences (Doppler b, line
+count, injection-LSF) do not touch the NHI-setting damping wing. Measured
+effective-NHI offset **< 0.001 dex** — 100× below the +0.05 dex bias. A
+Voigt mismatch is **not** a contributor. (Side note: `voigt_v2`'s BOSS LSF
+kernel is mis-scaled on the fine DESI grid — cosmetic, zero NHI impact.)
+
+### 7.4 — visual review figures (`visual_FP/`, job 53155949)
+
+99 figures in `visual_FP/figures/` — each misclassified spectrum (FP + FN)
+with the GP null + GP+DLA Voigt at predicted *and* true NHI overplotted,
+every flag annotated, plus `visual_FP/README.md` (flag glossary + index).
+
+### 7.5 — finer τ-EB (`tau_eb_finer/`, job 53155471): NULL — does not help
+
+Re-inference with a 23-point τ-EB factor grid (step 0.25) vs the 8-point
+production grid. The finer grid *is* exercised — 43.5 % of spectra land on
+a factor the coarse grid lacks — yet every NHI metric is flat-to-slightly-
+worse, all within noise: σ(dNHI) 0.238→0.245, pull std 1.845→1.870,
+excess std 0.191→0.198, P/C 0.799/0.851→0.797/0.848. **The ~0.19 dex
+misspecification floor is τ-EB-grid-independent — it is NOT mean-flux/τ_0
+granularity.** This corroborates §7.1: the floor is *localised* wing
+absorption, which a better mean-flux point estimate cannot touch. Keep the
+production 8-point grid.
+
+### Net
+
+The 85/85 purity gap is now concretely diagnosed and the alternatives are
+exhausted: **the GP forward model lacks a term for metal lines / Lyα-forest
+pile-ups coincident with the DLA damping wings**, so a fraction of sub-DLAs
+get an over-estimated NHI and cross the 20.3 cut. Ruled out as the cause:
+the Voigt implementation (§7.3), continuum placement (§7.1 C1), τ-EB grid
+granularity (§7.5), and SNR information limit (§7.1). Not a fix: any
+catalog knob / p_DLA cut / band-BF re-scoring (§6, §7.2), post-hoc NHI
+debias, or higher-SNR data. **The fix is model-side** — a metal-line veto
+(DESI foreground-z catalogs) before/during the DLA fit, and a heavy-tailed
+wing-residual nuisance term so `NHI_ERR` becomes calibrated — plus
+replacing the hard 20.3 cut with a continuous-NHI catalog + post-hoc bands.
