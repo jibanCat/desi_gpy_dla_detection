@@ -4,7 +4,7 @@
 #SBATCH -N 1
 #SBATCH -c 4
 #SBATCH --mem=24G
-#SBATCH -t 4:00:00
+#SBATCH -t 10:00:00
 #SBATCH -J stack_real_loa
 #SBATCH -o slurm/greatlakes/stack_real_loa_%j.log
 #SBATCH -e slurm/greatlakes/stack_real_loa_%j.log
@@ -18,7 +18,8 @@
 # stack_curves.npz + figures into docs/notes/2026-05-15_stack_real_loa_dlas/.
 #
 # Single-threaded Python; bottleneck is random HDF5 reads off /scratch.
-# Expect ~45-90 min wall.
+# Expect ~45-90 min wall when /scratch is responsive; walltime is set to
+# 10h to absorb the ~10x slowdowns seen under /scratch I/O contention.
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1

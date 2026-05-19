@@ -104,6 +104,7 @@ REST_LAMBDA_MIN = 700.0
 REST_LAMBDA_MAX = 1600.0
 DLOG_LAMBDA = 0.0001  # ~69 km/s, native BOSS/DESI
 LYMAN_LIMIT = 911.76  # H I rest-frame Lyman limit (Å)
+SIGMA_912 = 6.30e-18  # H I photoionization cross-section at 1 Ryd (cm²)
 
 # --- bin sets -------------------------------------------------------------
 # DIAGNOSTIC granularity: the LLS range is resolved into 3 bins. This is
@@ -181,8 +182,13 @@ SIGMA_V = 100.0              # stacked metal-line width budget (km/s):
                              # Z_DLA_ERR median 6.2e-4 → 47 km/s at z=3)
                              # ⊕ metal velocity structure ~80, in quadrature.
 K_MASK_SIGMA = 3.0           # metal mask half-width = K_MASK_SIGMA·σ_stack(λ)
-HI_MASK_HALF = {             # H I core+near-wing mask half-widths (Å)
-    "Lyα": 25.0, "Lyβ": 15.0, "Lyγ": 8.0, "Ly4": 5.0, "Ly5": 5.0,
+HI_MASK_HALF = {             # H I core mask half-widths (Å)
+    # Lyα ±12: a ±25 Å mask plus the SiII 1190/93 / NI 1200 / SiIII 1207
+    # cluster left the spline unconstrained across ~50 Å and it overshot
+    # onto the QSO-Lyα emission bump in the LLS bin (QC, 2026-05-18). ±12
+    # covers the LLS/sub-DLA Lyα core; DLA damping wings are removed by
+    # the rejection loop, not the static mask.
+    "Lyα": 12.0, "Lyβ": 15.0, "Lyγ": 8.0, "Ly4": 5.0, "Ly5": 5.0,
 }
 KNOT_SPACING = 15.0          # interior knot spacing (Å)
 SPLINE_ORDER = 3             # cubic
@@ -989,12 +995,28 @@ def plot_metal_zoom(rest_grid, per_bin, bins, fname, suptitle,
     print(f"[saved] {OUT_DIR / fname}", flush=True)
 
 
+def lls_recovery_model(rest_grid, log_nhi):
+    """Single-absorber Lyman-limit transmission T(λ) = exp(−τ_LL) for an
+    H I column log10(N_HI). Blueward of 911.76 Å the LL optical depth is
+    τ_LL(λ) = N_HI·σ_912·(λ/911.76)^3 — the ν^−3 photoionization cross-
+    section of Prochaska, Worseck & O'Meara 2009 (arXiv:0910.0009),
+    σ_912 = 6.30e-18 cm². T = 1 redward of the limit. This is the
+    recovery curve for ONE LLS; a real stacked LLS population, plus the
+    foreground IGM + Lyman-series opacity, sits below it."""
+    tau = np.zeros_like(rest_grid, dtype=float)
+    blue = rest_grid < LYMAN_LIMIT
+    tau[blue] = (10.0 ** log_nhi) * SIGMA_912 * (rest_grid[blue] / LYMAN_LIMIT) ** 3
+    return np.exp(-tau)
+
+
 def plot_lyman_limit(rest_grid, per_bin, fname):
     """Lyman limit break recovery: the 740–1050 Å absorber-rest region for
     the production NHI bins (non-BAL). A true LLS / sub-DLA / DLA
     population shows a coherent flux decrement turning on at the 911.76 Å
     Lyman limit; the depth deepens with NHI (and saturates near-black
-    above log NHI ~18). No coherent edge = false positives."""
+    above log NHI ~18). No coherent edge = false positives. Dashed black
+    curves overplot the single-absorber τ_LL ∝ (λ/912)^3 recovery model
+    (Prochaska, Worseck & O'Meara 2009) for reference log N_HI."""
     fig, ax = plt.subplots(figsize=(13, 6))
     lo_w, hi_w = 740.0, 1050.0
     sel = (rest_grid >= lo_w) & (rest_grid <= hi_w)
@@ -1005,6 +1027,16 @@ def plot_lyman_limit(rest_grid, per_bin, fname):
         bs = per_bin[(lo, hi)]
         ax.plot(x, bs.curve[sel], color=BIN_COLOR[(lo, hi)], lw=1.4,
                 alpha=0.9, label=f"log NHI [{lo:.1f}, {hi:.1f})  n={bs.n}")
+    # Overplot single-absorber LL-recovery models exp(−τ_LL), τ_LL ∝
+    # (λ/912)^3 (Prochaska, Worseck & O'Meara 2009). Plotted only blueward
+    # of the limit. The observed stack sits BELOW these — it also carries
+    # foreground IGM + Lyman-series opacity not in this single-LLS model.
+    xb = x[x <= LYMAN_LIMIT]
+    for log_nhi, ls in [(17.2, ":"), (17.5, "--"), (18.0, "-.")]:
+        Tb = lls_recovery_model(xb, log_nhi)
+        tau912 = (10.0 ** log_nhi) * SIGMA_912
+        ax.plot(xb, Tb, color="black", lw=1.2, ls=ls, alpha=0.75,
+                label=f"LLS model: log NHI={log_nhi}  (τ₉₁₂={tau912:.1f})")
     # Lyman limit + Lyman-series blanketing band (912–~940 Å, depressed by
     # converging Lyman-series lines — do NOT read the pre-break level here).
     ax.axvline(LYMAN_LIMIT, color="navy", lw=1.2, ls=":", alpha=0.85)
@@ -1122,8 +1154,11 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
     fig.suptitle(
         f"Real vs redshift-scrambled control — combined {label}, "
         f"n={n} non-BAL spectra. A coherent dip in RED (real) absent in "
-        "GREY (control) confirms the detections are real absorbers, not "
-        "false positives. CIV 1548/1551 is the decisive panel.",
+        "GREY (control) = real absorbers (CIV 1548/1551 is the decisive "
+        "panel). NOTE: the LLS bin is ~89% log NHI 18.5–19 — this confirms "
+        "the strong-LLS regime; the [17.2,18.5) tail is coverage-limited "
+        "and untested. P_DLA > 0.97 only — the marginal operating point "
+        "is not probed here.",
         fontsize=11, y=1.0)
     fig.tight_layout(rect=[0, 0, 1, 0.99])
     fig.savefig(OUT_DIR / fname, dpi=150, bbox_inches="tight")

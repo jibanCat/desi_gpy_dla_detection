@@ -85,9 +85,12 @@ rejection loop (Step 4) is the safety net** for line flux outside the
 **H I Lyman-series half-widths.** Lyα/Lyβ/Lyγ are *damped* (Lorentzian
 wings growing with N_HI). Masking the full DLA-regime wings would erase
 the forest metals, so the static H I mask covers core + near-wing only —
-**Lyα ±25, Lyβ ±15, Lyγ ±8, Ly4/Ly5 ±5 Å** (≈ a few × the LLS-regime
-core) — and the rejection loop removes the extended wing pixels (smooth
-negative residuals). *Known limitation:* for the DLA bins the Lyα
+**Lyα ±12, Lyβ ±15, Lyγ ±8, Ly4/Ly5 ±5 Å** — and the rejection loop
+removes the extended wing pixels (smooth negative residuals). *(Lyα was
+tuned down 25→12 Å after the first real-data QC: a ±25 Å mask plus the
+SiII/NI/SiIII cluster left the spline unconstrained across ~50 Å. ±12
+covers the LLS/sub-DLA Lyα core, which is not damping-broadened; DLA
+damping wings are handled by the rejection loop.)* *Known limitation:* for the DLA bins the Lyα
 damping wing is broad enough that the pseudo-continuum near 1190–1240 Å
 is approximate; the metals there (SiII 1190/93, NI 1200, SiIII 1207) are
 best trusted in the LLS / sub-DLA bins, which is the science focus
@@ -176,7 +179,7 @@ threshold).
 | `PCONT_LAMBDA_MIN` | 945.0 Å | blue end of the fit |
 | `SIGMA_V` | 100 km/s | stacked-line width budget (LSF ⊕ z-err ⊕ velocity structure) |
 | `K_MASK_SIGMA` | 3 | metal mask half-width = `K_MASK_SIGMA·σ_stack(λ)` |
-| `HI_MASK_HALF` | {Lyα:25, Lyβ:15, Lyγ:8, Ly4:5, Ly5:5} Å | H I core+near-wing masks |
+| `HI_MASK_HALF` | {Lyα:12, Lyβ:15, Lyγ:8, Ly4:5, Ly5:5} Å | H I core masks (Lyα tuned 25→12 post-QC) |
 | `KNOT_SPACING` | 15.0 Å | interior knot spacing |
 | `SPLINE_ORDER` | 3 | cubic |
 | `REJECT_SIGMA` | 5.0 | rejection threshold |
@@ -222,10 +225,12 @@ Per the repo's "extend existing files" style — all in
 - **Knot spacing 15 Å** (decided as the starting value) — deliberately
   coarser than Mas-Ribas's ~4.5 Å because our forest line list is dense;
   if the QC figure shows the forest decrement underfit, drop to ~10 Å.
-- **Lyα-vicinity crowding** (flagged, no decision needed) — SiIII 1207
-  is only ~9 Å from Lyα; its ~±1.3 Å metal mask and the ±25 Å Lyα mask
-  leave a thin clean sliver. Most likely spot to need a hand-tuned
-  knot/window after the QC figure is inspected.
+- **Lyα-vicinity crowding** (flagged → addressed) — SiIII 1207 is only
+  ~9 Å from Lyα. The first real-data QC showed the ±25 Å Lyα mask plus
+  the SiII/NI/SiIII cluster left a ~50 Å gap; the Lyα mask was tuned to
+  ±12 Å, which closes the gap. Post-tuning QC: the pseudo-continuum fits
+  cleanly in all 6 production bins (worst clean-pixel overshoot ~0.15 on
+  the steep flank of the QSO-Lyα emission bump in the LLS bin — minor).
 
 ## 8. Validation — mock-injection test FIRST (TDD)
 
