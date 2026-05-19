@@ -1,8 +1,12 @@
 # Design note — band Bayes-factor as a DLA/sub-DLA boundary discriminator
 
-**Date**: 2026-05-18   **Status**: RESEARCH / DESIGN — the `BAND_LOGBF`
-flag is **NOT yet added to `dlacat.fits`**. It is deferred pending the
-open questions below. This note is the research plan.
+**Date**: 2026-05-18   **Status**: **CLOSED 2026-05-18.** The research
+questions Q1–Q5 (§2) are answered (§3); the decision and the final flag
+spec are in §4. Outcome: ship **`BF_BAND`** = local posterior mass
+`P(NHI ≥ 20.3 | local)` as an informational `dlacat.fits` column (not a
+`DLAFLAG` gate). Full production spec:
+`band_bf_research/PRODUCTION_FLAG_SPEC.md`. §1–§2 below are kept as the
+original research plan.
 
 ## 1. Where this came from
 
@@ -125,28 +129,32 @@ Methodology agent → `band_bf_research/FINDINGS.md`; literature agent →
   fix band edges on physical grounds; expect a ROPE-style "undecided"
   zone near 20.3; propagate the QMC error.
 
-## 4. Decision & the one remaining step
+## 4. Decision — CLOSED 2026-05-18
 
-**The discriminator is real and worth shipping** — local, single scalar,
-AUC 0.759, ~2:1-favourable purity trade, *zero* completeness cost (Q3).
-But **it must be re-expressed in the statistically-sound form before it
-becomes a column**: the **prior-mass-corrected** statistic — i.e. the
-local posterior mass `P(NHI ≥ 20.3 | local data)` (bounded [0,1],
-range-stable, a genuine probability), not the raw `log(Z_A/Z_B)`. The
-AUC is rank-based so the *discrimination* should carry over, but the
-threshold and interpretation only make sense in the corrected form.
+The final debug-node test ran (job `53144090`, `band_bf_finalize.py`,
+T1–T5). Full spec: `band_bf_research/PRODUCTION_FLAG_SPEC.md`.
 
-**Remaining step**: one more debug-node test — recompute on the local
-posterior using the prior-mass-corrected statistic `P(NHI ≥ 20.3 |
-local)`, confirm the AUC, and set the threshold + a ROPE "undecided"
-band. Then finalise the flag spec:
-- `P_DLA_LOCAL` (float32) — local posterior mass `P(NHI ≥ 20.3)` for the
-  absorber, from QMC samples within ±0.02 in z_DLA. Informational column,
-  **not** folded into `DLAFLAG` (like `NHI_CONSISTENCY_FLAG`).
-- Downstream: a higher-purity boundary cut + an "undecided" flag for
-  objects whose local posterior straddles 20.3.
+- **T1**: the prior-mass-corrected statistic — local posterior mass
+  `P(NHI ≥ 20.3 | local)` (bounded [0,1]) — reproduces the raw-ratio
+  discrimination **exactly**: AUC **0.759** (Δ = −0.000; rank-corr with
+  the raw ratio ρ = 0.994). Median 0.93 (true DLA) vs 0.56 (promoted
+  sub-DLA). Ship the corrected form.
+- **T2**: z-window ±0.02 **confirmed** — flat AUC plateau ±0.005→±0.05,
+  reverts at ±0.10 (sightline contamination).
+- **T3**: NHI scatter is QMC-**independent** (MAP scatter flat
+  0.276→0.269 dex, 10k→50k) — it is **genuine inference uncertainty**,
+  not QMC sparsity. The flag's AUC stabilises by 20k; 50k is past the
+  knee; 100k would not help.
+- **T4**: NHI is **not** biased high (near-floor mean bias ≈ +0.016 dex).
+  The sub-DLA→DLA > DLA→sub-DLA asymmetry is **Eddington bias** — a
+  mildly asymmetric per-object leakage rate (11.5 % vs 8.4 %) amplified
+  by the steep-CDDF population ratio (detected near-boundary sub-DLAs :
+  DLAs ≈ 1.6 : 1).
+- **T5**: final column **`BF_BAND`** (float32) = `P(NHI ≥ 20.3 | local)`,
+  ±0.02 z-window; informational, **not** in `DLAFLAG`. Higher-purity cut
+  `BF_BAND ≥ 0.7`; ROPE "undecided" zone `0.4 ≤ BF_BAND ≤ 0.6`. Companion
+  `BF_BAND_NLOCAL` (int32) QMC-noise diagnostic.
 
-`BAND_LOGBF`/`P_DLA_LOCAL` stays **deferred** until that final test
-confirms the corrected form. It is a partial, no-cost-to-completeness
-purity proxy — **not** a route to 85/85; the root cause (3× under-
-estimated NHI posterior width) needs a model-side fix.
+`BF_BAND` is a **partial, no-cost-to-completeness purity proxy — NOT a
+route to 85/85**; the root cause (≈3× under-estimated NHI posterior
+width + Eddington bias at a hard cut) needs a model-side fix.
