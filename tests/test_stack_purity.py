@@ -87,6 +87,23 @@ def _mock_curve(rg, seed=0):
     return curve.astype(float), counts.astype(float)
 
 
+def test_purity_comparison_smoke(tmp_path, monkeypatch):
+    monkeypatch.setattr(stk, "OUT_DIR", tmp_path)
+    rg = 10 ** np.arange(np.log10(stk.REST_LAMBDA_MIN),
+                         np.log10(stk.REST_LAMBDA_MAX), stk.DLOG_LAMBDA)
+    curve, counts = _mock_curve(rg)
+    P = stk.fit_pseudo_continuum(rg, curve, counts)
+    comb = (curve, counts, P, curve, counts, P, 300)
+    stk.plot_purity_comparison(rg, comb, comb, "cmp.png")
+    assert (tmp_path / "cmp.png").stat().st_size > 0
+
+
+def test_purity_compare_panels_nonempty():
+    assert len(stk.PURITY_COMPARE_PANELS) >= 4
+    titles = {p[0] for p in stk.PURITY_COMPARE_PANELS}
+    assert "CIV 1548/1551" in titles
+
+
 def test_pcont_persists_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(stk, "OUT_DIR", tmp_path)
     monkeypatch.setattr(stk, "PURITY", "high")

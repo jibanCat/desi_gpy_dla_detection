@@ -280,6 +280,15 @@ ZOOM_PANELS = [
     ("CIV 1548/1551",           1549.5,  16.0, [("CIV", 1548.20), ("CIV", 1550.78)]),
 ]
 
+# The most diagnostic metal-line panels for the marginal-vs-high purity
+# comparison (a curated subset of ZOOM_PANELS).
+_PURITY_COMPARE_TITLES = {
+    "SiIV 1394/1403", "OI 1302 / SiII 1304", "CII 1335 / CII* 1336",
+    "SII 1251/1254 / SiII 1260", "CIV 1548/1551",
+}
+PURITY_COMPARE_PANELS = [p for p in ZOOM_PANELS
+                         if p[0] in _PURITY_COMPARE_TITLES]
+
 # Metal species to suppress (markers + labels + zoom panels) per category.
 EXCLUDE_SPECIES = {
     "all":    frozenset(),
@@ -1266,6 +1275,61 @@ def plot_pseudo_continuum_qc(rest_grid, per_bin, fname):
     print(f"[saved] {OUT_DIR / fname}", flush=True)
 
 
+def plot_purity_comparison(rest_grid, comb_high, comb_marg, fname):
+    """Marginal-purity vs high-purity, pooled low-NHI (LLS + sub-DLA).
+    Three pseudo-continuum-normalized curves per metal-line panel:
+    marginal-real, marginal z-scrambled control, high-purity-real
+    (reference). Marginal-real tracking high-real ⇒ the marginal
+    detections are real; marginal-real flat like its control ⇒ the
+    marginal operating point is contaminated. `comb_*` are the
+    `combined["lownhi"]` 7-tuples (rc, rn, pcont_r, cc, cn, pcont_c, n)."""
+    rc_h, _, pc_h, _, _, _, n_h = comb_high
+    rc_m, _, pc_m, cc_m, _, pcc_m, n_m = comb_marg
+    norm_high = rc_h / pc_h
+    norm_marg = rc_m / pc_m
+    norm_mctrl = cc_m / pcc_m
+    panels = PURITY_COMPARE_PANELS
+    n_panels = len(panels)
+    ncols = 3
+    nrows = (n_panels + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(19, 4.6 * nrows))
+    axes = np.atleast_1d(axes).flatten()
+    for ax, (title, center, half, lines) in zip(axes, panels):
+        lo_w, hi_w = center - half, center + half
+        sel = (rest_grid >= lo_w) & (rest_grid <= hi_w)
+        x = rest_grid[sel]
+        ax.plot(x, norm_marg[sel], color="#d62728", lw=1.6, alpha=0.9,
+                label=f"marginal real  n={n_m}")
+        ax.plot(x, norm_mctrl[sel], color="#888888", lw=1.3, alpha=0.8,
+                label="marginal z-scrambled control")
+        ax.plot(x, norm_high[sel], color="#1f77b4", lw=1.3, alpha=0.85,
+                ls="--", label=f"high-purity real  n={n_h}")
+        for ln_name, ln_w in lines:
+            ax.axvline(ln_w, color="k", lw=0.7, ls="--", alpha=0.6)
+            ax.text(ln_w, 1.05, ln_name, rotation=90, fontsize=7,
+                    ha="center", va="top", color="k")
+        ax.axhline(1.0, color="grey", lw=0.5, alpha=0.5)
+        ax.set_xlim(lo_w, hi_w)
+        ax.set_ylim(0.55, 1.1)
+        ax.set_title(title, fontsize=9)
+        ax.set_xlabel("rest-frame λ [Å]", fontsize=8)
+        ax.set_ylabel("flux / pseudo-continuum", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.2)
+    for ax in axes[n_panels:]:
+        ax.set_visible(False)
+    axes[0].legend(loc="lower left", fontsize=8, framealpha=0.9)
+    fig.suptitle("Marginal-purity (P_DLA 0.5–0.7) vs high-purity "
+                 "(P_DLA > 0.97) — pooled low-NHI. Marginal-real tracking "
+                 "high-real ⇒ marginal detections real; marginal-real flat "
+                 "like its control ⇒ marginal operating point contaminated.",
+                 fontsize=11, y=1.0)
+    fig.tight_layout(rect=[0, 0, 1, 0.99])
+    fig.savefig(OUT_DIR / fname, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[saved] {OUT_DIR / fname}", flush=True)
+
+
 def render_all(rest_grid, per_bin, combined):
     prod = prod_bins_view(per_bin)
 
@@ -1328,6 +1392,23 @@ def main():
         raise SystemExit(f"--purity must be one of {list(PURITY_PRESETS)}; "
                          f"got {PURITY!r}")
     _ensure_outdir()
+    # `--compare-purity`: load the cached high + marginal npz and render
+    # the marginal-vs-high comparison figure (no stacking, seconds).
+    if "--compare-purity" in sys.argv:
+        high_p = OUT_DIR / "stack_curves_high.npz"
+        marg_p = OUT_DIR / "stack_curves_marginal.npz"
+        missing = [str(p) for p in (high_p, marg_p) if not p.exists()]
+        if missing:
+            raise SystemExit("--compare-purity needs both npz; missing: "
+                             + ", ".join(missing))
+        rg_h, _, comb_h = load_curves(high_p, expect_preset="high")
+        _rg_m, _, comb_m = load_curves(marg_p, expect_preset="marginal")
+        if "lownhi" not in comb_h or "lownhi" not in comb_m:
+            raise SystemExit("npz lacks the 'lownhi' combined category — "
+                             "re-run both --purity presets to regenerate.")
+        plot_purity_comparison(rg_h, comb_h["lownhi"], comb_m["lownhi"],
+                               "stack_purity_comparison.png")
+        return
     # `--zhist-only`: just the per-bin redshift diagnostics (catalog-only,
     # runs in seconds — no spectrum reads).
     if "--zhist-only" in sys.argv:
