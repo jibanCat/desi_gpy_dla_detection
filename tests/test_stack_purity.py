@@ -58,3 +58,21 @@ def test_tagged_and_npz_path(monkeypatch):
     assert stk.npz_path().name == "stack_curves_marginal.npz"
     monkeypatch.setattr(stk, "PURITY", "high")
     assert stk.npz_path().name == "stack_curves_high.npz"
+
+
+def test_control_categories_has_lownhi():
+    assert "lownhi" in stk.CONTROL_CATEGORIES
+    assert (set(stk.CONTROL_CATEGORIES["lownhi"])
+            == set(stk.LLS_BINS_FINE) | set(stk.SUBDLA_BINS))
+    assert "lownhi" in {"lls", "subdla", "lownhi"}  # named control category
+
+
+def test_check_provenance_preset_mismatch(monkeypatch):
+    monkeypatch.setattr(stk, "PURITY", "high")
+    stored = stk.provenance_dict()          # a 'high' provenance dict
+    # expecting 'marginal' must raise
+    monkeypatch.setattr(sys, "argv", ["x"])  # no --force-plot
+    with pytest.raises(SystemExit):
+        stk.check_provenance(stored, expect_preset="marginal")
+    # expecting 'high' must pass (no raise)
+    stk.check_provenance(stored, expect_preset="high")

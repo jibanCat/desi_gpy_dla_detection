@@ -152,8 +152,13 @@ BIN_COLOR = {
 }
 # Bins for which the curves are persisted: all 8 fine bins + merged LLS.
 STORED_BINS = NHI_BINS + [LLS_MERGED]
-# Categories needing a redshift-scrambled control (low-NHI = contamination-prone)
-CONTROL_CATEGORIES = {"lls": LLS_BINS_FINE, "subdla": SUBDLA_BINS}
+# Categories needing a redshift-scrambled control (low-NHI = contamination-prone).
+# "lownhi" pools LLS + sub-DLA — the pooled stack used by --compare-purity.
+CONTROL_CATEGORIES = {
+    "lls":    LLS_BINS_FINE,
+    "subdla": SUBDLA_BINS,
+    "lownhi": LLS_BINS_FINE + SUBDLA_BINS,
+}
 
 # Selection — purity is a preset chosen by --purity (default "high",
 # which reproduces the original P_DLA > 0.97 behaviour).
@@ -313,17 +318,29 @@ def provenance_dict() -> dict:
     }
 
 
-def check_provenance(stored: dict) -> None:
-    """Compare a cached npz's provenance to the current constants. Raise
-    on any mismatch unless `--force-plot` is passed."""
+def check_provenance(stored: dict, expect_preset: str = None) -> None:
+    """Compare a cached npz's provenance to the current constants. With
+    `expect_preset` set (used by --compare-purity), require the stored
+    `purity` to equal it and compare all OTHER fields against the
+    current settings; without it, every field — purity included — must
+    match. Raise on mismatch unless `--force-plot` is passed."""
     current = provenance_dict()
     mismatches = []
+    if expect_preset is not None:
+        if stored.get("purity") != expect_preset:
+            mismatches.append(f"  purity: cached={stored.get('purity')!r}  "
+                              f"expected={expect_preset!r}")
+        skip = {"purity", "p_dla_range"}
+    else:
+        skip = set()
     for key, cur_val in current.items():
+        if key in skip:
+            continue
         old_val = stored.get(key, "<absent>")
         if old_val != cur_val:
             mismatches.append(f"  {key}: cached={old_val!r}  current={cur_val!r}")
     if mismatches:
-        msg = ("cached stack_curves.npz was built with different settings "
+        msg = ("cached npz was built with different settings "
                "than the current script:\n" + "\n".join(mismatches))
         if "--force-plot" in sys.argv:
             print(f"[WARN] {msg}\n[WARN] --force-plot given; plotting anyway.",
@@ -331,8 +348,8 @@ def check_provenance(stored: dict) -> None:
         else:
             raise SystemExit(
                 f"[ERROR] {msg}\n"
-                "Re-run without --plot-only to regenerate, or pass "
-                "--force-plot to plot the stale cache anyway.")
+                "Re-run to regenerate, or pass --force-plot to plot the "
+                "stale cache anyway.")
     else:
         print("provenance check: cached npz matches current settings.",
               flush=True)
@@ -765,14 +782,14 @@ def save_curves(rest_grid, per_bin, combined):
     print(f"[saved] {out}", flush=True)
 
 
-def load_curves(path):
+def load_curves(path, expect_preset=None):
     path = Path(path)
     d = np.load(path, allow_pickle=False)
     if "provenance" not in d:
         raise SystemExit(
             f"[ERROR] cached {path.name} predates the provenance/BAL "
             "format — re-run to regenerate.")
-    check_provenance(json.loads(str(d["provenance"])))
+    check_provenance(json.loads(str(d["provenance"])), expect_preset)
     rest_grid = d["rest_grid"]
     per_bin = {}
     for (lo, hi) in STORED_BINS:
@@ -1171,7 +1188,8 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
     for ax in axes[n_panels:]:
         ax.set_visible(False)
     axes[0].legend(loc="lower left", fontsize=8, framealpha=0.9)
-    label = {"lls": "LLS [17.2, 19)", "subdla": "sub-DLA [19, 20.3)"}[name]
+    label = {"lls": "LLS [17.2, 19)", "subdla": "sub-DLA [19, 20.3)",
+             "lownhi": "low-NHI (LLS + sub-DLA)"}[name]
     fig.suptitle(
         f"Real vs redshift-scrambled control — combined {label}, "
         f"n={n} non-BAL spectra. A coherent dip in RED (real) absent in "
@@ -1308,7 +1326,8 @@ def main():
             raise SystemExit(f"no cached curves at {npz_path()}; "
                              "run without --plot-only first")
         print(f"loading cached curves from {npz_path()}", flush=True)
-        rest_grid, per_bin, combined = load_curves(npz_path())
+        rest_grid, per_bin, combined = load_curves(npz_path(),
+                                                   expect_preset=PURITY)
     else:
         rest_grid, per_bin, combined = compute_stacks()
         save_curves(rest_grid, per_bin, combined)
