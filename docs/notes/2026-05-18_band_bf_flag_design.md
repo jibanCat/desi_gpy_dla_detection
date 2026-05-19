@@ -155,6 +155,33 @@ T1–T5). Full spec: `band_bf_research/PRODUCTION_FLAG_SPEC.md`.
   `BF_BAND ≥ 0.7`; ROPE "undecided" zone `0.4 ≤ BF_BAND ≤ 0.6`. Companion
   `BF_BAND_NLOCAL` (int32) QMC-noise diagnostic.
 
-`BF_BAND` is a **partial, no-cost-to-completeness purity proxy — NOT a
-route to 85/85**; the root cause (≈3× under-estimated NHI posterior
-width + Eddington bias at a hard cut) needs a model-side fix.
+`BF_BAND` is a **partial purity proxy — NOT a route to 85/85**; the root
+cause (≈3× under-estimated NHI posterior width + Eddington bias at a hard
+cut) needs a model-side fix.
+
+## 5. Implementation + validation (2026-05-18)
+
+`BF_BAND` (+ `BF_BAND_NLOCAL`) is implemented in
+`tools/postprocess/add_dla_flags.py` — an **informational column, NOT
+folded into `DLAFLAG`** (so `DLAFLAG == 0` is unchanged); `run_local.sh`'s
+postprocess hook passes `DLA_SAMPLES_FILE` so production runs get it.
+`molly_faithful_pc_plots.py` gained `--bf-band-min` as an optional cut.
+
+**Validation** (`bf_band_validation/`, job 53145330) — `BF_BAND` added to
+the V1 baseline run, molly headline P/C re-measured:
+
+| variant | purity | completeness |
+|---|---:|---:|
+| baseline | 0.804 | 0.864 |
+| BF_BAND ≥ 0.5 | 0.824 (+2.0) | 0.842 (−2.2) |
+| BF_BAND ≥ 0.7 | 0.843 (+3.9) | 0.814 (−5.0) |
+
+**It hurts completeness — it is a P↔C trade, not a free purity gain.** At
+≥0.5 the trade is ≈1:1; at ≥0.7 it is worse than 1:1 on the headline. The
+earlier "~2:1-favourable / no completeness cost" reading was a
+borderline-subset recall figure and does **not** carry to the headline
+P/C — applying `BF_BAND` as a filter is an ordinary slide along the P↔C
+frontier. This is exactly why it ships as an *optional, informational*
+column: the default `DLAFLAG == 0` catalog is unaffected; a consumer who
+needs higher boundary purity opts in and accepts the completeness cost.
+See `bf_band_validation/FINDINGS.md`.
