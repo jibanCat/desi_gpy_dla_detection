@@ -1,6 +1,7 @@
-# Generated stacking outputs — real-data composites / figures, keep local
-# only. LINE_LIST_REFERENCES.md (and this .gitignore) stay tracked.
+# Generated stacking outputs — real-LOA-derived composites / figures /
+# tables, keep LOCAL ONLY (DESI data policy). README.md,
+# LINE_LIST_REFERENCES.md, and this .gitignore stay tracked.
 *.png
 *.npz
-counts.txt
-zhist_summary.txt
+counts*.txt
+zhist_summary*.txt
