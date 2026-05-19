@@ -79,6 +79,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+import warnings
 from collections import namedtuple
 from pathlib import Path
 
@@ -557,11 +558,17 @@ def _sigma_clip_median(stack):
     n_pix = stack.shape[1]
     if stack.shape[0] == 0:
         return np.full(n_pix, np.nan), np.zeros(n_pix, dtype=int)
-    med = np.nanmedian(stack, axis=0)
-    mad = np.nanmedian(np.abs(stack - med), axis=0) * 1.4826
-    bad = np.abs(stack - med) > 3 * mad[None, :]
-    clipped = np.where(bad, np.nan, stack)
-    curve = np.nanmedian(clipped, axis=0)
+    with warnings.catch_warnings():
+        # All-NaN columns are expected (e.g. a small BAL sub-stack at the
+        # blue edge) — nanmedian yields NaN there and the <50-count cut
+        # below drops it. Suppress the cosmetic per-column warning.
+        warnings.filterwarnings("ignore", "All-NaN slice encountered",
+                                RuntimeWarning)
+        med = np.nanmedian(stack, axis=0)
+        mad = np.nanmedian(np.abs(stack - med), axis=0) * 1.4826
+        bad = np.abs(stack - med) > 3 * mad[None, :]
+        clipped = np.where(bad, np.nan, stack)
+        curve = np.nanmedian(clipped, axis=0)
     counts = np.sum(np.isfinite(clipped), axis=0)
     curve[counts < 50] = np.nan
     return curve, counts
@@ -1380,11 +1387,14 @@ def render_all(rest_grid, per_bin, combined):
 
 
 def _arg_value(flag, default):
-    """Value of `--flag VALUE` in sys.argv, else `default`."""
+    """Value of `--flag VALUE` in sys.argv, else `default`. Raises if the
+    flag is given with no value after it — a truncated invocation should
+    fail loudly, not silently fall back to the default."""
     if flag in sys.argv:
         i = sys.argv.index(flag)
-        if i + 1 < len(sys.argv):
-            return sys.argv[i + 1]
+        if i + 1 >= len(sys.argv):
+            raise SystemExit(f"{flag} requires a value")
+        return sys.argv[i + 1]
     return default
 
 

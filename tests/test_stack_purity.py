@@ -131,3 +131,16 @@ def test_pcont_persists_round_trip(tmp_path, monkeypatch):
     assert np.array_equal(np.nan_to_num(comb2["lownhi"][2]),
                           np.nan_to_num(P))
     assert len(comb2["lownhi"]) == 7
+
+
+def test_arg_value_missing_value_raises(monkeypatch):
+    """--purity given with no value after it must fail loudly, not
+    silently fall back to the default preset."""
+    monkeypatch.setattr(sys, "argv", ["stack_real_loa_dlas.py", "--purity"])
+    with pytest.raises(SystemExit):
+        stk._arg_value("--purity", "high")
+    # flag absent -> default; flag with a value -> that value
+    monkeypatch.setattr(sys, "argv", ["stack_real_loa_dlas.py"])
+    assert stk._arg_value("--purity", "high") == "high"
+    monkeypatch.setattr(sys, "argv", ["x", "--purity", "marginal"])
+    assert stk._arg_value("--purity", "high") == "marginal"
