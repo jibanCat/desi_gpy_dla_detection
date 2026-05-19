@@ -169,30 +169,31 @@ items).
 
 **Still open / the real blocker:**
 
-1. **The 85/85 gap is diagnosed; no cheap fix reaches it.** Production
-   tops out at **~0.80 P / 0.86 C**, ~4.6pp short on purity. The FN/FP
-   deep-dive (`2026-05-18_fn_fp_deepdive.md`) pins the cause: **75% of
-   false positives are *real* sub-DLAs (19.0–20.3) with NHI over-estimated
-   past the 20.3 floor**. Two fixes were then tested
-   (`2026-05-18_boundary_purity_tests.md`):
-   - **NHI-debias (post-hoc point-estimate correction) — REFUTED.** The
-     +0.06 dex bias is carried by the *strong-DLA* end; near the 20.3
-     floor it is ≈0, so a debias pushes nothing across the boundary. CV-
-     confirmed: it is just another 1:1 P↔C trade, the frontier does not
-     move. Drop it from the critical path (still worth doing for N_HI/CDDF
-     accuracy, separately).
-   - **Band Bayes factor — modestly useful.** `log(Z[20.3,20.6]/Z[20.0,
-     20.3])` from the QMC samples discriminates true DLAs from
-     over-estimated sub-DLAs at AUC 0.726; a `≥+0.5` cut gives ~+11pp
-     borderline purity at a ~2:1-favourable trade — the best lever found,
-     but not enough for 85/85 alone. **Action: add `BAND_LOGBF` as an
-     informational `dlacat` column** (not a `DLAFLAG` gate).
-   - The real frontier-mover is a **model-side** change — a sharper NHI
-     posterior at the DLA/sub-DLA boundary, or a joint sub-DLA+DLA forward
-     model — i.e. a development effort, not a knob.
-   **Pre-launch decision**: launch the 1M run at ~0.80/0.86 now (shipping
-   `BAND_LOGBF` so downstream can take a higher-purity boundary cut), or
-   invest in the model-side NHI-posterior work first.
+1. **The 85/85 gap is fully diagnosed; it is not reachable by any
+   catalog-level knob.** Production tops out at **~0.80 P / 0.86 C**,
+   ~4.6pp short on purity. Cause (FN/FP deep-dive + root-cause study,
+   `2026-05-18_fn_fp_deepdive.md`, `2026-05-18_band_bf_flag_design.md` §6):
+   75% of false positives are *real* sub-DLAs (19.0–20.3) whose recovered
+   NHI scattered past the 20.3 floor. The recovered NHI carries an
+   **irreducible ~0.24 dex scatter** = an SNR-driven **information limit**
+   (58% of borderline cases are SNR<4) **+ an SNR-independent ~0.19 dex
+   model-misspecification floor** (continuum / mean-flux τ_eff / metals /
+   RSD / Voigt-shape — the pull grows 1.5→2.9 with SNR while the error
+   scatter stays flat). The hard 20.3 cut turns that scatter into two-way
+   leakage. Every tested fix — p_DLA cut, NHI-debias, and a 63-config
+   band-Bayes-factor re-sweep — only **slides P↔C along the same
+   frontier**; none moves it (the band-BF AUC 0.726 looked useful but is a
+   ranking metric — by the actual P/C table it is just a frontier slide).
+   `BF_BAND` ships only as an *optional informational column*.
+   - **The real frontier-movers are model-side**: (i) shrink the ~0.19 dex
+     model-misspecification floor via per-spectrum continuum / mean-flux
+     marginalisation (evaluate the τ-EB recipe on σ(dNHI), not mean bias);
+     (ii) propagate that uncertainty into `NHI_ERR` so the posterior is
+     calibrated; (iii) replace the hard DLA/sub-DLA cut with a
+     continuous-NHI catalog + post-hoc bands.
+   **Pre-launch decision**: launch the 1M run at ~0.80/0.86 now, or invest
+   in the model-side NHI work first. No knob closes the gap — that is
+   settled.
 2. `p_DLA` cut convention — 0.99 is the completeness-rich default; any
    tightening just trades down the same frontier (no 85/85 point exists).
    Pick 0.99 unless a purity-priority subset catalog is wanted.

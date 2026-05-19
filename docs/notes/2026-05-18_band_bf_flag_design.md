@@ -185,3 +185,62 @@ frontier. This is exactly why it ships as an *optional, informational*
 column: the default `DLAFLAG == 0` catalog is unaffected; a consumer who
 needs higher boundary purity opts in and accepts the completeness cost.
 See `bf_band_validation/FINDINGS.md`.
+
+## 6. Follow-up deep-dive (2026-05-18) — P/C re-sweep + root cause
+
+After the validation showed an unfavourable trade, two further debug-node
+investigations: a full design re-sweep scored by P/C (not AUC), and a
+root-cause study of the borderline cases.
+
+### 6a. P/C re-sweep — no configuration works (`bf_band_pc_sweep/`, job 53146802)
+
+Re-swept **63 configs** = 3 statistic forms (raw ratio, prior-mass-corrected
+ratio, `P(NHI≥20.3|local)`) × 4 band definitions (disjoint, wide, narrow,
+overlapping) × 7 z-windows (±0.005…0.10 + global), each over a fine
+threshold grid — scored by the **actual molly headline P/C**, not AUC.
+
+**Every one of the 63 configs is a pure P↔C slide along the same
+frontier.** Past a ≥10 % cut the trade slope `ΔP/|ΔC|` is ≤ ~1.0 for all of
+them; none reaches 85/85; the whole-design-space spread is within the ~1pp
+noise floor. Band edges, z-window, raw-vs-corrected form — all immaterial.
+AUC misled us because it is a *ranking* metric; thresholding a ranking is a
+ROC point, which maps to a frontier slide — AUC > 0.5 only guarantees the
+slide is no worse than the p_DLA knob, never that it moves the frontier.
+
+### 6b. Root cause of the borderline cases (`borderline_rootcause/`, jobs 53146968/53147178)
+
+**Why `BF_BAND` is weak**: the borderline-case NHI posteriors genuinely
+**straddle 20.3** — single-peaked, ~0.08–0.12 dex wide, real physical
+ambiguity (over-estimated sub-DLAs: posterior mean median 0.094 dex from
+the cut, `P(NHI≥20.3|local)` median 0.564, 39 % in the [0.3,0.7] ROPE). An
+evidence ratio cannot separate classes whose posteriors overlap at the cut
+— the AUC-0.76 ceiling is the *data*, not the statistic.
+
+**The root cause** is a two-part NHI noise floor: (1) an **information
+limit** — 58 % of borderline cases are SNR<4, corr(logSNR, posterior
+width) = −0.76; and (2) an **SNR-independent ~0.19 dex
+model-misspecification floor** at all SNR — the decisive evidence is that
+the pull `(NHI_pred−NHI_true)/NHI_ERR` *grows* with SNR (1.5→2.9) while the
+MAP-error scatter stays flat ~0.24 dex; a systematic the likelihood is
+blind to (continuum / mean-flux τ_eff / metals / RSD / Voigt shape).
+
+> **Correction to §3 Q4 / §4 T4.** The earlier "σ ≈ 0.35–0.42 dex, ~3×
+> under-estimated NHI_ERR" is superseded. The 0.35–0.42 was a *plain* std
+> inflated by ~5 % truth-match artefacts; the **robust scatter is ~0.24
+> dex**. `NHI_ERR` is the QMC posterior weighted-RMS (not a parabola-fit
+> error) and it *faithfully* reports the per-spectrum posterior width
+> (~0.12 dex) — the box truncation is harmless. The real ratio is **~1.9×**,
+> and the gap is **not** an under-sized posterior — it is an extra error
+> term (model misspecification) that no per-spectrum posterior can contain.
+
+**What fixes it** — neither a sharper posterior-shape statistic nor
+post-hoc NHI debiasing can (the defect is scatter, not a mean bias, and the
+posteriors genuinely straddle the cut). The durable, model-side moves:
+(i) shrink the ~0.19 dex model-misspecification floor via per-spectrum
+continuum / mean-flux (τ_eff) marginalisation — evaluate the τ-EB recipe on
+σ(dNHI), not just mean bias; (ii) propagate continuum/mean-flux uncertainty
+into `NHI_ERR` so the posterior is *calibrated* (pull→1); (iii) replace the
+hard 20.3 cut with a continuous-NHI catalog + post-hoc bands so the catalog
+stops manufacturing boundary FP/FN. **85/85 at a hard 20.3 cut is
+unreachable by any catalog-level knob.** Full detail:
+`borderline_rootcause/FINDINGS.md`, `bf_band_pc_sweep/FINDINGS.md`.
