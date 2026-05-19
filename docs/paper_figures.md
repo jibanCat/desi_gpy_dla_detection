@@ -176,6 +176,190 @@ trainer-debugging / infrastructure-validation artifacts. Kept in
 
 ---
 
+## Progress log (PR #3 → present)
+
+Chronological record of what each PR delivered, the figures it produced,
+and the key conclusion. Organized oldest-first. Figure pathnames are
+relative to the repo root unless otherwise noted.
+
+---
+
+### PR #3 — GreatLakes setup + Voigt v2 + post-processing helpers + investigation logs
+*(merged 2026-04-27 into `desi_y3`)*
+
+Brought the pipeline up on GreatLakes: conda env recipe, libcerf build,
+NERSC↔GreatLakes path mapping. Added a selectable-LSF pure-Python Voigt
+forward model (`voigt_v2.py`, parity-tested to <1e-9 vs the C extension),
+Lyβ-misID veto and LLS cross-reference post-processing helpers, smoke-test
+and catalog-analysis tooling, and eight investigation logs under
+`docs/notes/2026-04-27_*`. Two minimal production-code fixes:
+`np.trapz → np.trapezoid` (numpy 2.x compat) and `argmax → nanargmax` in
+`plot_model.py`. Test count: 65 → 93 passing.
+
+**Figures:** No new paper-candidate figures. The investigation logs
+reference purity/completeness numbers (London mock-0: 81.8% completeness,
+76.0% → 79.2% loose purity after post-processing) but all diagnostics
+live in text tables, not committed PNGs.
+
+**Conclusion:** GreatLakes environment is functional and the production
+GP numbers on London mock-0 match the historical eBOSS-era ~78%/~80%
+operating point; post-processing (Lyβ veto + LLS cross-reference) adds
++3.2 pp loose purity at P_DLA ≥ 0.99 with BAL excluded.
+
+---
+
+### PR #4 — Streamlined v2 GP training: vectorized objective, autograd backward, end-to-end LOA pipeline
+*(merged 2026-04-29 into `desi_y3`)*
+
+Rebuilt the Phase 2 continuum trainer end-to-end: vectorized
+`spectrum_loss_batch` matching MATLAB `spectrum_loss.m` to rel_err
+≈5e-11 on five frozen 2LPT fixtures; 9.9–14.4× CPU speedup; validated
+on NERSC A100 (job 52175179) and GreatLakes spgpu for all three LOA
+training variants. Also found that the legacy `dlog_beta` formula uses
+`log(λ_α)` for all Lyman lines instead of each line's own wavelength
+(~0.17–0.29 difference), present in both Python `objective.py` and the
+MATLAB reference; autograd backward computes the correct gradient.
+A LoaArchive adapter and parameterized GPU SLURM scripts complete the
+DESI pipeline port.
+
+**Figures:** Internal diagnostics only — 3-way and 5-way kernel
+comparison figures committed under `docs/notes/2026-04-28_v2_3way_compare/`
+and `docs/notes/2026-04-28_v2_5way_compare/` (6 and 8 PNGs respectively:
+`mu_omega_overlay.png`, `eigenspectra.png`, `omega_ratio.png`,
+`correlation_*.png`). These are training-reproducibility checks, not
+paper figures — see "Internal diagnostics" section.
+
+**Conclusion:** The v2 vectorized trainer is mathematically equivalent to
+MATLAB at double precision and reduces per-epoch time from ~36 s to ~2.5 s
+(CPU, bs=32); the identified `dlog_beta` gradient approximation is benign
+at the current operating point (Layer 4 parity passes) but is now
+correctly computed in v2.
+
+---
+
+### PR #5 — tau-EB closes 56–65% of DLA-regime bias on n=146k random mock + 5k real LOA
+*(merged 2026-05-02 into `desi_y3`)*
+
+Implemented a per-spectrum empirical-Bayes τ_eff fit (`gpy_dla_detection/tau_eb.py`,
+CLI `--enable_tau_eb 1`). Validated on n=146k random mock spectra
+(3 mocks × ~49k, FILTER=1, max_dlas=4, BAL-excluded) and n=5k real LOA.
+Also shipped: FILTER fix #5 (1-DLA evidence bypass), Voigt LSF sweep
+on n=18 cherry-picked targets (null result; swept into this PR), story
+docs under `docs/stories/`, recipe doc `docs/tau_eb_hcd_mask.md`,
+`docs/notes/2026-04-29_bayesian_correctness_synthesis.md` (hypothesis
+ledger), and trained-model comparison doc.
+
+**Figures (committed):**
+- `docs/tau_eb_hcd_mask_demo.png` — 4-panel recipe walkthrough on TID
+  120046865; catalogued under Paper 2 as paper-candidate.
+- `docs/story_figures/2lpt_01_canonical_dla.png` through
+  `saclay_03_dla_persistent_bias.png` (9 per-spectrum panels) — illustrative
+  τ-EB closure examples; catalogued under Paper 2 as supplementary.
+- `docs/story_figures/trained_gp_models_compare.png` and
+  `trained_gp_models_hyperparameters.png` — Internal diagnostics (trainer
+  normalization archaeology; 4 of 5 models are known-buggy v2 variants).
+- `docs/notes/2026-04-29_voigt_lsf_sweep/delta_log_nhi_box_{2lpt,london,saclay}.png`
+  and `per_target_scatter.png` — Internal diagnostics (null result on
+  n=18; superseded by Phase B).
+- `docs/voigt_demo/voigt_kernel_demo_dl08.png` — methods-appendix figure
+  for Paper 1, catalogued there.
+
+**Conclusion:** τ-EB closes 56–65% of the median DLA-regime N_HI bias
+(Δlog N_HI +0.089–0.095 → +0.032–0.042) across three independent mock
+suites at production-typical p_DLA ≥ 0.97; real LOA spectra prefer
+τ_factor ≈ 1.5× vs mocks' ≈ 3× Turner+2024, confirming the mocks
+systematically overestimate forest opacity relative to real Y3 data.
+
+---
+
+### PR #6 — [debug] Rebuild GP trainer from v1 reference — v2 trainer regressed
+*(merged 2026-05-16 into `desi_y3`)*
+
+Discovered that `dataset.py::load_preprocessed_h5` applied the noise-
+variance mask before normalizing flux, opposite to MATLAB's order; the
+effective threshold for marginal-median spectra differed by up to 1000×,
+polluting the PCA kernel with outliers. Fixed by reordering
+normalize → mask and tightening the |med| rejection threshold from
+<1e-3 to <1e-2. Validated via a falsification probe (`probe_outlier_tail_corr.py`,
+15× smoothness inflation from 10 injected outliers, resolved to 1× after
+fix). Built the end-to-end DESI training pipeline (`tests/phase2_train_desi.py`)
+with 6 Step-C 2LPT models and 2 post-reorder LOA models. The LOA candidate
+`loa_no_dla_no_bal_wide_m_normmask_3000iter` was validated on real LOA
+in-distribution: 96% DLA recovery at p_DLA > 0.5, 93% at p_DLA > 0.97,
+MAP log N_HI bias −0.04 dex vs v1 production (see
+`docs/notes/2026-05-15_dla_recovery_real_loa/findings.md`).
+
+**Figures:** No new committed PNGs beyond figures produced during PR #4
+training-comparison analysis (already catalogued under Internal
+diagnostics). The `_normmask` and `_g_normmask` model DLA-recovery results
+exist as JSON tables under `docs/notes/2026-05-13_*` and
+`docs/notes/2026-05-14_*` directories, not as committed PNGs.
+
+**Conclusion:** The v2 trainer had a dataset-ordering bug that is now
+matched to MATLAB's effective behavior; the Garnett normalization band
+(`_g`) consistently fails DLA recovery on the canonical TID while the
+matched normalization band (`_m`) consistently passes — `_m_normmask` is
+the recommended variant for both 2LPT and LOA training.
+
+---
+
+### PR #7 — production_533: log-evidence bias fix + knob sweeps + production-knob decisions
+*(open, draft; base `desi_y3`)*
+
+Fixes a `-log(N)` bias in the Monte-Carlo log-evidence estimator (per-sample
+log-likelihoods carry a baked-in `-log(num_dla_samples)` shift never
+undone by the `max + log mean(probs)` estimator; +log(N) added at 7 downstream
+sites). Validated by a 3×3 A/B: −1.6 pp purity / +4.9 pp completeness,
+as predicted. Also adds the `DLAFLAG` schema split into inference-time vs
+postprocess bit groups, `tools/postprocess/add_dla_flags.py`, and a
+series of production-knob sweeps on London-0 5k with the fixed eval
+recipe (n_truth=581): MAX_LAMBDA=1250 chosen (P=0.838/C=0.830), MIN_Z_SEPARATION
+kept at 3000 km/s (inert), NHI prior ceiling extended to 22.5 (neutral),
+2-way vs 3-way model topology settled on 2-way.
+
+**Figures:** No committed PNGs — knob-sweep results live as markdown
+tables in the `docs/notes/2026-05-14_log_evidence_bias_fix.md`,
+`2026-05-15_nhi_prior_extension.md`, `2026-05-15_min_z_separation_smoke.md`,
+`2026-05-16_lambda_fine_and_gp_range.md`, and `2026-05-16_subdla_3way_sweep.md`
+notes (all on the `production_533` branch, not yet merged).
+
+**Conclusion:** The log-evidence estimator carried a systematic −log(N)
+≈ −10.8 downward bias on all k-DLA terms; correcting it shifts the
+operating point toward higher completeness; MAX_LAMBDA=1250 Å is the
+recommended production wavelength ceiling, pending cross-validation
+on Saclay-0 and 2LPT-0.
+
+---
+
+### PR #8 — Real-LOA absorber stacking analysis + masked-spline pseudo-continuum
+*(open; base `desi_y3`)*
+
+Stacks real DESI LOA absorber detections in the absorber rest frame
+(LLS / sub-DLA / DLA N_HI bins, 700–1600 Å) with a redshift-scrambled
+control as a false-positive null, BAL split, Lyman-limit break recovery,
+and a masked-spline pseudo-continuum for continuum-normalized composites.
+Adds a `--purity marginal` preset (P_DLA ∈ [0.5, 0.7]) for operating-point
+false-positive testing. All generated figures and `.npz` caches are
+real-LOA-derived and gitignored; only code, the metal-line reference list,
+and methodology docs are committed.
+
+**Figures (real-LOA-derived, local only — gitignored):**
+Paper-candidate figures catalogued under Paper 3 above:
+`stack_control_lls_high.png`, `stack_control_subdla_high.png`,
+`stack_lyman_limit_high.png`, `stack_metal_zoom_prod_high.png`,
+`stack_purity_comparison.png` (pending marginal-purity re-run).
+Diagnostic/QC figures: `stack_pseudo_continuum_qc_*.png`,
+`stack_bal_compare_*.png`, `zhist_*.png` — all under
+`docs/notes/2026-05-15_stack_real_loa_dlas/` on disk, not committed.
+
+**Conclusion:** CIV 1548/1551 is detected at ~35σ vs an empirical null
+in the real LLS stack and is flat (<2σ) in the redshift-scrambled
+control; the Lyman-limit break depth rises monotonically with N_HI —
+the GP-DLA sub-DLA / LLS detections in the strong-LLS regime
+(log N_HI ≈ 18–19) are confirmed real absorbers.
+
+---
+
 ## Adding to this catalogue
 
 New paper-candidate figures: add them under the relevant **Paper N**
