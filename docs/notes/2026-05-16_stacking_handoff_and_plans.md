@@ -15,9 +15,21 @@ PR #8 is **open, unreviewed**. It contains:
 - `.gitignore` — generated figures / per-object data stay local (real-LOA
   privacy).
 
-**Result so far**: the CIV 1548/1551 doublet is coherent in the real
-sub-DLA and LLS stacks and flat in the z-scrambled control — the low-N_HI
-detections are not dominated by false positives.
+**Result so far**: the CIV 1548/1551 doublet is detected at high
+significance in the real sub-DLA and LLS stacks (CIV 1548 ~35σ vs an
+empirical null in the LLS stack) and is flat (<2σ) in the z-scrambled
+control. The Lyman-limit break rises monotonically with N_HI. So the
+detections in the *tested* column-density range are real absorbers.
+
+**Honest scope of that claim** (2026-05-19 verdict): the LLS bin
+[17.2,19) is ~89 % log N_HI 18.5–19, so the evidence confirms the
+**strong-LLS / sub-DLA-adjacent regime (log N_HI 18–19)**. The genuinely
+low tail is *not* covered: [17.2,18.0) is fully NaN-clipped (only ~33–41
+objects, below the 50-spectrum floor) and [18.0,18.5) is marginal
+(n≈353, CIV S/N≈3–4). And the whole analysis uses P_DLA > 0.97, so it
+validates the high-purity cut — it does **not** characterize the
+marginal operating point (P_DLA 0.5–0.7). Significances are empirical-
+null, not yet bootstrap-over-sightlines.
 
 ## Decision: metallicity is PARKED
 
