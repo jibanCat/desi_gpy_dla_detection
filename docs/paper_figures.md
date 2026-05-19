@@ -42,6 +42,33 @@ the headline-figure plan, not a list of existing files.
 | f(N,z) | column-density distribution function | `CDDF_analysis/calc_cddf.py`, `notebooks/CDDF_fN_z.ipynb` |
 | Ω_HI vs z | cosmological H I mass density | `CDDF_analysis/cddf_mock.py` |
 
+### The learned GP forward model
+
+A method paper shows the trained GP itself — the learned mean
+μ(λ_rest), the per-pixel variance ω(λ_rest), and the low-rank
+covariance kernel K = M·Mᵀ (the emission-feature correlation matrix).
+For the **production model only** (`model_epoch_920.h5`):
+
+| Figure | Shows | Data | Committed |
+|---|---|---|---|
+| production μ(λ) + ω(λ) | the learned mean QSO continuum + per-pixel variance vs rest wavelength | real-LOA training (hyperparameters only — no spectra) | partial — see note |
+| production K = M·Mᵀ correlation kernel | emission-feature covariance; block structure at Lyα + major emission lines | real-LOA training (hyperparameters only) | `docs/notes/2026-04-28_v2_3way_compare/correlation_y3_legacy.png` |
+| production top-5 eigenspectra (columns of M) | the learned emission-line variability modes | real-LOA training | partial — in `eigenspectra.png` overlaid with v2 |
+
+Note: the production model's μ/ω and eigenspectra currently appear only
+*overlaid with v2 variants* (in `mu_omega_overlay.png` / `eigenspectra.png`
+under the 3-way/5-way comparison folders) — a clean **single-model**
+version should be exported for the paper. The correlation kernel
+`correlation_y3_legacy.png` is already a single-(production-)model
+figure and is paper-usable as-is.
+
+Regenerate (single production model):
+```bash
+python examples/diagnose_trained_gp.py visualize \
+    --model production:<path>/model_epoch_920.h5 \
+    --out-dir docs/notes/<dated>_production_gp_model --n-eigenspectra 5
+```
+
 ### Methods appendix
 
 | Figure | Shows | Data | Committed |
@@ -145,7 +172,7 @@ trainer-debugging / infrastructure-validation artifacts. Kept in
 - **Voigt LSF sweep** — `docs/notes/2026-04-29_voigt_lsf_sweep/delta_log_nhi_box_{2lpt,london,saclay}.png`. A **null result** on n=18 cherry-picked targets, superseded by the n=5000 Phase B runs; most box-plot cells are n=1–2. If the τ-EB / main paper wants a one-line LSF-null reassurance, make **one** combined panel — these three are not it. `voigt_kernel_demo.png` (dλ=0.15 grid) is the rest-grid twin of the methods-appendix figure.
 - **`per_target_scatter.png`** — **dropped** from the catalogue: n=18, superseded, and visually a near-empty 2–3-point scatter with no diagnostic value.
 - **Trained-GP model comparison** — `docs/story_figures/trained_gp_models_compare.png`, `trained_gp_models_hyperparameters.png`. Trainer normalization archaeology / β-gradient-bug visualization; 4 of the 5 models are known-buggy v2 variants not used in production. Ref: `docs/notes/2026-05-01_trained_gp_models_comparison.md`.
-- **GP forward-model kernel comparison (3-way / 5-way)** — `docs/notes/2026-04-28_v2_3way_compare/` (6 figs) and `docs/notes/2026-04-28_v2_5way_compare/` (8 figs). Training-reproducibility checks ("truth-catalog anti-join works", "GreatLakes ≈ NERSC"); the two sets are mutually redundant. Refs: the `report.md` in each folder.
+- **GP forward-model kernel comparison (3-way / 5-way)** — `docs/notes/2026-04-28_v2_3way_compare/` (6 figs) and `docs/notes/2026-04-28_v2_5way_compare/` (8 figs). Training-reproducibility checks ("truth-catalog anti-join works", "GreatLakes ≈ NERSC"); the two sets are mutually redundant. Refs: the `report.md` in each folder. *The **production-model** single-model μ/ω, eigenspectra, and correlation kernel belong under Paper 1 → "The learned GP forward model"; only the multi-model overlay/comparison versions here are diagnostics.*
 
 ---
 
