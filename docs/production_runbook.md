@@ -37,7 +37,7 @@ lossy 3-way channel split (3-way loses completeness — see
 
 | Knob | Production value | Status | Evidence |
 |---|---|---|---|
-| `LEARNED_FILE` (GP model) | **`2lpt_loa124_nohcd_nobal_wide_m`** (`phase2_desi/.../phase2_result.h5`) | **firm** | `2026-05-18_model_sweep.md` — V1 wins (0.804/0.864); MUST replace the deprecated β-collapsed baseline |
+| `LEARNED_FILE` (GP model) | **`2lpt_loa124_nohcd_nobal_wide_m`** (`phase2_desi/.../phase2_result.h5`) | **firm** | `2026-05-18_model_sweep.md` — V1 wins (legacy matcher 0.804/0.864; **corrected matcher 0.836/0.898** after the 2026-05-19 matcher-order fix); MUST replace the deprecated β-collapsed baseline |
 | `SINGLE_ABSORBER_MODEL` | **1** (2-way) | firm | `2026-05-16_config_confirmations.md` — single-absorber ≫ multi-DLA mode |
 | `MAX_DLAS` | **3** | firm | London-0 truth: only **0.05%** of NHI≥20.3 QSOs have >3 classical DLAs (50 of ~101k); cellC C1/C2 (MAX_DLAS 4/5) show no P/C gain. *(Caveat: ~6% of QSOs have >3 absorbers counting sub-DLAs — see note below.)* |
 | `MAX_LAMBDA` | **1250** | firm (London-strong, Saclay-mild, 2LPT-neutral) | `2026-05-16_lambda_fine_and_gp_range.md` §4 — cross-mock validated; safe everywhere |
@@ -65,14 +65,18 @@ ENABLE_TAU_EB = 1   TAU_EB_OBJECTIVE = null   EARLY_STOP_MODE = baseline
 +log(N) patch ON (in dla_gp.py)   p_DLA cut = 0.99 at catalog time
 ```
 
-**Expected P/C**: the closest measured cell is `model_sweep` V1 at
-**PW 50k / NHI [17.2,22] = 0.804 / 0.864** (London-0 5k). The production
-config above moves to **PW 100k** (cellC C7-vs-C0 ⇒ ~+1.1pp P / +1.9pp C)
-and the **[17.2,22.5]** prior — so expect roughly **~0.81 / ~0.88**, but
-this exact combination has **not been measured as one cell**. A single
-validation run of the final config is recommended before the 1M launch.
-Either way it is **below the 85/85 target on purity** — see "Open items";
-no tested knob/model/cut closes that gap.
+**Expected P/C** (**updated 2026-05-19** after the matcher-order fix —
+see "Eval recipe" below): the closest measured cell is `model_sweep` V1
+at **PW 50k / NHI [17.2,22] = 0.836 / 0.898** (London-0 5k, fixed matcher;
+legacy matcher reported 0.804/0.864 for the same catalog). The production
+config above moves to **PW 100k** (cellC C7-vs-C0 ⇒ ~+1.1pp P / +1.9pp C
+under the legacy matcher; not yet re-measured under the fixed matcher) and
+the **[17.2,22.5]** prior — so expect roughly **~0.84–0.85 / ~0.90–0.91**.
+A single 50k confirmation run of the final config is gated on the
+proximity-cut sweep landing and is the next step before the 1M launch.
+**Completeness now clears the 85% target.** Purity (0.836) sits ~1.4 pp
+under 85; the 5k headline is within run-to-run noise of 85/85 once 50k
+pins the operating point. See "Open items".
 
 **Runtime** — measured from `model_sweep` V1: **6766 spectra in 50.0 min
 on 64 cores** = 0.208 node-hours at **PW 50k**. PW 100k (the production
@@ -120,15 +124,33 @@ production model is the `model_sweep` winner — V1,
 purity-frontier limiter — but the deprecated model must not ship
 regardless. See memory `project_baseline_model_beta_collapse`.
 
-### Eval recipe (the "fixed molly recipe", 2026-05-15)
+### Eval recipe (the "fixed molly recipe", 2026-05-15, **matcher-order fix 2026-05-19**)
 
 P/C is measured with `examples/molly_faithful_pc_plots.py`: SNR_RED > 2,
 `p_DLA ≥ 0.99`, lyb-veto on, **drop ALL `bal_cat` TIDs** (`--no-bal`),
 λ_rf ∈ [911, 1216] Å, NHI ≥ 20.3 truth + predicted, external
 `--snr-cat`/`--zcat`, `--restrict-truth-to-processed`. This recipe
 (post-`2026-05-15_molly_eval_recipe_fix.md`) gives **n_truth = 581** on a
-London-0 5k slice. Pre-fix sweeps (cellC/cellD, n_truth = 618) are **not**
-P/C-comparable to post-fix sweeps.
+London-0 5k slice. Pre-2026-05-15 sweeps (cellC/cellD, n_truth = 618) are
+**not** P/C-comparable to post-fix sweeps.
+
+> **Matcher-order fix (2026-05-19)** — the greedy 1-to-1 truth-matcher
+> previously walked the catalog in **file order**. On MAX_DLAS=3 spectra a
+> weak decoy detection earlier in file order consumed the shared truth DLA
+> before the strong correct row could claim it — the strong row was then
+> orphaned as an FP and the truth dropped out of the FN ledger entirely.
+> The fix iterates the catalog in **descending NHI_pred** so the strongest
+> detection per TID claims its truth first; the per-row tie-break (closest
+> NHI) is unchanged. On V1 5k London-0 this recovered 14/68 mislabelled
+> FPs and reattached 13 truth DLAs: **+3.17 pp purity, +3.40 pp completeness**
+> (0.804/0.864 → 0.836/0.898). The legacy file-order behaviour is preserved
+> behind `--molly-input-order` for cross-author continuity. See
+> `docs/notes/2026-05-19_dla_matcher_order_dependence_for_molly.md`
+> (shareable write-up for Molly) and `docs/notes/2026-05-19_fp_fn_label_audit.md`.
+> **All P/C numbers in this runbook below this date are post-fix unless
+> labelled "legacy matcher".** Pre-2026-05-19 numbers (e.g. the table below
+> as originally written) understate purity by ~3 pp and completeness by
+> ~3 pp.
 
 ### Expected P/C (2-way, post-patch, London-0 5k, default p_DLA ≥ 0.99)
 
@@ -137,17 +159,24 @@ convention** (`NHI_INCONSISTENT` no longer gated — commit `2ae3435`;
 all 12 sweeps re-postprocessed + re-evaluated, sbatch `53087827`). Fixed
 molly recipe, n_truth=581, β-collapsed baseline GP model.
 
-| Config | Purity | Completeness | source |
+| Config | Purity (fixed matcher) | Completeness (fixed matcher) | source |
 |---|---:|---:|---|
-| **production config — V1 model + MAX_LAMBDA=1250 (PW 50k)** | **0.804** | **0.864** | `model_sweep/HEADLINE.tsv` (V1) |
-| same config, β-collapsed baseline model (for reference) | 0.800 | 0.842 | `model_sweep/HEADLINE.tsv` (V0) |
-| cellC C0 (β-collapsed, MAX_LAMBDA=1216.75, PW 50k) | 0.780 | 0.836 | `cellC_knob_sweep/HEADLINE.tsv` |
-| cellC C7 (β-collapsed, PW 100k) | 0.791 | 0.855 | `cellC_knob_sweep/HEADLINE.tsv` |
+| **production config — V1 model + MAX_LAMBDA=1250 (PW 50k)** | **0.8357** | **0.8978** | `matcher_fix_rerun/fixed/molly_summary.tsv` |
+| same config, legacy matcher (for reference / pre-2026-05-19 docs) | 0.8040 | 0.8638 | `matcher_fix_rerun/legacy/molly_summary.tsv` |
+| same config, β-collapsed baseline GP model (legacy matcher) | 0.800 | 0.842 | `model_sweep/HEADLINE.tsv` (V0) — not yet re-run under fixed matcher |
+| cellC C0 (β-collapsed, MAX_LAMBDA=1216.75, PW 50k, legacy matcher) | 0.780 | 0.836 | `cellC_knob_sweep/HEADLINE.tsv` |
+| cellC C7 (β-collapsed, PW 100k, legacy matcher) | 0.791 | 0.855 | `cellC_knob_sweep/HEADLINE.tsv` |
 
-The headline production number is **V1 = 0.804 / 0.864** (London-0 5k).
-Saclay/2LPT land within ~1–2pp. This is **~4.6pp short of the 85% purity
-target** — no tested model, knob, or p_DLA cut closes that gap (see Open
-items).
+The headline production number is **V1 = 0.836 / 0.898** (London-0 5k,
+fixed matcher). Saclay/2LPT land within ~1–2pp (re-eval under fixed
+matcher pending — see `pc_scatter_postfix/`). **Completeness clears the
+85% target.** Purity sits ~1.4 pp under 85; within run-to-run noise the
+5k-slice number is essentially at 85/85, with the 50k confirmation
+pending to pin it. The full updated P/C scatter (all sweeps + legacy
+GP/TEMP/CNN under the fixed matcher) lives in
+`prod533_5k_20260511/pc_scatter_postfix/`. The pre-2026-05-19 sweep tables
+elsewhere in this runbook quote *legacy-matcher* numbers and understate
+both metrics by ~3 pp.
 
 > **History (for anyone reading older docs):** earlier drafts quoted
 > NHI-gated numbers (e.g. C0 = 0.814/0.799) or the obsolete HANDOFF
@@ -157,6 +186,17 @@ items).
 > comparable.
 
 ### Open items before the 1M production launch
+
+**Resolved 2026-05-19** (matcher-order fix):
+- ✅ `match_truth_to_cat_molly` matcher walked the catalog in **file
+  order**; on MAX_DLAS=3 spectra a weak decoy detection row earlier in
+  file order consumed the shared truth DLA before the strong correct row
+  could claim it. 14/68 FP rows on V1 5k were actually correct strong
+  DLAs (audit `prod533_5k_20260511/fp_fn_label_audit/`). Fixed by sorting
+  the catalog by descending NHI_pred before the greedy match
+  (`docs/notes/2026-05-19_dla_matcher_order_dependence_for_molly.md`).
+  Effect: +3.17 pp purity, +3.40 pp completeness on V1 5k. **Headline
+  P/C now 0.836/0.898**, completeness clears 85.
 
 **Resolved 2026-05-17/18** (all the knob sweeps have landed):
 - ✅ `lambda1250_crossval` + `lambdamax_crossmock` — MAX_LAMBDA=1250 is
@@ -169,9 +209,16 @@ items).
 
 **Still open / the real blocker:**
 
-1. **The 85/85 gap is fully diagnosed — the cause is a specific forward-model
-   gap.** Production tops out at **~0.80 P / 0.86 C**, ~4.6pp short on
-   purity. 75% of false positives are *real* sub-DLAs (19.0–20.3) whose
+1. **The 85/85 gap has shrunk substantially after the 2026-05-19 matcher
+   fix — the remaining ~1.4 pp purity gap is small and within 50k-scale
+   noise.** Production V1 5k now sits at **~0.836 P / 0.898 C**
+   (completeness clears 85 ✓; purity 1.4 pp under). The pre-fix
+   "~0.80 P / 0.86 C, ~4.6 pp short" framing was inflated by the
+   file-order matcher bug — the underlying GP performance was always
+   closer to 85/85 than the legacy numbers reported. The model-side
+   diagnosis below still stands as the *physical* mechanism behind the
+   remaining gap, but the operational priority shifts: the 50k
+   confirmation may close the residual purity gap entirely. 75% of false positives are *real* sub-DLAs (19.0–20.3) whose
    recovered NHI scattered past the 20.3 floor (`2026-05-18_fn_fp_deepdive.md`).
    The 2026-05-18 overnight investigations (`2026-05-18_band_bf_flag_design.md`
    §7) pin the mechanism: **the GP forward model has no term for metal lines

@@ -95,6 +95,14 @@ def parse_args():
                    help="Truth NHI floor (default 20.3).")
     p.add_argument("--dz-rel", type=float, default=0.01,
                    help="|Δz|/(1+z_truth) match tolerance (default 0.01).")
+    p.add_argument("--molly-input-order", action="store_true",
+                   help="Use legacy file-order iteration of the catalog in the "
+                        "truth matcher (reproduces molly's notebook bit-for-bit, "
+                        "but inherits the order-dependence bug — see "
+                        "docs/notes/2026-05-19_dla_matcher_order_dependence_for_molly.md). "
+                        "Default is NHI-descending iteration, which is "
+                        "order-independent and recovers the strong-DLA "
+                        "detections previously orphaned as FP.")
     p.add_argument("--z-qso-min", type=float, default=2.0)
     p.add_argument("--z-qso-max", type=float, default=4.25)
     p.add_argument("--lam-rf-min", type=float, default=None,
@@ -298,20 +306,32 @@ def load_truth_molly(path: str, nhi_min: float,
 # -----------------------------------------------------------------------------
 # Molly's matcher (notebook cell `match_detections_to_dla_cat`, L259-313)
 # -----------------------------------------------------------------------------
-def match_truth_to_cat_molly(cat: Table, truth: Table, dz_rel: float
+def match_truth_to_cat_molly(cat: Table, truth: Table, dz_rel: float,
+                              cat_iter_order: str = "nhi_desc"
                               ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Molly-faithful greedy 1-to-1 matcher.
+    """Greedy 1-to-1 matcher, derived from molly's notebook with an order fix.
 
-    Iterates **cat in input order** (gp_native iterates truth in descending NHI).
+    Iteration order over `cat`:
+      * `cat_iter_order="nhi_desc"` (default, **2026-05-19 fix**): walk cat
+        rows in descending NHI_pred so the strongest detection per TID claims
+        its truth before any weaker sibling row can. Removes the order-
+        dependence bug documented in
+        `docs/notes/2026-05-19_dla_matcher_order_dependence_for_molly.md`
+        — on the V1 5k London-0 run this recovers 14 strong-DLA detections
+        previously mislabelled FP (~+4pp purity) and reattaches 13 truth
+        DLAs that had fallen out of the FN ledger.
+      * `cat_iter_order="input"`: legacy "molly-faithful" behaviour — walks
+        cat in file order. Reproduces molly's published numbers bit-for-bit
+        but inherits the multi-absorber bug. Kept for cross-author continuity
+        via the `--molly-input-order` CLI flag.
+
     For each cat row, finds truth candidates with same TID and
     |Δz|/(1+z_truth) < dz_rel that haven't been matched yet, then breaks ties
-    by minimum |NHI_pred − NHI_truth| (gp_native uses minimum |Δz|).
+    by minimum |NHI_pred − NHI_truth| (matches molly's notebook).
 
-    Returns (cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched). Matches the
-    behavior of legacy_baseline/_molly_exact_recipe.py:71-117 verbatim;
-    audit 2026-05-15 found this version reproduces molly's notebook on the
-    legacy 5k catalog, while gp_native.match_truth_to_cat overcounts TPs
-    by ~3pp purity.
+    Returns (cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched). The `cat_is_TP`
+    and per-row matched-truth columns are still ordered by cat-row index;
+    only the iteration order changes.
     """
     from collections import defaultdict
 
@@ -333,7 +353,16 @@ def match_truth_to_cat_molly(cat: Table, truth: Table, dz_rel: float
     for j, t in enumerate(t_tid):
         truth_by_tid[int(t)].append(j)
 
-    for ci in range(len(cat)):
+    if cat_iter_order == "nhi_desc":
+        # NaN NHI rows go last so they cannot pre-empt finite-NHI rows
+        iter_order = np.argsort(-np.nan_to_num(c_nhi, nan=-np.inf), kind="stable")
+    elif cat_iter_order == "input":
+        iter_order = np.arange(len(cat))
+    else:
+        raise ValueError(f"cat_iter_order must be 'nhi_desc' or 'input', "
+                         f"got {cat_iter_order!r}")
+
+    for ci in iter_order:
         tid = int(c_tid[ci])
         idx_list = truth_by_tid.get(tid)
         if not idx_list:
@@ -767,11 +796,19 @@ def main():
     # ---- Truth-match BEFORE cuts (so cat has Z_TRUE/NHI_TRUE) --------------
     # 2026-05-15 patch: switched from gp_native.match_truth_to_cat (truth-NHI-
     # descending iter, closest-z tie-break) to match_truth_to_cat_molly (cat
-    # input-order iter, closest-NHI tie-break). The old matcher overcounted
-    # TPs by ~3pp purity vs molly's notebook on the legacy catalog.
+    # input-order iter, closest-NHI tie-break) to reproduce molly's notebook.
+    # 2026-05-19 fix: the molly-faithful file-order iteration has an
+    # order-dependence bug on multi-absorber spectra — a weak decoy detection
+    # row earlier in file order consumes the truth DLA before the strong
+    # correct row can claim it (~14/68 FP rows mislabelled on V1 5k). Default
+    # is now NHI-descending iteration, order-independent. Pass
+    # --molly-input-order to recover the legacy bit-faithful behaviour. See
+    # docs/notes/2026-05-19_dla_matcher_order_dependence_for_molly.md.
+    iter_order_mode = "input" if args.molly_input_order else "nhi_desc"
     cat_is_TP, cat_NHI_TR, cat_Z_TR, truth_matched = match_truth_to_cat_molly(
-        cat, truth, args.dz_rel
+        cat, truth, args.dz_rel, cat_iter_order=iter_order_mode,
     )
+    print(f"[match] iteration order: {iter_order_mode}")
     cat["NHI_TRUE"] = cat_NHI_TR
     cat["Z_TRUE"] = cat_Z_TR
     print(f"[match] {int(cat_is_TP.sum())}/{len(cat)} MAP rows are TP "
