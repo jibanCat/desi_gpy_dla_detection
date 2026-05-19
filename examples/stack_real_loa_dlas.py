@@ -145,8 +145,13 @@ STORED_BINS = NHI_BINS + [LLS_MERGED]
 # Categories needing a redshift-scrambled control (low-NHI = contamination-prone)
 CONTROL_CATEGORIES = {"lls": LLS_BINS_FINE, "subdla": SUBDLA_BINS}
 
-# Selection
-P_DLA_MIN = 0.97
+# Selection — purity is a preset chosen by --purity (default "high",
+# which reproduces the original P_DLA > 0.97 behaviour).
+PURITY_PRESETS = {           # preset -> (p_lo, p_hi); keep p_lo < P_DLA <= p_hi
+    "high":     (0.97, 1.01),
+    "marginal": (0.50, 0.70),
+}
+PURITY = "high"              # module global; set from --purity in main()
 SNR_FOREST_MIN = 2.0
 Z_QSO_MIN = 3.0
 Z_DLA_TO_QSO_MARGIN = 0.05    # exclude proximate absorbers
@@ -282,7 +287,8 @@ def provenance_dict() -> dict:
         "dlacat": DLACAT,
         "loa_archive": LOA_ARCHIVE,
         "bal_catalog": BAL_CATALOG,
-        "p_dla_min": P_DLA_MIN,
+        "purity": PURITY,
+        "p_dla_range": list(PURITY_PRESETS[PURITY]),
         "snr_forest_min": SNR_FOREST_MIN,
         "z_qso_min": Z_QSO_MIN,
         "z_dla_to_qso_margin": Z_DLA_TO_QSO_MARGIN,
@@ -359,8 +365,10 @@ def select(cat: np.ndarray, bal_tids: set) -> np.ndarray:
     in_forest = (z_dla_lya_obs > z_qso_lyb_obs) & (z_dla_lya_obs < z_qso_lya_obs)
     not_proximate = z_dla < (z_qso - Z_DLA_TO_QSO_MARGIN)
 
+    p_lo, p_hi = PURITY_PRESETS[PURITY]
+    in_purity = (cat["P_DLA"] > p_lo) & (cat["P_DLA"] <= p_hi)
     keep = (
-        (cat["P_DLA"] > P_DLA_MIN)
+        in_purity
         & (cat["SNR_FOREST"] > SNR_FOREST_MIN)
         & (cat["DLAFLAG"] == 0)
         & (z_qso > Z_QSO_MIN)
@@ -369,7 +377,7 @@ def select(cat: np.ndarray, bal_tids: set) -> np.ndarray:
         & (cat["NHI"] >= NHI_MIN)
         & (cat["NHI"] <= NHI_MAX)
     )
-    print(f"  P_DLA > {P_DLA_MIN}:        {(cat['P_DLA'] > P_DLA_MIN).sum()}", flush=True)
+    print(f"  purity={PURITY} P_DLA∈({p_lo},{p_hi}]:  {in_purity.sum()}", flush=True)
     print(f"  SNR_FOREST > {SNR_FOREST_MIN}:   {(cat['SNR_FOREST'] > SNR_FOREST_MIN).sum()}", flush=True)
     print(f"  DLAFLAG == 0:       {(cat['DLAFLAG'] == 0).sum()}", flush=True)
     print(f"  Z_QSO > {Z_QSO_MIN}:        {(z_qso > Z_QSO_MIN).sum()}", flush=True)
@@ -701,7 +709,7 @@ def compute_stacks():
 
     # counts log
     with (OUT_DIR / "counts.txt").open("w") as fh:
-        fh.write(f"# P_DLA > {P_DLA_MIN}, SNR_FOREST > {SNR_FOREST_MIN}, "
+        fh.write(f"# purity={PURITY}, SNR_FOREST > {SNR_FOREST_MIN}, "
                  f"DLAFLAG=0, Z_QSO > {Z_QSO_MIN}, in-forest, not-proximate\n")
         fh.write(f"# MAX_PER_BIN={MAX_PER_BIN} (per BAL group)\n")
         fh.write("# NHI_lo NHI_hi n_candidates n_nonbal n_bal\n")
@@ -933,7 +941,7 @@ def plot_overview(rest_grid, per_bin, bins, fname, subtitle,
     ax.set_xlabel(r"absorber rest-frame wavelength [Å]")
     ax.set_ylabel("median stacked flux (norm. to 1 at 1410–1520 Å rest)")
     ax.set_title(
-        f"{subtitle} — high-purity (P_DLA > {P_DLA_MIN}), "
+        f"{subtitle} — purity={PURITY}, "
         f"SNR_forest > {SNR_FOREST_MIN}, z_QSO > {Z_QSO_MIN}, "
         "Lyα-forest detection only, non-BAL")
     ax.legend(loc="lower right", fontsize=8, framealpha=0.9)
@@ -1254,7 +1262,21 @@ def render_all(rest_grid, per_bin, combined):
                      exclude=EXCLUDE_SPECIES.get(name, frozenset()))
 
 
+def _arg_value(flag, default):
+    """Value of `--flag VALUE` in sys.argv, else `default`."""
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+
+
 def main():
+    global PURITY
+    PURITY = _arg_value("--purity", "high")
+    if PURITY not in PURITY_PRESETS:
+        raise SystemExit(f"--purity must be one of {list(PURITY_PRESETS)}; "
+                         f"got {PURITY!r}")
     _ensure_outdir()
     # `--zhist-only`: just the per-bin redshift diagnostics (catalog-only,
     # runs in seconds — no spectrum reads).
