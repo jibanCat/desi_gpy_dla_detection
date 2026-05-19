@@ -252,9 +252,11 @@ echo "[run-local] all done."
 
 # --- Postprocess: add downstream catalog flags to dlacat-*.fits -------------
 # Runs add_dla_flags.py over the OUTDIR so the shipped catalog carries
-# LYBETA / BAL / NHI-consistency flags folded into DLAFLAG. Skip with
-# --no-postprocess (e.g. for partial debug passes). Mock runs resolve the
-# BAL catalog from MOCKDIR; if not found, the BAL flag is skipped.
+# LYBETA / BAL flags (folded into DLAFLAG) plus the informational
+# NHI_CONSISTENCY / PDLA_SATURATED / BF_BAND columns. Skip with
+# --no-postprocess. Mock runs resolve the BAL catalog from MOCKDIR; if not
+# found, the BAL flag is skipped. BF_BAND needs the run's processed h5
+# (in OUTDIR/processed) + the DLA samples .mat; passed below.
 if [ "$DRY_RUN" -ne 1 ] && [ "$POSTPROCESS" -eq 1 ]; then
     bal_path=""
     if [ -n "${MOCKDIR:-}" ] && [ -f "${MOCKDIR}/bal_cat.fits" ]; then
@@ -266,6 +268,13 @@ if [ "$DRY_RUN" -ne 1 ] && [ "$POSTPROCESS" -eq 1 ]; then
     else
         echo "[run-local] postprocess: no bal_cat.fits under MOCKDIR — skipping BAL_FLAG"
         pp_args+=(--no-bal-flag)
+    fi
+    # BF_BAND: pass the QMC samples file this run used (else add_dla_flags
+    # skips BF_BAND gracefully).
+    if [ -n "${DLA_SAMPLES_FILE:-}" ] && [ -f "${DLA_SAMPLES_FILE}" ]; then
+        pp_args+=(--dla-samples-file "$DLA_SAMPLES_FILE")
+    else
+        echo "[run-local] postprocess: DLA_SAMPLES_FILE unset/missing — skipping BF_BAND"
     fi
     echo "[run-local] $(date +%H:%M:%S) postprocess: add_dla_flags.py ${pp_args[*]}"
     if python "${REPO_ROOT}/tools/postprocess/add_dla_flags.py" "${pp_args[@]}"; then

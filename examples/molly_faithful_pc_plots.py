@@ -112,6 +112,11 @@ def parse_args():
                    help="Min predicted/truth log NHI for headline numbers (default 20.3).")
     p.add_argument("--gp-conf", type=float, default=0.99,
                    help="Fixed P_DLA cut for 1D + 2D plots (molly used 0.99 for Saclay DLA).")
+    p.add_argument("--bf-band-min", type=float, default=None,
+                   help="Optional extra cut: keep only detections with "
+                        "BF_BAND >= this (the local-posterior boundary-purity "
+                        "flag from add_dla_flags.py). Rows with NaN BF_BAND "
+                        "are kept (not penalised for a missing score).")
     p.add_argument("--zcat", default=None,
                    help="Optional zcat.fits for Z_QSO lookup (canonical source). "
                         "Falls back to mockdir/zcat.fits, then processed h5.")
@@ -645,6 +650,15 @@ def _run_one_window(cat, truth, bal_tids, args, title, out_dir, lam_rf_min):
     good_mask = (np.asarray(cat_cut["DLAFLAG"], dtype=int) == 0)
     if args.lyb_veto and "LYBETA_FLAG" in cat_cut.colnames:
         good_mask &= ~np.asarray(cat_cut["LYBETA_FLAG"], dtype=bool)
+    if args.bf_band_min is not None:
+        if "BF_BAND" not in cat_cut.colnames:
+            raise SystemExit("--bf-band-min set but the catalog has no "
+                             "BF_BAND column — run add_dla_flags.py first.")
+        bf = np.asarray(cat_cut["BF_BAND"], dtype=float)
+        # keep NaN (unscored) rows; only cut rows that are scored AND below cut
+        good_mask &= ~(np.isfinite(bf) & (bf < args.bf_band_min))
+        print(f"[postcuts] BF_BAND>={args.bf_band_min}: "
+              f"{int((np.isfinite(bf) & (bf < args.bf_band_min)).sum())} rows cut")
     print(f"[postcuts] TP={int(tp.sum())}, good_mask={int(good_mask.sum())}/{len(cat_cut)}")
 
     log_pdla, pur_curve, cmp_curve = plot_pc_vs_pdla(

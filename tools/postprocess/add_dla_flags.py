@@ -27,17 +27,36 @@ Flag columns added (booleans + supporting metadata):
                                 marks rows where the p_DLA cut is a no-op
                                 (high-confidence detection). NOT folded
                                 into DLAFLAG.
+  BF_BAND              float32— local posterior mass P(logNHI ≥ 20.3 | local
+                                data) for the absorber: from the QMC 1-DLA
+                                per-sample log-likelihoods, restricted to
+                                samples within ±z_window of the detection's
+                                Z_DLA, the likelihood-weighted fraction with
+                                logNHI ≥ 20.3. A prior-mass-corrected interval
+                                Bayes factor expressed as a probability in
+                                [0,1] — discriminates true DLAs from
+                                NHI-overestimated sub-DLAs near the 20.3
+                                boundary. Informational only, NOT folded into
+                                DLAFLAG (it is a purity↔completeness selection
+                                knob — see docs/notes/2026-05-18_band_bf_flag_design.md).
+                                Requires the processed h5 + the DLA samples
+                                .mat; skipped (NaN) with --no-bf-band or if
+                                those are unavailable.
+  BF_BAND_NLOCAL       int32  — number of QMC samples inside the local
+                                z-window (BF_BAND's QMC-noise diagnostic;
+                                small N ⇒ noisy BF_BAND).
 
 DLAFLAG bitmask updates (see fitwarning.py for the full definition):
   bit 3 (LYBETA_MISID)     ← LYBETA_FLAG
   bit 4 (BAL_CAT_OVERLAP)  ← BAL_FLAG
-  (NHI_CONSISTENCY_FLAG and PDLA_SATURATED_FLAG are informational — they get
-   their own columns and are NOT folded into DLAFLAG.)
+  (NHI_CONSISTENCY_FLAG, PDLA_SATURATED_FLAG and BF_BAND are informational —
+   they get their own columns and are NOT folded into DLAFLAG.)
 
 After running this script, downstream consumers can use either:
   cat[cat["DLAFLAG"] == 0]                          # "clean" production cat
   cat[~cat["LYBETA_FLAG"] & ~cat["BAL_FLAG"]]       # finer-grained filtering
   cat[~cat["NHI_CONSISTENCY_FLAG"]]                 # optional high-purity cut
+  cat[cat["BF_BAND"] >= 0.7]                        # optional boundary-purity cut
 
 The script is meant to be the LAST step of the production pipeline:
 
@@ -52,11 +71,17 @@ Usage:
     python tools/postprocess/add_dla_flags.py \
         --catalog-dir /path/to/run/ \
         --bal-cat /path/to/bal_cat.fits \
+        --dla-samples-file /path/to/pw_samples_a3_*.mat \
+        [--processed-dir /path/to/run/processed] \
+        [--bf-band-z-window 0.02] \
         [--nhi-consistency-k 0.5] \
         [--pdla-saturation 1e-7] \
         [--lyb-veto-dz 0.005] \
         [--no-lyb-veto] [--no-bal-flag] \
-        [--no-nhi-consistency] [--no-pdla-saturated]
+        [--no-nhi-consistency] [--no-pdla-saturated] [--no-bf-band]
+
+BF_BAND needs the inference run's processed h5 (per-sample log-likelihoods)
+and the QMC DLA samples .mat — pass --dla-samples-file (or --no-bf-band).
 """
 from __future__ import annotations
 
@@ -103,6 +128,18 @@ def parse_args():
                    help="Skip NHI_CONSISTENCY_FLAG column.")
     p.add_argument("--no-pdla-saturated", action="store_true",
                    help="Skip PDLA_SATURATED_FLAG column.")
+    p.add_argument("--no-bf-band", action="store_true",
+                   help="Skip BF_BAND / BF_BAND_NLOCAL columns.")
+    p.add_argument("--processed-dir", default=None,
+                   help="Dir with processed-spectra-16-*.h5 (per-sample LL) "
+                        "for BF_BAND. Default: <catalog-dir>/processed.")
+    p.add_argument("--dla-samples-file", default=None,
+                   help="QMC DLA samples .mat used by the inference run "
+                        "(must match the run; provides logNHI per sample). "
+                        "Required for BF_BAND unless --no-bf-band.")
+    p.add_argument("--bf-band-z-window", type=float, default=0.02,
+                   help="Half-width of the local z_DLA window for BF_BAND "
+                        "(default 0.02; see the design note).")
     p.add_argument("--quiet", action="store_true",
                    help="Suppress per-file progress lines.")
     return p.parse_args()
@@ -145,6 +182,90 @@ def _add_pdla_saturated(tbl: Table, threshold: float) -> int:
     flag = p >= (1.0 - threshold)
     tbl["PDLA_SATURATED_FLAG"] = flag
     return int(flag.sum())
+
+
+# --- BF_BAND: local posterior mass P(logNHI >= 20.3 | local) ----------------
+_BF_BAND_NHI_THRESH = 20.3
+
+
+def _load_bf_band_inputs(processed_dir: str, samples_file: str):
+    """Load the QMC sample logNHI grid and, per TARGETID, the 1-DLA per-sample
+    log-likelihoods + per-sample z_DLA. Returns (spec, log_nhi_samples) where
+    spec maps tid -> (L float32[S], z_dla_samples float64[S]).
+
+    Per-sample z_DLA is reconstructed as
+        z_i = min_z_dla + (max_z_dla - min_z_dla) * offset_sample_i
+    (min/max_z_dlas stored per spectrum; offset_samples in the .mat).
+    """
+    import h5py  # local import — only needed when BF_BAND is requested
+    with h5py.File(samples_file, "r") as f:
+        log_nhi_samples = np.asarray(f["log_nhi_samples"][:, 0], dtype=np.float64)
+        offset_samples = np.asarray(f["offset_samples"][:, 0], dtype=np.float64)
+    n_samples = log_nhi_samples.size
+
+    spec: dict[int, tuple] = {}
+    h5s = sorted(glob.glob(os.path.join(processed_dir,
+                                        "processed-spectra-16-*.h5")))
+    if not h5s:
+        raise SystemExit(f"BF_BAND: no processed-spectra-16-*.h5 in {processed_dir}")
+    for hp in h5s:
+        with h5py.File(hp, "r") as f:
+            tids = np.asarray(f["target_ids"][:], dtype=np.int64)
+            slld = f["sample_log_likelihoods_dla"]   # (n_spec, S, max_dlas)
+            if slld.shape[1] != n_samples:
+                raise SystemExit(
+                    f"BF_BAND: sample-count mismatch — {hp} has S={slld.shape[1]}"
+                    f" but {samples_file} has {n_samples}. Wrong --dla-samples-file?")
+            minz = np.asarray(f["min_z_dlas"][:], dtype=np.float64)
+            maxz = np.asarray(f["max_z_dlas"][:], dtype=np.float64)
+            for r in range(slld.shape[0]):
+                tid = int(tids[r])
+                if tid < 0:
+                    continue
+                L = np.asarray(slld[r, :, 0], dtype=np.float64)
+                zlo, zhi = minz[r], maxz[r]
+                if not (np.isfinite(L).any() and np.isfinite(zlo)
+                        and np.isfinite(zhi) and zhi > zlo):
+                    continue
+                spec[tid] = (L.astype(np.float32),
+                             zlo + (zhi - zlo) * offset_samples)
+    return spec, log_nhi_samples
+
+
+def _add_bf_band(tbl: Table, spec: dict, log_nhi_samples: np.ndarray,
+                 z_window: float) -> int:
+    """Mutate `tbl`: add BF_BAND (float32) and BF_BAND_NLOCAL (int32).
+
+    BF_BAND = P(logNHI >= 20.3 | local) = likelihood-weighted fraction of QMC
+    samples within |z - Z_DLA| <= z_window that have logNHI >= 20.3. NaN when
+    the spectrum is absent from the processed h5 or the local window is empty.
+    Informational only — NOT folded into DLAFLAG.
+    """
+    n = len(tbl)
+    bf = np.full(n, np.nan, dtype=np.float64)
+    nloc = np.zeros(n, dtype=np.int64)
+    tids = np.asarray(tbl["TARGETID"], dtype=np.int64)
+    zdla = np.asarray(tbl["Z_DLA"], dtype=np.float64)
+    hi = log_nhi_samples >= _BF_BAND_NHI_THRESH
+    for i in range(n):
+        rec = spec.get(int(tids[i]))
+        if rec is None:
+            continue
+        L, zs = rec
+        loc = np.isfinite(L) & (np.abs(zs - zdla[i]) <= z_window)
+        nl = int(loc.sum())
+        nloc[i] = nl
+        if nl == 0:
+            continue
+        Ll = L[loc].astype(np.float64)
+        w = np.exp(Ll - Ll.max())            # unnormalised posterior weights
+        denom = w.sum()
+        if not np.isfinite(denom) or denom <= 0:
+            continue
+        bf[i] = float(w[hi[loc]].sum() / denom)
+    tbl["BF_BAND"] = bf.astype(np.float32)
+    tbl["BF_BAND_NLOCAL"] = nloc.astype(np.int32)
+    return int(np.isfinite(bf).sum())
 
 
 def _update_dlaflag_bitmask(tbl: Table) -> int:
@@ -190,6 +311,8 @@ def _update_dlaflag_bitmask(tbl: Table) -> int:
 
 
 def process_one(path: Path, args, bal_tids: set[int] | None,
+                bf_spec: dict | None = None,
+                bf_lognhi: np.ndarray | None = None,
                 ) -> dict[str, int]:
     """Process one dlacat-*.fits file in place. Return per-file stats."""
     tbl = Table(fitsio.read(str(path), ext=1))
@@ -205,6 +328,9 @@ def process_one(path: Path, args, bal_tids: set[int] | None,
             tbl, args.nhi_consistency_k, args.nhi_consistency_floor)
     if not args.no_pdla_saturated:
         stats["pdla_saturated"] = _add_pdla_saturated(tbl, args.pdla_saturation)
+    if not args.no_bf_band and bf_spec is not None:
+        stats["bf_band_finite"] = _add_bf_band(
+            tbl, bf_spec, bf_lognhi, args.bf_band_z_window)
 
     # Fold quality flags into DLAFLAG bitmask (excludes the informational
     # PDLA_SATURATED and NHI_CONSISTENCY flags). After this,
@@ -239,11 +365,33 @@ def main():
         print(f"[postprocess] loaded {len(bal_tids)} BAL TIDs from "
               f"{args.bal_cat} (drop-all-BAL convention; matches molly)")
 
+    # BF_BAND inputs (processed h5 + QMC samples) — loaded once.
+    # Skipped (gracefully, not an error) if the inputs are unavailable, so an
+    # existing run_local.sh postprocess call that omits --dla-samples-file
+    # still works — it just won't get the BF_BAND column.
+    bf_spec = None
+    bf_lognhi = None
+    if not args.no_bf_band:
+        proc_dir = args.processed_dir or str(cat_dir / "processed")
+        if not args.dla_samples_file:
+            print("[postprocess] BF_BAND: SKIPPED — no --dla-samples-file "
+                  "(pass it to compute BF_BAND, or --no-bf-band to silence).")
+        elif not os.path.isdir(proc_dir):
+            print(f"[postprocess] BF_BAND: SKIPPED — --processed-dir not "
+                  f"found: {proc_dir}")
+        else:
+            print(f"[postprocess] BF_BAND: loading per-sample LL from "
+                  f"{proc_dir} + samples {args.dla_samples_file} ...")
+            bf_spec, bf_lognhi = _load_bf_band_inputs(proc_dir,
+                                                      args.dla_samples_file)
+            print(f"[postprocess] BF_BAND: {len(bf_spec)} spectra with usable "
+                  f"1-DLA samples (z-window ±{args.bf_band_z_window})")
+
     totals = {"n_rows": 0, "lyb_flagged": 0, "bal_flagged": 0,
               "nhi_consistency_flagged": 0, "pdla_saturated": 0,
-              "dlaflag_zero": 0, "dlaflag_changed": 0}
+              "bf_band_finite": 0, "dlaflag_zero": 0, "dlaflag_changed": 0}
     for f in files:
-        stats = process_one(f, args, bal_tids)
+        stats = process_one(f, args, bal_tids, bf_spec, bf_lognhi)
         if not args.quiet:
             extras = " ".join(f"{k}={v}" for k, v in stats.items()
                               if k not in ("path", "n_rows"))
@@ -274,6 +422,12 @@ def main():
         pct = 100.0 * n / tot if tot else 0.0
         print(f"  PDLA_SATURATED_FLAG=True   = {n} ({pct:.2f}%)  "
               f"(P_DLA ≥ 1 − {args.pdla_saturation:g})  [informational, NOT in DLAFLAG]")
+    if not args.no_bf_band and bf_spec is not None:
+        n = totals['bf_band_finite']; tot = totals['n_rows']
+        pct = 100.0 * n / tot if tot else 0.0
+        print(f"  BF_BAND finite             = {n} ({pct:.2f}%)  "
+              f"(P(logNHI≥20.3|local), ±{args.bf_band_z_window} z-window)  "
+              f"[informational, NOT in DLAFLAG]")
     n = totals['dlaflag_zero']; tot = totals['n_rows']
     pct = 100.0 * n / tot if tot else 0.0
     print(f"  DLAFLAG == 0 ('clean')     = {n} ({pct:.2f}%)  "
