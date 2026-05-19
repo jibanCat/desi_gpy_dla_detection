@@ -58,18 +58,21 @@ redshift z + Δz (Δz random ±[0.15, 0.35]) — real metals locked to the
 absorber redshift survive the real stack and wash out in the control.
 A coherent CIV dip in the real stack but a flat control = real absorbers.
 
-Outputs (docs/notes/2026-05-15_stack_real_loa_dlas/)
-  stack_prod.png / stack_metal_zoom_prod.png        — production bins
-  stack_lls_diag.png / stack_metal_zoom_lls_diag.png — 3 fine LLS bins
-  stack_subdla.png / stack_metal_zoom_subdla.png    — sub-DLA [19, 20.3)
-  stack_dla.png / stack_metal_zoom_dla.png          — DLA [20.3, 23)
-  stack_lyman_limit.png                             — LL break recovery
-  stack_bal_compare.png                             — non-BAL vs BAL
-  stack_pseudo_continuum_qc.png                     — continuum-fit QC
-  stack_control_lls.png / stack_control_subdla.png  — real vs control
-  stack_curves_<purity>.npz   — cached curves + pseudo-continuum (`pcont`)
-                                + provenance. Continuum-normalized stack
-                                = curve / pcont.
+Outputs (docs/notes/2026-05-15_stack_real_loa_dlas/) — every per-run
+figure/npz/txt is tagged with the active --purity preset (`_high` /
+`_marginal`); only stack_purity_comparison.png spans both presets.
+  stack_prod_<p>.png / stack_metal_zoom_prod_<p>.png    — production bins
+  stack_lls_diag_<p>.png / stack_metal_zoom_lls_diag_<p>.png — 3 fine LLS bins
+  stack_subdla_<p>.png / stack_metal_zoom_subdla_<p>.png — sub-DLA [19, 20.3)
+  stack_dla_<p>.png / stack_metal_zoom_dla_<p>.png      — DLA [20.3, 23)
+  stack_lyman_limit_<p>.png                             — LL break recovery
+  stack_bal_compare_<p>.png                             — non-BAL vs BAL
+  stack_pseudo_continuum_qc_<p>.png                     — continuum-fit QC
+  stack_control_{lls,subdla,lownhi}_<p>.png             — real vs control
+  stack_purity_comparison.png   — marginal vs high-purity (--compare-purity)
+  stack_curves_<p>.npz   — cached curves + pseudo-continuum (`pcont`)
+                           + provenance. Continuum-normalized stack
+                           = curve / pcont.
 """
 from __future__ import annotations
 
