@@ -49,3 +49,12 @@ def test_provenance_carries_purity(monkeypatch):
     assert prov["purity"] == "marginal"
     assert prov["p_dla_range"] == [0.50, 0.70]
     assert "p_dla_min" not in prov
+
+
+def test_tagged_and_npz_path(monkeypatch):
+    monkeypatch.setattr(stk, "PURITY", "marginal")
+    assert stk.tagged("stack_prod") == "stack_prod_marginal.png"
+    assert stk.tagged("counts", "txt") == "counts_marginal.txt"
+    assert stk.npz_path().name == "stack_curves_marginal.npz"
+    monkeypatch.setattr(stk, "PURITY", "high")
+    assert stk.npz_path().name == "stack_curves_high.npz"

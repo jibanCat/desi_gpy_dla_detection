@@ -90,7 +90,17 @@ DLACAT = "/scratch/cavestru_root/cavestru0/mfho/nersc/desi-loa-gpdla-20251229-y3
 LOA_ARCHIVE = "/scratch/cavestru_root/cavestru0/mfho/nersc/loa_archives/loa_full_z2_noR_v2.h5"
 BAL_CATALOG = "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/QSO_cat_loa_main_dark_healpix_v3-altbal.fits"
 OUT_DIR = Path(__file__).resolve().parent.parent / "docs/notes/2026-05-15_stack_real_loa_dlas"
-NPZ_PATH = OUT_DIR / "stack_curves.npz"
+
+
+def tagged(basename, ext="png"):
+    """Output filename tagged with the active purity preset, so the
+    `high` and `marginal` runs do not clobber each other's outputs."""
+    return f"{basename}_{PURITY}.{ext}"
+
+
+def npz_path():
+    """Path to the cached-curves npz for the active purity preset."""
+    return OUT_DIR / tagged("stack_curves", "npz")
 
 
 def _ensure_outdir():
@@ -432,9 +442,9 @@ def dump_zhist(cat):
                  "sample. A shifted ratio distribution moves the QSO Lyα "
                  "emission bump in the absorber rest frame.", fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(OUT_DIR / "zhist.png", dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_DIR / tagged("zhist"), dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"[saved] {OUT_DIR / 'zhist.png'}", flush=True)
+    print(f"[saved] {OUT_DIR / tagged('zhist')}", flush=True)
 
     for (lo, hi) in NHI_BINS:
         m = (cat["NHI"] >= lo) & (cat["NHI"] < hi)
@@ -447,8 +457,9 @@ def dump_zhist(cat):
         qso_lya_absframe = LYA * ratio
         summary.append(f"{lo:.2f} {hi:.2f}   {int(m.sum())}   "
                        f"{zq:.4f}  {zd:.4f}  {ratio:.4f}  {qso_lya_absframe:.2f}")
-    (OUT_DIR / "zhist_summary.txt").write_text("\n".join(summary) + "\n")
-    print(f"[saved] {OUT_DIR / 'zhist_summary.txt'}", flush=True)
+    (OUT_DIR / tagged("zhist_summary", "txt")).write_text(
+        "\n".join(summary) + "\n")
+    print(f"[saved] {OUT_DIR / tagged('zhist_summary', 'txt')}", flush=True)
     print("\n".join(summary), flush=True)
 
 
@@ -708,7 +719,7 @@ def compute_stacks():
               f"(real + scrambled control)", flush=True)
 
     # counts log
-    with (OUT_DIR / "counts.txt").open("w") as fh:
+    with (OUT_DIR / tagged("counts", "txt")).open("w") as fh:
         fh.write(f"# purity={PURITY}, SNR_FOREST > {SNR_FOREST_MIN}, "
                  f"DLAFLAG=0, Z_QSO > {Z_QSO_MIN}, in-forest, not-proximate\n")
         fh.write(f"# MAX_PER_BIN={MAX_PER_BIN} (per BAL group)\n")
@@ -749,16 +760,18 @@ def save_curves(rest_grid, per_bin, combined):
         payload[f"comb_ctrl_{name}"] = cc
         payload[f"comb_ctrlcnt_{name}"] = cn
         payload[f"comb_n_{name}"] = np.int64(n)
-    np.savez(NPZ_PATH, **payload)
-    print(f"[saved] {NPZ_PATH}", flush=True)
+    out = npz_path()
+    np.savez(out, **payload)
+    print(f"[saved] {out}", flush=True)
 
 
-def load_curves():
-    d = np.load(NPZ_PATH, allow_pickle=False)
+def load_curves(path):
+    path = Path(path)
+    d = np.load(path, allow_pickle=False)
     if "provenance" not in d:
         raise SystemExit(
-            f"[ERROR] cached {NPZ_PATH.name} predates the provenance/BAL "
-            "format — re-run without --plot-only to regenerate.")
+            f"[ERROR] cached {path.name} predates the provenance/BAL "
+            "format — re-run to regenerate.")
     check_provenance(json.loads(str(d["provenance"])))
     rest_grid = d["rest_grid"]
     per_bin = {}
@@ -1224,19 +1237,20 @@ def render_all(rest_grid, per_bin, combined):
     prod = prod_bins_view(per_bin)
 
     # Production-binned headline figures (LLS merged to one bin).
-    plot_overview(rest_grid, prod, NHI_BINS_PROD, "stack_prod.png",
+    plot_overview(rest_grid, prod, NHI_BINS_PROD, tagged("stack_prod"),
                   "Real-LOA production bins (LLS merged / sub-DLA / DLA)",
                   exclude=EXCLUDE_SPECIES["all"])
-    plot_metal_zoom(rest_grid, prod, NHI_BINS_PROD, "stack_metal_zoom_prod.png",
+    plot_metal_zoom(rest_grid, prod, NHI_BINS_PROD,
+                    tagged("stack_metal_zoom_prod"),
                     "Metal-line zoom — production NHI bins",
                     exclude=EXCLUDE_SPECIES["all"])
 
     # Diagnostic: LLS resolved into 3 fine bins.
-    plot_overview(rest_grid, per_bin, LLS_BINS_FINE, "stack_lls_diag.png",
+    plot_overview(rest_grid, per_bin, LLS_BINS_FINE, tagged("stack_lls_diag"),
                   "Real-LOA LLS resolved (3 fine bins, log NHI 17.2–19)",
                   exclude=EXCLUDE_SPECIES["lls"])
     plot_metal_zoom(rest_grid, per_bin, LLS_BINS_FINE,
-                    "stack_metal_zoom_lls_diag.png",
+                    tagged("stack_metal_zoom_lls_diag"),
                     "Metal-line zoom — LLS resolved (3 fine bins)",
                     exclude=EXCLUDE_SPECIES["lls"])
 
@@ -1246,19 +1260,22 @@ def render_all(rest_grid, per_bin, combined):
         ("dla", DLA_BINS, "Real-LOA DLAs (log NHI ≥ 20.3)"),
     ]:
         exc = EXCLUDE_SPECIES[tag]
-        plot_overview(rest_grid, per_bin, bins, f"stack_{tag}.png", label,
+        plot_overview(rest_grid, per_bin, bins, tagged(f"stack_{tag}"), label,
                       exclude=exc)
-        plot_metal_zoom(rest_grid, per_bin, bins, f"stack_metal_zoom_{tag}.png",
+        plot_metal_zoom(rest_grid, per_bin, bins,
+                        tagged(f"stack_metal_zoom_{tag}"),
                         f"Metal-line zoom — {label}", exclude=exc)
 
-    # Lyman limit break recovery + BAL comparison.
-    plot_lyman_limit(rest_grid, per_bin, "stack_lyman_limit.png")
-    plot_bal_compare(rest_grid, per_bin, "stack_bal_compare.png")
-    plot_pseudo_continuum_qc(rest_grid, prod, "stack_pseudo_continuum_qc.png")
+    # Lyman limit break recovery + BAL comparison + continuum QC.
+    plot_lyman_limit(rest_grid, per_bin, tagged("stack_lyman_limit"))
+    plot_bal_compare(rest_grid, per_bin, tagged("stack_bal_compare"))
+    plot_pseudo_continuum_qc(rest_grid, prod,
+                             tagged("stack_pseudo_continuum_qc"))
 
     # Decisive real-vs-control plots.
     for name in CONTROL_CATEGORIES:
-        plot_control(rest_grid, combined, name, f"stack_control_{name}.png",
+        plot_control(rest_grid, combined, name,
+                     tagged(f"stack_control_{name}"),
                      exclude=EXCLUDE_SPECIES.get(name, frozenset()))
 
 
@@ -1287,11 +1304,11 @@ def main():
         dump_zhist(cat)
         return
     if "--plot-only" in sys.argv:
-        if not NPZ_PATH.exists():
-            raise SystemExit(f"no cached curves at {NPZ_PATH}; "
+        if not npz_path().exists():
+            raise SystemExit(f"no cached curves at {npz_path()}; "
                              "run without --plot-only first")
-        print(f"loading cached curves from {NPZ_PATH}", flush=True)
-        rest_grid, per_bin, combined = load_curves()
+        print(f"loading cached curves from {npz_path()}", flush=True)
+        rest_grid, per_bin, combined = load_curves(npz_path())
     else:
         rest_grid, per_bin, combined = compute_stacks()
         save_curves(rest_grid, per_bin, combined)
