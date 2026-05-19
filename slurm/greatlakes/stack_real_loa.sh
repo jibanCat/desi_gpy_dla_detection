@@ -20,6 +20,12 @@
 # Single-threaded Python; bottleneck is random HDF5 reads off /scratch.
 # Expect ~45-90 min wall when /scratch is responsive; walltime is set to
 # 10h to absorb the ~10x slowdowns seen under /scratch I/O contention.
+#
+# Purity preset via the PURITY env var (default "high"). Run both:
+#   sbatch slurm/greatlakes/stack_real_loa.sh                          # high
+#   sbatch --export=ALL,PURITY=marginal slurm/greatlakes/stack_real_loa.sh
+# then, once both npz exist (fast, no archive reads):
+#   python examples/stack_real_loa_dlas.py --compare-purity
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
@@ -57,9 +63,10 @@ for p in (m.DLACAT, m.LOA_ARCHIVE, m.BAL_CATALOG):
         sys.exit(1)
 PY
 
+PURITY="${PURITY:-high}"
 echo
-echo "=== running full stack ==="
-python -u examples/stack_real_loa_dlas.py
+echo "=== running full stack (purity=$PURITY) ==="
+python -u examples/stack_real_loa_dlas.py --purity "$PURITY"
 
 echo
 echo "=== STACK COMPLETE ==="
