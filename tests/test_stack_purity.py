@@ -76,3 +76,41 @@ def test_check_provenance_preset_mismatch(monkeypatch):
         stk.check_provenance(stored, expect_preset="marginal")
     # expecting 'high' must pass (no raise)
     stk.check_provenance(stored, expect_preset="high")
+
+
+def _mock_curve(rg, seed=0):
+    rng = np.random.default_rng(seed)
+    slope = 1.0 + 0.05 * (rg - 1200.0) / 900.0
+    curve = slope + rng.normal(0.0, 0.01, len(rg))
+    curve[rg < 760.0] = np.nan
+    counts = np.clip(60.0 + 0.9 * (rg - 700.0), 0.0, 800.0)
+    return curve.astype(float), counts.astype(float)
+
+
+def test_pcont_persists_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(stk, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(stk, "PURITY", "high")
+    rg = 10 ** np.arange(np.log10(stk.REST_LAMBDA_MIN),
+                         np.log10(stk.REST_LAMBDA_MAX), stk.DLOG_LAMBDA)
+    curve, counts = _mock_curve(rg)
+    # 80 noisy copies (60 non-BAL + 20 BAL) so the non-BAL group clears
+    # the 50-spectrum coverage floor and `bs.curve` is a real stack.
+    raw = (np.tile(curve, (80, 1))
+           + np.random.default_rng(1).normal(0.0, 0.01, (80, len(rg))))
+    is_bal = np.array([False] * 60 + [True] * 20)
+    bs = stk._stack_pair(rg, raw, is_bal)
+    assert np.isfinite(bs.curve[(rg > 1000) & (rg < 1500)]).any()
+    # pcont must be the deterministic fit of the non-BAL curve
+    assert np.allclose(np.nan_to_num(bs.pcont),
+                       np.nan_to_num(stk.fit_pseudo_continuum(rg, bs.curve,
+                                                              bs.counts)))
+    per_bin = {stk.NHI_BINS[0]: bs}
+    P = stk.fit_pseudo_continuum(rg, curve, counts)
+    combined = {"lownhi": (curve, counts, P, curve, counts, P, 2)}
+    stk.save_curves(rg, per_bin, combined)
+    _rg, per_bin2, comb2 = stk.load_curves(stk.npz_path())
+    bs2 = per_bin2[stk.NHI_BINS[0]]
+    assert np.array_equal(np.nan_to_num(bs2.pcont), np.nan_to_num(bs.pcont))
+    assert np.array_equal(np.nan_to_num(comb2["lownhi"][2]),
+                          np.nan_to_num(P))
+    assert len(comb2["lownhi"]) == 7

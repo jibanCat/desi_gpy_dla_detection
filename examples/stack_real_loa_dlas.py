@@ -67,7 +67,9 @@ Outputs (docs/notes/2026-05-15_stack_real_loa_dlas/)
   stack_bal_compare.png                             — non-BAL vs BAL
   stack_pseudo_continuum_qc.png                     — continuum-fit QC
   stack_control_lls.png / stack_control_subdla.png  — real vs control
-  stack_curves.npz                                  — cached curves + provenance
+  stack_curves_<purity>.npz   — cached curves + pseudo-continuum (`pcont`)
+                                + provenance. Continuum-normalized stack
+                                = curve / pcont.
 """
 from __future__ import annotations
 
@@ -286,9 +288,12 @@ EXCLUDE_SPECIES = {
     "dla":    frozenset({"CIII"}),
 }
 
-# Per-bin stack: non-BAL curve/counts/n + BAL curve/counts/n.
+# Per-bin stack: non-BAL (curve/counts/n/pcont) + BAL (..._bal). `pcont`
+# is the fitted pseudo-continuum; the continuum-normalized stack is
+# `curve / pcont`.
 BinStack = namedtuple(
-    "BinStack", ["curve", "counts", "n", "curve_bal", "counts_bal", "n_bal"])
+    "BinStack", ["curve", "counts", "n", "pcont",
+                 "curve_bal", "counts_bal", "n_bal", "pcont_bal"])
 
 
 # ---------------------------------------------------------------------------
@@ -550,14 +555,17 @@ def _sigma_clip_median(stack):
     return curve, counts
 
 
-def _stack_pair(raw, is_bal):
+def _stack_pair(rest_grid, raw, is_bal):
     """Split a raw resampled stack into non-BAL and BAL groups, σ-clip
-    median each. Returns a BinStack."""
+    median each, and fit the pseudo-continuum of each. Returns a
+    BinStack carrying both curves and their pseudo-continua."""
     nb = ~is_bal
     curve, counts = _sigma_clip_median(raw[nb])
     curve_b, counts_b = _sigma_clip_median(raw[is_bal])
-    return BinStack(curve, counts, int(nb.sum()),
-                    curve_b, counts_b, int(is_bal.sum()))
+    pcont = fit_pseudo_continuum(rest_grid, curve, counts)
+    pcont_b = fit_pseudo_continuum(rest_grid, curve_b, counts_b)
+    return BinStack(curve, counts, int(nb.sum()), pcont,
+                    curve_b, counts_b, int(is_bal.sum()), pcont_b)
 
 
 def read_bin_spectra(cat_bin, arch_tid_to_row, archive, rest_grid, bin_name,
@@ -706,13 +714,14 @@ def compute_stacks():
     for b in NHI_BINS:
         if b not in raw_real:
             continue
-        per_bin[b] = _stack_pair(raw_real[b], raw_isbal[b])
+        per_bin[b] = _stack_pair(rest_grid, raw_real[b], raw_isbal[b])
 
     # Production LLS bin = pooled union of the 3 fine LLS bins.
     lls_raw = [raw_real[b] for b in LLS_BINS_FINE if b in raw_real]
     lls_bal = [raw_isbal[b] for b in LLS_BINS_FINE if b in raw_isbal]
     if lls_raw:
-        per_bin[LLS_MERGED] = _stack_pair(np.concatenate(lls_raw, axis=0),
+        per_bin[LLS_MERGED] = _stack_pair(rest_grid,
+                                          np.concatenate(lls_raw, axis=0),
                                           np.concatenate(lls_bal, axis=0))
 
     # Combined real-vs-control stacks per low-NHI category (non-BAL only —
@@ -731,7 +740,9 @@ def compute_stacks():
         pooled_ctrl = np.concatenate(ctrls, axis=0)
         rc, rn = _sigma_clip_median(pooled_real)
         cc, cn = _sigma_clip_median(pooled_ctrl)
-        combined[name] = (rc, rn, cc, cn, len(pooled_real))
+        pcont_r = fit_pseudo_continuum(rest_grid, rc, rn)
+        pcont_c = fit_pseudo_continuum(rest_grid, cc, cn)
+        combined[name] = (rc, rn, pcont_r, cc, cn, pcont_c, len(pooled_real))
         print(f"combined {name}: {len(pooled_real)} non-BAL spectra "
               f"(real + scrambled control)", flush=True)
 
@@ -768,14 +779,18 @@ def save_curves(rest_grid, per_bin, combined):
         payload[f"curve_{key}"] = bs.curve
         payload[f"counts_{key}"] = bs.counts
         payload[f"ntot_{key}"] = np.int64(bs.n)
+        payload[f"pcont_{key}"] = bs.pcont
         payload[f"curvebal_{key}"] = bs.curve_bal
         payload[f"countsbal_{key}"] = bs.counts_bal
         payload[f"ntotbal_{key}"] = np.int64(bs.n_bal)
-    for name, (rc, rn, cc, cn, n) in combined.items():
+        payload[f"pcontbal_{key}"] = bs.pcont_bal
+    for name, (rc, rn, pcont_r, cc, cn, pcont_c, n) in combined.items():
         payload[f"comb_real_{name}"] = rc
         payload[f"comb_realcnt_{name}"] = rn
+        payload[f"comb_pcontreal_{name}"] = pcont_r
         payload[f"comb_ctrl_{name}"] = cc
         payload[f"comb_ctrlcnt_{name}"] = cn
+        payload[f"comb_pcontctrl_{name}"] = pcont_c
         payload[f"comb_n_{name}"] = np.int64(n)
     out = npz_path()
     np.savez(out, **payload)
@@ -798,14 +813,17 @@ def load_curves(path, expect_preset=None):
             continue
         per_bin[(lo, hi)] = BinStack(
             d[f"curve_{key}"], d[f"counts_{key}"], int(d[f"ntot_{key}"]),
+            d[f"pcont_{key}"],
             d[f"curvebal_{key}"], d[f"countsbal_{key}"],
-            int(d[f"ntotbal_{key}"]))
+            int(d[f"ntotbal_{key}"]), d[f"pcontbal_{key}"])
     combined = {}
     for name in CONTROL_CATEGORIES:
         if f"comb_real_{name}" not in d:
             continue
         combined[name] = (d[f"comb_real_{name}"], d[f"comb_realcnt_{name}"],
+                           d[f"comb_pcontreal_{name}"],
                            d[f"comb_ctrl_{name}"], d[f"comb_ctrlcnt_{name}"],
+                           d[f"comb_pcontctrl_{name}"],
                            int(d[f"comb_n_{name}"]))
     return rest_grid, per_bin, combined
 
@@ -1003,8 +1021,7 @@ def plot_metal_zoom(rest_grid, per_bin, bins, fname, suptitle,
             if (lo, hi) not in per_bin:
                 continue
             bs = per_bin[(lo, hi)]
-            P = fit_pseudo_continuum(rest_grid, bs.curve, bs.counts)
-            y = (bs.curve / P)[sel]
+            y = (bs.curve / bs.pcont)[sel]
             ax.plot(x, y, color=BIN_COLOR[(lo, hi)], lw=1.3, alpha=0.85,
                     label=f"NHI [{lo:.1f},{hi:.1f})")
             if np.isfinite(y).any():
@@ -1148,11 +1165,9 @@ def plot_control(rest_grid, combined, name, fname, exclude=frozenset()):
     if name not in combined:
         print(f"[skip] no combined stack for {name}", flush=True)
         return
-    rc, rn, cc, cn, n = combined[name]
-    P_real = fit_pseudo_continuum(rest_grid, rc, rn)
-    P_ctrl = fit_pseudo_continuum(rest_grid, cc, cn)
-    norm_real = rc / P_real
-    norm_ctrl = cc / P_ctrl
+    rc, rn, pcont_r, cc, cn, pcont_c, n = combined[name]
+    norm_real = rc / pcont_r
+    norm_ctrl = cc / pcont_c
     panels = _filtered_panels(exclude)
     n_panels = len(panels)
     ncols = 4
