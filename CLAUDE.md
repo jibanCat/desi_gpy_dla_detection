@@ -311,7 +311,7 @@ When starting on GreatLakes, work through this before running anything:
 
 ## 11. Known Issues / Gotchas
 
-- **`NUM_FOREST_LINES` was previously typo'd `NUM_FOEST_LINES`** across six `run_*.sh` drivers (missing R). The submit-side fallback defaults to **31**, not 3 — so production LOA + Saclay runs that went through these drivers were *silently using 31 Lyman lines, not the intended 3*, before the 2026-05-20 housekeeping pass. Existing catalogs on `/pscratch` reflect 31; future runs will use 3. Don't read older catalogs as if produced at the §6-documented setting.
+- **`NUM_FOREST_LINES` was previously typo'd `NUM_FOEST_LINES`** across 5 `run_*.sh` drivers (missing R; fixed 2026-05-20). The driver-side `NUM_FOEST_LINES=3` was a dead variable — `slurm/submit_desi_*.sh` reads the correctly-spelled `NUM_FOREST_LINES` from env, so the driver's literal `=3` never took effect. Effective forest-line count for any historical run was: whatever the calling NERSC shell had `NUM_FOREST_LINES` exported to, else **31** (the submit-side default). Not verified against actual production catalogs — to be sure for a specific run, inspect its `processed-*.h5` args metadata (schema in `gpy_dla_detection/process_helpers.py`). Future runs through these drivers will explicitly use **3** per the §6-documented setting. The legacy NERSC drivers will likely be retired in favor of the GreatLakes scripts anyway, so this is mostly historical.
 - **Saclay mock subdirs differ**: mock-0 uses `juraLy8-124/`, mock-1 uses `jura-124/`
 - **`model_posteriors` column layout differs by mode**:
   - `single_absorber_model=False`: `[:,0]`=Null, `[:,1]`=SubDLA, `[:,2]`=1DLA, `[:,3]`=2DLA, `[:,4]`=3DLA
