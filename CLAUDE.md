@@ -219,7 +219,6 @@ Notebooks use **Pathway B**. The calibration workflow is:
   are available
 
 ### Lower priority (cleanup/docs)
-- [ ] Merge `desi-DLAGP.py` + `desi-DLAGP-highz.py` with `--highz` flag
 - [ ] Merge `combine_dlakibo.py` + `combine_dlamocks.py` with `--mock` flag
 - [ ] `DLAHolder` refactor: separate model-init from inference dispatch
 - [ ] `effective_optical_depth.py`: add explicit link to Turner+2024 τ₀/β values
