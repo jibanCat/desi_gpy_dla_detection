@@ -436,3 +436,41 @@ backward-compat alias.
 - Sub-DLA / LLS prior boundary fix (orthogonal to τ-EB; H4 in synthesis)
 - Cost gap closure (1M QSOs = ~340 node-hours, target ~50; 6× over)
 - Long-run sampler (H6); non-Gaussian residuals (H7); retrained-GP (H8)
+
+## 15. State as of 2026-05-19 (post PR #6/#8)
+
+Three more PRs have landed (or opened) since §14. Authoritative current
+state lives in `docs/paper_figures.md` (the canonical figure catalogue,
+organized by target paper, with a PR #3 → #8 progress log) and the
+2026-05-19 memory handoff.
+
+| PR | Status | What it shipped |
+|----|--------|-----------------|
+| #6 — `claude/debug-trainer-from-v1` | **MERGED** 2026-05-16 into `desi_y3` | Rebuild GP trainer from the v1 reference: fixes a `dataset.py::load_preprocessed_h5` mask-before-normalize ordering bug (up to 1000× threshold error on marginal-median spectra); 6 Step-C 2LPT models + 2 post-reorder LOA models; `loa_no_dla_no_bal_wide_m_normmask_3000iter` validated on real LOA — 96% DLA recovery at p_DLA > 0.5. See `docs/notes/2026-05-15_dla_recovery_real_loa/findings.md`. |
+| #7 — `production_533` | OPEN, **DRAFT** | Monte-Carlo log-evidence `−log(N)` bias fix (`+log(N)` added at 7 downstream sites) — A/B: −1.6 pp purity / +4.9 pp completeness. Also `DLAFLAG` split into inference vs postprocess bit groups, `tools/postprocess/add_dla_flags.py`, and production-knob sweeps on London-0 5k (MAX_LAMBDA=1250 chosen, MIN_Z_SEPARATION 3000 km/s kept, NHI prior ceiling extended to 22.5, 2-way model topology settled). |
+| #8 — `claude/loa-dla-stacking` | **MERGED** 2026-05-19 into `desi_y3` (merge `0609925`) | Real-LOA absorber metal-line stacking + masked-spline pseudo-continuum + marginal-purity (`--purity {high,marginal}` / `--compare-purity`) operating-point test. `examples/stack_real_loa_dlas.py` + 20 tests. Scientific verdict: **LLS detections real for log N_HI 18–19** (CIV 1548 ≈ 35σ vs an empirical null, flat in z-scrambled control); Lyman-limit break depth rises with N_HI. Marginal P_DLA ∈ [0.5, 0.7] stack is sound. |
+
+**Two unmerged design memos** were landed under `docs/notes/` in the
+2026-05-19 housekeeping pass — Tier 1 #1 Phase 2 adaptive-importance
+joint inference (`2026-05-04_joint_inference_design.md`, rev 2 awaiting
+sign-off) and Tier 2 #2b smooth multi-DLA velocity-separation prior
+(`2026-05-03_multidla_velocity_separation_prior_design.md`, Option A
+approved).
+
+**Test fixtures convention** (set up by PR #6): `tests/fixtures/` holds
+large local-only fixtures regenerable from the trainer —
+`2lpt_frozen/training_set.{mat,npz}` (`build_2lpt_frozen_test_fixture.py`),
+`dr16_pca_init.npz` + `dr16_phase2_cache/` (`build_data_cache()`).
+`*.npz`/`*.h5` under `tests/` are un-ignored via `!tests/**` exceptions
+so smaller fixtures *can* be tracked when needed.
+
+**Open items** (2026-05-19 handoff):
+- **Paper 1 headline figures** are the biggest next deliverable —
+  dN/dX, f(N,z), Ω_HI, α(z) completeness, method schematic, mock
+  validation, single-production-model μ/ω/correlation/eigenspectra.
+  They live inside `CDDF_analysis/` + `notebooks/CDDF_*.ipynb`
+  and must be exported. See `docs/paper_figures.md` → "Paper 1".
+- **τ-EB population-scale bias-closure figure** (Paper 2) — currently
+  only tables in `docs/notes/2026-04-30_tau_eb_phase_b_5k_2lpt.md`.
+- **Stacking follow-ups**: push the [17.2, 18.5) low-N_HI tail,
+  bootstrap-over-sightlines error bars, optional EW table.
