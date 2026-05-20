@@ -311,7 +311,7 @@ When starting on GreatLakes, work through this before running anything:
 
 ## 11. Known Issues / Gotchas
 
-- **`NUM_FOEST_LINES`** typo in `slurm/run_loa_desi_y3_learned.sh` (missing R) — doesn't break anything since the env var fallback works, but note for new scripts use `NUM_FOREST_LINES`
+- **`NUM_FOREST_LINES` was previously typo'd `NUM_FOEST_LINES`** across six `run_*.sh` drivers (missing R). The submit-side fallback defaults to **31**, not 3 — so production LOA + Saclay runs that went through these drivers were *silently using 31 Lyman lines, not the intended 3*, before the 2026-05-20 housekeeping pass. Existing catalogs on `/pscratch` reflect 31; future runs will use 3. Don't read older catalogs as if produced at the §6-documented setting.
 - **Saclay mock subdirs differ**: mock-0 uses `juraLy8-124/`, mock-1 uses `jura-124/`
 - **`model_posteriors` column layout differs by mode**:
   - `single_absorber_model=False`: `[:,0]`=Null, `[:,1]`=SubDLA, `[:,2]`=1DLA, `[:,3]`=2DLA, `[:,4]`=3DLA
