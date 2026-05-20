@@ -40,7 +40,7 @@
 
 | Path | Purpose | Backend | Status |
 |---|---|---|---|
-| `train_gp.py` | Streamlined v2 CLI; loads `gp_interp_trainset.h5`, calls `trainer_v2.train_v2`. The current production GP trainer for DESI on NERSC/GreatLakes. | `training.trainer_v2` (broken — autograd + randn-init) | **Broken — do not run for production until rebuilt.** |
+| `train_gp.py` | Streamlined v2 CLI; loads `gp_interp_trainset.h5`, calls `trainer_v2.train_v2`. Was intended as the v2 production CLI for DESI on NERSC/GreatLakes; **superseded** by `tests/phase2_train_desi.py` (next row) until the autograd + randn-init-M regression is resolved. | `training.trainer_v2` (broken — autograd + randn-init) | **Broken — do not run for production until rebuilt.** |
 | `gpy_dla_detection/training_v3/desi_learn_qsos_model.py` | Frozen v1 reference. Wraps `learn_qso_model.Trainer` (per-spectrum loop). | v1 | Kept under `training_v3/` for diff hygiene; root copy removed 2026-05-20. |
 | `tests/phase2_train_dr16.py` | The **corrected** trainer (PR #6 deliverable). PCA init + hand-coded gradient via `training_v3/objective_vectorized.py` + Adam. CPU only. Hardcoded to MATLAB DR16 paths. | training_v3 (vectorized, hand-coded grad) | **Production-grade math.** Used for the MATLAB DR16 cross-validation. To be ported to DESI as `phase2_train_desi.py` (Step C). |
 
