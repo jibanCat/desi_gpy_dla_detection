@@ -12,12 +12,14 @@ reference at the moment this directory was created:
 |---|---|---|
 | `learn_qso_model.py` | `gpy_dla_detection/learn_qso_model.py` | model class + PCA init + Trainer |
 | `objective.py` | `gpy_dla_detection/objective.py` | hand-coded analytic-gradient loss |
-| `desi_learn_qsos_model.py` | `desi_learn_qsos_model.py` (repo root) | DESI-specific entry point + prepare_data |
+| `desi_learn_qsos_model.py` | `desi_learn_qsos_model.py` (repo root; removed 2026-05-20 — see git history) | DESI-specific entry point + prepare_data |
 | `__init__.py` | (new, empty) | package marker |
 
 The original v1 files at the source paths above are **frozen** — not
 modified by this PR. They serve as the diff reference for any change
-landed here.
+landed here. (The root `desi_learn_qsos_model.py` was removed in the
+2026-05-20 housekeeping pass; the verbatim copy here is now the sole
+in-tree v1 reference.)
 
 The broken v2 modules at `gpy_dla_detection/training/{model_v2,
 objective_v2, trainer_v2}.py` are also frozen (kept for diff inspection

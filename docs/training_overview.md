@@ -20,8 +20,12 @@
   `docs/notes/2026-05-06_trained_corrected_v2_models_validation/REPORT.md`
   for the regression. **Step C of PR #6 will replace this with a DESI
   port of `phase2_train_dr16.py` (`tests/phase2_train_desi.py`).**
-- **DO NOT** invoke `desi_learn_qsos_model.py` for new work — legacy
-  v1 entry point, kept only as a frozen reference.
+- **DO NOT** invoke the v1 frozen reference
+  `gpy_dla_detection/training_v3/desi_learn_qsos_model.py` for new
+  work — it is a frozen reference copy of the legacy MATLAB-faithful
+  trainer (per-spectrum loop, hand-coded gradients) used only for
+  diff hygiene during PR #6. New work goes through
+  `tests/phase2_train_desi.py`.
 
 ## Glossary of "v" generations
 
@@ -37,7 +41,7 @@
 | Path | Purpose | Backend | Status |
 |---|---|---|---|
 | `train_gp.py` | Streamlined v2 CLI; loads `gp_interp_trainset.h5`, calls `trainer_v2.train_v2`. The current production GP trainer for DESI on NERSC/GreatLakes. | `training.trainer_v2` (broken — autograd + randn-init) | **Broken — do not run for production until rebuilt.** |
-| `desi_learn_qsos_model.py` | Legacy v1 entry point. Wraps `learn_qso_model.Trainer` (per-spectrum loop). | v1 | Deprecated. Kept as reference; will be removed end-of-PR. |
+| `gpy_dla_detection/training_v3/desi_learn_qsos_model.py` | Frozen v1 reference. Wraps `learn_qso_model.Trainer` (per-spectrum loop). | v1 | Kept under `training_v3/` for diff hygiene; root copy removed 2026-05-20. |
 | `tests/phase2_train_dr16.py` | The **corrected** trainer (PR #6 deliverable). PCA init + hand-coded gradient via `training_v3/objective_vectorized.py` + Adam. CPU only. Hardcoded to MATLAB DR16 paths. | training_v3 (vectorized, hand-coded grad) | **Production-grade math.** Used for the MATLAB DR16 cross-validation. To be ported to DESI as `phase2_train_desi.py` (Step C). |
 
 ## 2. Trainer libraries
@@ -162,7 +166,11 @@ produces the broken model.
 - `gpy_dla_detection/training/{model_v2,objective_v2,trainer_v2}.py`
   — the broken trainer. Once the corrected `phase2_train_desi.py` is
   in production, the v2 modules can be deprecated.
-- `desi_learn_qsos_model.py` (legacy entry point).
+
+**Removed (2026-05-20 housekeeping):**
+- Root `desi_learn_qsos_model.py` (legacy entry point) — replaced by
+  `tests/phase2_train_desi.py`; v1 frozen reference still lives at
+  `gpy_dla_detection/training_v3/desi_learn_qsos_model.py`.
 
 **Keep (do not delete):**
 - `gpy_dla_detection/learn_qso_model.py`, `objective.py` — frozen v1 reference.
