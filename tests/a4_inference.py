@@ -74,8 +74,10 @@ def _save_h5(lane, params):
 
     Does NOT write normalization_min/max_lambda — DLAHolder falls back to
     the preset's [1425, 1475] window which is what v1 production uses. The
-    A.3 trainer didn't apply per-spectrum normalize (matching v1
-    desi_learn_qsos_model.py:97-104 which has it commented out), so the
+    A.3 trainer didn't apply per-spectrum normalize (matching the v1
+    frozen reference
+    gpy_dla_detection/training_v3/desi_learn_qsos_model.py:97-104,
+    which has it commented out), so the
     inference will normalize while training did not. The resulting
     flux-scale mismatch on canonical TID is the documented mean-flux
     issue addressed at inference time by τ-EB (PR #5; out of scope here).

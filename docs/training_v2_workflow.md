@@ -1,10 +1,27 @@
 # Streamlined GP training (v2)
 
+> ⚠️ **WARNING — the v2 trainer described below is broken.**
+> The autograd + randn-init-M combination in
+> `gpy_dla_detection/training/{model_v2,objective_v2,trainer_v2}.py`
+> caused the **2026-05-06 _corrected retrains regression** (all six
+> retrains miss the canonical TID; see
+> `docs/notes/2026-05-06_trained_corrected_v2_models_validation/REPORT.md`).
+> Treat this document as **historical reference**.
+>
+> The current production trainer is `tests/phase2_train_desi.py` (the
+> PR #6 corrected trainer — PCA init + hand-coded gradient via
+> `training_v3/objective_vectorized.py` + Adam). See
+> **`docs/training_overview.md` §1** for the live trainer map and
+> entry points. The root `desi_learn_qsos_model.py` was removed in
+> the 2026-05-20 housekeeping pass; the v1 frozen reference lives at
+> `gpy_dla_detection/training_v3/desi_learn_qsos_model.py`.
+
 End-to-end workflow for retraining the QSO emission GP, replacing the
-legacy ``desi_learn_qsos_model.py`` + ``learn_qso_model.Trainer`` stack.
-The legacy code remains in place; v2 lives under
-``gpy_dla_detection/training/`` and is a drop-in replacement at the
-data-tensor and HDF5-output level.
+legacy ``desi_learn_qsos_model.py`` + ``learn_qso_model.Trainer`` stack
+(both now superseded — see warning above). The v2 code lives under
+``gpy_dla_detection/training/`` and was intended to be a drop-in
+replacement at the data-tensor and HDF5-output level; the regression
+above blocks its production use.
 
 ## Why v2
 

@@ -109,7 +109,7 @@ The key files are:
 
 ## Step 1: Run DLA detection on London mock spectra
 
-The production DESI Y3 run uses these flags (derived from `slurm/run_referece_mock_desi_y3_learned.sh`):
+The production DESI Y3 run uses these flags (derived from `slurm/run_reference_mock_desi_y3_learned.sh`):
 
 ```bash
 MOCKDIR="/path/to/london/mock-0/jura-124"

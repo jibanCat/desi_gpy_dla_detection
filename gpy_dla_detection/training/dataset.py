@@ -19,9 +19,9 @@ Two HDF5 schemas supported:
 Filters by z-range, SNR and optional QSO catalog (``TARGETID`` join).
 
 Computes ``lya_1pzs`` per spectrum from the rest wavelengths and z_qso —
-this duplicates the formula used in
-``gpy_dla_detection/desi_learn_qsos_model.py`` so that v2 is a
-drop-in replacement at the data-tensor level.
+this duplicates the formula used in the v1 frozen reference
+``gpy_dla_detection/training_v3/desi_learn_qsos_model.py`` so that v2
+is a drop-in replacement at the data-tensor level.
 
 The HDF5 is expected to have already been **interpolated to a common
 rest-wavelength grid** by the existing preload pipeline
