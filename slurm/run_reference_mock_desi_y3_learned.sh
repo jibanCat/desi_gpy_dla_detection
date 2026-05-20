@@ -11,7 +11,7 @@ for (( START_INDEX=0; START_INDEX<=MAX_START_INDEX; START_INDEX+=STEP )); do
     # Print the command to be executed for reference
     echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/zcat.fits\",\
 MOCKDIR=\"/global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/\",\
-OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-gpdla-20251001-y3-learned-epoch920-filter-subdla-nhi191/\",\
+OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-gpdla-20250930-y3-learned-epoch920-filter-single-nhi198/\",\
 LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5\",\
 DLA_SAMPLES_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/data/dr12q/processed/dla_samples_a03_100000.mat\",\
 SUB_DLA_SAMPLES_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/data/dr12q/processed/subdla_samples_a03_191_200_100000.mat\",\
