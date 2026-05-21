@@ -21,11 +21,17 @@
 # Then analyse the logs under $SWEEP_OUT (see the companion analysis the
 # driver runs afterward).
 
+# NB: 32 single-cpu tasks (not --exclusive). --exclusive whole-node
+# requests sat in PD with "Reserved for maintenance" (overlap with
+# class/retirement node holds); an explicit 32-core request schedules
+# immediately, matches the production sizing, and lets srun --exact
+# carve out variable-width steps (up to -c16) from the 32 cpus.
 #SBATCH -A cavestru0
 #SBATCH -p standard
 #SBATCH -N 1
-#SBATCH --exclusive
-#SBATCH --mem=0
+#SBATCH -n 32
+#SBATCH -c 1
+#SBATCH --mem=64G
 #SBATCH -t 01:30:00
 #SBATCH -J gl_par_sweep
 #SBATCH -o slurm/greatlakes/production/logs/par_sweep_%j.log
@@ -107,7 +113,8 @@ run_concurrency () {
     total=$(cat "$base"/srun_*/run.log 2>/dev/null | grep -c 'time spent')
     echo "[sweep]   N=$N W=$W aggregate ~$total spectra in ${PHASE_B_SECS:-420}s across $N srun's"
 }
-run_concurrency 9 4
+# Both fit the 32-core allocation (8*4=32, 4*8=32).
+run_concurrency 8 4
 run_concurrency 4 8
 
 echo "[sweep] done $(date). results under $SWEEP_OUT"
