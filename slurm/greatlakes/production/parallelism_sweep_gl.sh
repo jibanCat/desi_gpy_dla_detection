@@ -73,7 +73,11 @@ common_args=(
     --min_lambda 911.75 --max_lambda 1250 --dlambda 0.15 --k 30
     --num_dla_samples 50000 --num_subdla_samples 100000
     --max_noise_variance 9 --num_forest_lines 3 --num_lines 3
+    --enable_tau_eb 1 --tau_eb_objective null --early_stop_mode baseline
 )
+# NB: τ-EB ON (null objective) matches the production best baseline — and it
+# adds a per-spectrum τ-grid search, so measuring throughput WITHOUT it would
+# understate production per-spectrum cost. Keep it on for representative timing.
 
 # --- Phase A: latency sweep (sequential, isolated) ---------------------------
 echo "[sweep] === Phase A: latency vs MAX_WORKERS (level2 0..2, ${PHASE_A_SECS:-300}s each) ==="

@@ -84,6 +84,13 @@ FIGURE_DIR="${FIGURE_DIR:-${OUTDIR}/figures}"
 FILTER_LOW_LIKELIHOOD="${FILTER_LOW_LIKELIHOOD:-1}"
 SINGLE_ABSORBER_MODEL="${SINGLE_ABSORBER_MODEL:-0}"
 
+# τ-EB (production "best baseline" = ON with the null objective; runbook
+# §10.1 flags that the NERSC submit scripts silently DROP these, so we
+# forward them explicitly here). EARLY_STOP_MODE=baseline is the prod choice.
+ENABLE_TAU_EB="${ENABLE_TAU_EB:-1}"
+TAU_EB_OBJECTIVE="${TAU_EB_OBJECTIVE:-null}"
+EARLY_STOP_MODE="${EARLY_STOP_MODE:-baseline}"
+
 START_INDEX="${START_INDEX:-0}"
 END_INDEX="${END_INDEX:-62}"
 STEP="${STEP:-2}"
@@ -148,6 +155,9 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
             --max_noise_variance "$MAX_NOISE_VARIANCE" \
             --num_forest_lines "$NUM_FOREST_LINES" \
             --num_lines "$NUM_LINES" \
+            --enable_tau_eb "$ENABLE_TAU_EB" \
+            --tau_eb_objective "$TAU_EB_OBJECTIVE" \
+            --early_stop_mode "$EARLY_STOP_MODE" \
             --figure_dir "$FIGURE_DIR" \
             --level2_start "$LEVEL2_START" \
             --level2_end "$LEVEL2_END" &
