@@ -1,3 +1,83 @@
+# Handoff — 2026-05-21 (GreatLakes — GL production-replication scaffold)
+
+> Cross-cluster session on GreatLakes (account `cavestru0`). Goal: be able
+> to run the PR #7 production config on GL against the mock spectra
+> mirrored here, **without touching the NERSC pipeline** — additive
+> drivers in a new folder. Also merged the PR #9 housekeeping branch into
+> `desi_y3` (separate from this branch). Full detail in the auto-memory
+> handoff `project_session_handoff_2026_05_21`.
+
+## What landed on `production_533` this session
+
+New folder **`slurm/greatlakes/production/`** (additive only — sources
+`slurm/configs/_base.env`, never edits it):
+
+| File | Role |
+|---|---|
+| `_base_gl.env` | GL overlay: repoints data paths, GL SLURM defaults |
+| `london0_gl_v1.env` | London-0 mock, production-baseline flavour config |
+| `submit_desi_mock_gl.sh` | GL inner sbatch (conda gpdla + libcerf; `srun --exact`; forwards τ-EB) |
+| `launch_gl.sh` | GL outer driver (analog of `slurm/launch.sh`) |
+| `parallelism_sweep_gl.sh` + `analyze_sweep.py` | per-spectrum-cost vs MAX_WORKERS sweep |
+| `README.md` | usage + ambiguities |
+
+Commits: `6848707` → `875ab9a` → `a07bda3` → `cca1c89` → `d998b15` →
+`5f4b160`. Also `cca1c89`: `examples/inspect_loa_spectra.py` now honors
+`GPDLA_ALLOWED_OUT_PREFIXES` (env) so it runs on GL `/scratch`.
+
+## Two gotchas the GL scripts fix (both from runbook §10.1)
+
+1. **τ-EB is silently dropped** by the NERSC `submit_desi_{mock,loa}.sh`
+   (they don't forward `--enable_tau_eb`/`--tau_eb_objective`/`--early_stop_mode`).
+   "τ-EB null" in the V1 headline means **ENABLE_TAU_EB=1, objective=null**
+   (τ-EB ON), not off. `submit_desi_mock_gl.sh` forwards all three.
+2. **srun steps serialize** without `--exact` — observed 1/8 active,
+   28/32 cores idle but billed. Fixed with `srun --exact --overlap`.
+
+## Production "best baseline" used (matches runbook 2026-05-19 + PW 100k)
+
+model `2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5`, single-absorber,
+MAX_DLAS=3, MAX_LAMBDA=1250, MIN_LAMBDA=911.75, MIN_Z_SEP=3000, FILTER=1,
+τ-EB ON/null, EARLY_STOP baseline, +log(N) ON, **PW 100k /
+`pw_samples_a3_172_225_100000.mat` (NHI [17.2, 22.5])**, p_DLA=0.99 eval.
+Expected P/C **~0.84–0.85 / ~0.90–0.91** — the 0.8357/0.8978 headline was
+the *different* PW 50k / [17.2,22.0] cell, so the GL run doubles as the
+100k re-measurement under the fixed matcher.
+
+## GL data layout
+
+- Model + outputs: `/scratch/cavestru_root/cavestru0/mfho/...`.
+- Catalogs + sample grids: copied to
+  `/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection/data/`
+  (off Turbo — maintenance-safe; under our allocation — purge-safe).
+- Mock spectra: still on Turbo `/nfs/turbo/.../mocks/` (too big to copy).
+- **`/home` is Turbo-backed**, so no fully Turbo-free path exists.
+
+## In flight / open
+
+- **Sweep `50587849`** running (gl3256, started 14:19 after the Turbo
+  maintenance window — ARC incident, ERT 13:00, slipped). Output
+  `/scratch/cavestru_root/cavestru0/mfho/gl_parallelism_sweep_20260521/`.
+  Next session: `sacct -j 50587849`, then
+  `python slurm/greatlakes/production/analyze_sweep.py <out> 32` → pick
+  MAX_WORKERS/packing → bake into the configs.
+- **⚠ Window-sizing unsolved**: one level2 slice ≈ **1081 spectra**
+  processed serially per srun ⇒ ~4.5–9 h/slice, risks the 8 h `-t`. Fix
+  (longer `-t` / more workers per srun / finer slicing) before the run.
+- LoaArchive toolchain smoke PASSED on the login node during maintenance
+  (`gl_loaarchive_smoke_20260521/`).
+- Then: small re-smoke → 5k production-baseline run → P/C eval vs
+  ~0.84–0.85/0.90–0.91.
+
+## Caveats
+
+- ⚠ **Active NERSC jobs run on `production_533`** — additive commits
+  only, no force-push / rebase.
+- PR #7 itself is still DRAFT; the GL replication is a side-validation,
+  not a NERSC-side change.
+
+---
+
 # Handoff — 2026-05-17 (login node)
 
 > Consolidation session. The 2026-05-15/16 sessions ran a large batch of
