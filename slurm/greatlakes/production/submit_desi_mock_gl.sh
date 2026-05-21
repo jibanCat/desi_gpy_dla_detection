@@ -103,7 +103,12 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
     LEVEL2_END=$((i + STEP))
     echo "[gl] level2 ${LEVEL2_START}..${LEVEL2_END}"
 
-    srun -N 1 -n 1 -c 4 \
+    # --exact + --overlap so the backgrounded srun steps PACK onto the
+    # allocation (each takes exactly 1 task / SRUN_CPUS cpus) and run
+    # concurrently. Without --exact the first srun grabs the whole
+    # allocation and the rest serialize (observed in job 50565955:
+    # 1/8 steps active, 28/32 cores idle but billed).
+    srun --exact --overlap -N 1 -n 1 -c "${SRUN_CPUS:-4}" \
         --output="${OUTDIR}/logs/mock_run_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" \
         --error="${OUTDIR}/logs/error_mock_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" \
         python desi-DLAGP.py \
