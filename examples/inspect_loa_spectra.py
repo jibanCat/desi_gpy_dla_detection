@@ -150,10 +150,17 @@ def _load_truth_index(truth_path: str | None):
 # ---------------------------------------------------------------------------
 # Allowed output roots — refuse otherwise
 # ---------------------------------------------------------------------------
+# NERSC defaults; extra roots (e.g. GreatLakes /scratch) can be appended via
+# the colon-separated env var GPDLA_ALLOWED_OUT_PREFIXES so the same script
+# runs on other clusters without editing this list.
 ALLOWED_OUT_PREFIXES = (
     "/pscratch/sd/j/jibancat/",
     "/global/homes/j/jibancat/",
     "/global/cfs/cdirs/desicollab/users/jibancat/",
+) + tuple(
+    p if p.endswith("/") else p + "/"
+    for p in os.environ.get("GPDLA_ALLOWED_OUT_PREFIXES", "").split(":")
+    if p
 )
 
 
