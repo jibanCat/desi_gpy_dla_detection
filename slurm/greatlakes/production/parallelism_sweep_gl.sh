@@ -52,7 +52,9 @@ echo "[sweep] node=$(hostname) cores=$NCORES job=$SLURM_JOB_ID start=$(date)"
 SWEEP_OUT="/scratch/cavestru_root/cavestru0/mfho/gl_parallelism_sweep_$(date +%Y%m%d)"
 mkdir -p "$SWEEP_OUT"
 
-DATA_ROOT=/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection
+# Catalogs + samples on cavestru scratch (Turbo-independent). Mock spectra
+# still on Turbo (MOCKDIR) — the sweep needs Turbo back to read them.
+DATA_ROOT=/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection
 MOCKDIR=/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/london/qq_desi_y3/v5.9.5/mock-0/jura-124
 MODEL=/scratch/cavestru_root/cavestru0/mfho/phase2_desi/2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5
 
@@ -64,14 +66,14 @@ common_args=(
     --catalog_name "$DATA_ROOT/data/dr12q/processed/catalog.mat"
     --los_catalog "$DATA_ROOT/data/dla_catalogs/dr9q_concordance/processed/los_catalog"
     --dla_catalog "$DATA_ROOT/data/dla_catalogs/dr9q_concordance/processed/dla_catalog"
-    --dla_samples_file "$DATA_ROOT/data/dr12q/processed/pw_samples_a3_172_220_50000.mat"
+    --dla_samples_file "$DATA_ROOT/data/dr12q/processed/pw_samples_a3_172_225_100000.mat"
     --sub_dla_samples_file "$DATA_ROOT/data/dr12q/processed/subdla_samples_a03_191_200_100000.mat"
     --min_z_separation 3000.0 --prev_tau_0 0.00246 --prev_beta 3.62
     --max_dlas 3 --plot_figures 0 --filter_low_likelihood 1 --single_absorber_model 1
     --batch_size 1250 --loading_min_lambda 910 --loading_max_lambda 1550
     --normalization_min_lambda 1425 --normalization_max_lambda 1475
     --min_lambda 911.75 --max_lambda 1250 --dlambda 0.15 --k 30
-    --num_dla_samples 50000 --num_subdla_samples 100000
+    --num_dla_samples 100000 --num_subdla_samples 100000
     --max_noise_variance 9 --num_forest_lines 3 --num_lines 3
     --enable_tau_eb 1 --tau_eb_objective null --early_stop_mode baseline
 )
