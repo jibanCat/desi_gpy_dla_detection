@@ -11,15 +11,20 @@
 #   - Env: conda activate gpdla + LD_LIBRARY_PATH for libcerf.
 #     No NERSC `desi_environment.sh main` (which doesn't exist on GL).
 #   - --output / --error paths live under OUTDIR/logs/ (caller mkdir'd).
-#   - parallelism: GL "standard" partition gives 36 cores/node. We launch
-#     ${NTASKS:-32} background srun jobs (each its own python process); each
-#     uses MAX_WORKERS inner threads. Mirrors NERSC ntasks=32, cpus-per-task=8.
+#   - Parallelism: GL standard nodes are 36 cores (≥28). We request 8 srun
+#     tasks × 4 CPUs = 32 cores per sbatch (fits any ≥32-core node, leaves
+#     4 idle for OS overhead). Each srun runs ONE python on ONE level2-
+#     slice with MAX_WORKERS=4 inner threads, no oversubscription. The
+#     level2 loop emits ~31 background srun's per window; 8 at a time
+#     execute concurrently. Production NERSC pattern is 32 × 8 = 256
+#     cores per sbatch — GL is downsized ~8× per node but parallelism
+#     across multiple sbatch's (5 windows = 5 sbatches) recovers.
 
 #SBATCH -A cavestru0
 #SBATCH -p standard
 #SBATCH -N 1
-#SBATCH -n 32
-#SBATCH -c 1
+#SBATCH -n 8
+#SBATCH -c 4
 #SBATCH --mem=64G
 #SBATCH -t 08:00:00
 #SBATCH -J dla_inference_gl
@@ -98,7 +103,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
     LEVEL2_END=$((i + STEP))
     echo "[gl] level2 ${LEVEL2_START}..${LEVEL2_END}"
 
-    srun -N 1 -n 1 -c 1 \
+    srun -N 1 -n 1 -c 4 \
         --output="${OUTDIR}/logs/mock_run_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" \
         --error="${OUTDIR}/logs/error_mock_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" \
         python desi-DLAGP.py \
