@@ -11,20 +11,27 @@
 #   - Env: conda activate gpdla + LD_LIBRARY_PATH for libcerf.
 #     No NERSC `desi_environment.sh main` (which doesn't exist on GL).
 #   - --output / --error paths live under OUTDIR/logs/ (caller mkdir'd).
-#   - Parallelism: GL standard nodes are 36 cores (≥28). We request 8 srun
-#     tasks × 4 CPUs = 32 cores per sbatch (fits any ≥32-core node, leaves
-#     4 idle for OS overhead). Each srun runs ONE python on ONE level2-
-#     slice with MAX_WORKERS=4 inner threads, no oversubscription. The
-#     level2 loop emits ~31 background srun's per window; 8 at a time
-#     execute concurrently. Production NERSC pattern is 32 × 8 = 256
-#     cores per sbatch — GL is downsized ~8× per node but parallelism
-#     across multiple sbatch's (5 windows = 5 sbatches) recovers.
+#   - Parallelism: GL standard nodes are 36 cores (≥28). We request 2 srun
+#     tasks × 16 CPUs = 32 cores per sbatch (fits any ≥32-core node, leaves
+#     4 idle for OS overhead). Each srun runs ONE python on ONE level2-slice
+#     with MAX_WORKERS=16 inner worker processes, BLAS pinned to 1 thread.
+#     This N=2 × W=16 packing was the throughput OPTIMUM in a pinned
+#     concurrency sweep (jobs 50635651/50638321): 32.6 spec/min — 3× the old
+#     N=8 × W=4 packing and ~100× the single-spectrum-latency pick (N=32 ×
+#     W=1 = 0.3 spec/min). Why N=2 wins: two spectra in flight overlap each
+#     other's serial (τ-EB / load / resample) and parallel phases, while only
+#     2 distinct GP working sets keep memory-bandwidth/cache contention low;
+#     N≥4 thrashes the memory subsystem. The level2 loop emits ~31 background
+#     srun's per window; 2 at a time execute concurrently, so size
+#     OUTER_WINDOW (or -t) so the window fits the wall limit (~67 min per
+#     2-file slice at ~3.7 s/spec). Production NERSC pattern is 32 × 8 = 256
+#     cores per sbatch; GL recovers via parallelism across multiple sbatch's.
 
 #SBATCH -A cavestru0
 #SBATCH -p standard
 #SBATCH -N 1
-#SBATCH -n 8
-#SBATCH -c 4
+#SBATCH -n 2
+#SBATCH -c 16
 #SBATCH --mem=64G
 #SBATCH -t 08:00:00
 #SBATCH -J dla_inference_gl
@@ -33,6 +40,18 @@
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
+
+# --- Pin BLAS threads to 1 (config-only; dla_gp.py is NOT touched) -----------
+# numpy here is OpenBLAS. Without this, each MAX_WORKERS process spawns its own
+# BLAS thread pool (~2 threads), so W workers => ~2*W threads thrashing the
+# allocated cores. Measured A/B (job 50635346, gl3010, one spectrum, identical
+# p=0.9999): W=4 14.6s->4.0s (3.7x), W=8 25.0s->2.8s (8.9x) purely by pinning.
+# One BLAS thread per worker => the ProcessPoolExecutor over QMC samples is the
+# only parallelism and it scales cleanly. (See memory: gl-blas-oversubscription.)
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
 
 # --- conda + libcerf runtime --------------------------------------------------
 GL_CONDA_SETUP="${GL_CONDA_SETUP:-/sw/pkgs/arc/mamba/py3.11/etc/profile.d/conda.sh}"
@@ -115,7 +134,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
     # concurrently. Without --exact the first srun grabs the whole
     # allocation and the rest serialize (observed in job 50565955:
     # 1/8 steps active, 28/32 cores idle but billed).
-    srun --exact --overlap -N 1 -n 1 -c "${SRUN_CPUS:-4}" \
+    srun --exact --overlap -N 1 -n 1 -c "${SRUN_CPUS:-${MAX_WORKERS}}" \
         --output="${OUTDIR}/logs/mock_run_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" \
         --error="${OUTDIR}/logs/error_mock_${LEVEL2_START}-${LEVEL2_END}_%j_%t.log" \
         python desi-DLAGP.py \
