@@ -65,10 +65,11 @@ Lyman_series["kamble20"] = {
     #'Ly5'     : { 'line':937.8035, 'A':0.00554/53.36202, 'B':3.182 },
 }
 
-# optical depth parameters from Turner et al. (2024)
-# arxiv 2405.06743
+# optical depth parameters from Turner et al. (2024) — LyCAN/DESI Y1, arxiv 2405.06743
+# Lya slope γ=3.62 (corrected 2026-05-22 from a Kamble+2020 legacy B=3.182).
+# NOTE: not used by the live inference path (which uses prev_beta from config).
 Lyman_series["turner24"] = {
-    "Lya": {"line": Lya_line, "A": 0.00246, "B": 3.182},
+    "Lya": {"line": Lya_line, "A": 0.00246, "B": 3.62},
     "Lyb": {"line": Lyb_line, "A": 0.00246 / 5.2615, "B": 3.62},
     "Ly3": {"line": 972.537, "A": 0.00246 / 14.356, "B": 3.62},
     "Ly4": {"line": 949.7431, "A": 0.00246 / 29.85984, "B": 3.62},

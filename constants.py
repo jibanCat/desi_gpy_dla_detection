@@ -110,15 +110,17 @@ Lyman_series["kamble20"] = {
     #'Ly5'     : { 'line':937.8035, 'A':0.00554/53.36202, 'B':3.182 },
 }
 
-# optical depth parameters from Turner et al. (2024) — DESI Year 1
-# Paper: "The Lyman-alpha Forest Power Spectrum and DESI Y1 Optical Depth"
-# arxiv: 2405.06743
-# τ₀ = (2.46 ± 0.14) × 10⁻³, β = 3.62 ± 0.04
-# Note: Lya uses B=3.182 (Kamble+2020 value) rather than 3.62.
-# TODO: verify whether Turner+2024 measures separate β for Lya vs higher lines,
-#       or whether B=3.182 for Lya is a legacy value that should be updated to 3.62.
+# optical depth parameters from Turner et al. (2024) — DESI Year 1 / LyCAN
+# Paper: "New measurements of the Lyman-alpha forest continuum and effective
+#         optical depth with LyCAN and DESI Y1 data", arxiv: 2405.06743
+# τ₀ = (2.46 ± 0.14) × 10⁻³, γ = 3.62 ± 0.04 (single slope; metal- and
+# continuum-bias corrected). Resolved 2026-05-22 (verified vs arXiv:2405.06743):
+# Turner+2024 measures a SINGLE Lya slope γ=3.62 — the previous B=3.182 here was
+# a Kamble+2020 legacy value and is corrected to 3.62. NOTE: this Lyman_series
+# table is NOT used by the live inference path (inference uses
+# effective_optical_depth with prev_beta from config = 3.62); kept for analysis.
 Lyman_series["turner24"] = {
-    "Lya": {"line": Lya_line, "A": 0.00246, "B": 3.182},
+    "Lya": {"line": Lya_line, "A": 0.00246, "B": 3.62},
     "Lyb": {"line": Lyb_line, "A": 0.00246 / 5.2615, "B": 3.62},
     "Ly3": {"line": 972.537, "A": 0.00246 / 14.356, "B": 3.62},
     "Ly4": {"line": 949.7431, "A": 0.00246 / 29.85984, "B": 3.62},

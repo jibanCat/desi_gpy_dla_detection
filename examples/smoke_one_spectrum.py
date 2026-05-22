@@ -67,7 +67,7 @@ PRESETS: dict[str, ModelPreset] = {
         k=20,
         min_lambda=910.75,
         max_lambda=1216.75,
-        prev_tau_0=0.0023,   # Kamble+2020 used in demo
+        prev_tau_0=0.0023,   # Kim+2007 (arXiv:0711.1862); NOT Kamble (=0.00554/3.182)
         prev_beta=3.65,
         num_forest_lines=3,  # demo uses 3
     ),
