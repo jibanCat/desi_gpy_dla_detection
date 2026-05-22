@@ -832,10 +832,13 @@ if __name__ == "__main__":
         help="Minimum redshift separation for DLA models.",
     )
     parser.add_argument(
-        "--prev_tau_0", type=float, default=0.00554, help="Previous value for tau_0."
+        # Turner+2024 (DESI Y1) mean-flux defaults. Were 0.00554/3.182 (Kamble+2020) —
+        # a mismatched default for the Turner-trained DESI models; production always
+        # overrides via config (PREV_TAU_0/PREV_BETA), so this is a safety fix only.
+        "--prev_tau_0", type=float, default=0.00246, help="Previous value for tau_0 (Turner+2024)."
     )
     parser.add_argument(
-        "--prev_beta", type=float, default=3.182, help="Previous value for beta."
+        "--prev_beta", type=float, default=3.62, help="Previous value for beta (Turner+2024)."
     )
     parser.add_argument(
         "--max_dlas", type=int, default=3, help="Maximum number of DLAs to model."
