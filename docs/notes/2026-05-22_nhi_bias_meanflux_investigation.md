@@ -16,7 +16,7 @@
 | NUM_FOREST_LINES (training=31 vs inference=3) | controlled τEB-off NF=3 vs NF=31, same slice: +0.044 vs +0.046 | **Identical; not it** (higher Lyman lines' absorbers are beyond the QSO ⇒ zeroed in the forest, so GP-3line ≡ GP-31line ≡ Turner-Lyα) |
 | Trained-model-specific (2lpt de-forest) | eBOSS DR16Q model (independently trained) on London: +0.057–0.060 | **Same bias ⇒ not model-specific** |
 | Inference mean-flux mismatch | eBOSS model + Kim (τ_eff(2.5)=0.229) vs + Kamble (0.298): +0.060 vs +0.057 | **±30% mean-flux ⇒ ΔNHI unchanged; not it** |
-| Training de-forest residual in `mu` | re-derive `mu` with the clean loa-0 Lyα de-forest, hold M/Ω, re-infer | **mu-only test** (running; predicted ~no change) |
+| Training de-forest residual in `mu` | re-derive `mu` with the clean loa-0 Lyα de-forest (0.01258/2.385, +2.84% forest mu), hold M/Ω, re-infer (job 50705918) | **CONFIRMED not it**: ΔNHI=+0.044, *identical* to the Turner-deforest baseline +0.044 (same 72 TP) |
 
 **Why mean-flux doesn't move NHI** (physical): the mean-flux *level* is absorbed into the
 continuum/normalization fit, while NHI comes from the Voigt **shape**, so a smooth mean-flux
@@ -50,8 +50,9 @@ Measured τ_eff(z) = −ln⟨F⟩ (F = flux / TRUE_CONT) in the forest [1040,118
 - **Production config UNCHANGED.** The V1 settings (Turner mean-flux, NF=31 [matches training,
   numerically a no-op in the forest], τ-EB on, MAX_DLAS=4) stand. The mean-flux investigation
   did not surface a production fix.
-- **Retrain NOT warranted** (the bias is mean-flux- and model-insensitive). The mu-only test
-  confirms/refutes the last piece (training de-forest residual); predicted negative.
+- **Retrain NOT warranted — CONFIRMED.** The mu-only test (clean loa-0 de-forest mu, M/Ω held)
+  gives ΔNHI=+0.044, *bit-for-bit the Turner-deforest baseline* — so the training de-forest residual
+  is also ruled out. Every mean-flux lever (training + inference) is null; the bias is intrinsic.
 
 ## Tooling added (this investigation)
 
