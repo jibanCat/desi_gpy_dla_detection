@@ -13,8 +13,9 @@ the Eisenstein-Hu 1998 no-wiggle transfer function (no camb/classy), sigma8-norm
 See docs/superpowers/specs/2026-05-22-dla-clustering-prior-design.md sec 4-5.
 """
 from __future__ import annotations
+import warnings
 import numpy as np
-from scipy.integrate import quad
+from scipy.integrate import quad, IntegrationWarning
 from scipy.interpolate import interp1d
 from astropy.cosmology import FlatLambdaCDM
 
@@ -38,10 +39,17 @@ class DLAClusteringPrior:
         self._Om0, self._Ob0 = Om0, Ob0
         self._norm = sigma8 ** 2 / self._sigma2(8.0, 1.0)
         rg = np.logspace(-1.0, 2.6, 300)
-        self._xi_interp = interp1d(np.log(rg),
-                                   np.array([self._xi_matter_one(r) for r in rg]),
-                                   kind="cubic", bounds_error=False,
-                                   fill_value=(self._xi_matter_one(rg[0]), 0.0))
+        # Suppress large-r FT IntegrationWarnings: the Gaussian regularizer
+        # exp(-(k/50)^2) limits accuracy loss to r > 25 Mpc/h, well outside
+        # the DLA-clustering window (~0.5-30 Mpc/h). Suppression is local only.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=IntegrationWarning)
+            self._xi_interp = interp1d(
+                np.log(rg),
+                np.array([self._xi_matter_one(r) for r in rg]),
+                kind="cubic",
+                # xi_matter_z0 clips r to the grid, so bounds_error/fill_value are unnecessary
+            )
         self._r_grid = rg
         zg = np.linspace(0.0, 6.0, 200)
         self._growth_interp = interp1d(zg, np.array([self._growth_one(z) for z in zg]),
@@ -103,7 +111,22 @@ class DLAClusteringPrior:
         return self.b_dla**2 * self.growth_D(z) ** 2 * self.xi_matter_z0(r)
 
     def log_rho(self, all_z_dlas: np.ndarray) -> np.ndarray:
+        """Return log(1 + sum_{i<j} xi_DLA) for each of N sample columns.
+
+        Parameters
+        ----------
+        all_z_dlas : np.ndarray, shape (k, N)
+            DLA redshifts. *Must* be 2D with k = number of DLAs (rows) and
+            N = number of samples (columns). A 1D ``(k,)`` array is wrong and
+            would silently return zeros; pass ``z.reshape(-1, 1)`` if k=1.
+        """
         all_z_dlas = np.atleast_2d(all_z_dlas)
+        if all_z_dlas.shape[0] > 10:
+            raise ValueError(
+                f"log_rho expects (k, N) with k = number of DLAs (<= MAX_DLAS); "
+                f"got shape {all_z_dlas.shape}. "
+                f"Did you pass a (N,) array instead of (k, N)?"
+            )
         k, N = all_z_dlas.shape
         if k < 2:
             return np.zeros(N)

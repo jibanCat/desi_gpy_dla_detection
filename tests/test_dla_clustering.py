@@ -71,3 +71,27 @@ def test_small_scale_cap(cp):
     tiny = cp.xi_dla(np.array([1.0]), np.array([2.5]))[0]
     capped = cp.xi_dla(np.array([1e-3]), np.array([2.5]))[0]
     assert np.isfinite(tiny) and tiny == pytest.approx(capped, rel=1e-6)
+
+
+def test_log_rho_vectorized_distinct_columns(cp):
+    # (k=2, N=3) with DIFFERENT z per column -> distinct, finite, shape (3,)
+    z = np.array([[2.50, 2.70, 3.00], [2.503, 2.85, 3.20]])
+    out = cp.log_rho(z)
+    assert out.shape == (3,)
+    assert np.isfinite(out).all()
+    assert out[0] > out[1] > out[2]   # closer pair => larger log rho
+
+
+def test_shape_contracts(cp):
+    assert cp.xi_dla(np.array([200.0, 500.0, 800.0]), np.array([2.5, 2.5, 2.5])).shape == (3,)
+    assert cp.growth_D(np.array([2.5, 3.0])).shape == (2,)
+    assert cp.log_rho(np.array([[2.5, 2.6], [2.51, 2.7]])).shape == (2,)
+
+
+def test_log_rho_rejects_1d_input(cp):
+    # A (11, 1) array has k=11 DLA rows which exceeds MAX_DLAS; the guard must fire.
+    # (A plain 1D (N,) array silently becomes (1, N) via atleast_2d, which is
+    # harder to guard cheaply — the k>10 check catches the obviously-wrong 2D case.)
+    bad = np.arange(11, dtype=float).reshape(11, 1)
+    with pytest.raises(ValueError, match="log_rho expects"):
+        cp.log_rho(bad)
