@@ -314,6 +314,7 @@ class DLAGP(NullGP):
         early_stop_mode: str = "baseline",
         pair_prior_mode: str = "off",   # "off" | "clustering" (default off => byte-identical)
         dla_bias: float = 2.0,
+        pair_prior=None,                # injected DLAClusteringPrior (built once on holder)
     ):
         super().__init__(
             params,
@@ -353,13 +354,21 @@ class DLAGP(NullGP):
         # DLA velocity-separation clustering prior (gated; default off => the
         # multi-DLA evidence is byte-identical to the proven path). See
         # docs/superpowers/specs/2026-05-22-dla-clustering-prior-design.md §4.
+        #
+        # ``pair_prior`` (injected instance) takes precedence over constructing
+        # one from ``pair_prior_mode``/``dla_bias``.  DLAHolder builds a single
+        # DLAClusteringPrior (~17 s) at startup and injects it here so the cost
+        # is not incurred once per spectrum.
         self._validate_pair_prior_mode(pair_prior_mode)
         self.pair_prior_mode = pair_prior_mode
         self.dla_bias = float(dla_bias)
-        self.pair_prior = None
-        if pair_prior_mode == "clustering":
+        if pair_prior is not None:
+            self.pair_prior = pair_prior          # injected (built once on the holder) — preferred
+        elif pair_prior_mode == "clustering":
             from gpy_dla_detection.dla_clustering import DLAClusteringPrior
-            self.pair_prior = DLAClusteringPrior(b_dla=dla_bias)
+            self.pair_prior = DLAClusteringPrior(b_dla=dla_bias)  # fallback for standalone/test use
+        else:
+            self.pair_prior = None
 
         # Initialize a cache for Voigt profiles
         self.voigt_cache = {}
@@ -1254,6 +1263,7 @@ class DLAGPMAT(DLAGP):
         early_stop_mode: str = "baseline",
         pair_prior_mode: str = "off",
         dla_bias: float = 2.0,
+        pair_prior=None,                # injected DLAClusteringPrior (built once on holder)
     ):
         # See NullGPMAT for the rationale: v2 trained .h5 carries its own
         # normalization region; mutate params in place if present so set_data
@@ -1305,4 +1315,5 @@ class DLAGPMAT(DLAGP):
             early_stop_mode=early_stop_mode,
             pair_prior_mode=pair_prior_mode,
             dla_bias=dla_bias,
+            pair_prior=pair_prior,
         )

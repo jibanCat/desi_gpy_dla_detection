@@ -133,6 +133,8 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             tau_eb_mask_threshold_sigma=model_params.get("tau_eb_mask_threshold_sigma", 1.5),
             tau_eb_objective=model_params.get("tau_eb_objective", "null"),
             early_stop_mode=model_params.get("early_stop_mode", "baseline"),
+            pair_prior_mode=model_params.get("pair_prior_mode", "off"),
+            dla_bias=model_params.get("dla_bias", 2.0),
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
@@ -250,6 +252,8 @@ def dlasearch_mock(specfile, catalog, model_params):
             tau_eb_mask_threshold_sigma=model_params.get("tau_eb_mask_threshold_sigma", 1.5),
             tau_eb_objective=model_params.get("tau_eb_objective", "null"),
             early_stop_mode=model_params.get("early_stop_mode", "baseline"),
+            pair_prior_mode=model_params.get("pair_prior_mode", "off"),
+            dla_bias=model_params.get("dla_bias", 2.0),
         )
 
         fitresults = process_spectra_group(specfile, catalog, model)

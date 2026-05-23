@@ -269,6 +269,18 @@ def parse(options=None):
         dest="early_stop_mode",
     )
 
+    # DLA velocity-separation clustering prior
+    parser.add_argument(
+        "--pair_prior_mode", dest="pair_prior_mode", default="off",
+        choices=["off", "clustering"],
+        help="DLA velocity-separation clustering prior on the multi-DLA evidence "
+             "(default off => byte-identical). 'clustering' is mock-calibrated (b_DLA=2); "
+             "on real data propagate b-uncertainty and exclude the catalog from "
+             "clustering/bias science (spec section 3).")
+    parser.add_argument(
+        "--dla_bias", dest="dla_bias", type=float, default=2.0,
+        help="Linear DLA bias for the clustering prior (xi ~ b^2). 2.0 = LyaCoLoRe mock value.")
+
     # Parameter-related arguments
     # These are the values used in the trained GP model, don't change them unless you change the trained model
     parser.add_argument(
@@ -583,7 +595,15 @@ def main(args=None):
         "tau_eb_mask_threshold_sigma": float(args.tau_eb_mask_threshold_sigma),
         "tau_eb_objective": args.tau_eb_objective,
         "early_stop_mode": args.early_stop_mode,
+        "pair_prior_mode": args.pair_prior_mode,
+        "dla_bias": args.dla_bias,
     }
+
+    if args.pair_prior_mode == "clustering":
+        log.warning(
+            "pair_prior_mode=clustering: mock-calibrated prior (b_DLA=%.2f). On REAL data this "
+            "fixes b and is over-confident; propagate b-uncertainty and DO NOT use this catalog "
+            "for DLA clustering/bias measurements (spec section 3 / C-1).", args.dla_bias)
 
     # Set up for nested multiprocessing
     # nproc_futures = int(os.cpu_count() / args.max_workers)

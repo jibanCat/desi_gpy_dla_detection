@@ -222,7 +222,11 @@ def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int, si
 
 
 def save_results_to_hdf5(
-    filename: str, results: dict, spectrum_ids: List[str], z_qsos: np.ndarray
+    filename: str,
+    results: dict,
+    spectrum_ids: List[str],
+    z_qsos: np.ndarray,
+    run_attrs: dict = None,
 ) -> None:
     """
     Save the results of the DLA detection process into an HDF5 file.
@@ -241,6 +245,10 @@ def save_results_to_hdf5(
         List of spectrum IDs that were processed.
     z_qsos : np.ndarray
         Array of redshift values for each Quasi-Stellar Object (QSO) corresponding to the spectra.
+    run_attrs : dict, optional
+        Optional dict of scalar provenance values (str or numeric) written as
+        HDF5 root-group attributes.  Use to record run-level parameters such as
+        ``pair_prior_mode`` and ``dla_bias`` so each catalog is self-describing.
 
     Keys in `results`:
     -----------------
@@ -258,3 +266,8 @@ def save_results_to_hdf5(
         # Loop through the results dictionary and save each key-value pair as an HDF5 dataset
         for key, value in results.items():
             f.create_dataset(key, data=value)  # Save each result in the HDF5 file
+
+        # Write provenance attributes (run-level parameters) to the root group.
+        if run_attrs:
+            for attr_key, attr_val in run_attrs.items():
+                f.attrs[attr_key] = attr_val

@@ -344,6 +344,8 @@ class DLAHolder:
         tau_eb_mask_threshold_sigma: float = 1.5,
         tau_eb_objective: str = "null",
         early_stop_mode: str = "baseline",
+        pair_prior_mode: str = "off",
+        dla_bias: float = 2.0,
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -414,6 +416,17 @@ class DLAHolder:
                 f"early_stop_mode must be one of 'baseline', 'A', 'D'; got {early_stop_mode!r}"
             )
         self.early_stop_mode = early_stop_mode
+
+        # DLA velocity-separation clustering prior.
+        # Built ONCE here (construction takes ~17 s for EH98 integrals + interpolator
+        # grids) and injected into every per-spectrum DLAGPMAT so the cost is paid
+        # only once per DLAHolder lifetime, not once per QSO spectrum.
+        self.pair_prior_mode = pair_prior_mode
+        self.dla_bias = dla_bias
+        self.pair_prior = None
+        if pair_prior_mode == "clustering":
+            from gpy_dla_detection.dla_clustering import DLAClusteringPrior
+            self.pair_prior = DLAClusteringPrior(b_dla=dla_bias)   # built ONCE; reused for every spectrum
 
         self.params = params  # Pass in the Parameters object here
         if params_subdla is None:
@@ -517,6 +530,8 @@ class DLAHolder:
             prev_tau_0=prev_tau_0_eff,
             prev_beta=self.prev_beta,
             early_stop_mode=self.early_stop_mode,
+            pair_prior_mode=self.pair_prior_mode,
+            pair_prior=self.pair_prior,
         )
         if self.single_absorber_model:
             subdla_gp = None
@@ -587,6 +602,11 @@ class DLAHolder:
             # Loop through the results dictionary and save each key-value pair as an HDF5 dataset
             for key, value in self.results.items():
                 f.create_dataset(key, data=value)  # Save each result in the HDF5 file
+
+            # Catalog provenance: record run-level parameters as root-group
+            # attributes so downstream readers can verify which prior was active.
+            f.attrs["pair_prior_mode"] = self.pair_prior_mode
+            f.attrs["dla_bias"] = float(self.dla_bias)
 
 
 class DLAProcessor:
@@ -724,6 +744,8 @@ class DLAProcessor:
                 broadening=self.broadening,
                 prev_tau_0=self.prev_tau_0,
                 prev_beta=self.prev_beta,
+                pair_prior_mode=self.pair_prior_mode,
+                pair_prior=self.pair_prior,
             )
             subdla_gp = SubDLAGPMAT(
                 self.params,
@@ -774,6 +796,7 @@ class DLAProcessor:
             self.results,
             self.all_spectrum_ids,
             self.redshift_data["Z"],
+            run_attrs={"pair_prior_mode": "off", "dla_bias": 2.0},
         )
 
 
