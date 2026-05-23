@@ -991,6 +991,22 @@ class DLAGP(NullGP):
                         num_dlas, all_z_dlas, sample_probabilities, ind, _valid_mask
                     )
 
+                # ===== Gated per-spectrum ESS-fraction log (validation only) =====
+                # Default-off: _log_ess is never set in production → this block is
+                # a dead branch and the byte-identical guarantee holds.  Enable in
+                # a validation run by setting `dla_gp_instance._log_ess = True`.
+                if getattr(self, "_log_ess", False) and num_dlas >= 1:
+                    w = np.array(sample_probabilities, dtype=float)
+                    w = w[np.isfinite(w)]
+                    if w.size and w.sum() > 0:
+                        ess = (w.sum() ** 2) / np.sum(w ** 2)
+                        ess_frac = ess / w.size
+                        if ess_frac < 0.3:
+                            log.warning(
+                                "low ESS-frac %.3f at k=%d (clustering bias indicator)",
+                                ess_frac, num_dlas + 1,
+                            )
+
                 # ========= Early stopping logic =========
                 if (num_dlas + 1) == max_dlas or np.isnan(
                     log_likelihoods_dla[num_dlas]
