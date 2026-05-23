@@ -207,29 +207,32 @@ def test_dlagp_accepts_injected_pair_prior():
 
 
 def test_injected_pair_prior_takes_precedence_over_mode():
-    """When pair_prior= is injected, DLAGP must use the injected instance and
-    NOT construct a new DLAClusteringPrior from dla_bias."""
+    """_resolve_pair_prior: injected instance wins; off→None; clustering→DLAClusteringPrior.
+
+    Exercises the REAL ``DLAGP._resolve_pair_prior`` static helper (not a local
+    simulation) to give genuine regression protection for the constructor branch.
+    """
     from gpy_dla_detection.dla_gp import DLAGP
+    from gpy_dla_detection.dla_clustering import DLAClusteringPrior
 
-    sentinel = object()      # a cheap non-None sentinel
+    sentinel = object()   # cheap non-None sentinel
 
-    # Build a minimal stub that has just enough state to reach the assignment.
-    obj = DLAGP.__new__(DLAGP)
-    obj.pair_prior_mode = "off"   # would normally mean pair_prior=None
-    obj.dla_bias = 2.0
-    # Simulate the constructor logic: injected instance beats pair_prior_mode.
-    pair_prior_mode = "off"
-    pair_prior = sentinel
-    if pair_prior is not None:
-        obj.pair_prior = pair_prior
-    elif pair_prior_mode == "clustering":
-        from gpy_dla_detection.dla_clustering import DLAClusteringPrior
-        obj.pair_prior = DLAClusteringPrior(b_dla=obj.dla_bias)
-    else:
-        obj.pair_prior = None
+    # 1. Injected instance wins regardless of pair_prior_mode.
+    result = DLAGP._resolve_pair_prior(sentinel, "off", 2.0)
+    assert result is sentinel, (
+        "injected pair_prior was not returned; _resolve_pair_prior precedence is wrong"
+    )
 
-    assert obj.pair_prior is sentinel, (
-        "injected pair_prior was not stored; constructor logic is wrong"
+    # 2. mode="off" + no injection → None (byte-identical default path).
+    result_off = DLAGP._resolve_pair_prior(None, "off", 2.0)
+    assert result_off is None, (
+        "pair_prior_mode='off' with no injection must return None"
+    )
+
+    # 3. mode="clustering" + no injection → a freshly built DLAClusteringPrior.
+    result_clu = DLAGP._resolve_pair_prior(None, "clustering", 2.0)
+    assert isinstance(result_clu, DLAClusteringPrior), (
+        "pair_prior_mode='clustering' with no injection must build a DLAClusteringPrior"
     )
 
 

@@ -693,6 +693,11 @@ class DLAProcessor:
         self.batch_size = batch_size
         self.params = params  # Pass in the Parameters object here
 
+        # Legacy path — not used by dlasearch.py / desi-DLAGP.py production runs;
+        # the clustering prior is always off here.
+        self.pair_prior_mode = "off"
+        self.pair_prior = None
+
         # Initialize prior catalog and Bayesian model selection
         self.prior = PriorCatalog(self.params, catalog_name, los_catalog, dla_catalog)
         self.dla_samples = DLASamplesMAT(self.params, self.prior, dla_samples_file)
@@ -796,7 +801,7 @@ class DLAProcessor:
             self.results,
             self.all_spectrum_ids,
             self.redshift_data["Z"],
-            run_attrs={"pair_prior_mode": "off", "dla_bias": 2.0},
+            run_attrs={"pair_prior_mode": "off", "dla_bias": 2.0},  # Legacy path — not production; prior always off
         )
 
 

@@ -362,13 +362,7 @@ class DLAGP(NullGP):
         self._validate_pair_prior_mode(pair_prior_mode)
         self.pair_prior_mode = pair_prior_mode
         self.dla_bias = float(dla_bias)
-        if pair_prior is not None:
-            self.pair_prior = pair_prior          # injected (built once on the holder) — preferred
-        elif pair_prior_mode == "clustering":
-            from gpy_dla_detection.dla_clustering import DLAClusteringPrior
-            self.pair_prior = DLAClusteringPrior(b_dla=dla_bias)  # fallback for standalone/test use
-        else:
-            self.pair_prior = None
+        self.pair_prior = self._resolve_pair_prior(pair_prior, pair_prior_mode, dla_bias)
 
         # Initialize a cache for Voigt profiles
         self.voigt_cache = {}
@@ -379,6 +373,29 @@ class DLAGP(NullGP):
             raise ValueError(
                 f"pair_prior_mode must be 'off' or 'clustering'; got {pair_prior_mode!r}"
             )
+
+    @staticmethod
+    def _resolve_pair_prior(pair_prior, pair_prior_mode: str, dla_bias: float):
+        """Resolve the active ``pair_prior`` instance from constructor args.
+
+        Resolution order (highest precedence first):
+          1. ``pair_prior is not None`` — injected instance wins (DLAHolder
+             builds a single DLAClusteringPrior at startup and injects it so
+             the ~17 s build cost is paid only once).
+          2. ``pair_prior_mode == "clustering"`` — build a fresh instance from
+             ``dla_bias`` (fallback for standalone / test use).
+          3. Otherwise — return ``None`` (the prior is off; byte-identical path).
+
+        Returns
+        -------
+        resolved : DLAClusteringPrior or None
+        """
+        if pair_prior is not None:
+            return pair_prior
+        if pair_prior_mode == "clustering":
+            from gpy_dla_detection.dla_clustering import DLAClusteringPrior
+            return DLAClusteringPrior(b_dla=dla_bias)
+        return None
 
     def _clustering_log_factor(
         self, num_dlas, all_z_dlas, sample_probabilities, ind, valid_mask=None
