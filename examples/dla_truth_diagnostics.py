@@ -185,6 +185,12 @@ def pair_purity(
         Velocity separation threshold for "close" pairs (km/s).
     match_dz : float
         |Δz|/(1+z_truth) tolerance for member-level truth matching.
+        **Dual-use**: this same threshold governs both (a) GP-member ↔
+        truth-DLA matching inside ``matches_truth_pair``, and (b) the
+        ON-pair ↔ OFF-pair identity check ("same absorber?") above.  The
+        shared value is intentional: ON and OFF runs share identical
+        inference code, so the same physical absorber's z_DLA will agree
+        to well within match_dz in both catalogs.
     dv_bin_edges : array-like or None
         Bin edges (km/s) for the per-Δv breakdown.  If None, uses
         10 equal bins from 0 to dv_max.

@@ -144,6 +144,14 @@ def combine_processed_files(processed_dir, healpix_list, output_file, survey, pr
         # preserve your attr
         out_f.attrs["combined_files"] = len(processed_files)
 
+        # Copy clustering-prior provenance attrs from the first processed file,
+        # if present.  No-op for older files that lack these attrs.
+        if processed_files:
+            with h5py.File(processed_files[0], "r") as _pf:
+                for _attr in ("pair_prior_mode", "dla_bias"):
+                    if _attr in _pf.attrs:
+                        out_f.attrs[_attr] = _pf.attrs[_attr]
+
     if not processed_files:
         log.info("No processed files were found. Exiting.")
         return
