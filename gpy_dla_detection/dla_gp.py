@@ -88,16 +88,6 @@ from .dla_samples import DLASamplesMAT
 # max_workers = os.cpu_count() * 2
 
 
-def _logmeanexp_nan(x: np.ndarray) -> float:
-    """log mean exp over the finite (non-NaN) entries of x. Returns 0.0 if none."""
-    m = np.isfinite(x)
-    if not m.any():
-        return 0.0
-    xm = x[m]
-    a = np.max(xm)
-    return float(a + np.log(np.mean(np.exp(xm - a))))
-
-
 # fast search method for adapative truncated sampling
 def select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.02, logL_null=None):
     """
@@ -1015,7 +1005,10 @@ class DLAGP(NullGP):
                         )
                         break
                 # If log likelihood is smaller than the previous one by 10 times,
-                # stop further computation
+                # stop further computation.
+                # NOTE (D-mode precision): D-mode's null-comparison above uses the
+                # pre-Occam, Δ-free likelihood; this decreased-from-previous-k stop
+                # compares the Δ-corrected evidence in ALL modes including D.
                 if num_dlas > 0:
                     if (
                         log_likelihoods_dla[num_dlas]

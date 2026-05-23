@@ -2,7 +2,6 @@
 
 The #1 guarantee: with ``pair_prior_mode="off"`` (the default) the inference
 path is byte-identical to current behaviour. These tests cover:
-  - the ``_logmeanexp_nan`` module helper,
   - the constructor signatures/defaults/validation on ``DLAGP``/``DLAGPMAT``,
   - the ``_clustering_log_factor`` per-MODEL evidence factor in isolation (the
     round-2 referee guarantee: Δ_k = log E_post[ρ] − log E_unif[ρ], with the
@@ -24,24 +23,7 @@ from gpy_dla_detection.dla_clustering import DLAClusteringPrior
 
 
 # --------------------------------------------------------------------------- #
-# 1. _logmeanexp_nan helper
-# --------------------------------------------------------------------------- #
-def test_logmeanexp_nan_helper():
-    from gpy_dla_detection.dla_gp import _logmeanexp_nan
-
-    x = np.array([0.0, np.log(3.0), np.nan])
-    # mean of exp over the non-nan entries = (1 + 3) / 2 = 2 -> log 2
-    assert _logmeanexp_nan(x) == pytest.approx(np.log(2.0))
-
-
-def test_logmeanexp_nan_all_nan_returns_zero():
-    from gpy_dla_detection.dla_gp import _logmeanexp_nan
-
-    assert _logmeanexp_nan(np.array([np.nan, np.nan])) == 0.0
-
-
-# --------------------------------------------------------------------------- #
-# 2. Constructor signatures / defaults / validation
+# 1. Constructor signatures / defaults / validation
 # --------------------------------------------------------------------------- #
 def test_dlagp_signature_defaults():
     from gpy_dla_detection.dla_gp import DLAGP
@@ -72,7 +54,7 @@ def test_pair_prior_mode_validation():
 
 
 # --------------------------------------------------------------------------- #
-# 3. _clustering_log_factor — the per-MODEL evidence-factor guarantee
+# 2. _clustering_log_factor — the per-MODEL evidence-factor guarantee
 # --------------------------------------------------------------------------- #
 def _stub(pair_prior_mode="off", b_dla=2.0):
     """A minimal stand-in carrying just the attributes the helper reads.
@@ -203,7 +185,7 @@ def test_factor_respects_valid_mask():
 
 
 # --------------------------------------------------------------------------- #
-# 4. OPTIONAL end-to-end null-invariance / parity on a saved fixture (RC-3)
+# 3. OPTIONAL end-to-end null-invariance / parity on a saved fixture (RC-3)
 # --------------------------------------------------------------------------- #
 _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "london0_single_dla.npz"
 _REPO = Path(__file__).resolve().parent.parent
