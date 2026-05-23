@@ -13,6 +13,7 @@ the Eisenstein-Hu 1998 no-wiggle transfer function (no camb/classy), sigma8-norm
 See docs/superpowers/specs/2026-05-22-dla-clustering-prior-design.md sec 4-5.
 """
 from __future__ import annotations
+import math
 import warnings
 import numpy as np
 from scipy.integrate import quad, IntegrationWarning
@@ -139,3 +140,50 @@ class DLAClusteringPrior:
                 dv = _C_KMS * np.abs(za - zb) / (1.0 + zbar)
                 sum_xi += self.xi_dla(dv, zbar)
         return np.log(np.maximum(1.0 + sum_xi, self.eps))
+
+    def mean_xi_window(self, z_min, z_max, n=400):
+        """Closed-form prior-average of ξ_DLA over the z-DLA search window.
+
+        Two DLAs drawn iid-uniformly in a redshift window of velocity width
+        ``L_kms`` have a pair separation ``d`` whose pdf is the triangular
+        density ``p(d) = 2(L - d) / L²`` for ``d ∈ [0, L]``. The closed-form
+        prior expectation of ξ over a *single* random pair is therefore
+        ``⟨ξ⟩ = ∫_0^L ξ_DLA(d, z̄) · p(d) dd``. This is the genuine uniform-
+        prior normalization (E_unif), independent of the SIR proposal.
+
+        Ported from ``examples/prototype_dla_clustering.py:mean_xi_window``
+        (which takes ``L_kms`` directly); here we derive ``L_kms`` from the
+        window edges so the caller can pass the spectrum's z-DLA span.
+
+        Parameters
+        ----------
+        z_min, z_max : float
+            Edges of the z-DLA sample window for this spectrum.
+        n : int
+            Number of quadrature points for the triangular-pdf integral.
+        """
+        zbar = 0.5 * (z_min + z_max)
+        L_kms = _C_KMS * (z_max - z_min) / (1.0 + zbar)
+        if not np.isfinite(L_kms) or L_kms <= 1.0:
+            # Degenerate / zero-width window: no pair separation to average over.
+            return 0.0
+        # integrate ξ against the triangular pdf p(d)=2(L-d)/L² over d∈[~1, L_kms].
+        # The lower bound starts at ~1 km/s (xi_dla applies the small-scale r_cut
+        # internally, so d->0 stays finite); matches the prototype.
+        d = np.linspace(1.0, L_kms, n)
+        pdf = 2.0 * (L_kms - d) / L_kms ** 2
+        xi = self.xi_dla(d, np.full_like(d, zbar))
+        trapz = getattr(np, "trapezoid", np.trapz)
+        return float(trapz(xi * pdf, d))
+
+    def prior_mean_rho(self, k, z_min, z_max):
+        """Closed-form E_unif[ρ_k] = 1 + C(k, 2) · ⟨ξ⟩_window.
+
+        ρ_k = 1 + Σ_{i<j} ξ_ij for k DLAs. Under the iid-uniform prior, every
+        one of the ``C(k, 2)`` pairs has the same expected ξ = ``mean_xi_window``,
+        so E_unif[ρ_k] = 1 + C(k, 2)·⟨ξ⟩. ``C(k, 2)`` is the genuine
+        normalization constant (number of pairs); for k=1 it is 0 -> 1.0 exactly.
+        """
+        if k < 2:
+            return 1.0
+        return 1.0 + math.comb(int(k), 2) * self.mean_xi_window(z_min, z_max)

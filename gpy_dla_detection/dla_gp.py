@@ -381,21 +381,62 @@ class DLAGP(NullGP):
                 f"pair_prior_mode must be 'off' or 'clustering'; got {pair_prior_mode!r}"
             )
 
-    def _apply_clustering_prior(self, sample_log_likelihoods, num_dlas, all_z_dlas, ind):
-        """RC-1/RC-2: add the self-normalized clustering log-weight to the k-DLA
-        per-sample EVIDENCE column, in place. No-op unless pair_prior_mode=='clustering'
-        and num_dlas>0 (Z_1=1: 1-DLA evidence is untouched). all_z_dlas: (k, N); ind:
-        bool (N,) min_z_sep mask. self-normalized Z_k = logmeanexp over the realized
-        valid samples; closed-form ⟨ξ⟩ is NOT used (the estimator is SIR, not iid-uniform)."""
+    def _clustering_log_factor(
+        self, num_dlas, all_z_dlas, sample_probabilities, ind, valid_mask=None
+    ):
+        """Per-model clustering EVIDENCE factor Δ_k = log E_post[ρ_k] − log E_unif[ρ_k].
+
+        This is an Occam-style per-MODEL evidence correction, NOT a per-sample
+        likelihood change. It is applied to the FINALIZED k-DLA log evidence
+        ``log_likelihoods_dla[num_dlas]`` only (round-2 referee, spec §4); the
+        per-sample column ``sample_log_likelihoods`` and the SIR resampling
+        weights are NEVER touched, so the sampler explores the bare likelihood
+        (full near+far z_DLA coverage — critical for sparse QMC).
+
+        For a k-DLA model (``k = num_dlas + 1``):
+          Δ_k = log E_post[ρ_k] − log E_unif[ρ_k]   (Δ = 0 for k=1, i.e. num_dlas=0)
+
+        - E_post[ρ_k] = posterior (likelihood-weighted) mean of ρ over the
+          samples = Σ_i p_i ρ_i / Σ_i p_i, with ``p_i`` the EXISTING bare
+          ``sample_probabilities`` (= exp(slk[:,num_dlas] − max); NaN at masked
+          samples) and ``ρ_i = exp(pair_prior.log_rho(all_z_dlas))``.
+        - E_unif[ρ_k] = closed-form prior mean = 1 + C(k, 2)·⟨ξ⟩_window
+          (the genuine normalization constant; analytic, proposal-independent).
+
+        Caveat (accepted, not "fixed" here): E_post via Σpρ/Σp is a
+        self-normalized importance ratio over the SIR proposal, so it is mildly
+        biased UPWARD and ESS-dependent — bounded and non-compounding, monitored
+        externally by ESS + pair-purity diagnostics.
+
+        Parameters
+        ----------
+        num_dlas : int            k − 1 (0 => 1-DLA model => Δ = 0).
+        all_z_dlas : (k, N)       per-sample z-DLA tuples for the k-DLA model.
+        sample_probabilities : (N,)  the BARE exp(slk − max) probabilities (NaN-masked).
+        ind : (N,) bool           min_z_separation mask (True = pair too close, dropped).
+        valid_mask : (N,) bool or None  FILTER=1 region-A mask (posterior ≈ region A).
+
+        Returns 0.0 if mode is off, num_dlas < 1, or no usable samples remain.
+        """
         if getattr(self, "pair_prior_mode", "off") != "clustering" or num_dlas < 1:
-            return
-        log_rho = self.pair_prior.log_rho(all_z_dlas)          # (N,)
-        log_rho[ind] = np.nan
-        log_rho[np.isnan(sample_log_likelihoods[:, num_dlas])] = np.nan
-        log_Zk = _logmeanexp_nan(log_rho)                       # RC-1
-        sample_log_likelihoods[:, num_dlas] = (
-            sample_log_likelihoods[:, num_dlas] + log_rho - log_Zk
-        )
+            return 0.0
+        rho = np.exp(self.pair_prior.log_rho(all_z_dlas))      # (N,)
+        p = np.array(sample_probabilities, dtype=float)
+        sel = np.isfinite(p) & np.isfinite(rho) & (~ind)
+        if valid_mask is not None:                             # FILTER=1: posterior ~ region A
+            sel &= valid_mask
+        if not sel.any() or p[sel].sum() <= 0:
+            return 0.0
+        E_post = np.sum(p[sel] * rho[sel]) / np.sum(p[sel])
+        # Window edges: use the spectrum's z-DLA sample span. all_z_dlas spans
+        # both the (fixed) first-DLA grid and the resampled later DLAs, so its
+        # min/max is a faithful proxy for the z-DLA search window.
+        z_min = float(np.nanmin(all_z_dlas))
+        z_max = float(np.nanmax(all_z_dlas))
+        E_unif = self.pair_prior.prior_mean_rho(num_dlas + 1, z_min, z_max)
+        if not (E_post > 0.0 and E_unif > 0.0):
+            return 0.0
+        return float(np.log(E_post) - np.log(E_unif))
 
     def log_model_evidences(self, max_dlas: int) -> np.ndarray:
         """
@@ -606,6 +647,11 @@ class DLAGP(NullGP):
         # Preallocate sample probabilities
         sample_probabilities = np.empty(self.params.num_dla_samples)
         sample_probabilities[:] = np.nan
+
+        # FILTER=1 region-A mask; set only in the non-empty valid_mask branch
+        # below. Initialised here so the clustering-evidence factor can guard on
+        # it unconditionally (it stays None for the FILTER=0 / empty-mask paths).
+        _valid_mask = None
 
         # precomputed log normalization factor
         lognorm = np.log(self.params.num_dla_samples)
@@ -832,7 +878,6 @@ class DLAGP(NullGP):
                         axis=0,
                     )
                     sample_log_likelihoods[ind, num_dlas] = np.nan
-                    self._apply_clustering_prior(sample_log_likelihoods, num_dlas, all_z_dlas, ind)
 
                 # Compute the log likelihood for each number of DLAs
                 max_log_likelihood = np.nanmax(sample_log_likelihoods[:, num_dlas])
@@ -912,6 +957,22 @@ class DLAGP(NullGP):
                         + np.log(np.nanmean(sample_probabilities))
                         + np.log(self.params.num_dla_samples)
                         - lognorm * num_dlas
+                    )
+
+                # ===== DLA clustering evidence factor (gated; default-off no-op) =====
+                # Per-MODEL Occam-style correction Δ_k applied to the FINALIZED
+                # evidence only — the per-sample column and the SIR resampler
+                # (below) run on the BARE likelihood and are never touched. Done
+                # BEFORE the early-stop checks so the stop logic sees the
+                # corrected evidence. all_z_dlas/ind are in scope here exactly
+                # when num_dlas >= 1 (defined in the `if num_dlas > 0` block);
+                # _valid_mask is None unless the FILTER=1 region-A branch set it.
+                if (
+                    getattr(self, "pair_prior_mode", "off") == "clustering"
+                    and num_dlas >= 1
+                ):
+                    log_likelihoods_dla[num_dlas] += self._clustering_log_factor(
+                        num_dlas, all_z_dlas, sample_probabilities, ind, _valid_mask
                     )
 
                 # ========= Early stopping logic =========

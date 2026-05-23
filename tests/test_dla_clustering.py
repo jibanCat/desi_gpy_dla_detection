@@ -95,3 +95,48 @@ def test_log_rho_rejects_1d_input(cp):
     bad = np.arange(11, dtype=float).reshape(11, 1)
     with pytest.raises(ValueError, match="log_rho expects"):
         cp.log_rho(bad)
+
+
+# --------------------------------------------------------------------------- #
+# Closed-form prior-window average E_unif[ρ_k] (mean_xi_window / prior_mean_rho)
+# --------------------------------------------------------------------------- #
+_Z_MIN, _Z_MAX = 2.40, 2.60  # a representative z-DLA search window
+
+
+def test_prior_mean_rho_k1_is_exactly_one(cp):
+    # k=1 -> no pairs -> C(1,2)=0 -> E_unif[ρ] = 1.0 exactly.
+    assert cp.prior_mean_rho(1, _Z_MIN, _Z_MAX) == 1.0
+
+
+def test_prior_mean_rho_monotone(cp):
+    # More DLAs -> more pairs -> larger expected ρ, all strictly above 1.
+    r2 = cp.prior_mean_rho(2, _Z_MIN, _Z_MAX)
+    r3 = cp.prior_mean_rho(3, _Z_MIN, _Z_MAX)
+    assert r3 > r2 > 1.0
+
+
+@pytest.mark.parametrize("k", [2, 3])
+def test_prior_mean_rho_matches_monte_carlo(cp, k):
+    """Closed-form E_unif[ρ_k] = 1 + C(k,2)·⟨ξ⟩ matches a Monte-Carlo estimate
+    that draws N uniform z-pairs in [z_min, z_max] and averages 1 + Σ_{i<j} ξ.
+    The referee verified closed-form ≈ MC to 4 sig figs; we require ~1%."""
+    rng = np.random.default_rng(0)
+    n = 400_000
+    c = 299792.458
+    sum_xi = np.zeros(n)
+    # draw k uniform redshifts per sample, sum ξ over all C(k,2) pairs
+    zk = rng.uniform(_Z_MIN, _Z_MAX, size=(k, n))
+    for a in range(k):
+        for b in range(a + 1, k):
+            zbar = 0.5 * (zk[a] + zk[b])
+            dv = c * np.abs(zk[a] - zk[b]) / (1.0 + zbar)
+            sum_xi += cp.xi_dla(dv, zbar)
+    mc = np.mean(1.0 + sum_xi)
+    closed = cp.prior_mean_rho(k, _Z_MIN, _Z_MAX)
+    assert closed == pytest.approx(mc, rel=0.01)
+
+
+def test_mean_xi_window_positive_and_degenerate(cp):
+    # A finite-width window has a positive mean ξ; a zero-width window -> 0.0.
+    assert cp.mean_xi_window(_Z_MIN, _Z_MAX) > 0.0
+    assert cp.mean_xi_window(2.5, 2.5) == 0.0
