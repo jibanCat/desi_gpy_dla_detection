@@ -87,6 +87,17 @@ from .dla_samples import DLASamplesMAT
 # Limit the number of workers to the number of CPU cores
 # max_workers = os.cpu_count() * 2
 
+
+def _logmeanexp_nan(x: np.ndarray) -> float:
+    """log mean exp over the finite (non-NaN) entries of x. Returns 0.0 if none."""
+    m = np.isfinite(x)
+    if not m.any():
+        return 0.0
+    xm = x[m]
+    a = np.max(xm)
+    return float(a + np.log(np.mean(np.exp(xm - a))))
+
+
 # fast search method for adapative truncated sampling
 def select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.02, logL_null=None):
     """
@@ -311,6 +322,8 @@ class DLAGP(NullGP):
         min_z_separation: float = 3000.0,
         broadening: bool = True,
         early_stop_mode: str = "baseline",
+        pair_prior_mode: str = "off",   # "off" | "clustering" (default off => byte-identical)
+        dla_bias: float = 2.0,
     ):
         super().__init__(
             params,
@@ -347,8 +360,42 @@ class DLAGP(NullGP):
             )
         self.early_stop_mode = early_stop_mode
 
+        # DLA velocity-separation clustering prior (gated; default off => the
+        # multi-DLA evidence is byte-identical to the proven path). See
+        # docs/superpowers/specs/2026-05-22-dla-clustering-prior-design.md §4.
+        self._validate_pair_prior_mode(pair_prior_mode)
+        self.pair_prior_mode = pair_prior_mode
+        self.dla_bias = float(dla_bias)
+        self.pair_prior = None
+        if pair_prior_mode == "clustering":
+            from gpy_dla_detection.dla_clustering import DLAClusteringPrior
+            self.pair_prior = DLAClusteringPrior(b_dla=dla_bias)
+
         # Initialize a cache for Voigt profiles
         self.voigt_cache = {}
+
+    @staticmethod
+    def _validate_pair_prior_mode(pair_prior_mode: str) -> None:
+        if pair_prior_mode not in ("off", "clustering"):
+            raise ValueError(
+                f"pair_prior_mode must be 'off' or 'clustering'; got {pair_prior_mode!r}"
+            )
+
+    def _apply_clustering_prior(self, sample_log_likelihoods, num_dlas, all_z_dlas, ind):
+        """RC-1/RC-2: add the self-normalized clustering log-weight to the k-DLA
+        per-sample EVIDENCE column, in place. No-op unless pair_prior_mode=='clustering'
+        and num_dlas>0 (Z_1=1: 1-DLA evidence is untouched). all_z_dlas: (k, N); ind:
+        bool (N,) min_z_sep mask. self-normalized Z_k = logmeanexp over the realized
+        valid samples; closed-form ⟨ξ⟩ is NOT used (the estimator is SIR, not iid-uniform)."""
+        if getattr(self, "pair_prior_mode", "off") != "clustering" or num_dlas < 1:
+            return
+        log_rho = self.pair_prior.log_rho(all_z_dlas)          # (N,)
+        log_rho[ind] = np.nan
+        log_rho[np.isnan(sample_log_likelihoods[:, num_dlas])] = np.nan
+        log_Zk = _logmeanexp_nan(log_rho)                       # RC-1
+        sample_log_likelihoods[:, num_dlas] = (
+            sample_log_likelihoods[:, num_dlas] + log_rho - log_Zk
+        )
 
     def log_model_evidences(self, max_dlas: int) -> np.ndarray:
         """
@@ -785,6 +832,7 @@ class DLAGP(NullGP):
                         axis=0,
                     )
                     sample_log_likelihoods[ind, num_dlas] = np.nan
+                    self._apply_clustering_prior(sample_log_likelihoods, num_dlas, all_z_dlas, ind)
 
                 # Compute the log likelihood for each number of DLAs
                 max_log_likelihood = np.nanmax(sample_log_likelihoods[:, num_dlas])
@@ -1150,6 +1198,8 @@ class DLAGPMAT(DLAGP):
         prev_tau_0: float = 0.0023,
         prev_beta: float = 3.65,
         early_stop_mode: str = "baseline",
+        pair_prior_mode: str = "off",
+        dla_bias: float = 2.0,
     ):
         # See NullGPMAT for the rationale: v2 trained .h5 carries its own
         # normalization region; mutate params in place if present so set_data
@@ -1199,4 +1249,6 @@ class DLAGPMAT(DLAGP):
             min_z_separation=min_z_separation,
             broadening=broadening,
             early_stop_mode=early_stop_mode,
+            pair_prior_mode=pair_prior_mode,
+            dla_bias=dla_bias,
         )
