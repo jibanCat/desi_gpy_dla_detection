@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gpy_dla_detection.effective_optical_depth import effective_optical_depth
 
 
-def accumulate_mock(spectra_dir, n_files, zbins):
+def accumulate_mock(spectra_dir, n_files, zbins, no_gp=False):
     sumF = np.zeros(len(zbins) - 1)
     sumC = np.zeros(len(zbins) - 1)
     # GP-predicted mean-flux suppression accumulated EXACTLY as null_gp applies it:
@@ -92,15 +92,16 @@ def accumulate_mock(spectra_dir, n_files, zbins):
                 cg = conti[g]
                 flg = fl[m][g]
                 wobs = w[m][g]
-                # GP-predicted suppression at these pixels, THIS QSO's z_qso
-                fgp3 = np.exp(-np.nansum(
-                    effective_optical_depth(wobs, TURNER_BETA, TURNER_TAU0, zq, 3), axis=1))
-                fgp31 = np.exp(-np.nansum(
-                    effective_optical_depth(wobs, TURNER_BETA, TURNER_TAU0, zq, 31), axis=1))
                 np.add.at(sumF, idx[ok], flg[ok])
                 np.add.at(sumC, idx[ok], cg[ok])
-                np.add.at(sumGP3, idx[ok], (cg * fgp3)[ok])
-                np.add.at(sumGP31, idx[ok], (cg * fgp31)[ok])
+                if not no_gp:
+                    # GP-predicted suppression at these pixels, THIS QSO's z_qso
+                    fgp3 = np.exp(-np.nansum(
+                        effective_optical_depth(wobs, TURNER_BETA, TURNER_TAU0, zq, 3), axis=1))
+                    fgp31 = np.exp(-np.nansum(
+                        effective_optical_depth(wobs, TURNER_BETA, TURNER_TAU0, zq, 31), axis=1))
+                    np.add.at(sumGP3, idx[ok], (cg * fgp3)[ok])
+                    np.add.at(sumGP31, idx[ok], (cg * fgp31)[ok])
                 used = True
             nqso += used
     return sumF, sumC, sumGP3, sumGP31, nqso
@@ -112,6 +113,8 @@ def main():
     ap.add_argument("--mock", action="append", required=True,
                     help="LABEL:/path/to/spectra-16  (repeatable)")
     ap.add_argument("--n-files", type=int, default=2)
+    ap.add_argument("--no-gp", action="store_true",
+                    help="Skip the per-QSO GP-model curve (fast — for full-mock runs).")
     ap.add_argument("--out-prefix", default="mock_mean_flux")
     args = ap.parse_args()
 
@@ -129,11 +132,12 @@ def main():
         return tau
     for spec in args.mock:
         label, d = spec.split(":", 1)
-        sumF, sumC, sumGP3, sumGP31, nq = accumulate_mock(d, args.n_files, zbins)
+        sumF, sumC, sumGP3, sumGP31, nq = accumulate_mock(d, args.n_files, zbins, no_gp=args.no_gp)
         tau = tau_of(sumF, sumC)
         results[label] = (zmid, sumF / np.where(sumC > 0, sumC, np.nan), tau)
-        gp3_ref = tau_of(sumGP3, sumC)    # GP curves coincide across mocks (same z_qso dist)
-        gp31_ref = tau_of(sumGP31, sumC)
+        if not args.no_gp:
+            gp3_ref = tau_of(sumGP3, sumC)    # GP curves coincide across mocks (same z_qso dist)
+            gp31_ref = tau_of(sumGP31, sumC)
         # fit tau_eff = tau_0 (1+z)^beta  via log-linear regression on finite bins
         fin = np.isfinite(tau) & (tau > 0)
         beta_f, lnt0 = np.polyfit(np.log(1 + zmid[fin]), np.log(tau[fin]), 1)
