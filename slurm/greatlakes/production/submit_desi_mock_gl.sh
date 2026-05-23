@@ -110,6 +110,10 @@ ENABLE_TAU_EB="${ENABLE_TAU_EB:-1}"
 TAU_EB_OBJECTIVE="${TAU_EB_OBJECTIVE:-null}"
 EARLY_STOP_MODE="${EARLY_STOP_MODE:-baseline}"
 
+# DLA clustering prior (default off => byte-identical to production).
+PAIR_PRIOR_MODE="${PAIR_PRIOR_MODE:-off}"
+DLA_BIAS="${DLA_BIAS:-2.0}"
+
 START_INDEX="${START_INDEX:-0}"
 END_INDEX="${END_INDEX:-62}"
 STEP="${STEP:-2}"
@@ -177,6 +181,8 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
             --enable_tau_eb "$ENABLE_TAU_EB" \
             --tau_eb_objective "$TAU_EB_OBJECTIVE" \
             --early_stop_mode "$EARLY_STOP_MODE" \
+            --pair_prior_mode "$PAIR_PRIOR_MODE" \
+            --dla_bias "$DLA_BIAS" \
             --figure_dir "$FIGURE_DIR" \
             --level2_start "$LEVEL2_START" \
             --level2_end "$LEVEL2_END" &
