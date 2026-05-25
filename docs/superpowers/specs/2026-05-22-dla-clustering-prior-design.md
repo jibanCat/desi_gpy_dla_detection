@@ -61,16 +61,18 @@ the prohibition.)
    *redshift-space* (RSD-included Δv) while the analytic is real-space, so agreement is ~shape to
    ~15-30%, not bit-for-bit; this is a prior/regularizer, exact agreement is not required.
 
-## 4. The math (verified)
+## 4. The math (verified by two Bayesian-referee rounds)
 
-The clustered prior enters as an **importance reweight** of the existing uniform-prior MC estimator
-(samples stay drawn from uniform; equivalent in expectation to resampling from the clustered prior —
-verified numerically to 3e-4):
+The clustered prior enters as an **evidence-only, Occam-style factor**. The SIR sampler is left
+**completely untouched** — it resamples ∝ the *bare* likelihood, preserving full exploration of near
+*and* far z_DLA (critical with sparse QMC samples; we don't starve far-separation regions). ρ never
+enters `sample_log_likelihoods` or the resampling weights; it only reweights the *finalized* k-DLA
+marginal evidence — exactly where the existing Occam penalty `−log(N)·k` lives.
 
-**Per-sample weight (additive form):**
+**Per-tuple clustering weight (additive form):**
 ```
 ρ_k(z_1..z_k) = 1 + Σ_{i<j} ξ_DLA(Δv_ij, z̄_ij)          # leading order, 2-point only
-log ρ_k       = log1p( Σ_{i<j} ξ_DLA(Δv_ij) )            # add to each surviving sample's L_i
+log ρ_k       = log1p( Σ_{i<j} ξ_DLA(Δv_ij) )            # feeds the evidence factor below, NOT added to L_i
 ```
 This is the **leading-order (tree-level)** N-point density for a Gaussian/linear-bias field
 (connected 3+point terms ζ small). NB: CoLoRe applies a *lognormal* transform before Poisson-
@@ -82,35 +84,53 @@ correlations and **overcounts** at k≥3 (numerically ⟨ρ_mult⟩=3.20 vs ⟨�
 production runs MAX_DLAS=4, the additive form is required. For **k=2** the two forms coincide and
 equal `1+ξ_12` exactly (the textbook 2-point definition `n̄²[1+ξ]`).
 
-**Per-model normalization (required) — SELF-NORMALIZED over the realized samples [RC-1].**
-The clustered prior must integrate to 1. **The Bayesian referee found the estimator is NOT
-"k i.i.d. uniform draws":** it is sequential importance resampling (SIR) — DLA-1's z is the QMC
-sample, DLAs 2..k are *resampled* ∝ likelihood via `searchsorted_method` (`dla_gp.py:148-156`,
-`np.random.rand`). So the realized k-tuples are **not** uniform, and the closed-form
-`Z_k = 1 + C(k,2)⟨ξ⟩_window` is the **wrong** normalizer — it would bias the multiplicity ladder
-toward *more* DLAs. The normalizer must be **self-normalized over the same realized samples**:
+**The evidence factor (exact algebra; round-2 referee confirmed to machine precision).** For the
+normalized clustered prior `π_clust = π_unif·ρ_k/C`, `C = E_unif[ρ_k]`:
 ```
-log Z_k_clustered = logmeanexp_i [ L_i + log ρ_k(z_i) ]  −  log Z_k
-log Z_k           = logmeanexp_i [ log ρ_k(z_i) ]        # over the SAME realized (SIR) samples
+Z_k^clust = ∫ L π_clust = E_unif[L ρ_k]/E_unif[ρ_k] = Z_k^unif · E_post[ρ_k] / E_unif[ρ_k]
+log Z_k  +=  log E_post[ρ_k]  −  log E_unif[ρ_k]        # added to the FINALIZED bare k-DLA log-evidence
 ```
-This is exact by construction for the realized proposal, needs no closed form, and removes the
-cosmology dependence of the normalizer. The closed-form `1 + C(k,2)⟨ξ⟩_window` (the triangular
-pair-pdf `2(L−d)/L²` integral, per spectrum) is retained **only as a sanity cross-check**, not the
-production normalizer. `Z_1 = 1` (no pairs) → the **DLA-vs-null factor at k=1 is unchanged**; only
-the multi-DLA ladder (k vs k−1) shifts.
+- **Z_k^unif** = the existing, **UNCHANGED** bare evidence (and the bare resampling weights `W`).
+- **E_post[ρ_k]** = posterior (likelihood-weighted) average = `Σ_i p_i ρ_i / Σ_i p_i`, `p_i` = the
+  **bare** `sample_probabilities` (= exp(L_k−max), `dla_gp.py:791`), `ρ_i = exp(log ρ_k)`.
+  Equivalently `logmeanexp_i(L_i+log ρ_i) − logmeanexp_i(L_i)` computed on the bare column (do **not**
+  mutate it). The `+log(N)`/`−lognorm·k` cancel in this ratio.
+- **E_unif[ρ_k]** = prior average = closed form **`1 + C(k,2)·⟨ξ⟩_window`** (⟨ξ⟩_window = the
+  triangular-pdf `2(L−d)/L²` integral over the spectrum's z-DLA window; analytic, *exact in
+  expectation* by linearity — verified vs MC to 4 sig figs). This is the genuine prior-normalization
+  constant `C`, computed once per spectrum.
+- **k=1**: ρ≡1 → factor 0 → the **DLA-vs-null factor (Z_1) is untouched**; only the multi-DLA
+  ladder (k vs k−1) shifts.
 
-**Hook placement [RC-2].** `log ρ_k` is added to the **per-sample evidence log-likelihood** (the
-`sample_log_likelihoods[:,k]` feeding the `max`/`mean`, `dla_gp.py:790-793`), composing correctly
-with the existing `+log(N)` patch (it rides through the logmeanexp untouched). It must **NOT** flow
-into the SIR resampling weights `W` (`:922`) — that would compound ρ multiplicatively across stages
-(the very blow-up the additive form avoids). Production resamples on the **bare** likelihood;
-ρ enters the evidence only.
+**⚠ E_post is a mildly biased estimator (the residual multiplicity-inflation risk).** The round-2
+referee showed `Σ p_i ρ_i/Σ p_i` is a self-normalized ratio over the **SIR proposal q ≠ uniform**;
+the `+log(N)`/`−lognorm·k` cancel but **q does not** (no `1/q` weight in `p`). So E_post is biased
+**upward**, ESS-dependent (~+0.03 logZ at ESS≈0.4 → ~+0.10 at ESS≈0.13), one-signed toward more DLAs
+— exactly the user's Comment-1 concern, in attenuated form. Crucially it **does NOT compound**
+(applied once per k, *post*-resampling), so it is bounded and far smaller than the rejected in-place
+option. It is monitored, not eliminated: the ESS-frac diagnostic (§7-i, warn <0.3) bounds it, and the
+**false-positive-pair purity** check (§7-iv) is the *gating* empirical guard. Accepted as the inherent
+SIR limitation for a default-off, mock-validated, calibratable prior.
+
+**Wiring (non-negotiable — round-2 referee).**
+1. `W` (resampling weights, `dla_gp.py:920-929`) computed from the **bare** likelihood — ρ excluded
+   (no proposal change, no compounding; this is what makes RC-2 hold and what was wrong in the first
+   in-place attempt).
+2. `Δ_k = log E_post[ρ_k] − log E_unif[ρ_k]` added to the **finalized** `log_likelihoods_dla[k]` in
+   all branches (no-truncation + FILTER partition: add to the *combined* value; for FILTER=1 compute
+   E_post over the dominant `_valid_mask` samples).
+3. Do **not** mutate the per-sample `sample_log_likelihoods` column. Default-off ⇒ byte-identical.
 
 **Model-selection separability [RC-3].** ρ_k re-distributes probability mass *within fixed k*; it
 must not leak into the existing occurrence prior `p(k) = (M/N)^k − (M/N)^{k+1}`
-(`dla_gp.py:1042-1070`, applied in `bayesian_model_selection.py`). The guarantee is a **null-
-clustering invariance test**: a spectrum with no true close pairs must give identical p_DLA and
-per-k posteriors prior-ON vs prior-OFF (to MC tolerance). If it fails, Z_k is mis-normalized.
+(`dla_gp.py:1042-1070`, applied in `bayesian_model_selection.py`). Guarantee = a **null-clustering
+invariance test**: a spectrum with no true close pairs gives identical p_DLA / per-k posteriors
+prior-ON vs prior-OFF (to MC tol). `Z_1`-untouched (k=1 factor=0) is the exact part of this.
+
+**RC-1 correction (superseded by round-2).** An earlier round-1 RC-1 used *only* the realized-sample
+`logmeanexp_i[log ρ]` (= log E_post, the **numerator**) and demoted the closed-form `1+C(k,2)⟨ξ⟩` to
+"a cross-check" — that was **incomplete**: the closed form is the genuine **denominator** `C = E_unif[ρ]`.
+The correct factor is `E_post[ρ]/E_unif[ρ]` — **both** terms.
 
 ## 5. The clustering function `ξ_DLA(Δv, z)`
 
@@ -202,7 +222,17 @@ b=2 to mock/caveat real data [RC-5, §3/§6]; validation must add ESS + pair ΔZ
 diagnostics [RC-6, §7]; flag prior-ON catalogs out of clustering science [C-1, §3/§10]. Composes
 correctly with the existing `+log(N)` patch and the `p(k)=(M/N)^k−(M/N)^{k+1}` occurrence prior.
 
-All required changes from (B) and (C) are folded into §3–§7 above. **Implementation may proceed.**
+**(C-round2) Bayesian referee, round 2** (after the design discussion chose evidence-only) —
+verified the exact evidence factor `log Z_k += log E_post[ρ] − log E_unif[ρ]` (confirmed to machine
+precision) with the **sampler left untouched** (your sparse-sample exploration concern). Two outcomes:
+(i) **round-1 RC-1 was incomplete** — it kept the realized-sample numerator (E_post) and wrongly
+dropped the closed-form denominator (E_unif = C); the correct form needs *both* (§4). (ii) `Σpρ/Σp`
+is **not** proposal-invariant — it is biased mildly *upward* (ESS-dependent, one-signed toward more
+DLAs), but bounded and non-compounding; monitored by ESS (§7-i) and gated by pair-purity (§7-iv).
+The §4 math + §7 diagnostics reflect this.
+
+All required changes from (B), (C), and (C-round2) are folded into §3–§7 above. **Implementation may
+proceed** (Task 2 re-worked from the rejected in-place form to the evidence-only factor).
 
 ## 10. Open questions / risks / caveats
 
