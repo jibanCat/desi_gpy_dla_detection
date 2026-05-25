@@ -151,6 +151,7 @@ for (( i=LOOP_START; i<=LOOP_END; i+=OUTER_STEP )); do
                 --account="$GL_SLURM_ACCOUNT" \
                 --partition="$GL_SLURM_PARTITION" \
                 --time="$GL_SLURM_TIME" \
+                --mem="${GL_SLURM_MEM:-64G}" \
                 --export="$full_export" "$INNER")
 
     echo "[launch-gl] $(date +%H:%M:%S) chunk ${i}..${chunk_end}"

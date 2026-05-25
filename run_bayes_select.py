@@ -21,7 +21,11 @@ from gpy_dla_detection.dla_samples import DLASamplesMAT
 from gpy_dla_detection.subdla_samples import SubDLASamplesMAT
 from gpy_dla_detection.bayesian_model_selection import BayesModelSelect
 from gpy_dla_detection.desi_spectrum_reader import DESISpectrumReader
-from gpy_dla_detection.process_helpers import initialize_results, save_results_to_hdf5
+from gpy_dla_detection.process_helpers import (
+    initialize_results,
+    save_results_to_hdf5,
+    _gzip_kwargs,
+)
 from gpy_dla_detection.plottings.plot_model import plot_samples_vs_this_mu
 
 from gpy_dla_detection.compute_1sigma_errors import compute_1sigma_errors_fast
@@ -582,11 +586,14 @@ class DLAHolder:
 
     def save_results(self, output_file: str):
 
-        # Save results to HDF5 file
+        # Save results to HDF5 file (gzip — the per-sample arrays are mostly
+        # NaN fill, so this is ~15-25x smaller and lossless; see _gzip_kwargs)
         with h5py.File(output_file, "w") as f:
             # Loop through the results dictionary and save each key-value pair as an HDF5 dataset
             for key, value in self.results.items():
-                f.create_dataset(key, data=value)  # Save each result in the HDF5 file
+                f.create_dataset(
+                    key, data=value, **_gzip_kwargs(value)
+                )  # Save each result in the HDF5 file (gzip-compressed)
 
 
 class DLAProcessor:
