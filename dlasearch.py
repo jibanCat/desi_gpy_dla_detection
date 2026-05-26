@@ -450,20 +450,26 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             nbal = catalog["NCIV_450"][entry]
             bal_locs = []
             for n in range(nbal):
-                # velocity factor: (1 - v/c) for each edge of the BAL trough
-                # VMAX_CIV_450 is the high-velocity (blueshifted) edge
-                # VMIN_CIV_450 is the low-velocity edge
-                v_max = -catalog[entry]["VMAX_CIV_450"][n] / constants.c + 1.0
-                v_min = -catalog[entry]["VMIN_CIV_450"][n] / constants.c + 1.0
+                # Rest-frame factor (1 - v/c) for each trough edge. Velocities are
+                # positive-blueward (quickquasars/baltools: λ_obs = λ_rest·(1−v/c)).
+                v_a = -catalog[entry]["VMAX_CIV_450"][n] / constants.c + 1.0
+                v_b = -catalog[entry]["VMIN_CIV_450"][n] / constants.c + 1.0
 
                 for line, lam in constants.bal_lines.items():
-                    # rest-frame wavelength range to mask for this BAL trough + line
-                    mask = np.logical_and(wave_rf > lam * v_max, wave_rf < lam * v_min)
+                    # BUG FIX (2026-05-26, order-agnostic): the previous code wrote
+                    # (wave_rf > lam*v_max) & (wave_rf < lam*v_min) assuming VMAX>VMIN,
+                    # but this mock's bal_cat stores VMIN_CIV_450 > VMAX_CIV_450 (VMIN =
+                    # high-velocity/blue edge) → backwards EMPTY interval → 0 pixels masked
+                    # for every trough. baltools' nominal ordering is the opposite (VMIN<VMAX),
+                    # and quickquasars mock catalogs aren't guaranteed either way, so take the
+                    # bluer edge (smaller 1−v/c) as the lower bound regardless of column order.
+                    # (--balmask is off in all production, so no production output was affected.)
+                    lo = lam * min(v_a, v_b)
+                    hi = lam * max(v_a, v_b)
+                    mask = np.logical_and(wave_rf > lo, wave_rf < hi)
                     # track Lyα and NV observed-frame ranges for post-detection BAL check
                     if (line == "Lya") or (line == "NV"):
-                        rededge = (lam * v_min) * (1 + zqso)
-                        blueedge = (lam * v_max) * (1 + zqso)
-                        bal_locs.append((rededge, blueedge))
+                        bal_locs.append((lo * (1 + zqso), hi * (1 + zqso)))
 
                     # Update pixel mask and zero out inverse variance
                     pixel_mask[mask] = True
