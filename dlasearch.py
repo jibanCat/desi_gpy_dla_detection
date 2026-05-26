@@ -557,7 +557,13 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         if ("nbal" in locals()) & np.any(zdla != -1):
             lam_center_dla = constants.Lya_line * (1 + zdla)
             for window in bal_locs:
-                balflag = (lam_center_dla < window[0]) & (lam_center_dla > window[1])
+                # Order-agnostic (2026-05-26): the BAL-mask fix now appends bal_locs as
+                # ascending (lo, hi), but this flag previously assumed descending (red, blue)
+                # — (center < window[0]) & (center > window[1]) — so the ascending tuple made
+                # the condition always False and silently killed POTENTIAL_BAL. Sort the edges
+                # so the flag fires for either tuple order.
+                lo_w, hi_w = sorted(window)
+                balflag = (lam_center_dla > lo_w) & (lam_center_dla < hi_w)
                 fitwarn[balflag] |= DLAFLAG.POTENTIAL_BAL
 
         # average signal to noise computation
