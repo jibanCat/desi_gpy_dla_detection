@@ -120,6 +120,15 @@ def parse_args():
                    help="Min predicted/truth log NHI for headline numbers (default 20.3).")
     p.add_argument("--gp-conf", type=float, default=0.99,
                    help="Fixed P_DLA cut for 1D + 2D plots (molly used 0.99 for Saclay DLA).")
+    p.add_argument("--nhi-bins", default=None,
+                   help="Comma-separated log-NHI bin edges for the (SNR,NHI) "
+                        "purity/completeness matrix + molly_matrix.tsv. 'inf' "
+                        "allowed for the open top bin. Default: "
+                        "20.3,20.5,21,21.5,22,inf (molly). For a sub-DLA→DLA "
+                        "table over [19,23] use e.g. 19,19.5,20,20.3,20.5,21,22,23.")
+    p.add_argument("--snr-bins", default=None,
+                   help="Comma-separated S2N_RED bin edges for the matrix. "
+                        "'inf' allowed. Default: 0,1,2,3,4,5,6,7,inf (molly).")
     p.add_argument("--bf-band-min", type=float, default=None,
                    help="Optional extra cut: keep only detections with "
                         "BF_BAND >= this (the local-posterior boundary-purity "
@@ -701,10 +710,39 @@ def _run_one_window(cat, truth, bal_tids, args, title, out_dir, lam_rf_min):
         title=title, gp_conf=args.gp_conf, nhi_min_both=args.nhi_min,
     )
 
-    snr_bin = np.array([0., 1., 2., 3., 4., 5., 6., 7., np.inf])
-    nhi_bin = np.array([20.3, 20.5, 21., 21.5, 22., np.inf])
-    snr_bin_plot = np.array([0., 1., 2., 3., 4., 5., 6., 7., 8.])
-    nhi_bin_plot = np.array([20.3, 20.5, 21., 21.5, 22., 22.5])
+    def _parse_edges(spec, default, name):
+        if spec is None:
+            return np.array(default, dtype=float)
+        try:
+            edges = np.array(
+                [np.inf if e.strip().lower() in ("inf", "+inf") else float(e)
+                 for e in spec.split(",") if e.strip() != ""], dtype=float)
+        except ValueError:
+            raise SystemExit(f"--{name}: could not parse '{spec}' as "
+                             f"comma-separated numbers (e.g. 19,20,21,inf)")
+        if len(edges) < 2:
+            raise SystemExit(f"--{name}: need >=2 bin edges, got {len(edges)} "
+                             f"from '{spec}'")
+        if np.isinf(edges[:-1]).any():
+            raise SystemExit(f"--{name}: only the last edge may be 'inf', "
+                             f"got {list(edges)}")
+        if not np.all(np.diff(edges) > 0):
+            raise SystemExit(f"--{name}: bin edges must be strictly "
+                             f"increasing, got {list(edges)}")
+        return edges
+
+    def _plot_edges(edges):
+        # pcolor needs finite edges; map a trailing inf to last_finite + step.
+        e = edges.copy()
+        if not np.isfinite(e[-1]):
+            step = (e[-2] - e[-3]) if len(e) >= 3 and np.isfinite(e[-3]) else 0.5
+            e[-1] = e[-2] + step
+        return e
+
+    snr_bin = _parse_edges(args.snr_bins, [0., 1., 2., 3., 4., 5., 6., 7., np.inf], "snr-bins")
+    nhi_bin = _parse_edges(args.nhi_bins, [20.3, 20.5, 21., 21.5, 22., np.inf], "nhi-bins")
+    snr_bin_plot = _plot_edges(snr_bin)
+    nhi_bin_plot = _plot_edges(nhi_bin)
 
     pur_mat = np.full((len(snr_bin) - 1, len(nhi_bin) - 1), np.nan)
     cmp_mat = np.full((len(snr_bin) - 1, len(nhi_bin) - 1), np.nan)
@@ -727,6 +765,18 @@ def _run_one_window(cat, truth, bal_tids, args, title, out_dir, lam_rf_min):
     plot_matrix(cmp_mat, snr_bin_plot, nhi_bin_plot,
                 title=f"{title} — Molly completeness matrix",
                 out_png=str(out_dir / "molly_completeness_matrix.png"), kind="completeness")
+
+    # Dump the (SNR bin, NHI bin) matrix to tsv so the heatmap is readable as a table.
+    with (out_dir / "molly_matrix.tsv").open("w") as f:
+        f.write(f"# (S2N_RED bin, log-NHI bin) purity & completeness at "
+                f"P_DLA>{args.gp_conf}; purity uses predicted NHI, "
+                f"completeness uses truth NHI\n")
+        f.write("snr_lo\tsnr_hi\tnhi_lo\tnhi_hi\tpurity\tcompleteness\n")
+        for i in range(len(snr_bin) - 1):
+            for j in range(len(nhi_bin) - 1):
+                f.write(f"{snr_bin[i]:g}\t{snr_bin[i+1]:g}\t"
+                        f"{nhi_bin[j]:g}\t{nhi_bin[j+1]:g}\t"
+                        f"{pur_mat[i, j]:.4f}\t{cmp_mat[i, j]:.4f}\n")
 
     _, _, pur_head = purity_min(cat_cut, tp, args.snr_min, args.nhi_min,
                                  args.gp_conf, good_mask,
