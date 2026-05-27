@@ -101,6 +101,10 @@ if [ "$DRY_RUN" -ne 1 ]; then
     {
         echo "# Resolved env for run launched $(date)"
         echo "# config: $CONFIG_PATH"
+        # Code version (git) for reproducibility — pins exactly which commit ran.
+        echo "CODE_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+        echo "CODE_BRANCH=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+        echo "CODE_DIRTY=$(git -C "$SCRIPT_DIR" diff --quiet 2>/dev/null && echo clean || echo dirty)"
         for var in MODE QSOCAT MOCKDIR OUTDIR LEARNED_FILE CATALOG_NAME LOS_CATALOG \
                    DLA_CATALOG DLA_SAMPLES_FILE SUB_DLA_SAMPLES_FILE NUM_DLA_SAMPLES \
                    NUM_SUBDLA_SAMPLES MAX_DLAS SINGLE_ABSORBER_MODEL FILTER_LOW_LIKELIHOOD \
