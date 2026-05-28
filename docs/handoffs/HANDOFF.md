@@ -59,10 +59,14 @@
 2. **London full re-run with the fixed code** (PR #7 pre-merge gate; fixes the coverage gap +
    −log_ratio staleness) → re-tune p_DLA + re-calibrate P/C. Budget-gated.
 3. **PR #7 → desi_y3**, then the `clustering_prior` PR (still unpushed, merge-ready).
-4. Housekeeping: migrate `docs/notes/` to a separate notes repo (see below).
+4. (done 2026-05-27) `docs/notes/` migrated to a separate notes repo — see Pointers.
 
 ## Pointers
 
+- **Investigation notes + figures: separate private repo `github.com/jibanCat/desi_gpy_dla_notes`**
+  (NOT in this codebase — `docs/notes/` is gitignored + untracked). **Read it for prior
+  investigation context** (`git clone`/`git pull`, then read `notes/*.md`). Add new write-ups
+  there, not here.
 - Detailed prior handoffs: `docs/handoffs/legacy/` (local archive, gitignored).
 - Per-knob production baseline + justification: top of PR #7 description.
 - Packaging routine: `slurm/greatlakes/production/package_catalog.sh`.
