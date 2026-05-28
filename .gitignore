@@ -55,3 +55,12 @@ slurm/greatlakes/*.log
 # and the GPU/CPU profiler trace JSONs (~MB-GB) are not.
 tests/profile/results/*.tsv
 tests/profile/results/trace_*.json
+
+# --- handoff notes: keep current in docs/handoffs/ (tracked); archive old ones locally ---
+docs/handoffs/legacy/
+
+# SLURM job logs in any greatlakes subdir (the old slurm/greatlakes/*.log missed production/logs/)
+slurm/greatlakes/**/*.log
+
+# investigation notes are tracked in a SEPARATE notes repo, not the codebase
+docs/notes/
