@@ -143,6 +143,10 @@ def parse_args():
     p.add_argument("--target-id", type=int, required=True)
     p.add_argument("--data-root", required=True)
     p.add_argument("--preset", choices=["eboss", "y3", "london", "2lpt"], required=True)
+    p.add_argument("--learned-file", default=None,
+                   help="Absolute path to the trained GP model HDF5; overrides "
+                        "the preset default (needed for the 2lpt model, which "
+                        "lives outside --data-root).")
     p.add_argument("--dla-samples-file", default=None)
     p.add_argument("--sub-dla-samples-file", default=None)
     p.add_argument("--num-dla-samples", type=int, default=10000)
@@ -244,7 +248,7 @@ def main():
     from examples.smoke_one_spectrum import PRESETS
 
     preset = PRESETS[args.preset]
-    learned = os.path.join(args.data_root, preset.learned_file)
+    learned = args.learned_file if args.learned_file else os.path.join(args.data_root, preset.learned_file)
     catalog = os.path.join(args.data_root, "data/dr12q/processed/catalog.mat")
     los_cat = os.path.join(args.data_root, "data/dla_catalogs/dr9q_concordance/processed/los_catalog")
     dla_cat = os.path.join(args.data_root, "data/dla_catalogs/dr9q_concordance/processed/dla_catalog")
