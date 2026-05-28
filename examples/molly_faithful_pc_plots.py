@@ -778,12 +778,12 @@ def _run_one_window(cat, truth, bal_tids, args, title, out_dir, lam_rf_min):
                         f"{nhi_bin[j]:g}\t{nhi_bin[j+1]:g}\t"
                         f"{pur_mat[i, j]:.4f}\t{cmp_mat[i, j]:.4f}\n")
 
-    _, _, pur_head = purity_min(cat_cut, tp, args.snr_min, args.nhi_min,
-                                 args.gp_conf, good_mask,
-                                 nhi_key="NHI", goodness_key="P_DLA")
-    _, _, cmp_head = completeness_min(cat_cut, tp, args.snr_min, args.nhi_min,
-                                       args.nhi_min, args.gp_conf, truth_cut,
-                                       good_mask, nhi_key="NHI", goodness_key="P_DLA")
+    n_tp_head, n_kept_head, pur_head = purity_min(
+        cat_cut, tp, args.snr_min, args.nhi_min, args.gp_conf, good_mask,
+        nhi_key="NHI", goodness_key="P_DLA")
+    _n_tp_c, n_truth_kept_head, cmp_head = completeness_min(
+        cat_cut, tp, args.snr_min, args.nhi_min, args.nhi_min, args.gp_conf,
+        truth_cut, good_mask, nhi_key="NHI", goodness_key="P_DLA")
     with (out_dir / "molly_summary.tsv").open("w") as f:
         f.write("metric\tvalue\n")
         f.write(f"title\t{title}\n")
@@ -796,6 +796,13 @@ def _run_one_window(cat, truth, bal_tids, args, title, out_dir, lam_rf_min):
         f.write(f"gp_conf\t{args.gp_conf}\n")
         f.write(f"purity_headline\t{pur_head:.4f}\n")
         f.write(f"completeness_headline\t{cmp_head:.4f}\n")
+        # Absolute counts at the headline operating point (SNR>snr_min, NHI>nhi_min,
+        # P_DLA>gp_conf, DLAFLAG==0 [+ lyb-veto if set]). purity = n_TP / n_kept;
+        # completeness = n_TP / n_truth_kept. n_TP from purity_min and completeness_min
+        # are equal by construction (same mask).
+        f.write(f"n_TP_headline\t{n_tp_head}\n")
+        f.write(f"n_kept_headline\t{n_kept_head}\n")
+        f.write(f"n_truth_kept_headline\t{n_truth_kept_head}\n")
         f.write("\n# log_pdla\tpurity\tcompleteness\n")
         for lp, pp, cc in zip(log_pdla, pur_curve, cmp_curve):
             f.write(f"{lp}\t{pp:.4f}\t{cc:.4f}\n")
