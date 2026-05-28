@@ -82,6 +82,57 @@ def raw_voigt_absorption(wave_obs_A: np.ndarray, log_nhi: float,
     return np.exp(-N * total)
 
 
+def _absorber_type(log_nhi: float) -> str:
+    if log_nhi >= 20.3:
+        return "DLA"
+    if log_nhi >= 19.5:
+        return "subDLA"
+    return "LLS"
+
+
+_TYPE_COLOR = {"DLA": "#2ca02c", "subDLA": "#ff7f0e", "LLS": "#8c564b"}
+
+
+def read_truth_absorbers(truth_cat: str, target_id: int):
+    """All true absorbers (z, log_nhi, type) for a TARGETID, strongest first."""
+    import fitsio
+    t = fitsio.read(truth_cat, ext=1)
+    m = t["TARGETID"] == target_id
+    zc = "Z" if "Z" in t.dtype.names else ("Z_DLA" if "Z_DLA" in t.dtype.names else "Z_QSO")
+    return sorted(
+        [(float(z), float(n), _absorber_type(float(n)))
+         for z, n in zip(t[zc][m], t["NHI"][m])],
+        key=lambda r: -r[1],
+    )
+
+
+def bal_civ_troughs(bal_cat: str, target_id: int, z_qso: float):
+    """Observed-Å BAL trough bands for the main UV lines in the Lyα forest.
+    Uses the AI CIV_450 trough velocities; order-agnostic (lo=min,hi=max v).
+    Convention λ_obs = λ_rest·(1+z_qso)·(1 − v/c), positive v = blueward."""
+    import fitsio
+    b = fitsio.read(bal_cat, ext=1)
+    idx = np.where(b["TARGETID"] == target_id)[0]
+    if idx.size == 0:
+        return []
+    r = idx[0]
+    vmin = np.atleast_1d(b["VMIN_CIV_450"][r]).astype(float)
+    vmax = np.atleast_1d(b["VMAX_CIV_450"][r]).astype(float)
+    good = np.isfinite(vmin) & np.isfinite(vmax) & ((vmin != 0) | (vmax != 0))
+    vmin, vmax = vmin[good], vmax[good]
+    if vmin.size == 0:
+        return []
+    c = 299792.458
+    lines = [1215.67, 1240.81, 1206.50, 1031.93, 1037.62, 1025.72, 972.54]
+    bands = []
+    for v0, v1 in zip(vmin, vmax):
+        lo_v, hi_v = min(v0, v1), max(v0, v1)
+        for lam in lines:
+            obs = lam * (1 + z_qso)
+            bands.append((obs * (1 - hi_v / c), obs * (1 - lo_v / c)))
+    return bands
+
+
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--pkl", required=True)
@@ -91,13 +142,20 @@ def parse_args():
     p.add_argument("--zcat", required=True)
     p.add_argument("--target-id", type=int, required=True)
     p.add_argument("--data-root", required=True)
-    p.add_argument("--preset", choices=["eboss", "y3", "london"], required=True)
+    p.add_argument("--preset", choices=["eboss", "y3", "london", "2lpt"], required=True)
     p.add_argument("--dla-samples-file", default=None)
     p.add_argument("--sub-dla-samples-file", default=None)
     p.add_argument("--num-dla-samples", type=int, default=10000)
     p.add_argument("--num-subdla-samples", type=int, default=10000)
     p.add_argument("--truth-z", type=float, default=None)
     p.add_argument("--truth-nhi", type=float, default=None)
+    p.add_argument("--truth-cat", default=None,
+                   help="hcd_truth_cat.fits / dla_cat.fits: overlay ALL true "
+                        "absorbers for this TARGETID, colored by class "
+                        "(DLA/subDLA/LLS).")
+    p.add_argument("--bal-cat", default=None,
+                   help="bal_cat.fits: shade the CIV-velocity BAL troughs "
+                        "(over the main UV lines) if this TARGETID is a BAL.")
     p.add_argument("--snr", type=float, default=None,
                    help="(optional) SNR_FOREST from snr_cat for the title")
     p.add_argument("--title", default=None)
@@ -327,6 +385,25 @@ def main():
         ax.axvspan(LYA * (1 + mz - ze), LYA * (1 + mz + ze),
                    color="C3", alpha=0.10, lw=0)
 
+    # All true absorbers from --truth-cat, colored by class; logNHI annotated.
+    if args.truth_cat:
+        seen = set()
+        for tz, tn, typ in read_truth_absorbers(args.truth_cat, args.target_id):
+            col = _TYPE_COLOR[typ]
+            ax.axvline(LYA * (1 + tz), color=col, lw=1.5, ls="--", alpha=0.9,
+                       label=(f"true {typ}" if typ not in seen else None))
+            seen.add(typ)
+            ax.annotate(f"{tn:.1f}", xy=(LYA * (1 + tz), 0.02),
+                        xycoords=("data", "axes fraction"),
+                        ha="center", va="bottom", color=col, fontsize=7)
+    # BAL CIV troughs from --bal-cat (shaded purple bands over the UV lines).
+    if args.bal_cat:
+        first = True
+        for lo, hi in bal_civ_troughs(args.bal_cat, args.target_id, z_qso):
+            ax.axvspan(lo, hi, color="purple", alpha=0.10, lw=0,
+                       label=("BAL CIV trough" if first else None))
+            first = False
+
     ax.axvline(LYA * (1 + z_qso), color="goldenrod", lw=1.0, ls=":",
                label=f"QSO Lyα (z_qso={z_qso:.3f})")
 
@@ -379,6 +456,15 @@ def main():
         ax2.plot(args.truth_z, args.truth_nhi, "*", color="C2", ms=20,
                  mec="black", mew=1.0, zorder=10,
                  label=f"truth ({args.truth_z:.3f}, {args.truth_nhi:.2f})")
+    # All true absorbers as class-colored stars (DLA/subDLA in range; LLS may
+    # sit below the 1-DLA sample band).
+    if args.truth_cat:
+        seen = set()
+        for tz, tn, typ in read_truth_absorbers(args.truth_cat, args.target_id):
+            ax2.plot(tz, tn, "*", color=_TYPE_COLOR[typ], ms=16, mec="black",
+                     mew=0.8, zorder=10,
+                     label=(f"true {typ}" if typ not in seen else None))
+            seen.add(typ)
     for i, (mz, mn, ze, ne) in enumerate(zip(
             map_z_all, map_nhi_all, z_err_all, nhi_err_all)):
         lbl = (f"MAP DLA{i+1} ({mz:.3f}±{ze:.3f}, {mn:.2f}±{ne:.2f})"
