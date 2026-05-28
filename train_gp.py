@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 """Streamlined GP-DLA training entry point.
 
-Replaces the legacy ``desi_learn_qsos_model.py`` for new training runs.
+Replaces the legacy ``desi_learn_qsos_model.py`` (removed 2026-05-20;
+v1 frozen reference still at ``gpy_dla_detection/training_v3/``) for
+new training runs.
 Math is byte-stable equivalent to the legacy code via autograd
 (parity-tested in ``tests/test_objective_v2_parity.py``); under the hood
 this entry point uses ``gpy_dla_detection.training.objective_v2``

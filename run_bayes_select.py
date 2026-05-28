@@ -364,8 +364,8 @@ class DLAHolder:
             ``docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md``.
         tau_eb_factors : tuple of float
             τ-grid for the EB scan: candidate τ_0 = factor * prev_tau_0.
-            Default (0.5, 1.0, 1.5, 2.0, 3.0, 4.0) covers the range
-            observed in mock validation.
+            Default (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0) covers the
+            range observed in mock validation.
         tau_eb_apply_hcd_mask : bool, default False
             If True, mask pixels with negative residual < -N σ during the
             τ-fit step. Default OFF — at scale this *over-corrects* the

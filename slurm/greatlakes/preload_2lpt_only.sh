@@ -3,7 +3,7 @@
 #SBATCH -p standard
 #SBATCH -N 1
 #SBATCH -c 8
-#SBATCH --mem=32G
+#SBATCH --mem=96G
 #SBATCH -t 4:00:00
 #SBATCH -J 2lpt_preload
 #SBATCH -o slurm/greatlakes/2lpt_preload_%j.log
@@ -39,6 +39,13 @@ VARIANT="${VARIANT:?must be set: loa0 | loa124_nohcd_nobal}"
 MAX_SPECTRA="${MAX_SPECTRA:-300000}"  # full mock; preload caps to whatever's in zcat after filters
 Z_MIN="${Z_MIN:-2.0}"
 Z_MAX="${Z_MAX:-4.0}"   # 2LPT z range is ~1.8–3.8
+
+# 2026-05-07: rest-grid coverage knobs. Defaults (850.75, 1420.75, 0.15) match the
+# legacy v1/v2 trainset pre-2026-05. Use wider bounds (e.g. 1700 Å) to include
+# CIV emission + BAL signatures redward of Lyα for v3 production work.
+MIN_LAMBDA="${MIN_LAMBDA:-850.75}"
+MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
+DLAMBDA="${DLAMBDA:-0.15}"
 
 DATA_BASE="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0"
 OUTDIR_BASE="${OUTDIR_BASE:-/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection}"
@@ -87,6 +94,9 @@ python -u preload_spectra/preload_2lpt_simple.py \
     --output "$TRAINSET_H5" \
     --z-min "$Z_MIN" --z-max "$Z_MAX" \
     --max-spectra "$MAX_SPECTRA" \
+    --min-lambda "$MIN_LAMBDA" \
+    --max-lambda "$MAX_LAMBDA" \
+    --dlambda "$DLAMBDA" \
     $EXTRA_FLAGS
 
 [ -r "$TRAINSET_H5" ] || { echo "[error] trainset.h5 not produced" >&2; exit 6; }

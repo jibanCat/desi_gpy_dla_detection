@@ -1,0 +1,13 @@
+{
+  "model": "2lpt_loa0_corrected",
+  "model_path": "/scratch/cavestru_root/cavestru0/mfho/gl_outputs/v2_runs/2lpt_loa0_corrected/model_epoch_1499.h5",
+  "target_id": 120046865,
+  "truth_log_nhi": 21.263,
+  "z_qso": 2.9619851112365723,
+  "p_dla": 0.3572125787607026,
+  "map_z_dla": NaN,
+  "map_log_nhi": NaN,
+  "delta_log_nhi": NaN,
+  "elapsed_s": 18.320890426635742,
+  "filter_low_likelihood": true
+}

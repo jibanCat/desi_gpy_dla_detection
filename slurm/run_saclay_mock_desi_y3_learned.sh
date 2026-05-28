@@ -12,13 +12,13 @@ for (( START_INDEX=0; START_INDEX<=MAX_START_INDEX; START_INDEX+=STEP )); do
     echo "sbatch --export=ALL,QSOCAT=\"/global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/zcat.fits\",\
 MOCKDIR=\"/global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124\",\
 OUTDIR=\"/pscratch/sd/j/jibancat/desi-mock-saclay-gpdla-y3-learned-epoch561-20250302/\",\
-LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_561.h5\",\
+LEARNED_FILE=\"/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5\",\
 PREV_TAU_0=0.00246,\
 PREV_BETA=3.62,\
 DLAMBDA=0.15,\
 K=30,\
 MAX_DLAS=3,\
-NUM_FOEST_LINES=3,\
+NUM_FOREST_LINES=3,\
 PLOT_FIGURES=0,\
 BATCH_SIZE=1250,\
 MAX_WORKERS=8,\
@@ -30,13 +30,13 @@ STEP=2 slurm/submit_desi_mock.sh"
     sbatch --export=ALL,QSOCAT="/global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/zcat.fits",\
 MOCKDIR="/global/cfs/cdirs/desicollab/mocks/lya_forest/develop/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124",\
 OUTDIR="/pscratch/sd/j/jibancat/desi-mock-saclay-gpdla-y3-learned-epoch561-20250302/",\
-LEARNED_FILE="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_561.h5",\
+LEARNED_FILE="/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5",\
 PREV_TAU_0=0.00246,\
 PREV_BETA=3.62,\
 DLAMBDA=0.15,\
 K=30,\
 MAX_DLAS=3,\
-NUM_FOEST_LINES=3,\
+NUM_FOREST_LINES=3,\
 PLOT_FIGURES=0,\
 BATCH_SIZE=1250,\
 MAX_WORKERS=8,\

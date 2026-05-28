@@ -1,0 +1,32 @@
+{
+  "model": "stepc_2lpt_loa0_wide_m",
+  "model_path": "/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-11_desi_phase2_2lpt_loa0_wide_m/phase2_result.h5",
+  "kind": "stepc_2lpt",
+  "status": "ok",
+  "target_id": 120046865,
+  "z_qso": 2.9619851112365723,
+  "truth_log_nhi": 21.263,
+  "p_dla": 0.7030627706515307,
+  "map_z_dla": 2.7749622965709904,
+  "map_log_nhi": 21.516873770938457,
+  "delta_log_nhi": 0.25387377093845487,
+  "model_posteriors": [
+    0.29693262914283486,
+    4.600205420282539e-06,
+    0.7030609630421503,
+    1.807609380445574e-06,
+    NaN,
+    NaN
+  ],
+  "elapsed_s": 34.25277256965637,
+  "model_info": {
+    "k": 30,
+    "rest_min": 850.75,
+    "rest_max": 1700.0,
+    "n_pix": 5662,
+    "d_lambda": 0.1500244140625,
+    "norm_min": 1425.0,
+    "norm_max": 1475.0,
+    "max_nv": 9.0
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "source": "2lpt mock-0 loa-124",
+  "spec_root": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16",
+  "selection_rules": "Z in [2.5, 4.0]; ZWARN=0; not in bal_cat with BI_CIV>0",
+  "z_target_range": [
+    2.6,
+    3.8
+  ],
+  "snr_tiers": "low (~1), med (~2-3), med-hi (~4), high (~8); canonical separately",
+  "spectra": [
+    {
+      "target_id": 260116758,
+      "z_qso": 2.6230974197387695,
+      "snr_forest": 7.99843601564132,
+      "snr_redside": 12.425768439209257,
+      "z_target": 2.6,
+      "snr_tier": "high",
+      "snr_target": 8.0,
+      "max_truth_log_nhi": 19.921597873037687,
+      "healpix": 1698,
+      "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/16/1698/spectra-16-1698.fits"
+    },
+    {
+      "target_id": 350112853,
+      "z_qso": 2.8781931400299072,
+      "snr_forest": 3.0003805457789587,
+      "snr_redside": 4.286513339929379,
+      "z_target": 2.9,
+      "snr_tier": "med",
+      "snr_target": 3.0,
+      "max_truth_log_nhi": 17.738556193412904,
+      "healpix": 2270,
+      "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/22/2270/spectra-16-2270.fits"
+    },
+    {
+      "target_id": 170056185,
+      "z_qso": 3.1772170066833496,
+      "snr_forest": 0.9999715720286994,
+      "snr_redside": 1.9171842994002608,
+      "z_target": 3.2,
+      "snr_tier": "low",
+      "snr_target": 1.0,
+      "max_truth_log_nhi": 20.70863569632359,
+      "healpix": 1115,
+      "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/11/1115/spectra-16-1115.fits"
+    },
+    {
+      "target_id": 270117569,
+      "z_qso": 3.5009045600891113,
+      "snr_forest": 4.001662537115917,
+      "snr_redside": 4.744624896703008,
+      "z_target": 3.5,
+      "snr_tier": "med-hi",
+      "snr_target": 4.0,
+      "max_truth_log_nhi": 18.880401353663903,
+      "healpix": 1743,
+      "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/17/1743/spectra-16-1743.fits"
+    },
+    {
+      "target_id": 102798,
+      "z_qso": 3.7796905040740967,
+      "snr_forest": 2.00120937727355,
+      "snr_redside": 2.5537076877211002,
+      "z_target": 3.8,
+      "snr_tier": "med",
+      "snr_target": 2.0,
+      "max_truth_log_nhi": 20.17848588275774,
+      "healpix": 35,
+      "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/0/35/spectra-16-35.fits"
+    },
+    {
+      "target_id": 120046865,
+      "z_qso": 2.9619851112365723,
+      "snr_forest": 0.5926113828195262,
+      "snr_redside": 0.9767020829199144,
+      "z_target": null,
+      "snr_tier": "canonical (low SNR, strong DLA)",
+      "snr_target": null,
+      "max_truth_log_nhi": 21.262793367733924,
+      "healpix": 789,
+      "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/7/789/spectra-16-789.fits"
+    }
+  ]
+}
