@@ -91,3 +91,8 @@ for f in "${FILES[@]}"; do
     "$PYBIN" "$VERIFY" iscompressed "$f" || { nleft=$((nleft+1)); echo "[remaining-uncompressed] $(basename "$f")"; }
 done
 echo "[repack] DONE  remaining-uncompressed=$nleft / ${#FILES[@]}"
+# Surface failures as a non-zero exit so SLURM/automation can detect them
+# (otherwise a partially-failed compression pass looks indistinguishable
+# from a clean run).
+[ "$nleft" -gt 0 ] && exit 1
+exit 0
