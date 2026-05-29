@@ -97,6 +97,10 @@ ENABLE_TAU_EB="${ENABLE_TAU_EB:-1}"
 TAU_EB_OBJECTIVE="${TAU_EB_OBJECTIVE:-null}"
 EARLY_STOP_MODE="${EARLY_STOP_MODE:-baseline}"
 
+# FILTER=1 truncated-sampler tuning knobs (defaults left empty → CLI defaults).
+FILTER_N_INITIAL_FLOOR="${FILTER_N_INITIAL_FLOOR:-}"
+FILTER_EMPTY_MASK_FALLTHROUGH="${FILTER_EMPTY_MASK_FALLTHROUGH:-0}"
+
 LEVEL2_LIST="${LEVEL2_LIST:?must be set via --export (comma-separated speclist positions)}"
 
 mkdir -p "$OUTDIR" "${OUTDIR}/logs"
@@ -161,6 +165,8 @@ for P in "${POSITIONS[@]}"; do
             --enable_tau_eb "$ENABLE_TAU_EB" \
             --tau_eb_objective "$TAU_EB_OBJECTIVE" \
             --early_stop_mode "$EARLY_STOP_MODE" \
+            $([ -n "$FILTER_N_INITIAL_FLOOR" ] && echo "--filter_n_initial_floor $FILTER_N_INITIAL_FLOOR") \
+            $([ "$FILTER_EMPTY_MASK_FALLTHROUGH" = "1" ] && echo "--filter_empty_mask_fallthrough 1") \
             --figure_dir "$FIGURE_DIR" \
             --level2_start "$LEVEL2_START" \
             --level2_end "$LEVEL2_END" &

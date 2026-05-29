@@ -75,13 +75,18 @@ overrides over `_base_gl.env`:
   (PR #6 corrected trainer, 2LPT-trained, matched normalization band
   [1425, 1475]).
 - `MAX_LAMBDA = 1250` (overrides the `_base.env` default 1216.75).
-- `MAX_DLAS = 3`, `SINGLE_ABSORBER_MODEL = 1` (2-way single-absorber).
+- `MAX_DLAS = 4`, `SINGLE_ABSORBER_MODEL = 1` (2-way single-absorber;
+  bumped 3 → 4 for DR2 alignment, P/C ~unchanged on the 5 k smoke).
 - `FILTER_LOW_LIKELIHOOD = 1` (PR #5 FILTER fix #5).
-- `NUM_DLA_SAMPLES = 50000`, PW prior 17.2–22.0
-  (`pw_samples_a3_172_220_50000.mat`).
+- `NUM_DLA_SAMPLES = 100000`, PW prior NHI [17.2, 22.5]
+  (`pw_samples_a3_172_225_100000.mat`) — production best baseline.
+- `NUM_FOREST_LINES = 31` — must match the training-time setting
+  (running inference at the 3 default biases log N_HI ~+0.06 dex high).
+- `ENABLE_TAU_EB = 1`, `TAU_EB_OBJECTIVE = null` — τ-EB ON with the
+  null objective (production best baseline).
 
-τ-EB is OFF (production-equivalent). The +log(N) log-evidence patch is
-already in the code path (PR #7 commits).
+The +log(N) and −log_ratio log-evidence patches are already in the code
+path (PR #7 commits) — no flag needed.
 
 > See the [PR #7 description](https://github.com/jibanCat/desi_gpy_dla_detection/pull/7)
 > "Updated headline P/C — V1 production candidate" section for the exact

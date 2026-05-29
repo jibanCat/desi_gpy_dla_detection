@@ -291,6 +291,39 @@ def _update_dlaflag_bitmask(tbl: Table) -> int:
     flag = np.asarray(tbl["DLAFLAG"], dtype=np.int64).copy()
     before = flag.copy()
 
+    # ---- Refuse to process pre-2026-05-15 (legacy-bit-numbering) catalogs ----
+    # Under the legacy schema bits 3/4/5 were the inference-time warnings
+    # POTENTIAL_BAL / BAD_ZFIT / BAD_NHIFIT (now bits 0/1/2). Clearing
+    # _ALL_POSTPROCESS_BITS_TO_CLEAR on such a catalog would silently erase
+    # real inference warnings. Heuristic: a catalog is "post-reshuffle" iff
+    # any of the postprocess boolean columns is present (i.e. it has been
+    # postprocessed before OR shipped from the current pipeline). A catalog
+    # with bits 3/4/5 set and none of those columns is almost certainly
+    # legacy — refuse.
+    LEGACY_INFERENCE_BITS_NOW_POSTPROCESS = (
+        np.int64(DLAFLAG.LYBETA_MISID) |       # bit 3
+        np.int64(DLAFLAG.BAL_CAT_OVERLAP) |    # bit 4
+        np.int64(DLAFLAG.NHI_INCONSISTENT)     # bit 5
+    )
+    no_postproc_cols = not any(
+        c in tbl.colnames for c in
+        ("LYBETA_FLAG", "BAL_FLAG", "NHI_CONSISTENCY_FLAG", "PDLA_SATURATED_FLAG")
+    )
+    legacy_bits_present = bool(
+        (flag & LEGACY_INFERENCE_BITS_NOW_POSTPROCESS).any()
+    )
+    if no_postproc_cols and legacy_bits_present:
+        raise RuntimeError(
+            "Refusing to postprocess what looks like a pre-2026-05-15 legacy "
+            "catalog: DLAFLAG has bits 3/4/5 set and none of the postprocess "
+            "boolean columns (LYBETA_FLAG/BAL_FLAG/NHI_CONSISTENCY_FLAG/"
+            "PDLA_SATURATED_FLAG) are present. Under the legacy numbering "
+            "those bits were inference warnings (POTENTIAL_BAL/BAD_ZFIT/"
+            "BAD_NHIFIT) and clearing them would silently erase them. "
+            "Remap the legacy bits to the new positions (0/1/2) first, or "
+            "process a fresh-from-inference catalog under the current schema."
+        )
+
     # Clear ALL known postprocess bits (current + legacy schema). Keeps the
     # inference-time bits intact. The legacy mask handles dlacats that were
     # postprocessed under an earlier bit numbering / the pre-2026-05-17
