@@ -74,4 +74,7 @@ python3 examples/analyze_production_catalog.py \
     --out "$OUTDIR/purity_completeness_raw.md" 2>&1 | tail -10
 echo
 echo "=== done. saved: ==="
-ls -lh "$OUTDIR"/combined.h5 "$OUTDIR"/purity_completeness*.md 2>&1
+# This script no longer combines per-healpix h5 → combined.h5 (earlier steps skip it),
+# so don't list combined.h5 here. With `set -e`, a missing combined.h5 would fail
+# the whole job after a successful P/C run.
+ls -lh "$OUTDIR"/purity_completeness*.md 2>&1

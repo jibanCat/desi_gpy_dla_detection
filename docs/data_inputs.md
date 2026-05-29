@@ -15,7 +15,7 @@ their formats, required keys, and how to obtain them.
 
 **How to get it:**
 - SDSS DR12Q model: `cd data/scripts && ./download_gp_files.sh` (clones `github.com/jibanCat/gp_dr12_trained`)
-- DESI Y3 model: produced by `desi_learn_qsos_model.py` on NERSC; stored at `/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/`
+- DESI Y3 model: produced by `tests/phase2_train_desi.py` (PR #6 corrected trainer; see `docs/training_overview.md`) on NERSC / GreatLakes; stored at `/pscratch/sd/j/jibancat/desi_gpy_dla_detection/learnlogs/`
 
 **Required HDF5 keys** (loaded in `gpy_dla_detection/null_gp.py:NullGPMAT.__init__`):
 

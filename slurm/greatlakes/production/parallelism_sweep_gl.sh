@@ -4,6 +4,14 @@
 # One-time calibration: find the best MAX_WORKERS / srun-packing on a GL
 # standard node (36 cores) for desi-DLAGP.py mock inference.
 #
+# NOTE — pre-V1 knobs by design. This sweep was run with `max_dlas=3` and
+# `num_forest_lines=3` to characterise the parallelism floor, NOT the V1
+# production recipe (`MAX_DLAS=4`, `NUM_FOREST_LINES=31`). It is preserved as
+# the historical record of how N=2 × W=16 packing was chosen; the chosen
+# packing was re-validated on the V1 recipe in subsequent runs. The raw
+# throughput numbers here therefore UNDERSTATE V1 cost and should not be
+# used as a production cost estimate — see docs/notes for the V1 cost figures.
+#
 # Two phases, all on ONE exclusive node:
 #   A) Latency sweep — sequential, one srun at a time, MAX_WORKERS ∈
 #      {1,2,4,8,16}. Measures per-spectrum compute time vs worker count

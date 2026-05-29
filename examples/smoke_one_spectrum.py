@@ -97,6 +97,22 @@ PRESETS: dict[str, ModelPreset] = {
         prev_beta=3.62,
         num_forest_lines=3,
     ),
+    # 2LPT-mock-trained model — the GreatLakes V1 production config (matches
+    # slurm/greatlakes/production/2lpt0_gl_v1.env / the run's BASELINE.env):
+    # MAX_LAMBDA=1250, NUM_FOREST_LINES=31, k=30, dlambda 0.15, Turner+2024 prior.
+    # Pass --learned-file (the 2lpt phase2_result.h5) and --dla-samples-file
+    # (PW-100k) explicitly; the learned_file below is only a fallback placeholder.
+    "2lpt": ModelPreset(
+        name="2lpt",
+        learned_file="learnlogs/model_epoch_920.h5",  # placeholder; override with --learned-file
+        dlambda=0.15,
+        k=30,
+        min_lambda=911.75,
+        max_lambda=1250.0,
+        prev_tau_0=0.00246,
+        prev_beta=3.62,
+        num_forest_lines=31,
+    ),
 }
 
 

@@ -16,8 +16,13 @@ slurm/greatlakes/production/
   _base_gl.env            # GL overlay: sources slurm/configs/_base.env then
                           # repoints REPO_ROOT, catalog/sample paths to /nfs/turbo
                           # and bakes in GL SLURM defaults (-A cavestru0 etc).
-  london0_gl_v1.env       # London-0 mock, V1 production candidate (PR #7
-                          # headline: P=0.8357 / C=0.8978 on the 5k slice).
+  london0_gl_v1.env       # London-0 mock, V1 candidate (see PR #7 description
+                          # for current headline P/C — the canonical merge-gate
+                          # baseline is now the 2LPT-0 V1 run, see below).
+  2lpt0_gl_v1.env         # 2LPT-0 mock, V1 production BASELINE — sources the
+                          # London-0 config and only overrides mock paths /
+                          # RELEASE / OUTDIR / TRUTH_CAT. The verified
+                          # merge-gate catalog (PR #7 baseline table).
   submit_desi_mock_gl.sh  # Inner sbatch script — GL analog of
                           # slurm/submit_desi_mock.sh. Body is identical;
                           # SBATCH directives + conda/libcerf setup differ.
@@ -43,49 +48,72 @@ NUM_LINES, MIN/MAX_LAMBDA, normalization band, …) are sourced verbatim
 from `slurm/configs/_base.env` via `_base_gl.env`. Flavour configs layer
 the same per-mock overrides on top.
 
-## Usage — V1 candidate replication smoke
+## Usage — V1 baseline replication
+
+The canonical merge-gate baseline is `2lpt0_gl_v1.env` (2LPT-0 mock,
+fully sourced from `london0_gl_v1.env`, only mock paths / RELEASE / OUTDIR
+differ). `london0_gl_v1.env` runs the same recipe against the London-0
+mock — kept as a sibling target.
 
 Dry-run the launch (prints sbatch commands, doesn't submit):
 ```bash
-bash slurm/greatlakes/production/launch_gl.sh london0_gl_v1.env --dry-run
+bash slurm/greatlakes/production/launch_gl.sh 2lpt0_gl_v1.env --dry-run
 ```
 
-1-window smoke (~62 spectra-16 files / ~1000 spectra, 1 sbatch):
+1-window smoke (~12 spectra-16 files, 1 sbatch at OUTER_WINDOW=10):
 ```bash
-bash slurm/greatlakes/production/launch_gl.sh london0_gl_v1.env --end 0
+bash slurm/greatlakes/production/launch_gl.sh 2lpt0_gl_v1.env --end 0
 ```
 
-5k slice (matches PR #7 headline n_truth ≈ 581, 5 sbatch windows):
+Full 2LPT-0 mock (1150 spectra-16 files; chunked into ~96 sbatches at
+OUTER_WINDOW=10 / OUTER_STEP=12):
 ```bash
-bash slurm/greatlakes/production/launch_gl.sh london0_gl_v1.env --end 320
+bash slurm/greatlakes/production/launch_gl.sh 2lpt0_gl_v1.env
 ```
 
-Full London-0 mock (~1150 spectra-16 files, 18 sbatch windows):
+Subset (`--end N` runs positions `0 .. N*OUTER_STEP`; pick `N` to size
+the slice you want):
 ```bash
-bash slurm/greatlakes/production/launch_gl.sh london0_gl_v1.env
+bash slurm/greatlakes/production/launch_gl.sh 2lpt0_gl_v1.env --end 40
 ```
 
-## What the V1 candidate config does
+## What the V1 baseline config does
 
-`london0_gl_v1.env` targets the PR #7 "Updated headline P/C — V1
-production candidate" recipe (post-2026-05-19 matcher fix). Key
-overrides over `_base_gl.env`:
+`london0_gl_v1.env` (and `2lpt0_gl_v1.env`, which sources it) target the
+PR #7 V1 production-baseline recipe. Key overrides over `_base_gl.env`:
 
 - `LEARNED_FILE`: `2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5`
-  (PR #6 corrected trainer, 2LPT-trained, matched normalization band
-  [1425, 1475]).
+  (PR #6 rebuilt trainer, 2LPT-trained, MATLAB-matched normalization
+  band [1425, 1475] — the `_m` suffix). Resolved 2026-05-26: the `_wide`
+  (no `_m`) Garnett-band variant is NOT the production choice.
 - `MAX_LAMBDA = 1250` (overrides the `_base.env` default 1216.75).
-- `MAX_DLAS = 3`, `SINGLE_ABSORBER_MODEL = 1` (2-way single-absorber).
-- `FILTER_LOW_LIKELIHOOD = 1` (PR #5 FILTER fix #5).
-- `NUM_DLA_SAMPLES = 50000`, PW prior 17.2–22.0
-  (`pw_samples_a3_172_220_50000.mat`).
+- `MAX_DLAS = 4`, `SINGLE_ABSORBER_MODEL = 1` (2-way single-absorber;
+  bumped 3 → 4 for DR2 alignment; P/C ~unchanged on the
+  `gl_maxdla4_london0_v1` sensitivity full-London run).
+- `FILTER_LOW_LIKELIHOOD = 1` (truncated importance sampler — FILTER
+  fix #5 plus the 2026-05-26 −log_ratio region-A/B correction at
+  `25f32ae`).
+- `NUM_DLA_SAMPLES = 100000`, PW prior NHI [17.2, 22.5]
+  (`pw_samples_a3_172_225_100000.mat`) — extended ceiling to 22.5,
+  matches the production best baseline.
+- `NUM_FOREST_LINES = 31` — must match the GP's training-time
+  `de_forest_num_lines` to avoid μ/Ω² mean-flux mis-scaling. NOTE: the
+  +0.06 dex N_HI bias seen on production is INTRINSIC to the sub-DLA
+  prior edge (resolved 2026-05-22), NOT caused by NUM_FOREST_LINES —
+  NF=3 vs NF=31 inference give numerically-identical NHI on controlled
+  comparisons.
+- `ENABLE_TAU_EB = 1`, `TAU_EB_OBJECTIVE = null` — τ-EB on with the
+  null objective (production best baseline).
 
-τ-EB is OFF (production-equivalent). The +log(N) log-evidence patch is
-already in the code path (PR #7 commits).
+The +log(N) and −log_ratio log-evidence patches are always-on code
+changes on this branch (`25f32ae` and an earlier log-N commit) — no
+runtime knob; any catalog produced from `production_533` HEAD has both.
 
 > See the [PR #7 description](https://github.com/jibanCat/desi_gpy_dla_detection/pull/7)
-> "Updated headline P/C — V1 production candidate" section for the exact
-> recipe + the 2026-05-19 matcher-fix details.
+> baseline-config table for the canonical recipe and the current
+> headline P/C numbers on the 2LPT-0 V1 catalog. The earlier London-0
+> 5k preview (P=0.8357/C=0.8978, pre-`25f32ae`) is superseded by the
+> 2LPT-0 V1 full-catalog baseline.
 
 ## After a run finishes
 
@@ -112,10 +140,10 @@ python examples/molly_faithful_pc_plots.py \
     --out "$OUTDIR/purity_completeness.md"
 ```
 
-Compare against the PR #7 headline (P = 0.8357 / C = 0.8978 on the 5k
-slice). The intra-batch P/C scatter on a 5k slice is ~0.6 pp; deltas
-under ~1 pp are within the noise floor (per
-`docs/notes/2026-05-16_config_confirmations.md`).
+Compare against the PR #7 baseline-config table (current 2LPT-0 V1
+headline at NHI≥20.3: P=0.8181 / C=0.8910). The intra-batch P/C scatter
+on a 5k slice is ~0.6 pp; deltas under ~1 pp are within the noise floor
+(per `docs/notes/2026-05-16_config_confirmations.md`).
 
 ## Outputs
 
@@ -126,19 +154,15 @@ Each run writes to `${OUTDIR}/`:
 - `BASELINE.env` — resolved env at submission time (audit trail).
 - `<flavour>.env` — copy of the flavour config used.
 
-## Known open items (ambiguities, not blockers)
+## Resolved items (kept for trail)
 
-- **Model name disambiguation**: PR #7 description says
-  `2lpt_loa124_nohcd_nobal_wide_m`; the 05-16 sweep notes
-  (`lambda_fine_and_gp_range.md`, `config_confirmations.md`) write the
-  same model as `2lpt_loa124_nohcd_nobal_wide` (no `_m`). The `_m`
-  variant uses MATLAB-matched norm band [1425,1475]; `_wide` (no `_m`)
-  uses Garnett band [1310,1325]. We use `_wide_m` based on the PR
-  description being most recent; if the replicated P/C deviates from
-  the headline, retry against `_wide`.
-- **PW sample-grid floor**: V1 candidate uses 50k PW samples; the
-  NHI-low floor is ambiguous from the PR description alone. We use
-  `pw_samples_a3_172_220_50000.mat` (matches the 2-way single-absorber
-  convention in `slurm/configs/london0_y3_lls172.env`). The
-  `_nhi198`-named NERSC OUTDIR is *output*-name choice, not the sample
-  floor.
+- **Model name (`_wide_m` vs `_wide`)** — RESOLVED 2026-05-26. `_wide_m`
+  (MATLAB-matched norm band [1425,1475]) is the production choice, used
+  in both `london0_gl_v1.env` and `2lpt0_gl_v1.env`. The `_wide` Garnett
+  band [1310,1325] variant is not used. Earlier README hedge ("if the
+  replicated P/C deviates, retry against `_wide`") is no longer relevant.
+- **PW sample-grid floor** — RESOLVED. V1 uses `NUM_DLA_SAMPLES=100000`
+  with `pw_samples_a3_172_225_100000.mat` (NHI prior [17.2, 22.5]) — see
+  the "What the V1 baseline config does" bullets above. The earlier 50k
+  / [17.2, 22.0] grid (`pw_samples_a3_172_220_50000.mat`) was the
+  pre-extension setting; superseded by the [17.2, 22.5] PW-100k baseline.

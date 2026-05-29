@@ -176,7 +176,15 @@ def write_archive(
         raise ValueError("wavelength must be 1D with at least 2 entries")
     dlam = float(np.diff(wavelength).mean())
 
-    chunks_2d = (min(chunk_qsos, 1), n_pix)
+    # HDF5 chunk shape for the 2D datasets (flux/ivar/mask/resolution).
+    # Use `chunk_qsos` rows per chunk so bulk reads of a healpix (~256 QSOs)
+    # touch ~1 chunk, and gzip compresses across the whole chunk.
+    # Lower-clamped to 1 to defend against `chunk_qsos=0`. The original
+    # `min(chunk_qsos, 1)` was a typo (always 1 → 1-row chunks regardless
+    # of input) and shipped in commit d4799c1; existing archives written
+    # under that bug still read correctly via HDF5's transparent chunking,
+    # just with ~256× more chunk fetches + worse gzip ratio.
+    chunks_2d = (max(chunk_qsos, 1), n_pix)
 
     with h5py.File(out_path, "w") as h:
         h.attrs["schema_version"] = SCHEMA_VERSION

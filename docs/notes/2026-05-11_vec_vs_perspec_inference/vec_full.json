@@ -1,0 +1,18 @@
+{
+  "model": "vec_full",
+  "model_path": "/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-08_matlab_dr16_validation_vec_full/phase2_result.h5",
+  "target_id": 120046865,
+  "z_qso": 2.9619851112365723,
+  "p_dla": 0.08651435285343598,
+  "map_z_dla": NaN,
+  "map_log_nhi": NaN,
+  "model_posteriors": [
+    0.9134781210068321,
+    7.526139982207347e-06,
+    0.08651435285343598,
+    NaN,
+    NaN,
+    NaN
+  ],
+  "elapsed_s": 24.943516969680786
+}

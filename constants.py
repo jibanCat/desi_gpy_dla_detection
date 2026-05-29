@@ -82,7 +82,7 @@ bal_lines = {
     "SiIV1": 1394.0,
     "NV": 1240.81,
     "Lya": 1216.1,
-    "CIII": 1175.0,
+    "CIIIstar": 1175.0,  # was "CIII" (dup key with 977.0 below → silently dropped); renamed 2026-05-26
     "PV2": 1128.0,
     "PV1": 1117.0,
     "SIV2": 1074.0,

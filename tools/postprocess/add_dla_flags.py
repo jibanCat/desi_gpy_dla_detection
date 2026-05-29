@@ -268,7 +268,10 @@ def _add_bf_band(tbl: Table, spec: dict, log_nhi_samples: np.ndarray,
     return int(np.isfinite(bf).sum())
 
 
-def _update_dlaflag_bitmask(tbl: Table) -> int:
+def _update_dlaflag_bitmask(
+    tbl: Table,
+    input_colnames: set[str] | None = None,
+) -> int:
     """Fold the quality flag columns into the DLAFLAG bitmask.
 
     1. Clear all known postprocess bits (current + legacy schema) first, so a
@@ -283,6 +286,20 @@ def _update_dlaflag_bitmask(tbl: Table) -> int:
     and docs/notes/2026-05-17_nhi_flag_investigation.md). PDLA_SATURATED_FLAG
     likewise stays out. Both remain as standalone columns.
 
+    Parameters
+    ----------
+    tbl : astropy.table.Table
+        The dlacat being updated in place.
+    input_colnames : set[str] or None
+        Snapshot of column names from the INPUT FITS file, taken in
+        `process_one` BEFORE the _add_* helpers ran. The legacy-bit refusal
+        (below) probes this snapshot, NOT `tbl.colnames` — otherwise the
+        check is dead code (the helpers always add the four boolean columns
+        in production, so `tbl.colnames` always satisfies the column-presence
+        condition). If None (e.g. unit-test direct call), the function uses
+        `tbl.colnames` as a best-effort snapshot — only safe when the caller
+        is constructing `tbl` directly without going through `process_one`.
+
     Returns the number of rows where DLAFLAG changed.
     """
     if "DLAFLAG" not in tbl.colnames:
@@ -290,6 +307,52 @@ def _update_dlaflag_bitmask(tbl: Table) -> int:
         tbl["DLAFLAG"] = np.zeros(len(tbl), dtype=np.int64)
     flag = np.asarray(tbl["DLAFLAG"], dtype=np.int64).copy()
     before = flag.copy()
+
+    # ---- Refuse to process pre-2026-05-15 (legacy-bit-numbering) catalogs ----
+    # Under the legacy schema bits 3/4/5 were the inference-time warnings
+    # POTENTIAL_BAL / BAD_ZFIT / BAD_NHIFIT (now bits 0/1/2). Clearing
+    # _ALL_POSTPROCESS_BITS_TO_CLEAR on such a catalog would silently erase
+    # real inference warnings. Heuristic: a catalog is "post-reshuffle" iff
+    # any of the postprocess boolean columns was present in the INPUT FITS
+    # (i.e. it has been postprocessed before OR shipped from the current
+    # pipeline). A catalog with bits 3/4/5 set and none of those columns in
+    # the INPUT is almost certainly legacy — refuse.
+    #
+    # NB: probe the input-time snapshot, NOT `tbl.colnames`. By the time this
+    # runs in `process_one`, the _add_* helpers have already written all four
+    # boolean columns onto `tbl`, so `tbl.colnames` always satisfies the
+    # column-presence condition and the heuristic would be dead code.
+    #
+    # The mask is built from LITERAL bit positions (1<<3 | 1<<4 | 1<<5),
+    # not from the current DLAFLAG enum symbols. The symbols
+    # LYBETA_MISID / BAL_CAT_OVERLAP / NHI_INCONSISTENT happen to live at
+    # those positions today, but any future renumbering would silently shift
+    # the mask off the legacy positions. Bits 3/4/5 are the historical
+    # POTENTIAL_BAL/BAD_ZFIT/BAD_NHIFIT positions — frozen at the
+    # pre-2026-05-15 schema, do not symbolify.
+    _LEGACY_INFERENCE_BIT_POSITIONS = np.int64((1 << 3) | (1 << 4) | (1 << 5))
+    probe_colnames = (
+        input_colnames if input_colnames is not None else set(tbl.colnames)
+    )
+    no_postproc_cols = not any(
+        c in probe_colnames for c in
+        ("LYBETA_FLAG", "BAL_FLAG", "NHI_CONSISTENCY_FLAG", "PDLA_SATURATED_FLAG")
+    )
+    legacy_bits_present = bool(
+        (flag & _LEGACY_INFERENCE_BIT_POSITIONS).any()
+    )
+    if no_postproc_cols and legacy_bits_present:
+        raise RuntimeError(
+            "Refusing to postprocess what looks like a pre-2026-05-15 legacy "
+            "catalog: DLAFLAG has bits 3/4/5 set and none of the postprocess "
+            "boolean columns (LYBETA_FLAG/BAL_FLAG/NHI_CONSISTENCY_FLAG/"
+            "PDLA_SATURATED_FLAG) are present in the input FITS. Under the "
+            "legacy numbering those bits were inference warnings "
+            "(POTENTIAL_BAL/BAD_ZFIT/BAD_NHIFIT) and clearing them would "
+            "silently erase them. Remap the legacy bits to the new positions "
+            "(0/1/2) first, or process a fresh-from-inference catalog under "
+            "the current schema."
+        )
 
     # Clear ALL known postprocess bits (current + legacy schema). Keeps the
     # inference-time bits intact. The legacy mask handles dlacats that were
@@ -318,6 +381,13 @@ def process_one(path: Path, args, bal_tids: set[int] | None,
     tbl = Table(fitsio.read(str(path), ext=1))
     stats: dict[str, int] = {"path": str(path), "n_rows": len(tbl)}
 
+    # Snapshot input-file column names BEFORE any _add_* helper mutates `tbl`.
+    # `_update_dlaflag_bitmask` uses this snapshot for its legacy-bit refusal
+    # (the helpers below unconditionally add the four boolean columns when
+    # invoked, so probing `tbl.colnames` AFTER they ran would make the
+    # refusal dead code — see the docstring in _update_dlaflag_bitmask).
+    input_colnames: set[str] = set(tbl.colnames)
+
     if not args.no_lyb_veto:
         n, n_flag = _add_lybeta(tbl, args.lyb_veto_dz)
         stats["lyb_flagged"] = n_flag
@@ -335,7 +405,7 @@ def process_one(path: Path, args, bal_tids: set[int] | None,
     # Fold quality flags into DLAFLAG bitmask (excludes the informational
     # PDLA_SATURATED and NHI_CONSISTENCY flags). After this,
     # `cat[cat["DLAFLAG"] == 0]` is the "clean" downstream filter.
-    stats["dlaflag_changed"] = _update_dlaflag_bitmask(tbl)
+    stats["dlaflag_changed"] = _update_dlaflag_bitmask(tbl, input_colnames)
     flag = np.asarray(tbl["DLAFLAG"], dtype=np.int64)
     stats["dlaflag_zero"] = int((flag == 0).sum())
 

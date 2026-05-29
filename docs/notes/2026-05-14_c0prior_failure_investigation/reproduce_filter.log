@@ -1,0 +1,26 @@
+INFO:spectra.py:453:read_spectra: iotime 0.092 sec to read spectra from:  spectra-16-789.fits at 2026-05-14T11:32:30.833351
+ERROR:coaddition.py:851:coadd_cameras: Input wavelength grids (band 'r') are not aligned. Use --lin-step or --log10-step to resample to a common grid.
+
+=== c0prior ===
+DESI GP model detected.
+  → overriding params.normalization window from .h5: [1425.0, 1475.0] Å → [1310.0, 1325.0] Å
+DESI DLA model detected.
+  null evidence (my probe) = -3029.9300
+  lognorm correction = 11.5129
+  raw logL: max=-3012.005  median=-3033.671
+  shifted logL (after -lognorm): max=-3023.518  median=-3045.184
+  --- threshold scan ---
+    thresh= -3029.930  (null_ev (raw)):  above=   53  valid_mask.sum()=8022
+    thresh= -3041.443  (null_ev_shifted (raw - lognorm)):  above= 1105  valid_mask.sum()=47692
+    thresh= -3027.477  (prod null_ev (prior-weighted)):  above=   22  valid_mask.sum()=6270
+  null_ev_shifted (null - lognorm) = -3041.443
+  raw_logL > null_ev (NO shift on either side): 1105/5000
+  shifted_logL > null_ev_shifted: 1105/5000
+Traceback (most recent call last):
+  File "/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-14_c0prior_failure_investigation/reproduce_filter_path.py", line 134, in <module>
+    r_c = reproduce('c0prior', MODELS['c0prior'])
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mfho/desi_gpy_dla_detection/docs/notes/2026-05-14_c0prior_failure_investigation/reproduce_filter_path.py", line 131, in reproduce
+    above_null_shifted=int(above_null))
+                           ^^^^^^^^^^
+NameError: name 'above_null' is not defined

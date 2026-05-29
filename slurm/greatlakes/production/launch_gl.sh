@@ -101,9 +101,14 @@ if [ "$DRY_RUN" -ne 1 ]; then
     {
         echo "# Resolved env for run launched $(date)"
         echo "# config: $CONFIG_PATH"
+        # Code version (git) for reproducibility — pins exactly which commit ran.
+        echo "CODE_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+        echo "CODE_BRANCH=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+        echo "CODE_DIRTY=$(git -C "$SCRIPT_DIR" diff --quiet 2>/dev/null && echo clean || echo dirty)"
         for var in MODE QSOCAT MOCKDIR OUTDIR LEARNED_FILE CATALOG_NAME LOS_CATALOG \
                    DLA_CATALOG DLA_SAMPLES_FILE SUB_DLA_SAMPLES_FILE NUM_DLA_SAMPLES \
                    NUM_SUBDLA_SAMPLES MAX_DLAS SINGLE_ABSORBER_MODEL FILTER_LOW_LIKELIHOOD \
+                   FILTER_N_INITIAL_FLOOR FILTER_EMPTY_MASK_FALLTHROUGH \
                    MAX_LAMBDA MIN_LAMBDA DLAMBDA K NUM_FOREST_LINES NUM_LINES BALMASK \
                    PREV_TAU_0 PREV_BETA MAX_NOISE_VARIANCE MAX_WORKERS BATCH_SIZE \
                    ENABLE_TAU_EB TAU_EB_OBJECTIVE EARLY_STOP_MODE; do
@@ -135,6 +140,8 @@ MIN_Z_SEPARATION=${MIN_Z_SEPARATION},MAX_Z_CUT=${MAX_Z_CUT},MIN_Z_CUT=${MIN_Z_CU
 MAX_NOISE_VARIANCE=${MAX_NOISE_VARIANCE},\
 MAX_DLAS=${MAX_DLAS},SINGLE_ABSORBER_MODEL=${SINGLE_ABSORBER_MODEL},\
 FILTER_LOW_LIKELIHOOD=${FILTER_LOW_LIKELIHOOD},\
+FILTER_N_INITIAL_FLOOR=${FILTER_N_INITIAL_FLOOR:-},\
+FILTER_EMPTY_MASK_FALLTHROUGH=${FILTER_EMPTY_MASK_FALLTHROUGH:-0},\
 NUM_DLA_SAMPLES=${NUM_DLA_SAMPLES},NUM_SUBDLA_SAMPLES=${NUM_SUBDLA_SAMPLES},\
 MAX_WORKERS=${MAX_WORKERS},BATCH_SIZE=${BATCH_SIZE},PLOT_FIGURES=${PLOT_FIGURES},\
 BALMASK=${BALMASK},RELEASE=${RELEASE},PROGRAM=${PROGRAM},SURVEY=${SURVEY},\
@@ -152,6 +159,7 @@ for (( i=LOOP_START; i<=LOOP_END; i+=OUTER_STEP )); do
                 --account="$GL_SLURM_ACCOUNT" \
                 --partition="$GL_SLURM_PARTITION" \
                 --time="$GL_SLURM_TIME" \
+                --mem="${GL_SLURM_MEM:-64G}" \
                 --export="$full_export" "$INNER")
 
     echo "[launch-gl] $(date +%H:%M:%S) chunk ${i}..${chunk_end}"

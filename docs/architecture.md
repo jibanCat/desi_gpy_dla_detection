@@ -11,7 +11,7 @@ The codebase has three distinct workflows:
 
 | Workflow | Entry point | Purpose |
 |----------|-------------|---------|
-| **Training** | `desi_learn_qsos_model.py` | Learn the null-GP model from QSO spectra |
+| **Training** | `tests/phase2_train_desi.py` | Learn the null-GP model from QSO spectra (see `docs/training_overview.md`) |
 | **Inference** | `desi-DLAGP.py` | Detect DLA/sub-DLA/LLS absorbers per spectrum |
 | **Statistics** | `desi_cddf.py` or CDDF notebooks | Compute population statistics from catalogs |
 
@@ -88,13 +88,13 @@ Raw DESI QSO spectra (HDF5 preloaded)
       → preloaded-{survey}-{program}-*.h5   [cached, chunked by healpix]
   → preload_spectra/prepare_trainset.py
       → training set subset (DLA-free spectra from DR9Q concordance)
-  → desi_learn_qsos_model.py
-      → learn_qso_model.GPModelTrainer (PyTorch)
-          → PCA decomposition of mean spectra (k=20 components)
-          → gradient descent on GP log-likelihood (objective.py)
+  → tests/phase2_train_desi.py   (PR #6 corrected trainer; see docs/training_overview.md)
+      → gpy_dla_detection.training_v3.objective_vectorized + Adam loop
+          → PCA decomposition of mean spectra
+          → hand-coded-gradient minimization of GP log-likelihood
           → Turner+2024 optical depth priors: τ₀=0.00246 ± 0.00014, β=3.62 ± 0.04
-      → checkpoint: learned_qso_model_{epoch}.pth
-      → export: learned_qso_model.mat  (compatible with inference pipeline)
+      → checkpoint + final export: `model_epoch_*.h5` (HDF5 with mu, M, log_omega)
+      (v1 frozen reference for diffing: gpy_dla_detection/training_v3/desi_learn_qsos_model.py)
 ```
 
 ---
@@ -192,7 +192,7 @@ absorber catalogs rather than raw model posteriors.
 
 | File | Purpose | Source |
 |------|---------|--------|
-| `learned_qso_model.mat` | Trained null GP (mu, M, log_omega) | `desi_learn_qsos_model.py` output |
+| `learned_qso_model.mat` / `model_epoch_*.h5` | Trained null GP (mu, M, log_omega) | `tests/phase2_train_desi.py` (PR #6); see `docs/training_overview.md` |
 | `dla_samples_a03.mat` | QMC grid for DLA params (Ho+2020) | `data/scripts/download_gp_files.sh` |
 | `subdla_samples.mat` | QMC grid for sub-DLA/LLS params | `gpy_dla_detection/generate_samples.py` |
 | `data/london/dla_cat.fits` | London mock absorber catalog | `data/scripts/download_spectra.sh` |
@@ -222,7 +222,7 @@ These must be preserved across any refactor:
 |------|---------|
 | Run DLA detection on real DESI healpix | `python desi-DLAGP.py --survey main --program dark --release loa ...` |
 | Run on London mock data | `python desi-DLAGP.py --mocks --mockdir data/london ...` |
-| Train null GP model | `python desi_learn_qsos_model.py ...` |
+| Train null GP model | `python tests/phase2_train_desi.py ...` (see `docs/training_overview.md`) |
 | Compute Bayesian CDDF | `python desi_cddf.py ...` |
 | Run population stats from catalog | Use `CDDF_analysis/cddf_mock.py` directly (see notebooks) |
 | Demo on one spectrum | `python examples/demo_desi_spectrum.py` |

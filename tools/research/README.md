@@ -1,9 +1,11 @@
 # tools/research/
 
 One-off investigation scripts used during specific analysis sessions. These are
-checked in for reproducibility of session findings (see `docs/notes/`) but are
-**not** part of the production pipeline. Treat them as supporting evidence for
-the notes, not as APIs.
+checked in for reproducibility of session findings (the matching prose lives in
+the **separate private notes repo** `github.com/jibanCat/desi_gpy_dla_notes` —
+this codebase's `docs/notes/` was migrated out and gitignored) but are **not**
+part of the production pipeline. Treat them as supporting evidence for the
+notes, not as APIs.
 
 Each script is self-contained — it hard-codes the dataset/output paths it was
 written for. Adapt those paths if rerunning on a different mock.

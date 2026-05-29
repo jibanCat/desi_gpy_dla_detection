@@ -89,6 +89,25 @@ import h5py
 from typing import List
 
 
+def _gzip_kwargs(value) -> dict:
+    """h5py create_dataset kwargs for lossless gzip compression.
+
+    Full rationale + measured size expectations: docs/h5_compression.md.
+
+    The dominant datasets (sample_log_likelihoods_dla (n,num_samples,k) f64 and
+    base_sample_inds (n,k-1,num_samples) i32) are ~93-96% NaN/fill because FILTER
+    truncation + early-stop leave most QMC samples un-computed; gzip collapses
+    those identical-byte runs (measured 15-25x smaller, fully lossless). gzip
+    needs a chunked layout, which is impossible for scalar (ndim 0) or empty
+    datasets, so fall back to contiguous/uncompressed for those. CDDF readers
+    (qso_loader / calc_cddf) decompress transparently.
+    """
+    arr = np.asarray(value)
+    if arr.ndim >= 1 and arr.size > 0:
+        return {"compression": "gzip", "compression_opts": 4}
+    return {}
+
+
 def initialize_results(num_spectra: int, max_dlas: int, num_dla_samples: int, single_absorber_model: bool = False) -> dict:
     """Pre-allocate the results dict for all spectra (NaN/zero-filled).
 
@@ -257,15 +276,20 @@ def save_results_to_hdf5(
     """
 
     with h5py.File(filename, "w") as f:
-        # Save spectrum IDs and QSO redshifts
+        # Save spectrum IDs and QSO redshifts (gzip — see _gzip_kwargs)
+        spectrum_ids_arr = np.array(spectrum_ids, dtype="S")
         f.create_dataset(
-            "spectrum_ids", data=np.array(spectrum_ids, dtype="S")
+            "spectrum_ids", data=spectrum_ids_arr, **_gzip_kwargs(spectrum_ids_arr)
         )  # Save spectrum IDs as strings
-        f.create_dataset("z_qsos", data=z_qsos)  # Save QSO redshifts
+        f.create_dataset(
+            "z_qsos", data=z_qsos, **_gzip_kwargs(z_qsos)
+        )  # Save QSO redshifts
 
         # Loop through the results dictionary and save each key-value pair as an HDF5 dataset
         for key, value in results.items():
-            f.create_dataset(key, data=value)  # Save each result in the HDF5 file
+            f.create_dataset(
+                key, data=value, **_gzip_kwargs(value)
+            )  # Save each result in the HDF5 file (gzip-compressed)
 
         # Write provenance attributes (run-level parameters) to the root group.
         if run_attrs:

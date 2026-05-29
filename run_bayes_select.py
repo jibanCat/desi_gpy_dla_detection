@@ -21,7 +21,11 @@ from gpy_dla_detection.dla_samples import DLASamplesMAT
 from gpy_dla_detection.subdla_samples import SubDLASamplesMAT
 from gpy_dla_detection.bayesian_model_selection import BayesModelSelect
 from gpy_dla_detection.desi_spectrum_reader import DESISpectrumReader
-from gpy_dla_detection.process_helpers import initialize_results, save_results_to_hdf5
+from gpy_dla_detection.process_helpers import (
+    initialize_results,
+    save_results_to_hdf5,
+    _gzip_kwargs,
+)
 from gpy_dla_detection.plottings.plot_model import plot_samples_vs_this_mu
 
 from gpy_dla_detection.compute_1sigma_errors import compute_1sigma_errors_fast
@@ -362,8 +366,8 @@ class DLAHolder:
             ``docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md``.
         tau_eb_factors : tuple of float
             τ-grid for the EB scan: candidate τ_0 = factor * prev_tau_0.
-            Default (0.5, 1.0, 1.5, 2.0, 3.0, 4.0) covers the range
-            observed in mock validation.
+            Default (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0) covers the
+            range observed in mock validation.
         tau_eb_apply_hcd_mask : bool, default False
             If True, mask pixels with negative residual < -N σ during the
             τ-fit step. Default OFF — at scale this *over-corrects* the
@@ -597,16 +601,22 @@ class DLAHolder:
 
     def save_results(self, output_file: str):
 
-        # Save results to HDF5 file
+        # Save results to HDF5 file (gzip — the per-sample arrays are mostly
+        # NaN fill, so this is ~15-25x smaller and lossless; see _gzip_kwargs)
         with h5py.File(output_file, "w") as f:
             # Loop through the results dictionary and save each key-value pair as an HDF5 dataset
             for key, value in self.results.items():
-                f.create_dataset(key, data=value)  # Save each result in the HDF5 file
+                f.create_dataset(
+                    key, data=value, **_gzip_kwargs(value)
+                )  # Save each result in the HDF5 file (gzip-compressed)
 
             # Catalog provenance: record run-level parameters as root-group
             # attributes so downstream readers can verify which prior was active.
-            f.attrs["pair_prior_mode"] = self.pair_prior_mode
-            f.attrs["dla_bias"] = float(self.dla_bias)
+            # getattr-with-default so a holder built without __init__ (e.g. via
+            # object.__new__ in tests, or any legacy construction path) still
+            # writes the production default ("off") instead of raising.
+            f.attrs["pair_prior_mode"] = getattr(self, "pair_prior_mode", "off")
+            f.attrs["dla_bias"] = float(getattr(self, "dla_bias", 2.0))
 
 
 class DLAProcessor:

@@ -957,10 +957,19 @@ class DLAGP(NullGP):
                     log.info(
                         f"Fraction of prior retained: {w:.4f} for {num_dlas + 1} DLAs."
                     )
-                    log_ratio = np.log(self.params.num_dla_samples) - np.log(n_initial)
+                    # log Z = log(w·Z_A + (1−w)·Z_B), with log_Z_trunc = log Z_A (the
+                    # region-A conditional likelihood mean) and log_initial_logL = log Z_B.
+                    # Bug fix (2026-05-25): the Z_A term previously carried a spurious
+                    # `− log_ratio` (= −log(N / n_initial)), an uncompensated leftover from
+                    # before the 2026-05-14 +log(N) fix. It suppressed EVERY k≥2 evidence by
+                    # exactly log_ratio (~3 nat ≈ ~20× Bayes factor), systematically
+                    # under-counting multi-DLA systems. A/B on 3 multi-DLA London-0 spectra:
+                    # removing it recovers the unbiased FILTER=0 full-sample evidence to
+                    # ≤0.4 nat (vs ~3 nat off). The 1-DLA-vs-null factor is unaffected — it
+                    # uses the num_dlas==0 fix-#5 branch above, not this partition.
                     log_likelihoods_dla[num_dlas] = (
                         logsumexp([
-                            log_Z_trunc - log_ratio + np.log(w),
+                            log_Z_trunc + np.log(w),
                             log_initial_logL + np.log(1 - w),
                         ])
                         - lognorm * num_dlas
