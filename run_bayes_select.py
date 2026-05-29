@@ -21,7 +21,11 @@ from gpy_dla_detection.dla_samples import DLASamplesMAT
 from gpy_dla_detection.subdla_samples import SubDLASamplesMAT
 from gpy_dla_detection.bayesian_model_selection import BayesModelSelect
 from gpy_dla_detection.desi_spectrum_reader import DESISpectrumReader
-from gpy_dla_detection.process_helpers import initialize_results, save_results_to_hdf5
+from gpy_dla_detection.process_helpers import (
+    initialize_results,
+    save_results_to_hdf5,
+    _gzip_kwargs,
+)
 from gpy_dla_detection.plottings.plot_model import plot_samples_vs_this_mu
 
 from gpy_dla_detection.compute_1sigma_errors import compute_1sigma_errors_fast
@@ -57,6 +61,8 @@ def process_single_spectrum(
     snr_blue: float = None,
     snr_red: float = None,
     filter_low_likelihood: bool = False,
+    filter_n_initial_floor: int = 5000,
+    filter_empty_mask_fallthrough: bool = False,
     single_absorber_model: bool = False,
 ):
     """
@@ -132,6 +138,8 @@ def process_single_spectrum(
             max_workers=max_workers,
             batch_size=batch_size,
             filter_low_likelihood=filter_low_likelihood,
+            filter_n_initial_floor=filter_n_initial_floor,
+            filter_empty_mask_fallthrough=filter_empty_mask_fallthrough,
         )
     else:
         # Set data for the Null, DLA, and Sub-DLA models
@@ -147,6 +155,8 @@ def process_single_spectrum(
             max_workers=max_workers,
             batch_size=batch_size,
             filter_low_likelihood=filter_low_likelihood,
+            filter_n_initial_floor=filter_n_initial_floor,
+            filter_empty_mask_fallthrough=filter_empty_mask_fallthrough,
         )
 
     # Store basic results
@@ -329,12 +339,15 @@ class DLAHolder:
         figure_dir: str = "figures/",
         params_subdla=None,
         filter_low_likelihood: bool = False,
+        filter_n_initial_floor: int = 5000,
+        filter_empty_mask_fallthrough: bool = False,
         single_absorber_model: bool = False,
         enable_tau_eb: bool = False,
         tau_eb_factors: tuple = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
         tau_eb_apply_hcd_mask: bool = False,
         tau_eb_mask_threshold_sigma: float = 1.5,
         tau_eb_objective: str = "null",
+        early_stop_mode: str = "baseline",
     ):
         """
         Initialize the DLAProcessor class with necessary data files and parameters.
@@ -381,6 +394,12 @@ class DLAHolder:
 
         # Filter low likelihood samples
         self.filter_low_likelihood = filter_low_likelihood
+        # FILTER=1 knobs (see docs/notes/2026-05-13_filter1_knob_tuning.md).
+        # Defaults reproduce historical behavior:
+        #   n_initial = max(num_dla_samples // 20, 5000)
+        #   empty valid_mask → early-stop with 1-DLA evidence from coarse samples
+        self.filter_n_initial_floor = int(filter_n_initial_floor)
+        self.filter_empty_mask_fallthrough = bool(filter_empty_mask_fallthrough)
 
         # Single absorber model flag: No Sub-DLA model, only Null and DLA models
         self.single_absorber_model = single_absorber_model
@@ -391,6 +410,14 @@ class DLAHolder:
         self.tau_eb_apply_hcd_mask = bool(tau_eb_apply_hcd_mask)
         self.tau_eb_mask_threshold_sigma = float(tau_eb_mask_threshold_sigma)
         self.tau_eb_objective = tau_eb_objective
+
+        # Multi-DLA early-stop policy (see DLAGP for documentation).
+        # See docs/notes/2026-05-12_multidla_early_stop_bug.md.
+        if early_stop_mode not in ("baseline", "A", "D"):
+            raise ValueError(
+                f"early_stop_mode must be one of 'baseline', 'A', 'D'; got {early_stop_mode!r}"
+            )
+        self.early_stop_mode = early_stop_mode
 
         self.params = params  # Pass in the Parameters object here
         if params_subdla is None:
@@ -493,6 +520,7 @@ class DLAHolder:
             broadening=self.broadening,
             prev_tau_0=prev_tau_0_eff,
             prev_beta=self.prev_beta,
+            early_stop_mode=self.early_stop_mode,
         )
         if self.single_absorber_model:
             subdla_gp = None
@@ -541,6 +569,8 @@ class DLAHolder:
             self.batch_size,
             self.figure_dir,
             filter_low_likelihood=self.filter_low_likelihood,
+            filter_n_initial_floor=self.filter_n_initial_floor,
+            filter_empty_mask_fallthrough=self.filter_empty_mask_fallthrough,
             single_absorber_model=self.single_absorber_model,
         )
         # Clean up to free memory
@@ -556,11 +586,14 @@ class DLAHolder:
 
     def save_results(self, output_file: str):
 
-        # Save results to HDF5 file
+        # Save results to HDF5 file (gzip — the per-sample arrays are mostly
+        # NaN fill, so this is ~15-25x smaller and lossless; see _gzip_kwargs)
         with h5py.File(output_file, "w") as f:
             # Loop through the results dictionary and save each key-value pair as an HDF5 dataset
             for key, value in self.results.items():
-                f.create_dataset(key, data=value)  # Save each result in the HDF5 file
+                f.create_dataset(
+                    key, data=value, **_gzip_kwargs(value)
+                )  # Save each result in the HDF5 file (gzip-compressed)
 
 
 class DLAProcessor:
@@ -806,10 +839,13 @@ if __name__ == "__main__":
         help="Minimum redshift separation for DLA models.",
     )
     parser.add_argument(
-        "--prev_tau_0", type=float, default=0.00554, help="Previous value for tau_0."
+        # Turner+2024 (DESI Y1) mean-flux defaults. Were 0.00554/3.182 (Kamble+2020) —
+        # a mismatched default for the Turner-trained DESI models; production always
+        # overrides via config (PREV_TAU_0/PREV_BETA), so this is a safety fix only.
+        "--prev_tau_0", type=float, default=0.00246, help="Previous value for tau_0 (Turner+2024)."
     )
     parser.add_argument(
-        "--prev_beta", type=float, default=3.182, help="Previous value for beta."
+        "--prev_beta", type=float, default=3.62, help="Previous value for beta (Turner+2024)."
     )
     parser.add_argument(
         "--max_dlas", type=int, default=3, help="Maximum number of DLAs to model."

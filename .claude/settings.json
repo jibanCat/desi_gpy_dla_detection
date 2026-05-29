@@ -1,6 +1,23 @@
 {
   "permissions": {
     "allow": [
+      "WebSearch",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:adsabs.harvard.edu)",
+      "WebFetch(domain:academic.oup.com)",
+      "WebFetch(domain:iopscience.iop.org)",
+      "WebFetch(domain:scholar.google.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:proceedings.mlr.press)",
+      "WebFetch(domain:papers.nips.cc)",
+      "WebFetch(domain:link.springer.com)",
+      "WebFetch(domain:doi.org)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:dynesty.readthedocs.io)",
+      "WebFetch(domain:emcee.readthedocs.io)",
+      "WebFetch(domain:johndcook.com)",
+      "WebFetch(domain:portal.nersc.gov)",
+      "Bash(gh *)",
       "Bash(sacct *)",
       "Bash(sacctmgr show *)",
       "Bash(scontrol show *)",

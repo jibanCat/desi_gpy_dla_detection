@@ -121,7 +121,8 @@ DEFAULT_PARAMS = dict(
     num_forest_lines=3,
 )
 
-# IGM mean-flux parameters (Kamble+2020, legacy default for eBOSS model)
+# IGM mean-flux parameters (Kim+2007, arXiv:0711.1862; legacy default for eBOSS
+# model). NOT Kamble+2020 (that is 0.00554/3.182).
 PREV_TAU_0 = 0.0023
 PREV_BETA  = 3.65
 

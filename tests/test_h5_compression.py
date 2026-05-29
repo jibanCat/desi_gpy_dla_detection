@@ -1,0 +1,127 @@
+"""Tests for the lossless gzip compression of saved processed-h5 result files.
+
+Covers the shared `_gzip_kwargs` helper and BOTH writers that persist
+per-spectrum GP-DLA results:
+  - `process_helpers.save_results_to_hdf5`  (run_bayes_select standalone path)
+  - `run_bayes_select.DLAHolder.save_results` (the mock/DESI/LOA production path,
+    called from dlasearch.py:621 model.save_results)
+
+The compression is purely an on-disk encoding change: every value (including
+NaN fill) must round-trip bit-identically. The big per-sample arrays are mostly
+NaN in FILTER+multi-DLA+early-stop runs, so they compress heavily; these tests
+assert both losslessness and that a NaN-heavy array shrinks substantially.
+"""
+import os
+
+import h5py
+import numpy as np
+import pytest
+
+from gpy_dla_detection.process_helpers import _gzip_kwargs, save_results_to_hdf5
+
+GZIP = {"compression": "gzip", "compression_opts": 4}
+
+
+# --- _gzip_kwargs ------------------------------------------------------------
+def test_gzip_kwargs_float_array():
+    assert _gzip_kwargs(np.zeros((5, 3))) == GZIP
+
+
+def test_gzip_kwargs_int_array():
+    assert _gzip_kwargs(np.arange(10, dtype=np.int32)) == GZIP
+
+
+def test_gzip_kwargs_1d_array():
+    assert _gzip_kwargs(np.array([1.0, 2.0, 3.0])) == GZIP
+
+
+def test_gzip_kwargs_scalar_gets_no_compression():
+    # gzip needs a chunked layout, impossible for a scalar (ndim 0)
+    assert _gzip_kwargs(np.float64(1.0)) == {}
+    assert _gzip_kwargs(5) == {}
+
+
+def test_gzip_kwargs_empty_gets_no_compression():
+    assert _gzip_kwargs(np.array([])) == {}
+
+
+# --- shared fixture ----------------------------------------------------------
+def _nan_heavy_results(n=4, ns=2000, k=4):
+    """A results dict shaped like real output: a ~98% NaN per-sample array, an
+    int index array, plus small per-spectrum vectors and a target_ids axis.
+    (No z_qsos: save_results_to_hdf5 writes z_qsos from a separate argument, so
+    including it here would collide; DLAHolder.save_results writes only the dict.)"""
+    rs = np.random.RandomState(0)
+    big = np.full((n, ns, k), np.nan)
+    big[:, :40, :] = rs.randn(n, 40, k)  # ~98% NaN
+    return {
+        "sample_log_likelihoods_dla": big,
+        "base_sample_inds": rs.randint(0, ns, (n, k - 1, ns)).astype(np.int32),
+        "model_posteriors": rs.rand(n, 5),
+        "p_dlas": rs.rand(n),
+        "target_ids": np.arange(n, dtype=np.int64),
+    }
+
+
+def _assert_lossless(h5file, results):
+    with h5py.File(h5file, "r") as h:
+        for key, val in results.items():
+            a, b = np.asarray(val), h[key][()]
+            assert a.shape == b.shape and a.dtype == b.dtype, key
+            if a.dtype.kind in "fc":
+                assert np.array_equal(a, b, equal_nan=True), key
+            else:
+                assert np.array_equal(a, b), key
+
+
+# --- save_results_to_hdf5 (process_helpers) ----------------------------------
+def test_save_results_to_hdf5_compresses_and_round_trips(tmp_path):
+    results = _nan_heavy_results()
+    fn = str(tmp_path / "ph.h5")
+    z_qsos = np.linspace(2.1, 3.5, 4)
+    save_results_to_hdf5(fn, results, [f"s{i}" for i in range(4)], z_qsos)
+    with h5py.File(fn, "r") as h:
+        assert h["sample_log_likelihoods_dla"].compression == "gzip"
+        assert h["base_sample_inds"].compression == "gzip"
+        assert h["spectrum_ids"].compression == "gzip"
+    _assert_lossless(fn, results)
+
+
+def test_nan_heavy_array_shrinks_substantially(tmp_path):
+    big = np.full((2, 5000, 4), np.nan)
+    big[:, :50, :] = 1.23  # 97.5% NaN
+    fn = str(tmp_path / "shrink.h5")
+    save_results_to_hdf5(
+        fn, {"sample_log_likelihoods_dla": big}, ["a", "b"], np.array([2.0, 3.0])
+    )
+    # a 97.5%-NaN array must end well under a third of its raw byte size
+    assert os.path.getsize(fn) < big.nbytes * 0.3
+
+
+# --- DLAHolder.save_results (run_bayes_select; the production/LOA writer) -----
+def test_dlaholder_save_results_compresses_and_round_trips(tmp_path):
+    from run_bayes_select import DLAHolder
+
+    results = _nan_heavy_results()
+    holder = object.__new__(DLAHolder)  # bypass __init__; save_results only reads .results
+    holder.results = results
+    fn = str(tmp_path / "holder.h5")
+    holder.save_results(output_file=fn)
+    with h5py.File(fn, "r") as h:
+        assert h["sample_log_likelihoods_dla"].compression == "gzip"
+        assert h["base_sample_inds"].compression == "gzip"
+    _assert_lossless(fn, results)
+
+
+def test_dlaholder_handles_scalar_value(tmp_path):
+    """A scalar in results must not raise (gzip can't chunk a scalar)."""
+    from run_bayes_select import DLAHolder
+
+    holder = object.__new__(DLAHolder)
+    holder.results = {"a_scalar": np.float64(3.14), "a_vec": np.arange(5)}
+    fn = str(tmp_path / "scalar.h5")
+    holder.save_results(output_file=fn)
+    with h5py.File(fn, "r") as h:
+        assert h["a_scalar"].compression is None  # scalar: uncompressed, no error
+        assert h["a_vec"].compression == "gzip"
+        assert h["a_scalar"][()] == np.float64(3.14)

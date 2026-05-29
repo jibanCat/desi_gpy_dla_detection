@@ -66,6 +66,15 @@ slurm/greatlakes/*.log
 tests/profile/results/*.tsv
 tests/profile/results/trace_*.json
 
+# --- handoff notes: keep current in docs/handoffs/ (tracked); archive old ones locally ---
+docs/handoffs/legacy/
+
+# SLURM job logs in any greatlakes subdir (the old slurm/greatlakes/*.log missed production/logs/)
+slurm/greatlakes/**/*.log
+
+# investigation notes are tracked in a SEPARATE notes repo, not the codebase
+docs/notes/
+
 # Step A trainset fixtures regenerable from build_2lpt_frozen_test_fixture.py
 tests/fixtures/2lpt_frozen/training_set.mat
 tests/fixtures/2lpt_frozen/training_set.npz

@@ -124,12 +124,15 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
             filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+            filter_n_initial_floor=model_params.get("filter_n_initial_floor", 5000),
+            filter_empty_mask_fallthrough=model_params.get("filter_empty_mask_fallthrough", False),
             single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
             enable_tau_eb=model_params.get("enable_tau_eb", False),
             tau_eb_factors=model_params.get("tau_eb_factors", (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)),
             tau_eb_apply_hcd_mask=model_params.get("tau_eb_apply_hcd_mask", False),
             tau_eb_mask_threshold_sigma=model_params.get("tau_eb_mask_threshold_sigma", 1.5),
             tau_eb_objective=model_params.get("tau_eb_objective", "null"),
+            early_stop_mode=model_params.get("early_stop_mode", "baseline"),
         )
 
         fitresults = process_spectra_group(coadd, hpxcat, model)
@@ -238,12 +241,15 @@ def dlasearch_mock(specfile, catalog, model_params):
             figure_dir=model_params["figure_dir"],
             params_subdla=params_subdla,  # Pass the Sub-DLA Parameters
             filter_low_likelihood=model_params["filter_low_likelihood"],  # Filter low likelihood samples
+            filter_n_initial_floor=model_params.get("filter_n_initial_floor", 5000),
+            filter_empty_mask_fallthrough=model_params.get("filter_empty_mask_fallthrough", False),
             single_absorber_model=model_params["single_absorber_model"],  # single absorber model only
             enable_tau_eb=model_params.get("enable_tau_eb", False),
             tau_eb_factors=model_params.get("tau_eb_factors", (0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0)),
             tau_eb_apply_hcd_mask=model_params.get("tau_eb_apply_hcd_mask", False),
             tau_eb_mask_threshold_sigma=model_params.get("tau_eb_mask_threshold_sigma", 1.5),
             tau_eb_objective=model_params.get("tau_eb_objective", "null"),
+            early_stop_mode=model_params.get("early_stop_mode", "baseline"),
         )
 
         fitresults = process_spectra_group(specfile, catalog, model)
@@ -444,20 +450,26 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
             nbal = catalog["NCIV_450"][entry]
             bal_locs = []
             for n in range(nbal):
-                # velocity factor: (1 - v/c) for each edge of the BAL trough
-                # VMAX_CIV_450 is the high-velocity (blueshifted) edge
-                # VMIN_CIV_450 is the low-velocity edge
-                v_max = -catalog[entry]["VMAX_CIV_450"][n] / constants.c + 1.0
-                v_min = -catalog[entry]["VMIN_CIV_450"][n] / constants.c + 1.0
+                # Rest-frame factor (1 - v/c) for each trough edge. Velocities are
+                # positive-blueward (quickquasars/baltools: λ_obs = λ_rest·(1−v/c)).
+                v_a = -catalog[entry]["VMAX_CIV_450"][n] / constants.c + 1.0
+                v_b = -catalog[entry]["VMIN_CIV_450"][n] / constants.c + 1.0
 
                 for line, lam in constants.bal_lines.items():
-                    # rest-frame wavelength range to mask for this BAL trough + line
-                    mask = np.logical_and(wave_rf > lam * v_max, wave_rf < lam * v_min)
+                    # BUG FIX (2026-05-26, order-agnostic): the previous code wrote
+                    # (wave_rf > lam*v_max) & (wave_rf < lam*v_min) assuming VMAX>VMIN,
+                    # but this mock's bal_cat stores VMIN_CIV_450 > VMAX_CIV_450 (VMIN =
+                    # high-velocity/blue edge) → backwards EMPTY interval → 0 pixels masked
+                    # for every trough. baltools' nominal ordering is the opposite (VMIN<VMAX),
+                    # and quickquasars mock catalogs aren't guaranteed either way, so take the
+                    # bluer edge (smaller 1−v/c) as the lower bound regardless of column order.
+                    # (--balmask is off in all production, so no production output was affected.)
+                    lo = lam * min(v_a, v_b)
+                    hi = lam * max(v_a, v_b)
+                    mask = np.logical_and(wave_rf > lo, wave_rf < hi)
                     # track Lyα and NV observed-frame ranges for post-detection BAL check
                     if (line == "Lya") or (line == "NV"):
-                        rededge = (lam * v_min) * (1 + zqso)
-                        blueedge = (lam * v_max) * (1 + zqso)
-                        bal_locs.append((rededge, blueedge))
+                        bal_locs.append((lo * (1 + zqso), hi * (1 + zqso)))
 
                     # Update pixel mask and zero out inverse variance
                     pixel_mask[mask] = True
@@ -545,7 +557,13 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         if ("nbal" in locals()) & np.any(zdla != -1):
             lam_center_dla = constants.Lya_line * (1 + zdla)
             for window in bal_locs:
-                balflag = (lam_center_dla < window[0]) & (lam_center_dla > window[1])
+                # Order-agnostic (2026-05-26): the BAL-mask fix now appends bal_locs as
+                # ascending (lo, hi), but this flag previously assumed descending (red, blue)
+                # — (center < window[0]) & (center > window[1]) — so the ascending tuple made
+                # the condition always False and silently killed POTENTIAL_BAL. Sort the edges
+                # so the flag fires for either tuple order.
+                lo_w, hi_w = sorted(window)
+                balflag = (lam_center_dla > lo_w) & (lam_center_dla < hi_w)
                 fitwarn[balflag] |= DLAFLAG.POTENTIAL_BAL
 
         # average signal to noise computation
