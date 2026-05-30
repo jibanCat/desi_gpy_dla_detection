@@ -95,6 +95,10 @@ def combine_processed_files(processed_dir, healpix_list, output_file, survey, pr
     ### CHANGED
     written_counts = {}
 
+    # Clustering-prior provenance, gathered across ALL processed files so a
+    # combine that mixes prior-on and prior-off runs is caught (see below).
+    prov_values = {"pair_prior_mode": [], "dla_bias": []}
+
     with h5py.File(output_file, "w") as out_f:  # ### CHANGED: open output once
         for healpix in healpix_list:
             filepath = construct_filename(processed_dir, survey, program, healpix)
@@ -107,6 +111,12 @@ def combine_processed_files(processed_dir, healpix_list, output_file, survey, pr
             log.info(f"Reading processed file: {filepath}")
 
             with h5py.File(filepath, "r") as f:
+                # Record provenance before any skip: an empty/unmatched file is
+                # still a valid run output and should count toward the stamp.
+                for _attr in prov_values:
+                    if _attr in f.attrs:
+                        prov_values[_attr].append(f.attrs[_attr])
+
                 if "target_ids" not in f:
                     log.info(f"Missing 'target_ids' in {filepath}. Skipping...")
                     continue
@@ -143,6 +153,27 @@ def combine_processed_files(processed_dir, healpix_list, output_file, survey, pr
 
         # preserve your attr
         out_f.attrs["combined_files"] = len(processed_files)
+
+        # Stamp clustering-prior provenance onto the combined file. Require the
+        # value to agree across every processed file that carries it: combining
+        # prior-on and prior-off runs into one catalog is scientifically wrong,
+        # so we refuse to silently inherit only the first file's value. On a
+        # genuine disagreement, warn loudly and write "MIXED" so the artifact is
+        # self-documenting rather than mislabeled. No-op for older files that
+        # lack these attrs.
+        for _attr, _vals in prov_values.items():
+            if not _vals:
+                continue
+            _uniq = {v.decode() if isinstance(v, bytes) else v for v in _vals}
+            if len(_uniq) == 1:
+                out_f.attrs[_attr] = _vals[0]
+            else:
+                log.warning(
+                    f"Inconsistent '{_attr}' across processed files: "
+                    f"{sorted(_uniq)}. The combined catalog mixes runs; "
+                    f"writing '{_attr}'='MIXED'."
+                )
+                out_f.attrs[_attr] = "MIXED"
 
     if not processed_files:
         log.info("No processed files were found. Exiting.")

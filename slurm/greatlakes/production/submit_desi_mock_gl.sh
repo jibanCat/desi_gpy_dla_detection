@@ -110,6 +110,10 @@ ENABLE_TAU_EB="${ENABLE_TAU_EB:-1}"
 TAU_EB_OBJECTIVE="${TAU_EB_OBJECTIVE:-null}"
 EARLY_STOP_MODE="${EARLY_STOP_MODE:-baseline}"
 
+# DLA clustering prior (default off => byte-identical to production).
+PAIR_PRIOR_MODE="${PAIR_PRIOR_MODE:-off}"
+DLA_BIAS="${DLA_BIAS:-2.0}"
+
 # FILTER=1 truncated-sampler tuning knobs (mirrors run_local.sh:208-215).
 # Defaults left empty → desi-DLAGP.py uses its built-in CLI defaults; set in
 # the flavour .env to override. (see docs/notes/2026-05-13_filter1_knob_tuning.md)
@@ -183,6 +187,8 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
             --enable_tau_eb "$ENABLE_TAU_EB" \
             --tau_eb_objective "$TAU_EB_OBJECTIVE" \
             --early_stop_mode "$EARLY_STOP_MODE" \
+            --pair_prior_mode "$PAIR_PRIOR_MODE" \
+            --dla_bias "$DLA_BIAS" \
             $([ -n "$FILTER_N_INITIAL_FLOOR" ] && echo "--filter_n_initial_floor $FILTER_N_INITIAL_FLOOR") \
             $([ "$FILTER_EMPTY_MASK_FALLTHROUGH" = "1" ] && echo "--filter_empty_mask_fallthrough 1") \
             --figure_dir "$FIGURE_DIR" \

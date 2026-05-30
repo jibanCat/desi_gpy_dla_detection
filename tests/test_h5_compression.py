@@ -87,6 +87,29 @@ def test_save_results_to_hdf5_compresses_and_round_trips(tmp_path):
     _assert_lossless(fn, results)
 
 
+def test_save_results_with_run_attrs_compresses_and_writes_attrs(tmp_path):
+    """Regression for the PR #7 (gzip) x clustering_prior (run_attrs) merge:
+    the compressed datasets AND the root-group provenance attrs must coexist,
+    and each result dataset must be written exactly once. A duplicate
+    create_dataset (the bad keep-both resolution) would raise ValueError at
+    the save call below, so this fails loudly on a regressed merge."""
+    results = _nan_heavy_results()
+    fn = str(tmp_path / "ph_attrs.h5")
+    z_qsos = np.linspace(2.1, 3.4, 4)
+    attrs = {"pair_prior_mode": "clustering", "dla_bias": 2.0}
+    save_results_to_hdf5(
+        fn, results, [f"s{i}" for i in range(4)], z_qsos, run_attrs=attrs
+    )
+    with h5py.File(fn, "r") as h:
+        # provenance attrs present + correct
+        assert h.attrs["pair_prior_mode"] == "clustering"
+        assert float(h.attrs["dla_bias"]) == 2.0
+        # datasets still gzip-compressed (conflict-1 kept the gzip loop body)
+        assert h["sample_log_likelihoods_dla"].compression == "gzip"
+        assert h["base_sample_inds"].compression == "gzip"
+    _assert_lossless(fn, results)
+
+
 def test_nan_heavy_array_shrinks_substantially(tmp_path):
     big = np.full((2, 5000, 4), np.nan)
     big[:, :50, :] = 1.23  # 97.5% NaN
@@ -125,3 +148,118 @@ def test_dlaholder_handles_scalar_value(tmp_path):
         assert h["a_scalar"].compression is None  # scalar: uncompressed, no error
         assert h["a_vec"].compression == "gzip"
         assert h["a_scalar"][()] == np.float64(3.14)
+
+
+# --- provenance attrs: the PRODUCTION writer + the combine round-trip ---------
+def test_dlaholder_save_results_writes_clustering_provenance(tmp_path):
+    """The production writer (DLAHolder.save_results) must stamp the clustering
+    provenance attrs from the holder's own fields when set."""
+    from run_bayes_select import DLAHolder
+
+    holder = object.__new__(DLAHolder)
+    holder.results = _nan_heavy_results()
+    holder.pair_prior_mode = "clustering"
+    holder.dla_bias = 2.0
+    fn = str(tmp_path / "prov_on.h5")
+    holder.save_results(output_file=fn)
+    with h5py.File(fn, "r") as h:
+        assert h.attrs["pair_prior_mode"] == "clustering"
+        assert float(h.attrs["dla_bias"]) == 2.0
+
+
+def test_dlaholder_save_results_provenance_defaults_off(tmp_path):
+    """A holder built without the clustering fields (e.g. object.__new__ / any
+    legacy path) must still write the production default ('off', 2.0) via the
+    getattr fallback — never raise, never silently omit the stamp."""
+    from run_bayes_select import DLAHolder
+
+    holder = object.__new__(DLAHolder)
+    holder.results = _nan_heavy_results()  # no pair_prior_mode / dla_bias set
+    fn = str(tmp_path / "prov_default.h5")
+    holder.save_results(output_file=fn)
+    with h5py.File(fn, "r") as h:
+        assert h.attrs["pair_prior_mode"] == "off"
+        assert float(h.attrs["dla_bias"]) == 2.0
+
+
+def test_combine_propagates_clustering_provenance(tmp_path):
+    """End-to-end: the clustering provenance written by the production writer
+    must survive combine_processed_h5 into combined.h5, so a downstream reader
+    can verify which prior produced a catalog. Guards the combine attr-copy
+    (combine_processed_h5.py: copy pair_prior_mode/dla_bias from processed[0])."""
+    from astropy.table import Table
+
+    from run_bayes_select import DLAHolder
+    from combine_processed_h5 import combine_processed_files
+
+    survey, program = "main", "dark"
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+
+    # Two per-healpix processed files, each row-aligned on target_ids, each
+    # stamped clustering/2.0 by the production writer.
+    all_ids = []
+    for hp, ids in ((100, [10, 11, 12, 13]), (200, [20, 21, 22, 23])):
+        holder = object.__new__(DLAHolder)
+        res = _nan_heavy_results()
+        res["target_ids"] = np.asarray(ids, dtype=np.int64)
+        holder.results = res
+        holder.pair_prior_mode = "clustering"
+        holder.dla_bias = 2.0
+        holder.save_results(
+            output_file=str(processed_dir / f"processed-{survey}-{program}-{hp}.h5")
+        )
+        all_ids.extend(ids)
+
+    out = str(tmp_path / "combined.h5")
+    target_catalog = Table({"TARGETID": np.asarray(all_ids, dtype=np.int64)})
+    combine_processed_files(
+        str(processed_dir), [100, 200], out, survey, program, target_catalog
+    )
+
+    with h5py.File(out, "r") as h:
+        assert h.attrs["pair_prior_mode"] == "clustering"
+        assert float(h.attrs["dla_bias"]) == 2.0
+        assert h.attrs["combined_files"] == 2
+        # rows from both healpix made it through
+        assert h["target_ids"].shape[0] == 8
+
+
+def test_combine_marks_mixed_provenance(tmp_path):
+    """A combine that mixes prior-on and prior-off runs must NOT silently
+    inherit only the first file's stamp — it must mark the attr 'MIXED' so the
+    combined catalog is self-documenting rather than mislabeled."""
+    from astropy.table import Table
+
+    from run_bayes_select import DLAHolder
+    from combine_processed_h5 import combine_processed_files
+
+    survey, program = "main", "dark"
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+
+    all_ids = []
+    # One healpix produced with the prior ON, one with it OFF.
+    for hp, ids, mode in ((100, [10, 11, 12, 13], "clustering"),
+                          (200, [20, 21, 22, 23], "off")):
+        holder = object.__new__(DLAHolder)
+        res = _nan_heavy_results()
+        res["target_ids"] = np.asarray(ids, dtype=np.int64)
+        holder.results = res
+        holder.pair_prior_mode = mode
+        holder.dla_bias = 2.0
+        holder.save_results(
+            output_file=str(processed_dir / f"processed-{survey}-{program}-{hp}.h5")
+        )
+        all_ids.extend(ids)
+
+    out = str(tmp_path / "combined_mixed.h5")
+    target_catalog = Table({"TARGETID": np.asarray(all_ids, dtype=np.int64)})
+    combine_processed_files(
+        str(processed_dir), [100, 200], out, survey, program, target_catalog
+    )
+
+    with h5py.File(out, "r") as h:
+        assert h.attrs["pair_prior_mode"] == "MIXED"
+        # dla_bias agreed (2.0 in both), so it is NOT marked mixed
+        assert float(h.attrs["dla_bias"]) == 2.0

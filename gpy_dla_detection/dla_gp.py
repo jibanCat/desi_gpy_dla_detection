@@ -87,6 +87,7 @@ from .dla_samples import DLASamplesMAT
 # Limit the number of workers to the number of CPU cores
 # max_workers = os.cpu_count() * 2
 
+
 # fast search method for adapative truncated sampling
 def select_region_indices_searchsorted(initial_z, initial_logL, z_all, z_tol=0.02, logL_null=None):
     """
@@ -311,6 +312,9 @@ class DLAGP(NullGP):
         min_z_separation: float = 3000.0,
         broadening: bool = True,
         early_stop_mode: str = "baseline",
+        pair_prior_mode: str = "off",   # "off" | "clustering" (default off => byte-identical)
+        dla_bias: float = 2.0,
+        pair_prior=None,                # injected DLAClusteringPrior (built once on holder)
     ):
         super().__init__(
             params,
@@ -347,8 +351,108 @@ class DLAGP(NullGP):
             )
         self.early_stop_mode = early_stop_mode
 
+        # DLA velocity-separation clustering prior (gated; default off => the
+        # multi-DLA evidence is byte-identical to the proven path). See
+        # docs/superpowers/specs/2026-05-22-dla-clustering-prior-design.md §4.
+        #
+        # ``pair_prior`` (injected instance) takes precedence over constructing
+        # one from ``pair_prior_mode``/``dla_bias``.  DLAHolder builds a single
+        # DLAClusteringPrior (~17 s) at startup and injects it here so the cost
+        # is not incurred once per spectrum.
+        self._validate_pair_prior_mode(pair_prior_mode)
+        self.pair_prior_mode = pair_prior_mode
+        self.dla_bias = float(dla_bias)
+        self.pair_prior = self._resolve_pair_prior(pair_prior, pair_prior_mode, dla_bias)
+
         # Initialize a cache for Voigt profiles
         self.voigt_cache = {}
+
+    @staticmethod
+    def _validate_pair_prior_mode(pair_prior_mode: str) -> None:
+        if pair_prior_mode not in ("off", "clustering"):
+            raise ValueError(
+                f"pair_prior_mode must be 'off' or 'clustering'; got {pair_prior_mode!r}"
+            )
+
+    @staticmethod
+    def _resolve_pair_prior(pair_prior, pair_prior_mode: str, dla_bias: float):
+        """Resolve the active ``pair_prior`` instance from constructor args.
+
+        Resolution order (highest precedence first):
+          1. ``pair_prior is not None`` — injected instance wins (DLAHolder
+             builds a single DLAClusteringPrior at startup and injects it so
+             the ~17 s build cost is paid only once).
+          2. ``pair_prior_mode == "clustering"`` — build a fresh instance from
+             ``dla_bias`` (fallback for standalone / test use).
+          3. Otherwise — return ``None`` (the prior is off; byte-identical path).
+
+        Returns
+        -------
+        resolved : DLAClusteringPrior or None
+        """
+        if pair_prior is not None:
+            return pair_prior
+        if pair_prior_mode == "clustering":
+            from gpy_dla_detection.dla_clustering import DLAClusteringPrior
+            return DLAClusteringPrior(b_dla=dla_bias)
+        return None
+
+    def _clustering_log_factor(
+        self, num_dlas, all_z_dlas, sample_probabilities, ind, valid_mask=None
+    ):
+        """Per-model clustering EVIDENCE factor Δ_k = log E_post[ρ_k] − log E_unif[ρ_k].
+
+        This is an Occam-style per-MODEL evidence correction, NOT a per-sample
+        likelihood change. It is applied to the FINALIZED k-DLA log evidence
+        ``log_likelihoods_dla[num_dlas]`` only (round-2 referee, spec §4); the
+        per-sample column ``sample_log_likelihoods`` and the SIR resampling
+        weights are NEVER touched, so the sampler explores the bare likelihood
+        (full near+far z_DLA coverage — critical for sparse QMC).
+
+        For a k-DLA model (``k = num_dlas + 1``):
+          Δ_k = log E_post[ρ_k] − log E_unif[ρ_k]   (Δ = 0 for k=1, i.e. num_dlas=0)
+
+        - E_post[ρ_k] = posterior (likelihood-weighted) mean of ρ over the
+          samples = Σ_i p_i ρ_i / Σ_i p_i, with ``p_i`` the EXISTING bare
+          ``sample_probabilities`` (= exp(slk[:,num_dlas] − max); NaN at masked
+          samples) and ``ρ_i = exp(pair_prior.log_rho(all_z_dlas))``.
+        - E_unif[ρ_k] = closed-form prior mean = 1 + C(k, 2)·⟨ξ⟩_window
+          (the genuine normalization constant; analytic, proposal-independent).
+
+        Caveat (accepted, not "fixed" here): E_post via Σpρ/Σp is a
+        self-normalized importance ratio over the SIR proposal, so it is mildly
+        biased UPWARD and ESS-dependent — bounded and non-compounding, monitored
+        externally by ESS + pair-purity diagnostics.
+
+        Parameters
+        ----------
+        num_dlas : int            k − 1 (0 => 1-DLA model => Δ = 0).
+        all_z_dlas : (k, N)       per-sample z-DLA tuples for the k-DLA model.
+        sample_probabilities : (N,)  the BARE exp(slk − max) probabilities (NaN-masked).
+        ind : (N,) bool           min_z_separation mask (True = pair too close, dropped).
+        valid_mask : (N,) bool or None  FILTER=1 region-A mask (posterior ≈ region A).
+
+        Returns 0.0 if mode is off, num_dlas < 1, or no usable samples remain.
+        """
+        if getattr(self, "pair_prior_mode", "off") != "clustering" or num_dlas < 1:
+            return 0.0
+        rho = np.exp(self.pair_prior.log_rho(all_z_dlas))      # (N,)
+        p = np.array(sample_probabilities, dtype=float)
+        sel = np.isfinite(p) & np.isfinite(rho) & (~ind)
+        if valid_mask is not None:                             # FILTER=1: posterior ~ region A
+            sel &= valid_mask
+        if not sel.any() or p[sel].sum() <= 0:
+            return 0.0
+        E_post = np.sum(p[sel] * rho[sel]) / np.sum(p[sel])
+        # Window edges: use the spectrum's z-DLA sample span. all_z_dlas spans
+        # both the (fixed) first-DLA grid and the resampled later DLAs, so its
+        # min/max is a faithful proxy for the z-DLA search window.
+        z_min = float(np.nanmin(all_z_dlas))
+        z_max = float(np.nanmax(all_z_dlas))
+        E_unif = self.pair_prior.prior_mean_rho(num_dlas + 1, z_min, z_max)
+        if not (E_post > 0.0 and E_unif > 0.0):
+            return 0.0
+        return float(np.log(E_post) - np.log(E_unif))
 
     def log_model_evidences(self, max_dlas: int) -> np.ndarray:
         """
@@ -559,6 +663,11 @@ class DLAGP(NullGP):
         # Preallocate sample probabilities
         sample_probabilities = np.empty(self.params.num_dla_samples)
         sample_probabilities[:] = np.nan
+
+        # FILTER=1 region-A mask; set only in the non-empty valid_mask branch
+        # below. Initialised here so the clustering-evidence factor can guard on
+        # it unconditionally (it stays None for the FILTER=0 / empty-mask paths).
+        _valid_mask = None
 
         # precomputed log normalization factor
         lognorm = np.log(self.params.num_dla_samples)
@@ -875,6 +984,38 @@ class DLAGP(NullGP):
                         - lognorm * num_dlas
                     )
 
+                # ===== DLA clustering evidence factor (gated; default-off no-op) =====
+                # Per-MODEL Occam-style correction Δ_k applied to the FINALIZED
+                # evidence only — the per-sample column and the SIR resampler
+                # (below) run on the BARE likelihood and are never touched. Done
+                # BEFORE the early-stop checks so the stop logic sees the
+                # corrected evidence. all_z_dlas/ind are in scope here exactly
+                # when num_dlas >= 1 (defined in the `if num_dlas > 0` block);
+                # _valid_mask is None unless the FILTER=1 region-A branch set it.
+                if (
+                    getattr(self, "pair_prior_mode", "off") == "clustering"
+                    and num_dlas >= 1
+                ):
+                    log_likelihoods_dla[num_dlas] += self._clustering_log_factor(
+                        num_dlas, all_z_dlas, sample_probabilities, ind, _valid_mask
+                    )
+
+                # ===== Gated per-spectrum ESS-fraction log (validation only) =====
+                # Default-off: _log_ess is never set in production → this block is
+                # a dead branch and the byte-identical guarantee holds.  Enable in
+                # a validation run by setting `dla_gp_instance._log_ess = True`.
+                if getattr(self, "_log_ess", False) and num_dlas >= 1:
+                    w = np.array(sample_probabilities, dtype=float)
+                    w = w[np.isfinite(w)]
+                    if w.size and w.sum() > 0:
+                        ess = (w.sum() ** 2) / np.sum(w ** 2)
+                        ess_frac = ess / w.size
+                        if ess_frac < 0.3:
+                            log.warning(
+                                "low ESS-frac %.3f at k=%d (clustering bias indicator)",
+                                ess_frac, num_dlas + 1,
+                            )
+
                 # ========= Early stopping logic =========
                 if (num_dlas + 1) == max_dlas or np.isnan(
                     log_likelihoods_dla[num_dlas]
@@ -915,7 +1056,10 @@ class DLAGP(NullGP):
                         )
                         break
                 # If log likelihood is smaller than the previous one by 10 times,
-                # stop further computation
+                # stop further computation.
+                # NOTE (D-mode precision): D-mode's null-comparison above uses the
+                # pre-Occam, Δ-free likelihood; this decreased-from-previous-k stop
+                # compares the Δ-corrected evidence in ALL modes including D.
                 if num_dlas > 0:
                     if (
                         log_likelihoods_dla[num_dlas]
@@ -1159,6 +1303,9 @@ class DLAGPMAT(DLAGP):
         prev_tau_0: float = 0.0023,
         prev_beta: float = 3.65,
         early_stop_mode: str = "baseline",
+        pair_prior_mode: str = "off",
+        dla_bias: float = 2.0,
+        pair_prior=None,                # injected DLAClusteringPrior (built once on holder)
     ):
         # See NullGPMAT for the rationale: v2 trained .h5 carries its own
         # normalization region; mutate params in place if present so set_data
@@ -1208,4 +1355,7 @@ class DLAGPMAT(DLAGP):
             min_z_separation=min_z_separation,
             broadening=broadening,
             early_stop_mode=early_stop_mode,
+            pair_prior_mode=pair_prior_mode,
+            dla_bias=dla_bias,
+            pair_prior=pair_prior,
         )
