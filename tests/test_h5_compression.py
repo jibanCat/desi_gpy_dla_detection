@@ -223,3 +223,43 @@ def test_combine_propagates_clustering_provenance(tmp_path):
         assert h.attrs["combined_files"] == 2
         # rows from both healpix made it through
         assert h["target_ids"].shape[0] == 8
+
+
+def test_combine_marks_mixed_provenance(tmp_path):
+    """A combine that mixes prior-on and prior-off runs must NOT silently
+    inherit only the first file's stamp — it must mark the attr 'MIXED' so the
+    combined catalog is self-documenting rather than mislabeled."""
+    from astropy.table import Table
+
+    from run_bayes_select import DLAHolder
+    from combine_processed_h5 import combine_processed_files
+
+    survey, program = "main", "dark"
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+
+    all_ids = []
+    # One healpix produced with the prior ON, one with it OFF.
+    for hp, ids, mode in ((100, [10, 11, 12, 13], "clustering"),
+                          (200, [20, 21, 22, 23], "off")):
+        holder = object.__new__(DLAHolder)
+        res = _nan_heavy_results()
+        res["target_ids"] = np.asarray(ids, dtype=np.int64)
+        holder.results = res
+        holder.pair_prior_mode = mode
+        holder.dla_bias = 2.0
+        holder.save_results(
+            output_file=str(processed_dir / f"processed-{survey}-{program}-{hp}.h5")
+        )
+        all_ids.extend(ids)
+
+    out = str(tmp_path / "combined_mixed.h5")
+    target_catalog = Table({"TARGETID": np.asarray(all_ids, dtype=np.int64)})
+    combine_processed_files(
+        str(processed_dir), [100, 200], out, survey, program, target_catalog
+    )
+
+    with h5py.File(out, "r") as h:
+        assert h.attrs["pair_prior_mode"] == "MIXED"
+        # dla_bias agreed (2.0 in both), so it is NOT marked mixed
+        assert float(h.attrs["dla_bias"]) == 2.0
