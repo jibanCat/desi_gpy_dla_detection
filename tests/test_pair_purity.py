@@ -23,6 +23,11 @@ import pytest
 
 # Make sure the examples directory is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "examples"))
+# dla_truth_diagnostics imports fitsio (+ plotting deps) at module load; the
+# tests below only exercise its pure-logic helpers, but the import still fails
+# collection in lightweight envs without the DESI FITS stack. Skip the whole
+# module there, matching the convention in the sibling wiring tests.
+pytest.importorskip("fitsio")
 from dla_truth_diagnostics import (
     close_pairs,
     matches_truth_pair,
