@@ -1,11 +1,16 @@
-# HANDOFF — current (2026-05-27)
+# HANDOFF — current (2026-05-27, PR status updated 2026-05-30)
 
 > **Canonical, cross-machine handoff.** Lives in the repo so any clone sees it.
 > Older/superseded handoffs are archived locally under `docs/handoffs/legacy/`
 > (gitignored — not pushed). Claude's per-session working notes live in its
 > local memory (`~/.claude/.../memory/`), not here.
+>
+> **2026-05-30:** PR #7 **and** PR #10 (clustering prior, gated default-off,
+> no production-behavior change) are both **MERGED into `desi_y3`**. `desi_y3`
+> is now the single source of truth. NERSC bring-up instructions:
+> `docs/handoffs/NERSC_KICKOFF.md` (see its 2026-05-30 UPDATE block).
 
-- **Repo:** `/home/mfho/desi_gpy_dla_detection`, branch **`production_533`** (PR #7 → `desi_y3`).
+- **Repo:** `/home/mfho/desi_gpy_dla_detection`, branch **`production_533`** (PR #7 → `desi_y3`, MERGED).
 - **Cluster:** GreatLakes. Scratch outputs under `/scratch/cavestru_root/cavestru0/mfho/`.
   Persistent shareables under `/nfs/turbo/lsa-cavestru/mfho/`.
 

@@ -1,9 +1,108 @@
 # NERSC kickoff — note for the NERSC Claude agent
 
-> Written 2026-05-28 by the GL-side Claude as a cross-machine handoff. Pair this
-> with `docs/handoffs/HANDOFF.md` (the canonical current handoff) and the project
-> memory note `project_acwells_code_review` / `catalog-packaging-routine` /
-> `reference_notes_repo` if those are loaded on your side.
+> Written 2026-05-28, **updated 2026-05-30** by the GL-side Claude as a
+> cross-machine handoff. Read the **2026-05-30 UPDATE** block first (it reflects
+> the merged state), then the original Steps 0–5 below (still the correct
+> recipe for the NERSC config port). Pair with `docs/handoffs/HANDOFF.md`.
+
+---
+
+## 2026-05-30 UPDATE — read this first
+
+### What changed since this note was first written
+
+Both PRs are now **MERGED into `desi_y3`**:
+
+- **PR #7** (`production_533` → `desi_y3`) — **MERGED.** Carries all the GL
+  production work and the three correctness fixes you must have before any run:
+  the `−log_ratio` multi-DLA evidence fix in `dla_gp.py`, the order-agnostic
+  BAL-mask fix in `dlasearch.py`, and the `+log(N)` MC-evidence patch. So the
+  "Step 0 — wait for PR #7" gate below is **already satisfied.**
+- **PR #10** (`clustering_prior` → `desi_y3`) — **MERGED.** Adds an
+  evidence-only DLA close-pair clustering prior, **gated default-off and
+  byte-identical when off** (verified by an `np.array_equal` parity test).
+  **This does NOT change production behavior** unless someone explicitly passes
+  `--pair_prior_mode clustering`. **Leave it off for all production runs.** A
+  ~87k-DLA London-0 A/B (2026-05-29) showed the prior is a *close-pair no-op*
+  (1 false new pair) — the bottleneck is the SIR proposal, not the weighting, so
+  enabling it buys nothing today. Full write-up is in the notes repo
+  (`notes/2026-05-29_clustering_prior_pair_purity_ab.md`). The real fix
+  (future, not now) is a clustering-informed *proposal*; don't spend NERSC
+  cycles enabling the prior.
+
+Net: **`desi_y3` is now the single source of truth** with all fixes + both PRs.
+Base every NERSC branch off it.
+
+### Step A — get the NERSC clone unstuck (it's mid-PR-7)
+
+The NERSC repo was left part-way through PR #7 and never advanced; it predates
+both merges and the notes repo. Recover it carefully — **do not blow away local
+NERSC work without checking** (there may be a half-built `launch_nersc.sh` etc.;
+see Step 1 below):
+
+```bash
+cd /global/homes/j/jibancat/desi_gpy_dla_detection   # or wherever the NERSC clone is
+git status --short                 # inspect FIRST — note any local/untracked NERSC work
+git stash list                     # and any stashes
+# if a merge/rebase/cherry-pick is half-applied and you don't need it:
+git merge --abort 2>/dev/null; git rebase --abort 2>/dev/null; git cherry-pick --abort 2>/dev/null
+git fetch origin
+git checkout desi_y3 && git pull --ff-only origin desi_y3
+# verify you have the fixes + both PRs:
+git log --oneline -5                      # should show the PR #10 + PR #7 merge commits
+git log --oneline | grep -iE "log_ratio|BAL masking|clustering" | head
+```
+
+If `git status` shows real NERSC WIP, `git stash` it (or commit to a wip branch)
+before checking out `desi_y3`, then reapply onto the new `nersc_production`
+branch. Ask the user before discarding anything unfamiliar.
+
+### Step B — build the private notes repo on NERSC (it isn't there yet)
+
+The NERSC side has **no clone of the investigation-notes repo**. Investigation
+notes/figures live in a **separate private repo**, NOT in this codebase
+(`docs/notes/` here is gitignored). Bootstrap it:
+
+```bash
+cd /global/homes/j/jibancat            # or any home-dir location you can write
+gh repo clone jibanCat/desi_gpy_dla_notes   # needs `gh auth login` (or use the SSH URL)
+# then read the recent context, most-recent first:
+ls desi_gpy_dla_notes/notes/ | sort | tail
+#   2026-05-29_clustering_prior_pair_purity_ab.md   ← the clustering A/B no-op result
+#   2026-05-26 handoff, −log_ratio + BAL fixes, etc.
+```
+
+Write any NEW investigation write-ups THERE (`notes/*.md`), never into
+`desi_gpy_dla_detection/docs/notes/`. Keep real-LOA spectra out of it — mocks
+and derived numbers only (real-data privacy rule).
+
+### Step C — configure NERSC production + run the remaining productions
+
+Do the config port exactly as **Steps 1–5 below** (mirror
+`slurm/greatlakes/production/` → `slurm/nersc/production/`; science knobs
+**identical**, only paths/headers/env activation change). The V1 knobs to carry
+verbatim are in Step 3's table and in each GL `*_v1.env`.
+
+**Remaining productions** — confirm the exact list + priority **with the user**
+before launching (I'm GL-side and don't have the authoritative NERSC job
+ledger), but the known candidates from the canonical handoff are:
+
+1. **Real DESI Y3 (LOA) production with the fixed code** — this is the headline
+   NERSC deliverable: NERSC has the full real-spectra access GL lacks. Use the
+   V1 knobs + `--pair_prior_mode off`. Mirror `slurm/submit_desi_loa.sh` into the
+   new `slurm/nersc/production/` flavour, then `launch_nersc.sh`.
+2. **London-0 full re-run with the fixed code** — the GL London-0 V1 catalog has
+   a 161-healpix dlacat coverage gap and predates the `−log_ratio` fix, so it was
+   deferred to a clean fixed-code re-run. Then re-tune p_DLA + re-calibrate P/C.
+3. **CDDF input run** (FILTER-off, MAX_DLAS=1) to completion + `calc_cddf` on the
+   2LPT catalog, if not already finished on GL.
+
+**Before trusting any NERSC catalog**, run the Step 4 5k cross-check: NERSC P/C
+must match the GL reference (2LPT-0 NHI≥20.3 → **P 0.8181 / C 0.8910**; London-0
+5k PW-100k → **0.818 / 0.904**). A divergence ≥ a few pp means a knob drifted in
+the port.
+
+---
 
 ## Context
 
