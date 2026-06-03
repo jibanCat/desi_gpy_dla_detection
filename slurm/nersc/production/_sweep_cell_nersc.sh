@@ -73,7 +73,12 @@ common_args=(
 # ---------------------------------------------------------------------------
 if [ "${SWEEP_TASK:-0}" = "1" ]; then
     k="${SLURM_PROCID:-0}"
-    l2s=$(( 2 * k )); l2e=$(( 2 * k + 2 ))
+    # STRIDE = spacing between tasks' start files (use a large stride to SPREAD
+    # tasks across the whole mock for a representative throughput measurement);
+    # FILES_PER_TASK = files each task processes. Defaults reproduce the original
+    # 2-file contiguous slices (STRIDE=2, FILES_PER_TASK=2).
+    _stride="${STRIDE:-2}"; _fpt="${FILES_PER_TASK:-2}"
+    l2s=$(( k * _stride )); l2e=$(( l2s + _fpt ))
     od="${SWEEP_OUT}/${CELL_TAG}/srun_${k}"; mkdir -p "$od/figures"
     timeout "${TIMEBOX}" python desi-DLAGP.py "${common_args[@]}" \
         --max_workers "$W" --outdir "$od" --figure_dir "$od/figures" \

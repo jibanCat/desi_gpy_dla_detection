@@ -82,13 +82,20 @@ Each run dir gets a `BASELINE.env` with the resolved knobs + `CODE_COMMIT` for p
 
 | Run | config | node-hours |
 |---|---|---|
-| Mock catalog (London/2LPT) | FILTER1, MAXDLA4, PW50k, **load-balanced** | **~20** each |
+| Mock catalog (London-0) | FILTER1, MAXDLA4, PW50k (measured 452 spec/min, ~4.25 s/spec) | **~36** |
+| Mock catalog (2LPT-1/2) | same (assumed ≈ London; 2LPT per-spec not yet measured) | **~36** each |
 | LOA catalog | FILTER1, MAXDLA4, PW50k (measured 2.657 s/spec, 942,946 QSO) | **~21.7** |
 | LOA CDDF | FILTER0, MAXDLA1, **PW100k** (62 cpu-s/spec @ PW50k ×1.8–2) | **~120** |
 
-**Load balancing matters (~1.7×):** ~12–20 files/task (large `--window`) → ~720 spec/min/node;
-1 file/task → ~420 (the slowest DLA-rich file gates the window). CDDF (FILTER=0, uniform
-per-spectrum) gets no load-balance gain. PW10k/30k/50k/100k catalog ≈ 14/24/34/57 nh @ 1-file/task.
+**Mock vs LOA per-spec (measured V1, PW50k):** mock spectra are DLA-richer → more
+refinement → ~452 spec/min (London, ~4.25 s/spec) vs real LOA ~722 spec/min (~2.66 s/spec).
+So **mock catalogs ~36 nh, LOA catalog ~21.7 nh** — the difference is the DATASET, not packing.
+
+**Load balancing is small (~7%), NOT the 1.7× first claimed:** the 722-vs-423 gap was a
+dataset confound (LOA cheap vs DLA-rich mock), not imbalance. London spread-healpix (452)
+≈ London completion (423) → ~7%. A larger `--window` (~12–20 files/task) still helps a
+little — it shrinks the per-window completion tail (slowest file) and cuts the number of
+sbatch jobs — but it is not a major node-hour lever. CDDF (FILTER=0, uniform) gets nothing.
 
 ## P/C calibration (London-0, 32-healpix slice, canonical cuts SNR>2 / NHI≥20.3 / pDLA>0.99 / no-BAL / lyβ-veto)
 
