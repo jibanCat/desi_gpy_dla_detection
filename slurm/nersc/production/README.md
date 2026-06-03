@@ -134,12 +134,38 @@ bash slurm/nersc/production/package_catalog.sh --rundir <OUTDIR> --share-to <CFS
 Note: desi-DLAGP writes the processed h5 under `<OUTDIR>/figures/processed/`; the molly eval
 expects `<OUTDIR>/processed/` — symlink it: `ln -sfn <OUTDIR>/figures/processed <OUTDIR>/processed`.
 
+## Memory + termination (verified 2026-06-03)
+
+**Memory fits N32×W8 with huge margin** (measured, 3 methods — meminfo/cgroup/sacct):
+catalog PW50k peaks **102 GB** (20% of the 503 GB node), CDDF PW100k peaks **76 GB** (15%)
+— ~0.3–0.4 GB/worker. The model+grids are shared page cache; per-spectrum arrays scale with
+MAX_DLAS, so CDDF (MAXDLAS=1) is *lighter* than the catalog (MAXDLAS=4) despite 2× the QMC bag.
+Keep N32×W8 for both; no repacking. (The GL OOM was on a 64 GB node — not relevant here.)
+
+**Termination is graceful + recoverable.** Each healpix's `processed-*.h5` is written/closed
+as that file finishes (`dlasearch.py:631`), so a kill keeps all completed healpix — only the
+in-flight window is lost. A mid-write h5 truncation is caught (`resume_positions.py` validates
+on open + core keys → truncated = not-done). Caveat: the `dlacat` FITS is written only at each
+task's window-end (`desi-DLAGP.py:681`), so a window killed after its h5s but before its dlacat
+leaves h5-but-no-dlacat — **`combine_dlacat.py --expect-positions N --fail-on-gap` is the
+authoritative completeness gate** that catches it (always run it before trusting a catalog).
+
+**Recovery recipe** (timeout/node-failure):
+```bash
+python slurm/nersc/production/resume_positions.py --mockdir <MOCKDIR> --procdir <OUTDIR>/figures/processed --summary
+bash slurm/nersc/production/launch_nersc.sh <env> --outdir <OUTDIR> --start <first_not_done> --end <end> --window <W>
+python examples/combine_dlacat.py --procdir <OUTDIR> --out <OUTDIR>/combined.fits --expect-positions <N> --fail-on-gap
+```
+Writes are idempotent (overwrite-safe), so `--start/--end` re-launch suffices; a
+`launch_nersc_resume.sh` is only worth porting if a run leaves a *sparse scattered* gap set
+(the NERSC inner script lacks the GL `LEVEL2_LIST` task branch).
+
 ## Pre-launch TODO / open items
 
-- [ ] **Validate load-balancing** on one `--window 384` sbatch (confirm ~700 spec/min) before full launch.
-- [ ] **nfl train/inference check** (correctness, not cost): confirm the V1 `_m` model was trained at
-  `num_forest_lines=31` (GL note + validated P/C say yes) vs an agent's claim of nfl=3. See
-  notes `2026-05-13_filter_nfl_confirmation.md`. nfl is 0.07% of cost either way.
-- [ ] **CDDF PW100k cost is extrapolated** (×1.8–2 from measured PW50k) — optionally pin with one regular-QOS slice.
-- [ ] **Resume**: `resume_positions.py` is copied (cluster-agnostic) but a `launch_nersc_resume.sh`
-  wrapper isn't ported yet — for now, re-launch with `--start` past the completed windows.
+- [x] **Load-balancing / throughput** — confirmed: London-0 spread-healpix = 452 spec/min (~36 nh);
+  balancing is ~7% (dataset, not packing — see cost section).
+- [x] **nfl=31** — confirmed correct (P/C insensitive to nfl=3 vs 31; `2026-05-13_filter_nfl_confirmation.md`).
+- [x] **Memory + termination/resume** — verified (this section).
+- [ ] **CDDF PW100k cost is extrapolated** (×1.8–2 from measured PW50k 63.5 nh → ~120 nh) —
+  optionally pin with one regular-QOS slice before the (largest) CDDF launch.
+- [ ] **2LPT per-spec** assumed ≈ London (~36 nh); pin on the first 2LPT run.
