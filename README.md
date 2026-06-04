@@ -297,6 +297,64 @@ over-correct and is no longer the default. See
 `docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md` for the
 falsification.
 
+## End-to-end cataloguing procedure (inference → final combined catalog)
+
+How a production run becomes a single shareable, flagged catalog FITS. Cluster
+drivers live in `slurm/nersc/production/` (NERSC) and `slurm/greatlakes/production/`
+(GreatLakes); the combine/flag/package/eval tools below are cluster-agnostic.
+
+**1. Run inference** (one `sbatch` per window; each writes per-healpix
+`processed-spectra-16-*.h5` + per-task `dlacat-*.fits` slices into `OUTDIR`):
+```bash
+bash slurm/nersc/production/launch_nersc.sh <flavour>.env --start 0 --end <N_hpx> --window <W> --time 08:00:00
+# always --dry-run first. --window sets files(or hpx)/task -> per-sbatch wall (fit the QOS limit).
+```
+
+**2. Verify completeness** (per-healpix — do NOT rely on combine's slice check alone):
+```bash
+python slurm/nersc/production/resume_positions.py --mockdir <MOCKDIR> --procdir <OUTDIR>/figures/processed --summary
+```
+A `not_done` position is a **real** gap only if that healpix has `z>2` QSOs (else it is a
+benign empty healpix — its only QSOs are below the search redshift). Refill a true gap
+(idempotent overwrite): `launch_nersc.sh <flavour>.env --outdir <OUTDIR> --start <idx> --end <idx+1> --window 1`.
+
+**3. Package → the final combined catalog** (combine → flag → stamp → README → optional share):
+```bash
+bash slurm/nersc/production/package_catalog.sh \
+    --rundir <RUNDIR> --release <REL> --bal-cat <bal_cat.fits> --expect-positions <N_hpx> \
+    [--purity P --completeness C] [--share-to <CFS dir>]
+```
+This runs, in order:
+- `examples/combine_dlacat.py` — glob all `dlacat-*.fits` slices → one FITS, gap-checked (`--fail-on-gap`).
+- `tools/postprocess/add_dla_flags.py` — add `LYBETA_FLAG`, `BAL_FLAG`, `NHI_CONSISTENCY_FLAG`,
+  `PDLA_SATURATED_FLAG` (+ `LYBETA_PARENT_*`) and fold the `DLAFLAG` bitmask (`==0` = clean).
+- stamp provenance into the FITS header (`CODECMT`, `COMBTOOL`, `FLAGTOOL`, `LYBDZ`, `SRCRUN`, `NROWS`, …).
+- copy `BASELINE.env` (resolved config) + write `README.md`.
+
+Output bundle: **`dlacat-<release>-mockcat.fits`** (real LOA: `-hpx`) + `README.md` + `BASELINE.env`.
+Schema (HDU 1, `EXTNAME=DLACAT`, one row per detected absorber): `TARGETID, RA, DEC, Z_QSO,
+SNR_FOREST, SNR_REDSIDE, DLAID, Z_DLA(_ERR), NHI(_ERR), DLAFLAG, P_DLA, P_NULL, LOGP_DLA,
+LOGP_NULL, MODEL_P, LYBETA_FLAG, LYBETA_PARENT_TID/Z, BAL_FLAG, NHI_CONSISTENCY_FLAG, PDLA_SATURATED_FLAG`.
+
+**4. P/C evaluation** (mocks only — real LOA has no truth):
+```bash
+ln -sfn <OUTDIR>/figures/processed <OUTDIR>/processed   # molly expects processed/ under catalog-dir
+python examples/molly_faithful_pc_plots.py --catalog-dir <OUTDIR> \
+    --truth <MOCKDIR>/dla_cat.fits   # London; Saclay/2LPT use hcd_truth_cat.fits
+    --bal-cat <MOCKDIR>/bal_cat.fits --no-bal --mockdir <MOCKDIR> \
+    --snr-min 2.0 --nhi-min 20.3 --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out <OUTDIR>/pc/
+```
+Produces purity/completeness matrices + P/C-vs-SNR/P_DLA plots + `molly_matrix.tsv`.
+
+**Recommended selection from the final catalog** (reproduces the validated headline P/C):
+```python
+sel = (cat["DLAFLAG"]==0) & (cat["P_DLA"]>0.99) & (cat["SNR_REDSIDE"]>2) & (cat["NHI"]>20.3)
+```
+
+**Reference shareable bundles** (catalog + README + BASELINE.env [+ diagnostics/example_spectra]):
+`/global/cfs/cdirs/desicollab/users/jibancat/DLA/2lpt/mock-0/2lpt0_loa124_v1/` (2LPT-0),
+`/global/cfs/cdirs/desicollab/users/jibancat/DLA/london/mock-0/london0_jura124_v1/` (London-0).
+
 ## For developers
 
 There are some customizable features for this GP-DLA model.
