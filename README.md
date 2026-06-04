@@ -328,7 +328,10 @@ This runs, in order:
 - `examples/combine_dlacat.py` — glob all `dlacat-*.fits` slices → one FITS, gap-checked (`--fail-on-gap`).
 - `tools/postprocess/add_dla_flags.py` — add `LYBETA_FLAG`, `BAL_FLAG`, `NHI_CONSISTENCY_FLAG`,
   `PDLA_SATURATED_FLAG` (+ `LYBETA_PARENT_*`) and fold the `DLAFLAG` bitmask (`==0` = clean).
-- stamp provenance into the FITS header (`CODECMT`, `COMBTOOL`, `FLAGTOOL`, `LYBDZ`, `SRCRUN`, `NROWS`, …).
+- **clip `P_DLA`/`P_NULL` to [0,1]** (raw inference overshoots 1 by ~1e-13; header `PDLACLIP=T`)
+  and stamp provenance into the FITS header (`CODECMT`, `COMBTOOL`, `FLAGTOOL`, `LYBDZ`, `SRCRUN`, `NROWS`, …).
+  The generated README documents the data conventions (`P_DLA` clip, the `-1` "not-computed" sentinel
+  in `NHI_ERR`/`Z_DLA_ERR`, `DLAFLAG==0` = clean).
 - copy `BASELINE.env` (resolved config) + write `README.md`.
 
 Output bundle: **`dlacat-<release>-mockcat.fits`** (real LOA: `-hpx`) + `README.md` + `BASELINE.env`.

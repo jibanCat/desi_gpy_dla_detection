@@ -59,15 +59,22 @@ bit4 `BAL_CAT_OVERLAP` (=`BAL_FLAG`, sightline in bal_cat).
 ```python
 import numpy as np
 sel = (cat["DLAFLAG"] == 0) & (cat["P_DLA"] > 0.99) & \\
-      (cat["SNR_REDSIDE"] > 2) & (cat["NHI"] > 20.3)
+      (cat["SNR_REDSIDE"] > 2) & (cat["NHI"] > 20.0)   # headline floor; tighten to >20.3 for conservative DLAs
 clean = cat[sel]
-# to reproduce the validated P/C, also: Z_QSO in (2.0, 4.25) and Z_DLA within
-# rest-frame lambda [911,1216] A of Z_QSO (the Lya-Lyb window).
+# Headline window: Z_QSO in (2.0, 4.25) and Z_DLA within rest-frame lambda
+# [911,1216] A of Z_QSO (the FULL Lya+Lyb window).
 ```
 `P_DLA` is the tunable knob: lower for completeness, raise for purity.
 
 ## Validated performance (vs the mock truth)
 {pc_block}
+
+## Data notes
+- `P_DLA`/`P_NULL` are **clipped to [0,1]** (FITS header `PDLACLIP=T`); they sum to 1.
+- `NHI_ERR`/`Z_DLA_ERR` use **`-1` as a "not computed" sentinel** — mask `*_ERR == -1` before
+  treating these as positive uncertainties.
+- `SNR_FOREST` can be slightly negative for very noisy/low-flux forests (physical); the
+  recommended `SNR_REDSIDE > 2` cut removes them.
 
 ## Caveats
 - Mock validation catalog (truth known); numbers differ on real DESI spectra.
@@ -79,11 +86,13 @@ clean = cat[sel]
 """
 
 PC_WITH = """Matched per-TARGETID (|Δz|/(1+z) < 0.01, strongest-N_HI-first), BAL excluded,
-Lyβ vetoed, at `P_DLA > 0.99`, `SNR_REDSIDE > 2`:
+Lyβ vetoed, at `P_DLA > 0.99`, `SNR_REDSIDE > 2`. Headline = full lyα+lyβ [911,1216] window:
 
 | N(H I) floor | Purity | Completeness |
 |---|---:|---:|
-| log N_HI > 20.3 | {purity} | {compl} |
+| log N_HI > 20.0 | {purity} | {compl} |
+
+(Full window x NHI-floor breakdown — lyα-only/lyα+lyβ at NHI>20 and >20.3 — is in diagnostics/.)
 """
 
 PC_WITHOUT = """Measure with `examples/molly_faithful_pc_plots.py` against the mock truth

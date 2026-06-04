@@ -82,9 +82,14 @@ python - "$FITS" "$RUN_COMMIT" "$SRCLABEL" "$LYBDZ" <<'PY'
 import sys, datetime, numpy as np, fitsio
 fits, commit, srclabel, lybdz = sys.argv[1:5]
 d = fitsio.read(fits, ext=1)
-with fitsio.FITS(fits, 'rw') as h:
+hdr = fitsio.read_header(fits, ext=1)   # preserve combine_dlacat's coverage cards (NSLICES/NPOSCOV/...)
+# Clip probabilities to [0,1] — raw inference can overshoot 1 by ~1e-13 (float round-off).
+for col in ('P_DLA', 'P_NULL'):
+    if col in d.dtype.names:
+        d[col] = np.clip(d[col], 0.0, 1.0)
+with fitsio.FITS(fits, 'rw', clobber=True) as h:
+    h.write(d, header=hdr, extname='DLACAT')
     hdu = h[1]
-    hdu.write_key('EXTNAME', 'DLACAT')
     hdu.write_key('NROWS', len(d))
     hdu.write_key('NUNQTID', int(np.unique(d['TARGETID']).size))
     hdu.write_key('CODECMT', commit, comment='git commit that ran the inference')
@@ -92,8 +97,9 @@ with fitsio.FITS(fits, 'rw') as h:
     hdu.write_key('FLAGTOOL', 'tools/postprocess/add_dla_flags.py')
     hdu.write_key('LYBDZ', float(lybdz), comment='lyb-veto dz_match')
     hdu.write_key('SRCRUN', srclabel)
+    hdu.write_key('PDLACLIP', 'T', comment='P_DLA/P_NULL clipped to [0,1]')
     hdu.write_key('PKGDATE', datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
-print(f"  rows={len(d)} commit={commit}")
+print(f"  rows={len(d)} commit={commit} (P_DLA/P_NULL clipped to [0,1])")
 PY
 
 echo "[package] 4/5 copy BASELINE.env"
@@ -104,7 +110,7 @@ else
 fi
 
 echo "[package] 5/5 write README.md"
-python "$REPO/slurm/greatlakes/production/_write_catalog_readme.py" \
+python "$SCRIPT_DIR/_write_catalog_readme.py" \
     --fits "$FITS" --release "$RELEASE" --source-label "$SRCLABEL" \
     --commit "$RUN_COMMIT" --lyb-veto-dz "$LYBDZ" --out "$OUTDIR/README.md" \
     ${PURITY:+--purity "$PURITY"} ${COMPL:+--compl "$COMPL"}
