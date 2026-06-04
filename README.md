@@ -336,19 +336,27 @@ Schema (HDU 1, `EXTNAME=DLACAT`, one row per detected absorber): `TARGETID, RA, 
 SNR_FOREST, SNR_REDSIDE, DLAID, Z_DLA(_ERR), NHI(_ERR), DLAFLAG, P_DLA, P_NULL, LOGP_DLA,
 LOGP_NULL, MODEL_P, LYBETA_FLAG, LYBETA_PARENT_TID/Z, BAL_FLAG, NHI_CONSISTENCY_FLAG, PDLA_SATURATED_FLAG`.
 
-**4. P/C evaluation** (mocks only — real LOA has no truth):
+**4. P/C evaluation** (mocks only — real LOA has no truth). **Always report the full
+`λ_rf ∈ [911,1216]` (lyα+lyβ) window as the headline, at BOTH `logNHI > 20` and `> 20.3`:**
 ```bash
 ln -sfn <OUTDIR>/figures/processed <OUTDIR>/processed   # molly expects processed/ under catalog-dir
-python examples/molly_faithful_pc_plots.py --catalog-dir <OUTDIR> \
-    --truth <MOCKDIR>/dla_cat.fits   # London; Saclay/2LPT use hcd_truth_cat.fits
-    --bal-cat <MOCKDIR>/bal_cat.fits --no-bal --mockdir <MOCKDIR> \
-    --snr-min 2.0 --nhi-min 20.3 --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out <OUTDIR>/pc/
+for NHI in 20.0 20.3; do
+  python examples/molly_faithful_pc_plots.py --catalog-dir <OUTDIR> \
+      --truth <MOCKDIR>/dla_cat.fits   `# London; Saclay/2LPT use hcd_truth_cat.fits` \
+      --bal-cat <MOCKDIR>/bal_cat.fits --no-bal --mockdir <MOCKDIR> \
+      --lam-rf-min 911 --snr-min 2.0 --nhi-min $NHI --truth-nhi-min $NHI \
+      --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out <OUTDIR>/pc_nhi${NHI}/
+done
 ```
-Produces purity/completeness matrices + P/C-vs-SNR/P_DLA plots + `molly_matrix.tsv`.
+The molly script always computes both the lyα-only `[1025,1216]` and the full `[911,1216]`
+windows; **lead with the full `[911,1216]`** number. Report a small P/C table (window ×
+{NHI>20, NHI>20.3}). Outputs: purity/completeness matrices + P/C-vs-SNR/P_DLA + `molly_matrix.tsv`.
 
-**Recommended selection from the final catalog** (reproduces the validated headline P/C):
+**Recommended selection from the final catalog** (full window; the headline floor is `NHI>20`,
+tighten to `>20.3` for the conservative DLA set):
 ```python
-sel = (cat["DLAFLAG"]==0) & (cat["P_DLA"]>0.99) & (cat["SNR_REDSIDE"]>2) & (cat["NHI"]>20.3)
+sel = (cat["DLAFLAG"]==0) & (cat["P_DLA"]>0.99) & (cat["SNR_REDSIDE"]>2) & (cat["NHI"]>20.0)
+# Z_DLA over the full [911,1216] rest-frame window relative to Z_QSO; tighten NHI>20.3 for conservative DLAs.
 ```
 
 **Reference shareable bundles** (catalog + README + BASELINE.env [+ diagnostics/example_spectra]):
