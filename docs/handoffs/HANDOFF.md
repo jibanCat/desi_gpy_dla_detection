@@ -19,7 +19,11 @@ is **launched and in flight**.
 - The "missing" healpix 715 is **benign** — its 1 QSO is z=1.926 (< the z>2 cut), so it correctly produces no h5. 1149/1150 is complete.
 - **Gap-detection lesson (important for LOA scale):** `combine --fail-on-gap` checks *slice* coverage (misses per-healpix holes); `resume_positions` checks per-healpix h5 but **false-positives on z<2-only healpix**. A flagged position is a REAL gap only if that healpix has z>2 QSOs (cross-ref spectra-16 fibermap TARGETIDs vs the z>2 zcat). Verify before re-running. A true silent mid-file failure (no traceback, loop continues, no "Completed processing" line) IS possible — re-run `--start <idx> --end <idx+1> --window 1` (idempotent).
 
-### NEXT: 2LPT-1, then 2LPT-2, then LOA catalog, then LOA CDDF (see plan below)
+### IN FLIGHT — 2LPT-1 catalog (2026-06-04)
+- **6 sbatch jobs `53950094`–`53950099`** (PW50k, N32×W8, OUTDIR `/pscratch/sd/j/jibancat/nersc_prod_2lpt1_v1_20260604/outputs/`). Check: `sacct -j 53950094,...,53950099`.
+- When done: same finish recipe as London-0, but **truth = `hcd_truth_cat.fits`** (2LPT) and mockdir `…/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124`. Run resume_positions → package_catalog.sh (auto-clips P_DLA now) → molly P/C at NHI 20.0 & 20.3 (lead full [911,1216]) → share to `DLA/2lpt/mock-1/2lpt1_loa124_v1/`.
+- London-0 reference (faithful, no drift): full [911,1216] NHI>20 = 0.837/0.885; node-hour estimate 36 vs actual 32.2 (~13% conservative).
+### NEXT after 2LPT-1: 2LPT-2, then LOA catalog, then LOA CDDF (see plan below)
 
 ### (historical) London-0 launch — 6 sbatch jobs `53867901`–`53867906`
 - Config: `slurm/nersc/production/london0_nersc_v1.env`, **PW50k**, N32×W8, ~36 nh, OUTDIR
