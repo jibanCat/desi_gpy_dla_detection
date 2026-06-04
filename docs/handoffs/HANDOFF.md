@@ -1,9 +1,59 @@
-# HANDOFF — current (2026-05-27)
+# HANDOFF — current (2026-06-03, NERSC production launched)
 
 > **Canonical, cross-machine handoff.** Lives in the repo so any clone sees it.
 > Older/superseded handoffs are archived locally under `docs/handoffs/legacy/`
 > (gitignored — not pushed). Claude's per-session working notes live in its
 > local memory (`~/.claude/.../memory/`), not here.
+
+---
+
+## 2026-06-03 — NERSC Perlmutter session (READ THIS FIRST)
+
+**Where we are:** on NERSC, branch **`nersc_production`** (off merged `desi_y3`), repo at
+`/pscratch/sd/j/jibancat/desi_gpy_dla_detection`. The NERSC production port is built,
+committed, pushed, and **PR #12 → `desi_y3` is open**. The first production run (London-0)
+is **launched and in flight**.
+
+### IN FLIGHT — London-0 catalog (check this first)
+- **6 sbatch jobs `53867901`–`53867906`** (these survive any disconnect; a `/tmp` poller does NOT).
+- Config: `slurm/nersc/production/london0_nersc_v1.env`, **PW50k**, N32×W8, ~36 nh, OUTDIR
+  `/pscratch/sd/j/jibancat/nersc_prod_london0_v1_20260603/outputs/`.
+- **Check status:** `sacct -j 53867901,53867902,53867903,53867904,53867905,53867906 --format=JobID,State,Elapsed`
+- **When all 6 COMPLETE**, finish the run:
+  ```bash
+  source /global/cfs/cdirs/desi/software/desi_environment.sh main   # (wrap in set +u)
+  OUT=/pscratch/sd/j/jibancat/nersc_prod_london0_v1_20260603/outputs
+  python examples/combine_dlacat.py --procdir $OUT --out $OUT/combined_dlacat.fits --expect-positions 1150 --fail-on-gap
+  ln -sfn $OUT/figures/processed $OUT/processed
+  python examples/molly_faithful_pc_plots.py --catalog-dir $OUT \
+     --truth /global/cfs/projectdirs/desi/mocks/lya_forest/london/qq_desi_y3/v5.9.5/mock-0/jura-124/dla_cat.fits \
+     --bal-cat .../bal_cat.fits --no-bal --mockdir .../jura-124 \
+     --snr-min 2.0 --nhi-min 20.3 --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out $OUT/pc/
+  ```
+  Expect P≈0.85 / C≈0.91 (calibration gave 0.852/0.906). Then compare to last year's London-0.
+- **If a job times out / a position is missing** (combine `--fail-on-gap` flags it): re-launch the
+  not-done range — `launch_nersc.sh london0_nersc_v1.env --outdir $OUT --start <first_not_done> --end <end> --window 192 --time 08:00:00` (idempotent), then re-combine. Per-healpix h5 is checkpointed so completed healpix survive a kill.
+
+### Remaining production plan (user's order; budget-gated)
+663 nh left; **preserve ~300 nh reserve** → ~363 spendable.
+1. **London-0** (running) — last-year comparison.
+2. **2LPT-1, 2LPT-2** catalog → `2lpt1_nersc_v1.env`, `2lpt2_nersc_v1.env` (~36 nh each; 2LPT per-spec assumed≈London, pin on first run).
+3. **LOA catalog** → `loa_nersc_v1.env` (`--window ~4500`, ~22 nh measured).
+4. **LOA CDDF** (PW100k) → `loa_cddf_nersc.env` (`--window ~1600`, ~120 nh; PW100k is extrapolated — optionally pin with one regular slice). **CDDF on LOA only.**
+5. Hold ≥300 nh for 2–3 DR3 Matterhorn (next-gen LOA) catalog iterations (~22 nh each).
+
+### Key findings (don't re-litigate — see memory `nersc-parallelism-and-cost` + notes repo)
+- Packing **N32×W8** optimal (GL's W=16 doesn't transfer). P/C: PW50k 0.852/0.906, PW≥30k all hit 85/85; PW10k misses purity (not pDLA-recoverable). PW100k reproduces GL 0.818/0.904 → **port faithful**.
+- Model + grids **md5-verified byte-identical to GL** (`…/learned/greatlakes/`); PW50k = first-50k prefix of the 100k.
+- **Woodbury batching REFUTED** (~1.4× e2e, not 2×; don't do the PR). **K-reduction rejected** (fidelity). **nfl=31 correct** (P/C-insensitive). FILTER-floor & load-balancing are minor (~7–13%). Real 10× = GPU only.
+- Memory fits N32×W8 easily (102/76 GB of 503). Investigation write-ups: private notes repo `desi_gpy_dla_notes` (`notes/2026-06-0{1,2,3}_*`).
+
+### What this session changed in git (PR #12, base `desi_y3`)
+`slurm/nersc/production/` (full port + README), `tools/make_subsampled_grids.py`, `slurm/run_local.sh` (+1 line `--max_z_cut`). **No inference-code changes** (diff vs `gpy_dla_detection/`/`dla_gp.py`/`dlasearch.py`/`desi-DLAGP.py` is empty).
+
+---
+
+### Prior GreatLakes context (2026-05-27, superseded by the above for NERSC work)
 
 - **Repo:** `/home/mfho/desi_gpy_dla_detection`, branch **`production_533`** (PR #7 → `desi_y3`).
 - **Cluster:** GreatLakes. Scratch outputs under `/scratch/cavestru_root/cavestru0/mfho/`.
