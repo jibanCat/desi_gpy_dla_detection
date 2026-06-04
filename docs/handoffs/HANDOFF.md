@@ -14,8 +14,14 @@
 committed, pushed, and **PR #12 → `desi_y3` is open**. The first production run (London-0)
 is **launched and in flight**.
 
-### IN FLIGHT — London-0 catalog (check this first)
-- **6 sbatch jobs `53867901`–`53867906`** (these survive any disconnect; a `/tmp` poller does NOT).
+### London-0 catalog — DONE ✅ (2026-06-04)
+- **Result: 1149/1150 healpix, P 0.844 / C 0.907 (lyα)** — faithful to the 32-hpx calibration (0.852/0.906) and above the GL reference purity (0.818/0.904 → no drift). Catalog: `…/nersc_prod_london0_v1_20260603/outputs/combined_dlacat.fits` (741,760 rows / 348,272 sightlines). Ready for the last-year comparison.
+- The "missing" healpix 715 is **benign** — its 1 QSO is z=1.926 (< the z>2 cut), so it correctly produces no h5. 1149/1150 is complete.
+- **Gap-detection lesson (important for LOA scale):** `combine --fail-on-gap` checks *slice* coverage (misses per-healpix holes); `resume_positions` checks per-healpix h5 but **false-positives on z<2-only healpix**. A flagged position is a REAL gap only if that healpix has z>2 QSOs (cross-ref spectra-16 fibermap TARGETIDs vs the z>2 zcat). Verify before re-running. A true silent mid-file failure (no traceback, loop continues, no "Completed processing" line) IS possible — re-run `--start <idx> --end <idx+1> --window 1` (idempotent).
+
+### NEXT: 2LPT-1, then 2LPT-2, then LOA catalog, then LOA CDDF (see plan below)
+
+### (historical) London-0 launch — 6 sbatch jobs `53867901`–`53867906`
 - Config: `slurm/nersc/production/london0_nersc_v1.env`, **PW50k**, N32×W8, ~36 nh, OUTDIR
   `/pscratch/sd/j/jibancat/nersc_prod_london0_v1_20260603/outputs/`.
 - **Check status:** `sacct -j 53867901,53867902,53867903,53867904,53867905,53867906 --format=JobID,State,Elapsed`
