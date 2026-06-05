@@ -33,6 +33,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 
+# Steps below call `python` (fitsio/numpy) — ensure the DESI env is active so we don't
+# fall back to system python2. desi_environment.sh is not set -u clean, so relax -u.
+set +u; source /global/cfs/cdirs/desi/software/desi_environment.sh main >/dev/null 2>&1 || true; set -u
+
 RUNDIR="" RELEASE="" BAL_CAT="" EXPECT="" OUTDIR="" SHARE_TO="" LYBDZ="0.005" SRCLABEL=""
 PURITY="" COMPL=""
 while [ $# -gt 0 ]; do

@@ -19,11 +19,19 @@ is **launched and in flight**.
 - The "missing" healpix 715 is **benign** — its 1 QSO is z=1.926 (< the z>2 cut), so it correctly produces no h5. 1149/1150 is complete.
 - **Gap-detection lesson (important for LOA scale):** `combine --fail-on-gap` checks *slice* coverage (misses per-healpix holes); `resume_positions` checks per-healpix h5 but **false-positives on z<2-only healpix**. A flagged position is a REAL gap only if that healpix has z>2 QSOs (cross-ref spectra-16 fibermap TARGETIDs vs the z>2 zcat). Verify before re-running. A true silent mid-file failure (no traceback, loop continues, no "Completed processing" line) IS possible — re-run `--start <idx> --end <idx+1> --window 1` (idempotent).
 
-### IN FLIGHT — 2LPT-1 catalog (2026-06-04)
-- **6 sbatch jobs `53950094`–`53950099`** (PW50k, N32×W8, OUTDIR `/pscratch/sd/j/jibancat/nersc_prod_2lpt1_v1_20260604/outputs/`). Check: `sacct -j 53950094,...,53950099`.
-- When done: same finish recipe as London-0, but **truth = `hcd_truth_cat.fits`** (2LPT) and mockdir `…/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124`. Run resume_positions → package_catalog.sh (auto-clips P_DLA now) → molly P/C at NHI 20.0 & 20.3 (lead full [911,1216]) → share to `DLA/2lpt/mock-1/2lpt1_loa124_v1/`.
-- London-0 reference (faithful, no drift): full [911,1216] NHI>20 = 0.837/0.885; node-hour estimate 36 vs actual 32.2 (~13% conservative).
-### NEXT after 2LPT-1: 2LPT-2, then LOA catalog, then LOA CDDF (see plan below)
+### 2LPT-1 catalog — DONE ✅ (2026-06-05)
+- **6 sbatch jobs `53950094`–`53950099`** all COMPLETED (exit 0:0) overnight 2026-06-04 19:56 → 06-05 01:19 (PW50k, N32×W8).
+- **Completeness: 1149/1150** — the lone missing h5 (position 550 → healpix 1046) is **benign** (its 1 QSO is z=1.825 < z>2 cut, so correctly no h5). Verified via `resume_positions --summary` + zcat cross-ref.
+- **P/C faithful, no drift** (BAL-excl, lyβ-veto, P_DLA>0.99, SNR_RED>2; NHI-desc matcher):
+  | window | logNHI>20 (P/C) | logNHI>20.3 (P/C) |
+  |---|---|---|
+  | **full [911,1216]** (headline) | **0.818 / 0.874** | **0.815 / 0.888** |
+  | lyα-only [1025,1216] | 0.836 / 0.892 | 0.835 / 0.903 |
+  (2LPT-0 GL ref lyα-only NHI≥20.3 = 0.818/0.891 → consistent.)
+- **Packaged + shared:** `…/DLA/2lpt/mock-1/2lpt1_loa124_v1/` (FITS 799,162 rows / 362,445 TIDs, 23 cols w/ flag columns, DLAFLAG==0 clean=656,102/82.1%, P_DLA clipped, commit 891db99) + README + BASELINE.env + `diagnostics/nhi20.{0,3}/{lya_lyb,lya_only}`. Bundle: `/pscratch/sd/j/jibancat/nersc_prod_2lpt1_v1_20260604/combined_catalog/`.
+- **NOTE:** the earlier packaging run died right after combine (the 07:22 bundle FITS was a raw combine, no flags/provenance/README) — re-ran `package_catalog.sh` cleanly 2026-06-05. Watch for this if a session disconnects mid-package.
+- node-hour estimate 36 vs London-0 actual 32.2 (~13% conservative); 2LPT per-spec ≈ London confirmed.
+### NEXT: 2LPT-2 (`2lpt2_nersc_v1.env`, ~36 nh) — NOT yet launched (budget-gated; confirm). Then LOA catalog, then LOA CDDF (see plan below).
 
 ### (historical) London-0 launch — 6 sbatch jobs `53867901`–`53867906`
 - Config: `slurm/nersc/production/london0_nersc_v1.env`, **PW50k**, N32×W8, ~36 nh, OUTDIR
