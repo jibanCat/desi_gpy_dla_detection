@@ -531,7 +531,11 @@ def main(args=None):
 
             # TODO: So hxps are ALSO discontinuous, so it might make more sense to just indexing the catalog
             # ind = (all_hpxs >= args.hpx_start) & (all_hpxs < args.hpx_end)
-            this_hpxs = all_hpxs.data[args.hpx_start : args.hpx_end]
+            # NB: slice the array directly (matches the external-list branch above). The old
+            # `all_hpxs.data[...]` returned the ndarray's raw memoryview; iterating it crashes
+            # with "memoryview: unsupported format >q" because HPXPIXEL is big-endian int64
+            # (FITS byte order) and CPython memoryview can't iterate non-native multi-byte formats.
+            this_hpxs = all_hpxs[args.hpx_start : args.hpx_end]
 
     # Convert Parameters to a dictionary
     params_dict = {
