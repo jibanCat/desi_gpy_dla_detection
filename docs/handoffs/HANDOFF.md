@@ -31,7 +31,15 @@ is **launched and in flight**.
 - **Packaged + shared:** `…/DLA/2lpt/mock-1/2lpt1_loa124_v1/` (FITS 799,162 rows / 362,445 TIDs, 23 cols w/ flag columns, DLAFLAG==0 clean=656,102/82.1%, P_DLA clipped, commit 891db99) + README + BASELINE.env + `diagnostics/nhi20.{0,3}/{lya_lyb,lya_only}`. Bundle: `/pscratch/sd/j/jibancat/nersc_prod_2lpt1_v1_20260604/combined_catalog/`.
 - **NOTE:** the earlier packaging run died right after combine (the 07:22 bundle FITS was a raw combine, no flags/provenance/README) — re-ran `package_catalog.sh` cleanly 2026-06-05. Watch for this if a session disconnects mid-package.
 - node-hour estimate 36 vs London-0 actual 32.2 (~13% conservative); 2LPT per-spec ≈ London confirmed.
-### NEXT: 2LPT-2 (`2lpt2_nersc_v1.env`, ~36 nh) — NOT yet launched (budget-gated; confirm). Then LOA catalog, then LOA CDDF (see plan below).
+### LOA catalog (REAL DESI Y3) — DONE ✅ (2026-06-06)
+- **The headline NERSC deliverable.** Run `nersc_prod_loa_v1_20260606`, **9 sbatch jobs `54044805`–`54044860`** (window 2048 → 9 jobs; clean BASELINE @ commit `84fa654`). All COMPLETED, ~34 nh actual (vs 21.7 est — the per-job 3 GB altbal-cat read adds overhead at 9 jobs). **16,519/16,519 healpix processed** (full z>2 coverage).
+- **Catalog:** `…/DLA/loa/loa_main_dark_v1/` (bundle: FITS + README + BASELINE.env + diagnostics/). FITS `dlacat-loa-main-dark-v1.fits` = 801,761 rows / 358,835 sightlines, DLAFLAG==0 clean 723,805 (90.3%), P_DLA clipped. At clean cut (DLAFLAG==0, p>0.99, SNR_RED>2): **NHI>20 = 91,900 DLAs/74,981 sightlines; NHI>20.3 = 65,325/56,155**. 77% sightline overlap w/ prior epoch-920 LOA cat (different model — sane).
+- **No truth (real data):** P/C cited from mocks (London-0 0.84/0.91, 2LPT-1 0.82/0.87, full [911,1216] NHI>20). BAL = `BI_CIV>0` from the altbal QSO cat (56,740 TIDs), built via new `tools/postprocess/build_bal_cat_from_qsocat.py`.
+- **⚠ TWO LOA-path bugs fixed this session (commit `84fa654`)** — the MODE=loa path had never been exercised (GL lacked real LOA):
+  1. `desi-DLAGP.py:534` iterated a big-endian memoryview (`all_hpxs.data[...]`) → `NotImplementedError: memoryview: unsupported format >q` under py3.13/current numpy. Crashed every task **but the sbatch wrapper still exited 0** (silent failure — first 33-job run reported COMPLETED with ZERO output). Fixed: drop `.data` (matches the external-list branch). **Lesson: for LOA always confirm `processed-*.h5` count, NOT just sacct State.**
+  2. `launch_nersc.sh` `MOCKDIR=${MOCKDIR}` aborted under `set -u` for LOA. Fixed: `${MOCKDIR:-}`.
+- (Stale `nersc_prod_loa_v1_20260605/` = the first crashed run, 0 outputs — safe to delete.)
+### NEXT: **2LPT-2** (`2lpt2_nersc_v1.env`, ~36 nh, budget-gated) and **LOA CDDF** (`loa_cddf_nersc.env`, PW100k, FILTER=0, MAX_DLAS=1, ~120 nh) — both NOT launched; confirm before spending. LOA CDDF reuses the same BAL helper + finish recipe.
 
 ### (historical) London-0 launch — 6 sbatch jobs `53867901`–`53867906`
 - Config: `slurm/nersc/production/london0_nersc_v1.env`, **PW50k**, N32×W8, ~36 nh, OUTDIR
