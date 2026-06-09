@@ -78,6 +78,11 @@ START_INDEX="${START_INDEX:-0}"     # HPX window for THIS sbatch (split across N
 END_INDEX="${END_INDEX:-32}"
 NTASKS="${NTASKS:-32}"
 SELF="${SELF:?must be set via --export (absolute path to this script)}"
+# Option B (opt-in, default off): path to a per-HPX-index spec-count table
+# (tools/loa_hpx_spec_counts.py). When set, the driver computes spec-weighted
+# CONTIGUOUS task boundaries instead of the equal-COUNT split. Coverage is
+# identical either way; only task load balance changes.
+LOA_BALANCE_COUNTS="${LOA_BALANCE_COUNTS:-}"
 
 build_and_run () {
     local hs="$1" he="$2"
@@ -106,14 +111,26 @@ build_and_run () {
         --hpx_start "$hs" --hpx_end "$he"
 }
 
-# TASK branch: this task's contiguous HPX chunk of [START,END).
+# TASK branch: this task's CONTIGUOUS HPX index range.
+#   balanced (Option B): [b_k, b_{k+1}) read from BALANCE_BOUNDARIES_FILE
+#                        (NTASKS+1 boundary lines, written by the driver)
+#   default            : equal-COUNT split [START + k*per, +per)
+# Both tile [START,END) exactly; the empty-range guard (hs >= he) is shared.
 if [ "${LOA_TASK:-0}" = "1" ]; then
     k="${SLURM_PROCID:-0}"
-    span=$(( END_INDEX - START_INDEX ))
-    per=$(( (span + NTASKS - 1) / NTASKS )); [ "$per" -lt 1 ] && per=1
-    hs=$(( START_INDEX + k * per )); he=$(( hs + per ))
-    [ "$he" -gt "$END_INDEX" ] && he="$END_INDEX"
-    if [ "$hs" -ge "$END_INDEX" ]; then echo "[task $k] no work (hs=$hs >= END=$END_INDEX)"; exit 0; fi
+    if [ -n "${BALANCE_BOUNDARIES_FILE:-}" ] && [ -r "${BALANCE_BOUNDARIES_FILE:-}" ]; then
+        hs=$(sed -n "$(( k + 1 ))p" "$BALANCE_BOUNDARIES_FILE")
+        he=$(sed -n "$(( k + 2 ))p" "$BALANCE_BOUNDARIES_FILE")
+        if [ -z "$hs" ] || [ -z "$he" ]; then
+            echo "[task $k] no boundary lines in $BALANCE_BOUNDARIES_FILE; exit"; exit 0
+        fi
+    else
+        span=$(( END_INDEX - START_INDEX ))
+        per=$(( (span + NTASKS - 1) / NTASKS )); [ "$per" -lt 1 ] && per=1
+        hs=$(( START_INDEX + k * per )); he=$(( hs + per ))
+        [ "$he" -gt "$END_INDEX" ] && he="$END_INDEX"
+    fi
+    if [ "$hs" -ge "$he" ]; then echo "[task $k] no work (hs=$hs >= he=$he)"; exit 0; fi
     echo "[task $k] hpx ${hs}..${he}"
     build_and_run "$hs" "$he"
     exit 0
@@ -125,6 +142,25 @@ set +u; eval "$NERSC_ENV_SETUP"; set -u
 mkdir -p "$OUTDIR" "${OUTDIR}/logs"
 echo "[loa] $(date) job=${SLURM_JOB_ID:-NA} hpx_window=${START_INDEX}..${END_INDEX} ntasks=${NTASKS} W=${MAX_WORKERS}"
 echo "[loa] LEARNED_FILE=$LEARNED_FILE  OUTDIR=$OUTDIR"
+
+# Option B (opt-in): compute spec-weighted task boundaries ONCE for this window;
+# each task reads its [b_k,b_{k+1}) via SLURM_PROCID. Requested-but-broken is a
+# loud failure (never silently fall back to a different split).
+if [ -n "$LOA_BALANCE_COUNTS" ]; then
+    if [ ! -r "$LOA_BALANCE_COUNTS" ]; then
+        echo "[loa] ERROR: LOA_BALANCE_COUNTS=$LOA_BALANCE_COUNTS not readable" >&2; exit 1
+    fi
+    BALANCE_BOUNDARIES_FILE="${OUTDIR}/logs/boundaries_${START_INDEX}-${END_INDEX}_${SLURM_JOB_ID:-NA}.txt"
+    if ! python "${REPO_ROOT:-.}/tools/loa_balance_boundaries.py" \
+            --counts "$LOA_BALANCE_COUNTS" --start "$START_INDEX" --end "$END_INDEX" \
+            --ntasks "$NTASKS" --out "$BALANCE_BOUNDARIES_FILE" --verify; then
+        echo "[loa] ERROR: boundary computation failed (balance requested); aborting" >&2; exit 1
+    fi
+    export BALANCE_BOUNDARIES_FILE
+    echo "[loa] balance=ON (Option B) -> $BALANCE_BOUNDARIES_FILE"
+else
+    echo "[loa] balance=OFF (equal-count split)"
+fi
 echo "[loa] MAX_DLAS=$MAX_DLAS SINGLE_ABSORBER_MODEL=$SINGLE_ABSORBER_MODEL NUM_DLA_SAMPLES=$NUM_DLA_SAMPLES FILTER=$FILTER_LOW_LIKELIHOOD"
 srun -N 1 -n "${NTASKS}" -c "${MAX_WORKERS}" --cpu-bind=cores \
      --output="${OUTDIR}/logs/loa_run_${START_INDEX}-${END_INDEX}_%j_%t.log" \
