@@ -274,7 +274,7 @@ class DLACatalogue(object):
         min_obs_wavelength_cut: bool = False,  # Cut out the tail part below certain obs lambda, default 4000 A
         min_obs_wavelength: float = 4000,  # A
         high_nhi_cut: bool = True,  # Cut out the high NHI samples
-        high_nhi_cut_value: float = 22.0,  # log10(cm^-2)
+        high_nhi_cut_value: float = 22.5,  # log10(cm^-2)
         bins_per_z: int = 6, # number of bins of dNdX or Omega_DLA to plot per unit z interval
     ):
         # Should we include the second DLA?
@@ -386,7 +386,7 @@ class DLACatalogue(object):
         self.set_snr(snr)
         self.do_resample = False
         # This allows us to filter by quasar redshift later
-        self.condition = np.ones_like(self._z_min, dtype=np.bool)
+        self.condition = np.ones_like(self._z_min, dtype=bool)
         # filter out those detection with target_ids not in the DLA catalog
         self.condition = self.condition * (self.real_index != -1)
 
@@ -538,7 +538,7 @@ class DLACatalogue(object):
         # Probability of exactly k DLAs in each spectrum
         # `model_posteriors` := (no dla, sub dla, dla(1), dla(2), ...)
         #                      [     0,       1,      2,      3, ...]
-        assert k > 1 and type(k) is np.int
+        assert k > 1 and isinstance(k, (int, np.integer))
         setattr(self, "p_dla_{}".format(k), self.model_posteriors[:, k + self.sub_dla])
 
         # Now build caches for the DLA2 likelihoods and base_sample values
@@ -780,7 +780,7 @@ class DLACatalogue(object):
         # The parameters of DLA2 are spectrum dependent and given by nhi[base_sample_inds[i,j]], z[base_sample_inds[i, j]]
         # Mask out nan values by making them very low probability: these correspond to samples where the DLAs are too close.
         try:
-            return getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[
+            return getattr(self, "log_norm_like_{}_cache".format(int(second) + 1))[
                 spec
             ]
             # return self.log_norm_like_2_cache[spec]
@@ -788,17 +788,17 @@ class DLACatalogue(object):
             # log_nhi_like_k (np.ndarray) : dimension, (k-1, num_dla_samples)
             # if it is a DLA(2) model, we will still get a 2-dim array with shape == (1, num_dla_samples)
             # so that we can sum(axis=0) to eliminate the 0th axis.
-            # log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][1:np.int(second) + 1, :, spec]
+            # log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][1:int(second) + 1, :, spec]
             log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][
                 spec,
                 :,
-                np.int(second),
+                int(second),
             ]  # DESI: (num_qsos, num_samples, k)
-            getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[spec] = (
-                self._do_norm_log_norm_like_k(log_nhi_like_k, spec, np.int(second))
+            getattr(self, "log_norm_like_{}_cache".format(int(second) + 1))[spec] = (
+                self._do_norm_log_norm_like_k(log_nhi_like_k, spec, int(second))
             )
             # self.log_norm_like_2_cache[spec] = self._do_norm_log_norm_like_2(log_nhi_like, spec)
-            return getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[
+            return getattr(self, "log_norm_like_{}_cache".format(int(second) + 1))[
                 spec
             ]
 
@@ -887,13 +887,13 @@ class DLACatalogue(object):
         If second=True, return the probability of exactly two DLAs in each spectrum.
         If second=k, k is an integer, return the probability of exactly (k+1) DLAs in each spectrum.
         """
-        assert second >= 0 and (type(second) is np.int or type(second) is np.bool)
+        assert second >= 0 and isinstance(second, (int, np.integer, bool, np.bool_))
         if not second:
             if self.do_resample:
                 return self.p_dla[self._resample]
             return self.p_dla
         else:
-            return getattr(self, "p_dla_{}".format(np.int(second) + 1))
+            return getattr(self, "p_dla_{}".format(int(second) + 1))
 
     def z_max(self, spec=None):
         """Returns the maximum redshift of the quasar spectrum."""
@@ -1651,7 +1651,7 @@ class DLACatalogue(object):
             log_norm_posteriors_k = np.empty(log_norm_posteriors.shape)
             log_norm_posteriors_k = -1e30
 
-            for i in range(np.int(second) + 1):
+            for i in range(int(second) + 1):
                 p_dla_k = self.model_posteriors[index, i + 1 + self.sub_dla]
                 log_norm_posteriors_k += (
                     np.exp(self._log_norm_like(spec, second=second)[index]) * p_dla_k
@@ -1784,7 +1784,7 @@ class DLACatalogue(object):
                     (redshifts - self.z_min(spec))
                     / (self.z_max(spec) - self.z_min(spec))
                     * np.size(pn),
-                    dtype=np.int,
+                    dtype=int,
                 )
                 desired_samples *= pn[pind] < self.noise_thresh
             ind = np.where(desired_samples)

@@ -10,7 +10,7 @@ plus a QSO sightline catalog, applies per-QSO search windows, and computes:
   - dN/dX (line density) in redshift bins
   - CDDF f(N, z) = d²N_abs / (dN dX)  (Bird+ 2016 convention)
   - Omega_HI(z) from CDDF integration
-  - Mock validation calibration: alpha(z) = f_measured_mock / f_truth
+  - Mock validation calibration: alpha(z) = f_truth / f_measured_mock
 
 This is **distinct from** ``CDDF_analysis/calc_cddf.py``, which propagates
 full Bayesian model posteriors (from ``process_helpers.py`` HDF5 output)
@@ -65,7 +65,8 @@ To calibrate real-data statistics using London mock spectra:
    (use ``truth_cddf_prochaska2014()`` and integrate over logN range).
 2. Compute ``dNdX_measured_mock`` by running GP-DLA on London mock spectra
    and calling ``compute_dndx()`` on the detected mock absorbers.
-3. Compute calibration: ``alpha(z) = dNdX_measured_mock(z) / dNdX_truth(z)``
+3. Compute calibration: ``alpha(z) = dNdX_truth(z) / dNdX_measured_mock(z)``
+   (a completeness-correction multiplier; alpha > 1 ⇒ GP under-counts)
    using ``compute_calibration_alpha()``.
 4. Apply to real data: ``dNdX_calibrated = alpha(z) × dNdX_real``
    using ``apply_calibration()``.
@@ -829,6 +830,12 @@ def omega_hi_prefactor(H0_km_s_Mpc=70.0):
       - K is dimensionless
 
     Uses cgs constants.
+
+    CONVENTION: uses the H-atom mass m_H, so this returns the NEUTRAL-HYDROGEN-only
+    Omega_HI (the Crighton+2015 / Noterdaeme+2012 convention).  For a TOTAL neutral
+    *gas* density (Omega_DLA incl. helium, the HBG2020 / Prochaska convention),
+    multiply by mu = 1/X_H ~ 1/0.76 ~ 1.3.  Keep the reported quantity labelled
+    Omega_HI unless that He correction is applied.
     """
     c_cms = 2.99792458e10
     mH_g  = 1.6735575e-24
@@ -1073,11 +1080,23 @@ def truth_dndx_prochaska2014(logNHImin, logNHImax, n_points=1000):
 
 def compute_calibration_alpha(out_truth, out_measured_mock, *, kind="linear"):
     """
-    Compute the calibration factor alpha(z) = dNdX_measured_mock / dNdX_truth.
+    Compute the calibration factor alpha(z) = dNdX_truth / dNdX_measured_mock.
 
-    This factor corrects for detection incompleteness and false positives:
-    the GP-DLA pipeline measured on London mock spectra is compared to the
-    known truth dN/dX to estimate the redshift-dependent bias alpha(z).
+    This is the **net completeness-and-purity correction multiplier** (it folds
+    detection incompleteness AND false positives into one ratio — it does NOT
+    separate them), consistent with the canonical convention in
+    ``CDDF_analysis/cddf_calibration.calibration_factor_alpha`` and the notebooks
+    (CLAUDE.md: ``alpha = dNdX_truth / dNdX_measured_mock``).
+    alpha > 1 means the GP-DLA pipeline net-UNDER-counts; the calibrated estimate
+    is ``y_corr = y_meas * alpha`` (an up-correction).  The GP-DLA pipeline measured
+    on mock spectra is compared to the known truth dN/dX to estimate alpha(z).
+
+    SCOPE (important): alpha(z) is a *scalar per z-bin* — it corrects the
+    BAND-INTEGRATED dN/dX only.  It is the diagonal limit of the full forward
+    model E[F]=R·F_true+b_FP and CANNOT capture off-diagonal N_HI migration (the
+    sub-DLA->DLA up-scatter at logN~20.3 driven by the prior-edge bias).  Do NOT
+    apply alpha(z) as a per-N_HI-bin CDDF correction; use the 2D response R for
+    f(N,z).
 
     Parameters
     ----------
@@ -1095,13 +1114,14 @@ def compute_calibration_alpha(out_truth, out_measured_mock, *, kind="linear"):
     -------
     dict with keys:
         z       : (n,)  Redshift bin centers (from out_truth).
-        alpha   : (n,)  alpha(z) = measured / truth.
+        alpha   : (n,)  alpha(z) = truth / measured (up-correction multiplier).
         alpha_err : (n,)  Propagated 1-sigma error on alpha(z).
 
     Notes
     -----
-    Relative error propagation:
-        sigma_alpha / alpha = sqrt( (sigma_meas/meas)^2 + (sigma_truth/truth)^2 )
+    Relative error propagation (alpha is invariant under inversion, so the
+    relative error is identical to the truth/measured ratio):
+        sigma_alpha / alpha = sqrt( (sigma_truth/truth)^2 + (sigma_meas/meas)^2 )
     """
     z_truth = np.asarray(out_truth["z_mid"], dtype=float)
     y_truth = np.asarray(out_truth["dndx"], dtype=float)
@@ -1126,12 +1146,18 @@ def compute_calibration_alpha(out_truth, out_measured_mock, *, kind="linear"):
         e_meas = interp1d(z_meas, e_meas, kind=kind, bounds_error=False, fill_value=np.nan)(z_truth)
 
     with np.errstate(invalid="ignore", divide="ignore"):
-        alpha = np.where(y_truth > 0, y_meas / y_truth, np.nan)
+        # Completeness-correction multiplier: alpha = truth / measured.
+        # alpha > 1 => GP under-counts; calibrated y = y_meas * alpha up-corrects.
+        alpha = np.where(y_meas > 0, y_truth / y_meas, np.nan)
         rel_err = np.sqrt(
             np.where(y_meas > 0, (e_meas / y_meas) ** 2, 0.0)
             + np.where(y_truth > 0, (e_truth / y_truth) ** 2, 0.0)
         )
-        alpha_err = alpha * rel_err
+        # In a truth-empty bin (y_truth == 0) alpha collapses to 0, which would
+        # give alpha_err = 0*rel_err = 0 and hide the real measurement noise.
+        # The multiplicative calibration is degenerate there (pure false positives,
+        # no truth to calibrate against) -> flag it NaN rather than report 0 +/- 0.
+        alpha_err = np.where(y_truth > 0, alpha * rel_err, np.nan)
 
     return {"z": z_truth, "alpha": alpha, "alpha_err": alpha_err}
 
@@ -1140,11 +1166,23 @@ def apply_calibration(out_real, out_calibration):
     """
     Apply the calibration factor alpha(z) to real GP-DLA dN/dX measurements.
 
+    With alpha = truth / measured (the completeness-correction multiplier from
+    ``compute_calibration_alpha``), this UP-corrects an under-counted real
+    measurement back toward truth.
+
     Calibrated result:
         dNdX_calibrated = alpha(z) * dNdX_real
 
     Error propagation (assuming alpha and dNdX_real are independent):
         err_calibrated = sqrt( (alpha * err_real)^2 + (dNdX_real * err_alpha)^2 )
+
+    NOTE: this product-form error is valid only when ``out_real`` is INDEPENDENT
+    of ``alpha`` (the production case: a mock-derived alpha applied to real DESI
+    data).  If you apply alpha back to the SAME mock measurement it was built from
+    (``out_real == out_measured_mock``), alpha and dNdX_real are anti-correlated
+    and this formula OVER-counts the error; use the pure-fractional form in
+    ``cddf_calibration.calibration_factor_alpha`` (``y_corr_err = y_corr*frac``)
+    for that self-referential case.
 
     Parameters
     ----------
