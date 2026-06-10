@@ -115,6 +115,18 @@ from astropy.table import Table
 
 from .set_parameters import *
 
+# WindowSpec (the shared search-window spec) is annotation-only here, imported under
+# TYPE_CHECKING with a string forward-reference annotation. A runtime
+# ``from .cddf_forward.window import WindowSpec`` would run ``cddf_forward/__init__.py``,
+# which eagerly imports ``driver`` → ``from ..calc_cddf import DLACatalogue`` → a
+# circular import while ``calc_cddf`` is still initializing. The constructor only ever
+# duck-types a passed window (``.prox_dz``/``.v_prox_kms``/``.z_min_lyb``), so no
+# runtime class reference is needed and there is exactly ONE WindowSpec class.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .cddf_forward.window import WindowSpec
+
 # prevent cluster session plotting issue
 import matplotlib
 
@@ -276,6 +288,7 @@ class DLACatalogue(object):
         high_nhi_cut: bool = True,  # Cut out the high NHI samples
         high_nhi_cut_value: float = 22.5,  # log10(cm^-2)
         bins_per_z: int = 6, # number of bins of dNdX or Omega_DLA to plot per unit z interval
+        window: "Optional[WindowSpec]" = None,  # shared search-window spec (None = legacy behaviour)
     ):
         # Should we include the second DLA?
         self.second_dla = (
@@ -329,6 +342,35 @@ class DLACatalogue(object):
         self.z_max_lyb = z_max_lyb
         # Exclude spectra between lymanlimit to lymanbeta
         self.z_min_lyb = z_min_lyb  # TODO implement it
+
+        # [Shared WindowSpec] When a window is supplied it becomes the single
+        # source of truth for the proximity/tail cut and the Lyβ edges. We keep
+        # the legacy constant-0.1 path EXACTLY when ``window is None`` so the
+        # existing CDDF numbers (golden + 131 tests) are byte-identical.
+        self.window = window
+        if window is not None:
+            if window.velocity_scaled:
+                raise NotImplementedError(
+                    "WindowSpec(velocity_scaled=True) would require re-running "
+                    "inference with a matching kms_to_z; it does not match the "
+                    "existing posteriors' stored min_z_dlas/max_z_dlas."
+                )
+            # CRITICAL: the stored min_z_dlas/max_z_dlas ALREADY encode the inference
+            # proximity/tail cut (set_parameters.kms_to_z(v_prox)). So we must NOT
+            # re-apply proximity/tail here (that double-cuts: z_qso - 2*v/c) and must
+            # NOT force lowzcut/highzcut (they also trip the lyb-branch asserts). The
+            # WindowSpec's ONLY measurement-side effect is the Lyα-only / Lyman-limit
+            # edge selection; the proximity is the stored edge, and cddf_mock reproduces
+            # that stored edge (z_qso - v/c off raw z_qso) from the SAME spec.
+            self.z_min_lyb = window.z_min_lyb
+            self.z_max_lyb = window.z_max_lyb
+            # The lyb branches assert highzcut/lowzcut == False (and the stored edges
+            # already carry the tail/proximity), so disable the conflicting cut to keep
+            # a window with a lyb mode self-consistent regardless of the ctor default.
+            if window.z_min_lyb:
+                self.highzcut = False
+            if window.z_max_lyb:
+                self.lowzcut = False
         # Exclude the dubious part of the obs wavelengths
         self.min_obs_wavelength_cut = min_obs_wavelength_cut
         self.min_obs_wavelength = min_obs_wavelength  # A
@@ -966,12 +1008,15 @@ class DLACatalogue(object):
                 [np.min([max_z_dlas, self.lymanbeta(max_z_dlas)], axis=0), min_z_dlas],
                 axis=0,
             )
-        # remove the lyman beta fprest region to test lybeta-lya detections
+        # remove the lyman beta forest region to test lybeta-lya (Lyα-only) detections.
+        # Floor the blue edge at the QSO Lyβ EMISSION redshift = lymanbeta(z_qso) (NOT
+        # lymanbeta(min_z_dla), which is < min_z_dla and a no-op). This matches
+        # cddf_mock.qso_blue_edge_to_z_abs(z_qso).
         if self.z_min_lyb:
-            print("[Info] testing on the range lybeta-lya")
-            min_z_dlas = np.min(
-                [np.max([min_z_dlas, self.lymanbeta(min_z_dlas)], axis=0), max_z_dlas],
-                axis=0,
+            print("[Info] testing on the range lybeta-lya (Lyα-only)")
+            z_qsos = np.array(self.z_qsos)[ind]
+            min_z_dlas = np.minimum(
+                np.maximum(min_z_dlas, self.lymanbeta(z_qsos)), max_z_dlas
             )
         # Increase the minimum redshift to remove spectra contaminated by the lyman beta forest.
         if self.lowzcut:
@@ -1692,8 +1737,18 @@ class DLACatalogue(object):
         return (probs, poissons)
 
     def lymanbeta(self, zqso):
-        """Compute the redshift at which the lyman beta forest at the redshift of the quasar will show up."""
-        waveratios = 1026.72 / 1215.67
+        """Compute the redshift at which the lyman beta forest at the redshift of the quasar will show up.
+
+        Uses the UNIFIED Lyβ/Lyα rest wavelengths from ``set_parameters`` (imported
+        via ``from .set_parameters import *``: ``lyb_wavelength = 1025.7223``,
+        ``lya_wavelength = 1215.6701``) — the same values as
+        ``gpy_dla_detection.set_parameters.Parameters.lyb_wavelength`` /
+        ``cddf_mock.LYB_REST`` and the inference — instead of the legacy hard-coded
+        ``1026.72 / 1215.67``. This shifts the Lyβ edge by ~0.0037 in z at z_qso=3.5
+        (i.e. ``Δz ≈ (1+z)·(1026.72-1025.7223)/1215.67``), making all three CDDF
+        pathways agree on the Lyβ blue edge.
+        """
+        waveratios = lyb_wavelength / lya_wavelength
         zlyb = (1 + zqso) * waveratios - 1
         return zlyb
 
@@ -1751,10 +1806,11 @@ class DLACatalogue(object):
             if self.z_max_lyb:
                 assert self.lowzcut == False
                 upper_z = np.min([self.lymanbeta(self.z_max(spec)), ured])
-            # test lybeta - lyalpha only
+            # test lybeta - lyalpha only (Lyα-only): floor at the QSO Lyβ EMISSION
+            # = lymanbeta(z_qso), matching cddf_mock (NOT lymanbeta(z_min), a no-op).
             if self.z_min_lyb:
                 assert self.highzcut == False
-                lower_z = np.max([self.lymanbeta(self.z_min(spec)), lred])
+                lower_z = np.max([self.lymanbeta(self.z_qsos[spec]), lred])
             # The low cutoff redshift.
             if self.lowzcut:
                 upper_z = np.min([self.proximity(self.z_max(spec)), ured])

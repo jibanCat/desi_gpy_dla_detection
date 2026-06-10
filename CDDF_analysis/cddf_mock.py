@@ -102,8 +102,32 @@ from matplotlib import cm
 # Constants
 # ----------------------------
 C_KMS = 299792.458
-LYA_REST = 1215.67
-LYB_REST = 1025.72
+# Match gpy_dla_detection.set_parameters (lya_wavelength / lyb_wavelength) and
+# calc_cddf.lymanbeta, so the Lyα-only blue edge is identical across pathways.
+LYA_REST = 1215.6701
+LYB_REST = 1025.7223
+
+# Shared search-window spec (single source of truth for the proximity cut + Lyβ edge).
+# Imported robustly: ``cddf_mock`` is loaded both as a package member
+# (``CDDF_analysis.cddf_mock``) AND as a top-level module (``import cddf_mock`` after
+# adding ``CDDF_analysis/`` to sys.path, as tests/test_cddf_mock.py does), so the
+# relative import only works in the former case. Fall back to loading the leaf
+# ``window`` module by file path, which avoids running ``cddf_forward/__init__.py``
+# (and its eager ``driver`` import) in the standalone case.
+try:
+    from .cddf_forward.window import WindowSpec
+except ImportError:  # standalone (non-package) import
+    import importlib.util as _importlib_util
+
+    _window_path = os.path.join(
+        os.path.dirname(__file__), "cddf_forward", "window.py"
+    )
+    _window_spec = _importlib_util.spec_from_file_location(
+        "_cddf_mock_window", _window_path
+    )
+    _window_mod = _importlib_util.module_from_spec(_window_spec)
+    _window_spec.loader.exec_module(_window_mod)
+    WindowSpec = _window_mod.WindowSpec
 
 
 # ----------------------------
@@ -200,6 +224,7 @@ def build_qso_windows(
     blue_rest=LYB_REST,
     lambda_obs_min=None,
     lambda_obs_max=None,
+    window=None,
 ):
     """
     Build per-QSO absorber windows [z_lo, z_hi].
@@ -239,9 +264,31 @@ def build_qso_windows(
     lambda_obs_min, lambda_obs_max : float or None
         Instrument observed wavelength limits in Å. These are converted into
         absorber redshift using absorber_rest.
+
+    window : WindowSpec or None
+        Shared single-source-of-truth search window. BACKWARD-COMPATIBLE: when
+        ``None`` (default), behaviour is unchanged (the ``v_prox_kms=10000`` default
+        and the ``(1+z)``-scaled ``zmax_nonprox`` red edge). When supplied, the
+        proximity cut is taken from the spec — ``v_prox_kms = window.v_prox_kms``
+        (3000 by default) and the red edge becomes ``z_qso - window.prox_dz(z_qso)``
+        (a CONSTANT ``v/C_KMS`` Δz under the approved ``velocity_scaled=False``,
+        matching ``calc_cddf``'s constant ``proximity_zone``). When
+        ``window.z_min_lyb`` is set, the blue edge is forced to the QSO Lyβ edge
+        (Lyα-only CDDF), the same edge ``calc_cddf`` applies via ``z_min_lyb``.
     """
     tid = np.asarray(qso_cat["TARGETID"])
     zq = np.asarray(qso_cat["Z"], dtype=float)
+
+    # [Shared WindowSpec] override proximity + Lyβ-edge from the spec when supplied.
+    if window is not None:
+        v_prox_kms = window.v_prox_kms
+        if window.z_min_lyb and blue_limit_mode == "global":
+            # Lyα-only CDDF: shift the blue edge to the QSO Lyβ edge, matching
+            # calc_cddf's z_min_lyb. ("global" is the unconstrained default; "lyb"/"max"
+            # already include the Lyβ edge, so leave an explicit caller choice intact.)
+            blue_limit_mode = "lyb"
+        if window.lambda_obs_min is not None and lambda_obs_min is None:
+            lambda_obs_min = window.lambda_obs_min
 
     # ----- lower edge candidates -----
     lower_candidates = []
@@ -280,7 +327,13 @@ def build_qso_windows(
         raise ValueError("blue_limit_mode must be one of {'global', 'lyb', 'max'}.")
 
     # ----- upper edge candidates -----
-    upper_candidates = [zmax_nonprox(zq, v_prox_kms=v_prox_kms)]
+    if window is not None:
+        # Constant-v/c (or (1+z)-scaled, per window.velocity_scaled) red edge from
+        # the shared spec — z_qso - window.prox_dz(z_qso). Under velocity_scaled=False
+        # (approved default) this is z_qso - v/C_KMS, byte-matching calc_cddf's cut.
+        upper_candidates = [zq - window.prox_dz(zq)]
+    else:
+        upper_candidates = [zmax_nonprox(zq, v_prox_kms=v_prox_kms)]
 
     if lambda_obs_max is not None:
         z_from_obsmax = observed_lambda_to_z_abs(lambda_obs_max, absorber_rest=absorber_rest)
@@ -423,6 +476,7 @@ def compute_dndx(
     blue_rest=LYB_REST,
     lambda_obs_min=None,
     lambda_obs_max=None,
+    window=None,
 ):
     """
     Compute the DLA line density dN/dX in redshift bins.
@@ -486,6 +540,10 @@ def compute_dndx(
     zbins = np.asarray(zbins, dtype=float)
     z_mid = 0.5 * (zbins[:-1] + zbins[1:])
 
+    # [Shared WindowSpec] take v_prox_kms from the spec so meta + edges agree (3000 km/s).
+    if window is not None:
+        v_prox_kms = window.v_prox_kms
+
     # QSO windows
     qso_tid, qso_zlo, qso_zhi = build_qso_windows(
         qso_cat,
@@ -497,6 +555,7 @@ def compute_dndx(
         blue_rest=blue_rest,
         lambda_obs_min=lambda_obs_min,
         lambda_obs_max=lambda_obs_max,
+        window=window,
     )
 
     if len(qso_tid) == 0:
@@ -603,6 +662,7 @@ def compute_cddf_fN(
     blue_rest=LYB_REST,
     lambda_obs_min=None,
     lambda_obs_max=None,
+    window=None,
 ):
     """
     Compute CDDF in Bird+ convention:
@@ -632,6 +692,10 @@ def compute_cddf_fN(
     N_mid = np.sqrt(N_edges[:-1] * N_edges[1:])
     logN_mid = np.log10(N_mid)
 
+    # [Shared WindowSpec] take v_prox_kms from the spec so meta + edges agree (3000 km/s).
+    if window is not None:
+        v_prox_kms = window.v_prox_kms
+
     # QSO windows
     qso_tid, qso_zlo, qso_zhi = build_qso_windows(
         qso_cat,
@@ -643,6 +707,7 @@ def compute_cddf_fN(
         blue_rest=blue_rest,
         lambda_obs_min=lambda_obs_min,
         lambda_obs_max=lambda_obs_max,
+        window=window,
     )
 
     if len(qso_tid) == 0:
