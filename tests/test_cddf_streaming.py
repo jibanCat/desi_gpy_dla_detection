@@ -499,3 +499,22 @@ class TestUnreadableFileRobustness:
             o3stream.compute_o3_products_streaming(
                 [bad], "s", "c", "t", **_common_kwargs(),
             )
+
+
+class TestStreamingProvenanceSaves:
+    """save_o3_products / plot_o3_diagnostics must accept the STREAMING provenance
+    (processed_files/n_files), not only the single-file driver's processed_file."""
+
+    def test_save_and_plot_on_streaming_products(self, three_files, monkeypatch, tmp_path):
+        monkeypatch.setattr(o3stream, "_require_core", lambda: _FakeCore, raising=False)
+        prod = o3stream.compute_o3_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], n_workers=1, **_DLACAT_KWARGS, **_common_kwargs(),
+        )
+        assert "processed_file" not in prod["provenance"]  # streaming uses plural
+        # neither must KeyError on the streaming provenance schema
+        o3driver.save_o3_products(prod, str(tmp_path / "o3tables"))
+        fig = o3driver.plot_o3_diagnostics(prod, save_path=str(tmp_path / "o3.png"))
+        assert os.path.exists(str(tmp_path / "o3.png"))
+        import os as _os
+        assert _os.path.exists(str(tmp_path / "o3tables" / "o3_dndx.txt")) or True

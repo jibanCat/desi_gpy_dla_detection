@@ -1171,10 +1171,21 @@ def save_o3_products(products: dict, out_dir: str) -> dict:
     prov = products["provenance"]
     o1 = products["o1"]
     note = f"{_O3_LABEL}. {_O3_LIMITATION}"
+    # ``processed_file`` (single-file driver) OR ``processed_files``/``n_files``
+    # (no-combine streaming) — summarize the latter so the streaming provenance
+    # schema does not KeyError here.
+    _proc = prov.get("processed_file")
+    if _proc is None:
+        _n_skip = len(prov.get("unreadable_files", []))
+        _proc = (
+            f"{prov.get('n_files', '?')} per-healpix files (streaming"
+            + (f", {_n_skip} skipped" if _n_skip else "")
+            + ")"
+        )
     meta = {
         "product": _O3_LABEL,
         "limitation": _O3_LIMITATION,
-        "processed_file": prov["processed_file"],
+        "processed_file": _proc,
         "truth_file": prov["truth_file"],
         "split_seed": prov["split_seed"],
         "build_frac": prov["build_frac"],
