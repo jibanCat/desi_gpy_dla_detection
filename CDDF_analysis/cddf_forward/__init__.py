@@ -17,7 +17,11 @@ CDDF f(N), dN/dX, and Omega_DLA (no selection correction yet) and saves text tab
 """
 
 from .window import WindowSpec
-from .filter_guard import assert_filter_off
+from .filter_guard import (
+    assert_filter_off,
+    read_filter_flag,
+    assert_filter_off_from_file,
+)
 from .split import (
     sightline_role,
     assign_roles,
@@ -30,6 +34,8 @@ from .driver import compute_o1_products, save_o1_products
 __all__ = [
     "WindowSpec",
     "assert_filter_off",
+    "read_filter_flag",
+    "assert_filter_off_from_file",
     "sightline_role",
     "assign_roles",
     "split_masks",

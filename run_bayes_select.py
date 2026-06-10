@@ -617,6 +617,10 @@ class DLAHolder:
             # writes the production default ("off") instead of raising.
             f.attrs["pair_prior_mode"] = getattr(self, "pair_prior_mode", "off")
             f.attrs["dla_bias"] = float(getattr(self, "dla_bias", 2.0))
+            # Persist the FILTER setting so a catalog is self-describing: the CDDF is
+            # only valid on FILTER-off runs and downstream cannot otherwise tell (cf.
+            # CDDF_analysis/cddf_forward/filter_guard.py). Additive metadata only.
+            f.attrs["filter_low_likelihood"] = int(getattr(self, "filter_low_likelihood", 0))
 
 
 class DLAProcessor:

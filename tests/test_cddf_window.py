@@ -184,3 +184,42 @@ class TestAssertFilterOff:
     def test_truthy_int_two_raises(self):
         with pytest.raises(ValueError):
             assert_filter_off(2)
+
+
+class TestFilterFlagFromFile:
+    """The FILTER flag is now persisted in the processed HDF5 (self-describing)."""
+
+    def _write(self, tmp_path, flag):
+        import h5py
+        p = str(tmp_path / "proc.h5")
+        with h5py.File(p, "w") as f:
+            if flag is not None:
+                f.attrs["filter_low_likelihood"] = int(flag)
+        return p
+
+    def test_read_filter_flag_present(self, tmp_path):
+        from CDDF_analysis.cddf_forward import read_filter_flag
+        assert read_filter_flag(self._write(tmp_path, 0)) == 0
+        assert read_filter_flag(self._write(tmp_path, 1)) == 1
+
+    def test_read_filter_flag_absent_returns_none(self, tmp_path):
+        from CDDF_analysis.cddf_forward import read_filter_flag
+        assert read_filter_flag(self._write(tmp_path, None)) is None
+
+    def test_from_file_uses_persisted_flag(self, tmp_path):
+        from CDDF_analysis.cddf_forward import assert_filter_off_from_file
+        assert_filter_off_from_file(self._write(tmp_path, 0))  # off -> ok
+        with pytest.raises(ValueError):
+            assert_filter_off_from_file(self._write(tmp_path, 1))  # on -> raise
+
+    def test_from_file_disagreement_raises(self, tmp_path):
+        from CDDF_analysis.cddf_forward import assert_filter_off_from_file
+        with pytest.raises(ValueError, match="disagrees"):
+            assert_filter_off_from_file(self._write(tmp_path, 0), supplied=1)
+
+    def test_from_file_legacy_requires_supplied(self, tmp_path):
+        from CDDF_analysis.cddf_forward import assert_filter_off_from_file
+        legacy = self._write(tmp_path, None)
+        with pytest.raises(ValueError, match="predates"):
+            assert_filter_off_from_file(legacy)  # no attr, no supplied
+        assert_filter_off_from_file(legacy, supplied=0)  # supplied off -> ok

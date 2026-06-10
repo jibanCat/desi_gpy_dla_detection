@@ -68,3 +68,45 @@ def assert_filter_off(filter_low_likelihood: int, *, ctx: str = "") -> None:
             + "Re-run inference with FILTER_LOW_LIKELIHOOD=0, or pass a FILTER-off "
             + "catalog."
         )
+
+
+def read_filter_flag(processed_file):
+    """Read the persisted ``filter_low_likelihood`` root attr from a processed HDF5.
+
+    Returns the int flag if present, or ``None`` for legacy files written before
+    ``run_bayes_select.save_results`` started persisting it (in which case the
+    caller must supply the FILTER setting explicitly).  Makes the catalog
+    self-describing so the guard can be asserted FROM THE FILE rather than trusted
+    from the driver.
+    """
+    import h5py
+
+    with h5py.File(processed_file, "r") as f:
+        if "filter_low_likelihood" in f.attrs:
+            return int(f.attrs["filter_low_likelihood"])
+    return None
+
+
+def assert_filter_off_from_file(processed_file, *, supplied=None, ctx=""):
+    """Guard using the persisted flag when present, else the ``supplied`` value.
+
+    If the file records ``filter_low_likelihood``, that wins (and, if ``supplied``
+    is given and disagrees, raise — the driver was mislabelled).  If the file has
+    no attr (legacy), fall back to ``supplied`` (which must then be provided).
+    """
+    file_flag = read_filter_flag(processed_file)
+    if file_flag is not None:
+        if supplied is not None and int(supplied) != file_flag:
+            raise ValueError(
+                f"{ctx + ': ' if ctx else ''}supplied filter_low_likelihood="
+                f"{supplied!r} disagrees with the file's persisted value {file_flag}."
+            )
+        assert_filter_off(file_flag, ctx=ctx)
+    else:
+        if supplied is None:
+            raise ValueError(
+                f"{ctx + ': ' if ctx else ''}this processed file predates the "
+                "persisted FILTER flag; supply filter_low_likelihood explicitly "
+                "(0 for FILTER-off) from the run's .env."
+            )
+        assert_filter_off(supplied, ctx=ctx)
