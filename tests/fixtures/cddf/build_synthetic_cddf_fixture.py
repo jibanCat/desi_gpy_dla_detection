@@ -35,6 +35,7 @@ def build_synthetic_cddf(
     lnhi_lo=20.3,
     lnhi_hi=21.9,
     fill_loglike=-60.0,
+    convention="mean",
     seed=0,
 ):
     """Build a synthetic single-absorber CDDF fixture; return a dict of file paths + truth.
@@ -64,8 +65,18 @@ def build_synthetic_cddf(
         peak_idx[i] = j
         sll[i, j, 0] = 0.0
 
-    # normalizer invariant: log_likelihoods_dla = logsumexp(sll) - log(S)
-    lld = (logsumexp(sll[:, :, 0], axis=1) - np.log(S)).reshape(N, 1)
+    # The stored marginal `log_likelihoods_dla` follows one of two conventions:
+    #   * "mean" (pre-PR#7): log-mean-exp = logsumexp(sll) - log(S);
+    #   * "sum"  (post-PR#7 +log(N) evidence fix): log-sum-exp = logsumexp(sll).
+    # A convention-agnostic (self-normalizing) estimator must give sum_j
+    # exp(log_norm_like_j) == 1 for BOTH.
+    _lse = logsumexp(sll[:, :, 0], axis=1)
+    if convention == "sum":
+        lld = _lse.reshape(N, 1)
+    elif convention == "mean":
+        lld = (_lse - np.log(S)).reshape(N, 1)
+    else:
+        raise ValueError(f"convention must be 'mean' or 'sum', got {convention!r}")
 
     # model posteriors [Null, DLA(1)] for the single-absorber (sub_dla=False) layout
     mp = np.zeros((N, 2), dtype=float)

@@ -540,25 +540,28 @@ class DLACatalogue(object):
             ].T  # DESI: (num_qsos, num_samples, k)
         else:
             log_norm_like = self.filehandle["sample_log_likelihoods_dla"][:].T
-        # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
-        # Each DLA in a spectrum is a different column
-        log_dla_like = self.filehandle["log_likelihoods_dla"][
-            :, 0
-        ]  # DESI: shape (num_qsos, k)
-        # log_norm_like -= (log_dla_like + np.log(np.shape(self.log_norm_like)[0]))
+        # Normalize per-sample posterior weights so sum_j exp(log_norm_like_j) == 1
+        # per spectrum.  SELF-NORMALIZING (softmax over samples): subtract
+        # logsumexp(sample_ll) directly rather than the stored marginal
+        # `log_likelihoods_dla`.  This is convention-AGNOSTIC: it is byte-identical
+        # to the historical `sample_ll - log_likelihoods_dla - log(S)` form on
+        # pre-PR#7 (log-MEAN-exp) outputs, where log_likelihoods_dla = logsumexp -
+        # log(S) so the two -log(S) cancel; and it is CORRECT on post-PR#7
+        # (log-SUM-exp) outputs, where the old form subtracted an extra log(S) and
+        # silently produced f(N)=0 (the guarding assert below is stripped under -O).
+        # The Occam factor (constant across samples) cancels in the softmax exactly.
         for spec in dla_ind[0]:
             # prevent IndexError while using a small test set for sample_log_likelihoods
             try:
+                ll_spec = log_norm_like[:, spec]
                 self.log_norm_like_cache[spec] = np.array(
-                    log_norm_like[:, spec]
-                    - (log_dla_like[spec] + np.log(np.shape(log_norm_like)[0]))
+                    ll_spec - logsumexp(ll_spec)
                 )
             except IndexError as e:
                 print("The sizes of dla_ind and log_norm_like don't match!")
                 print(e)
                 break
         del log_norm_like
-        del log_dla_like
 
     def get_kth_dla_attrs(self, k=2):
         """
@@ -803,10 +806,11 @@ class DLACatalogue(object):
                     log_norm_like = self.filehandle["sample_log_likelihoods_dla"][
                         spec, :
                     ]  # DESI: (num_qsos, num_samples, k)
-                # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
-                # Each DLA in a spectrum is a different column
-                log_dla_like = self.filehandle["log_likelihoods_dla"][spec, 0]
-                log_norm_like -= log_dla_like + np.log(np.shape(log_norm_like)[0])
+                # Self-normalizing (softmax over samples): convention-agnostic, see
+                # the matching note in __init__.  Byte-identical to the historical
+                # `- log_likelihoods_dla - log(S)` form on pre-PR#7 (log-mean-exp)
+                # outputs; correct on post-PR#7 (log-sum-exp) outputs.
+                log_norm_like = log_norm_like - logsumexp(log_norm_like)
                 self.log_norm_like_cache[spec] = log_norm_like
                 assert 0.95 < np.sum(np.exp(log_norm_like)) < 1.05
                 return log_norm_like
@@ -1530,6 +1534,25 @@ class DLACatalogue(object):
             lnhi_max=lnhi_bins[-1],
             nhi=True,
         )
+        return self._omega_ci_from_probs_poissons(
+            probs, poissons, lnhi_bins, tailprob=tailprob
+        )
+
+    def _omega_ci_from_probs_poissons(
+        self, probs, poissons, lnhi_bins, *, tailprob=5e-4
+    ):
+        """Ω-CI from PRE-ACCUMULATED ``(probs, poissons)`` over the lnhi grid.
+
+        ADDITIVE helper (no behaviour change): the exact post-``_split_distributions``
+        body of :meth:`_get_omega_confidence_intervals`, factored out so the
+        NO-COMBINE streaming driver can run the SAME N-weighted PDF convolution on
+        the per-z-bin ``(probs, poissons)`` it accumulated across files.  Because
+        ``_split_distributions`` is ADDITIVE over sightlines, the accumulated
+        ingredients reproduce the single-combined-file Ω CI exactly.
+
+        Returns ``(maxlike_NHI, (lo68, hi68), (lo95, hi95))`` — the N-weighted
+        DLA-HI abundance MAP + intervals for one z window.
+        """
         # probs[i] now contains a list of arrays
         # Now we have built a list of probabilities in each z bin of interest and we want to solve for the Poisson binomial coefficients.
         # to get each combined pdf.
@@ -2043,6 +2066,25 @@ class DLACatalogue(object):
         )
         # probs[i] now contains a list of arrays
         # Now we have built a list of probabilities in each z bin of interest and we want to solve for the Poisson binomial coefficients.
+        return self._count_ci_from_probs_poissons(probs, poissons)
+
+    def _count_ci_from_probs_poissons(self, probs, poissons):
+        """MAP + 68/95 count CIs from PRE-ACCUMULATED ``(probs, poissons)`` per bin.
+
+        ADDITIVE helper (no behaviour change): this is the exact per-bin CI-combine
+        loop that ``_get_confidence_intervals`` used to inline.  It is factored out
+        so the NO-COMBINE streaming driver
+        (``CDDF_analysis.cddf_forward.streaming``) can call the SAME Poisson-binomial
+        + Poisson combine on ``(probs, poissons)`` it accumulated across files —
+        which equals running it on one combined file because the
+        ``_split_distributions_single`` ingredients are ADDITIVE over sightlines
+        (concatenate the per-bin ``probs`` lists, sum the per-bin ``poissons``).
+
+        ``probs`` is a per-bin LIST of arrays of large-p (>= ``p_switch``) DLA
+        probabilities; ``poissons`` is a per-bin array of summed small-p
+        probabilities.  Returns ``(maxlikes, levels68, levels95)`` identically to
+        ``_get_confidence_intervals``.
+        """
         maxlikes = []
         levels68 = []
         levels95 = []
@@ -2349,10 +2391,16 @@ def get_poisson_binomial_pdf(pp):
     Poisson-Binomial Probability Density Function."
     IEEE Transactions on Reliability, 59(3), 615–616.
     """
-    # Check input is reasonable
-    if np.size(pp) == 0:
+    # Check input is reasonable.  ``pp`` is a per-bin LIST of per-sightline arrays
+    # (generally RAGGED — different lengths).  Under numpy 2.x ``np.size(pp)``
+    # raises ValueError on a ragged list (it tries to build an inhomogeneous
+    # array), so guard on ``len(pp)`` and the concatenated size instead.  Behaviour
+    # is identical to the old ``np.size(pp) == 0`` check wherever that did not crash.
+    if len(pp) == 0:
         return np.ones(1)
     ppa = np.array(np.concatenate(pp))
+    if np.size(ppa) == 0:
+        return np.ones(1)
     assert ppa.dtype == np.float64
     assert np.size(np.shape(ppa)) == 1
     Nsamp = np.size(ppa)

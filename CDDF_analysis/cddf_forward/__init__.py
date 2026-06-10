@@ -49,6 +49,11 @@ from .diagonal_deposit import (
     TruthMap,
     DiagonalSoftDeposit,
 )
+from .streaming import (
+    compute_o1_products_streaming,
+    compute_o3_products_streaming,
+    heldout_closure_streaming,
+)
 
 __all__ = [
     "WindowSpec",
@@ -75,4 +80,8 @@ __all__ = [
     "build_truth_map",
     "TruthMap",
     "DiagonalSoftDeposit",
+    # no-combine streaming pipeline
+    "compute_o1_products_streaming",
+    "compute_o3_products_streaming",
+    "heldout_closure_streaming",
 ]

@@ -525,6 +525,127 @@ class DiagonalSoftDeposit:
             "n_truth": tmap.n_truth_grid(),
         }
 
+    def deposit_raw(self, *, z_min, z_max, target_ids=None, nhi, q_bins) -> dict:
+        """RAW additive ingredients for the NO-COMBINE streaming accumulator.
+
+        This is the ADDITIVE seam.  It returns, for ONE processed file, everything a
+        streaming driver must accumulate so that running the EXISTING CI-combine
+        once on the totals equals running the whole pipeline on a single combined
+        file:
+
+        1. the partitioned DEPOSIT-MEAN totals ``F_matched`` / ``F_unmatched`` /
+           ``n_truth`` (1-D over the surviving axis: logN if ``nhi`` else z; the
+           orthogonal axis collapsed to the single window bin) — identical to
+           collapsing :meth:`deposit`; AND
+        2. the per-bin Poisson-binomial INGREDIENTS ``(probs, poissons)`` of the
+           estimator's ``column_density_function_counts`` MAP — i.e. the EXACT
+           output of ``calc_cddf.DLACatalogue._split_distributions`` on the SAME
+           ``q_bins`` / range (summed over the multi-DLA ``second`` passes).
+           ``probs`` is a per-bin LIST of large-p (>= ``p_switch``) arrays;
+           ``poissons`` is a per-bin array of summed small-p probabilities.
+
+        Both (1) and (2) are ADDITIVE over sightlines/files: extend the per-bin
+        ``probs`` lists, sum the per-bin ``poissons`` / ``F_matched`` /
+        ``F_unmatched`` / ``n_truth`` across files.  ``deposit_raw`` does NOT change
+        :meth:`deposit`'s output (it adds the raw ``(probs, poissons)``).
+
+        Parameters
+        ----------
+        z_min, z_max : float
+            The window's redshift bounds (same as :meth:`deposit`).
+        target_ids : set/iterable of int, optional
+            Restrict to these sightlines (e.g. a BUILD / HELDOUT subset).  Applied
+            to BOTH the deposit partition AND the ``(probs, poissons)`` MAP
+            ingredients so the streaming closure can accumulate roles separately.
+        nhi : bool
+            Whether ``q_bins`` are log10(N_HI) bin edges (the CDDF) or z bin edges
+            (dN/dX) — passed straight to the estimator's ``_split_distributions``.
+        q_bins : array-like
+            The bin edges for the surviving axis (logN for the CDDF, z for dN/dX).
+            MUST equal ``self.lnhi_edges`` (nhi=True) or ``self.z_edges`` (nhi=False).
+
+        Returns
+        -------
+        dict
+            ``F_matched``   : (nbin,) deposit-mean matched count per surviving bin;
+            ``F_unmatched`` : (nbin,) deposit-mean unmatched count;
+            ``n_truth``     : (nbin,) integer truth count;
+            ``probs``       : per-bin LIST of large-p arrays (MAP ingredient);
+            ``poissons``    : (nbin,) summed small-p probabilities (MAP ingredient);
+            ``n_active``    : number of active sightlines contributing (after the
+                              optional ``target_ids`` restriction).
+        """
+        q_bins = np.asarray(q_bins, dtype=float)
+        # --- (1) deposit-mean partition (collapse the orthogonal singleton axis) ---
+        part = self.deposit(z_min=z_min, z_max=z_max, target_ids=target_ids)
+        if nhi:
+            # surviving axis = logN; the z axis must be the single window bin.
+            if part["F_matched"].shape[1] != 1:
+                raise ValueError(
+                    "deposit_raw(nhi=True) needs a single z window bin; got "
+                    f"{part['F_matched'].shape[1]} z bins."
+                )
+            F_matched = part["F_matched"][:, 0]
+            F_unmatched = part["F_unmatched"][:, 0]
+            n_truth = part["n_truth"][:, 0]
+        else:
+            # surviving axis = z; the logN axis must be the single window bin.
+            if part["F_matched"].shape[0] != 1:
+                raise ValueError(
+                    "deposit_raw(nhi=False) needs a single logN window bin; got "
+                    f"{part['F_matched'].shape[0]} logN bins."
+                )
+            F_matched = part["F_matched"][0, :]
+            F_unmatched = part["F_unmatched"][0, :]
+            n_truth = part["n_truth"][0, :]
+
+        # --- (2) (probs, poissons) MAP ingredients via the estimator's own split ---
+        # Reuse calc_cddf._split_distributions (the SAME loop column_density_function
+        # _counts uses) so the streaming MAP CI is byte-identical to the combined
+        # file. Optionally restrict to a target_id subset via a temporary condition
+        # mask (additive; restored on exit), mirroring the driver's role helpers.
+        cat = self.cat
+        lnhi_min = float(self.lnhi_edges[0])
+        lnhi_max = float(self.lnhi_edges[-1])
+        if target_ids is None:
+            probs, poissons = cat._split_distributions(
+                q_bins, lred=z_min, ured=z_max,
+                lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=nhi,
+            )
+        else:
+            keep = np.isin(
+                np.asarray(cat.target_ids).astype(np.int64),
+                np.array(sorted(int(t) for t in target_ids), dtype=np.int64),
+            )
+            saved = cat.condition
+            try:
+                cat.condition = saved & keep
+                probs, poissons = cat._split_distributions(
+                    q_bins, lred=z_min, ured=z_max,
+                    lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=nhi,
+                )
+            finally:
+                cat.condition = saved
+
+        # n_active sightlines contributing (after the restriction) — for coverage.
+        dla_ind = cat.filter_dla_spectra()
+        if target_ids is None:
+            n_active = int(np.size(dla_ind[0]))
+        else:
+            allowed = set(int(t) for t in target_ids)
+            n_active = int(sum(
+                1 for spec in dla_ind[0] if int(cat.target_ids[spec]) in allowed
+            ))
+
+        return {
+            "F_matched": np.asarray(F_matched, float),
+            "F_unmatched": np.asarray(F_unmatched, float),
+            "n_truth": np.asarray(n_truth),
+            "probs": probs,
+            "poissons": np.asarray(poissons, float),
+            "n_active": n_active,
+        }
+
     def reference_count_grid(self, *, z_min, z_max) -> np.ndarray:
         """Unpartitioned windowed expected-count grid (independent of truth).
 
