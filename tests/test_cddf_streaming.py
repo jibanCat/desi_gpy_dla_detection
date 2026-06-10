@@ -334,6 +334,99 @@ class TestStreamingProvenance:
             )
 
 
+class TestParallelStreaming:
+    """THE parallel pin: ``n_workers > 1`` == sequential to floating-point.
+
+    The per-file deposit is INDEPENDENT (each file -> additive per-bin ingredients),
+    so mapping it across a ``multiprocessing`` pool and REDUCING the ingredients —
+    then running the SAME single correction at the end — must reproduce the
+    sequential streaming result bit-for-bit modulo float summation order (allclose).
+    """
+
+    def test_o3_parallel_equals_sequential(self, three_files, monkeypatch):
+        monkeypatch.setattr(o3stream, "soft_completeness", _FakeCore, raising=False)
+        seq = o3stream.compute_o3_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], **_DLACAT_KWARGS, **_common_kwargs(),
+        )
+        par = o3stream.compute_o3_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], **_DLACAT_KWARGS, **_common_kwargs(),
+            n_workers=3,
+        )
+        for blk in ("o3_cddf",):
+            for k in ("logN", "f", "f68", "f95", "f_raw", "n_corr"):
+                _assert_array_close(par[blk][k], seq[blk][k], f"par {blk}[{k}]")
+        for k in ("z", "dndx", "dndx68", "dndx95", "n_corr"):
+            _assert_array_close(par["o3_dndx"][k], seq["o3_dndx"][k], f"par o3_dndx[{k}]")
+        for k in ("C", "b_FP", "n_truth", "F_matched", "F_unmatched"):
+            _assert_array_close(
+                par["completeness"][k], seq["completeness"][k], f"par completeness[{k}]"
+            )
+        for k in ("omega", "omega68", "omega95"):
+            _assert_array_close(par["o3_omega"][k], seq["o3_omega"][k], f"par o3_omega[{k}]")
+        for blk in ("cddf", "dndx", "omega"):
+            for k in seq["o1"][blk]:
+                if k == "xerrs":
+                    continue
+                _assert_array_close(par["o1"][blk][k], seq["o1"][blk][k], f"par o1[{blk}][{k}]")
+
+    def test_o1_parallel_equals_sequential(self, three_files):
+        seq = o3stream.compute_o1_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            **_DLACAT_KWARGS, **_common_kwargs(),
+        )
+        par = o3stream.compute_o1_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            **_DLACAT_KWARGS, **_common_kwargs(), n_workers=2,
+        )
+        for blk in ("cddf", "dndx", "omega"):
+            for k in seq[blk]:
+                if k == "xerrs":
+                    continue
+                _assert_array_close(par[blk][k], seq[blk][k], f"par {blk}[{k}]")
+
+    def test_parallel_provenance_records_workers(self, three_files, monkeypatch):
+        monkeypatch.setattr(o3stream, "soft_completeness", _FakeCore, raising=False)
+        par = o3stream.compute_o3_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], **_DLACAT_KWARGS, **_common_kwargs(), n_workers=3,
+        )
+        assert par["provenance"]["streaming"] is True
+        assert par["provenance"]["n_workers"] == 3
+        assert par["provenance"]["n_files"] == len(three_files["files"])
+
+    def test_n_workers_one_is_default_sequential(self, three_files, monkeypatch):
+        # n_workers=1 must take the exact sequential path (back-compat) and record it.
+        monkeypatch.setattr(o3stream, "soft_completeness", _FakeCore, raising=False)
+        prod = o3stream.compute_o3_products_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], **_DLACAT_KWARGS, **_common_kwargs(), n_workers=1,
+        )
+        assert prod["provenance"]["n_workers"] == 1
+
+    def test_closure_parallel_equals_sequential(self, three_files, monkeypatch):
+        monkeypatch.setattr(o3stream, "soft_completeness", _FakeCore, raising=False)
+        seq = o3stream.heldout_closure_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], **_DLACAT_KWARGS,
+            z_min=_Z_MIN, z_max=_Z_MAX, lnhi_min=_LNHI_MIN, lnhi_max=_LNHI_MAX,
+            lnhi_nbins=_LNHI_NBINS, filter_low_likelihood=0, window=_WINDOW,
+        )
+        par = o3stream.heldout_closure_streaming(
+            three_files["files"], three_files["sample"], three_files["catalog"],
+            three_files["truth"], **_DLACAT_KWARGS,
+            z_min=_Z_MIN, z_max=_Z_MAX, lnhi_min=_LNHI_MIN, lnhi_max=_LNHI_MAX,
+            lnhi_nbins=_LNHI_NBINS, filter_low_likelihood=0, window=_WINDOW,
+            n_workers=2,
+        )
+        _assert_array_close(par["corrected"], seq["corrected"], "par closure.corrected")
+        _assert_array_close(par["truth"], seq["truth"], "par closure.truth")
+        _assert_array_close(par["residual"], seq["residual"], "par closure.residual")
+        assert par["bfp_rebase_ratio"] == pytest.approx(seq["bfp_rebase_ratio"])
+        assert bool(par["passed"]) == bool(seq["passed"])
+
+
 class TestHeldoutClosureStreaming:
     def test_closure_streaming_runs_and_reports_pass_flag(self, three_files, monkeypatch):
         monkeypatch.setattr(o3stream, "soft_completeness", _FakeCore, raising=False)
@@ -367,3 +460,42 @@ class TestHeldoutClosureStreaming:
         _assert_array_close(strm["corrected"], comb["corrected"], "closure.corrected")
         _assert_array_close(strm["truth"], comb["truth"], "closure.truth")
         assert strm["bfp_rebase_ratio"] == pytest.approx(comb["bfp_rebase_ratio"])
+
+
+class TestUnreadableFileRobustness:
+    """A truncated/corrupt processed file must be SKIPPED + recorded, not crash."""
+
+    def test_truncated_file_skipped_and_recorded(self, three_files, monkeypatch, tmp_path):
+        monkeypatch.setattr(o3stream, "_require_core", lambda: _FakeCore, raising=False)
+        # a 96-byte HDF5 stub (what a killed job leaves), named like a real output
+        bad = str(tmp_path / "processed-spectra-16-9999.h5")
+        with open(bad, "wb") as fh:
+            fh.write(b"\x89HDF\r\n\x1a\n" + b"\x00" * 88)
+        good = list(three_files["files"])
+
+        prod = o3stream.compute_o3_products_streaming(
+            good + [bad], three_files["sample"], three_files["catalog"],
+            three_files["truth"], n_workers=1, **_DLACAT_KWARGS, **_common_kwargs(),
+        )
+        unread = prod["provenance"]["unreadable_files"]
+        assert len(unread) == 1
+        assert "9999" in unread[0]["file"]
+        assert prod["provenance"]["n_files"] == len(good)  # bad one excluded
+
+        # result is identical to running on ONLY the good files
+        ref = o3stream.compute_o3_products_streaming(
+            good, three_files["sample"], three_files["catalog"],
+            three_files["truth"], n_workers=1, **_DLACAT_KWARGS, **_common_kwargs(),
+        )
+        np.testing.assert_allclose(
+            prod["o3_dndx"]["dndx"], ref["o3_dndx"]["dndx"], rtol=0, atol=1e-12
+        )
+
+    def test_all_unreadable_raises(self, tmp_path):
+        bad = str(tmp_path / "processed-spectra-16-9998.h5")
+        with open(bad, "wb") as fh:
+            fh.write(b"\x00" * 96)
+        with pytest.raises(ValueError, match="no readable"):
+            o3stream.compute_o3_products_streaming(
+                [bad], "s", "c", "t", **_common_kwargs(),
+            )

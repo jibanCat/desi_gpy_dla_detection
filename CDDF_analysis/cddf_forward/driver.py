@@ -1238,58 +1238,221 @@ def save_o3_products(products: dict, out_dir: str) -> dict:
     return {"cddf": cddf_path, "dndx": dndx_path, "completeness": comp_path}
 
 
-def plot_o3_products(products: dict, *, save_path: Optional[str] = None):
-    """Diagnostic O3 panels: dN/dX & f(N) raw-vs-corrected, C(N), b_FP (§3.6).
+# How low / unreliable a per-bin completeness must be before the fine-logN f(N)
+# point is annotated "DIAGONAL — needs off-diagonal R (M3)" (N-scatter dominates).
+_C_UNRELIABLE = 0.2
 
-    Honest title: "O3 DIAGONAL SOFT-COMPLETENESS CORRECTED" + the migration caveat.
-    Returns the matplotlib Figure (and writes ``save_path`` if given).
+
+def _band(ax, x, lo, hi, *, color, alpha=0.25, label=None):
+    """A 68% (or any) shaded band ``[lo, hi]`` along ``x`` (NaN-safe)."""
+    x = np.asarray(x, float)
+    lo = np.asarray(lo, float)
+    hi = np.asarray(hi, float)
+    finite = np.isfinite(x) & np.isfinite(lo) & np.isfinite(hi)
+    if np.any(finite):
+        ax.fill_between(x[finite], lo[finite], hi[finite], color=color, alpha=alpha,
+                        linewidth=0, label=label)
+
+
+def plot_o3_diagnostics(products: dict, *, save_path: Optional[str] = None,
+                        title: Optional[str] = None):
+    """Reviewable multi-panel O3 DIAGONAL diagnostic figure (§3.6).
+
+    Six panels on a streaming/combined O3-products dict (the shape
+    :func:`compute_o3_products` / ``compute_o3_products_streaming`` return):
+
+    1. **f(N)**         raw vs corrected (log-log) + 68% band; fine-logN bins where
+       completeness is low/unreliable are annotated "DIAGONAL — needs off-diagonal
+       R (M3)" (the N-scatter limitation lives precisely there).
+    2. **dN/dX(z)**     raw vs corrected + 68% band — the ROBUST wide-N-bin product.
+    3. **Ω_DLA(z)**     value + CI, with the diagonal caveat.
+    4. **C(N)**         per-bin completeness; NaN/masked bins greyed.
+    5. **b_FP(N)**      per-bin soft false-positive deposit; NaN bins greyed.
+    6. **coverage**     join-coverage / per-healpix counts so a partial-healpix GAP
+       is visible (cf. the 161-healpix London dlacat gap).
+
+    Honest everywhere: the suptitle carries the "O3 DIAGONAL SOFT-COMPLETENESS
+    CORRECTED" banner + the off-diagonal/N-scatter limitation; no panel claims an
+    alpha(z) / London-mock calibration.  Agg backend when ``save_path`` is given (no
+    display).  Returns the matplotlib :class:`~matplotlib.figure.Figure`.
     """
     import matplotlib
     if save_path is not None:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    o1 = products["o1"]
     c3 = products["o3_cddf"]
     d3 = products["o3_dndx"]
+    om = products.get("o3_omega", {})
     comp = products["completeness"]
+    prov = products.get("provenance", {})
+    grey = "0.7"
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
-    fig.suptitle(
-        f"{_O3_LABEL}\n{_O3_LIMITATION}", fontsize=8,
-    )
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    banner = f"{_O3_LABEL}\n{_O3_LIMITATION}"
+    if title:
+        banner = f"{title}\n{banner}"
+    fig.suptitle(banner, fontsize=8)
 
-    # f(N): windowed raw vs corrected
+    # ---- 1. f(N): raw vs corrected (log-log) + 68% band -----------------------
     ax = axes[0, 0]
-    ax.plot(c3["logN"], c3["f_raw"], "o-", label="raw (windowed)", color="0.5")
-    ax.plot(c3["logN"], c3["f"], "s-", label="O3 corrected", color="C0")
+    logN = np.asarray(c3["logN"], float)
+    f_raw = np.asarray(c3["f_raw"], float)
+    f_cor = np.asarray(c3["f"], float)
+    f68 = np.asarray(c3["f68"], float)
+    _band(ax, logN, f68[:, 0], f68[:, 1], color="C0", label="O3 68%")
+    ax.plot(logN, f_raw, "o-", color=grey, label="raw (windowed)")
+    ax.plot(logN, f_cor, "s-", color="C0", label="O3 corrected")
     ax.set_yscale("log")
     ax.set_xlabel(r"$\log_{10} N_{HI}$"); ax.set_ylabel(r"$f(N_{HI})$")
-    ax.legend(fontsize=7); ax.set_title("CDDF", fontsize=9)
+    ax.set_title("CDDF f(N) [DIAGONAL]", fontsize=9)
+    # Annotate fine-logN bins where C is low/unreliable: there the DIAGONAL f(N) is
+    # corrupted by N-scatter and would need the off-diagonal response R (M3).
+    C = np.asarray(comp.get("C", np.full(logN.shape, np.nan)), float)
+    unreliable = ~np.isfinite(C) | (C < _C_UNRELIABLE)
+    if np.any(unreliable & np.isfinite(f_cor)):
+        ax.annotate(
+            "DIAGONAL — needs off-diagonal R (M3)\n(low-C fine-logN bins unreliable)",
+            xy=(0.02, 0.03), xycoords="axes fraction", fontsize=6, color="C3",
+            va="bottom",
+        )
+    ax.legend(fontsize=6)
 
-    # dN/dX: windowed raw vs corrected
+    # ---- 2. dN/dX(z): raw vs corrected + 68% band (robust wide-N product) ------
     ax = axes[0, 1]
-    ax.plot(d3["z"], d3["dndx_raw"], "o-", label="raw (windowed)", color="0.5")
-    ax.plot(d3["z"], d3["dndx"], "s-", label="O3 corrected", color="C0")
+    z = np.asarray(d3["z"], float)
+    dndx_raw = np.asarray(d3["dndx_raw"], float)
+    dndx_cor = np.asarray(d3["dndx"], float)
+    d68 = np.asarray(d3["dndx68"], float)
+    _band(ax, z, d68[:, 0], d68[:, 1], color="C0", label="O3 68%")
+    ax.plot(z, dndx_raw, "o-", color=grey, label="raw (windowed)")
+    ax.plot(z, dndx_cor, "s-", color="C0", label="O3 corrected")
     ax.set_xlabel("z"); ax.set_ylabel("dN/dX")
-    ax.legend(fontsize=7); ax.set_title("Line density", fontsize=9)
+    ax.set_title("Line density dN/dX (robust wide-N bin)", fontsize=9)
+    ax.legend(fontsize=6)
 
-    # C(N)
+    # ---- 3. Omega_DLA(z): value + CI, diagonal caveat -------------------------
+    ax = axes[0, 2]
+    if om:
+        z_o = np.asarray(om["omega"]).ravel().size  # noqa: F841 (presence check)
+        zc = np.atleast_1d(np.asarray(om.get("z", [np.nan]), float))
+        omega = np.atleast_1d(np.asarray(om["omega"], float))
+        o68 = np.asarray(om.get("omega68", np.full((omega.size, 2), np.nan)), float
+                         ).reshape(-1, 2)
+        yerr = np.vstack([omega - o68[:, 0], o68[:, 1] - omega])
+        ax.errorbar(zc, omega, yerr=np.abs(yerr), fmt="s", color="C0", capsize=3,
+                    label=r"$\Omega_{DLA}$ (68%)")
+        ax.set_xlabel("z"); ax.set_ylabel(r"$\Omega_{DLA}$")
+        ax.legend(fontsize=6)
+    ax.set_title(r"$\Omega_{DLA}(z)$ [DIAGONAL caveat]", fontsize=9)
+    ax.annotate("N-weighted; DIAGONAL — high-N scatter not modelled (M3)",
+                xy=(0.02, 0.02), xycoords="axes fraction", fontsize=6, color="C3",
+                va="bottom")
+
+    # ---- 4. C(N): completeness; NaN/masked bins greyed ------------------------
     ax = axes[1, 0]
-    ax.plot(comp["logN"], comp["C"], "o-", color="C2")
+    cl = np.asarray(comp.get("C_lo68", np.full(C.shape, np.nan)), float)
+    ch = np.asarray(comp.get("C_hi68", np.full(C.shape, np.nan)), float)
+    finite = np.isfinite(C)
+    _band(ax, logN, cl, ch, color="C2", label="68%")
+    ax.plot(logN[finite], C[finite], "o-", color="C2", label="C (valid)")
+    masked = ~finite
+    if np.any(masked):
+        # grey vertical spans mark the masked / NaN-completeness bins.
+        for xb in logN[masked]:
+            ax.axvspan(xb - 0.03, xb + 0.03, color=grey, alpha=0.5)
+        ax.plot([], [], color=grey, lw=6, alpha=0.5, label="masked / NaN")
+    ax.set_ylim(0, 1.05)
     ax.set_xlabel(r"$\log_{10} N_{HI}$"); ax.set_ylabel("completeness C")
-    ax.set_ylim(0, 1.05); ax.set_title("Diagonal completeness", fontsize=9)
+    ax.set_title("Diagonal completeness C(N)", fontsize=9)
+    ax.legend(fontsize=6)
 
-    # b_FP
+    # ---- 5. b_FP(N): soft false-positive deposit; NaN bins greyed -------------
     ax = axes[1, 1]
-    ax.plot(comp["logN"], comp["b_FP"], "o-", color="C3")
+    bfp = np.asarray(comp.get("b_FP", np.full(logN.shape, np.nan)), float)
+    fb = np.isfinite(bfp)
+    ax.plot(logN[fb], bfp[fb], "o-", color="C3", label=r"$b_{FP}$ (valid)")
+    bmask = ~fb
+    if np.any(bmask):
+        for xb in logN[bmask]:
+            ax.axvspan(xb - 0.03, xb + 0.03, color=grey, alpha=0.5)
+        ax.plot([], [], color=grey, lw=6, alpha=0.5, label="masked / NaN")
     ax.set_xlabel(r"$\log_{10} N_{HI}$"); ax.set_ylabel(r"$b_{FP}$ (counts)")
-    ax.set_title("Soft false-positive deposit", fontsize=9)
+    ax.set_title("Soft false-positive deposit b_FP(N)", fontsize=9)
+    ax.legend(fontsize=6)
 
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    # ---- 6. coverage / gap panel ----------------------------------------------
+    ax = axes[1, 2]
+    _draw_coverage_panel(ax, prov, grey=grey)
+
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     if save_path is not None:
         fig.savefig(save_path, dpi=110)
     return fig
+
+
+def _draw_coverage_panel(ax, prov, *, grey):
+    """Per-healpix coverage bars + join-coverage counts so a GAP is visible.
+
+    A zero-count healpix is drawn in red and the panel title is annotated "GAP" so a
+    partial-coverage hole (cf. the 161-healpix London dlacat gap) cannot be mistaken
+    for low completeness.  Absent ``provenance.coverage`` -> an honest "N/A" panel.
+    """
+    cov = (prov or {}).get("coverage")
+    ax.set_title("Coverage / per-healpix gap", fontsize=9)
+    if not cov:
+        ax.annotate("coverage provenance N/A", xy=(0.5, 0.5),
+                    xycoords="axes fraction", ha="center", va="center", fontsize=8,
+                    color=grey)
+        ax.set_xticks([]); ax.set_yticks([])
+        return
+
+    hp_cov = cov.get("healpix_coverage")
+    has_gap = False
+    if hp_cov:
+        items = sorted(hp_cov.items())
+        counts = np.array([c for _, c in items], float)
+        idx = np.arange(counts.size)
+        is_gap = counts <= 0
+        has_gap = bool(np.any(is_gap))
+        colors = ["C3" if g else "C0" for g in is_gap]
+        ax.bar(idx, counts, color=colors)
+        ax.set_xlabel(f"healpix index (n={counts.size})")
+        ax.set_ylabel("sightlines / healpix")
+        if has_gap:
+            n_gap = int(np.sum(is_gap))
+            ax.annotate(f"GAP: {n_gap} zero-coverage healpix (red)",
+                        xy=(0.02, 0.92), xycoords="axes fraction", fontsize=7,
+                        color="C3", va="top")
+    else:
+        # no per-healpix breakdown: show the join-coverage counts as a bar summary.
+        keys = ["n_both", "n_truth_only", "n_processed_only"]
+        vals = [int(cov.get(k, 0)) for k in keys]
+        ax.bar(range(len(keys)), vals, color=["C0", "C3", "0.5"])
+        ax.set_xticks(range(len(keys)))
+        ax.set_xticklabels(["both", "truth-only", "proc-only"], fontsize=7)
+        ax.set_ylabel("TARGETID count")
+        if vals[1] > 0:
+            ax.annotate("truth-only = coverage GAP (not incompleteness)",
+                        xy=(0.02, 0.92), xycoords="axes fraction", fontsize=7,
+                        color="C3", va="top")
+
+    # always surface the headline join-coverage numbers as text.
+    txt = (f"both={cov.get('n_both', '?')}  truth-only={cov.get('n_truth_only', '?')}"
+           f"  proc-only={cov.get('n_processed_only', '?')}"
+           f"  n_healpix={cov.get('n_healpix', '?')}")
+    ax.annotate(txt, xy=(0.02, 0.02), xycoords="axes fraction", fontsize=6,
+                color="0.3", va="bottom")
+
+
+def plot_o3_products(products: dict, *, save_path: Optional[str] = None):
+    """Back-compat shim: delegates to :func:`plot_o3_diagnostics` (§3.6).
+
+    The original 4-panel entry point is preserved for existing callers; it now
+    produces the richer multi-panel diagnostic figure.  Honest title + the migration
+    caveat are carried by the delegate.
+    """
+    return plot_o3_diagnostics(products, save_path=save_path)
 
 
 def main(argv=None):

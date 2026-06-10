@@ -46,7 +46,8 @@ from __future__ import annotations
 
 import glob
 import os
-from typing import List, Optional, Sequence, Union
+from concurrent.futures import ProcessPoolExecutor
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -103,6 +104,37 @@ def _resolve_files(processed_files: Union[str, Sequence[str]]) -> List[str]:
     if not files:
         raise ValueError("processed_files is an empty list.")
     return files
+
+
+def _partition_readable_files(files):
+    """Split ``files`` into (readable, unreadable) by attempting an HDF5 open.
+
+    A production per-healpix run can contain TRUNCATED / partially-written outputs
+    (e.g. a 96-byte HDF5 stub from a killed job).  The streaming pipeline must not
+    crash the whole population run on one bad file — it skips the unreadable ones
+    and records them so the gap is VISIBLE in coverage provenance (the C8 purpose),
+    not silently dropped.  Opening just the superblock is cheap.
+    """
+    import h5py
+
+    readable, unreadable = [], []
+    for fp in files:
+        try:
+            with h5py.File(fp, "r"):
+                pass
+            readable.append(fp)
+        except (OSError, KeyError) as exc:  # truncated / corrupt / not-HDF5
+            unreadable.append({"file": fp, "error": str(exc).split("\n")[0][:200]})
+    if unreadable:
+        import warnings
+
+        warnings.warn(
+            f"streaming: skipping {len(unreadable)} unreadable processed file(s) "
+            f"(e.g. {os.path.basename(unreadable[0]['file'])}); recorded in "
+            "provenance['unreadable_files'].",
+            stacklevel=3,
+        )
+    return readable, unreadable
 
 
 # --------------------------------------------------------------------------- #
@@ -348,6 +380,163 @@ def _file_coverage(truth_file, processed_file, truth_map):
 
 
 # --------------------------------------------------------------------------- #
+# parallelism: top-level (picklable) per-file workers + a bounded-RAM map
+# --------------------------------------------------------------------------- #
+#
+# RAM ENVELOPE
+# ------------
+# Each worker opens EXACTLY ONE processed file at a time (the per-healpix FILTER-off
+# file is the dominant cost: ~100k QMC-sample log-likelihoods per spectrum, ~750 MB
+# on disk for a full 2LPT-0 healpix). The worker materialises that file's arrays
+# (the DLACatalogue + its single-file deposit ingredients) and then RETURNS a small
+# picklable ingredients dict — the per-bin (probs, poissons, F_*, n_truth, dX) totals
+# plus coverage scalars — and the big HDF5 handle is closed before the next file. So
+# steady-state RAM is ~1-2 GB PER WORKER (one file's decompressed arrays + the deposit
+# scratch), and the parent only ever holds the (small) reduced accumulators + the
+# in-flight ingredient dicts (bounded by the pool's prefetch). Pick ``n_workers`` so
+# ``n_workers * ~1.5 GB`` fits the node (16 cores ⇒ keep n_workers ≲ available_GB/2).
+#
+# PICKLABILITY
+# ------------
+# The map passes a FILE PATH + a flat params dict to a MODULE-LEVEL worker (no open
+# handles, no closures, no lambda) so the ProcessPoolExecutor can pickle the call.
+# The worker reconstructs everything (DLACatalogue, truth map, deposit) from the path
+# + params, identical to the sequential per-file step, and returns only arrays/scalars.
+
+
+def _o3_ingredients_worker(args):
+    """Top-level worker: O3 per-file ingredients from a path + flat params (picklable).
+
+    ``args`` is ``(processed_file, params)`` where ``params`` carries every scalar/array
+    :func:`_per_file_ingredients` needs.  Returns the SAME ingredient dict the
+    sequential loop accumulates, MINUS the open catalogue (``keep_open=False`` always —
+    a worker never hands a live HDF5 handle back across the process boundary).
+    """
+    processed_file, p = args
+    ing = _per_file_ingredients(
+        processed_file, p["sample_file"], p["catalog_file"], p["truth_file"],
+        z_min=p["z_min"], z_max=p["z_max"], lnhi_edges=p["lnhi_edges"],
+        z_edges_cddf=p["z_edges_cddf"], z_edges_dndx=p["z_edges_dndx"],
+        window=p["window"], role_mask=p["role_mask"], split_seed=p["split_seed"],
+        build_frac=p["build_frac"], dlacat_kwargs=p["dlacat_kwargs"],
+        keep_open=False,
+    )
+    ing.pop("cat", None)  # defensive: never ship a handle (keep_open is False anyway)
+    return ing
+
+
+def _closure_ingredients_worker(args):
+    """Top-level worker: BOTH role ingredients (BUILD + HELDOUT) for one file (picklable).
+
+    The closure accumulates BUILD-active and HELDOUT-active deposits SEPARATELY; doing
+    both roles in ONE worker (so the file is opened ONCE) keeps the per-worker RAM at
+    one file while halving construction.  Returns ``{"build": <ing>, "held": <ing>}``,
+    each the same ingredient dict :func:`_per_file_ingredients` yields (no open cat).
+    """
+    processed_file, p = args
+    common = dict(
+        sample_file=p["sample_file"], catalog_file=p["catalog_file"],
+        truth_file=p["truth_file"], z_min=p["z_min"], z_max=p["z_max"],
+        lnhi_edges=p["lnhi_edges"], z_edges_cddf=p["z_edges_cddf"],
+        z_edges_dndx=p["z_edges_cddf"], window=p["window"],
+        split_seed=p["split_seed"], build_frac=p["build_frac"],
+        dlacat_kwargs=p["dlacat_kwargs"], keep_open=False,
+    )
+    ing_b = _per_file_ingredients(processed_file, role_mask="BUILD", **common)
+    ing_h = _per_file_ingredients(processed_file, role_mask="HELDOUT", **common)
+    ing_b.pop("cat", None)
+    ing_h.pop("cat", None)
+    return {"build": ing_b, "held": ing_h}
+
+
+def _o1_ingredients_worker(args):
+    """Top-level worker: O1 per-file (probs, poissons) ingredients (picklable, no truth).
+
+    Mirrors the O1 sequential per-file block: the CDDF (probs, poissons)+dX, the dN/dX
+    (probs, poissons)+per-bin dX, and the per-z-bin omega (probs over the lnhi grid).
+    Returns a picklable dict of arrays/lists; the big HDF5 handle is closed before
+    return so a worker holds at most one file in RAM.
+    """
+    processed_file, p = args
+    lnhi_edges = np.asarray(p["lnhi_edges"], float)
+    lnhi_nbins = lnhi_edges.size - 1
+    z_edges_dndx = np.asarray(p["z_edges_dndx"], float)
+    n_z = z_edges_dndx.size - 1
+    cat = DLACatalogue(
+        processed_file=processed_file, sample_file=p["sample_file"],
+        catalog_file=p["catalog_file"], window=p["window"], **p["dlacat_kwargs"],
+    )
+    try:
+        pr_c, po_c = cat._split_distributions(
+            lnhi_edges, lred=p["z_min"], ured=p["z_max"],
+            lnhi_min=p["lnhi_min"], lnhi_max=p["lnhi_max"], nhi=True,
+        )
+        dX_cddf = float(cat.path_length(p["z_min"], p["z_max"]))
+        pr_d, po_d = cat._split_distributions(
+            z_edges_dndx, lred=p["z_min"], ured=p["z_max"],
+            lnhi_min=p["lnhi_min"], lnhi_max=p["lnhi_max"], nhi=False,
+        )
+        dX_dndx = np.array(
+            [cat.path_length(zl, zh)
+             for zl, zh in zip(z_edges_dndx[:-1], z_edges_dndx[1:])], float
+        )
+        omega_raw = []  # per z bin: (probs-list-over-lnhi, poissons-array)
+        for zl, zh in zip(z_edges_dndx[:-1], z_edges_dndx[1:]):
+            pr_o, po_o = cat._split_distributions(
+                lnhi_edges, lred=zl, ured=zh,
+                lnhi_min=p["lnhi_min"], lnhi_max=p["lnhi_max"], nhi=True,
+            )
+            omega_raw.append((pr_o, np.asarray(po_o, float)))
+        return {
+            "probs_cddf": pr_c, "poissons_cddf": np.asarray(po_c, float),
+            "dX_cddf": dX_cddf,
+            "probs_dndx": pr_d, "poissons_dndx": np.asarray(po_d, float),
+            "dX_dndx": dX_dndx,
+            "omega_raw": omega_raw,
+            "processed_file": processed_file,
+        }
+    finally:
+        try:
+            cat.filehandle.close()
+        except Exception:  # pragma: no cover
+            pass
+
+
+def _map_files(worker, files, params, n_workers):
+    """Map ``worker`` over ``files`` (path, params) — sequential if ``n_workers<=1``.
+
+    Yields ``(file, ingredients)`` IN INPUT ORDER (``ProcessPoolExecutor.map`` preserves
+    order), so the caller's REDUCE is deterministic.  ``chunksize=1`` keeps at most
+    ``n_workers`` files decompressed at once (bounded RAM, see the envelope note above).
+    """
+    n_workers = int(n_workers)
+    payload = [(fp, params) for fp in files]
+    if n_workers <= 1:
+        for fp, args in zip(files, payload):
+            yield fp, worker(args)
+        return
+    with ProcessPoolExecutor(max_workers=n_workers) as ex:
+        for fp, ing in zip(files, ex.map(worker, payload, chunksize=1)):
+            yield fp, ing
+
+
+def _reduce_o3_ingredient(ing, acc_cddf, acc_dndx, omega_accum, n_z, lnhi_nbins):
+    """ADD one file's O3 ingredient dict into the running accumulators (in place).
+
+    The single reduction used by BOTH the sequential and parallel O3 paths, so the two
+    accumulate the per-bin (probs, poissons, F_*, n_truth, dX) totals identically.
+    """
+    acc_cddf.add(ing["raw_cddf"], ing["dX_cddf"])
+    acc_dndx.add(ing["raw_dndx"], ing["dX_dndx"])
+    for zb in range(n_z):
+        pr_o, po_o = ing["omega_raw"][zb]
+        acc_probs, acc_po = omega_accum[zb]
+        for b in range(lnhi_nbins):
+            acc_probs[b].extend(pr_o[b])
+        omega_accum[zb] = (acc_probs, acc_po + po_o)
+
+
+# --------------------------------------------------------------------------- #
 # O1 + O3 streaming products from accumulated ingredients
 # --------------------------------------------------------------------------- #
 def _o1_blocks_from_accumulators(
@@ -438,14 +627,25 @@ def compute_o1_products_streaming(
     hubble: float = 0.7,
     filter_low_likelihood: int = 0,
     window: Optional[WindowSpec] = None,
+    n_workers: int = 1,
     **dlacat_kwargs,
 ) -> dict:
     """Streaming O1 (uncorrected) CDDF / dN/dX / Ω — no combined file on disk.
 
     Equals :func:`driver.compute_o1_products` on the single combined file built from
     the same ``processed_files`` (pinned by ``tests/test_cddf_streaming.py``).
+
+    ``n_workers > 1`` maps the per-file (probs, poissons) extraction across a
+    ``ProcessPoolExecutor`` and REDUCES the accumulators in INPUT ORDER, then runs the
+    SAME CI-combine ONCE on the totals — the accumulation is associative, so the result
+    is allclose to the sequential path (float summation order may differ).  Each worker
+    holds at most ONE file in RAM (~1-2 GB); default ``n_workers=1`` is the original
+    sequential path (back-compat).
     """
     files = _resolve_files(processed_files)
+    files, _unreadable = _partition_readable_files(files)
+    if not files:
+        raise ValueError("no readable processed files (all truncated/corrupt).")
     if window is None:
         window = WindowSpec()
     dlacat_kwargs.setdefault("high_nhi_cut_value", lnhi_max)
@@ -459,74 +659,53 @@ def compute_o1_products_streaming(
     z_cent_dndx = 0.5 * (z_edges_dndx[:-1] + z_edges_dndx[1:])
     n_z = z_edges_dndx.size - 1
     acc_dndx = _BinAccumulator(n_z, dx_is_scalar=False)
-    omega_accum = None  # list over z bins of (probs-list, poissons-array)
+    omega_accum = [([list() for _ in range(lnhi_nbins)], np.zeros(lnhi_nbins))
+                   for _ in range(n_z)]
 
+    # FILTER guard on EVERY file FIRST (refuse a FILTER-on run with no work done).
     for fp in files:
         assert_filter_off_from_file(
             fp, supplied=filter_low_likelihood, ctx="compute_o1_products_streaming"
         )
-    # O1 needs NO truth file: we accumulate the (probs, poissons) directly per file
-    # (no truth partition needed for the uncorrected products). One DLACatalogue per
-    # file; the FIRST is kept open to reuse as the CI-combine reference.
-    per_file_prov = []
-    ref_cat = None
-    for i, fp in enumerate(files):
-        cat = DLACatalogue(
-            processed_file=fp, sample_file=sample_file, catalog_file=catalog_file,
-            window=window, **dlacat_kwargs,
-        )
-        try:
-            # CDDF (probs, poissons) + dX
-            pr_c, po_c = cat._split_distributions(
-                lnhi_edges, lred=z_min, ured=z_max,
-                lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=True,
-            )
-            acc_cddf.add(
-                {"probs": pr_c, "poissons": po_c,
-                 "F_matched": np.zeros(lnhi_nbins), "F_unmatched": np.zeros(lnhi_nbins),
-                 "n_truth": np.zeros(lnhi_nbins)},
-                float(cat.path_length(z_min, z_max)),
-            )
-            # dN/dX (probs, poissons) per z bin + per-bin dX
-            pr_d, po_d = cat._split_distributions(
-                z_edges_dndx, lred=z_min, ured=z_max,
-                lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=False,
-            )
-            dX_d = np.array(
-                [cat.path_length(zl, zh)
-                 for zl, zh in zip(z_edges_dndx[:-1], z_edges_dndx[1:])], float
-            )
-            acc_dndx.add(
-                {"probs": pr_d, "poissons": po_d,
-                 "F_matched": np.zeros(n_z), "F_unmatched": np.zeros(n_z),
-                 "n_truth": np.zeros(n_z)},
-                dX_d,
-            )
-            # Omega per z bin (probs over lnhi grid)
-            if omega_accum is None:
-                omega_accum = [([list() for _ in range(lnhi_nbins)],
-                                np.zeros(lnhi_nbins)) for _ in range(n_z)]
-            for zb, (zl, zh) in enumerate(zip(z_edges_dndx[:-1], z_edges_dndx[1:])):
-                pr_o, po_o = cat._split_distributions(
-                    lnhi_edges, lred=zl, ured=zh,
-                    lnhi_min=lnhi_min, lnhi_max=lnhi_max, nhi=True,
-                )
-                acc_probs, acc_po = omega_accum[zb]
-                for b in range(lnhi_nbins):
-                    acc_probs[b].extend(pr_o[b])
-                omega_accum[zb] = (acc_probs, acc_po + np.asarray(po_o, float))
-            per_file_prov.append({"processed_file": fp})
-        finally:
-            # Keep the FIRST file's catalogue open to reuse as the CI-combine ref.
-            if i == 0:
-                ref_cat = cat
-            else:
-                try:
-                    cat.filehandle.close()
-                except Exception:  # pragma: no cover
-                    pass
 
-    # CI-combine ONCE on the totals, reusing the first file's (still-open) catalogue.
+    # O1 needs NO truth file: workers accumulate the (probs, poissons) directly per
+    # file (no truth partition needed for the uncorrected products).  Map across the
+    # pool (sequential when n_workers<=1), then REDUCE in input order.
+    params = {
+        "sample_file": sample_file, "catalog_file": catalog_file,
+        "z_min": z_min, "z_max": z_max, "lnhi_min": lnhi_min, "lnhi_max": lnhi_max,
+        "lnhi_edges": lnhi_edges, "z_edges_dndx": z_edges_dndx,
+        "window": window, "dlacat_kwargs": dict(dlacat_kwargs),
+    }
+    per_file_prov = []
+    for fp, ing in _map_files(_o1_ingredients_worker, files, params, n_workers):
+        acc_cddf.add(
+            {"probs": ing["probs_cddf"], "poissons": ing["poissons_cddf"],
+             "F_matched": np.zeros(lnhi_nbins), "F_unmatched": np.zeros(lnhi_nbins),
+             "n_truth": np.zeros(lnhi_nbins)},
+            ing["dX_cddf"],
+        )
+        acc_dndx.add(
+            {"probs": ing["probs_dndx"], "poissons": ing["poissons_dndx"],
+             "F_matched": np.zeros(n_z), "F_unmatched": np.zeros(n_z),
+             "n_truth": np.zeros(n_z)},
+            ing["dX_dndx"],
+        )
+        for zb in range(n_z):
+            pr_o, po_o = ing["omega_raw"][zb]
+            acc_probs, acc_po = omega_accum[zb]
+            for b in range(lnhi_nbins):
+                acc_probs[b].extend(pr_o[b])
+            omega_accum[zb] = (acc_probs, acc_po + po_o)
+        per_file_prov.append({"processed_file": fp})
+
+    # CI-combine ONCE on the totals.  Construct ONE reference catalogue (the
+    # Poisson-binomial combine reads only tophat_prior + pure module-level PB
+    # functions, so any constructed catalogue is a valid combine reference).
+    ref_cat = DLACatalogue(
+        processed_file=files[0], sample_file=sample_file, catalog_file=catalog_file,
+        window=window, **dlacat_kwargs,
+    )
     try:
         blocks = _o1_blocks_from_accumulators(
             ref_cat, acc_cddf, acc_dndx, omega_accum,
@@ -546,7 +725,9 @@ def compute_o1_products_streaming(
         "z_min": z_min, "z_max": z_max,
         "lnhi_min": lnhi_min, "lnhi_max": lnhi_max, "lnhi_nbins": lnhi_nbins,
         "hubble": hubble, "window": window, "window_applied": True,
-        "streaming": True, "dlacat_kwargs": dict(dlacat_kwargs),
+        "streaming": True, "n_workers": int(n_workers),
+        "unreadable_files": _unreadable,
+        "dlacat_kwargs": dict(dlacat_kwargs),
         "per_file": per_file_prov,
     }
     return blocks
@@ -568,6 +749,7 @@ def compute_o3_products_streaming(
     window: Optional[WindowSpec] = None,
     split_seed: int = 20260609,
     build_frac: float = 0.7,
+    n_workers: int = 1,
     **dlacat_kwargs,
 ) -> dict:
     """Streaming O3 diagonal soft-completeness CDDF / dN/dX / Ω — no combined file.
@@ -579,8 +761,19 @@ def compute_o3_products_streaming(
 
     See the module docstring for the additive seam.  ``processed_files`` is a
     directory (glob ``processed-*-*.h5``) OR an explicit list of file paths.
+
+    ``n_workers > 1`` maps the INDEPENDENT per-file deposit across a
+    ``ProcessPoolExecutor`` and REDUCES the additive per-bin ingredients (probs,
+    poissons, F_matched/unmatched, n_truth, dX) in INPUT ORDER, then runs the SAME
+    single correction at the end — allclose to the sequential path (the accumulation
+    is associative; float summation order may differ).  Each worker holds at most ONE
+    processed file in RAM (~1-2 GB/worker); default ``n_workers=1`` is the original
+    sequential path (back-compat).
     """
     files = _resolve_files(processed_files)
+    files, _unreadable = _partition_readable_files(files)
+    if not files:
+        raise ValueError("no readable processed files (all truncated/corrupt).")
     if window is None:
         window = WindowSpec()
     core = _require_core()
@@ -612,35 +805,60 @@ def compute_o3_products_streaming(
     per_file_prov = []
     active_union = set()
 
-    # Process each file with exactly ONE DLACatalogue construction; keep the FIRST
-    # file's catalogue OPEN to reuse as the CI-combine reference (so a streaming run
-    # builds exactly n_files catalogues — no combined file, no extra construction).
+    # Process each file with exactly ONE DLACatalogue construction per file (the
+    # per-file deposit is INDEPENDENT).  In SEQUENTIAL mode (n_workers<=1) we keep the
+    # FIRST file's catalogue OPEN to reuse as the CI-combine reference, so a streaming
+    # run builds exactly n_files catalogues (no combined file, no extra construction —
+    # pinned by TestNoCombineDiscipline).  In PARALLEL mode workers cannot hand a live
+    # HDF5 handle back across the process boundary, so we construct ONE reference
+    # catalogue from files[0] after the reduce (n_files + 1 total): the PB combine
+    # reads only tophat_prior + pure module-level PB functions, so any constructed
+    # catalogue is a valid reference for the accumulated TOTALS.
     ref_cat = None
-    for i, fp in enumerate(files):
-        ing = _per_file_ingredients(
-            fp, sample_file, catalog_file, truth_file,
-            z_min=z_min, z_max=z_max, lnhi_edges=lnhi_edges,
-            z_edges_cddf=z_edges_cddf, z_edges_dndx=z_edges_dndx, window=window,
-            role_mask=None, split_seed=split_seed, build_frac=build_frac,
-            dlacat_kwargs=dlacat_kwargs, keep_open=(i == 0),
+    if int(n_workers) <= 1:
+        # sequential: keep the first file's cat open as the combine reference.
+        for i, fp in enumerate(files):
+            ing = _per_file_ingredients(
+                fp, sample_file, catalog_file, truth_file,
+                z_min=z_min, z_max=z_max, lnhi_edges=lnhi_edges,
+                z_edges_cddf=z_edges_cddf, z_edges_dndx=z_edges_dndx, window=window,
+                role_mask=None, split_seed=split_seed, build_frac=build_frac,
+                dlacat_kwargs=dlacat_kwargs, keep_open=(i == 0),
+            )
+            if i == 0:
+                ref_cat = ing.pop("cat")
+            _reduce_o3_ingredient(
+                ing, acc_cddf, acc_dndx, omega_accum, n_z, lnhi_nbins
+            )
+            cov = ing["coverage"]
+            n_absorbers_in += cov["n_absorbers_in"]
+            n_absorbers_kept += cov["n_absorbers_kept"]
+            active_union |= ing["active"]
+            per_file_prov.append({"processed_file": fp, "coverage": cov})
+    else:
+        # parallel: map the worker across the pool, REDUCE in INPUT ORDER.
+        params = {
+            "sample_file": sample_file, "catalog_file": catalog_file,
+            "truth_file": truth_file, "z_min": z_min, "z_max": z_max,
+            "lnhi_edges": lnhi_edges, "z_edges_cddf": z_edges_cddf,
+            "z_edges_dndx": z_edges_dndx, "window": window, "role_mask": None,
+            "split_seed": split_seed, "build_frac": build_frac,
+            "dlacat_kwargs": dict(dlacat_kwargs),
+        }
+        for fp, ing in _map_files(_o3_ingredients_worker, files, params, n_workers):
+            _reduce_o3_ingredient(
+                ing, acc_cddf, acc_dndx, omega_accum, n_z, lnhi_nbins
+            )
+            cov = ing["coverage"]
+            n_absorbers_in += cov["n_absorbers_in"]
+            n_absorbers_kept += cov["n_absorbers_kept"]
+            active_union |= ing["active"]
+            per_file_prov.append({"processed_file": fp, "coverage": cov})
+        ref_cat = DLACatalogue(
+            processed_file=files[0], sample_file=sample_file,
+            catalog_file=catalog_file, window=window, **dlacat_kwargs,
         )
-        if i == 0:
-            ref_cat = ing["cat"]
-        acc_cddf.add(ing["raw_cddf"], ing["dX_cddf"])
-        acc_dndx.add(ing["raw_dndx"], ing["dX_dndx"])
-        for zb in range(n_z):
-            pr_o, po_o = ing["omega_raw"][zb]
-            acc_probs, acc_po = omega_accum[zb]
-            for b in range(lnhi_nbins):
-                acc_probs[b].extend(pr_o[b])
-            omega_accum[zb] = (acc_probs, acc_po + po_o)
-        cov = ing["coverage"]
-        n_absorbers_in += cov["n_absorbers_in"]
-        n_absorbers_kept += cov["n_absorbers_kept"]
-        active_union |= ing["active"]
-        per_file_prov.append({"processed_file": fp, "coverage": cov})
 
-    # ---- reuse the FIRST file's (still-open) catalogue for the CI-combine ----
     try:
         # O1 blocks from the SAME accumulated ingredients.
         o1 = _o1_blocks_from_accumulators(
@@ -758,6 +976,8 @@ def compute_o3_products_streaming(
         "lnhi_min": lnhi_min, "lnhi_max": lnhi_max, "lnhi_nbins": lnhi_nbins,
         "hubble": hubble, "split_seed": split_seed, "build_frac": build_frac,
         "window": window, "window_applied": True, "streaming": True,
+        "n_workers": int(n_workers),
+        "unreadable_files": _unreadable,
         "lnhi_edges": lnhi_edges, "z_edges": z_edges_cddf,
         "z_edges_dndx": z_edges_dndx,
         "dlacat_kwargs": dict(dlacat_kwargs),
@@ -889,6 +1109,7 @@ def heldout_closure_streaming(
     split_seed: int = 20260609,
     build_frac: float = 0.7,
     pass_frac: float = 0.68,
+    n_workers: int = 1,
     **dlacat_kwargs,
 ) -> dict:
     """Streaming HELDOUT closure — equals :func:`driver.heldout_closure` on combined.
@@ -898,8 +1119,16 @@ def heldout_closure_streaming(
     existing closure logic (b_FP rebased BUILD→HELDOUT, real count CI on HELDOUT,
     coverage + coherent-bias gate).  ``assert_no_leakage`` runs on the accumulated
     BUILD vs HELDOUT TARGETID sets.
+
+    ``n_workers > 1`` maps the (both-role) per-file deposit across a process pool and
+    REDUCES the BUILD/HELDOUT accumulators in INPUT ORDER — allclose to the sequential
+    closure (associative accumulation).  One file open per worker; default
+    ``n_workers=1`` is the sequential path.
     """
     files = _resolve_files(processed_files)
+    files, _unreadable = _partition_readable_files(files)
+    if not files:
+        raise ValueError("no readable processed files (all truncated/corrupt).")
     if window is None:
         window = WindowSpec()
     core = _require_core()
@@ -917,24 +1146,18 @@ def heldout_closure_streaming(
     build_ids = set()
     held_ids = set()
 
-    for fp in files:
-        ing_b = _per_file_ingredients(
-            fp, sample_file, catalog_file, truth_file,
-            z_min=z_min, z_max=z_max, lnhi_edges=lnhi_edges,
-            z_edges_cddf=z_edges_cddf, z_edges_dndx=z_edges_cddf, window=window,
-            role_mask="BUILD", split_seed=split_seed, build_frac=build_frac,
-            dlacat_kwargs=dlacat_kwargs,
-        )
+    params = {
+        "sample_file": sample_file, "catalog_file": catalog_file,
+        "truth_file": truth_file, "z_min": z_min, "z_max": z_max,
+        "lnhi_edges": lnhi_edges, "z_edges_cddf": z_edges_cddf,
+        "window": window, "split_seed": split_seed, "build_frac": build_frac,
+        "dlacat_kwargs": dict(dlacat_kwargs),
+    }
+    for fp, both in _map_files(_closure_ingredients_worker, files, params, n_workers):
+        ing_b = both["build"]
         acc_build.add(ing_b["raw_cddf"], ing_b["dX_cddf"])
         build_ids |= ing_b["active"]
-
-        ing_h = _per_file_ingredients(
-            fp, sample_file, catalog_file, truth_file,
-            z_min=z_min, z_max=z_max, lnhi_edges=lnhi_edges,
-            z_edges_cddf=z_edges_cddf, z_edges_dndx=z_edges_cddf, window=window,
-            role_mask="HELDOUT", split_seed=split_seed, build_frac=build_frac,
-            dlacat_kwargs=dlacat_kwargs,
-        )
+        ing_h = both["held"]
         acc_held.add(ing_h["raw_cddf"], ing_h["dX_cddf"])
         held_ids |= ing_h["active"]
 
