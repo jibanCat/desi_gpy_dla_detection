@@ -407,8 +407,13 @@ class DLACatalogue(object):
         # Prevent situation where the run fails, which returns -1
         order_mapping[-1] = -1  # TODO: Make sure those -1 are not valid data
 
-        # Step 2: Generate sorting indices for target_ids_to_sort
-        real_index = np.array([order_mapping[val] for val in self.target_ids])
+        # Step 2: Generate sorting indices for target_ids_to_sort. A processed
+        # target NOT present in the catalog maps to -1 (then excluded via
+        # ``self.condition = (real_index != -1)`` below) — this is what the
+        # comment above intends. Using ``.get(val, -1)`` instead of ``[val]`` makes
+        # a SUBSET catalog (e.g. a SNR_REDSIDE/BAL-filtered selection) valid; it is
+        # byte-identical when the catalog covers every processed target.
+        real_index = np.array([order_mapping.get(val, -1) for val in self.target_ids])
 
         self.real_index = real_index
 
