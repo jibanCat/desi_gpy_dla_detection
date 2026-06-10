@@ -39,6 +39,22 @@ N_HI units
 exactly what ``dla_gp`` passes to the C extension (it uses ``nhis``, not
 ``log_nhis``). Pass ``10**21.5`` for log N_HI = 21.5, NOT ``21.5``.
 
+Grid spacing (log vs linear) — note for the M3 injection campaign
+-----------------------------------------------------------------
+The "equally log-spaced" wording above describes the eBOSS/BOSS observed grid
+``dla_gp`` was originally built on, and the ``1e-4``-dex edge pad reproduces
+``null_gp.padded_wavelengths`` on that grid. The Voigt PROFILE itself is computed
+at the supplied wavelengths (the C kernel reads the wavelength array; it does not
+assume a fixed pitch), and the edge pad only affects the ``_EDGE_WIDTH`` (=3)
+pixels at each END — far from any line core. So ``voigt_transmission`` is equally
+valid on a **linear** grid: in the DESI mock path the GP scores on a RESAMPLED
+0.8 Å LINEAR ``brz`` grid (coadd → ``resample_spectra_lin_or_log``), and calling
+this profile on that grid reproduces ``dla_gp``'s imprint to <1 % in equivalent
+width (round-trip validated in ``tests/test_coadd_injection.py::test_m4_round
+trip_*``). The 3-pixel log-pad is numerically inert for the trough at the 0.8 Å
+linear scale; it is retained only for byte-identical parity with the historical
+log-grid edge handling.
+
 Public API
 ----------
 ``inject_voigt(wavelengths, flux, nhi, z_dla, num_lines=3) -> injected_flux``
