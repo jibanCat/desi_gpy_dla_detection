@@ -10,6 +10,10 @@ M0 ships:
 * the deterministic, TARGETID-keyed train/test split (``split.py``) that keeps the
   response-matrix BUILD set disjoint from the closure-validation HELDOUT set, with
   a no-leakage guard so non-circularity is enforced, not merely intended.
+
+M1 ships the O1 end-to-end CDDF driver (``driver.py``): a faithful wrapper over the
+Pathway-A estimator (``calc_cddf.DLACatalogue``) that emits the raw probabilistic
+CDDF f(N), dN/dX, and Omega_DLA (no selection correction yet) and saves text tables.
 """
 
 from .window import WindowSpec
@@ -21,6 +25,7 @@ from .split import (
     SplitProvenance,
     assert_no_leakage,
 )
+from .driver import compute_o1_products, save_o1_products
 
 __all__ = [
     "WindowSpec",
@@ -30,4 +35,6 @@ __all__ = [
     "split_masks",
     "SplitProvenance",
     "assert_no_leakage",
+    "compute_o1_products",
+    "save_o1_products",
 ]
