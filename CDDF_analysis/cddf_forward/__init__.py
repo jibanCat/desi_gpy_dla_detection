@@ -29,7 +29,26 @@ from .split import (
     SplitProvenance,
     assert_no_leakage,
 )
-from .driver import compute_o1_products, save_o1_products
+from .driver import (
+    compute_o1_products,
+    save_o1_products,
+    compute_o3_products,
+    heldout_closure,
+    save_o3_products,
+    plot_o3_products,
+)
+from .soft_completeness import (
+    estimate_diagonal_completeness,
+    estimate_false_positive_deposit,
+    apply_diagonal_correction,
+    toy_count_mock,
+    sbc_coverage,
+)
+from .diagonal_deposit import (
+    build_truth_map,
+    TruthMap,
+    DiagonalSoftDeposit,
+)
 
 __all__ = [
     "WindowSpec",
@@ -43,4 +62,17 @@ __all__ = [
     "assert_no_leakage",
     "compute_o1_products",
     "save_o1_products",
+    # O3 diagonal soft-completeness (M2)
+    "compute_o3_products",
+    "heldout_closure",
+    "save_o3_products",
+    "plot_o3_products",
+    "estimate_diagonal_completeness",
+    "estimate_false_positive_deposit",
+    "apply_diagonal_correction",
+    "toy_count_mock",
+    "sbc_coverage",
+    "build_truth_map",
+    "TruthMap",
+    "DiagonalSoftDeposit",
 ]

@@ -74,13 +74,18 @@ def build_synthetic_cddf(
 
     target_ids = (1000 + np.arange(N)).astype(np.int64)
 
+    # snr may be a scalar (applied to all) or a per-spectrum array (length N) so a
+    # test can make a specific sightline fail the SNR cut (contract C3 active-set).
+    snr_arr = np.full(N, float(snr)) if np.ndim(snr) == 0 else np.asarray(snr, float)
+    assert snr_arr.shape == (N,)
+
     processed_file = f"{out_dir}/processed_synth.h5"
     with h5py.File(processed_file, "w") as f:
         f["min_z_dlas"] = np.full(N, z_min, dtype=float)
         f["max_z_dlas"] = np.full(N, z_max, dtype=float)
         f["z_qsos"] = np.full(N, z_qso, dtype=float)
         f["target_ids"] = target_ids
-        f["snrs"] = np.full(N, snr, dtype=float)
+        f["snrs"] = snr_arr
         f["model_posteriors"] = mp
         f["sample_log_likelihoods_dla"] = sll
         f["log_likelihoods_dla"] = lld

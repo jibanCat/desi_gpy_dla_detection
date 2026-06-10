@@ -1208,6 +1208,52 @@ class DLACatalogue(object):
         xerrs = (10**l_Ncent - 10 ** l_nhi[:-1], 10 ** l_nhi[1:] - 10**l_Ncent)
         return (l_Ncent, cddf, cddf68, cddf95, xerrs)
 
+    def column_density_function_counts(
+        self, z_min=1.0, z_max=6.0, lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0
+    ):
+        """COUNT-SPACE CDDF accessor (additive; for the O3 diagonal correction).
+
+        Surfaces the per-bin Poisson-binomial expected count (MAP) + 68/95 COUNT
+        intervals the estimator already computes internally in
+        ``_get_confidence_intervals`` — *before* the ΔN·ΔX normalization that
+        ``column_density_function`` applies.  This is the count basis the O3
+        diagonal soft-completeness correction operates in (``(F − b_FP)/C``); the
+        same ``ΔN``/``ΔX`` are returned so a caller can re-normalize back to f(N).
+
+        ADDITIVE: this method does NOT change ``column_density_function``'s output.
+        Re-normalizing the returned counts by ``counts / dX / dN`` reproduces the
+        O1 f(N) byte-identically (pinned by ``test_cddf_count_accessor``).
+
+        Returns
+        -------
+        dict
+            ``logN``      : (nbins,) bin-centre log10(N_HI);
+            ``counts``    : (nbins,) MAP expected DLA count per bin;
+            ``counts68``  : (nbins, 2) 68% COUNT interval [lo, hi];
+            ``counts95``  : (nbins, 2) 95% COUNT interval [lo, hi];
+            ``dN``        : (nbins,) linear N_HI bin width;
+            ``dX``        : float, total absorption path length over [z_min, z_max].
+        """
+        l_nhi = np.linspace(lnhi_min, lnhi_max, num=lnhi_nbins + 1)
+        (ndlas, l68, l95) = self._get_confidence_intervals(
+            q_bins=l_nhi, lred=z_min, ured=z_max, lnhi_min=lnhi_min, nhi=True
+        )
+        dX = self.path_length(z_min, z_max)
+        dN = np.array(
+            [10**lnhi_x - 10**lnhi_m for (lnhi_m, lnhi_x) in zip(l_nhi[:-1], l_nhi[1:])]
+        )
+        l_Ncent = np.array(
+            [(lnhi_x + lnhi_m) / 2.0 for (lnhi_m, lnhi_x) in zip(l_nhi[:-1], l_nhi[1:])]
+        )
+        return {
+            "logN": l_Ncent,
+            "counts": np.array(ndlas),
+            "counts68": np.array(l68),
+            "counts95": np.array(l95),
+            "dN": dN,
+            "dX": dX,
+        }
+
     def plot_cddf(
         self, zmin=1.0, zmax=6.0, label="GP", color=None, moment=False, twosigma=True,
         lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0
@@ -1314,6 +1360,48 @@ class DLACatalogue(object):
         )
         xerrs = (z_cent[ii] - z_bins[:-1][ii], z_bins[1:][ii] - z_cent[ii])
         return (z_cent[ii], dNdX, dndx68, dndx95, xerrs)
+
+    def line_density_counts(self, z_min=2, z_max=4, lnhi_min=20.3, lnhi_max=23):
+        """COUNT-SPACE dN/dX accessor (additive; for the O3 diagonal correction).
+
+        Surfaces the per-redshift-bin Poisson-binomial MAP count + 68/95 COUNT
+        intervals before the ``/dX`` normalization that ``line_density`` applies, so
+        the O3 diagonal correction can operate in count space and re-normalize.
+
+        ADDITIVE: does NOT change ``line_density``'s output.  Re-normalizing by
+        ``counts / dX`` reproduces the O1 dN/dX byte-identically.
+
+        Returns
+        -------
+        dict
+            ``z``        : (nbins,) bin-centre redshifts (only dX>0 bins kept,
+                           matching ``line_density``);
+            ``counts``   : (nbins,) MAP expected DLA count per z bin;
+            ``counts68`` : (nbins, 2) 68% COUNT interval;
+            ``counts95`` : (nbins, 2) 95% COUNT interval;
+            ``dX``       : (nbins,) absorption path length per z bin.
+        """
+        nbins = np.max([int((z_max - z_min) * self.bins_per_z), 1])
+        z_bins = np.linspace(z_min, z_max, nbins + 1)
+        (maxlike, l68, l95) = self._get_confidence_intervals(
+            q_bins=z_bins, lred=z_min, ured=z_max, lnhi_min=lnhi_min,
+            lnhi_max=lnhi_max, nhi=False,
+        )
+        dX = np.array(
+            [self.path_length(z_m, z_x) for (z_m, z_x) in zip(z_bins[:-1], z_bins[1:])]
+        )
+        ii = np.where(dX > 0)
+        dX = dX[ii]
+        z_cent = np.array(
+            [(z_x + z_m) / 2.0 for (z_m, z_x) in zip(z_bins[:-1], z_bins[1:])]
+        )
+        return {
+            "z": z_cent[ii],
+            "counts": np.array(maxlike)[ii],
+            "counts68": np.array(l68)[ii],
+            "counts95": np.array(l95)[ii],
+            "dX": dX,
+        }
 
     def plot_line_density(self, zmin=2, zmax=4, label="GP", lnhi_min=20.3, lnhi_max=23):
         """Plot the line density as a function of redshift"""
