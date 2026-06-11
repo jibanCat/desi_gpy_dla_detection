@@ -1,7 +1,7 @@
 """
 tests/test_campaign_grid.py
 ===========================
-TDD tests for ``examples.inject.campaign_grid`` — the M3 injection-campaign GRID
+TDD tests for ``injection.campaign_grid`` — the M3 injection-campaign GRID
 + SIGHTLINE-SAMPLER + MANIFEST-SCHEMA (the Bayesian-modeling owner's scope of the
 M3 design, ``2026-06-10_m3_injection_campaign_design.md``).
 
@@ -25,8 +25,8 @@ the single-absorber GP is weakest, moderate in [19, 20.3], coarse in
 import numpy as np
 import pytest
 
-from examples.inject import campaign_grid as cg
-from examples.inject.campaign_grid import (
+from injection import campaign_grid as cg
+from injection.campaign_grid import (
     MANIFEST_FIELDS,
     build_injection_grid,
     sample_clean_sightlines,

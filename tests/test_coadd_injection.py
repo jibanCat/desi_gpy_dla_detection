@@ -1,7 +1,7 @@
 """
 tests/test_coadd_injection.py
 =============================
-TDD tests for ``examples/inject/coadd_injection.py`` — the M3 injection-campaign
+TDD tests for ``injection/coadd_injection.py`` — the M3 injection-campaign
 I/O machinery owned by the scientific-software / CS agent:
 
   1. ``build_clean_table``     — clean-sightline selection table
@@ -228,7 +228,7 @@ def test_build_clean_table_set_difference():
     joined. 102/103 (HCD), 104 (BAL), 105 (both) are removed; 100/101/106/107
     remain."""
     pytest.importorskip("astropy.table")
-    from examples.inject.coadd_injection import build_clean_table
+    from injection.coadd_injection import build_clean_table
 
     zcat, hcd, bal, snr = _fake_catalogs()
     table = build_clean_table(zcat, hcd, bal, snr)
@@ -243,7 +243,7 @@ def test_build_clean_table_int64_targetid_and_columns():
     """TARGETID stays int64 (no float coercion → no precision loss on 19-digit
     DESI IDs); the table carries SNR_FOREST and a HEALPIX column."""
     pytest.importorskip("astropy.table")
-    from examples.inject.coadd_injection import build_clean_table
+    from injection.coadd_injection import build_clean_table
 
     zcat, hcd, bal, snr = _fake_catalogs()
     table = build_clean_table(zcat, hcd, bal, snr)
@@ -261,7 +261,7 @@ def test_build_clean_table_healpix_matches_ang2pix():
     nside=16 nested assignment the GP driver's tree uses."""
     hp = pytest.importorskip("healpy")
     pytest.importorskip("astropy.table")
-    from examples.inject.coadd_injection import build_clean_table
+    from injection.coadd_injection import build_clean_table
 
     zcat, hcd, bal, snr = _fake_catalogs()
     table = build_clean_table(zcat, hcd, bal, snr)
@@ -284,7 +284,7 @@ def test_inject_into_coadd_roundtrip_and_schema(tmp_path):
     unchanged."""
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import inject_into_coadd
+    from injection.coadd_injection import inject_into_coadd
 
     tids = np.array([100, 101, 102], dtype=np.int64)
     ra = np.array([10.0, 10.1, 10.2])
@@ -323,7 +323,7 @@ def test_inject_into_coadd_injected_fiber_shows_trough(tmp_path):
     (1+z)·1215.67; un-injected fibers are byte-unchanged."""
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import inject_into_coadd
+    from injection.coadd_injection import inject_into_coadd
 
     tids = np.array([100, 101, 102], dtype=np.int64)
     ra = np.array([10.0, 10.1, 10.2])
@@ -369,7 +369,7 @@ def test_inject_into_coadd_multiplies_only_signal_not_ivar(tmp_path):
     SNR preserved per the design)."""
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import inject_into_coadd
+    from injection.coadd_injection import inject_into_coadd
     from gpy_dla_detection.inject_absorber import inject_voigt
 
     tids = np.array([100, 101], dtype=np.int64)
@@ -407,7 +407,7 @@ def test_inject_into_coadd_multiple_injections_same_fiber(tmp_path):
     """Two injected absorbers on one fiber (close pair) blend multiplicatively."""
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import inject_into_coadd
+    from injection.coadd_injection import inject_into_coadd
 
     tids = np.array([100, 101], dtype=np.int64)
     spec = _make_spectra(tids, [10.0, 10.1], [5.0, 5.0], flux_level=1.0)
@@ -463,7 +463,7 @@ def test_m4_roundtrip_ew_matches_gp_forward_model():
 
     _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import inject_into_coadd  # noqa: F401
+    from injection.coadd_injection import inject_into_coadd  # noqa: F401
     from gpy_dla_detection.inject_absorber import inject_voigt, voigt_transmission
 
     tids = np.array([100], dtype=np.int64)
@@ -625,7 +625,7 @@ def test_inject_into_coadd_flags_forest_blend(tmp_path):
     for the injected response. The flag is reported, not silently dropped."""
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import inject_into_coadd
+    from injection.coadd_injection import inject_into_coadd
 
     tids = np.array([100, 101], dtype=np.int64)
     spec = _make_spectra(tids, [10.0, 10.1], [5.0, 5.0], flux_level=1.0)
@@ -694,7 +694,7 @@ def test_write_campaign_builds_injectable_tree(tmp_path):
     """
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import write_campaign
+    from injection.coadd_injection import write_campaign
 
     # Build a fake mock dir with TWO healpix, both supplying source coadds.
     mockdir = tmp_path / "mock"
@@ -778,7 +778,7 @@ def test_write_campaign_truth_manifest_records_blend_flag(tmp_path):
     exclude/annotate it rather than mistaking the blend for the LLS response."""
     desispec_io = _require_desispec()
     _require_c_voigt()
-    from examples.inject.coadd_injection import write_campaign
+    from injection.coadd_injection import write_campaign
 
     mockdir = tmp_path / "mock"
     hp_id = 1960

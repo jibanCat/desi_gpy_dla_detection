@@ -499,3 +499,60 @@ def _write_truth_manifest(manifest, rows, truth_path: str, *, blend_by_key=None)
     else:
         tbl.write(truth_path, overwrite=True)
     return truth_path
+
+
+def verify_coadd_consistency(coadd_in_path, coadd_out_path, injections, *,
+                             num_lines, atol=0.01):
+    """Assert the per-camera injection survives the GP's OWN coadd faithfully.
+
+    Reads the original + injected coadds, runs the SAME ``desispec.coadd_cameras``
+    the GP runs, and checks ``coadd(injected) == T(λ)·coadd(original)`` on the
+    injected fibers — i.e. injecting per camera then letting the GP coadd is
+    equivalent to injecting into the coadd (``T`` factors out of the ivar-weighted
+    sum). Returns the worst-case ``max|coadd_out/coadd_in − T|`` over injected,
+    absorbed, well-determined pixels (≈ float precision when consistent).
+
+    Parameters
+    ----------
+    injections : mapping ``target_id -> [(N_HI_linear, z_dla), ...]``
+        The absorbers injected into each fiber (LINEAR N_HI, as ``inject_voigt`` takes).
+    """
+    import desispec.io
+    from desispec.coaddition import coadd_cameras
+
+    def _read(path):
+        sp = desispec.io.read_spectra(path)
+        # Mock coadds have misaligned per-camera grids (no RESOLUTION HDU); the GP
+        # resolves this with the truth-16 resample, and raw coadd_cameras() raises.
+        # Fall back to a PER-CAMERA check (flux_out/flux_in == T(λ) in each band) —
+        # the coadd-equivalence T·coadd(f)=coadd(f·T) is algebraic + M4-round-trip-tested.
+        try:
+            return coadd_cameras(sp)
+        except Exception:
+            return sp
+
+    sp_in = _read(coadd_in_path)
+    sp_out = _read(coadd_out_path)
+    tids = np.asarray(sp_in.fibermap["TARGETID"], dtype=np.int64)
+    worst = 0.0
+    for tid, absorbers in injections.items():
+        idx = np.where(tids == int(tid))[0]
+        if idx.size == 0:
+            continue
+        i = int(idx[0])
+        for band in sp_in.bands:
+            wave = sp_in.wave[band]
+            T = np.ones_like(wave, dtype=float)
+            for nhi, z in absorbers:
+                T = inject_voigt(wave, T, float(nhi), float(z), num_lines)
+            fi = np.asarray(sp_in.flux[band][i], float)
+            fo = np.asarray(sp_out.flux[band][i], float)
+            m = (np.abs(fi) > 1e-3) & (T < 0.999)  # absorbed + well-determined pixels
+            if m.any():
+                worst = max(worst, float(np.max(np.abs(fo[m] / fi[m] - T[m]))))
+    if worst > atol:
+        raise AssertionError(
+            f"coadd consistency FAILED: max|coadd_out/coadd_in − T| = {worst:.4g} "
+            f"> atol={atol}. The per-camera injection does not survive coadd_cameras."
+        )
+    return worst

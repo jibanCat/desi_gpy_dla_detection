@@ -1,7 +1,7 @@
 """
 tests/test_campaign_measurements.py
 ===================================
-TDD tests for ``examples.inject.measurements`` — the three M3 recovered-vs-
+TDD tests for ``injection.measurements`` — the three M3 recovered-vs-
 injected estimators (the Bayesian-modeling owner's scope):
 
   1. ``detection_completeness`` — C_det(logN_true, z, SNR): fraction of injected
@@ -30,8 +30,8 @@ mass deposits in (logN, z) space (the same ``p_dla`` mass
 import numpy as np
 import pytest
 
-from examples.inject import measurements as M
-from examples.inject.measurements import (
+from injection import measurements as M
+from injection.measurements import (
     detection_completeness,
     gpdraw_spec,
     nhi_bias,

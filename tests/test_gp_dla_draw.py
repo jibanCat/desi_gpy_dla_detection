@@ -1,7 +1,7 @@
 """
 tests/test_gp_dla_draw.py
 =========================
-TDD tests for ``examples/inject/gp_dla_draw.py`` — the M3 cross-check (method i):
+TDD tests for ``injection/gp_dla_draw.py`` — the M3 cross-check (method i):
 draw a spectrum from the GP+DLA generative model.
 
     s ~ NullGP(μ, K) for a given (z_qso, SNR),  then  s *= Voigt(logN, z_dla)
@@ -81,7 +81,7 @@ class _FakeNullGP:
 def test_draw_returns_expected_arrays_and_shapes():
     """draw_gp_dla_spectrum returns (wavelengths, flux, noise_variance) of equal
     length on the requested observed grid."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP()
     z_qso = 3.0
@@ -99,7 +99,7 @@ def test_draw_returns_expected_arrays_and_shapes():
 def test_draw_noise_variance_matches_snr():
     """With snr given, the returned per-pixel noise variance ≈ (mean_level/snr)²
     so a downstream GP sees the requested sightline SNR."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP()
     z_qso = 3.0
@@ -119,7 +119,7 @@ def test_draw_noise_variance_matches_snr():
 
 def test_draw_reproducible_with_seed():
     """Same rng seed → identical spectra (deterministic for the campaign)."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP()
     z_qso = 2.8
@@ -139,7 +139,7 @@ def test_draw_reproducible_with_seed():
 def test_draw_sample_tracks_gp_mean_and_covariance():
     """Over many draws the empirical mean ≈ this_mu and variance is consistent
     with diag(K)+noise (the draw is s ~ N(this_mu, K + V), no DLA)."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP(seed=7)
     z_qso = 3.0
@@ -169,7 +169,7 @@ def test_strong_dla_produces_trough():
     """Injecting a strong DLA (logN=21.5) at z_dla yields a deep trough at
     (1+z_dla)·1215.67 relative to the same draw with no DLA."""
     _require_c_voigt()
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP()
     z_qso = 3.0
@@ -212,7 +212,7 @@ def test_subdla_shallower_than_dla():
     """A sub-DLA (logN=19) imprint is shallower than a DLA (logN=21) at the same
     (z_dla, draw)."""
     _require_c_voigt()
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP()
     z_qso, z_dla = 3.0, 2.6
@@ -248,7 +248,7 @@ def test_draw_accepts_per_pixel_noise_template():
     """When a per-pixel ``noise_variance`` template (V(λ)=1/ivar(λ)) is supplied,
     the returned noise_variance equals it exactly and the empirical scatter tracks
     the λ-dependent σ(λ) — NOT the flat median(μ)/snr."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP(seed=3)
     z_qso = 3.0
@@ -290,7 +290,7 @@ def test_draw_accepts_per_pixel_noise_template():
 def test_draw_noise_template_takes_precedence_over_snr():
     """If both ``noise_variance`` and ``snr`` are given, the explicit per-pixel
     template wins (it is the more faithful forest noise model)."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP(seed=5)
     z_qso = 3.0
@@ -308,7 +308,7 @@ def test_draw_noise_template_takes_precedence_over_snr():
 def test_draw_requires_snr_or_noise_template():
     """Exactly one noise specification is required: neither ``snr`` nor
     ``noise_variance`` → a clear error (no silent default)."""
-    from examples.inject.gp_dla_draw import draw_gp_dla_spectrum
+    from injection.gp_dla_draw import draw_gp_dla_spectrum
 
     model = _FakeNullGP()
     obs = np.linspace(3600.0, 4800.0, 200)
