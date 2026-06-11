@@ -136,4 +136,33 @@ tests/test_gp_dla_draw.py tests/test_campaign_grid.py tests/test_campaign_measur
 
 ## 5. Pilot results
 
-_(figures appended after the pilot GP run — see below)_
+Pilot: 150 injections (54% NHI<19) into 6 HCD-free∩BAL-free 2LPT-0 healpix, run
+through the unmodified GP (single-absorber FILTER-off, `--k 30`, 100k samples).
+**Measured cost: 115.6 CPU-s / spectrum** (102 spectra, 3.28 CPU-h). Recovery scored
+vs the INJECTED manifest (non-circular).
+
+![pilot recovery](../../desi_gpy_dla_notes/notes/figures/injection_pilot/injection_pilot_recovery.png)
+
+| injected logN | n | C_det (p>0.5) | ⟨NHI_rec − NHI_inj⟩ |
+|---|---|---|---|
+| 17.4 | 18 | 0.89 | **+2.08** |
+| 18.2 | 18 | 1.00 | **+1.53** |
+| 19.0 | 18 | 0.94 | +0.49 |
+| 20.2 | 18 | 1.00 | +0.17 |
+| 21.3 | 6  | 1.00 | +0.01 |
+
+**Two headline findings (both vindicate the campaign over the diagonal O3):**
+1. **Detection completeness is HIGH and roughly flat (≈0.9–1.0) across all N_HI,
+   including the LLS regime** — the GP *detects* weak absorbers. This is the REAL
+   completeness; the diagonal-O3 C≈0.1 at NHI<19 was a fine-bin N-posterior-smearing
+   artifact, not incompleteness.
+2. **N_HI is massively over-recovered at low N (+1.5 to +2 dex at NHI<18.5), decaying
+   to ~0 for DLAs** — the prior-pull: a weak Lyα line under-constrains N_HI, so the
+   posterior collapses toward the PW14 prior mode. This is the dominant **off-diagonal
+   migration** (an injected LLS at 17.4 is recovered near ~19.5) that the diagonal
+   correction structurally cannot capture, and is exactly why the NHI<19 CDDF needs
+   the response matrix R, not a diagonal C.
+
+The R-build uses the dlacat MAP recovery + `NHI_ERR` + `P_DLA` (no dense posterior
+storage), so the full A+B+C+D campaign (~68k injections ≈ ~2200 CPU-h at the measured
+rate) fits well under the 4000 CPU-h cap.
