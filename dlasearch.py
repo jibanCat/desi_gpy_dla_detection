@@ -209,7 +209,7 @@ def dlasearch_mock(specfile, catalog, model_params):
 
     if os.path.exists(specfile):
         fm = desispec.io.read_fibermap(specfile)
-        tidmask = np.in1d(catalog["TARGETID"], fm["TARGETID"])
+        tidmask = np.isin(catalog["TARGETID"], fm["TARGETID"])  # np.in1d removed in numpy 2.0; np.isin is the identical drop-in
         catalog = catalog[tidmask]
         if len(catalog) < 1:
             return ()
