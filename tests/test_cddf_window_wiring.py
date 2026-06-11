@@ -235,3 +235,26 @@ class TestMatchedWindow:
             abs_cat, qso, zbins=zbins, zmin=2.0, blue_limit_mode="global", window=win
         )
         assert out["meta"]["v_prox_kms"] == pytest.approx(3000.0)
+
+
+def test_windowspec_disables_both_proximity_and_tail_cuts(tmp_path):
+    """Production Lyα-only window (z_min_lyb=True, z_max_lyb=False) must disable
+    BOTH lowzcut (proximity) AND highzcut (tail) — the stored min/max_z_dlas already
+    carry them. The old code only disabled highzcut (z_min_lyb) / lowzcut (z_max_lyb),
+    silently leaving lowzcut=True in production → a proximity DOUBLE-CUT on the F
+    deposit that the truth window (_search_edges) does not apply → n_truth inflated
+    ~1.43x relative to F.
+    """
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "fixtures", "cddf"))
+    from build_synthetic_cddf_fixture import build_synthetic_cddf
+    from CDDF_analysis.calc_cddf import DLACatalogue
+    from CDDF_analysis.cddf_forward.window import WindowSpec
+    fx = build_synthetic_cddf(str(tmp_path), n_spec=4, n_samples=64,
+                              p_dla=(1.0, 1.0, 1.0, 0.0),
+                              peak_logN=(20.5, 21.0, 21.5, None),
+                              peak_z=(2.6, 2.8, 3.0, None))
+    cat = DLACatalogue(processed_file=fx["processed_file"], sample_file=fx["sample_file"],
+                       catalog_file=fx["catalog_file"], sub_dla=0, snr=-2,
+                       high_nhi_cut_value=21.9, window=WindowSpec())  # z_min_lyb=True, z_max_lyb=False
+    assert cat.lowzcut is False and cat.highzcut is False

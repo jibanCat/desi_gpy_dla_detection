@@ -364,13 +364,17 @@ class DLACatalogue(object):
             # that stored edge (z_qso - v/c off raw z_qso) from the SAME spec.
             self.z_min_lyb = window.z_min_lyb
             self.z_max_lyb = window.z_max_lyb
-            # The lyb branches assert highzcut/lowzcut == False (and the stored edges
-            # already carry the tail/proximity), so disable the conflicting cut to keep
-            # a window with a lyb mode self-consistent regardless of the ctor default.
-            if window.z_min_lyb:
-                self.highzcut = False
-            if window.z_max_lyb:
-                self.lowzcut = False
+            # The stored min_z_dlas/max_z_dlas ALREADY carry the inference proximity
+            # (lowzcut) AND tail (highzcut) cut, so NEITHER may be re-applied here:
+            # doing so (a) double-cuts the F deposit (z_qso - 2*v/c) and (b) desyncs the
+            # F window from the truth window (diagonal_deposit._search_edges applies
+            # NEITHER cut), inflating n_truth relative to F. The earlier code only
+            # disabled highzcut when z_min_lyb and lowzcut when z_max_lyb, so the
+            # production Lyα-only window (z_min_lyb=True, z_max_lyb=False) silently left
+            # lowzcut=True — a proximity double-cut + truth/F mismatch (~1.43x n_truth
+            # inflation). Disable BOTH unconditionally whenever a WindowSpec is supplied.
+            self.lowzcut = False
+            self.highzcut = False
         # Exclude the dubious part of the obs wavelengths
         self.min_obs_wavelength_cut = min_obs_wavelength_cut
         self.min_obs_wavelength = min_obs_wavelength  # A
