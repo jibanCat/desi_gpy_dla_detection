@@ -820,6 +820,29 @@ def test_injection_rows_carry_control_false():
     assert rows and all(r["control"] is False for r in rows)
 
 
+def test_build_control_rows_excludes_non_forest_hostable_zqso():
+    # Controls must be forest-hostable (non-empty GP search window). A low-z_QSO
+    # sightline (no Lyα forest in the searchable window) would crash the GP with
+    # All-NaN evidence and pad the b_FP denominator — build_control_rows must drop it.
+    import numpy as np
+    from injection.campaign_grid import build_control_rows, _per_sightline_forest_window
+    n = 200
+    rng = np.random.default_rng(0)
+    # half the pool at z_QSO ~ 1.85 (no searchable forest), half at ~3.2 (hostable)
+    zq = np.concatenate([rng.uniform(1.75, 1.95, n // 2),
+                         rng.uniform(3.0, 3.4, n // 2)])
+    clean = dict(target_id=np.arange(9000, 9000 + n, dtype=np.int64),
+                 healpix=np.full(n, 7, dtype=np.int64),
+                 z_qso=zq, native_snr=rng.uniform(2, 9, n))
+    ctrl = build_control_rows(clean, snr_bins=[2, 4, 8, 1e9], target_controls=80, seed=1)
+    assert ctrl
+    for r in ctrl:
+        z_lo, z_hi = _per_sightline_forest_window(float(r["z_qso"]))
+        assert z_lo <= z_hi, f"control z_qso {r['z_qso']} has an empty (un-searchable) window"
+    # all drawn controls are from the high-z (hostable) half
+    assert all(r["z_qso"] > 2.0 for r in ctrl)
+
+
 def test_control_rows_disjoint_from_injections():
     """Control sightlines must NOT overlap injected sightlines (else b_FP is
     contaminated by the injection)."""

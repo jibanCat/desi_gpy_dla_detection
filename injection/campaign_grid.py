@@ -747,6 +747,15 @@ def build_control_rows(
         if not sl:
             raise ValueError("no clean sightlines left for controls after excluding the "
                              "injected targets — widen the clean pool / healpix.")
+    # Controls MUST be forest-hostable (a non-empty GP search window), matching the
+    # injection population.  A low-z_QSO sightline (no Lyα forest in the searchable
+    # window) yields All-NaN GP evidence → it crashes and never registers, padding
+    # the b_FP denominator with un-scorable sightlines (referee finding 2026-06-11).
+    sl = {t: v for t, v in sl.items()
+          if (lambda zlhi: zlhi[0] <= zlhi[1])(_per_sightline_forest_window(v["z_qso"]))}
+    if not sl:
+        raise ValueError("no forest-hostable clean sightlines left for controls "
+                         "(all z_QSO below the searchable-forest floor).")
     snr_table = {t: info["native_snr"] for t, info in sl.items()}
     all_tids = np.array(sorted(sl.keys()), dtype=np.int64)
 

@@ -814,6 +814,46 @@ def test_write_campaign_injects_both_absorbers_of_a_close_pair(tmp_path):
     np.testing.assert_allclose(a.flux["b"][fm.index(301)], 1.0, atol=1e-9)
 
 
+def test_write_campaign_leaves_control_fibers_clean_not_nan(tmp_path):
+    """CONTROL rows (logN_true=NaN) must NOT be injected: 10**NaN=NaN would blank the
+    control fiber to all-NaN, the GP would crash on it, and b_FP would collapse to a
+    FAKE zero.  write_campaign must leave the control fiber as the clean source flux."""
+    desispec_io = _require_desispec()
+    _require_c_voigt()
+    from injection.coadd_injection import write_campaign
+
+    mockdir = tmp_path / "mock"
+    hp = 1960
+    d = mockdir / "spectra-16" / str(hp // 100) / str(hp)
+    d.mkdir(parents=True)
+    # fiber 300 = injection target, 301 = control (no injection)
+    spec = _make_spectra(np.array([300, 301], np.int64), [10.0, 11.0], [5.0, 5.0],
+                         flux_level=1.0)
+    desispec_io.write_spectra(str(d / f"spectra-16-{hp}.fits"), spec)
+    (d / f"truth-16-{hp}.fits").write_bytes(b"STUB")
+
+    manifest = [
+        dict(inj_id=0, campaign="A", method="coadd", target_id=300, healpix=hp,
+             z_qso=2.9, snr_bin=0, native_snr=1.0, logN_true=20.5, z_true=2.40,
+             num_lines=3, control=False, zqso_bin=-1),
+        dict(inj_id=1, campaign="A", method="coadd", target_id=301, healpix=hp,
+             z_qso=2.9, snr_bin=0, native_snr=1.0, logN_true=float("nan"),
+             z_true=float("nan"), num_lines=3, control=True, zqso_bin=-1),
+    ]
+    out_root = tmp_path / "camp"
+    write_campaign(manifest, None, out_root=str(out_root), mockdir=str(mockdir),
+                   num_lines=3)
+    a = desispec_io.read_spectra(
+        str(out_root / "spectra-16" / str(hp // 100) / str(hp) / f"spectra-16-{hp}.fits"))
+    fm = list(np.asarray(a.fibermap["TARGETID"]))
+    # control fiber 301 stays clean/finite (NOT all-NaN), == flat source flux
+    ctrl_flux = a.flux["b"][fm.index(301)]
+    assert np.all(np.isfinite(ctrl_flux)), "control fiber was NaN-poisoned by injection"
+    np.testing.assert_allclose(ctrl_flux, 1.0, atol=1e-9)
+    # injected fiber 300 DID get the trough
+    assert a.flux["b"][fm.index(300)].min() < 0.5
+
+
 def test_write_campaign_truth_manifest_heterogeneous_pair_and_control_rows(tmp_path):
     """A Campaign-B manifest mixes pair rows (carrying logN_true2/z_true2/dv_kms) with
     control rows that LACK those keys.  _write_truth_manifest must take the UNION of

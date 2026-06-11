@@ -419,6 +419,14 @@ def write_campaign(
 
         injections = []
         for r in hp_rows:
+            # CONTROL rows carry logN_true = NaN (clean no-injection sightlines that
+            # measure b_FP).  They must NOT be injected: 10**NaN = NaN would blank the
+            # whole control fiber to all-NaN, the GP then crashes on it ("All-NaN slice
+            # → error flag"), it never reaches the dlacat, and b_FP collapses to a
+            # FAKE zero (referee finding 2026-06-11).  Skip them so the control fiber
+            # stays the clean source flux the GP is supposed to score for false positives.
+            if bool(r.get("control", False)) or not np.isfinite(r.get("logN_true", np.nan)):
+                continue
             nl = int(r["num_lines"]) if r.get("num_lines") is not None else None
             injections.append(
                 {
