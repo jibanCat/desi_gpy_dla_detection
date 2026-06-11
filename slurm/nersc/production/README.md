@@ -3,7 +3,7 @@
 NERSC mirror of `slurm/greatlakes/production/`. Runs the **V1** GP-DLA production
 recipe on Perlmutter with **identical science knobs** to the GreatLakes config —
 only paths, SLURM headers, env activation, and the per-cluster parallelism packing
-differ. Built + cost-characterised 2026-06-01/02 (see "Runs done" below).
+differ. Built + cost-characterised 2026-06-01/02; all four V1 catalogs run since (see "Runs" below).
 
 > **Before any `Write`/`mkdir` here read `docs/nersc_write_permissions.md`.** Writable
 > roots: `/pscratch/sd/j/jibancat/`, `/global/homes/j/jibancat/`,
@@ -109,7 +109,9 @@ sbatch jobs — but it is not a major node-hour lever. CDDF (FILTER=0, uniform) 
 FILTER-floor sweep (PW30k): P/C flat 0.853–0.860 across floor 2500→15000 → floor is past
 diminishing returns; production keeps the default 5000.
 
-## Runs done so far (calibration only — NO production launched yet)
+## Runs
+
+### Calibration (2026-06-01/02)
 
 - **Parallelism sweep** (`nersc_parallelism_sweep_*`): N32×W8 optimal (301 spec/min PW100k).
 - **Sample-count sweep** (`nersc_samplecost_sweep_*`): node-hours vs PW (above).
@@ -118,6 +120,18 @@ diminishing returns; production keeps the default 5000.
 - **Real-LOA cost benches** (`loa_cost_bench/`): LOA catalog + CDDF costs above.
 - Investigation write-ups are in the **private notes repo** `github.com/jibanCat/desi_gpy_dla_notes`
   (`notes/2026-06-0{1,2}_*`), not committed here.
+
+### Production — V1 catalogs
+
+The three completed catalogs are packaged + shared to `desicollab/users/jibancat/DLA/...`.
+P/C is the full [911,1216] window, NHI>20 / >20.3.
+
+| Run | Output | P/C | nh |
+|-----|--------|-----|----|
+| London-0 mock (`nersc_prod_london0_v1_*`) | 1149/1150 hpx | 0.837/0.885 · 0.828/0.896 | ~36 |
+| 2LPT-1 mock | 1149/1150 hpx, 799,162 rows / 362,445 TIDs | 0.818/0.874 · 0.815/0.888 | ~36 |
+| **Real LOA catalog** (`nersc_prod_loa_v1_20260606`) | 16,519/16,519 hpx, 801,761 rows / 358,835 sightlines, 90.3% DLAFLAG-clean | — (real data) | ~34 |
+| **Real LOA CDDF** (`nersc_cddf_loa_v1_20260609`, PW100k) | **in flight** (2026-06-11: hpx 0..9216 done, 22 jobs, 0 failures) | — (Pathway-A input) | ~125-130 proj |
 
 ## After a run finishes
 
@@ -166,6 +180,6 @@ Writes are idempotent (overwrite-safe), so `--start/--end` re-launch suffices; a
   balancing is ~7% (dataset, not packing — see cost section).
 - [x] **nfl=31** — confirmed correct (P/C insensitive to nfl=3 vs 31; `2026-05-13_filter_nfl_confirmation.md`).
 - [x] **Memory + termination/resume** — verified (this section).
-- [ ] **CDDF PW100k cost is extrapolated** (×1.8–2 from measured PW50k 63.5 nh → ~120 nh) —
-  optionally pin with one regular-QOS slice before the (largest) CDDF launch.
-- [ ] **2LPT per-spec** assumed ≈ London (~36 nh); pin on the first 2LPT run.
+- [x] **CDDF PW100k cost** — measured on the real run (`nersc_cddf_loa_v1_20260609`):
+  13.07 s/spec, ~125-130 nh projected with Option B, in the ~115–120 nh band. No longer extrapolated.
+- [x] **2LPT per-spec** — 2LPT-1 ran at ≈ London (~36 nh); the assumption held.
