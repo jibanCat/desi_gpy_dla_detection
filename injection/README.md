@@ -67,14 +67,27 @@ injected_flux = flux × T(λ)
 
 ## 2. The campaign (what gets injected, and what we measure)
 
-**Grid** (`campaign_grid.build_injection_grid`): `(logN_true × z_true × SNR_bin)`,
-**dense in [17.2, 19.0]** (the LLS regime the single-absorber GP is weakest in),
-moderate to 20.3, coarse to 22.5. `z_true` is clamped to the GP's *actual* Lyα-only
+**Grid** (`campaign_grid.build_injection_grid`): `(logN_true × z_true × z_QSO_bin ×
+SNR_bin)`, **dense in [17.2, 19.0]** (the LLS regime the single-absorber GP is weakest
+in), moderate to 20.3, coarse to 22.5. `z_true` is clamped to the GP's *actual* Lyα-only
 search window (Lyman-limit floor + 3000 km/s proximity/tail buffers + MAX_LAMBDA,
 imported from `set_parameters` — not hardcoded). **SNR bins use the red-side SNR**
 (`SNR_REDSIDE`), which is DLA-uncorrelated (forest SNR is anti-correlated with a DLA
-since the DLA absorbs forest flux → biases completeness). **Control rows**
-(`build_control_rows`, `logN_true=NaN`, no injection) measure `b_FP`.
+since the DLA absorbs forest flux → biases completeness).
+
+**z_QSO stratification (`zqso_bins`, default-on).** The N_HI bias and completeness can
+depend on the absorber's **rest-frame position in the forest**, `λ_rest =
+(1+z_DLA)/(1+z_QSO)·1215.67` (the GP null-model μ(λ_rest), the Lyman-series mean-flux
+suppression, and the forest opacity all evolve across 912→1216 Å). The SNR-only draw
+lands on whatever z_QSO is most common (→ a red-skewed λ_rest); stratifying the host
+draw by z_QSO injects the SAME `(N, z_DLA)` on a range of hosts, so `λ_rest` is sampled
+across the forest and the response matrix R can be **conditioned** on `zqso_bin` instead
+of confounding it. The host selection for a subset also spans z_QSO (ranks healpix by
+median z_QSO, picks evenly) rather than taking the most-populous. Effect on a 20-healpix
+2LPT-0 draw: blue-forest fraction (λ_rest<1080 Å) rises **9% → 38%**, λ_rest reaches the
+Lyman limit (917 Å). `--zqso_bins 0` disables. **Control rows** (`build_control_rows`,
+`logN_true=NaN`, no injection) measure `b_FP`, labelled by `zqso_bin` so b_FP is
+z-resolvable too.
 
 **Campaigns** (all approved; ≤ 4000 SLURM CPU-h total):
 - **A** — controlled single-absorber R-build (primary + cross-check) → `R`, `b_FP`.
@@ -136,33 +149,50 @@ tests/test_gp_dla_draw.py tests/test_campaign_grid.py tests/test_campaign_measur
 
 ## 5. Pilot results
 
-Pilot: 150 injections (54% NHI<19) into 6 HCD-free∩BAL-free 2LPT-0 healpix, run
-through the unmodified GP (single-absorber FILTER-off, `--k 30`, 100k samples).
-**Measured cost: 115.6 CPU-s / spectrum** (102 spectra, 3.28 CPU-h). Recovery scored
-vs the INJECTED manifest (non-circular).
+Pilot: **145 injections + 48 controls** (50% NHI<19) into 6 HCD-free∩BAL-free
+2LPT-0 healpix, run through the unmodified GP at the **byte-exact production
+FILTER-off config** (`single_absorber_model=1, max_dlas=1, filter_low_likelihood=0,
+τ-EB null, dlambda 0.15, num_forest_lines 31, 100k samples, k=30, release v2.8.5`).
+**Measured cost: 80.6 CPU-s / spectrum** (193 spectra, 4.3 CPU-h, 23.8 min wall on
+16 cores). Recovery is scored vs the INJECTED manifest by `inj_id` (non-circular),
+read from the dlacat (`P_DLA` / `NHI` / `Z_DLA`).
 
 ![pilot recovery](../../desi_gpy_dla_notes/notes/figures/injection_pilot/injection_pilot_recovery.png)
 
+What the injections look like (clean mock vs injected, the Voigt family, forest
+context, and a Campaign-B close pair):
+
+![injection variants](../../desi_gpy_dla_notes/notes/figures/injection_pilot/injection_variants_nhi.png)
+![voigt family](../../desi_gpy_dla_notes/notes/figures/injection_pilot/injection_variants_voigt_family.png)
+![close pair](../../desi_gpy_dla_notes/notes/figures/injection_pilot/injection_context_close_pair.png)
+
 | injected logN | n | C_det (p>0.5) | ⟨NHI_rec − NHI_inj⟩ |
 |---|---|---|---|
-| 17.4 | 18 | 0.89 | **+2.08** |
-| 18.2 | 18 | 1.00 | **+1.53** |
-| 19.0 | 18 | 0.94 | +0.49 |
-| 20.2 | 18 | 1.00 | +0.17 |
-| 21.3 | 6  | 1.00 | +0.01 |
+| 17.2–17.8 | 9 ea | 0.89 | **+1.3 to +1.6** |
+| 18.0 | 8 | 0.88 | +0.84 |
+| 18.4 | 7 | 1.00 | +0.37 |
+| 19.0 | 7 | 1.00 | **+0.06** |
+| 20.3 | 6 | 1.00 | +0.12 |
+| 21.0–22.5 | 6 ea | 1.00 | ≈ ±0.05 |
+
+Controls: **0 / 48 detected** → false-positive deposit `b_FP ≈ 0` at p>0.5.
 
 **Two headline findings (both vindicate the campaign over the diagonal O3):**
-1. **Detection completeness is HIGH and roughly flat (≈0.9–1.0) across all N_HI,
-   including the LLS regime** — the GP *detects* weak absorbers. This is the REAL
-   completeness; the diagonal-O3 C≈0.1 at NHI<19 was a fine-bin N-posterior-smearing
-   artifact, not incompleteness.
-2. **N_HI is massively over-recovered at low N (+1.5 to +2 dex at NHI<18.5), decaying
-   to ~0 for DLAs** — the prior-pull: a weak Lyα line under-constrains N_HI, so the
-   posterior collapses toward the PW14 prior mode. This is the dominant **off-diagonal
-   migration** (an injected LLS at 17.4 is recovered near ~19.5) that the diagonal
-   correction structurally cannot capture, and is exactly why the NHI<19 CDDF needs
-   the response matrix R, not a diagonal C.
+1. **Detection completeness is HIGH (≈0.89 in the LLS regime, 1.00 for NHI≥18.2)** —
+   the GP *detects* weak absorbers. This is the REAL completeness; the diagonal-O3
+   C≈0.1 at NHI<19 was a fine-bin N-posterior-smearing artifact, not incompleteness.
+2. **N_HI is over-recovered at low N (+1.3 to +1.6 dex at NHI<17.8), decaying through
+   +0.84 (18.0) to ≈0 by NHI≈19** — the prior-pull: a weak Lyα line under-constrains
+   N_HI, so the posterior collapses toward the PW14 prior mode. This is the dominant
+   **off-diagonal migration** (an injected LLS at 17.4 is recovered near ~19) that the
+   diagonal correction structurally cannot capture, and is exactly why the NHI<19 CDDF
+   needs the response matrix R, not a diagonal C.
 
 The R-build uses the dlacat MAP recovery + `NHI_ERR` + `P_DLA` (no dense posterior
-storage), so the full A+B+C+D campaign (~68k injections ≈ ~2200 CPU-h at the measured
-rate) fits well under the 4000 CPU-h cap.
+storage), so the full A+B+C+D campaign (~68k injections ≈ **~1500 CPU-h** at the
+measured 80.6 CPU-s/spec) fits comfortably under the 4000 CPU-h cap.
+
+> **Provenance note.** An earlier pilot reported here was run at the WRONG config
+> (τ-EB off, dlambda 0.25) on a manifest with a **sightline-reuse bug** that stacked
+> up to 7 absorbers on one spectrum — both fixed (global one-injection-per-target;
+> production-byte-exact GP config). The numbers above are the corrected re-run.

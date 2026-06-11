@@ -55,6 +55,7 @@ def test_manifest_fields_are_the_exact_contract():
         "z_true",
         "num_lines",
         "control",
+        "zqso_bin",
     )
 
 
@@ -148,14 +149,106 @@ def test_build_grid_inj_ids_are_unique_and_contiguous():
     assert ids == list(range(len(rows)))  # 0..N-1, unique
 
 
+def _zqso_spread_sightlines(n=300, zq_lo=2.45, zq_hi=3.35, seed=0):
+    """Clean sightlines whose host z_QSO spans a broad range, so a low-z absorber
+    (z_true=2.3) is hostable across many z_QSO → its rest-frame position sweeps the
+    forest.  z_true=2.3 is hostable while z_lo(z_qso) <= 2.3 <= z_qso-buffer, i.e.
+    z_qso in ~[2.31, 3.39]; this pool sits inside that."""
+    rng = np.random.default_rng(seed)
+    return {
+        "target_id": np.arange(7000, 7000 + n, dtype=np.int64),
+        "healpix": np.zeros(n, dtype=np.int64),
+        "z_qso": rng.uniform(zq_lo, zq_hi, size=n),
+        "native_snr": rng.uniform(2.5, 9.0, size=n),
+    }
+
+
+def test_build_grid_zqso_stratification_labels_and_spans_bins():
+    # With zqso_bins given, a FIXED low z_true is injected across the full hostable
+    # z_QSO range (each row labelled by its z_QSO bin) → rest-frame forest position
+    # is sampled, not left to wherever the SNR-only draw happens to land.
+    zqso_bins = [2.4, 2.8, 3.1, 3.4]
+    rows = build_injection_grid(
+        clean_sightlines=_zqso_spread_sightlines(n=300),
+        logN_grid=[20.5],
+        z_grid=[2.3],
+        snr_bins=[2.0, 100.0],
+        n_per_cell=6,
+        zqso_bins=zqso_bins,
+        seed=1,
+    )
+    assert rows
+    for r in rows:
+        b = r["zqso_bin"]
+        assert 0 <= b < len(zqso_bins) - 1
+        assert zqso_bins[b] <= r["z_qso"] < zqso_bins[b + 1]
+    # all three z_QSO bins are populated → the rest-frame position is spanned
+    assert set(r["zqso_bin"] for r in rows) == {0, 1, 2}
+
+
+def test_build_grid_zqso_none_emits_sentinel_and_is_backward_compatible():
+    rows = build_injection_grid(
+        clean_sightlines=_toy_sightlines(),
+        logN_grid=[18.0],
+        z_grid=[2.6],
+        snr_bins=[0.0, 100.0],
+        n_per_cell=1,
+        seed=2,
+    )
+    assert rows and all(r["zqso_bin"] == -1 for r in rows)  # no stratification → -1
+
+
+def test_default_zqso_bins_spans_desi_qso_window():
+    b = np.asarray(cg.default_zqso_bins())
+    assert b[0] <= 2.2 and b[-1] >= 4.0       # covers the DESI QSO z range
+    assert np.all(np.diff(b) > 0) and b.size >= 4  # >=3 bins, strictly increasing
+
+
+def test_build_grid_target_ids_are_globally_unique_across_cells():
+    # CRITICAL M3 invariant: each clean sightline yields exactly ONE DESI spectrum,
+    # and ``inject_into_coadd`` STACKS every manifest row that shares a target_id
+    # into that single spectrum (multiplicative blend).  So a target_id reused
+    # across (logN, z, SNR) cells would superimpose several absorbers on one
+    # spectrum while the manifest claims them as independent single-absorber
+    # injections — corrupting recovery-by-inj_id.  The grid MUST inject each clean
+    # sightline at most ONCE globally.
+    rows = build_injection_grid(
+        clean_sightlines=_toy_sightlines(n=200, seed=3),
+        logN_grid=[18.0, 19.0, 20.5],
+        z_grid=[2.6, 3.2],
+        snr_bins=[0.0, 2.0, 100.0],
+        n_per_cell=3,
+        seed=5,
+    )
+    tids = [r["target_id"] for r in rows]
+    assert len(tids) == len(set(tids)), "a clean sightline was injected in >1 cell"
+
+
+def _ample_balanced_sightlines(n_per_bin=200, z_qso=3.5):
+    """A toy pool where EVERY sightline hosts both test z's (high z_qso) and the
+    two SNR bins [0,2) / [2,inf) are each amply filled — so the cell-product count
+    is reachable even under the global one-injection-per-target rule."""
+    snr = np.concatenate([np.full(n_per_bin, 1.0), np.full(n_per_bin, 5.0)])
+    n = snr.size
+    return {
+        "target_id": np.arange(5000, 5000 + n, dtype=np.int64),
+        "healpix": np.zeros(n, dtype=np.int64),
+        "z_qso": np.full(n, float(z_qso)),
+        "native_snr": snr,
+    }
+
+
 def test_build_grid_cell_product_with_n_per_cell():
-    # rows == n_logN * n_z * n_snr_bins * n_per_cell (when enough clean per bin).
+    # rows == n_logN * n_z * n_snr_bins * n_per_cell when the clean pool is AMPLE
+    # per SNR bin AND every sightline hosts both z's — under the global
+    # one-injection-per-target rule the product is still reachable (the pool here
+    # has 200/bin >> the 18/bin demanded).
     logN = [18.0, 19.0, 20.5]
     z = [2.6, 3.2]
     snr_bins = [0.0, 2.0, 100.0]  # 2 occupied SNR bins
     n_per_cell = 3
     rows = build_injection_grid(
-        clean_sightlines=_toy_sightlines(n=60, seed=3),
+        clean_sightlines=_ample_balanced_sightlines(),
         logN_grid=logN,
         z_grid=z,
         snr_bins=snr_bins,
@@ -164,6 +257,27 @@ def test_build_grid_cell_product_with_n_per_cell():
     )
     n_cells = len(logN) * len(z) * (len(snr_bins) - 1)
     assert len(rows) == n_cells * n_per_cell
+    # …and still globally unique (no sightline reused across cells).
+    tids = [r["target_id"] for r in rows]
+    assert len(tids) == len(set(tids))
+
+
+def test_build_grid_count_never_exceeds_cells_times_per_cell():
+    # On a constrained pool the count is BOUNDED by the cell product AND by the
+    # distinct hostable pool (global dedup) — never above the product, never reusing.
+    logN = [18.0, 19.0, 20.5]
+    z = [2.6, 3.2]
+    snr_bins = [0.0, 2.0, 100.0]
+    n_per_cell = 3
+    rows = build_injection_grid(
+        clean_sightlines=_toy_sightlines(n=60, seed=3),
+        logN_grid=logN, z_grid=z, snr_bins=snr_bins,
+        n_per_cell=n_per_cell, seed=5,
+    )
+    n_cells = len(logN) * len(z) * (len(snr_bins) - 1)
+    assert len(rows) <= n_cells * n_per_cell
+    tids = [r["target_id"] for r in rows]
+    assert len(tids) == len(set(tids))
 
 
 def test_build_grid_method_and_campaign_defaults():
@@ -270,6 +384,27 @@ def test_validate_manifest_rejects_duplicate_inj_id():
     )
     dup = [dict(r) for r in rows] + [dict(rows[0])]  # duplicate inj_id
     with pytest.raises(ValueError):
+        validate_manifest(dup)
+
+
+def test_validate_manifest_rejects_duplicate_target_id():
+    # Two rows on the SAME sightline → the injector stacks both absorbers into the
+    # one spectrum while the manifest claims two independent injections.  The guard
+    # must reject this even when the inj_ids are distinct.
+    rows = build_injection_grid(
+        clean_sightlines=_toy_sightlines(),
+        logN_grid=[18.0, 20.5],
+        z_grid=[2.6],
+        snr_bins=[0.0, 100.0],
+        n_per_cell=1,
+        seed=3,
+    )
+    dup = [dict(r) for r in rows]
+    clash = dict(rows[0])
+    clash["inj_id"] = max(r["inj_id"] for r in rows) + 1   # distinct inj_id…
+    # …but the SAME target_id as rows[0]
+    dup.append(clash)
+    with pytest.raises(ValueError, match="target_id"):
         validate_manifest(dup)
 
 
@@ -381,6 +516,27 @@ def test_close_pair_grid_dv_maps_to_redshift_separation():
         dz = r["z_true2"] - r["z_true"]
         dv = C_KMS * dz / (1.0 + r["z_true"])
         assert dv == pytest.approx(300.0, rel=1e-6)
+
+
+def test_close_pair_grid_target_injections_only_mode():
+    # The CPU-budget sizing mode (target_injections WITHOUT n_per_cell) must work,
+    # not crash in _resolve_n_per_cell.  Each sightline hosts ONE pair config → the
+    # output stays globally target-unique and within the cap.
+    rows = cg.build_close_pair_grid(
+        clean_sightlines=_toy_sightlines(n=200, seed=11),
+        logN_grid=[20.5],
+        z_grid=[3.0],
+        dv_kms_grid=[200.0, 500.0],
+        dlogN_grid=[0.0],
+        snr_bins=[0.0, 100.0],
+        target_injections=30,
+        seed=12,
+    )
+    assert rows and len(rows) <= 30
+    tids = [r["target_id"] for r in rows]
+    assert len(tids) == len(set(tids))      # one injection per sightline globally
+    assert {r["dv_kms"] for r in rows} <= {200.0, 500.0}
+    validate_manifest(rows)
 
 
 def test_close_pair_grid_validates_with_manifest_guard():
@@ -590,15 +746,23 @@ def test_injection_and_control_rows_combine_into_one_valid_manifest():
         clean_sightlines=sl, logN_grid=[18.0, 20.5], z_grid=[3.0],
         snr_bins=[0.0, 100.0], n_per_cell=2, seed=38,
     )
+    # Controls MUST exclude the injected sightlines (the gen_injectables.py path),
+    # else a control sits on an injected spectrum → duplicate target_id + b_FP
+    # contamination.  validate_manifest now enforces global target_id uniqueness.
     ctrl = cg.build_control_rows(
         clean_sightlines=sl, snr_bins=[0.0, 100.0], n_per_cell=3,
         seed=39, inj_id_start=len(inj),
+        exclude_target_ids={int(r["target_id"]) for r in inj},
     )
     manifest = inj + ctrl
     # inj_id contiguous across the combined manifest
     assert sorted(r["inj_id"] for r in manifest) == list(range(len(manifest)))
     # at least one control row present
     assert any(r.get("control") for r in manifest)
+    # injection and control sightlines are disjoint
+    assert {int(r["target_id"]) for r in inj}.isdisjoint(
+        {int(r["target_id"]) for r in ctrl}
+    )
     validate_manifest(manifest)
 
 

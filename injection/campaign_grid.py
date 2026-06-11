@@ -39,7 +39,7 @@ native SNR is preserved (Campaign A varies SNR by clean-sightline selection).
 """
 from __future__ import annotations
 
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -70,6 +70,7 @@ MANIFEST_FIELDS = (
     "z_true",
     "num_lines",
     "control",
+    "zqso_bin",
 )
 
 # Optional close-pair fields (Campaign B only).
@@ -162,6 +163,21 @@ def default_logn_grid(
     return grid.astype(float)
 
 
+def default_zqso_bins() -> np.ndarray:
+    """Default host-z_QSO stratification edges spanning the DESI QSO window.
+
+    The N_HI bias and detection completeness can depend on the absorber's
+    REST-FRAME position in the forest (``λ_rest = (1+z_DLA)/(1+z_QSO)·1215.67``):
+    the GP null-model mean μ(λ_rest), the Lyman-series mean-flux suppression, and
+    the forest opacity all evolve across the forest.  Stratifying the host draw by
+    z_QSO forces the campaign to sample a true absorber at the SAME (N, z_DLA) on a
+    range of hosts → a range of λ_rest, so the response matrix R can be conditioned
+    on it instead of confounding it.  Four bins across ``[2.1, 4.3]`` (the global
+    ``zmin_search``..``zmax_qso`` window).
+    """
+    return np.array([2.1, 2.7, 3.1, 3.6, 4.3], dtype=float)
+
+
 def default_z_grid() -> np.ndarray:
     """Default injected-absorber redshift grid — a few bins across the window.
 
@@ -179,6 +195,22 @@ def _snr_bin_index(snr: float, snr_bins: Sequence[float]) -> int:
     """Index ``b`` such that ``snr_bins[b] <= snr < snr_bins[b+1]`` (-1 if out)."""
     b = int(np.searchsorted(snr_bins, snr, side="right") - 1)
     if 0 <= b < len(snr_bins) - 1:
+        return b
+    return -1
+
+
+def _zqso_bin_index(z_qso: float, zqso_bins) -> int:
+    """Index ``b`` with ``zqso_bins[b] <= z_qso < zqso_bins[b+1]`` (-1 if out / None).
+
+    The host-z_QSO stratification label (mirrors :func:`_snr_bin_index`).  Returns
+    ``-1`` when no ``zqso_bins`` are supplied (the unstratified sentinel) or when
+    ``z_qso`` falls outside the edge array.
+    """
+    if zqso_bins is None:
+        return -1
+    zb = np.asarray(zqso_bins, dtype=float)
+    b = int(np.searchsorted(zb, float(z_qso), side="right") - 1)
+    if 0 <= b < zb.size - 1:
         return b
     return -1
 
@@ -359,6 +391,7 @@ def build_injection_grid(
     logN_grid: Optional[Sequence[float]] = None,
     z_grid: Optional[Sequence[float]] = None,
     snr_bins: Sequence[float],
+    zqso_bins: Optional[Sequence[float]] = None,
     n_per_cell: Optional[int] = None,
     target_injections: Optional[int] = None,
     seed: int,
@@ -414,57 +447,99 @@ def build_injection_grid(
     snr_table = {t: info["native_snr"] for t, info in sl.items()}
     all_tids = np.array(sorted(sl.keys()), dtype=np.int64)
 
-    n_cells = int(logN_grid.size) * int(z_grid.size) * int(n_snr)
+    # Host-z_QSO stratification (optional).  When ``zqso_bins`` is given the cell
+    # grid gains a z_QSO axis: at a FIXED (logN, z_true) we draw hosts SEPARATELY in
+    # each z_QSO bin, so the same true absorber is sampled across a range of hosts →
+    # a range of rest-frame forest positions λ_rest=(1+z_true)/(1+z_qso)·Lyα (the
+    # SNR-only draw otherwise lands on whatever z_QSO is most common).  ``n_zqso=1``
+    # with a -1 label when unstratified (byte-identical to the pre-stratification
+    # behaviour).
+    if zqso_bins is not None:
+        zqso_edges = np.asarray(zqso_bins, dtype=float)
+        if zqso_edges.ndim != 1 or zqso_edges.size < 2 or np.any(np.diff(zqso_edges) <= 0):
+            raise ValueError("zqso_bins must be a strictly-increasing edge array of >=2.")
+        n_zqso = zqso_edges.size - 1
+    else:
+        zqso_edges = None
+        n_zqso = 1
+
+    n_cells = int(logN_grid.size) * int(z_grid.size) * int(n_zqso) * int(n_snr)
     per_cell = _resolve_n_per_cell(n_cells, n_per_cell, target_injections)
 
     rng = np.random.default_rng(int(seed))
     rows: List[dict] = []
     inj_id = 0
-    # Iterate cells in a fixed (logN, z, snr_bin) order for determinism.
+    # GLOBAL one-injection-per-target guard (M3 blocker fix).  Each clean sightline
+    # is ONE DESI spectrum, and ``inject_into_coadd`` STACKS every manifest row that
+    # shares a target_id into that single spectrum.  Reusing a sightline across
+    # (logN, z, SNR) cells would superimpose several absorbers on one spectrum while
+    # the manifest claims them as independent single-absorber injections —
+    # corrupting recovery-by-inj_id.  We therefore exclude every already-injected
+    # target from later cells' candidate pools (a target hosts at most one cell).
+    used_targets: set = set()
+    # Iterate cells in a fixed (logN, z, zqso_bin, snr_bin) order for determinism.
     for logN in logN_grid:
         for z_true in z_grid:
             # Candidate sightlines whose GP search window can host this grid z
-            # (i.e. the grid z falls inside [z_lo, z_hi]).  This is a per-(logN,z)
-            # draw.  The emitted z_true is additionally CLAMPED into the window
-            # below so float-edge cases never escape it (M1).
+            # (i.e. the grid z falls inside [z_lo, z_hi]) AND that have not already
+            # been injected in an earlier cell.  The emitted z_true is additionally
+            # CLAMPED into the window below so float-edge cases never escape it (M1).
             hostable = []
             for t in all_tids:
-                z_lo, z_hi = _per_sightline_forest_window(sl[int(t)]["z_qso"])
+                ti = int(t)
+                if ti in used_targets:
+                    continue
+                z_lo, z_hi = _per_sightline_forest_window(sl[ti]["z_qso"])
                 if z_lo <= z_true <= z_hi:
-                    hostable.append(int(t))
-            hostable = np.array(hostable, dtype=np.int64)
-            if hostable.size == 0:
+                    hostable.append(ti)
+            if not hostable:
                 continue
-            sub_snr = {int(t): snr_table[int(t)] for t in hostable}
-            # Per-cell seed derived from the master rng so the whole build is
-            # reproducible yet each (logN,z) cell draws an independent balanced set.
-            cell_seed = int(rng.integers(1, 2**31 - 1))
-            assign = sample_clean_sightlines(
-                hostable, sub_snr,
-                n_per_cell=per_cell, snr_bins=snr_bins, seed=cell_seed,
-            )
-            for b in range(n_snr):
-                for t in assign.get(b, ()):
-                    info = sl[int(t)]
-                    z_lo, z_hi = _per_sightline_forest_window(info["z_qso"])
-                    z_emit = _clamp_z_into_window(float(z_true), z_lo, z_hi)
-                    if not np.isfinite(z_emit):
-                        continue  # empty window — no valid injection z (skip)
-                    rows.append({
-                        "inj_id": inj_id,
-                        "campaign": str(campaign),
-                        "method": str(method),
-                        "target_id": int(t),
-                        "healpix": int(info["healpix"]),
-                        "z_qso": float(info["z_qso"]),
-                        "snr_bin": int(b),
-                        "native_snr": float(info["native_snr"]),
-                        "logN_true": float(logN),
-                        "z_true": float(z_emit),
-                        "num_lines": int(num_lines),
-                        "control": False,
-                    })
-                    inj_id += 1
+            for zq_idx in range(n_zqso):
+                # Restrict to this z_QSO bin (whole hostable set when unstratified).
+                if zqso_edges is None:
+                    pool = [t for t in hostable if t not in used_targets]
+                    zqso_label = -1
+                else:
+                    lo, hi = float(zqso_edges[zq_idx]), float(zqso_edges[zq_idx + 1])
+                    pool = [t for t in hostable
+                            if t not in used_targets and lo <= sl[t]["z_qso"] < hi]
+                    zqso_label = zq_idx
+                if not pool:
+                    continue
+                pool = np.asarray(pool, dtype=np.int64)
+                sub_snr = {int(t): snr_table[int(t)] for t in pool}
+                # Per-(logN,z,zqso) seed from the master rng → reproducible, and each
+                # sub-cell draws an independent SNR-balanced set.
+                cell_seed = int(rng.integers(1, 2**31 - 1))
+                assign = sample_clean_sightlines(
+                    pool, sub_snr,
+                    n_per_cell=per_cell, snr_bins=snr_bins, seed=cell_seed,
+                )
+                for b in range(n_snr):
+                    for t in assign.get(b, ()):
+                        info = sl[int(t)]
+                        z_lo, z_hi = _per_sightline_forest_window(info["z_qso"])
+                        z_emit = _clamp_z_into_window(float(z_true), z_lo, z_hi)
+                        if not np.isfinite(z_emit):
+                            continue  # empty window — no valid injection z (skip)
+                        # Reserve this sightline globally — no later cell may reuse it.
+                        used_targets.add(int(t))
+                        rows.append({
+                            "inj_id": inj_id,
+                            "campaign": str(campaign),
+                            "method": str(method),
+                            "target_id": int(t),
+                            "healpix": int(info["healpix"]),
+                            "z_qso": float(info["z_qso"]),
+                            "snr_bin": int(b),
+                            "native_snr": float(info["native_snr"]),
+                            "logN_true": float(logN),
+                            "z_true": float(z_emit),
+                            "num_lines": int(num_lines),
+                            "control": False,
+                            "zqso_bin": int(zqso_label),
+                        })
+                        inj_id += 1
     # Enforce the total cap exactly (the per-cell floor can leave a small surplus
     # only if n_cells does not divide target_injections; trim deterministically).
     if target_injections is not None and len(rows) > int(target_injections):
@@ -487,6 +562,7 @@ def build_control_rows(
     num_lines: int = DEFAULT_NUM_LINES,
     inj_id_start: int = 0,
     exclude_target_ids: Optional[Iterable] = None,
+    zqso_bins: Optional[Sequence[float]] = None,
 ) -> List[dict]:
     """CLEAN no-injection CONTROL rows — the data path for ``b_FP`` (M2).
 
@@ -566,6 +642,8 @@ def build_control_rows(
                 "z_true": float("nan"),
                 "num_lines": int(num_lines),
                 "control": True,
+                # Label by host z_QSO bin (or -1) so b_FP can be z-resolved too.
+                "zqso_bin": _zqso_bin_index(info["z_qso"], zqso_bins),
             })
             inj_id += 1
     if target_controls is not None and len(rows) > int(target_controls):
@@ -589,6 +667,7 @@ def build_close_pair_grid(
     dv_kms_grid: Sequence[float],
     dlogN_grid: Sequence[float],
     snr_bins: Sequence[float],
+    zqso_bins: Optional[Sequence[float]] = None,
     n_per_cell: Optional[int] = None,
     target_injections: Optional[int] = None,
     seed: int,
@@ -632,15 +711,30 @@ def build_close_pair_grid(
     if np.any(dv_kms_grid <= 0):
         raise ValueError("dv_kms_grid entries must be > 0 (a close PAIR).")
 
-    # Reuse the single-absorber builder for the FIRST absorber + sightline draw,
-    # then expand each base row across the (dv, dlogN) pair grid.
+    # The (dv, dlogN) pair configurations to cover.  Each clean sightline is ONE
+    # spectrum, so it can host exactly ONE pair config (injecting two configs into
+    # the same sightline would superimpose FOUR absorbers — the same M3 multiplicity
+    # bug the single-absorber guard catches).  We therefore draw n_per_cell × n_combo
+    # DISTINCT sightlines per (logN1, z1, SNR) cell and ROUND-ROBIN one pair config
+    # onto each, instead of replicating one base sightline across the whole grid.
+    combos = [(float(dv), float(dlN)) for dv in dv_kms_grid for dlN in dlogN_grid]
+    n_combo = len(combos)
+    base_per_cell = None if n_per_cell is None else int(n_per_cell) * n_combo
+    # Each base sightline yields exactly ONE output pair row, so to size the campaign
+    # by a total budget we draw ~target_injections base sightlines.  Forward the
+    # budget to the base draw when n_per_cell is omitted (else _resolve_n_per_cell
+    # raises: neither n_per_cell nor target_injections supplied).  The exact cap is
+    # re-applied after pair assignment below.
+    base_target = None if n_per_cell is not None else target_injections
+
     base = build_injection_grid(
         clean_sightlines,
         logN_grid=logN_grid,
         z_grid=z_grid,
         snr_bins=snr_bins,
-        n_per_cell=n_per_cell,
-        target_injections=None,  # cap applied AFTER pair expansion below
+        zqso_bins=zqso_bins,   # close-pair rows inherit zqso_bin via dict(br) below
+        n_per_cell=base_per_cell,
+        target_injections=base_target,
         seed=seed,
         campaign="B",
         method=method,
@@ -648,29 +742,40 @@ def build_close_pair_grid(
     )
     rows: List[dict] = []
     inj_id = 0
+    combo_cursor = 0  # round-robin pointer; advances only on a SUCCESSFUL pair
     for br in base:
         z1 = br["z_true"]
         lN1 = br["logN_true"]
         z_lo, z_hi = _per_sightline_forest_window(br["z_qso"])
-        for dv in dv_kms_grid:
-            z2 = z1 + float(dv) / _C_KMS * (1.0 + z1)
+        # Try pair configs starting at the cursor; a single sightline accepts the
+        # FIRST config whose second absorber is valid (in-window z2, in-range lN2),
+        # then we advance the cursor so the next sightline gets the next config.
+        placed = False
+        for off in range(n_combo):
+            dv, dlogN = combos[(combo_cursor + off) % n_combo]
+            z2 = z1 + dv / _C_KMS * (1.0 + z1)
             # The second absorber must ALSO sit in the GP search window (M1).  We
-            # DROP pairs whose z2 falls outside it rather than clamp — clamping
-            # would silently falsify the dv separation the campaign measures.
+            # DROP (never clamp) configs whose z2 is outside it — clamping would
+            # silently falsify the dv separation the campaign measures.
             if not (z_lo <= z2 <= z_hi):
                 continue
-            for dlogN in dlogN_grid:
-                lN2 = lN1 + float(dlogN)
-                if not (LOGN_MIN - 1e-6 <= lN2 <= LOGN_MAX + 1e-6):
-                    continue
-                row = dict(br)
-                row["inj_id"] = inj_id
-                row["logN_true2"] = float(lN2)
-                row["z_true2"] = float(z2)
-                row["dv_kms"] = float(dv)
-                row["_dlogN"] = float(dlogN)
-                rows.append(row)
-                inj_id += 1
+            lN2 = lN1 + dlogN
+            if not (LOGN_MIN - 1e-6 <= lN2 <= LOGN_MAX + 1e-6):
+                continue
+            row = dict(br)
+            row["inj_id"] = inj_id
+            row["logN_true2"] = float(lN2)
+            row["z_true2"] = float(z2)
+            row["dv_kms"] = float(dv)
+            row["_dlogN"] = float(dlogN)
+            rows.append(row)
+            inj_id += 1
+            combo_cursor = (combo_cursor + off + 1) % n_combo
+            placed = True
+            break
+        # if no config is valid for this sightline it is simply dropped (not reused)
+        if not placed:
+            continue
     if target_injections is not None and len(rows) > int(target_injections):
         rows = rows[: int(target_injections)]
         # re-contiguous inj_id after the trim
@@ -701,6 +806,7 @@ def validate_manifest(rows: Sequence[Mapping]) -> None:
     ``z_lo <= z_true2 <= z_hi`` and ``z_true2 < z_qso``).
     """
     seen_ids = set()
+    seen_targets = set()
     for i, r in enumerate(rows):
         for k in MANIFEST_FIELDS:
             if k not in r:
@@ -709,6 +815,18 @@ def validate_manifest(rows: Sequence[Mapping]) -> None:
         if iid in seen_ids:
             raise ValueError(f"duplicate inj_id {iid!r} in manifest")
         seen_ids.add(iid)
+        # Each clean sightline is ONE DESI spectrum and ``inject_into_coadd`` STACKS
+        # every manifest row sharing a target_id into it.  A target_id appearing in
+        # more than one row (whether two injections, or an injection AND a control)
+        # would superimpose absorbers / contaminate the control while the manifest
+        # claims independent measurements — reject it (M3 blocker guard).
+        tid = int(r["target_id"])
+        if tid in seen_targets:
+            raise ValueError(
+                f"row {i}: duplicate target_id {tid!r} in manifest — each clean "
+                f"sightline may host at most one injection/control row"
+            )
+        seen_targets.add(tid)
         if r["campaign"] not in ("A", "B", "D"):
             raise ValueError(f"row {i}: campaign {r['campaign']!r} not in A/B/D")
         if r["method"] not in ("coadd", "gpdraw"):

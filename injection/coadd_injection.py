@@ -417,17 +417,34 @@ def write_campaign(
         os.makedirs(dst_dir, exist_ok=True)
         dst_coadd = os.path.join(dst_dir, f"spectra-16-{healpix}.fits")
 
-        injections = [
-            {
-                "target_id": int(r["target_id"]),
-                "logN_true": float(r["logN_true"]),
-                "z_true": float(r["z_true"]),
-                "num_lines": (
-                    int(r["num_lines"]) if r.get("num_lines") is not None else None
-                ),
-            }
-            for r in hp_rows
-        ]
+        injections = []
+        for r in hp_rows:
+            nl = int(r["num_lines"]) if r.get("num_lines") is not None else None
+            injections.append(
+                {
+                    "target_id": int(r["target_id"]),
+                    "logN_true": float(r["logN_true"]),
+                    "z_true": float(r["z_true"]),
+                    "num_lines": nl,
+                }
+            )
+            # Campaign-B close pair: the SECOND absorber rides the SAME sightline.
+            # inject_into_coadd blends multiple records on one fiber multiplicatively
+            # (the GP's own multi-DLA model blends the same way), so emit it as a
+            # second injection record rather than dropping it.  (validate_manifest
+            # keeps ONE manifest row per target_id; the pair is two physical Voigt
+            # absorbers on that single spectrum — exactly a close pair.)
+            lN2 = r.get("logN_true2")
+            z2 = r.get("z_true2")
+            if lN2 is not None and z2 is not None and np.isfinite(lN2) and np.isfinite(z2):
+                injections.append(
+                    {
+                        "target_id": int(r["target_id"]),
+                        "logN_true": float(lN2),
+                        "z_true": float(z2),
+                        "num_lines": nl,
+                    }
+                )
         blend_report: list = []
         inject_into_coadd(
             src_coadd, dst_coadd, injections, num_lines=num_lines,

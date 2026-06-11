@@ -771,6 +771,49 @@ def test_write_campaign_builds_injectable_tree(tmp_path):
     assert not np.any(np.asarray(tman["forest_blend"]).astype(bool))
 
 
+def test_write_campaign_injects_both_absorbers_of_a_close_pair(tmp_path):
+    """Campaign-B close-pair rows carry a SECOND absorber (logN_true2/z_true2); the
+    manifest keeps ONE row per sightline (validate_manifest enforces target_id
+    uniqueness), so write_campaign must inject BOTH Voigt absorbers into that single
+    spectrum — not just the first.  Regression for the review finding that the
+    second absorber was silently dropped (Campaign B injected 1 trough vs a 2-trough
+    truth)."""
+    desispec_io = _require_desispec()
+    _require_c_voigt()
+    from injection.coadd_injection import write_campaign
+
+    mockdir = tmp_path / "mock"
+    hp, tid = 1960, 300
+    d = mockdir / "spectra-16" / str(hp // 100) / str(hp)
+    d.mkdir(parents=True)
+    spec = _make_spectra(np.array([tid, 301], np.int64), [10.0, 11.0], [5.0, 5.0],
+                         flux_level=1.0)
+    desispec_io.write_spectra(str(d / f"spectra-16-{hp}.fits"), spec)
+    (d / f"truth-16-{hp}.fits").write_bytes(b"STUB")
+
+    z1, z2 = 2.40, 2.46  # both Lyα land in the b camera (3600-5800 Å)
+    manifest = [dict(inj_id=0, campaign="B", method="coadd", target_id=tid,
+                     healpix=hp, z_qso=2.9, snr_bin=0, native_snr=1.0,
+                     logN_true=20.8, z_true=z1, num_lines=3,
+                     logN_true2=20.6, z_true2=z2, dv_kms=5000.0)]
+    out_root = tmp_path / "camp"
+    write_campaign(manifest, None, out_root=str(out_root), mockdir=str(mockdir),
+                   num_lines=3)
+
+    a = desispec_io.read_spectra(
+        str(out_root / "spectra-16" / str(hp // 100) / str(hp) / f"spectra-16-{hp}.fits")
+    )
+    fm = list(np.asarray(a.fibermap["TARGETID"]))
+    j = fm.index(tid)
+    w = a.wave["b"]
+    f = a.flux["b"][j]
+    for zc in (z1, z2):
+        c = int(np.argmin(np.abs(w - (1.0 + zc) * LYA)))
+        assert f[c] < 0.5, f"close-pair absorber at z={zc} was not injected"
+    # the other fiber is untouched
+    np.testing.assert_allclose(a.flux["b"][fm.index(301)], 1.0, atol=1e-9)
+
+
 def test_write_campaign_truth_manifest_records_blend_flag(tmp_path):
     """write_campaign records the forest-blend flag per injection in the truth
     manifest: a sightline pre-absorbed to near-zero at the trough centre is
