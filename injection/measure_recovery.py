@@ -124,18 +124,26 @@ def _dlacat_rows_from_table(tbl):
         yield t, pp, nn, zz
 
 
-def _iter_dlacat_rows(dlacat_path):
-    """Yield recovery rows from a dlacat FITS (see :func:`_dlacat_rows_from_table`)."""
-    from astropy.table import Table
-    yield from _dlacat_rows_from_table(Table.read(dlacat_path))
-
-
-def _find_dlacat(path):
-    """Resolve ``path`` to a dlacat FITS: a file → itself; a dir → its dlacat-*.fits."""
+def _find_dlacats(path):
+    """Resolve ``path`` to a LIST of dlacat FITS: a file → ``[itself]``; a dir → ALL
+    its ``dlacat-*.fits`` (a CHUNKED job array writes one dlacat per healpix range,
+    e.g. ``dlacat-...-mockcat-0-10.fits``, ``...-10-20.fits`` — read them all)."""
     if os.path.isfile(path) and path.endswith(".fits"):
-        return path
-    hits = sorted(glob.glob(os.path.join(path, "dlacat-*.fits")))
-    return hits[0] if hits else None
+        return [path]
+    return sorted(glob.glob(os.path.join(path, "dlacat-*.fits")))
+
+
+def _iter_dlacat_rows(dlacat_paths):
+    """Yield recovery rows from one or more dlacat FITS (concatenated, then deduped
+    by max P_DLA in :func:`_dlacat_rows_from_table`).  Each healpix lives in exactly
+    one chunk, so cross-chunk TARGETID collisions don't occur; the global dedup is a
+    belt-and-suspenders guard."""
+    from astropy.table import Table, vstack
+    tabs = [Table.read(p) for p in dlacat_paths]
+    if not tabs:
+        return iter(())
+    combined = vstack(tabs, metadata_conflicts="silent") if len(tabs) > 1 else tabs[0]
+    return _dlacat_rows_from_table(combined)
 
 
 def _load_recovered(processed, manifest):
@@ -147,9 +155,9 @@ def _load_recovered(processed, manifest):
     ``processed-*.h5`` (the legacy posterior-store layout).  Streams the rows
     through :func:`_assemble_recovered` (the join-collapse guard).
     """
-    dlacat = _find_dlacat(processed)
-    if dlacat:
-        return _assemble_recovered(manifest, _iter_dlacat_rows(dlacat)), "dlacat"
+    dlacats = _find_dlacats(processed)
+    if dlacats:
+        return _assemble_recovered(manifest, _iter_dlacat_rows(dlacats)), "dlacat"
     return _assemble_recovered(manifest, _iter_processed_rows(processed)), "processed"
 
 

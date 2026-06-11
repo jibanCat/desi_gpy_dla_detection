@@ -4,10 +4,10 @@
 #SBATCH -N 1
 #SBATCH -c 16
 #SBATCH --mem=64G
-#SBATCH -t 2:00:00
-#SBATCH -J gp_inject_pilot
-#SBATCH -o /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/gp_inject_%j.log
-#SBATCH -e /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/gp_inject_%j.log
+#SBATCH -t 8:00:00
+#SBATCH -J gp_inject
+#SBATCH -o /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/gp_inject_%A_%a.log
+#SBATCH -e /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/gp_inject_%A_%a.log
 
 # Run the UNMODIFIED GP on an injectable tree, BYTE-MATCHING the 2LPT-0 FILTER-off
 # CDDF run being corrected (2lpt0_gl_v1_filteroff_maxdla1.env): single_absorber_model=1,
@@ -36,12 +36,30 @@ if [ -z "${N_HEALPIX:-}" ]; then
 fi
 [ "${N_HEALPIX:-0}" -ge 1 ] 2>/dev/null || { echo "[gp-inject] ERROR: no spectra-16-*.fits under $CAMPAIGN/spectra-16" >&2; exit 1; }
 OUTDIR="${OUTDIR:-$CAMPAIGN/gp_out}"
+QSOCAT="${QSOCAT:-$CAMPAIGN/pilot_qsocat.fits}"
 DR=/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection/data
 mkdir -p "$OUTDIR"
 
-echo "[gp-inject] host=$(hostname) campaign=$CAMPAIGN n_healpix=$N_HEALPIX start=$(date)"
+# Healpix range for THIS run. In a SLURM job array, each task processes a CHUNK of
+# healpix [task*CHUNK, (task+1)*CHUNK) → one dlacat-*-<start>-<end>.fits per chunk
+# (measure_recovery reads them all). Outside an array, do the whole tree (or honor
+# an explicit LEVEL2_START/END override).
+CHUNK="${CHUNK:-$N_HEALPIX}"
+if [ -n "${SLURM_ARRAY_TASK_ID:-}" ]; then
+    LEVEL2_START=$(( SLURM_ARRAY_TASK_ID * CHUNK ))
+    LEVEL2_END=$(( LEVEL2_START + CHUNK ))
+    [ "$LEVEL2_END" -gt "$N_HEALPIX" ] && LEVEL2_END=$N_HEALPIX
+    if [ "$LEVEL2_START" -ge "$N_HEALPIX" ]; then
+        echo "[gp-inject] array task $SLURM_ARRAY_TASK_ID: start $LEVEL2_START >= N_HEALPIX $N_HEALPIX — nothing to do"; exit 0
+    fi
+else
+    LEVEL2_START="${LEVEL2_START:-0}"
+    LEVEL2_END="${LEVEL2_END:-$N_HEALPIX}"
+fi
+
+echo "[gp-inject] host=$(hostname) campaign=$CAMPAIGN n_healpix=$N_HEALPIX level2=[$LEVEL2_START,$LEVEL2_END) start=$(date)"
 python desi-DLAGP.py \
-    --qsocat "$CAMPAIGN/pilot_qsocat.fits" \
+    --qsocat "$QSOCAT" \
     --release v2.8.5 --program dark --survey main \
     --mocks --mockdir "$CAMPAIGN" \
     --outdir "$OUTDIR" \
@@ -58,5 +76,5 @@ python desi-DLAGP.py \
     --enable_tau_eb 1 --tau_eb_objective null \
     --dlambda 0.15 --early_stop_mode baseline --min_lambda 911.75 \
     --k 30 --max_workers 16 \
-    --level2_start 0 --level2_end "$N_HEALPIX"
+    --level2_start "$LEVEL2_START" --level2_end "$LEVEL2_END"
 echo "[gp-inject] DONE rc=$?  end=$(date)"

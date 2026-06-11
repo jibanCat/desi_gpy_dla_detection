@@ -145,6 +145,22 @@ def test_dlacat_rows_extracts_recovery_fields():
     assert rows == [(100, 0.99, 20.5, 3.0), (101, 0.60, 19.1, 2.8), (102, 0.20, 17.8, 2.5)]
 
 
+def test_find_dlacats_returns_all_chunks(tmp_path):
+    # A chunked job array writes one dlacat per healpix range; the reader must pick
+    # up ALL of them, not just the first (else recovery silently undercounts).
+    from injection.measure_recovery import _find_dlacats
+    Table = pytest.importorskip("astropy.table").Table
+    for a, b in [(0, 10), (10, 20), (20, 30)]:
+        Table({"TARGETID": np.array([a], np.int64), "P_DLA": [0.9],
+               "NHI": [20.0], "Z_DLA": [3.0]}).write(
+            str(tmp_path / f"dlacat-v2.8.5-mockcat-{a}-{b}.fits"), overwrite=True)
+    found = _find_dlacats(str(tmp_path))
+    assert len(found) == 3
+    # a single explicit FITS path resolves to just itself
+    one = _find_dlacats(str(tmp_path / "dlacat-v2.8.5-mockcat-0-10.fits"))
+    assert len(one) == 1
+
+
 def test_dlacat_rows_dedup_keeps_highest_pdla():
     # A multi-row TARGETID (e.g. a multi-DLA dlacat) collapses to its BEST detection
     # so the single-absorber recovery join stays one-to-one (no spurious collapse).
