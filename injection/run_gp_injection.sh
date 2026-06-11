@@ -29,8 +29,12 @@ CAMPAIGN="${CAMPAIGN:?set CAMPAIGN=<injectable tree root>}"
 # Derive the healpix count from the injectable tree itself — never silently
 # default to a fixed number (which would undercount a larger campaign). The GP's
 # --level2_end is exclusive, so this count == number of spectra-16-*.fits files.
-N_HEALPIX="${N_HEALPIX:-$(find "$CAMPAIGN/spectra-16" -name 'spectra-16-*.fits' | wc -l)}"
-[ "$N_HEALPIX" -ge 1 ] || { echo "[gp-inject] ERROR: no spectra-16-*.fits under $CAMPAIGN/spectra-16" >&2; exit 1; }
+if [ -z "${N_HEALPIX:-}" ]; then
+    # 2>/dev/null so a missing spectra-16/ dir doesn't abort the command-substitution
+    # under `set -e` BEFORE the friendly guard below can fire.
+    N_HEALPIX=$(find "$CAMPAIGN/spectra-16" -name 'spectra-16-*.fits' 2>/dev/null | wc -l)
+fi
+[ "${N_HEALPIX:-0}" -ge 1 ] 2>/dev/null || { echo "[gp-inject] ERROR: no spectra-16-*.fits under $CAMPAIGN/spectra-16" >&2; exit 1; }
 OUTDIR="${OUTDIR:-$CAMPAIGN/gp_out}"
 DR=/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection/data
 mkdir -p "$OUTDIR"

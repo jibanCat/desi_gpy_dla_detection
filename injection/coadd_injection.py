@@ -451,7 +451,22 @@ def write_campaign(
             blend_report=blend_report,
         )
         for rep in blend_report:
-            blend_by_key[(healpix, int(rep["target_id"]))] = rep
+            key = (healpix, int(rep["target_id"]))
+            prev = blend_by_key.get(key)
+            if prev is not None:
+                # A Campaign-B close pair injects TWO records on one fiber; aggregate
+                # their blend diagnostics over the sightline (most-blended wins) so
+                # the truth manifest reflects BOTH absorbers, not just the last.
+                rep = {
+                    "target_id": rep["target_id"],
+                    "z_true": rep["z_true"],
+                    "logN_true": rep["logN_true"],
+                    "forest_flux_frac": float(
+                        np.nanmin([prev["forest_flux_frac"], rep["forest_flux_frac"]])
+                    ),
+                    "forest_blend": bool(prev["forest_blend"] or rep["forest_blend"]),
+                }
+            blend_by_key[key] = rep
 
         # Carry over the truth-16 companion (resolution data for resample).
         src_truth = os.path.join(src_dir, f"truth-16-{healpix}.fits")
