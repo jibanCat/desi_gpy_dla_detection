@@ -43,5 +43,6 @@ python desi-DLAGP.py \
     --max_dlas 1 --single_absorber_model 1 --filter_low_likelihood 0 \
     --num_dla_samples 100000 --num_subdla_samples 100000 \
     --num_forest_lines 31 --max_lambda 1250 --plot_figures 0 \
+    --k 30 \
     --level2_start 0 --level2_end "$N_HEALPIX"
 echo "[gp-inject] DONE rc=$?  end=$(date)"
