@@ -26,6 +26,10 @@ def main():
     ap.add_argument("--out", required=True, help="injectable-tree root")
     ap.add_argument("--mockdir", default=DEFAULT_MOCK)
     ap.add_argument("--target_injections", type=int, default=150)
+    ap.add_argument("--n_per_cell", type=int, default=None,
+                    help="sightlines per (logN×z×zqso×snr) cell. Takes precedence over "
+                         "--target_injections — the predictable R-density knob (the "
+                         "z_QSO×window feasibility makes target_injections under-deliver).")
     ap.add_argument("--n_controls", type=int, default=50)
     ap.add_argument("--n_healpix", type=int, default=0, help="0 = all clean healpix")
     ap.add_argument("--snr_cut", type=float, default=2.0, help="SNR_REDSIDE > cut")
@@ -79,8 +83,11 @@ def main():
                     healpix=np.asarray(clean["HEALPIX"], np.int64),
                     z_qso=np.asarray(clean["Z"], float),
                     native_snr=np.asarray(clean["SNR_REDSIDE"], float))  # RED-SIDE
+    # n_per_cell (if given) controls R density directly; else size to target_injections.
+    _npc = a.n_per_cell
+    _tgt = None if _npc is not None else a.target_injections
     inj = build_injection_grid(clean_sl, snr_bins=a.snr_bins, zqso_bins=zqso_bins,
-                               target_injections=a.target_injections, seed=a.seed,
+                               n_per_cell=_npc, target_injections=_tgt, seed=a.seed,
                                campaign="A", method="coadd", num_lines=a.num_lines)
     ctrl = build_control_rows(clean_sl, snr_bins=a.snr_bins, target_controls=a.n_controls,
                               seed=a.seed + 1, inj_id_start=len(inj),
@@ -113,11 +120,12 @@ def main():
     # distinct clean (hostable ∩ SNR-bin) pool — never silently undercount the
     # requested budget.  Warn loudly so the driver can widen the clean pool
     # (more healpix / lower SNR cut) rather than ship a thin campaign.
-    if len(inj) < int(0.95 * a.target_injections):
+    if a.n_per_cell is None and len(inj) < int(0.95 * a.target_injections):
         print(f"[manifest] WARNING: requested {a.target_injections} injections but the "
               f"clean pool only supports {len(inj)} distinct sightlines "
               f"({100 * len(inj) / a.target_injections:.0f}%). Add healpix (--n_healpix 0 "
-              f"= all) or lower --snr_cut to reach the target.", flush=True)
+              f"= all), lower --snr_cut, or use --n_per_cell (z_QSO×window feasibility "
+              f"makes target_injections under-deliver).", flush=True)
 
     truth_path = write_campaign(manifest, clean, out_root=a.out, mockdir=D, num_lines=a.num_lines)
     n = len(glob.glob(f"{a.out}/spectra-16/*/*/spectra-16-*.fits"))
