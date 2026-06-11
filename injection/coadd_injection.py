@@ -500,8 +500,17 @@ def _write_truth_manifest(manifest, rows, truth_path: str, *, blend_by_key=None)
         if not rows:
             tbl = Table()
         else:
-            cols = list(rows[0].keys())
-            data = {c: [r[c] for r in rows] for c in cols}
+            # Rows can be HETEROGENEOUS: Campaign-B pair rows carry the close-pair
+            # fields (logN_true2/z_true2/dv_kms/_dlogN) that control rows (and
+            # Campaign-A rows) lack.  Build the column set as the UNION over all
+            # rows, in first-seen order, and fill a missing value with NaN (numeric)
+            # so a mixed pair+control manifest writes without KeyError.
+            cols = []
+            for r in rows:
+                for k in r.keys():
+                    if k not in cols:
+                        cols.append(k)
+            data = {c: [r.get(c, np.nan) for r in rows] for c in cols}
             tbl = Table(data)
             for idcol in ("target_id", "healpix", "inj_id"):
                 if idcol in tbl.colnames:

@@ -814,6 +814,45 @@ def test_write_campaign_injects_both_absorbers_of_a_close_pair(tmp_path):
     np.testing.assert_allclose(a.flux["b"][fm.index(301)], 1.0, atol=1e-9)
 
 
+def test_write_campaign_truth_manifest_heterogeneous_pair_and_control_rows(tmp_path):
+    """A Campaign-B manifest mixes pair rows (carrying logN_true2/z_true2/dv_kms) with
+    control rows that LACK those keys.  _write_truth_manifest must take the UNION of
+    columns and fill missing values (NaN), not index every row by the first row's keys
+    (which crashed with KeyError: 'logN_true2')."""
+    desispec_io = _require_desispec()
+    _require_c_voigt()
+    from injection.coadd_injection import write_campaign
+
+    mockdir = tmp_path / "mock"
+    hp = 1960
+    d = mockdir / "spectra-16" / str(hp // 100) / str(hp)
+    d.mkdir(parents=True)
+    spec = _make_spectra(np.array([300, 301], np.int64), [10.0, 11.0], [5.0, 5.0],
+                         flux_level=1.0)
+    desispec_io.write_spectra(str(d / f"spectra-16-{hp}.fits"), spec)
+    (d / f"truth-16-{hp}.fits").write_bytes(b"STUB")
+
+    manifest = [
+        dict(inj_id=0, campaign="B", method="coadd", target_id=300, healpix=hp,
+             z_qso=2.9, snr_bin=0, native_snr=1.0, logN_true=20.6, z_true=2.40,
+             num_lines=3, control=False, zqso_bin=1,
+             logN_true2=20.2, z_true2=2.43, dv_kms=400.0, _dlogN=-0.4),
+        dict(inj_id=1, campaign="B", method="coadd", target_id=301, healpix=hp,
+             z_qso=2.9, snr_bin=0, native_snr=1.0, logN_true=float("nan"),
+             z_true=float("nan"), num_lines=3, control=True, zqso_bin=1),  # no pair keys
+    ]
+    out_root = tmp_path / "camp"
+    truth_path = write_campaign(manifest, None, out_root=str(out_root), mockdir=str(mockdir),
+                                num_lines=3)
+    from astropy.table import Table
+    tman = Table.read(truth_path)
+    assert len(tman) == 2
+    assert "logN_true2" in tman.colnames          # union column present
+    # the control row's pair fields are NaN-filled, not a crash
+    ctrl = tman[np.asarray(tman["control"]).astype(bool)]
+    assert len(ctrl) == 1 and not np.isfinite(ctrl["logN_true2"][0])
+
+
 def test_write_campaign_truth_manifest_records_blend_flag(tmp_path):
     """write_campaign records the forest-blend flag per injection in the truth
     manifest: a sightline pre-absorbed to near-zero at the trough centre is
