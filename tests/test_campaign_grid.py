@@ -198,6 +198,49 @@ def test_build_grid_zqso_none_emits_sentinel_and_is_backward_compatible():
     assert rows and all(r["zqso_bin"] == -1 for r in rows)  # no stratification → -1
 
 
+def test_build_injection_sample_follows_known_logN_pdf():
+    # Campaign D: inject a KNOWN non-PW100 truth CDDF. The injected logN distribution
+    # must follow the supplied pdf (here a falling power law dn/dlogN ∝ 10^(-0.7 logN)),
+    # so deconvolving the recovery with R can be checked for unbiasedness on a
+    # distribution the inference prior (PW100) does NOT match.
+    from injection.campaign_grid import build_injection_sample
+    pdf = lambda ln: 10.0 ** (-0.7 * np.asarray(ln))
+    rows = build_injection_sample(
+        clean_sightlines=_zqso_spread_sightlines(n=600, zq_lo=2.6, zq_hi=3.7),
+        snr_bins=[2.0, 100.0],
+        n_per_cell=40,
+        logN_pdf=pdf,
+        logN_range=(17.2, 22.5),
+        zqso_bins=[2.5, 3.0, 3.5, 3.8],
+        seed=3,
+    )
+    assert rows
+    lN = np.array([r["logN_true"] for r in rows])
+    # falling pdf → more low-N than high-N injections
+    assert np.mean(lN < 19.0) > np.mean(lN > 21.0)
+    assert lN.min() >= 17.2 - 1e-6 and lN.max() <= 22.5 + 1e-6
+    # contract intact + globally unique sightlines + campaign D
+    for r in rows:
+        for k in MANIFEST_FIELDS:
+            assert k in r
+        assert r["campaign"] == "D"
+    tids = [r["target_id"] for r in rows]
+    assert len(tids) == len(set(tids))
+    validate_manifest(rows)
+
+
+def test_build_injection_sample_deterministic():
+    from injection.campaign_grid import build_injection_sample
+    pdf = lambda ln: np.ones_like(np.asarray(ln, float))
+    kw = dict(clean_sightlines=_zqso_spread_sightlines(n=400, zq_lo=2.6, zq_hi=3.6),
+              snr_bins=[2.0, 100.0], n_per_cell=20, logN_pdf=pdf,
+              logN_range=(17.2, 22.5), seed=7)
+    a = build_injection_sample(**kw)
+    b = build_injection_sample(**kw)
+    assert [r["target_id"] for r in a] == [r["target_id"] for r in b]
+    assert [round(r["logN_true"], 6) for r in a] == [round(r["logN_true"], 6) for r in b]
+
+
 def test_default_zqso_bins_spans_desi_qso_window():
     b = np.asarray(cg.default_zqso_bins())
     assert b[0] <= 2.2 and b[-1] >= 4.0       # covers the DESI QSO z range

@@ -548,6 +548,137 @@ def build_injection_grid(
 
 
 # --------------------------------------------------------------------------- #
+# Campaign D — inject a KNOWN (non-PW100) truth CDDF (the anti-circular gate).
+# --------------------------------------------------------------------------- #
+def _inverse_cdf_sampler(logN_pdf, logN_range, *, n_grid=400):
+    """Return a function ``rng, k -> logN[k]`` sampling ``logN_pdf`` over
+    ``logN_range`` via inverse-CDF on a fine grid (normalized; non-negative)."""
+    lo, hi = float(logN_range[0]), float(logN_range[1])
+    grid = np.linspace(lo, hi, int(n_grid))
+    pdf = np.asarray(logN_pdf(grid), dtype=float)
+    if np.any(pdf < 0) or not np.all(np.isfinite(pdf)) or pdf.sum() <= 0:
+        raise ValueError("logN_pdf must be finite, non-negative, positive-mass on the range.")
+    cdf = np.cumsum(pdf)
+    cdf = cdf / cdf[-1]
+
+    def _draw(rng, k):
+        u = rng.random(int(k))
+        return np.interp(u, cdf, grid)
+
+    return _draw
+
+
+def build_injection_sample(
+    clean_sightlines,
+    *,
+    snr_bins: Sequence[float],
+    n_per_cell: int,
+    logN_pdf,
+    logN_range=(LOGN_MIN, LOGN_MAX),
+    z_grid: Optional[Sequence[float]] = None,
+    zqso_bins: Optional[Sequence[float]] = None,
+    seed: int,
+    campaign: str = "D",
+    method: str = "coadd",
+    num_lines: int = DEFAULT_NUM_LINES,
+) -> List[dict]:
+    """Inject a KNOWN truth CDDF — Campaign D, the anti-circular validation gate.
+
+    Identical sightline draw to :func:`build_injection_grid` (one injection per
+    sightline globally, SNR- and z_QSO-stratified, z clamped to the GP window), but
+    instead of gridding ``logN`` each injection's ``logN_true`` is SAMPLED from
+    ``logN_pdf`` (inverse-CDF over ``logN_range``).  Because the injected column
+    distribution is the test CDDF — deliberately NOT the PW100 inference prior —
+    deconvolving the recovery with the response matrix R (built from Campaign A) and
+    checking it returns ``logN_pdf`` is a non-circular unbiasedness test.
+
+    ``logN_pdf(logN_array) -> density`` (per-dex, any positive normalization).
+    Returns manifest rows with the full :data:`MANIFEST_FIELDS` and ``campaign='D'``.
+    """
+    draw_logN = _inverse_cdf_sampler(logN_pdf, logN_range)
+    z_grid = np.asarray(default_z_grid() if z_grid is None else z_grid, dtype=float)
+    snr_bins = np.asarray(snr_bins, dtype=float)
+    if snr_bins.ndim != 1 or snr_bins.size < 2 or np.any(np.diff(snr_bins) <= 0):
+        raise ValueError("snr_bins must be a strictly-increasing edge array of >=2.")
+    n_snr = snr_bins.size - 1
+
+    if zqso_bins is not None:
+        zqso_edges = np.asarray(zqso_bins, dtype=float)
+        if zqso_edges.ndim != 1 or zqso_edges.size < 2 or np.any(np.diff(zqso_edges) <= 0):
+            raise ValueError("zqso_bins must be a strictly-increasing edge array of >=2.")
+        n_zqso = zqso_edges.size - 1
+    else:
+        zqso_edges = None
+        n_zqso = 1
+
+    sl = _normalize_clean_sightlines(clean_sightlines)
+    snr_table = {t: info["native_snr"] for t, info in sl.items()}
+    all_tids = np.array(sorted(sl.keys()), dtype=np.int64)
+
+    rng = np.random.default_rng(int(seed))
+    rows: List[dict] = []
+    inj_id = 0
+    used_targets: set = set()
+    for z_true in z_grid:
+        hostable = []
+        for t in all_tids:
+            ti = int(t)
+            if ti in used_targets:
+                continue
+            z_lo, z_hi = _per_sightline_forest_window(sl[ti]["z_qso"])
+            if z_lo <= z_true <= z_hi:
+                hostable.append(ti)
+        if not hostable:
+            continue
+        for zq_idx in range(n_zqso):
+            if zqso_edges is None:
+                pool = [t for t in hostable if t not in used_targets]
+                zqso_label = -1
+            else:
+                lo, hi = float(zqso_edges[zq_idx]), float(zqso_edges[zq_idx + 1])
+                pool = [t for t in hostable
+                        if t not in used_targets and lo <= sl[t]["z_qso"] < hi]
+                zqso_label = zq_idx
+            if not pool:
+                continue
+            pool = np.asarray(pool, dtype=np.int64)
+            sub_snr = {int(t): snr_table[int(t)] for t in pool}
+            cell_seed = int(rng.integers(1, 2**31 - 1))
+            assign = sample_clean_sightlines(
+                pool, sub_snr, n_per_cell=int(n_per_cell), snr_bins=snr_bins, seed=cell_seed,
+            )
+            for b in range(n_snr):
+                picks = list(assign.get(b, ()))
+                if not picks:
+                    continue
+                logN_vals = draw_logN(rng, len(picks))
+                for t, logN in zip(picks, logN_vals):
+                    info = sl[int(t)]
+                    z_lo, z_hi = _per_sightline_forest_window(info["z_qso"])
+                    z_emit = _clamp_z_into_window(float(z_true), z_lo, z_hi)
+                    if not np.isfinite(z_emit):
+                        continue
+                    used_targets.add(int(t))
+                    rows.append({
+                        "inj_id": inj_id,
+                        "campaign": str(campaign),
+                        "method": str(method),
+                        "target_id": int(t),
+                        "healpix": int(info["healpix"]),
+                        "z_qso": float(info["z_qso"]),
+                        "snr_bin": int(b),
+                        "native_snr": float(info["native_snr"]),
+                        "logN_true": float(logN),
+                        "z_true": float(z_emit),
+                        "num_lines": int(num_lines),
+                        "control": False,
+                        "zqso_bin": int(zqso_label),
+                    })
+                    inj_id += 1
+    return rows
+
+
+# --------------------------------------------------------------------------- #
 # M2 — control-row generator (clean sightlines, NO injection) for b_FP.
 # --------------------------------------------------------------------------- #
 def build_control_rows(
