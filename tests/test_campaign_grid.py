@@ -611,3 +611,24 @@ def test_injection_rows_carry_control_false():
         snr_bins=[0.0, 100.0], n_per_cell=1, seed=41,
     )
     assert rows and all(r["control"] is False for r in rows)
+
+
+def test_control_rows_disjoint_from_injections():
+    """Control sightlines must NOT overlap injected sightlines (else b_FP is
+    contaminated by the injection)."""
+    import numpy as np
+    from injection.campaign_grid import build_injection_grid, build_control_rows
+    rng = np.random.default_rng(0)
+    n = 400
+    clean = dict(target_id=np.arange(1000, 1000 + n, dtype=np.int64),
+                 healpix=np.full(n, 7, dtype=np.int64),
+                 z_qso=np.full(n, 3.2), native_snr=rng.uniform(2, 10, n))
+    inj = build_injection_grid(clean, snr_bins=[2, 4, 8, 1e9],
+                               target_injections=120, seed=1)
+    inj_tids = {int(r["target_id"]) for r in inj}
+    ctrl = build_control_rows(clean, snr_bins=[2, 4, 8, 1e9], target_controls=50,
+                              seed=2, inj_id_start=len(inj),
+                              exclude_target_ids=inj_tids)
+    ctrl_tids = {int(r["target_id"]) for r in ctrl}
+    assert inj_tids.isdisjoint(ctrl_tids), "controls overlap injections"
+    assert len(ctrl) > 0

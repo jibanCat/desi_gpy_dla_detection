@@ -486,6 +486,7 @@ def build_control_rows(
     method: str = "coadd",
     num_lines: int = DEFAULT_NUM_LINES,
     inj_id_start: int = 0,
+    exclude_target_ids: Optional[Iterable] = None,
 ) -> List[dict]:
     """CLEAN no-injection CONTROL rows — the data path for ``b_FP`` (M2).
 
@@ -531,6 +532,14 @@ def build_control_rows(
     n_snr = snr_bins.size - 1
 
     sl = _normalize_clean_sightlines(clean_sightlines)
+    # Controls MUST be injection-free: drop any sightline carrying an injection (else
+    # a "control" sits on an injected sightline → contaminated b_FP).
+    if exclude_target_ids is not None:
+        _excl = {int(t) for t in exclude_target_ids}
+        sl = {t: v for t, v in sl.items() if int(t) not in _excl}
+        if not sl:
+            raise ValueError("no clean sightlines left for controls after excluding the "
+                             "injected targets — widen the clean pool / healpix.")
     snr_table = {t: info["native_snr"] for t, info in sl.items()}
     all_tids = np.array(sorted(sl.keys()), dtype=np.int64)
 

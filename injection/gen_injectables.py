@@ -56,7 +56,8 @@ def main():
                                target_injections=a.target_injections, seed=a.seed,
                                campaign="A", method="coadd", num_lines=a.num_lines)
     ctrl = build_control_rows(clean_sl, snr_bins=a.snr_bins, target_controls=a.n_controls,
-                              seed=a.seed + 1, inj_id_start=len(inj))
+                              seed=a.seed + 1, inj_id_start=len(inj),
+                              exclude_target_ids={int(r["target_id"]) for r in inj})
     manifest = list(inj) + list(ctrl)
     validate_manifest(manifest)
     nlt = np.array([r["logN_true"] for r in inj])
