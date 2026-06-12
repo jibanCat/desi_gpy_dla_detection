@@ -132,8 +132,8 @@ if [ "${LOA_TASK:-0}" = "1" ]; then
     fi
     if [ "$hs" -ge "$he" ]; then echo "[task $k] no work (hs=$hs >= he=$he)"; exit 0; fi
     echo "[task $k] hpx ${hs}..${he}"
-    build_and_run "$hs" "$he"
-    exit 0
+    build_and_run "$hs" "$he"; rc=$?   # propagate inner-python exit (don't mask a crash as COMPLETED)
+    exit "$rc"
 fi
 
 # DRIVER branch: env + ONE srun -n NTASKS.

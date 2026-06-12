@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Analyze a parallelism_sweep_gl.sh run.
+"""Analyze a parallelism_sweep_nersc.sh run.
 
 Reads the per-spectrum "time spent: XmYs" log lines from each sweep cell
 and reports:
@@ -11,8 +11,8 @@ and reports:
     so contention vs the Phase-A prediction is visible.
 
 Usage:
-    python slurm/greatlakes/production/analyze_sweep.py \
-        /scratch/cavestru_root/cavestru0/mfho/gl_parallelism_sweep_<date> [NCORES]
+    python slurm/nersc/production/analyze_sweep.py \
+        /pscratch/sd/j/jibancat/nersc_parallelism_sweep_<date> [NCORES]
 """
 import re
 import sys

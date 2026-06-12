@@ -126,8 +126,8 @@ if [ "${MOCK_TASK:-0}" = "1" ]; then
         echo "[task $k] no work (l2s=$l2s >= END=$END_INDEX)"; exit 0
     fi
     echo "[task $k] level2 ${l2s}..${l2e}"
-    build_and_run "$l2s" "$l2e"
-    exit 0
+    build_and_run "$l2s" "$l2e"; rc=$?   # propagate inner-python exit (don't mask a crash as COMPLETED)
+    exit "$rc"
 fi
 
 # ---------------------------------------------------------------------------

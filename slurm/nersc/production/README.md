@@ -23,7 +23,7 @@ differ. Built + cost-characterised 2026-06-01/02; all four V1 catalogs run since
 | `submit_desi_loa_nersc.sh` | LOA inner. Same pattern over **healpix** (`--hpx_start/--hpx_end`). |
 | `parallelism_sweep_nersc.sh` + `_sweep_cell_nersc.sh` + `analyze_sweep.py` | Packing calibration (debug-QOS cells; one `srun -n N` per cell, NOT backgrounded). |
 | `samplecost_sweep_nersc.sh` | Node-hours-vs-`NUM_SAMPLES` sweep. |
-| `package_catalog.sh`, `_write_catalog_readme.py`, `resume_positions.py`, `repack_gzip.sh`, `repack_verify.py` | Cluster-agnostic post-run utilities (copied verbatim from GL). |
+| `package_catalog.sh`, `_write_catalog_readme.py`, `resume_positions.py`, `repack_gzip.sh`, `repack_verify.py` | Post-run utilities. `resume_positions.py` + `repack_verify.py` are cluster-agnostic (verbatim from GL); `repack_gzip.sh` + `package_catalog.sh` are NERSC-adapted (SBATCH headers `-A desi -q shared -C cpu`, repo-relative paths, DESI-env `h5repack`/`python`). |
 | (repo) `tools/make_subsampled_grids.py` | Makes the PW {10k,30k,50k} grids by subsampling the 100k Halton grids. |
 
 ## How it differs from the GreatLakes pipeline

@@ -1,5 +1,5 @@
 #!/bin/bash
-# slurm/greatlakes/production/repack_gzip.sh
+# slurm/nersc/production/repack_gzip.sh
 #
 # Lossless gzip-repack of processed-spectra h5 files, in place, in parallel.
 #
@@ -16,31 +16,37 @@
 # to resubmit (idempotent via the iscompressed skip).
 #
 # Submit (from repo root):
-#   PROCDIR=/scratch/.../outputs/figures/processed \
-#     sbatch --export=ALL,PROCDIR slurm/greatlakes/production/repack_gzip.sh
+#   PROCDIR=/pscratch/sd/j/jibancat/.../outputs/figures/processed \
+#     sbatch --export=ALL,PROCDIR slurm/nersc/production/repack_gzip.sh
 #
 # Tunables (env): GZIP_LEVEL (default 4), NPAR (default 16).
 
-#SBATCH -A cavestru0
-#SBATCH -p standard
+#SBATCH -A desi
+#SBATCH -q shared
+#SBATCH -C cpu
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -c 16
 #SBATCH --mem=16G
 #SBATCH -t 03:00:00
 #SBATCH -J h5repack_gzip
-#SBATCH -o slurm/greatlakes/production/logs/repack_%j.log
-#SBATCH -e slurm/greatlakes/production/logs/repack_err_%j.log
+#SBATCH -o slurm/nersc/production/logs/repack_%j.log
+#SBATCH -e slurm/nersc/production/logs/repack_err_%j.log
 
 set -uo pipefail
+
+# NERSC: make h5repack + python available (both ship in the DESI conda env).
+if ! command -v h5repack >/dev/null 2>&1; then
+    set +u; source /global/cfs/cdirs/desi/software/desi_environment.sh main >/dev/null 2>&1; set -u
+fi
 
 PROCDIR="${PROCDIR:?set PROCDIR to the processed/ dir holding the *.h5}"
 GZIP_LEVEL="${GZIP_LEVEL:-4}"
 NPAR="${NPAR:-16}"
-REPO_ROOT="${REPO_ROOT:-/home/mfho/desi_gpy_dla_detection}"
-H5REPACK="${H5REPACK:-/home/mfho/.conda/envs/emu-3.9/bin/h5repack}"
-PYBIN="${PYBIN:-/home/mfho/.conda/envs/gpdla/bin/python}"
-VERIFY="${VERIFY:-$REPO_ROOT/slurm/greatlakes/production/repack_verify.py}"
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+H5REPACK="${H5REPACK:-h5repack}"
+PYBIN="${PYBIN:-python}"
+VERIFY="${VERIFY:-$REPO_ROOT/slurm/nersc/production/repack_verify.py}"
 
 export H5REPACK PYBIN VERIFY GZIP_LEVEL
 

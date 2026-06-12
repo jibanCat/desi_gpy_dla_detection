@@ -75,7 +75,7 @@ is **launched and in flight**.
 - Memory fits N32×W8 easily (102/76 GB of 503). Investigation write-ups: private notes repo `desi_gpy_dla_notes` (`notes/2026-06-0{1,2,3}_*`).
 
 ### What this session changed in git (PR #12, base `desi_y3`)
-`slurm/nersc/production/` (full port + README), `tools/make_subsampled_grids.py`, `slurm/run_local.sh` (+1 line `--max_z_cut`). **No inference-code changes** (diff vs `gpy_dla_detection/`/`dla_gp.py`/`dlasearch.py`/`desi-DLAGP.py` is empty).
+`slurm/nersc/production/` (full port + README), `tools/make_subsampled_grids.py`, `slurm/run_local.sh` (+1 line `--max_z_cut`). **One behaviour-preserving inference-code change**: the `desi-DLAGP.py` memoryview fix (item 1 above); no changes under `gpy_dla_detection/`, `dla_gp.py`, or `dlasearch.py`.
 
 ---
 
