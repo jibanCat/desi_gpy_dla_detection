@@ -310,10 +310,13 @@ bash slurm/nersc/production/launch_nersc.sh <flavour>.env --start 0 --end <N_hpx
 # always --dry-run first. --window sets files(or hpx)/task -> per-sbatch wall (fit the QOS limit).
 ```
 
-**2. Verify completeness** (per-healpix — do NOT rely on combine's slice check alone):
+**2. Verify completeness** (do NOT rely on combine's slice check alone).
+*Mocks* — per-healpix presence check (`resume_positions.py` is **mock-only**; it walks the `spectra-16/` tree):
 ```bash
 python slurm/nersc/production/resume_positions.py --mockdir <MOCKDIR> --procdir <OUTDIR>/figures/processed --summary
 ```
+*Real data (LOA/Matterhorn — no `MOCKDIR`)*: the authoritative gate is
+`examples/combine_dlacat.py --expect-positions <N_hpx> --fail-on-gap` (also run by step 3).
 A `not_done` position is a **real** gap only if that healpix has `z>2` QSOs (else it is a
 benign empty healpix — its only QSOs are below the search redshift). Refill a true gap
 (idempotent overwrite): `launch_nersc.sh <flavour>.env --outdir <OUTDIR> --start <idx> --end <idx+1> --window 1`.
@@ -334,7 +337,11 @@ This runs, in order:
   in `NHI_ERR`/`Z_DLA_ERR`, `DLAFLAG==0` = clean).
 - copy `BASELINE.env` (resolved config) + write `README.md`.
 
-Output bundle: **`dlacat-<release>-mockcat.fits`** (real LOA: `-hpx`) + `README.md` + `BASELINE.env`.
+Output bundle: **`dlacat-<release>-mockcat.fits`** + `README.md` + `BASELINE.env`. **Caveat:**
+`package_catalog.sh` + `_write_catalog_readme.py` are currently **mock-oriented** — they hardcode the
+`-mockcat` filename and a "mock validation" README and do not pass `--data-kind`. For a **real** run
+(LOA, Matterhorn) the bundle is presently **hand-assembled** (cf. the shipped `dlacat-loa-main-dark-v1.fits`);
+adding a real-data `--data-kind`/name branch is a TODO (tracked in the Matterhorn handoff).
 Schema (HDU 1, `EXTNAME=DLACAT`, one row per detected absorber): `TARGETID, RA, DEC, Z_QSO,
 SNR_FOREST, SNR_REDSIDE, DLAID, Z_DLA(_ERR), NHI(_ERR), DLAFLAG, P_DLA, P_NULL, LOGP_DLA,
 LOGP_NULL, MODEL_P, LYBETA_FLAG, LYBETA_PARENT_TID/Z, BAL_FLAG, NHI_CONSISTENCY_FLAG, PDLA_SATURATED_FLAG`.

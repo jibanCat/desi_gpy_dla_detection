@@ -131,7 +131,7 @@ P/C is the full [911,1216] window, NHI>20 / >20.3.
 | London-0 mock (`nersc_prod_london0_v1_*`) | 1149/1150 hpx | 0.837/0.885 · 0.828/0.896 | ~36 |
 | 2LPT-1 mock | 1149/1150 hpx, 799,162 rows / 362,445 TIDs | 0.818/0.874 · 0.815/0.888 | ~36 |
 | **Real LOA catalog** (`nersc_prod_loa_v1_20260606`) | 16,519/16,519 hpx, 801,761 rows / 358,835 sightlines, 90.3% DLAFLAG-clean | — (real data) | ~34 |
-| **Real LOA CDDF** (`nersc_cddf_loa_v1_20260609`, PW100k) | **in flight** (2026-06-11: hpx 0..9216 done, 22 jobs, 0 failures) | — (Pathway-A input) | ~125-130 proj |
+| **Real LOA CDDF** (`nersc_cddf_loa_v1_20260609`, PW100k) | **DONE** (16,519/16,519 hpx, 22/22 jobs, 0 failures, dlacat gap-free; 618 GB) | — (Pathway-A input) | ~130 |
 
 ## After a run finishes
 
@@ -142,9 +142,12 @@ python examples/combine_dlacat.py --procdir <OUTDIR> --out <OUTDIR>/combined_dla
 python examples/molly_faithful_pc_plots.py --catalog-dir <OUTDIR> --truth <MOCKDIR>/dla_cat.fits \
     --bal-cat <MOCKDIR>/bal_cat.fits --no-bal --mockdir <MOCKDIR> --snr-min 2.0 --nhi-min 20.3 \
     --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out <OUTDIR>/pc/
-# Package + share (cluster-agnostic):
+# Package + share (MOCK runs): emits dlacat-<release>-mockcat.fits + a mock-validation README.
 bash slurm/nersc/production/package_catalog.sh --rundir <OUTDIR> --share-to <CFS share>
 ```
+**Note:** `package_catalog.sh` / `_write_catalog_readme.py` are **mock-oriented** (hardcoded `-mockcat`
+name + "mock validation" README; `--data-kind` not forwarded). For a **real** run (LOA, Matterhorn)
+the bundle is currently **hand-assembled**; real-data packaging support is a TODO (Matterhorn handoff).
 Note: desi-DLAGP writes the processed h5 under `<OUTDIR>/figures/processed/`; the molly eval
 expects `<OUTDIR>/processed/` — symlink it: `ln -sfn <OUTDIR>/figures/processed <OUTDIR>/processed`.
 
@@ -166,7 +169,9 @@ authoritative completeness gate** that catches it (always run it before trusting
 
 **Recovery recipe** (timeout/node-failure):
 ```bash
+# completeness check — MOCKS: resume_positions.py (mock-only, walks spectra-16/):
 python slurm/nersc/production/resume_positions.py --mockdir <MOCKDIR> --procdir <OUTDIR>/figures/processed --summary
+#                       REAL data (no MOCKDIR): use the combine_dlacat --fail-on-gap gate (last line) instead.
 bash slurm/nersc/production/launch_nersc.sh <env> --outdir <OUTDIR> --start <first_not_done> --end <end> --window <W>
 python examples/combine_dlacat.py --procdir <OUTDIR> --out <OUTDIR>/combined.fits --expect-positions <N> --fail-on-gap
 ```
