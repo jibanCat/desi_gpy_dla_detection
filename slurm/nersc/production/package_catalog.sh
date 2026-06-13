@@ -39,6 +39,9 @@ set +u; source /global/cfs/cdirs/desi/software/desi_environment.sh main >/dev/nu
 
 RUNDIR="" RELEASE="" BAL_CAT="" EXPECT="" OUTDIR="" SHARE_TO="" LYBDZ="0.005" SRCLABEL=""
 PURITY="" COMPL=""
+# --data-kind selects the FITS naming + README text. Default mock for back-compat
+# (byte-identical to the historical packaging). real names by SURVEY/PROGRAM.
+DATA_KIND="mock" SURVEY="main" PROGRAM="dark"
 while [ $# -gt 0 ]; do
     case "$1" in
         --rundir)           RUNDIR="$2"; shift 2;;
@@ -51,6 +54,9 @@ while [ $# -gt 0 ]; do
         --source-label)     SRCLABEL="$2"; shift 2;;
         --purity)           PURITY="$2"; shift 2;;   # optional, for the README P/C table
         --completeness)     COMPL="$2"; shift 2;;
+        --data-kind)        DATA_KIND="$2"; shift 2;; # mock (default) | real
+        --survey)           SURVEY="$2"; shift 2;;    # real only: e.g. main
+        --program)          PROGRAM="$2"; shift 2;;   # real only: e.g. dark
         --code-commit)      CODE_COMMIT_OVERRIDE="$2"; shift 2;;  # backfill old runs
         *) echo "[package] unknown arg: $1" >&2; exit 2;;
     esac
@@ -58,11 +64,22 @@ done
 CODE_COMMIT_OVERRIDE="${CODE_COMMIT_OVERRIDE:-}"
 [ -n "$RUNDIR" ] && [ -n "$RELEASE" ] && [ -n "$BAL_CAT" ] || {
     echo "[package] --rundir, --release and --bal-cat are required" >&2; exit 2; }
+case "$DATA_KIND" in
+    mock|real) ;;
+    *) echo "[package] --data-kind must be mock or real (got: $DATA_KIND)" >&2; exit 2;;
+esac
 
 PROCDIR="$RUNDIR/outputs"
 [ -d "$PROCDIR" ] || { echo "[package] no $PROCDIR" >&2; exit 2; }
 OUTDIR="${OUTDIR:-$RUNDIR/combined_catalog}"
-FITS="$OUTDIR/dlacat-${RELEASE}-mockcat.fits"
+# Naming: mock keeps the historical dlacat-<release>-mockcat.fits; real names the
+# bundle by SURVEY/PROGRAM (no truth, so "mockcat" would be misleading).
+if [ "$DATA_KIND" = "real" ]; then
+    FITS="$OUTDIR/dlacat-${RELEASE}-${SURVEY}-${PROGRAM}.fits"
+else
+    FITS="$OUTDIR/dlacat-${RELEASE}-mockcat.fits"
+fi
+FITS_NAME="$(basename "$FITS")"
 mkdir -p "$OUTDIR"
 [ -n "$SRCLABEL" ] || SRCLABEL="$(basename "$RUNDIR")"
 
@@ -114,9 +131,17 @@ else
 fi
 
 echo "[package] 5/5 write README.md"
+# For real data, forward --data-kind real + the real FITS basename so the README
+# uses the real filename and real-data (no-truth) caveats. Mock omits both to keep
+# the historical invocation (and README output) byte-identical.
+README_KIND_ARGS=()
+if [ "$DATA_KIND" = "real" ]; then
+    README_KIND_ARGS=(--data-kind real --fits-name "$FITS_NAME")
+fi
 python "$SCRIPT_DIR/_write_catalog_readme.py" \
     --fits "$FITS" --release "$RELEASE" --source-label "$SRCLABEL" \
     --commit "$RUN_COMMIT" --lyb-veto-dz "$LYBDZ" --out "$OUTDIR/README.md" \
+    "${README_KIND_ARGS[@]}" \
     ${PURITY:+--purity "$PURITY"} ${COMPL:+--compl "$COMPL"}
 
 if [ -n "$SHARE_TO" ]; then
