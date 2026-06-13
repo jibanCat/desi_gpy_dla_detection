@@ -43,7 +43,7 @@ def counts_from_run_dir(run_dir):
     return out
 
 
-def counts_from_qsocat(qsocat):
+def counts_from_qsocat(qsocat, pixel_col="HPXPIXEL"):
     import numpy as np
     import fitsio
     # Match desi-DLAGP.py / constants.py exactly. NOTE: this applies ONLY the
@@ -52,11 +52,14 @@ def counts_from_qsocat(qsocat):
     # has all three False, so the index space matches. If one flips True and
     # removes an entire healpix, per-index alignment shifts (degrading *balance*
     # only -- coverage still tiles exactly). Use --from-run-dir to cross-check.
+    #
+    # pixel_col selects the grouping column: HPXPIXEL (default; the desi-DLAGP
+    # index space, parity-preserving) or UNIQPIX (per-UNIQPIX QSO counts).
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     import constants
-    cat = fitsio.read(qsocat, columns=["Z", "HPXPIXEL"])
+    cat = fitsio.read(qsocat, columns=["Z", pixel_col])
     z = np.asarray(cat["Z"], dtype=float)
-    hpx = np.asarray(cat["HPXPIXEL"]).astype(np.int64)  # defuse big-endian >q
+    hpx = np.asarray(cat[pixel_col]).astype(np.int64)  # defuse big-endian >q
     zmask = (z > constants.zmin_qso) & (z < constants.zmax_qso)
     hpx = hpx[zmask]
     uniq, cnt = np.unique(hpx, return_counts=True)
@@ -68,17 +71,21 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--qsocat", default=None)
     ap.add_argument("--from-run-dir", default=None)
+    ap.add_argument("--pixel-col", choices=["HPXPIXEL", "UNIQPIX"],
+                    default="HPXPIXEL",
+                    help="catalog column to group QSO counts by (default: "
+                         "HPXPIXEL -- the desi-DLAGP index space).")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     if not a.qsocat and not a.from_run_dir:
         sys.exit("[counts] need --qsocat or --from-run-dir")
 
     primary = (counts_from_run_dir(a.from_run_dir) if a.from_run_dir
-               else counts_from_qsocat(a.qsocat))
+               else counts_from_qsocat(a.qsocat, a.pixel_col))
 
     # Cross-check when both sources are available.
     if a.from_run_dir and a.qsocat:
-        ref = counts_from_qsocat(a.qsocat)
+        ref = counts_from_qsocat(a.qsocat, a.pixel_col)
         only_run = set(primary) - set(ref)
         only_cat = set(ref) - set(primary)
         diff = sum(1 for h in (set(primary) & set(ref)) if primary[h] != ref[h])
