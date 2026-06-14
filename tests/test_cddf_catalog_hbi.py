@@ -1430,6 +1430,8 @@ def test_S2_calc_cddf_reproduction_hard_gate():
         minz0 = np.asarray(h["min_z_dlas"][:], float)
         maxz0 = np.asarray(h["max_z_dlas"][:], float)
         tids_f0 = np.asarray(h["target_ids"][:], np.int64)
+        mp0 = np.asarray(h["model_posteriors"][:])
+        K_sll0 = h["sample_log_likelihoods_dla"].shape[2]
     rate_marg = np.zeros(len(lo_k))
     ref_marg = np.zeros(len(lo_k))
     margN = kappa.reshape(n_op, len(lo_k), -1).sum(axis=2)   # (n_op, n_N)
@@ -1437,8 +1439,12 @@ def test_S2_calc_cddf_reproduction_hard_gate():
         fr = bk.get(int(t))
         assert fr is not None and fr[0] == 0
         r = fr[1]
+        # WINNING model column (SLOT-K PARTNER-AXIS FIX): col = nanargmax(mp) - 1, the
+        # SAME column the kernel uses for every slot (slot-0 rows here use pidx=arange,
+        # so this exercises the slot-0 weight = plain softmax of the WINNING column).
+        col0 = min(max(int(np.nanargmax(mp0[r])) - 1, 0), K_sll0 - 1)
         with h5py.File(f0, "r") as h:
-            ll = h["sample_log_likelihoods_dla"][r, :, 0]
+            ll = h["sample_log_likelihoods_dla"][r, :, col0]
         logw = H._slot0_softmax(ll)
         relv = logw > -1e29
         if not np.any(relv):
@@ -1574,6 +1580,109 @@ def test_build_posterior_kernel_one_file_shapes_and_normalization():
     assert med_k < 3.0 * med_0 + 0.2, (
         f"slot>=1 centering ({med_k:.2f}) is much worse than slot-0 ({med_0:.2f}) — "
         f"the slot-k path is mis-paired (the items 1/5 remap-blocker signature)")
+
+
+def test_slotk_partner_axis_marginalization_synthetic():
+    """SLOT-K PARTNER-AXIS FIX regression (2026-06-14), NO real I/O — builds a tiny
+    synthetic processed-h5 + a matching sample grid in a tmpdir, then runs the REAL
+    build_posterior_kernel and asserts the slot-1 kernel marginal peaks at the PARTNER
+    absorber's logN (base_sample_inds[r,0,argmax]), NOT the slot-1 column's own-argmax
+    logN. This is the exact failure mode the fix corrects: the pre-fix path (weight =
+    slotk_norm of column k, params = raw grid at column-k argmax) put the slot-1 kernel
+    at the WRONG logN; the fix (weight = plain softmax of the WINNING column,
+    params = partner axis) puts it at the partner logN, mirroring
+    dla_gp.maximum_a_posteriori. Constructed so the partner logN and the naive logN are
+    in DIFFERENT fine bins, so the two conventions are distinguishable."""
+    import h5py, tempfile, shutil, os as _os
+    from astropy.table import Table
+
+    S = 64
+    rng = np.random.default_rng(1)
+    # sample grid: log_nhi_samples spans the DLA tier; offsets uniform.
+    log_nhi = np.linspace(19.0, 22.0, S)
+    offset = np.linspace(0.05, 0.95, S)
+
+    # ONE spectrum, winning model = 2-DLA -> model_posteriors argmax at idx 3
+    # ([null, subDLA, 1DLA, 2DLA, 3DLA]); col = nanargmax(mp) - 1 = 2.
+    nq, K = 1, 4
+    mp = np.array([[0.0, 0.0, 0.05, 0.92, 0.03]])           # argmax=3 -> col=2
+    sll = np.full((nq, S, K), np.nan)
+    # winning column = 2 (index): give it a clean peak at sample jstar.
+    jstar = 40
+    sll[0, :, 2] = -((np.arange(S) - jstar) ** 2) * 0.5     # max at jstar
+    # decoy peaks in OTHER columns at DIFFERENT samples (the pre-fix slot/col path
+    # would read these); make col 1 (the pre-fix "slot 1" column) peak elsewhere.
+    sll[0, :, 1] = -((np.arange(S) - 8) ** 2) * 0.5
+    sll[0, :, 0] = -((np.arange(S) - 55) ** 2) * 0.5
+    # base_sample_inds (nq, K-1, S): slot-1 partner of base sample jstar -> a sample
+    # whose logN is in a DIFFERENT fine bin from log_nhi[jstar].
+    bsi = np.zeros((nq, K - 1, S), dtype=np.int32)
+    for s in range(K - 1):
+        bsi[0, s, :] = np.arange(S, dtype=np.int32)        # identity default
+    partner = 12                                            # logN[12] far below logN[40]
+    bsi[0, 0, jstar] = partner
+    assert abs(log_nhi[partner] - log_nhi[jstar]) > 0.5, "decoy must differ by >1 fine bin"
+
+    min_z = np.array([2.2]); max_z = np.array([3.2])
+    tids = np.array([777], dtype=np.int64)
+    # MAP arrays (so the file is well-formed; not consumed by the kernel)
+    map_n = np.full((nq, K), np.nan); map_z = np.full((nq, K), np.nan)
+    map_n[0, 0] = log_nhi[jstar]; map_n[0, 1] = log_nhi[partner]
+    map_z[0, 0] = min_z[0] + (max_z[0] - min_z[0]) * offset[jstar]
+    map_z[0, 1] = min_z[0] + (max_z[0] - min_z[0]) * offset[partner]
+    log_lik_dla = np.zeros((nq, K))
+
+    tmpd = tempfile.mkdtemp()
+    try:
+        gridp = _os.path.join(tmpd, "grid.mat")
+        with h5py.File(gridp, "w") as m:
+            m.create_dataset("log_nhi_samples", data=log_nhi.reshape(S, 1))
+            m.create_dataset("offset_samples", data=offset.reshape(S, 1))
+        procp = _os.path.join(tmpd, "processed-spectra-16-0.h5")
+        with h5py.File(procp, "w") as h:
+            h.create_dataset("sample_log_likelihoods_dla", data=sll)
+            h.create_dataset("base_sample_inds", data=bsi)
+            h.create_dataset("model_posteriors", data=mp)
+            h.create_dataset("MAP_log_nhis", data=map_n)
+            h.create_dataset("MAP_z_dlas", data=map_z)
+            h.create_dataset("log_likelihoods_dla", data=log_lik_dla)
+            h.create_dataset("min_z_dlas", data=min_z)
+            h.create_dataset("max_z_dlas", data=max_z)
+            h.create_dataset("target_ids", data=tids)
+
+        # catalog: slot-0 (DLAID ...0) and slot-1 (...1) rows for the spectrum.
+        cat_cut = Table(dict(
+            TARGETID=np.array([777, 777], dtype=np.int64),
+            DLAID=np.array(["7770", "7771"]),
+            S2N_RED=np.array([5.0, 5.0]),
+            P_DLA=np.array([0.999, 0.999]),
+            DLAFLAG=np.array([0, 0])))
+        good = (cat_cut["DLAFLAG"] == 0)
+        cfg = _make_cfg(logN_lo=19.0, logN_hi=22.5, dlogN=0.1, drop_top_bin_above=22.4,
+                        v2_z_fit_lo=2.0, v2_z_fit_hi=3.5, v2_z_fit_step=0.1,
+                        snr_min=2.0, p_dla_min=0.99)
+        fine = H.build_fine_grid(cfg)
+        lo, hi, N_b, dN_b = fine
+        Nmid = 0.5 * (lo + hi)
+        kappa, ess = H.build_posterior_kernel(
+            cfg, cat_cut, good, fine,
+            processed_glob=_os.path.join(tmpd, "processed-spectra-16-*.h5"),
+            pw_samples_path=gridp, restrict_to_files=[0], verbose=False)
+        op, slot, tid_op, _ = H._op_mask_and_slots(cat_cut, good, cfg)
+        # slot-0 row -> kernel mode at log_nhi[jstar]; slot-1 -> at PARTNER log_nhi[12]
+        i0 = int(np.where(slot == 0)[0][0]); i1 = int(np.where(slot == 1)[0][0])
+        mode0 = Nmid[int(np.argmax(kappa[i0].sum(axis=1)))]
+        mode1 = Nmid[int(np.argmax(kappa[i1].sum(axis=1)))]
+        assert abs(mode0 - log_nhi[jstar]) < 0.1, (
+            f"slot-0 kernel mode {mode0:.2f} != winning-col argmax logN {log_nhi[jstar]:.2f}")
+        assert abs(mode1 - log_nhi[partner]) < 0.1, (
+            f"slot-1 kernel mode {mode1:.2f} != PARTNER logN {log_nhi[partner]:.2f} "
+            f"(pre-fix it landed near {log_nhi[jstar]:.2f}, the wrong axis)")
+        # and slot-1 mode must NOT be the slot-0 (jstar) logN — the discriminating check
+        assert abs(mode1 - log_nhi[jstar]) > 0.4, (
+            "slot-1 kernel collapsed onto the slot-0 axis — partner remap not applied")
+    finally:
+        shutil.rmtree(tmpd, ignore_errors=True)
 
 
 def test_kernel_pit_coverage_parameter_free_diagnostic():

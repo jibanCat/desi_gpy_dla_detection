@@ -1818,12 +1818,32 @@ def _op_mask_and_slots(cat_cut, good_mask, cfg):
 
 
 def _kernel_one_file(job, static):
-    """Process ONE processed-h5 file: read the needed slot slices CONTIGUOUSLY, build
-    each matched op row's 2-D kernel (slot-0 softmax / slot-k k-norm, RAW-grid params
-    — NO base_sample_inds remap, items 1 & 5 — 1/pi reweight, wall-truncate,
-    renormalize). Returns
+    """Process ONE processed-h5 file: read the needed arrays CONTIGUOUSLY, build each
+    matched op row's 2-D kernel (PARTNER-AXIS marginalization, 1/pi reweight,
+    wall-truncate, renormalize). Returns
     (ois, kappa_rows[n,n_N,n_z] float32, ess_rows[n,n_tiers] float32, n_no_support).
-    Module-level so joblib can pickle it for file-parallel reads."""
+    Module-level so joblib can pickle it for file-parallel reads.
+
+    SLOT-K PARTNER-AXIS FIX (2026-06-14, MAP-reproduction-gated to 0.000 dex on 2LPT-0,
+    1130/1130 slots over 3 files). For EVERY slot s of a given op row, the per-sample
+    WEIGHT is the PLAIN joint softmax (the same ``_slot0_softmax``) of the WINNING
+    model column ``col = nanargmax(model_posteriors[r]) - 1`` (the number-of-DLAs
+    winning model — empirically the column whose argmax reproduces the stored
+    MAP_log_nhis/MAP_z_dlas for ALL slots; the candidate ``-2`` reproduced only ~29%).
+    The SAMPLE AXIS differs by slot: slot 0 uses the RAW grid (``pidx = arange(S)``),
+    slot s>=1 uses the PARTNER axis ``pidx = base_sample_inds[r, s-1, :]`` (RAW int32 in
+    [0,S), NO -1 offset). The sample params + per-sample static arrays (logN, z via
+    offset, inv_pi, fine-bin index, wall/grid keep) are then indexed by ``pidx`` so the
+    1/pi divisor is evaluated at the PARTNER logN. This MIRRORS dla_gp.
+    maximum_a_posteriori EXACTLY: it pairs the winning-column argmax ``maxind`` (slot 0)
+    with ``base_sample_inds[s-1, maxind]`` (slot s). The previous slot-k path (slotk_norm
+    weight on column=slot, RAW grid) leaked ~60% of kernel mass below logN 19.5,
+    centered ~1.3 dex below the catalog NHI; this fix recovers slot-0-quality centering
+    (mean kernel-mean - catalog NHI ~ -0.01 dex for slot>=1). NOTE: slot 0 also moves
+    from the hard-coded column 0 to the WINNING column (the MAP gate showed column 0
+    reproduces the slot-0 MAP only ~2% of the time; the winning column 100%); the
+    slot-0 recipe (pidx=arange, plain softmax, raw grid) is otherwise unchanged and the
+    practical slot-0 centering is preserved (median kernel-mean - NHI ~ -0.02 dex)."""
     fi, ois, rows, slots, tids_op, fp = job
     log_nhi_samples = static["log_nhi_samples"]; offset_samples = static["offset_samples"]
     inv_pi_samp = static["inv_pi_samp"]; nbin_of_sample = static["nbin_of_sample"]
@@ -1831,18 +1851,37 @@ def _kernel_one_file(job, static):
     n_Nbins = static["n_Nbins"]; n_zf = static["n_zf"]
     z_edges = static["z_edges"]; drop_top = static["drop_top"]; tiers = static["tiers"]
 
+    rows_arr = np.asarray([int(r) for r in rows], dtype=np.int64)
+    slots_arr = np.asarray([int(k) for k in slots], dtype=np.int64)
     with _h5py.File(fp, "r") as h:
-        slots_needed = sorted(set(int(k) for k in slots))
-        sll = {k: h["sample_log_likelihoods_dla"][:, :, k] for k in slots_needed}  # (nq,S)
-        # slot-k>=1 needs ONLY log_likelihoods_dla (the _slotk_norm scale); the
-        # base_sample_inds remap was DROPPED (items 1 & 5) so we no longer read it.
-        need_bsi = [k for k in slots_needed if k >= 1]
-        log_lik_dla = None
-        if need_bsi:
-            log_lik_dla = np.asarray(h["log_likelihoods_dla"][:])        # (nq,k)
         min_z = np.asarray(h["min_z_dlas"][:], float)
         max_z = np.asarray(h["max_z_dlas"][:], float)
         tids_f = np.asarray(h["target_ids"][:], np.int64)
+        # WINNING model column per matched row (SLOT-K PARTNER-AXIS FIX):
+        #   col = nanargmax(model_posteriors[r]) - 1  (the number-of-DLAs winning
+        #   model; MAP-reproduction-gated). model_posteriors has NaN tail entries
+        #   for un-evaluated k, hence nanargmax. The SAME col is used for every slot
+        #   of a given spectrum (it is the joint winning model).
+        mp = np.asarray(h["model_posteriors"][:])                        # (nq,5)
+        K_sll = h["sample_log_likelihoods_dla"].shape[2]
+        col_of_row = {}
+        for r in np.unique(rows_arr):
+            r = int(r)
+            mpr = mp[r]
+            if not np.any(np.isfinite(mpr)):
+                col_of_row[r] = -1
+                continue
+            c = int(np.nanargmax(mpr)) - 1                              # = #DLAs
+            col_of_row[r] = min(max(c, 0), K_sll - 1)
+        # read ONLY the winning columns we actually need (one contiguous slice each)
+        cols_needed = sorted(set(int(c) for c in col_of_row.values() if c >= 0))
+        sll_col = {c: h["sample_log_likelihoods_dla"][:, :, c] for c in cols_needed}  # (nq,S)
+        # base_sample_inds (nq, K-1, S) RAW int32 — needed for any slot>=1 op row.
+        # Re-added (it had been dropped); read only if a slot>=1 row is present.
+        need_bsi = bool(np.any(slots_arr >= 1))
+        base_sample_inds = None
+        if need_bsi:
+            base_sample_inds = np.asarray(h["base_sample_inds"][:])      # (nq,K-1,S)
 
     n = len(ois)
     krows = np.zeros((n, n_Nbins, n_zf), dtype=np.float32)
@@ -1862,40 +1901,37 @@ def _kernel_one_file(job, static):
         assert int(tids_f[r]) == int(tids_op[j]), (
             f"DLAID/backlink misalignment: op TID {int(tids_op[j])} -> file {fi} row "
             f"{r} whose h5 TID is {int(tids_f[r])}")
-        ll = sll[k][r, :]
-        # adversarial-review MAJOR fix (item 8): an ALL-NaN likelihood row has NO real
-        # support. For slot 0, _slot0_softmax re-centers (ll−logsumexp), turning all
-        # -1e30 into a flat ~−log(S) (which would pass the logw>−1e29 gate below as a
-        # spurious uniform), so the all-NaN guard MUST be on the RAW ll, before the
-        # normalization. For slot k the k-norm preserves the −1e30 sentinel, but we
-        # guard on raw ll uniformly for clarity.
+        # SLOT-K PARTNER-AXIS FIX: WEIGHT = plain joint softmax of the WINNING model
+        # column (col = nanargmax(model_posteriors[r]) - 1), SAME for every slot of the
+        # spectrum. The col is the number-of-DLAs winning model — empirically the
+        # column whose argmax reproduces the stored MAP for ALL slots (MAP gate 100%).
+        col = col_of_row[r]
+        if col < 0:
+            n_no_support += 1
+            continue
+        ll = sll_col[col][r, :]
+        # ALL-NaN likelihood row has NO real support (guard on RAW ll before softmax,
+        # which would otherwise re-center -1e30 into a spurious flat ~-log(S)).
         if not np.any(np.isfinite(ll)):
             n_no_support += 1
             continue
+        logw = _slot0_softmax(ll)            # PLAIN joint softmax (slot-INDEPENDENT)
+        # SAMPLE AXIS (slot-DEPENDENT): slot 0 = RAW grid (pidx = arange(S)); slot s>=1
+        # = the PARTNER axis pidx = base_sample_inds[r, s-1, :] (RAW int32 in [0,S),
+        # NO -1 offset). The weight w[j] (over base sample j) is paired with the
+        # params of sample pidx[j], MIRRORING dla_gp.maximum_a_posteriori, which pairs
+        # the winning-column argmax (slot 0) with base_sample_inds[s-1, argmax] (slot s).
         if k == 0:
-            logw = _slot0_softmax(ll)
+            pidx = np.arange(len(log_nhi_samples))
         else:
-            # CS/Lya-review BLOCKER fix (items 1 & 5): the slot-k WEIGHT is the
-            # calc_cddf _slotk_norm of the k-axis sample likelihood, but the SAMPLE
-            # PARAMS are the RAW grid (NO base_sample_inds remap). The remap returned
-            # calc_cddf's base-sample-PARTNER marginal (the DLA1 partner of a DLA2
-            # joint fit) — a quantity calc_cddf only ever SUMS over all DLAs to build a
-            # WHOLE-spectrum posterior, NOT a per-slot posterior keyed to the catalog's
-            # MAP_log_nhis[k]. The catalog DLAID-slot-k row IS the (k+1)-th absorber's
-            # joint-MAP, so its f(N) histogram must be paired with the k-axis sample's
-            # OWN logN (log_nhi_samples[s]), not the partner's. Verified on real
-            # multi-DLA h5 rows: the remapped pairing was centered ~1.85 dex BELOW the
-            # catalog NHI (median |mode−NHI|, 95.8% pushed <19); the non-remapped
-            # pairing recovers a center that tracks the catalog NHI to ~0.24 dex
-            # (median), the same sane behaviour the slot-0 path already has.
-            logw = _slotk_norm(ll, log_lik_dla[r, k], second=k)
-        # SAMPLE PARAMS (slot-INDEPENDENT, raw grid — KERNEL DEFINITION):
-        #   logN_s = log_nhi_samples[s]; z_s = min_z[r]+(max_z[r]−min_z[r])·offset[s].
-        logN_s = log_nhi_samples
-        z_s = min_z[r] + (max_z[r] - min_z[r]) * offset_samples
-        inv_pi_s = inv_pi_samp
-        nbin_s = nbin_of_sample
-        keep_s = samp_keep_static
+            pidx = np.asarray(base_sample_inds[r, k - 1, :], dtype=np.int64)
+        # PARAMS + per-sample static arrays indexed at the PARTNER sample (so the
+        # 1/pi divisor is evaluated at the PARTNER logN, automatically).
+        logN_s = log_nhi_samples[pidx]
+        z_s = min_z[r] + (max_z[r] - min_z[r]) * offset_samples[pidx]
+        inv_pi_s = inv_pi_samp[pidx]
+        nbin_s = nbin_of_sample[pidx]
+        keep_s = samp_keep_static[pidx]
         # adversarial-review MAJOR fix (item 8): the NaN sentinel is -1e30, which IS
         # finite, so an ALL-NaN likelihood row would survive `np.isfinite` and produce
         # a spurious full-strength UNIFORM-in-prior kernel (w=exp(0)=1 for every
@@ -1950,21 +1986,26 @@ def build_posterior_kernel(cfg: HBIConfig, cat_cut, good_mask, fine_grid,
       ess   : dict tier->float32[n_obs], ESS_i(tier) = (Σ w/pi)² / Σ(w/pi)² over the
               samples whose logN_s >= tier (tiers 20.3/20.6/21.0); flag ESS<30.
 
-    The recipe is the KERNEL DEFINITION exactly:
+    The recipe is the KERNEL DEFINITION exactly (SLOT-K PARTNER-AXIS FIX, 2026-06-14):
       * op order = (S2N_RED>snr_min)&(P_DLA>p_dla_min)&good_mask on cat_cut.
-      * slot k = DLAID last digit -> h5 axis k of sample_log_likelihoods_dla; the
-        per-sample weight w_{i,s} = exp(slot-norm) (slot0 softmax / slotk k-norm).
-        CENTER from the slot likelihood, NEVER MAP_log_nhis. The base_sample_inds
-        remap on the PARAMS was DROPPED (items 1 & 5): it pulled in calc_cddf's
-        base-sample-PARTNER marginal (centered ~1.85 dex below the catalog NHI on real
-        multi-DLA rows), a whole-spectrum-sum quantity, not the per-slot posterior
-        keyed to the catalog row's MAP. The raw-grid pairing tracks the catalog NHI.
-      * sample (logN_s, z_s) = (log_nhi_samples[s], min_z[r]+(max_z[r]-min_z[r])*off[s])
-        for EVERY slot (raw grid, slot-independent params).
-      * kappa_i(x_s) ∝ w_{i,s}/pi_N(logN_s); 2-D fine-grid histogram; wall-truncate;
-        renormalize each object to Σ=1.
-    Contiguous per-file read of sll[:,:,0..3] (index rows in RAM); rows grouped by file
-    so each file is opened once (Do NOT fancy-index matched rows — 4.7x slower)."""
+      * WEIGHT (slot-INDEPENDENT): w_{i,j} = exp(_slot0_softmax(sll[r,:,col])) over the
+        base sample axis j, where col = nanargmax(model_posteriors[r]) - 1 is the
+        WINNING (number-of-DLAs) model column — the column whose argmax reproduces the
+        stored MAP_log_nhis/MAP_z_dlas for EVERY slot (MAP-reproduction-gated 100% on
+        2LPT-0; the candidate col=...-2 gave ~29%). The SAME col is used for every slot.
+      * SAMPLE AXIS (slot-DEPENDENT): slot 0 uses the RAW grid (pidx = arange(S));
+        slot s>=1 uses the PARTNER axis pidx = base_sample_inds[r, s-1, :] (RAW int32 in
+        [0,S), NO -1 offset). The params + 1/pi divisor are evaluated at the PARTNER
+        sample: logN_s = log_nhi_samples[pidx], z_s = min_z[r]+(max_z-min_z)*off[pidx].
+        This MIRRORS dla_gp.maximum_a_posteriori (winning-col argmax for slot 0, its
+        base_sample_inds[s-1, argmax] partner for slot s). The previous slotk_norm +
+        column=slot + raw-grid path leaked ~60% of slot-k mass below logN 19.5 (centered
+        ~1.3 dex below the catalog NHI); the fix recovers slot-0-quality centering.
+      * kappa_i(x_s) ∝ w_{i,j}/pi_N(logN_{pidx[j]}); 2-D fine-grid histogram;
+        wall-truncate; renormalize each object to Σ=1.
+    Contiguous per-file read of the WINNING columns of sll + base_sample_inds (index
+    rows in RAM); rows grouped by file so each file is opened once (Do NOT fancy-index
+    matched rows — 4.7x slower). The grid sample axis S is asserted == h5 sample axis."""
     logN_lo, logN_hi, N_b, dN_b = fine_grid
     z_edges_fine = _fine_z_grid(cfg)
     n_Nbins = len(logN_lo)
@@ -1990,6 +2031,19 @@ def build_posterior_kernel(cfg: HBIConfig, cat_cut, good_mask, fine_grid,
     pi_N, log_nhi_samples = precompute_pi_N(logN_lo, logN_hi, pw_samples_path)
     with _h5py.File(pw_samples_path, "r") as m:
         offset_samples = np.asarray(m["offset_samples"][:, 0], dtype=float)
+    # SLOT-K PARTNER-AXIS FIX requires the grid sample axis S to match the h5 sample
+    # axis EXACTLY (base_sample_inds values index into log_nhi_samples/offset_samples).
+    # A grid/h5 mismatch (e.g. a 50k grid against a 100k-sample run) silently
+    # mis-indexes every partner sample. Assert against the first file we will read.
+    S_grid = log_nhi_samples.size
+    if files:
+        _probe = files[0] if keep_fi is None else files[sorted(keep_fi)[0]]
+        with _h5py.File(_probe, "r") as _h:
+            S_h5 = int(_h["sample_log_likelihoods_dla"].shape[1])
+        assert S_grid == S_h5, (
+            f"pw_samples grid S={S_grid} != processed-h5 sample axis S={S_h5} "
+            f"({pw_samples_path} vs {_probe}). base_sample_inds partner indexing "
+            f"requires identical grids — check NUM_DLA_SAMPLES in BASELINE.env.")
     # item 9: cap the 1/pi tail amplification at 1/PI_FLOOR_FRAC (=100x) not 1000x.
     pi_floor = (float(pi_N[pi_N > 0].min()) * PI_FLOOR_FRAC) if np.any(pi_N > 0) else 1e-30
     inv_pi_samp = 1.0 / _pi_N_at_logN(log_nhi_samples, logN_lo, logN_hi, pi_N,
