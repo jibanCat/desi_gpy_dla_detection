@@ -56,6 +56,47 @@ def load_clean_sightlines(mockdir, *, snr_cut=2.0, n_healpix=0):
     return clean, clean_sl
 
 
+def load_natural_sightlines(mockdir, *, snr_cut=2.0, n_healpix=0):
+    """NATURAL hosts: BAL-free, SNR_REDSIDE>cut, but HCD-bearing sightlines KEPT.
+
+    Identical to :func:`load_clean_sightlines` except the truth-HCD removal is
+    skipped (an empty hcd table is passed to ``build_clean_table``), so injected
+    absorbers land on sightlines that retain their REAL HCD content → the host's
+    natural absorbers provide realistic single-slot COMPETITION (the 0.83→0.76
+    completeness gap the clean campaigns cannot see).  b_FP is still measured on
+    the CLEAN controls (an HCD-bearing host's detection may be a real absorber,
+    not a false positive), so this loader is for the INJECTION arm only.
+    """
+    from astropy.table import Table
+    D = mockdir
+    empty_hcd = Table({"TARGETID": np.array([], dtype=np.int64)})
+    nat = build_clean_table(Table.read(f"{D}/zcat.fits"), empty_hcd,
+                            Table.read(f"{D}/bal_cat.fits"),
+                            Table.read(f"{D}/snr_cat.fits"))
+    rs = np.asarray(nat["SNR_REDSIDE"], float)
+    nat = nat[np.isfinite(rs) & (rs > snr_cut)]
+    if n_healpix:
+        hp = np.asarray(nat["HEALPIX"], np.int64); zq = np.asarray(nat["Z"], float)
+        u = np.unique(hp); cnt = np.array([(hp == h).sum() for h in u])
+        floor = max(20, int(np.median(cnt) * 0.25))
+        cand = u[cnt >= floor]
+        if cand.size < n_healpix:
+            cand = u
+        med = np.array([np.median(zq[hp == h]) for h in cand])
+        order = np.argsort(med)
+        pick = np.unique(np.linspace(0, order.size - 1, n_healpix).round().astype(int))
+        nat = nat[np.isin(hp, cand[order[pick]])]
+    zqa = np.asarray(nat["Z"], float)
+    print(f"[natural] {len(nat)} sightlines on {len(set(nat['HEALPIX'].tolist()))} "
+          f"healpix; z_QSO [{zqa.min():.2f},{zqa.max():.2f}] median {np.median(zqa):.2f} "
+          f"(HCD hosts KEPT for competition)", flush=True)
+    nat_sl = dict(target_id=np.asarray(nat["TARGETID"], np.int64),
+                  healpix=np.asarray(nat["HEALPIX"], np.int64),
+                  z_qso=np.asarray(nat["Z"], float),
+                  native_snr=np.asarray(nat["SNR_REDSIDE"], float))
+    return nat, nat_sl
+
+
 def report_restframe(inj, zqso_bins):
     """Print the rest-frame forest-position (λ_rest) coverage of an injection list."""
     zt = np.array([r["z_true"] for r in inj]); zq = np.array([r["z_qso"] for r in inj])

@@ -75,7 +75,7 @@ python desi-DLAGP.py \
     --num_forest_lines 31 --max_lambda 1250 --plot_figures 0 \
     --enable_tau_eb 1 --tau_eb_objective null \
     --dlambda 0.15 --early_stop_mode baseline --min_lambda 911.75 \
-    --k 30 --max_workers 16 \
+    --k 30 --max_workers 16 --batch_size 1250 \
     --figure_dir "$OUTDIR/figures" \
     --level2_start "$LEVEL2_START" --level2_end "$LEVEL2_END"
 echo "[gp-inject] DONE rc=$?  end=$(date)"
