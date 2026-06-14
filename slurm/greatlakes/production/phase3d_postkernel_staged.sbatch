@@ -17,7 +17,10 @@
 #SBATCH -p standard
 #SBATCH -N 1
 #SBATCH -n 16
-#SBATCH --mem=48G
+# stage 1 (kernel rebuild) reads base_sample_inds (nq*3*S int32 ~0.8GB/file) + winning
+# sll columns across 16 workers -> 48G OOM'd (job 51779167). Standard nodes have 180G;
+# 150G gives ~9GB/worker. Light stages 2/3/s3 over-request harmlessly on a -N1 node.
+#SBATCH --mem=150G
 #SBATCH -t 08:00:00
 #SBATCH -J phase3d_staged
 #SBATCH -o slurm/greatlakes/production/logs/phase3d_staged_%j.log
