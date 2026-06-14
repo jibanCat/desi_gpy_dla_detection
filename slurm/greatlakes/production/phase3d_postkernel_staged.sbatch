@@ -8,6 +8,7 @@
 #
 #   STAGE=1            sbatch ... phase3d_postkernel_staged.sbatch   (default)
 #   STAGE=2  / 3       sbatch --export=ALL,STAGE=2 ...
+#   STAGES="2 3"       sbatch --export=ALL,STAGES="2 3" ...   (run several in order)
 #   STAGE=s3_all       sbatch --export=ALL,STAGE=s3_all ...
 #
 # DISCIPLINE: analysis-side only — NEVER touches dla_gp.py / run_bayes_select.py /
@@ -28,7 +29,7 @@
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
-STAGE="${STAGE:-1}"
+STAGES="${STAGES:-${STAGE:-1}}"   # space-separated list of --stage values, run in order
 
 # BLAS threads pinned to 1 (file-parallel joblib processes must not oversubscribe).
 export OMP_NUM_THREADS=1
@@ -74,10 +75,11 @@ ZBINS="2.0,2.5,3.0,3.5"
 REPORT_LIMITS="20.0,20.3,20.6"
 NJOBS=16
 
-echo "[$(date)] phase3d_postkernel_staged STAGE=${STAGE} start (job ${SLURM_JOB_ID:-local}, ${NJOBS} workers)"
+for ST in ${STAGES}; do
+echo "[$(date)] phase3d_postkernel_staged STAGE=${ST} start (job ${SLURM_JOB_ID:-local}, ${NJOBS} workers)"
 
 python CDDF_analysis/run_phase3d_postkernel.py \
-    --stage "${STAGE}" \
+    --stage "${ST}" \
     --out "${OUT}" \
     --catalog-dir "${CAT}" \
     --truth "${TRUTH}" \
@@ -95,4 +97,5 @@ python CDDF_analysis/run_phase3d_postkernel.py \
     --seed 0 \
     --n-jobs "${NJOBS}"
 
-echo "[$(date)] phase3d_postkernel_staged STAGE=${STAGE} DONE -> ${OUT}"
+echo "[$(date)] phase3d_postkernel_staged STAGE=${ST} DONE -> ${OUT}"
+done
