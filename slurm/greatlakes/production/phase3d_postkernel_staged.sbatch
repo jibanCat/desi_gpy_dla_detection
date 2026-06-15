@@ -45,7 +45,7 @@ REPO="/home/mfho/desi_gpy_dla_detection"
 cd "${REPO}"
 mkdir -p slurm/greatlakes/production/logs
 
-OUT="/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phase3d_postkernel_out"
+OUT="${OUT_OVERRIDE:-/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phase3d_postkernel_out}"
 CAT="/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/"
 TRUTH="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits"
 BAL="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits"
@@ -67,8 +67,8 @@ fi
 echo "[gate] FROZEN criteria: ${GATE_DOC}"
 sha256sum "${GATE_DOC}" || md5sum "${GATE_DOC}" || true
 
-FIT_FLOOR=19.5
-LAMBDA_BSPBODY=30.0
+FIT_FLOOR="${FIT_FLOOR:-19.5}"
+LAMBDA_BSPBODY="${LAMBDA_BSPBODY:-30.0}"
 DALPHA=0.5
 HOST_TRUTH_FLOOR=19.0
 ZBINS="2.0,2.5,3.0,3.5"
