@@ -77,6 +77,7 @@ docs/handoffs/
 docs/runs/
 docs/stories/
 docs/superpowers/
+docs/voigt_lsf_sweep_plan.md
 
 # Step A trainset fixtures regenerable from build_2lpt_frozen_test_fixture.py
 tests/fixtures/2lpt_frozen/training_set.mat

@@ -23,6 +23,7 @@ team's P/C, dN/dX, Ω_HI and DLA-catalog results stay public in this repo); the 
 | `docs/runs/` | `from_code_repo/docs/runs/` | 7 |
 | `docs/stories/` | `from_code_repo/docs/stories/` | 4 |
 | `docs/superpowers/` | `from_code_repo/docs/superpowers/` | 6 |
+| `docs/voigt_lsf_sweep_plan.md` | `from_code_repo/docs/voigt_lsf_sweep_plan.md` | 1 |
 
 To read them: `ls /global/homes/j/jibancat/desi_gpy_dla_notes/from_code_repo/docs/`
 (or `git -C /global/homes/j/jibancat/desi_gpy_dla_notes pull` first to refresh).
