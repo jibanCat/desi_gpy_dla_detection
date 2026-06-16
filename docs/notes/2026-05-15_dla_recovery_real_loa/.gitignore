@@ -1,6 +1,0 @@
-# Per-target recovery results carry real DESI LOA TARGETIDs / per-object
-# N_HI (LOA = pre-public DESI collaboration data) — keep local only.
-# findings_summary.md (aggregate-only, no TARGETIDs) and this .gitignore
-# stay tracked.
-*.json
-findings.md

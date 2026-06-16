@@ -72,8 +72,19 @@ docs/handoffs/legacy/
 # SLURM job logs in any greatlakes subdir (the old slurm/greatlakes/*.log missed production/logs/)
 slurm/greatlakes/**/*.log
 
-# investigation notes are tracked in a SEPARATE notes repo, not the codebase
+# Investigation notes, run results, stories, design memos, session handoffs and
+# results-heavy docs carry catalog statistics (counts, P/C) -> they live in the
+# SEPARATE private notes repo, not the public codebase.
 docs/notes/
+docs/handoffs/
+docs/runs/
+docs/stories/
+docs/superpowers/
+docs/paper_figures.md
+docs/production_runbook.md
+docs/production_models.md
+docs/CURRENT_MODELS.md
+docs/test_results_overview.md
 
 # Step A trainset fixtures regenerable from build_2lpt_frozen_test_fixture.py
 tests/fixtures/2lpt_frozen/training_set.mat
