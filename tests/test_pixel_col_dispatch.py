@@ -10,6 +10,7 @@ those three packages plus ``desispec.io.findfile`` (a pure path constructor).
 """
 import importlib.util
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -31,6 +32,15 @@ def _load_balance():
     """Import ``tools/loa_balance_boundaries.py``."""
     path = os.path.join(REPO_ROOT, "tools", "loa_balance_boundaries.py")
     spec = importlib.util.spec_from_file_location("loa_balance_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_spec_counts():
+    """Import ``tools/loa_hpx_spec_counts.py`` (the count-table generator)."""
+    path = os.path.join(REPO_ROOT, "tools", "loa_hpx_spec_counts.py")
+    spec = importlib.util.spec_from_file_location("loa_hpx_spec_counts_under_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -112,17 +122,22 @@ def test_read_catalog_uniqpix_appended_in_balmask_branch(monkeypatch):
 # --------------------------------------------------------------------------- #
 # (2) dispatch column: np.unique on the chosen col selects the right TARGETIDs
 # --------------------------------------------------------------------------- #
-def _grouping_targetids(catalog, pixel_col):
-    """Replicate desi-DLAGP's dispatch: unique cells over pixel_col, then the
-    per-cell sub-catalog selection ``catalog[catalog[pixel_col] == cell]``."""
-    cells = np.unique(catalog[pixel_col])
+def _grouping_targetids(desi, catalog, pixel_col):
+    """Drive desi-DLAGP's PRODUCTION dispatch helpers (``unique_pixel_cells`` +
+    ``select_pixel_cell``) -- NOT a re-implementation. ``main`` uses these exact
+    helpers, so a regression that ignored ``pixel_col`` (e.g. hard-coding
+    HPXPIXEL back in) would make this test fail."""
+    cells = desi.unique_pixel_cells(catalog, pixel_col)
     return {
-        int(cell): set(np.asarray(catalog[catalog[pixel_col] == cell]["TARGETID"]))
+        int(cell): set(
+            np.asarray(desi.select_pixel_cell(catalog, pixel_col, cell)["TARGETID"])
+        )
         for cell in cells
     }
 
 
 def test_dispatch_column_selects_right_targetids():
+    desi = _load_desi_dlagp()
     # HPXPIXEL and UNIQPIX intentionally disagree so the two groupings differ.
     catalog = Table(
         {
@@ -133,12 +148,12 @@ def test_dispatch_column_selects_right_targetids():
         }
     )
 
-    by_hpx = _grouping_targetids(catalog, "HPXPIXEL")
+    by_hpx = _grouping_targetids(desi, catalog, "HPXPIXEL")
     assert set(by_hpx) == {100, 200}
     assert by_hpx[100] == {10, 11}
     assert by_hpx[200] == {12, 13, 14}
 
-    by_uniq = _grouping_targetids(catalog, "UNIQPIX")
+    by_uniq = _grouping_targetids(desi, catalog, "UNIQPIX")
     assert set(by_uniq) == {7000000, 7000001, 8000000}
     assert by_uniq[7000000] == {10, 12}   # spans two healpix
     assert by_uniq[7000001] == {11}
@@ -148,6 +163,73 @@ def test_dispatch_column_selects_right_targetids():
     all_hpx = set().union(*by_hpx.values())
     all_uniq = set().union(*by_uniq.values())
     assert all_hpx == all_uniq == {10, 11, 12, 13, 14}
+
+
+# --------------------------------------------------------------------------- #
+# (2b) loa_hpx_spec_counts: --pixel-col groups QSO counts by the chosen column
+# --------------------------------------------------------------------------- #
+def test_counts_from_qsocat_groups_by_selected_column(monkeypatch):
+    import fitsio
+    sc = _load_spec_counts()
+
+    # Z all inside (constants.zmin_qso, zmax_qso) so the z-mask keeps every row.
+    cat = {
+        "Z": np.array([2.5, 3.0, 3.5, 2.8, 3.1], dtype=float),
+        "HPXPIXEL": np.array([100, 100, 200, 200, 200], dtype=np.int64),
+        "UNIQPIX": np.array([7000000, 7000001, 7000000, 8000000, 8000000],
+                            dtype=np.int64),
+    }
+    captured = {}
+
+    def fake_read(path, columns=None):
+        captured["columns"] = list(columns)
+        return {c: cat[c] for c in columns}
+
+    monkeypatch.setattr(fitsio, "read", fake_read)
+
+    # Default: HPXPIXEL (the parity-preserving desi-DLAGP index space).
+    out_hpx = sc.counts_from_qsocat("dummy.fits")
+    assert captured["columns"] == ["Z", "HPXPIXEL"]
+    assert out_hpx == {100: 2, 200: 3}
+
+    # UNIQPIX: groups by the per-UNIQPIX column instead (matterhorn path).
+    out_uniq = sc.counts_from_qsocat("dummy.fits", pixel_col="UNIQPIX")
+    assert captured["columns"] == ["Z", "UNIQPIX"]
+    assert out_uniq == {7000000: 2, 7000001: 1, 8000000: 2}
+
+
+def test_counts_from_qsocat_applies_zmask(monkeypatch):
+    import fitsio
+    sys.path.insert(0, REPO_ROOT)
+    import constants  # the very z-bounds the tool applies
+    sc = _load_spec_counts()
+
+    lo, hi = constants.zmin_qso, constants.zmax_qso
+    cat = {
+        # one below lo, one above hi -> both dropped; two in-range kept.
+        "Z": np.array([lo - 0.5, hi + 0.5, lo + 0.1, hi - 0.1], dtype=float),
+        "HPXPIXEL": np.array([100, 100, 100, 200], dtype=np.int64),
+    }
+
+    def fake_read(path, columns=None):
+        return {c: cat[c] for c in columns}
+
+    monkeypatch.setattr(fitsio, "read", fake_read)
+    out = sc.counts_from_qsocat("dummy.fits")
+    assert out == {100: 1, 200: 1}  # the two out-of-range rows are excluded
+
+
+def test_spec_counts_cli_rejects_unknown_pixel_col(monkeypatch):
+    sc = _load_spec_counts()
+    monkeypatch.setattr(
+        sys, "argv",
+        ["loa_hpx_spec_counts.py", "--qsocat", "x.fits",
+         "--out", "y.txt", "--pixel-col", "BOGUS"],
+    )
+    # argparse choices=[HPXPIXEL, UNIQPIX] rejects the bad value -> exit 2,
+    # before any file I/O.
+    with pytest.raises(SystemExit):
+        sc.main()
 
 
 # --------------------------------------------------------------------------- #

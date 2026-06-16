@@ -86,4 +86,5 @@ docs/notes/2026-05-08_matlab_dr16_validation/phase2_result.npz
 
 # Per-healpix QSO spec-count tables hold catalog counts -> keep on CFS, never commit.
 # Regenerate with tools/loa_hpx_spec_counts.py (see matterhorn_nersc_v1.env).
-slurm/nersc/production/*_qso_counts.txt
+# Covers *_qso_counts.txt (matterhorn) and *_spec_counts.txt (loa).
+slurm/nersc/production/*_counts.txt

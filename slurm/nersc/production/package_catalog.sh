@@ -40,8 +40,10 @@ set +u; source /global/cfs/cdirs/desi/software/desi_environment.sh main >/dev/nu
 RUNDIR="" RELEASE="" BAL_CAT="" EXPECT="" OUTDIR="" SHARE_TO="" LYBDZ="0.005" SRCLABEL=""
 PURITY="" COMPL=""
 # --data-kind selects the FITS naming + README text. Default mock for back-compat
-# (byte-identical to the historical packaging). real names by SURVEY/PROGRAM.
-DATA_KIND="mock" SURVEY="main" PROGRAM="dark"
+# (byte-identical to the historical packaging). real names by SURVEY/PROGRAM, which
+# must be passed explicitly (no defaults) so a real run on a non-main/dark program
+# can't be silently mislabeled dlacat-<release>-main-dark.fits.
+DATA_KIND="mock" SURVEY="" PROGRAM=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --rundir)           RUNDIR="$2"; shift 2;;
@@ -68,6 +70,11 @@ case "$DATA_KIND" in
     mock|real) ;;
     *) echo "[package] --data-kind must be mock or real (got: $DATA_KIND)" >&2; exit 2;;
 esac
+# real-data bundles are named by survey/program; require them explicitly so a
+# non-main/dark real run can't be mislabeled. mock ignores survey/program.
+if [ "$DATA_KIND" = "real" ] && { [ -z "$SURVEY" ] || [ -z "$PROGRAM" ]; }; then
+    echo "[package] --data-kind real requires --survey and --program" >&2; exit 2
+fi
 
 PROCDIR="$RUNDIR/outputs"
 [ -d "$PROCDIR" ] || { echo "[package] no $PROCDIR" >&2; exit 2; }
