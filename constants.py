@@ -10,7 +10,7 @@ from scipy.constants import speed_of_light
 
 # Redshift range for QSO catalog inclusion
 zmin_qso = 2.0
-zmax_qso = 4.25 #7.0 :: 942946 -> 945968, 926122 -> 926122
+zmax_qso = 4.25  # upper z bound for QSO inclusion (7.0 was tried historically)
 # ---------------------------------------------------------------
 # DLA search window (GP model rest-frame wavelength range)
 # ---------------------------------------------------------------
