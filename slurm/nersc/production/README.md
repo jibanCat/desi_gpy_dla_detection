@@ -135,6 +135,9 @@ P/C is the full [911,1216] window, NHI>20 / >20.3.
 
 ## After a run finishes
 
+> Full step-by-step packaging + flag reference: [`docs/packaging_catalog_guide.md`](../../../docs/packaging_catalog_guide.md).
+
+
 ```bash
 # Combine per-healpix dlacat → one catalog (gap-checked + provenance):
 python examples/combine_dlacat.py --procdir <OUTDIR> --out <OUTDIR>/combined_dlacat.fits
