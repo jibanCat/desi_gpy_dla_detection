@@ -337,11 +337,14 @@ This runs, in order:
   in `NHI_ERR`/`Z_DLA_ERR`, `DLAFLAG==0` = clean).
 - copy `BASELINE.env` (resolved config) + write `README.md`.
 
-Output bundle: **`dlacat-<release>-mockcat.fits`** + `README.md` + `BASELINE.env`. **Caveat:**
-`package_catalog.sh` + `_write_catalog_readme.py` are currently **mock-oriented** — they hardcode the
-`-mockcat` filename and a "mock validation" README and do not pass `--data-kind`. For a **real** run
-(LOA, Matterhorn) the bundle is presently **hand-assembled** (cf. the shipped `dlacat-loa-main-dark-v1.fits`);
-adding a real-data `--data-kind`/name branch is a TODO (tracked in the Matterhorn handoff).
+Output bundle: **`dlacat-<release>-mockcat.fits`** + `README.md` + `BASELINE.env`. **Data kind:**
+`package_catalog.sh` takes `--data-kind {mock,real}` (default `mock`). The default `mock` path is
+**byte-identical** to the historical packaging — it emits `dlacat-<release>-mockcat.fits` and a
+"mock validation" README. For a **real** run (LOA, Matterhorn) pass `--data-kind real --survey <s>
+--program <p>` (e.g. `--survey main --program dark`): the bundle is then named
+`dlacat-<release>-<survey>-<program>.fits` (no `-mockcat`, since there is no truth) and the generated
+README carries the **no-truth** caveats — P/C is **not** measured on real data; the recommended cuts
+are the mock-validated operating point inherited from the matching mock catalog.
 Schema (HDU 1, `EXTNAME=DLACAT`, one row per detected absorber): `TARGETID, RA, DEC, Z_QSO,
 SNR_FOREST, SNR_REDSIDE, DLAID, Z_DLA(_ERR), NHI(_ERR), DLAFLAG, P_DLA, P_NULL, LOGP_DLA,
 LOGP_NULL, MODEL_P, LYBETA_FLAG, LYBETA_PARENT_TID/Z, BAL_FLAG, NHI_CONSISTENCY_FLAG, PDLA_SATURATED_FLAG`.

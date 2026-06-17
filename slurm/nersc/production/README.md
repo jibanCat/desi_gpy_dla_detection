@@ -145,12 +145,17 @@ python examples/combine_dlacat.py --procdir <OUTDIR> --out <OUTDIR>/combined_dla
 python examples/molly_faithful_pc_plots.py --catalog-dir <OUTDIR> --truth <MOCKDIR>/dla_cat.fits \
     --bal-cat <MOCKDIR>/bal_cat.fits --no-bal --mockdir <MOCKDIR> --snr-min 2.0 --nhi-min 20.3 \
     --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out <OUTDIR>/pc/
-# Package + share (MOCK runs): emits dlacat-<release>-mockcat.fits + a mock-validation README.
+# Package + share (MOCK runs, default): emits dlacat-<release>-mockcat.fits + a mock-validation README.
 bash slurm/nersc/production/package_catalog.sh --rundir <OUTDIR> --share-to <CFS share>
+# Package + share (REAL runs, e.g. LOA/Matterhorn): names by survey/program, no-truth README.
+bash slurm/nersc/production/package_catalog.sh --rundir <OUTDIR> --share-to <CFS share> \
+    --data-kind real --survey main --program dark   # → dlacat-<release>-main-dark.fits
 ```
-**Note:** `package_catalog.sh` / `_write_catalog_readme.py` are **mock-oriented** (hardcoded `-mockcat`
-name + "mock validation" README; `--data-kind` not forwarded). For a **real** run (LOA, Matterhorn)
-the bundle is currently **hand-assembled**; real-data packaging support is a TODO (Matterhorn handoff).
+**Note:** `package_catalog.sh` takes `--data-kind {mock,real}` (default `mock`). The default `mock`
+path is **byte-identical** to the historical packaging (`dlacat-<release>-mockcat.fits` + mock-validation
+README). Passing `--data-kind real --survey <s> --program <p>` names the bundle
+`dlacat-<release>-<survey>-<program>.fits` (no `-mockcat`) and writes a **no-truth** README: P/C is not
+measured on real data — the recommended cuts are the mock-validated operating point.
 Note: desi-DLAGP writes the processed h5 under `<OUTDIR>/figures/processed/`; the molly eval
 expects `<OUTDIR>/processed/` — symlink it: `ln -sfn <OUTDIR>/figures/processed <OUTDIR>/processed`.
 

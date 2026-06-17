@@ -396,6 +396,19 @@ def parse(options=None):
         help="end level2 folder",
     )
 
+    # healpix grouping column / coadd layout
+    parser.add_argument(
+        "--pixel_col",
+        type=str,
+        choices=["HPXPIXEL", "UNIQPIX"],
+        default="HPXPIXEL",
+        help=(
+            "catalog column used to group spectra into healpix cells and to "
+            "resolve coadd paths. Default HPXPIXEL keeps the existing loa/mock "
+            "behavior. Use UNIQPIX for the matterhorn spectra/ (uniqpix) coadd layout."
+        ),
+    )
+
     # external healpix list
     parser.add_argument(
         "--use_external_hpx_list",
@@ -417,6 +430,23 @@ def parse(options=None):
         args = parser.parse_args(options)
 
     return args
+
+
+def unique_pixel_cells(catalog, pixel_col):
+    """Distinct dispatch cells in ``catalog``, sorted (``np.unique`` sorts).
+
+    This is the dispatch index space that ``--hpx_start/--hpx_end`` slice into.
+    Factored out (rather than inlined in ``main``) so the parity contract --
+    ``pixel_col='HPXPIXEL'`` reproduces the legacy ``np.unique(catalog['HPXPIXEL'])``
+    exactly -- is exercised by the test suite against the PRODUCTION code path,
+    not a re-implementation of it.
+    """
+    return np.unique(catalog[pixel_col])
+
+
+def select_pixel_cell(catalog, pixel_col, cell):
+    """Sub-catalog of rows whose ``pixel_col`` equals ``cell`` (one dispatch slice)."""
+    return catalog[catalog[pixel_col] == cell]
 
 
 def main(args=None):
@@ -508,7 +538,9 @@ def main(args=None):
         catalog = read_mock_catalog(args.qsocat, args.balmask, args.mockdir)
     else:
         # running in between healpix pixels: hpx_start - hpx_end
-        catalog = read_catalog(args.qsocat, args.balmask, args.tilebased)
+        catalog = read_catalog(
+            args.qsocat, args.balmask, args.tilebased, pixel_col=args.pixel_col
+        )
 
         if args.use_external_hpx_list:
             # read in healpix list
@@ -522,7 +554,8 @@ def main(args=None):
                 f"healpix pixels to process: from {this_hpxs[0]} to {this_hpxs[-1]}"
             )
         else:
-            all_hpxs = np.unique(catalog["HPXPIXEL"])
+            all_hpxs = unique_pixel_cells(catalog, args.pixel_col)
+            log.info(f"dispatch by {args.pixel_col}: {len(all_hpxs)} unique cells")
             log.info(
                 "running in between healpix pixels {} - {}; Total {}".format(
                     args.hpx_start, args.hpx_end, len(all_hpxs)
@@ -624,8 +657,10 @@ def main(args=None):
                     args.survey,
                     args.program,
                     datapath,
-                    catalog[catalog["HPXPIXEL"] == hpx],
+                    select_pixel_cell(catalog, args.pixel_col, hpx),
                     model_params,  # Pass the model parameters dictionary here
+                    args.release,
+                    args.pixel_col,
                 )
                 for hpx in this_hpxs
             ]
@@ -637,8 +672,10 @@ def main(args=None):
                     "survey": args.survey,
                     "program": args.program,
                     "datapath": datapath,
-                    "hpxcat": catalog[catalog["HPXPIXEL"] == hpx],
+                    "hpxcat": select_pixel_cell(catalog, args.pixel_col, hpx),
                     "model_params": model_params,
+                    "release": args.release,
+                    "pixel_col": args.pixel_col,
                 }
                 for hpx in this_hpxs
             ]
@@ -702,7 +739,7 @@ def main(args=None):
     print(f"total run time: {np.round(total_time/60,1)} minutes")
 
 
-def read_catalog(qsocat, balmask, bytile):
+def read_catalog(qsocat, balmask, bytile, pixel_col="HPXPIXEL"):
     """
     read quasar catalog
 
@@ -711,6 +748,8 @@ def read_catalog(qsocat, balmask, bytile):
     qsocat (str) : path to quasar catalog
     balmask (bool) : should BAL attributes from baltools be read in?
     bytile (bool) : catalog is tilebased, default assumption is healpix
+    pixel_col (str) : healpix grouping column; if 'UNIQPIX', ensure that
+        column is read in addition to the default HPXPIXEL columns
 
     Returns
     -------
@@ -751,6 +790,8 @@ def read_catalog(qsocat, balmask, bytile):
                     "SPECTYPE",
                     "ZWARN",
                 ]
+            if pixel_col == "UNIQPIX" and "UNIQPIX" not in cols:
+                cols.append("UNIQPIX")
             catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
         except:
             log.error(f"cannot find {cols} in quasar catalog")
@@ -777,6 +818,8 @@ def read_catalog(qsocat, balmask, bytile):
                 "SPECTYPE",
                 "ZWARN",
             ]
+        if pixel_col == "UNIQPIX" and "UNIQPIX" not in cols:
+            cols.append("UNIQPIX")
         catalog = Table(fitsio.read(qsocat, ext=1, columns=cols))
 
     log.info(f"Successfully read quasar catalog: {qsocat}")

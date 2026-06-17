@@ -15,7 +15,7 @@ import fitsio
 
 TEMPLATE = """# GP-DLA absorber catalog — {source_label}
 
-**File:** `dlacat-{release}-mockcat.fits` (single FITS table, HDU 1, `EXTNAME=DLACAT`)
+**File:** `{fits_name}` (single FITS table, HDU 1, `EXTNAME=DLACAT`)
 
 Combined Gaussian-Process DLA detection catalog. {data_kind}
 
@@ -30,14 +30,14 @@ Combined Gaussian-Process DLA detection catalog. {data_kind}
 A row is one absorber, so a sightline with k DLAs contributes k rows (group by
 `TARGETID`). Sightlines with no detection are absent.
 
-**Files in this folder:** `dlacat-{release}-mockcat.fits` (catalog), `README.md`
+**Files in this folder:** `{fits_name}` (catalog), `README.md`
 (this file), `BASELINE.env` (exact resolved pipeline config — for reproducibility).
 
 ## Reading it
 ```python
 from astropy.table import Table
-cat = Table.read("dlacat-{release}-mockcat.fits")
-# or:  import fitsio; cat = fitsio.read("dlacat-{release}-mockcat.fits", ext=1)
+cat = Table.read("{fits_name}")
+# or:  import fitsio; cat = fitsio.read("{fits_name}", ext=1)
 ```
 
 ## Columns
@@ -66,7 +66,7 @@ clean = cat[sel]
 ```
 `P_DLA` is the tunable knob: lower for completeness, raise for purity.
 
-## Validated performance (vs the mock truth)
+## Validated performance {validated_heading}
 {pc_block}
 
 ## Data notes
@@ -77,7 +77,7 @@ clean = cat[sel]
   recommended `SNR_REDSIDE > 2` cut removes them.
 
 ## Caveats
-- Mock validation catalog (truth known); numbers differ on real DESI spectra.
+- {caveat_data}
 - BAL sightlines handled by *exclusion* (`BAL_FLAG`), not pixel masking.
 - See `BASELINE.env` for the exact config; regenerate via the pipeline:
   inference (`desi-DLAGP.py`) → `examples/combine_dlacat.py` →
@@ -100,6 +100,30 @@ PC_WITHOUT = """Measure with `examples/molly_faithful_pc_plots.py` against the m
 --snr-min 2 --nhi-min 20.3 --lam-rf-min 911 --lam-rf-max 1216` (NHI-descending
 matcher). Re-run on this catalog to fill in the headline P/C."""
 
+# Real-data variant: there is no truth catalog for real DESI spectra, so P/C is
+# inherited from the mock-validated operating point rather than measured here.
+PC_WITHOUT_REAL = """No truth catalog exists for real DESI spectra, so P/C is **not** measured on
+this catalog. The cuts below are the **mock-validated operating point** (see the
+matching mock dlacat README + `BASELINE.env`); apply the same `P_DLA`/`SNR`/`N_HI`
+selection here. To re-validate the operating point, run
+`examples/molly_faithful_pc_plots.py` on the corresponding mock catalog."""
+
+# Per-data-kind text: the mock strings MUST reproduce the historical README byte
+# for byte (parity contract); real strings carry the no-truth caveats.
+DATA_KIND_TEXT = {
+    "mock": {
+        "data_kind": "It is a **validation/mock** catalog (truth known), not real-survey data.",
+        "validated_heading": "(vs the mock truth)",
+        "caveat_data": "Mock validation catalog (truth known); numbers differ on real DESI spectra.",
+    },
+    "real": {
+        "data_kind": "It is a **real DESI survey** catalog (no truth available).",
+        "validated_heading": "(mock-validated operating point)",
+        "caveat_data": ("Real DESI survey catalog — no truth available; the recommended cuts are the "
+                        "**mock-validated operating point** (P/C measured on mocks, not on this data)."),
+    },
+}
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -110,8 +134,11 @@ def main():
     ap.add_argument("--lyb-veto-dz", default="0.005")
     ap.add_argument("--purity", default=None)
     ap.add_argument("--compl", default=None)
-    ap.add_argument("--data-kind",
-                    default="It is a **validation/mock** catalog (truth known), not real-survey data.")
+    ap.add_argument("--data-kind", choices=("mock", "real"), default="mock",
+                    help="mock (default, back-compat) or real DESI survey data")
+    ap.add_argument("--fits-name", default=None,
+                    help="basename of the catalog FITS in this folder; "
+                         "default dlacat-<release>-mockcat.fits (mock back-compat)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -119,14 +146,23 @@ def main():
     nrows = len(d)
     nuniq = int(np.unique(d["TARGETID"]).size)
 
+    fits_name = a.fits_name or f"dlacat-{a.release}-mockcat.fits"
+    kind = DATA_KIND_TEXT[a.data_kind]
+
     if a.purity and a.compl:
         pc_block = PC_WITH.format(purity=a.purity, compl=a.compl)
+    elif a.data_kind == "real":
+        pc_block = PC_WITHOUT_REAL
     else:
         pc_block = PC_WITHOUT
 
     with open(a.out, "w") as f:
         f.write(TEMPLATE.format(
-            source_label=a.source_label, release=a.release, data_kind=a.data_kind,
+            source_label=a.source_label, release=a.release,
+            fits_name=fits_name,
+            data_kind=kind["data_kind"],
+            validated_heading=kind["validated_heading"],
+            caveat_data=kind["caveat_data"],
             nrows=nrows, nuniq=nuniq, commit=a.commit, lybdz=a.lyb_veto_dz,
             pc_block=pc_block,
         ))
