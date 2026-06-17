@@ -84,7 +84,7 @@ Each run dir gets a `BASELINE.env` with the resolved knobs + `CODE_COMMIT` for p
 |---|---|---|
 | Mock catalog (London-0) | FILTER1, MAXDLA4, PW50k (measured 452 spec/min, ~4.25 s/spec) | **~36** |
 | Mock catalog (2LPT-1/2) | same (assumed ≈ London; 2LPT per-spec not yet measured) | **~36** each |
-| LOA catalog | FILTER1, MAXDLA4, PW50k (measured 2.657 s/spec, 942,946 QSO) | **~21.7** |
+| LOA catalog | FILTER1, MAXDLA4, PW50k (measured 2.657 s/spec) | **~21.7** |
 | LOA CDDF | FILTER0, MAXDLA1, **PW100k** (62 cpu-s/spec @ PW50k ×1.8–2) | **~120** |
 
 **Mock vs LOA per-spec (measured V1, PW50k):** mock spectra are DLA-richer → more
@@ -134,6 +134,9 @@ P/C is the full [911,1216] window, NHI>20 / >20.3.
 | **Real LOA CDDF** (`nersc_cddf_loa_v1_20260609`, PW100k) | **DONE** (16,519/16,519 hpx, 22/22 jobs, 0 failures, dlacat gap-free; 618 GB) | — (Pathway-A input) | ~130 |
 
 ## After a run finishes
+
+> Full step-by-step packaging + flag reference: [`docs/packaging_catalog_guide.md`](../../../docs/packaging_catalog_guide.md).
+
 
 ```bash
 # Combine per-healpix dlacat → one catalog (gap-checked + provenance):
