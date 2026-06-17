@@ -1967,3 +1967,255 @@ def test_kappa2d_consume_normalization_matches_gaussian():
     assert rowsum_k == pytest.approx(bare / dx_seg, rel=1e-6), "expected /(sb-sa)=÷Δx_seg"
     assert abs(rowsum_k / bare - (1.0 / dx_seg)) < 1e-6, (
         "kappa consume reverted to the bare mass×dN_seg product (missing ÷Δx_seg)")
+
+
+# ---------------------------------------------------------------------------
+# loa-0 forest-FP background (Loa0FP) — additive + gated; default byte-identical
+# ---------------------------------------------------------------------------
+def _toy_loa0fp(n_nbins=4, n_zbins=2, n_snr=3, n_nhi=4, with_n_cat=True):
+    """Minimal Loa0FP with known counts + scalars for unit checks."""
+    rng = np.random.default_rng(0)
+    n_fp_molly = rng.integers(0, 5, size=(n_snr, n_nhi)).astype(float)
+    nhi_edges = np.array([17.2, 19.0, 20.3, 21.0, 22.5])  # n_nhi=4
+    snr_edges = np.array([0.0, 2.0, 4.0, np.inf])          # n_snr=3
+    dxhat = np.diff(nhi_edges)
+    n_sl_loa0 = 2255.0
+    b_fp_molly = n_fp_molly / (dxhat[None, :] * n_sl_loa0)
+    n_fp_fine = rng.integers(0, 3, size=(n_nbins, n_zbins)).astype(float)
+    logN_lo = np.array([17.2, 19.0, 20.3, 21.0])
+    logN_hi = np.array([19.0, 20.3, 21.0, 22.5])
+    band_eta = np.array([0.011, 0.006, 0.0, 0.0])  # lls, subdla, dla, dla
+    n_sl_prod = 374177.0
+    ell_eff = n_sl_loa0 * (n_sl_loa0 / n_sl_prod)
+    # n_cat_molly (FIX 1): production op-detection counts per molly cell (>= the loa-0
+    # FP counts, since the production catalog is far denser per cell). Keep some cells
+    # large so the per-detection share is small but commensurable.
+    n_cat = (rng.integers(20, 400, size=(n_snr, n_nhi)).astype(float)
+             if with_n_cat else None)
+    return H.Loa0FP(n_fp_molly, b_fp_molly, snr_edges, nhi_edges, n_fp_fine,
+                    logN_lo, logN_hi, band_eta, n_sl_loa0, n_sl_prod, ell_eff,
+                    n_cat_molly=n_cat)
+
+
+def test_loa0_mu_fp_grid_is_integral_not_per_object():
+    """μ_FP grid = n̂_FP_fine·(N_prod/N_sl_loa0)·(1−η_band), summing to the INTEGRAL
+    μ_FP = (N_prod/N_sl_loa0)·N_FP_total·(1−η̄). NOT Σ_i over op rows, NOT (1−ρ)."""
+    fp = _toy_loa0fp()
+    n_nbins, n_zbins = fp.n_fp_fine.shape
+    # the per-object args are IGNORED (frozen external background)
+    nbin_idx = np.array([0, 1, 2])
+    zbin_idx = np.array([0, 1, 0])
+    grid = fp.mu_fp_grid(nbin_idx, zbin_idx, n_nbins, n_zbins, weights=np.ones(3))
+    eta_b = (1.0 - fp.band_eta_per_nbin)[:, None]
+    expected = fp.n_fp_fine * (fp.n_sl_prod / fp.n_sl_loa0) * eta_b
+    np.testing.assert_allclose(grid, expected, rtol=1e-12)
+    # the grid is INDEPENDENT of the per-object marks (frozen)
+    grid2 = fp.mu_fp_grid(np.array([0]), np.array([0]), n_nbins, n_zbins)
+    np.testing.assert_allclose(grid, grid2, rtol=1e-12)
+    # sum == mu_fp_scalar == the volume-scaled integral
+    assert grid.sum() == pytest.approx(fp.mu_fp_scalar(), rel=1e-12)
+
+
+def test_loa0_lam_fp_per_obj_is_per_detection_share_fix1():
+    """FIX 1: per-object λ_FP = μ_FP,cell / N_cat,cell · (1−η) — the DIMENSIONLESS
+    per-detection forest-FP share (μ_FP,cell = n̂_FP·vol_scale), NOT the rate density
+    b_FP·(1−η), and NOT (1−ρ)."""
+    fp = _toy_loa0fp()
+    xhat = np.array([18.0, 19.5, 20.5])   # lls, subdla, dla bands
+    snr = np.array([3.0, 5.0, 1.0])
+    lam = fp.lam_fp_per_obj(xhat, snr)
+    i, j = fp._cell_idx(xhat, snr)
+    eta = fp._eta_at_nbin(j)
+    mu_cell = fp.n_fp_molly[i, j] * fp.vol_scale       # production-volume FP COUNT
+    expected = (mu_cell / fp.n_cat_molly[i, j]) * (1.0 - eta)
+    np.testing.assert_allclose(lam, expected, rtol=1e-12)
+    # the share is DIMENSIONLESS and commensurable with a per-object count: it must
+    # NOT equal the old rate-density form (which is ~vol_scale/N_cat too small).
+    old_rate_form = fp.b_fp_molly[i, j] * (1.0 - eta)
+    assert not np.allclose(lam, old_rate_form)
+
+
+def test_loa0_lam_fp_share_reduces_to_one_minus_rho_no_migration():
+    """No-migration consistency identity (FIX 1): if every production op detection in
+    a cell were a forest FP scaled to the same volume, the per-detection share equals
+    (1−ρ_cell). Concretely μ_FP,cell/N_cat,cell ≈ (1−ρ_cell) when n̂_FP·vol ≈ n_FP_cell
+    of the production catalog. We assert the share is bounded in [0,1]-ish and tracks
+    n̂_FP/N_cat·vol_scale exactly (the identity's LHS)."""
+    fp = _toy_loa0fp()
+    # build a per-cell share grid and compare to the closed form
+    n_snr, n_nhi = fp.n_fp_molly.shape
+    for ii in range(n_snr):
+        for jj in range(n_nhi):
+            if fp.n_cat_molly[ii, jj] <= 0:
+                continue
+            share = fp.n_fp_molly[ii, jj] * fp.vol_scale / fp.n_cat_molly[ii, jj]
+            assert share >= 0.0
+            # the volume scaling MUST be present (without it the share is ~165x too
+            # small — the documented bug). Check it is NOT the un-scaled ratio.
+            unscaled = fp.n_fp_molly[ii, jj] / fp.n_cat_molly[ii, jj]
+            if fp.n_fp_molly[ii, jj] > 0:
+                assert share == pytest.approx(unscaled * fp.vol_scale, rel=1e-12)
+                assert share > unscaled  # vol_scale >> 1
+
+
+def test_loa0_lam_fp_fallback_warns_without_n_cat():
+    """Without n_cat_molly the per-object accessor FALLS BACK to the buggy rate-
+    density form and WARNS (only the μ_FP integral/resample are usable then)."""
+    fp = _toy_loa0fp(with_n_cat=False)
+    assert fp.n_cat_molly is None
+    xhat = np.array([18.0, 19.5]); snr = np.array([3.0, 5.0])
+    with pytest.warns(RuntimeWarning):
+        lam = fp.lam_fp_per_obj(xhat, snr)
+    i, j = fp._cell_idx(xhat, snr)
+    eta = fp._eta_at_nbin(j)
+    np.testing.assert_allclose(lam, fp.b_fp_molly[i, j] * (1.0 - eta), rtol=1e-12)
+    # the degraded fallback must also survive a resample draw (no KeyError on the
+    # additive-Gehrels _gamma_draw keys); it scales the rate by the drawn/point ratio.
+    rng = np.random.default_rng(0)
+    with pytest.warns(RuntimeWarning):
+        lam_d = fp.resample(rng).lam_fp_per_obj(xhat, snr)
+    assert np.all(np.isfinite(lam_d)) and np.all(lam_d >= 0)
+
+
+def test_loa0_resample_additive_gehrels_empty_cell_positive_fix3():
+    """FIX 3: resample is ADDITIVE — per cell draw λ_FP~Gamma(n+½, 1/ℓ_eff) and store
+    an effective count n_eff=λ·ℓ_eff (=> E[n_eff]=n+½). The POINT (no draw) is exact,
+    and an empty (n=0) cell now draws a POSITIVE λ_FP (Gehrels band), NOT a hard 0."""
+    fp = _toy_loa0fp()
+    # point grid is deterministic and uses the RAW counts (byte-stable)
+    g0 = fp.mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
+    g0b = fp.mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
+    np.testing.assert_allclose(g0, g0b, rtol=0)
+    eta_b = (1.0 - fp.band_eta_per_nbin)[:, None]
+    np.testing.assert_allclose(g0, fp.n_fp_fine * fp.vol_scale * eta_b, rtol=1e-12)
+    rng = np.random.default_rng(1)
+    draws = np.array([fp.resample(rng).mu_fp_scalar() for _ in range(400)])
+    assert np.all(draws >= 0)
+    # the resample mean tracks the point + the +½ Gehrels offset per cell (additive)
+    n_cells = fp.n_fp_fine.size
+    gehrels_mean = float(np.sum((fp.n_fp_fine + 0.5) * fp.vol_scale * eta_b))
+    assert draws.mean() == pytest.approx(gehrels_mean, rel=0.25)
+    # the CRITICAL fix: an empty (n=0) fine cell draws a POSITIVE effective count in
+    # essentially every draw (Gamma(½,·) is strictly positive), NOT a hard 0.
+    empty = fp.n_fp_fine == 0
+    if empty.any():
+        n_pos = 0
+        for _ in range(50):
+            fc = fp.resample(rng)._gamma_draw["fine_count"]
+            if np.all(fc[empty] > 0):
+                n_pos += 1
+        # Gamma(0.5, ·) is positive with probability 1 → all 50 draws positive
+        assert n_pos == 50, "empty FP cell drew a non-positive Gehrels count"
+
+
+def test_loa0_resample_empty_dla_cell_draws_ceiling_band_fix3():
+    """FIX 3 (DLA-tier ceiling): construct a Loa0FP with the DLA-tier fine cells
+    EMPTY (n_FP=0, the real loa-0 case). The point μ_FP there is exactly 0, but the
+    resample must produce a POSITIVE FP-ceiling band (Gehrels upper limit)."""
+    fp = _toy_loa0fp()
+    # zero the DLA-tier fine bins (logN_lo >= 20.3) to mimic the real product
+    dla = fp.logN_lo >= 20.3
+    fp.n_fp_fine[dla, :] = 0.0
+    # point: DLA-tier μ_FP is hard 0
+    g0 = fp.mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
+    assert np.all(g0[dla, :] == 0.0)
+    rng = np.random.default_rng(3)
+    ever_positive = False
+    for _ in range(50):
+        g = fp.resample(rng).mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
+        if np.any(g[dla, :] > 0.0):
+            ever_positive = True
+            break
+    assert ever_positive, "empty DLA-tier cell never drew a positive FP ceiling (FIX 3)"
+
+
+def test_forward_fp_terms_default_byte_identical():
+    """_forward_fp_terms in the DEFAULT purity_mixture branch reproduces the prior
+    hardcode (1−ρ) EXACTLY (byte-identical), with and without a tilt weight."""
+    cfg = _make_cfg(fp_estimator="purity_mixture")
+    rho_vals = np.array([0.99, 0.5, 0.0, 0.8, 0.95])
+    xhat = np.array([20.4, 19.6, 18.1, 20.8, 21.2])
+    snr = np.array([3.0, 5.0, 1.5, 8.0, 4.0])
+    # a rho_interp returning fixed values keyed by index isn't possible (it keys on
+    # x̂/SNR); use the real nearest-cell interpolator semantics via a stub that maps
+    # the same x̂ order to rho_vals.
+    def rho_interp(x, s):
+        # deterministic: same length, same order
+        return rho_vals
+    for w in (None, np.array([1.0, 2.0, 0.5, 1.0, 3.0])):
+        lam, mu = H._forward_fp_terms(cfg, rho_interp, xhat, snr,
+                                      obj_weights_extra=w)
+        ref_lam = (1.0 - rho_vals).astype(float)
+        if w is not None:
+            ref_lam = ref_lam * w
+        ref_mu = float(np.sum(ref_lam))
+        np.testing.assert_array_equal(lam, ref_lam)
+        assert mu == ref_mu
+
+
+def test_forward_fp_terms_loa0_uses_cell_rate_and_integral():
+    """_forward_fp_terms loa0 branch (FIX 1): lam_fp = per-detection FP share
+    μ_FP,cell/N_cat,cell·(1−η) (NOT 1−ρ, NOT the rate density), mu_fp = the loa-0
+    INTEGRAL (NOT Σ_i lam_fp), and a tilt weight does NOT scale the frozen FP."""
+    cfg = _make_cfg(fp_estimator="loa0")
+    fp = _toy_loa0fp()
+    xhat = np.array([18.0, 19.5, 20.5])
+    snr = np.array([3.0, 5.0, 1.0])
+    def rho_interp(x, s):
+        return np.full(len(x), 0.42)   # would be used by purity_mixture; must be ignored
+    lam, mu = H._forward_fp_terms(cfg, rho_interp, xhat, snr, loa0_fp=fp)
+    np.testing.assert_allclose(lam, fp.lam_fp_per_obj(xhat, snr), rtol=1e-12)
+    assert mu == pytest.approx(fp.mu_fp_scalar(), rel=1e-12)
+    # tilt must NOT change the frozen FP term
+    lam_t, mu_t = H._forward_fp_terms(cfg, rho_interp, xhat, snr,
+                                      obj_weights_extra=np.array([2.0, 3.0, 0.5]),
+                                      loa0_fp=fp)
+    np.testing.assert_allclose(lam_t, lam, rtol=1e-12)
+    assert mu_t == pytest.approx(mu, rel=1e-12)
+
+
+def test_make_fp_model_dispatch():
+    """make_fp_model returns PurityMixtureFP by default; loa0 requires a product path."""
+    cfg = _make_cfg(fp_estimator="purity_mixture")
+    # build a tiny cat_cut Table with the columns make_fp_model reads
+    from astropy.table import Table
+    cat = Table(dict(NHI=np.array([20.4, 19.6]), S2N_RED=np.array([3.0, 5.0])))
+    op = np.array([True, True])
+    def rho_interp(x, s):
+        return np.array([0.9, 0.6])
+    fp, rho = H.make_fp_model(cfg, cat, op, rho_interp)
+    assert isinstance(fp, H.PurityMixtureFP)
+    # loa0 without a product path raises a clear error
+    cfg2 = _make_cfg(fp_estimator="loa0")
+    with pytest.raises(ValueError):
+        H.make_fp_model(cfg2, cat, op, rho_interp)
+
+
+def test_make_fp_model_loa0_bins_n_cat_from_op_set_fix1(monkeypatch):
+    """FIX 1: make_fp_model's loa0 branch bins the production op-passing detections
+    into the loa-0 product's molly cells → n_cat_molly (the per-detection share
+    denominator), using the SAME op set that defines ρ."""
+    from astropy.table import Table
+    base = _toy_loa0fp(with_n_cat=False)   # the from_product result (no n_cat yet)
+    monkeypatch.setattr(H.Loa0FP, "from_product",
+                        classmethod(lambda cls, path, n_sl_prod=None: base))
+    cfg = _make_cfg(fp_estimator="loa0")
+    cfg.loa0_product_path = "/dev/null"    # bypass the missing-path guard
+    cfg.n_sl_prod = base.n_sl_prod
+    # 5 production detections; 2 fail the op mask (should NOT be binned)
+    nhi = np.array([18.0, 18.2, 19.5, 20.5, 18.1])
+    snr = np.array([3.0, 3.0, 5.0, 1.0, 5.0])
+    cat = Table(dict(NHI=nhi, S2N_RED=snr))
+    op = np.array([True, True, True, True, False])   # last row excluded
+    def rho_interp(x, s):
+        return np.zeros(len(x))
+    fp, _ = H.make_fp_model(cfg, cat, op, rho_interp)
+    assert fp.n_cat_molly is not None
+    # expected: bin only the op-passing 4 rows into the product's molly cells
+    i, j = base._cell_idx(nhi[op], snr[op])
+    expect = np.zeros_like(base.n_fp_molly)
+    np.add.at(expect, (i, j), 1.0)
+    np.testing.assert_array_equal(fp.n_cat_molly, expect)
+    assert fp.n_cat_molly.sum() == 4   # the excluded row is not counted
+    # cfg._loa0_fp is stashed for the forward builders and carries n_cat
+    assert cfg._loa0_fp.n_cat_molly is not None

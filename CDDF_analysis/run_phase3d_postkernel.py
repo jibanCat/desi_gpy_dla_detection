@@ -58,9 +58,14 @@ def _make_cfg(args) -> HBIConfig:
         zbins=zbins, n_mc=args.n_mc, rng_seed=args.seed,
         fp_estimator="purity_mixture", no_bal=True,
         report_logN_limits=report_limits,
-        v3_family="bspbody",
+        v3_family=args.family,
         v3_logN_fit_floor=args.fit_floor,
+        v3_logN_fit_ceil=args.fit_ceil,
         v3_lambda_bspbody=args.lambda_bspbody,
+        v3_mc_n_restart=args.mc_n_restart,
+        lam_rf_min=args.lam_rf_min,
+        v3_bspbody_edge_slope_lam=args.edge_slope_lam,
+        v3_fine_density_gl_nodes=args.gl_nodes,
         v2_z_fit_lo=zbins[0], v2_z_fit_hi=zbins[-1], v2_z_fit_step=0.1,
     )
     return cfg
@@ -334,7 +339,39 @@ def main(argv=None):
     # so >=20.6 MUST be a report limit or the committed contract is not evaluated.
     p.add_argument("--report-limits", default="20.0,20.3,20.6")
     p.add_argument("--fit-floor", type=float, default=19.5)
+    p.add_argument("--family", default="bspbody",
+                   help="v3 CDDF family: bspbody (default, penalized B-spline) | plaw | "
+                        "plawcut (Schechter) | bplcut (broken power-law). For the "
+                        "throw-away/fit-ceil test, a CONTROLLED power-law family (plaw/"
+                        "plawcut) extrapolates sanely above the ceiling, unlike bspbody "
+                        "(whose unconstrained high-N spline knots blow up).")
+    p.add_argument("--fit-ceil", type=float, default=99.0,
+                   help="fit CEILING (default 99=none). Set e.g. 21.0 to restrict the "
+                        "likelihood's active band to [fit_floor, fit_ceil]; the parametric "
+                        "family then fits only well-localized low-N detections and "
+                        "EXTRAPOLATES above (throw-away-high-N test for full ±0.5 closure).")
     p.add_argument("--lambda-bspbody", type=float, default=30.0)
+    p.add_argument("--mc-n-restart", type=int, default=2,
+                   help="WALL-1 per-draw MC-refit multistart count (point solve uses "
+                        "v3_n_restart=8). Raise to 8 to test the gate-MC-convergence "
+                        "hypothesis (whether the MC band is biased low by under-convergence).")
+    p.add_argument("--lam-rf-min", type=float, default=911.0,
+                   help="Rest-frame blue edge of the search window (Å). 911.0 = Lyman "
+                        "limit = full Lyα+Lyβ region (default, matches the production "
+                        "finder). Set 1025.7223 (Lyβ rest) for the Lyα-only forest — "
+                        "restricts catalog cut + truth cut + pathlength consistently; "
+                        "pair with the lya_only molly matrix.")
+    p.add_argument("--gl-nodes", type=int, default=1,
+                   help="within-bin density quadrature nodes for A·f/M·f. 1=bin-midpoint "
+                        "(default, exact current behavior). 3=Gauss-Legendre (N ln10)-"
+                        "weighted bin mean — removes the slope-dependent midpoint bias "
+                        "(WALL-1 V3_KERNEL_SLOPE_DEPENDENCE structural fix candidate).")
+    p.add_argument("--edge-slope-lam", type=float, default=40.0,
+                   help="Strength of the fixed low-N edge-slope PRIOR anchor (pins "
+                        "d(log f)/d(logN) toward v3_bspbody_edge_slope_target=-1.4). "
+                        "Default 40.0. Set 0.0 to neutralize the anchor — a WALL-1 "
+                        "slope-robustness probe (does the fixed-slope prior memory drive "
+                        "the tilt-closure pull?). Pair with a low --lambda-bspbody.")
     p.add_argument("--dalpha", type=float, default=0.5)
     p.add_argument("--host-truth-floor", type=float, default=19.0)
     p.add_argument("--n-mc", type=int, default=200)

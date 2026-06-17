@@ -121,6 +121,7 @@ class HBIConfig:
     # FP plug
     fp_estimator: str = "purity_mixture"
     n_sl_prod: Optional[int] = None  # for loa-0 ell_eff variance scale
+    loa0_product_path: Optional[str] = None  # npz from build_loa0_fp_product.py (loa0 FP)
     # --- v2 forward-HBI knobs (all defaulted; v1 callers byte-unaffected) ---
     v2_lambda_smooth: Optional[float] = None   # None => choose by L-curve over the grid
     v2_lambda_grid: tuple = (1e-3, 3e-3, 1e-2, 3e-2, 1e-1)  # G4 sensitivity range
@@ -146,12 +147,25 @@ class HBIConfig:
     v3_n_pivot: float = 20.3           # log10 N_HI where the amplitude θ_amp = log10 f(N_piv)
     v3_z_pivot: float = 2.5            # z evolution pivot (catalog median)
     v3_n_restart: int = 8              # multi-start count for the θ MAP
+    v3_mc_n_restart: int = 2           # per-draw WALL-1 MC-refit multistart (point uses
+                                       # v3_n_restart=8); raise to match the point to test
+                                       # whether the MC band's low bias is a convergence artifact
     v3_n_lap: int = 2000               # Laplace posterior draws (cross-check)
     v3_n_emcee_steps: int = 1500       # emcee steps (within-data posterior shape check)
     v3_logN_fit_floor: float = 19.5    # keep rows whose true-ish N reaches >= this; the
     #                                    parametric form couples all N, so the LLS rows DO
     #                                    inform alpha — Finding 5 says run BOTH 19.5 and 17.2
     #                                    and require the DLA-tier headline to agree.
+    v3_logN_fit_ceil: float = 99.0     # SYMMETRIC fit CEILING (default 99 = none, = fit to
+    #                                    drop_top_bin_above, current behavior). Set e.g. 21.0
+    #                                    to restrict the LIKELIHOOD's active band to
+    #                                    [fit_floor, fit_ceil] — the parametric family is then
+    #                                    constrained ONLY by well-localized low-N detections and
+    #                                    EXTRAPOLATES (power-law) above the ceiling at reduction.
+    #                                    Tests the throw-away-high-N hypothesis: removes the
+    #                                    prior-stuck high-N detections that drive the antisymmetric
+    #                                    WALL-1 slope-dependence. high-N dN/dX stays robust (count);
+    #                                    Ω/deep tiers become a quoted power-law extrapolation.
     v3_n_spline_knots: int = 7         # Rung-3 P-spline knot count (n_basis=9; EDF tuned)
     v3_lambda_spline: float = 1.0      # Rung-3 2nd-diff curvature penalty (EDF~4.8 here;
     #                                    sweep {0.3,1.0,3.0} => EDF {5.7,4.8,4.0}; free=9)
@@ -192,6 +206,12 @@ class HBIConfig:
     #                                    With fit floor 18.5 the edge sits in the LLS/sub-DLA
     #                                    rise (local truth slope ~-1.1 to -1.4), so anchor near
     #                                    -1.4 (a soft prior; the dense low-N data dominate).
+    v3_fine_density_gl_nodes: int = 1  # within-bin density quadrature for A·f_θ / M·f_θ.
+    #                                    1 = bin-midpoint f(x_mid) (DEFAULT, exact current
+    #                                    behavior). >1 = Q-node Gauss-Legendre (N ln10)-weighted
+    #                                    bin MEAN ⟨f⟩_b, removing the slope-dependent midpoint
+    #                                    quadrature bias that contributes to the WALL-1
+    #                                    V3_KERNEL_SLOPE_DEPENDENCE integrated pull (3 ≈ exact).
     v3_bspbody_edge_hi: float = 20.05  # 4-LENS REVIEW (bayesian F2 / lya F1 / cs F5): the edge
     #                                    anchor must reach THROUGH the 20.0 boundary (else the
     #                                    [19.5,20.0) sub-DLA band collapses to f~0 on the real
@@ -680,14 +700,265 @@ class PurityMixtureFP(FPModel):
 
 
 class Loa0FP(FPModel):
-    """PRIMARY (§4) loa-0 forest-only b_FP. NOT built in this phase — interface
-    stub so the runner can select it once the loa-0 run lands. resample draws
-    λ_FP ~ Gamma(n_FP + 0.5, ℓ_eff) at the production-extrapolation variance
-    ℓ_eff = N_sl_loa0 * (N_sl_loa0 / N_prod) (WALL-2 FP-rate variance fix).
-    Mutually exclusive with the purity-mixture (never summed)."""
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(
-            "loa-0 b_FP run not landed; use fp_estimator='purity_mixture'")
+    """PRIMARY (§4) loa-0 forest-only b_FP — the DIRECTLY-measured forest-FP
+    intensity that replaces the in-sample/circular ``(1−ρ)`` per-object impurity.
+
+    Built from the loa-0 (HCD-free twin) FP run: every loa-0 GP detection is a
+    forest false positive by construction. ``CDDF_analysis/build_loa0_fp_product.py``
+    bins those FP detections into the molly (x̂, SNR) cells AND the fine (logN, z)
+    grid and saves the per-cell COUNTS + scalars to an npz. THIS class consumes
+    that npz and exposes the three accessors the forward builders + reductions need.
+
+    Math (spec §4, verified, z-flat pilot) — CORRECTED per-object form (FIX 1):
+      * per-object FP SHARE (data term, DIMENSIONLESS, commensurable with λ_real,i
+        which is itself a per-object expected COUNT λ_real,i = Σ_b A_{i,b}·f_b):
+            λ_FP_per_obj[i] = μ_FP,cell(i) / N_cat,cell(i) · (1 − η_{band_i})
+            μ_FP,cell  = n̂_FP_loa0(cell) · (N_prod / N_sl_loa0)   [prod-volume FP COUNT]
+            N_cat,cell = # production op-passing catalog detections in cell
+        This is the per-detection forest-FP share: the production-volume expected FP
+        count in the cell spread over the production detections that landed there.
+        In the no-migration limit it reduces to (1 − ρ_cell) via the volume-matched
+        consistency identity  (1 − ρ_cell) ≈ n̂_FP_loa0(cell)/N_cat(cell)·(N_prod/N_sl_loa0).
+        The PRIOR (buggy) form  λ_FP_per_obj = b_FP(cell)·(1−η)  was a RATE DENSITY
+        (≈0.008, per unit x̂ per sightline) — INCOMMENSURABLE with the per-object
+        count λ_real,i (median ≈0.35) → FP under-subtracted ~20-30× at sub-DLA.
+      * μ_FP grid (the INTEGRAL — production-volume expected FP counts, NOT Σ_i):
+            mu_fp_grid[b,k] = n̂_FP_loa0_fine[b,k] · (N_prod/N_sl_loa0) · (1 − η_band[b])
+        which sums to  μ_FP = (N_prod/N_sl_loa0)·N_FP_loa0_total·(1−η̄). Note: the
+        per-object share Σ_i λ_FP_per_obj,i ≈ μ_FP (over the cells the catalog
+        populates, before z-window clipping) — the two are the SAME background
+        partitioned per-detection (data term) vs population-integral (rate term).
+      * resample (WALL-2 variance): ADDITIVE Gehrels (FIX 3) — per cell draw the RATE
+            λ_FP ~ Gamma(n_FP + ½, ℓ_eff),  ℓ_eff = N_sl_loa0·(N_sl_loa0/N_prod)
+        (production-extrapolation, NOT in-sample). The Gamma(½, ℓ_eff) on an empty
+        (n_FP=0) DLA cell draws a POSITIVE λ_FP (a real upper-limit band / FP
+        ceiling), NOT a hard 0 — the prior MULTIPLICATIVE ratio form forced n=0 cells
+        to exactly 0 in 100% of draws.
+
+    Mutually exclusive with the purity-mixture (never summed).
+
+    HOST-OCCLUSION η (pilot): applied BAND-BY-BAND (DLA η=0; sub-DLA/LLS from the
+    loa-124 truth occlusion). FLAT-η across the DLA tier re-creates a known 1.73x
+    over-subtraction and is NOT done — see build_loa0_fp_product.py.
+
+    COMMENSURABILITY (FIX 1, addresses the Bayesian-lens load-bearing finding): the
+    per-object accessor now returns a DIMENSIONLESS per-detection FP share (count /
+    count), the same kind as λ_real,i = Σ_b A_{i,b}·f_b (a per-object expected count
+    with C applied). The μ_FP normalizer remains the population integral (counts),
+    paired with mu_det = Σ_b M_b·f_b. ``n_cat_molly`` (production op counts per molly
+    cell) is required for the per-object share; set it via make_fp_model from the SAME
+    op set (S2N_RED>snr_min & P_DLA>p_dla_min & good_mask) that defines ρ's denominator.
+    If n_cat_molly is None the per-object accessor falls back to the (buggy) rate-
+    density form with a warning — only the μ_FP integral and resample are usable then.
+    """
+    def __init__(self, n_fp_molly, b_fp_molly, snr_edges, nhi_edges,
+                 n_fp_fine, logN_lo, logN_hi, band_eta_per_nbin,
+                 n_sl_loa0, n_sl_prod, ell_eff,
+                 n_cat_molly=None,
+                 _gamma_draw=None):
+        self.n_fp_molly = np.asarray(n_fp_molly, float)        # (n_snr, n_nhi)
+        self.b_fp_molly = np.asarray(b_fp_molly, float)        # (n_snr, n_nhi) rate density
+        self.snr_edges = np.asarray(snr_edges, float)
+        self.nhi_edges = np.asarray(nhi_edges, float)
+        self.n_fp_fine = np.asarray(n_fp_fine, float)          # (n_nbins, n_zbins) counts
+        self.logN_lo = np.asarray(logN_lo, float)
+        self.logN_hi = np.asarray(logN_hi, float)
+        self.band_eta_per_nbin = np.asarray(band_eta_per_nbin, float)  # (n_nbins,)
+        self.n_sl_loa0 = float(n_sl_loa0)
+        self.n_sl_prod = float(n_sl_prod)
+        self.ell_eff = float(ell_eff)
+        self.vol_scale = self.n_sl_prod / self.n_sl_loa0       # N_prod/N_sl_loa0
+        # n_cat_molly (FIX 1): # production op-passing detections per molly (snr,nhi)
+        # cell — the denominator of the per-detection FP share. Set by make_fp_model
+        # from the SAME op set that defines ρ. None => per-object accessor falls back
+        # to the (buggy) rate-density form (only the μ_FP integral/resample are usable).
+        self.n_cat_molly = (np.asarray(n_cat_molly, float)
+                            if n_cat_molly is not None else None)
+        # _gamma_draw: per-resample ADDITIVE Gehrels rate draw on the molly cells AND a
+        # per-resample fine-grid rate draw, both as RATIO-to-mean (FIX 3) so the POINT
+        # estimate (no draw) is byte-stable; None => point (no perturbation).
+        self._gamma_draw = _gamma_draw
+
+    def with_n_cat_molly(self, n_cat_molly) -> "Loa0FP":
+        """Return a shallow copy carrying the production op-count grid (FIX 1)."""
+        return Loa0FP(
+            self.n_fp_molly, self.b_fp_molly, self.snr_edges, self.nhi_edges,
+            self.n_fp_fine, self.logN_lo, self.logN_hi, self.band_eta_per_nbin,
+            self.n_sl_loa0, self.n_sl_prod, self.ell_eff,
+            n_cat_molly=n_cat_molly, _gamma_draw=self._gamma_draw)
+
+    # ---- factory from the saved product -------------------------------------
+    @classmethod
+    def from_product(cls, product_path, n_sl_prod=None):
+        d = np.load(product_path, allow_pickle=True)
+        n_nbins = len(d["logN_lo"])
+        # band η already resolved per fine Nbin in the product
+        band_eta = (d["band_eta_per_nbin"] if "band_eta_per_nbin" in d
+                    else np.zeros(n_nbins))
+        nslp = float(n_sl_prod) if n_sl_prod is not None else float(d["n_sl_prod"])
+        # ℓ_eff at the (possibly overridden) N_prod
+        ns0 = float(d["n_sl_loa0"])
+        ell_eff = ns0 * (ns0 / nslp)
+        # n_cat_molly is normally supplied at runtime by make_fp_model (the
+        # production op set); honor it if the product happens to persist one.
+        n_cat = d["n_cat_molly"] if "n_cat_molly" in d.files else None
+        return cls(
+            n_fp_molly=d["n_fp_molly"], b_fp_molly=d["b_fp_molly"],
+            snr_edges=d["snr_edges"], nhi_edges=d["nhi_edges"],
+            n_fp_fine=d["n_fp_fine"], logN_lo=d["logN_lo"], logN_hi=d["logN_hi"],
+            band_eta_per_nbin=band_eta,
+            n_sl_loa0=ns0, n_sl_prod=nslp, ell_eff=ell_eff,
+            n_cat_molly=n_cat,
+        )
+
+    def _cell_idx(self, xhat, snr):
+        n_snr = len(self.snr_edges) - 1
+        n_nhi = len(self.nhi_edges) - 1
+        i = np.searchsorted(self.snr_edges, np.asarray(snr, float), side="right") - 1
+        j = np.searchsorted(self.nhi_edges, np.asarray(xhat, float), side="right") - 1
+        i = np.clip(i, 0, n_snr - 1)
+        j = np.clip(j, 0, n_nhi - 1)
+        return i, j
+
+    def _eta_at_nbin(self, j_nhi_molly):
+        """η is stored per FINE Nbin (band-averaged); map the molly cell's NHI edge
+        to a fine Nbin to pick the band η. Conservative: use the molly cell's lower
+        NHI edge to look up the fine bin (DLA tier η=0 by construction)."""
+        nhi_lo = self.nhi_edges[np.asarray(j_nhi_molly, int)]
+        fb = _bin_index_logN(nhi_lo, self.logN_lo, self.logN_hi)
+        # out-of-fine-grid (e.g. NHI>22.4 dropped top bin) -> band of nearest = last bin
+        fb = np.where(fb >= 0, fb, len(self.band_eta_per_nbin) - 1)
+        return self.band_eta_per_nbin[fb]
+
+    def mu_fp_cell(self):
+        """Production-volume expected FP COUNT per molly (snr, nhi) cell:
+            μ_FP,cell = n̂_FP_loa0(cell) · (N_prod / N_sl_loa0).
+        Uses the additive Gehrels-perturbed loa-0 count (FIX 3) when a draw is set."""
+        n_molly = (self._gamma_draw["molly_count"]
+                   if self._gamma_draw is not None else self.n_fp_molly)
+        return n_molly * self.vol_scale
+
+    # ---- per-object FP SHARE (the v2/v3x data term — DIMENSIONLESS, FIX 1) ---
+    def lam_fp_per_obj(self, xhat, snr):
+        """CORRECTED (FIX 1) per-DETECTION forest-FP SHARE at each op object's
+        (x̂, SNR) — DIMENSIONLESS and commensurable with λ_real,i (a per-object
+        expected COUNT):
+
+            λ_FP,i = μ_FP,cell(i) / N_cat,cell(i) · (1 − η_{band_i})
+                   = [n̂_FP_loa0(cell) · (N_prod/N_sl_loa0)] / N_cat,cell(i) · (1−η)
+
+        where N_cat,cell is the # production op-passing detections in the cell. This
+        spreads the production-volume expected FP count in the cell over the
+        production detections that landed there → the per-detection FP probability.
+        In the no-migration limit it reduces to (1 − ρ_cell). REQUIRES n_cat_molly
+        (set by make_fp_model from the op set). If n_cat_molly is None we FALL BACK
+        to the (buggy) rate-density form b_FP·(1−η) and emit a warning — the integral
+        μ_FP / resample remain correct, but the per-object data term will be ~20-30×
+        too small at sub-DLA (the original bug)."""
+        i, j = self._cell_idx(xhat, snr)
+        eta = self._eta_at_nbin(j)
+        if self.n_cat_molly is None:
+            import warnings
+            warnings.warn(
+                "Loa0FP.lam_fp_per_obj: n_cat_molly is None — falling back to the "
+                "buggy rate-density form (b_FP·(1−η)); the per-object FP term will be "
+                "incommensurable with λ_real,i. Set n_cat_molly via make_fp_model.",
+                RuntimeWarning, stacklevel=2)
+            # degraded fallback: rate density at the point b_FP. If a draw is present,
+            # scale the rate by the additive Gehrels-perturbed/raw count ratio of the
+            # cell (mu_fp_cell already carries the draw); guard the n=0 point.
+            b = self.b_fp_molly[i, j]
+            lam = b * (1.0 - eta)
+            if self._gamma_draw is not None:
+                pt = self.n_fp_molly[i, j] * self.vol_scale
+                drawn = self.mu_fp_cell()[i, j]
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    ratio = np.where(pt > 0, drawn / pt, 1.0)
+                lam = lam * ratio
+            return np.asarray(lam, float)
+        mu_cell = self.mu_fp_cell()[i, j]                  # carries the Gamma draw
+        n_cat = self.n_cat_molly[i, j]
+        # an op object lands in a cell ⇒ N_cat,cell >= 1 by construction; guard 0.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            share = np.where(n_cat > 0, mu_cell / n_cat, 0.0)
+        lam = share * (1.0 - eta)
+        return np.asarray(lam, float)
+
+    # ---- μ_FP grid (the INTEGRAL — production-volume expected FP counts) -----
+    def mu_fp_grid(self, nbin_idx, zbin_idx, n_nbins, n_zbins, weights=None):
+        """Production-volume expected FP COUNTS per fine (logN, z) cell:
+            mu_fp_grid[b,k] = n̂_FP_loa0_fine[b,k] · (N_prod/N_sl_loa0) · (1−η_band[b]).
+        Computed as the INTEGRAL over the loa-0 fine-grid FP histogram (NOT Σ_i over
+        the production op rows — that is the purity-mixture's circular form). The
+        (nbin_idx, zbin_idx, weights) args are accepted for FPModel-interface
+        symmetry but IGNORED: the loa-0 μ_FP is a frozen external background that
+        does not depend on the production catalog's per-object marks."""
+        eta_b = (1.0 - self.band_eta_per_nbin)[:, None]        # (n_nbins, 1)
+        n_fine = (self._gamma_draw["fine_count"]
+                  if self._gamma_draw is not None else self.n_fp_fine)
+        grid = n_fine * self.vol_scale * eta_b                 # (n_nbins, n_zbins)
+        # tolerate a caller grid shape mismatch (e.g. zbin count) by trimming/padding
+        if grid.shape == (n_nbins, n_zbins):
+            return grid
+        out = np.zeros((n_nbins, n_zbins))
+        a0 = min(grid.shape[0], n_nbins); a1 = min(grid.shape[1], n_zbins)
+        out[:a0, :a1] = grid[:a0, :a1]
+        return out
+
+    def mu_fp_scalar(self, logN_fit_floor=None):
+        """μ_FP = Σ_{b,k} mu_fp_grid = (N_prod/N_sl_loa0)·N_FP_total·(1−η̄).
+
+        ``logN_fit_floor`` (v2/v3/v3x): restrict the integral to the fit support
+        (cells with logN_lo >= floor) so the loa-0 μ_FP normalizer matches the
+        ``mu_det = Σ_b M_b·f_b`` support (M is zeroed below the floor in the v3x
+        builder — fit-support fix). The purity-mixture μ_FP is already floor-
+        restricted (Σ_i over the floored op rows), so this keeps the two FP modes
+        commensurable. None (v1) => the FULL grid (v1 integrates per report limit)."""
+        eta_b = (1.0 - self.band_eta_per_nbin)[:, None]
+        n_fine = (self._gamma_draw["fine_count"]
+                  if self._gamma_draw is not None else self.n_fp_fine)
+        grid = n_fine * self.vol_scale * eta_b
+        if logN_fit_floor is not None:
+            keep = self.logN_lo >= float(logN_fit_floor) - 1e-9
+            grid = grid[keep, :]
+        return float(np.sum(grid))
+
+    # ---- WALL-2 variance: ADDITIVE Gehrels Gamma(n_FP+½, ℓ_eff) per cell -----
+    def resample(self, rng) -> "Loa0FP":
+        """Return a perturbed Loa0FP carrying an ADDITIVE Gehrels rate draw (FIX 3).
+
+        Per cell draw the RATE  λ_FP ~ Gamma(n_FP + ½, scale = 1/ℓ_eff)  with
+        ℓ_eff = N_sl_loa0·(N_sl_loa0/N_prod) (the production-extrapolation exposure),
+        then express it as an effective perturbed loa-0 COUNT
+
+            n_eff = λ_FP · ℓ_eff             (rate · exposure = count)
+
+        which the μ_FP accessors use IN PLACE OF the raw count when a draw is present
+        (they multiply by vol_scale = N_prod/N_sl_loa0 exactly as for the point).
+        Because the ``+½`` Gehrels prior makes the draw STRICTLY positive even when
+        n_FP=0, an empty (e.g. DLA-tier) cell now draws a POSITIVE λ_FP — a real
+        upper-limit / FP-ceiling band — instead of the hard 0 the prior MULTIPLICATIVE
+        ratio (0·ratio≡0) forced in 100% of draws.
+
+        E[n_eff] = (n_FP+½)/ℓ_eff · ℓ_eff = n_FP + ½, so after the accessor's
+        ×vol_scale: E[μ_FP,cell] = (n_FP+½)·vol_scale — the point count n_FP·vol_scale
+        plus a +½·vol_scale Gehrels upper-limit offset per cell (negligible for the
+        populated sub-DLA cells with n_FP≫1; material exactly where it should be — the
+        empty rare-bin tail), with the production-extrapolation variance
+        Var(μ_FP,cell) = (n_FP+½)·vol_scale². The POINT estimate (no draw, _gamma_draw
+        is None) is byte-stable: it uses the raw n_FP."""
+        def _neff(n_counts):
+            n = np.asarray(n_counts, float)
+            shape = n + 0.5                       # Gehrels +½ → strictly positive
+            lam = rng.gamma(shape=shape, scale=1.0 / self.ell_eff)   # rate draw
+            return lam * self.ell_eff             # effective perturbed loa-0 count, E=n+½
+        gd = dict(molly_count=_neff(self.n_fp_molly),
+                  fine_count=_neff(self.n_fp_fine))
+        return Loa0FP(
+            self.n_fp_molly, self.b_fp_molly, self.snr_edges, self.nhi_edges,
+            self.n_fp_fine, self.logN_lo, self.logN_hi, self.band_eta_per_nbin,
+            self.n_sl_loa0, self.n_sl_prod, self.ell_eff,
+            n_cat_molly=self.n_cat_molly, _gamma_draw=gd)
 
 
 def make_fp_model(cfg: HBIConfig, cat_cut: Table, op_mask: np.ndarray,
@@ -700,8 +971,65 @@ def make_fp_model(cfg: HBIConfig, cat_cut: Table, op_mask: np.ndarray,
         rho = rho_interp(nhi, snr)
         return PurityMixtureFP(rho), rho
     elif cfg.fp_estimator == "loa0":
-        return Loa0FP(), None
+        if not cfg.loa0_product_path:
+            raise ValueError(
+                "fp_estimator='loa0' requires cfg.loa0_product_path "
+                "(npz from build_loa0_fp_product.py).")
+        loa0 = Loa0FP.from_product(cfg.loa0_product_path, n_sl_prod=cfg.n_sl_prod)
+        # FIX 1: bin the production op-passing detections into the SAME molly cell
+        # grid the loa-0 product uses → N_cat,cell (the denominator of the per-
+        # detection FP share). The op set is IDENTICAL to ρ's denominator:
+        # (S2N_RED>snr_min) & (P_DLA>p_dla_min) & good_mask. Binned with the loa-0
+        # product's OWN edges (via Loa0FP._cell_idx) so the per-object share lookup
+        # is self-consistent and independent of the downstream reduce's molly matrix.
+        nhi_op = np.asarray(cat_cut["NHI"], dtype=float)[op_mask]
+        snr_op = np.asarray(cat_cut["S2N_RED"], dtype=float)[op_mask]
+        n_snr = len(loa0.snr_edges) - 1
+        n_nhi = len(loa0.nhi_edges) - 1
+        i_op, j_op = loa0._cell_idx(nhi_op, snr_op)
+        n_cat_molly = np.zeros((n_snr, n_nhi))
+        np.add.at(n_cat_molly, (i_op, j_op), 1.0)
+        loa0 = loa0.with_n_cat_molly(n_cat_molly)
+        # stash on cfg so the v2/v3/v3x forward builders (which take cfg, not a
+        # fp_model) can resolve the loa-0 FP terms via _forward_fp_terms.
+        cfg._loa0_fp = loa0
+        return loa0, None
     raise ValueError(f"unknown fp_estimator {cfg.fp_estimator!r}")
+
+
+def _forward_fp_terms(cfg: HBIConfig, rho_interp: Callable, xhat: np.ndarray,
+                      snr_op: np.ndarray, obj_weights_extra: np.ndarray = None,
+                      loa0_fp: "Loa0FP" = None, logN_fit_floor=None) -> tuple:
+    """Resolve (lam_fp_per_obj, mu_fp) for the v2/v3/v3x forward builders, GATED on
+    cfg.fp_estimator. This is the ONE place the (1−ρ) hardcode is replaced.
+
+    DEFAULT (``purity_mixture``) — BYTE-IDENTICAL to the pre-existing hardcode:
+        lam_fp = (1−ρ(x̂,SNR)) [· obj_weights_extra];   mu_fp = Σ_i lam_fp.
+
+    ``loa0`` (spec §4 PRIMARY, FIX 1): per-object λ_FP = the per-DETECTION forest-FP
+    SHARE μ_FP,cell/N_cat,cell·(1−η_band) — DIMENSIONLESS, commensurable with the
+    per-object expected count λ_real,i = Σ_b A_{i,b}·f_b (reduces to (1−ρ) in the
+    no-migration limit). μ_FP (the rate-term normalizer) = the loa-0 INTEGRAL
+    (N_prod/N_sl_loa0)·N_FP_total·(1−η̄) — NOT Σ_i lam_fp. The loa-0 background is a
+    FROZEN external intensity, so obj_weights_extra (WALL-1 tilt) is NOT applied to
+    the FP term (spec §7: freeze b_FP); the tilt threads to the 1/C numerator only.
+    """
+    if cfg.fp_estimator == "loa0":
+        if loa0_fp is None:
+            raise ValueError("_forward_fp_terms: fp_estimator='loa0' but loa0_fp is None")
+        lam_fp = loa0_fp.lam_fp_per_obj(xhat, snr_op).astype(float)
+        # FP is a frozen external background — do NOT tilt-scale it (spec §7/§4).
+        # μ_FP = the INTEGRAL (not Σ_i lam_fp), restricted to the fit support so it
+        # matches the floor-zeroed mu_det normalizer (v2/v3/v3x pass logN_fit_floor).
+        mu_fp = loa0_fp.mu_fp_scalar(logN_fit_floor=logN_fit_floor)
+        return lam_fp, mu_fp
+    # default purity_mixture — preserve the exact prior arithmetic
+    rho_op = rho_interp(xhat, snr_op)
+    lam_fp = (1.0 - rho_op).astype(float)
+    if obj_weights_extra is not None:
+        lam_fp = lam_fp * obj_weights_extra
+    mu_fp = float(np.sum(lam_fp))
+    return lam_fp, mu_fp
 
 
 # -----------------------------------------------------------------------------
@@ -2720,14 +3048,18 @@ def fit_forward_hbi(cfg: HBIConfig, cat_cut, good_mask, mm: MollyMatrix,
     A_full = _apply_C_to_A(A_meta, C_matrix)            # [n_obs, n_nbins*n_zf]
     M_full = _apply_C_to_M(M_meta, C_matrix)            # [n_nbins*n_zf]
 
-    # ---- FP per object + μ_FP (purity-mixture) ----
+    # ---- FP per object + μ_FP (GATED on cfg.fp_estimator) ----
+    # DEFAULT purity_mixture: lam_fp=(1−ρ)[·tilt], μ_FP=Σ_i lam_fp (byte-identical).
+    # loa0: lam_fp=per-detection FP share, μ_FP=loa-0 INTEGRAL (frozen; tilt NOT applied).
+    # FIX 4(b): pass the v2 fit floor so the loa-0 μ_FP integral matches the floor-
+    # restricted mu_det = M_act·f (M_act = M_full[active_flat_cols], active includes
+    # floor_ok). No-op for purity_mixture.
     rho_interp = make_rho_interpolator(mm)
-    rho_op = rho_interp(xhat, snr_op)
-    lam_fp_per_obj = (1.0 - rho_op).astype(float)
-    if obj_weights_extra is not None:
-        # WALL-1: tilt scales the (1−ρ) FP term coherently with the row mark
-        lam_fp_per_obj = lam_fp_per_obj * obj_weights_extra
-    mu_fp_scalar = float(np.sum(lam_fp_per_obj))
+    rho_op = rho_interp(xhat, snr_op)   # kept for the return-internals dict (diagnostic)
+    lam_fp_per_obj, mu_fp_scalar = _forward_fp_terms(
+        cfg, rho_interp, xhat, snr_op, obj_weights_extra=obj_weights_extra,
+        loa0_fp=getattr(cfg, "_loa0_fp", None),
+        logN_fit_floor=getattr(cfg, "v2_logN_fit_floor", None))
 
     # ---- active set: logN_lo >= fit floor AND non-empty A column AND truth occ ----
     # truth occupancy on the fine (logN, z) grid
@@ -2759,7 +3091,11 @@ def fit_forward_hbi(cfg: HBIConfig, cat_cut, good_mask, mm: MollyMatrix,
     # bins below the cap in the fit and the Ω sum. Per-cell N_eff-collapse is still
     # flagged in occ_2d for the differential-vs-integrated G2/G4 reporting.
     occ_marg = occ_2d.sum(axis=1)[:, None]                 # (n_nbins, 1) broadcast
-    active_2d = (floor_ok & (col_nnz > 0) & (occ_marg >= cfg.occupancy_floor))
+    # SYMMETRIC fit CEILING (throw-away-high-N): restrict the active band to logN<=fit_ceil
+    # so the parametric family is fit ONLY by well-localized low-N detections and EXTRAPOLATES
+    # above (v3x_reduce integrates f(N|theta) over the FULL grid). Default 99.0 => no-op.
+    ceil_ok = (logN_hi <= getattr(cfg, "v3_logN_fit_ceil", 99.0) + 1e-9)[:, None]
+    active_2d = (floor_ok & ceil_ok & (col_nnz > 0) & (occ_marg >= cfg.occupancy_floor))
     n_fixed_below_floor = int((~floor_ok[:, 0]).sum())
 
     # active flat indices in column-major (kz outer, jN inner) order — matches D2
@@ -3169,10 +3505,14 @@ def v2_refit(cat_cut, is_TP, good_mask, C_interp, fp_model, X_tot,
         be tilt-scaled until threaded to the numerator alone).
       * C/ρ FROZEN: v2_refit receives the frozen ``mm`` counts; it does not regen.
     """
-    if cfg.fp_estimator != "purity_mixture":
+    # FP-FREEZE GUARD (spec §7/§4): refuse a TILTED loa-0 refit (a frozen forest
+    # background must not be tilt-scaled). The UNTILTED baseline (boot_weights=None)
+    # is supported — v2's build correctly drops the tilt from the loa0 FP term.
+    if cfg.fp_estimator != "purity_mixture" and boot_weights is not None:
         raise NotImplementedError(
-            "v2_refit WALL-1 path is wired for the purity-mixture FP only; a frozen "
-            "loa-0 background must not be tilt-scaled (spec §7/§4).")
+            "v2_refit WALL-1 tilt is wired for the purity-mixture FP only; a frozen "
+            "loa-0 background must not be tilt-scaled (spec §7/§4). Untilted baseline "
+            "(boot_weights=None) is supported for the loa0 A/B.")
     if mm is None or qso_per_sl is None or Xcalc is None:
         raise ValueError("v2_refit requires mm, qso_per_sl, Xcalc (pass via "
                          "estimator_fn kwargs / functools.partial).")
@@ -4075,11 +4415,17 @@ def v3_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     A_full = _apply_C_to_A(A_meta, C_matrix)
     M_full = _apply_C_to_M(M_meta, C_matrix)
     rho_interp = make_rho_interpolator(mm)
-    rho_op = rho_interp(xhat, snr_op)
-    lam_fp = (1.0 - rho_op).astype(float)
-    if obj_weights_extra is not None:
-        lam_fp = lam_fp * obj_weights_extra
-    mu_fp = float(np.sum(lam_fp))
+    rho_op = rho_interp(xhat, snr_op)   # kept in the return dict for diagnostics
+    # FP GATE (default purity_mixture byte-identical; loa0 = frozen forest background)
+    # FIX 4(b): v3 (this simple builder) does NOT zero M below a fit floor — M_full
+    # here is the FULL-grid normalizer and mu_det = M_full·f_θ integrates the full
+    # grid. So the commensurable loa-0 μ_FP is the FULL integral (logN_fit_floor=None),
+    # NOT the floor-restricted one. (v3x DOES floor-zero M via active_flat → it passes
+    # logN_fit_floor; v2's M_act is floor-restricted via active_flat_cols → it passes
+    # the floor.) Hence v3 deliberately omits logN_fit_floor.
+    lam_fp, mu_fp = _forward_fp_terms(
+        cfg, rho_interp, xhat, snr_op, obj_weights_extra=obj_weights_extra,
+        loa0_fp=getattr(cfg, "_loa0_fp", None))
     return dict(fine=fine, A_full=A_full, M_full=M_full, lam_fp=lam_fp,
                 mu_fp=mu_fp, M_meta=M_meta, A_meta=A_meta, cat_op=cat_op,
                 rho_op=rho_op, n_op=int(op.sum()), z_edges_fine=z_edges_fine)
@@ -4889,26 +5235,56 @@ def v3x_grad_log_prior(theta, family, cfg, validation_mode=False):
 # -----------------------------------------------------------------------------
 # v3.x.2  fine-grid density + the continuous marked-Poisson −logP(θ) (analytic grad)
 # -----------------------------------------------------------------------------
+def _v3x_bin_quad(logN_lo, logN_hi, cfg):
+    """Per-x-bin quadrature nodes (in log10 N) + (N ln10)-weighted normalized weights.
+
+    Returns (x_nodes, omega) each shape (n_nbins, Q). The within-bin density used by
+    A·f_θ / M·f_θ must be the (N ln10)-weighted MEAN ⟨f⟩_b = ∫_b f·(N ln10)dx / ΔN_b
+    (since A/M carry the geometric ΔN_b = 10^hi−10^lo factor). With Q=1 the single GL
+    node is the bin midpoint and omega=1 → reduces EXACTLY to the legacy f(x_mid).
+    Q≥3 makes ⟨f⟩_b exact for any smooth f, killing the slope-dependent midpoint bias."""
+    Q = max(1, int(getattr(cfg, "v3_fine_density_gl_nodes", 1)))
+    n = len(logN_lo)
+    if Q == 1:
+        x_nodes = (0.5 * (logN_lo + logN_hi)).reshape(n, 1)
+        omega = np.ones((n, 1), float)
+        return x_nodes, omega
+    t, v = np.polynomial.legendre.leggauss(Q)        # nodes/weights on [-1,1]
+    half = 0.5 * (logN_hi - logN_lo)                 # (n,)
+    mid = 0.5 * (logN_hi + logN_lo)
+    x_nodes = mid[:, None] + half[:, None] * t[None, :]   # (n, Q) in log10 N
+    # (N ln10) measure weight; the GL interval-scale `half` and ln10 cancel in the
+    # normalized mean, so omega ∝ v_q · 10^{x_q}; normalize per bin so Σ_q omega = 1.
+    w = v[None, :] * np.power(10.0, x_nodes)          # (n, Q)
+    omega = w / w.sum(axis=1, keepdims=True)
+    return x_nodes, omega
+
+
 def _v3x_fine_density(theta, fine, family, cfg):
     logN_lo, logN_hi, N_b, dN_b, z_edges_fine = fine
-    x_mid = 0.5 * (logN_lo + logN_hi)
     z_mid = 0.5 * (z_edges_fine[:-1] + z_edges_fine[1:])
-    n_nbins = len(x_mid); n_zf = len(z_mid)
-    X = np.broadcast_to(x_mid[:, None], (n_nbins, n_zf))
-    Z = np.broadcast_to(z_mid[None, :], (n_nbins, n_zf))
-    f2d = v3x_f_of_N(X, Z, theta, family, cfg)
-    return np.asarray(f2d, float).reshape(-1)
+    x_nodes, omega = _v3x_bin_quad(logN_lo, logN_hi, cfg)   # (n_nbins, Q)
+    n_nbins, Q = x_nodes.shape; n_zf = len(z_mid)
+    # evaluate f at every (bin-node, z); contract the node axis with the (N ln10) weights
+    X = np.broadcast_to(x_nodes[:, :, None], (n_nbins, Q, n_zf))
+    Z = np.broadcast_to(z_mid[None, None, :], (n_nbins, Q, n_zf))
+    f3d = np.asarray(v3x_f_of_N(X, Z, theta, family, cfg), float)  # (n_nbins, Q, n_zf)
+    f2d = np.einsum("nq,nqz->nz", omega, f3d)                      # ⟨f⟩_b per (bin, z)
+    return f2d.reshape(-1)
 
 
 def _v3x_grad_fine_density(theta, fine, family, cfg):
     logN_lo, logN_hi, N_b, dN_b, z_edges_fine = fine
-    x_mid = 0.5 * (logN_lo + logN_hi)
     z_mid = 0.5 * (z_edges_fine[:-1] + z_edges_fine[1:])
-    n_nbins = len(x_mid); n_zf = len(z_mid)
-    X = np.broadcast_to(x_mid[:, None], (n_nbins, n_zf))
-    Z = np.broadcast_to(z_mid[None, :], (n_nbins, n_zf))
-    g = v3x_grad_f_wrt_theta(X, Z, theta, family, cfg)
-    return g.reshape(g.shape[0], -1)
+    x_nodes, omega = _v3x_bin_quad(logN_lo, logN_hi, cfg)   # (n_nbins, Q)
+    n_nbins, Q = x_nodes.shape; n_zf = len(z_mid)
+    X = np.broadcast_to(x_nodes[:, :, None], (n_nbins, Q, n_zf))
+    Z = np.broadcast_to(z_mid[None, None, :], (n_nbins, Q, n_zf))
+    g = v3x_grad_f_wrt_theta(X, Z, theta, family, cfg)      # (n_theta, n_nbins, Q, n_zf)
+    g = np.asarray(g, float)
+    # same (N ln10)-weighted bin mean applied to each θ-gradient component
+    g2d = np.einsum("nq,knqz->knz", omega, g)              # (n_theta, n_nbins, n_zf)
+    return g2d.reshape(g2d.shape[0], -1)
 
 
 def v3x_neg_log_posterior(theta, A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
@@ -5190,21 +5566,45 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     # cs F2 / lya F5). Cushion the cut one fine bin below the floor so a kernel
     # whose center is just below the floor still contributes its mass.
     active_bin_lo = float(logN_fit_floor) - (logN_hi[0] - logN_lo[0]) - 1e-9
-    active_mask_x = (logN_lo >= active_bin_lo)
+    # SYMMETRIC fit CEILING (throw-away-high-N, v3_logN_fit_ceil; default 99 = none).
+    # Mirror of the floor: restrict the LIKELIHOOD support to logN<=fit_ceil so the
+    # parametric family is constrained ONLY by well-localized low-N detections and
+    # EXTRAPOLATES (power-law) above — v3x_reduce uses the UNMASKED M_meta + full-grid
+    # f(N|theta), so the reduction integrates the extrapolation (GW-HBI: the high-N
+    # rate is carried by the population posterior Λ, not per-object localization).
+    _fit_ceil = float(getattr(cfg, "v3_logN_fit_ceil", 99.0))
+    ceil_ok_x = (logN_hi <= _fit_ceil + 1e-9)
+    active_mask_x = (logN_lo >= active_bin_lo) & ceil_ok_x
     n_zf_fwd = len(z_edges_fine) - 1
     active_flat = np.broadcast_to(active_mask_x[:, None],
                                   (len(logN_lo), n_zf_fwd)).reshape(-1)
     M_full = np.where(active_flat, M_full, 0.0)
-    rho_op = make_rho_interpolator(mm)(xhat, snr_op)
-    lam_fp = (1.0 - rho_op).astype(float)
+    # A rows are floor-pruned via keep_in_base, but the >ceil COLUMNS are populated by
+    # high-N detections' kernel mass — zero them so λ_real = A_full·f counts only
+    # <=ceil cells (the v3x parametric fit uses A_full/M_full directly, NOT active_2d).
+    if _fit_ceil < float(logN_hi[-1]) - 1e-9:
+        ceil_flat = np.broadcast_to(ceil_ok_x[:, None],
+                                    (len(logN_lo), n_zf_fwd)).reshape(-1)
+        A_full = A_full @ _sp.diags(ceil_flat.astype(float))
+    rho_interp = make_rho_interpolator(mm)
+    rho_op = rho_interp(xhat, snr_op)   # kept in the return dict for diagnostics
+    # op_weights (the tilt) ALWAYS thread to the likelihood Σ-log numerator (cat_op),
+    # regardless of FP mode. The FP TERM, however, is gated:
+    #   purity_mixture: lam_fp=(1−ρ)·tilt, μ_FP=Σ_i lam_fp (byte-identical to before).
+    #   loa0: lam_fp=b_FP(cell)·(1−η) FROZEN (tilt NOT applied; spec §7), μ_FP=INTEGRAL.
     if obj_weights_extra is not None:
         # boot_weights is op_base-ordered (WALL-1 contract); slice to the floored subset
         we = np.asarray(obj_weights_extra, float)[keep_in_base]
-        lam_fp = lam_fp * we
         cat_op["op_weights"] = we
     else:
+        we = None
         cat_op["op_weights"] = None
-    mu_fp = float(np.sum(lam_fp))
+    # loa0 μ_FP restricted to the fit support (>= logN_fit_floor) so it matches the
+    # floor-zeroed mu_det = Σ_b M_b·f_b normalizer (purity_mixture's Σ_i is already
+    # floor-restricted since v3x prunes sub-floor op rows). No-op for purity_mixture.
+    lam_fp, mu_fp = _forward_fp_terms(
+        cfg, rho_interp, xhat, snr_op, obj_weights_extra=we,
+        loa0_fp=getattr(cfg, "_loa0_fp", None), logN_fit_floor=logN_fit_floor)
     # the full op_base mask + the within-base keep so the MC can slice NHI_ERR/TARGETID
     op_full = np.zeros(len(nhi), bool)
     idx_base = np.where(op_base)[0]
@@ -5596,9 +5996,17 @@ def v3x_refit(cat_cut, is_TP, good_mask, C_interp, fp_model, X_tot,
     A_full/M_full/λ_FP ONCE (the tilt threads via boot_weights → obj_weights_extra on
     the per-object log + (1−ρ) FP term, NOT M), MAP-fits θ, reduces. Returns the v1-key
     dict + _v3x internals so run_one_tilt can build the MC refit_fn."""
-    if cfg.fp_estimator != "purity_mixture":
-        raise NotImplementedError("v3x_refit is wired for the purity-mixture FP only "
-                                  "(a frozen loa-0 background must not be tilt-scaled).")
+    # FP-FREEZE GUARD (spec §7 / §4): the loa-0 background is a FROZEN external
+    # forest intensity that must NOT be tilt-scaled. The v3x_build_forward loa0 path
+    # already DROPS the tilt from the FP term, but the WALL-1 *closure* statistic
+    # (R0·truth^tilt vs est^tilt) is only meaningful for the per-row-mark FP. So we
+    # allow loa0 for the UNTILTED baseline (boot_weights is None — the
+    # baseline_recovery R0 / A/B reduce), and refuse only the TILTED refit.
+    if cfg.fp_estimator != "purity_mixture" and boot_weights is not None:
+        raise NotImplementedError(
+            "v3x_refit WALL-1 tilt is wired for the purity-mixture FP only "
+            "(a frozen loa-0 background must not be tilt-scaled — spec §7/§4). "
+            "Untilted baseline (boot_weights=None) is supported for the loa0 A/B.")
     if mm is None or qso_per_sl is None or Xcalc is None:
         raise ValueError("v3x_refit requires mm, qso_per_sl, Xcalc (pass via partial).")
     if rng is None:
@@ -5652,7 +6060,8 @@ def make_v3x_refit_fn(cfg, point_v3x, mm):
         lam_fp = (1.0 - rho_i) * boot_w
         mu_fp = float(np.sum(lam_fp))
         fit = v3x_fit_map(A_draw, M_draw, lam_fp, mu_fp, fine, family, cfg,
-                          obj_weights=boot_w, theta0=theta_map, n_restart=2,
+                          obj_weights=boot_w, theta0=theta_map,
+                          n_restart=getattr(cfg, "v3_mc_n_restart", 2),
                           rng=np.random.default_rng(int(abs(hash((float(boot_w.sum()), m))) % (2**31))),
                           lit_start=False)
         rr = v3x_reduce(cfg, fit["theta_map"], fine, family, M_meta)

@@ -41,7 +41,7 @@ OUT="${OUT_OVERRIDE:-/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phas
 CAT="/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/"
 TRUTH="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits"
 BAL="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits"
-MOLLY="/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly/molly_matrix.tsv"
+MOLLY="${MOLLY_OVERRIDE:-/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly/molly_matrix.tsv}"
 
 mkdir -p "${OUT}"
 
@@ -64,6 +64,7 @@ sha256sum "${GATE_DOC}" || md5sum "${GATE_DOC}" || true
 # defaults match the SIR-kernel run for a like-for-like comparison
 FIT_FLOOR="${FIT_FLOOR:-19.5}"
 LAMBDA_BSPBODY="${LAMBDA_BSPBODY:-30.0}"
+LAM_RF_MIN="${LAM_RF_MIN:-911.0}"   # 911=Lyα+Lyβ (default); 1025.0=Lyα-only forest
 DALPHA="${DALPHA:-0.5}"
 HOST_TRUTH_FLOOR=19.0
 ZBINS="2.0,2.5,3.0,3.5"
@@ -89,6 +90,7 @@ python CDDF_analysis/run_remp_kernel.py \
     --report-limits "${REPORT_LIMITS}" \
     --fit-floor "${FIT_FLOOR}" \
     --lambda-bspbody "${LAMBDA_BSPBODY}" \
+    --lam-rf-min "${LAM_RF_MIN}" \
     --dalpha "${DALPHA}" \
     --host-truth-floor "${HOST_TRUTH_FLOOR}" \
     --smooth-bins "${SMOOTH_BINS}" \

@@ -70,8 +70,20 @@ sha256sum "${GATE_DOC}" || md5sum "${GATE_DOC}" || true
 FIT_FLOOR="${FIT_FLOOR:-19.5}"
 LAMBDA_BSPBODY="${LAMBDA_BSPBODY:-30.0}"
 DALPHA="${DALPHA:-0.5}"
+MC_NRESTART="${MC_NRESTART:-2}"   # WALL-1 per-draw MC-refit multistart; raise to 8 to
+                                  # test the gate-MC-convergence hypothesis (point uses 8)
+LAM_RF_MIN="${LAM_RF_MIN:-911.0}" # rest-frame blue edge: 911.0=Lyman limit (full Lyα+Lyβ,
+                                  # default); 1025.0=Lyα-only forest (pair with the
+                                  # lya_only molly matrix via MOLLY_OVERRIDE)
+EDGE_SLOPE_LAM="${EDGE_SLOPE_LAM:-40.0}"  # low-N edge-slope prior anchor strength; 0.0
+                                  # neutralizes the fixed -1.4 slope memory (WALL-1 probe)
+GL_NODES="${GL_NODES:-1}"         # within-bin density quadrature: 1=midpoint (default),
+                                  # 3=Gauss-Legendre bin-mean (slope-bias structural fix)
+FIT_CEIL="${FIT_CEIL:-99.0}"      # fit ceiling (99=none); set 21.0 = throw-away-high-N
+                                  # (fit only low-N, extrapolate power-law above)
+FAMILY="${FAMILY:-bspbody}"       # v3 CDDF family: bspbody (default) | plaw | plawcut | bplcut
+ZBINS="${ZBINS:-2.0,2.5,3.0,3.5}" # reporting/fit z-bin edges (override e.g. 2.15,2.5,3.0,3.5)
 HOST_TRUTH_FLOOR=19.0
-ZBINS="2.0,2.5,3.0,3.5"
 REPORT_LIMITS="20.0,20.3,20.6"
 NJOBS=16
 
@@ -89,8 +101,14 @@ python CDDF_analysis/run_phase3d_postkernel.py \
     --pw-samples "${PWSAMPLES}" \
     --zbins "${ZBINS}" \
     --report-limits "${REPORT_LIMITS}" \
+    --family "${FAMILY}" \
     --fit-floor "${FIT_FLOOR}" \
+    --fit-ceil "${FIT_CEIL}" \
     --lambda-bspbody "${LAMBDA_BSPBODY}" \
+    --mc-n-restart "${MC_NRESTART}" \
+    --lam-rf-min "${LAM_RF_MIN}" \
+    --edge-slope-lam "${EDGE_SLOPE_LAM}" \
+    --gl-nodes "${GL_NODES}" \
     --dalpha "${DALPHA}" \
     --host-truth-floor "${HOST_TRUTH_FLOOR}" \
     --n-mc 200 \

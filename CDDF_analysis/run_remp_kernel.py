@@ -76,6 +76,7 @@ def _make_cfg(args) -> HBIConfig:
         v3_family="bspbody",
         v3_logN_fit_floor=args.fit_floor,
         v3_lambda_bspbody=args.lambda_bspbody,
+        lam_rf_min=args.lam_rf_min,
         v2_z_fit_lo=zbins[0], v2_z_fit_hi=zbins[-1], v2_z_fit_step=0.1,
     )
     return cfg
@@ -290,6 +291,10 @@ def main(argv=None):
     p.add_argument("--report-limits", default="20.0,20.3,20.6")
     p.add_argument("--fit-floor", type=float, default=19.5)
     p.add_argument("--lambda-bspbody", type=float, default=30.0)
+    p.add_argument("--lam-rf-min", type=float, default=911.0,
+                   help="rest-frame blue edge: 911.0=full Lyα+Lyβ (default); 1025.0="
+                        "Lyα-only forest (pair with the lya_only molly matrix). Restricts "
+                        "the catalog/truth cut + R_emp training pairs consistently.")
     p.add_argument("--dalpha", type=float, default=0.5)
     p.add_argument("--host-truth-floor", type=float, default=19.0)
     p.add_argument("--n-mc", type=int, default=200)
