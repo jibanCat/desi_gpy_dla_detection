@@ -679,6 +679,159 @@ def build_injection_sample(
 
 
 # --------------------------------------------------------------------------- #
+# WALL-1 — tilted-f(N) manifest sampler (continuous draw, one per sightline)
+# --------------------------------------------------------------------------- #
+def tilt_weight(logN, dalpha: float, pivot: float = LOGN_KNEE):
+    """w(logN) = 10^(Δα·(logN − pivot)) — the WALL-1 tilt mark (cddf_tilt_closure
+    parity, byte-identical formula). NaN logN → weight 1.0 (shape-independent)."""
+    logN = np.asarray(logN, dtype=float)
+    w = 10.0 ** (dalpha * (logN - pivot))
+    return np.where(np.isfinite(logN), w, 1.0)
+
+
+def _empirical_logn_pdf(truth_logn, *, logN_range, n_grid=400, smooth=1.0):
+    """Smoothed histogram → callable per-dex f(N) SHAPE from a truth logN array.
+
+    Returns ``pdf(logN_array) -> density`` (interpolated, non-negative). Used to
+    derive the 2LPT f(N) SHAPE directly from the loa-124 truth catalog so the tilted
+    draw is a genuine sample of (2LPT f(N) × tilt), not a parametric guess. The
+    NORMALIZATION is irrelevant (inverse-CDF only uses the shape).
+    """
+    lo, hi = float(logN_range[0]), float(logN_range[1])
+    grid = np.linspace(lo, hi, int(n_grid))
+    t = np.asarray(truth_logn, dtype=float)
+    t = t[np.isfinite(t) & (t >= lo) & (t <= hi)]
+    if t.size == 0:
+        raise ValueError("empirical f(N) needs truth logN in the range")
+    # fine histogram + light Gaussian smoothing for a continuous shape
+    edges = np.linspace(lo, hi, int(n_grid) + 1)
+    counts, _ = np.histogram(t, bins=edges)
+    dens = counts.astype(float)
+    if smooth and smooth > 0:
+        try:
+            from scipy.ndimage import gaussian_filter1d
+            dens = gaussian_filter1d(dens, sigma=float(smooth), mode="nearest")
+        except Exception:                                      # noqa: BLE001
+            pass
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    dens = np.maximum(dens, 1e-12)                             # strictly positive
+
+    def _pdf(logN):
+        return np.interp(np.asarray(logN, dtype=float), centers, dens,
+                         left=dens[0], right=dens[-1])
+
+    return _pdf
+
+
+def build_tilted_manifest(
+    clean_sightlines,
+    *,
+    dalpha: float,
+    n_inj: int,
+    logn_pdf_2lpt,
+    fit_floor: float = 19.5,
+    logN_ceil: float = LOGN_MAX,
+    pivot: float = LOGN_KNEE,
+    seed: int,
+    campaign: str = "W1",
+    method: str = "coadd",
+    num_lines: int = DEFAULT_NUM_LINES,
+) -> List[dict]:
+    """WALL-1 tilted-f(N) injection manifest — ONE absorber per clean sightline.
+
+    Draws ``(z_DLA, logN_HI)`` per injected sightline from the TILTED CDDF
+    ``f(N)_tilt = f(N)_2LPT(logN) × 10^(Δα·(logN − pivot))`` on the fit support
+    ``[fit_floor, logN_ceil]`` (the molly floor-19.5 / fit-floor-19.5 config), with
+    ``z`` drawn UNIFORM in each host sightline's GP search window (design §3.2). The
+    injected truth IS the comparison truth (n_true^tilt drawn directly), so the
+    headline closure compares the re-inferred detections to this manifest, not to a
+    reweighted natural population.
+
+    One injection per clean sightline globally (the M3 one-injection-per-target guard
+    — ``inject_into_coadd`` stacks rows sharing a target_id, so reuse corrupts the
+    per-object bookkeeping). Sightlines are shuffled deterministically and consumed in
+    order; only those whose GP window is non-empty receive an absorber, so the number
+    actually emitted may be < ``n_inj`` if the clean pool is exhausted (warned by the
+    driver, not silently).
+
+    Parameters
+    ----------
+    clean_sightlines : dict-of-arrays or list-of-dicts
+        Clean (HCD-free ∩ BAL-free) sightlines: ``target_id, healpix, z_qso,
+        native_snr`` (the :func:`build_clean_table` output, normalized).
+    dalpha : float
+        Tilt slope Δα (e.g. +0.5 / −0.5). The tilt weight is
+        ``10^(Δα·(logN − pivot))`` applied to the 2LPT f(N) shape.
+    n_inj : int
+        Target number of injections (sightlines consumed). Capped by the clean pool.
+    logn_pdf_2lpt : callable
+        ``logn_pdf_2lpt(logN_array) -> density`` — the UNTILTED 2LPT f(N) SHAPE
+        (any positive normalization). Build it from the loa-124 truth via
+        :func:`_empirical_logn_pdf` for a faithful 2LPT shape.
+    fit_floor, logN_ceil : float
+        logN draw support (default [19.5, 22.5]).
+    pivot : float
+        Tilt pivot (default 20.3, the WALL-1 LOGN_KNEE).
+    seed : int
+        Deterministic seed (sightline shuffle + logN/z draws).
+    campaign, method, num_lines : as in :func:`build_injection_sample`.
+
+    Returns
+    -------
+    list[dict]
+        Manifest rows with the full :data:`MANIFEST_FIELDS` (``campaign='W1'``,
+        ``control=False``, ``zqso_bin=-1``). Consumable by ``write_campaign`` unchanged.
+    """
+    if not callable(logn_pdf_2lpt):
+        raise ValueError("logn_pdf_2lpt must be a callable density f(N)_2LPT(logN)")
+
+    def _tilted_pdf(logN):
+        base = np.asarray(logn_pdf_2lpt(logN), dtype=float)
+        w = tilt_weight(np.asarray(logN, dtype=float), dalpha, pivot)
+        return np.maximum(base, 0.0) * w
+
+    draw_logN = _inverse_cdf_sampler(_tilted_pdf, (fit_floor, logN_ceil))
+
+    sl = _normalize_clean_sightlines(clean_sightlines)
+    all_tids = np.array(sorted(sl.keys()), dtype=np.int64)
+
+    rng = np.random.default_rng(int(seed))
+    order = rng.permutation(all_tids.size)
+    tids_shuffled = all_tids[order]
+
+    rows: List[dict] = []
+    inj_id = 0
+    for t in tids_shuffled:
+        if len(rows) >= int(n_inj):
+            break
+        ti = int(t)
+        info = sl[ti]
+        z_lo, z_hi = _per_sightline_forest_window(info["z_qso"])
+        if not (z_hi > z_lo):
+            continue                                           # empty GP window → skip
+        z_true = float(rng.uniform(z_lo, z_hi))                # z UNIFORM in window
+        logN = float(draw_logN(rng, 1)[0])
+        rows.append({
+            "inj_id": inj_id,
+            "campaign": str(campaign),
+            "method": str(method),
+            "target_id": ti,
+            "healpix": int(info["healpix"]),
+            "z_qso": float(info["z_qso"]),
+            "snr_bin": int(_snr_bin_index(float(info["native_snr"]),
+                                          [2.0, 4.0, 8.0, 1e9])),
+            "native_snr": float(info["native_snr"]),
+            "logN_true": logN,
+            "z_true": z_true,
+            "num_lines": int(num_lines),
+            "control": False,
+            "zqso_bin": -1,
+        })
+        inj_id += 1
+    return rows
+
+
+# --------------------------------------------------------------------------- #
 # M2 — control-row generator (clean sightlines, NO injection) for b_FP.
 # --------------------------------------------------------------------------- #
 def build_control_rows(
@@ -931,7 +1084,7 @@ def validate_manifest(rows: Sequence[Mapping]) -> None:
     """Assert ``rows`` is a valid manifest (the CS-injector contract).
 
     For ordinary INJECTION rows: every required :data:`MANIFEST_FIELDS` key
-    present; ``inj_id`` unique; ``campaign`` ∈ {'A','B','D'}; ``method`` ∈
+    present; ``inj_id`` unique; ``campaign`` ∈ {'A','B','D','W1'}; ``method`` ∈
     {'coadd','gpdraw'}; ``LOGN_MIN <= logN_true <= LOGN_MAX``; and the z-window
     bounds (M1) ``z_lo <= z_true <= z_hi`` AND ``z_true < z_qso`` (absorber inside
     the GP search window and blueward of the QSO).
@@ -967,8 +1120,8 @@ def validate_manifest(rows: Sequence[Mapping]) -> None:
                 f"sightline may host at most one injection/control row"
             )
         seen_targets.add(tid)
-        if r["campaign"] not in ("A", "B", "D"):
-            raise ValueError(f"row {i}: campaign {r['campaign']!r} not in A/B/D")
+        if r["campaign"] not in ("A", "B", "D", "W1"):
+            raise ValueError(f"row {i}: campaign {r['campaign']!r} not in A/B/D/W1")
         if r["method"] not in ("coadd", "gpdraw"):
             raise ValueError(f"row {i}: method {r['method']!r} not in coadd/gpdraw")
 

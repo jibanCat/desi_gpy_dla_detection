@@ -156,6 +156,26 @@ class HBIConfig:
     #                                    parametric form couples all N, so the LLS rows DO
     #                                    inform alpha — Finding 5 says run BOTH 19.5 and 17.2
     #                                    and require the DLA-tier headline to agree.
+    basis_pad_floor: Optional[float] = None  # DECOUPLED deconvolution-basis floor (2026-06-17,
+    #                                    sub-DLA edge bracket). None => equals v3_logN_fit_floor
+    #                                    (BYTE-IDENTICAL default). When set BELOW v3_logN_fit_floor
+    #                                    (e.g. 19.0), it lowers ONLY the deconvolution basis +
+    #                                    normalizer support — the A-build column-skip floor and the
+    #                                    M_full active_bin_lo — so an edge object's broadened-kernel
+    #                                    mass that leaks below the 19.5 fit floor still has BASIS
+    #                                    columns to land in (carries the leaked mass) and the
+    #                                    marked-Poisson normalizer mu_det covers the same support as
+    #                                    lambda_real. It does NOT lower the DETECTION set (keep_in_base),
+    #                                    the molly C/rho, or the FP mu_FP/lam_fp (those stay at
+    #                                    v3_logN_fit_floor => NO FP-heavy [pad,19.5) detections admitted,
+    #                                    FP normalizer matched to the 19.5 detection set). The padding
+    #                                    [basis_pad_floor, v3_logN_fit_floor) is UNREPORTED support;
+    #                                    only >= v3_logN_fit_floor is reduced/reported. The completeness
+    #                                    C used in the padding is the constant-extrapolation of the
+    #                                    molly's LOWEST cell (its searchsorted->clip(0) maps any
+    #                                    sub-floor midN to molly cell 0 = [19.5,20.0)), applied
+    #                                    IDENTICALLY to A_full and M_full so lambda_real and mu_det
+    #                                    share the same padding C (Bayesian coherence; see v3x_build_forward).
     v3_logN_fit_ceil: float = 99.0     # SYMMETRIC fit CEILING (default 99 = none, = fit to
     #                                    drop_top_bin_above, current behavior). Set e.g. 21.0
     #                                    to restrict the LIKELIHOOD's active band to
@@ -3352,7 +3372,17 @@ def make_v2_refit_fn(cfg, internals, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
 
     WALL-2 variance = per-cell binomial (Rao-Blackwell, math §farr-strat) — NOT a
     fresh-injection N_eff. The Farr N_eff term is a WALL-3 (real-data) item.
+
+    FP-FREEZE GUARD (adversarial review 2026-06-19): the per-draw ``lam_fp`` below
+    HARD-CODES the purity-mixture ``(1−ρ)·boot_w`` and IGNORES cfg.fp_estimator — same
+    landmine as the v3x band. v2_refit already refuses a TILTED loa-0 refit, but a
+    direct call to this band builder with a loa-0 cfg would silently mis-band. Refuse.
     """
+    if cfg.fp_estimator != "purity_mixture":
+        raise NotImplementedError(
+            f"make_v2_refit_fn hard-codes the purity-mixture (1−ρ) FP per draw; "
+            f"fp_estimator={cfg.fp_estimator!r} (frozen loa-0 background) is not "
+            f"supported for the v2 MC band (spec §4/§7).")
     A_meta = internals["A_meta"]
     act_idx = internals["act_idx"]
     active_flat_cols = internals["active_flat_cols"]
@@ -4892,11 +4922,21 @@ def _v3x_bspbody_knots(cfg):
     """Interior knots for the body-anchored spline: linspace over
     [fit_floor - margin, drop_top]. NOT 17.2 — that left the original pspline's
     sub-floor coeffs unconstrained (cond 4e6). The basis is concentrated where the
-    fit data live (>=19.5), so every coeff is data-constrained -> well-posed."""
+    fit data live (>=19.5), so every coeff is data-constrained -> well-posed.
+
+    2026-06-17 BRACKET (gate #5): when cfg.basis_pad_floor is set BELOW
+    v3_logN_fit_floor, the deconvolution basis is extended down to it (A columns +
+    M normalizer). The knot grid must then SPAN the padding so the edge-slope prior
+    (v3_bspbody_edge_slope_lam, already active) pins the padding f instead of leaving
+    it as a free flat extrapolation below the lowest knot. We therefore anchor the
+    lowest knot at min(fit_floor, basis_pad_floor) - margin. basis_pad_floor is None /
+    == fit_floor by default => the lowest knot is fit_floor - margin (byte-identical)."""
     floor = getattr(cfg, "v3_logN_fit_floor", 19.5)
     margin = getattr(cfg, "v3_bspbody_knot_margin", 0.3)
     K = getattr(cfg, "v3_bspbody_n_knots", 8)
-    lo = float(floor) - float(margin)
+    pad = getattr(cfg, "basis_pad_floor", None)
+    knot_floor = float(floor) if pad is None else min(float(floor), float(pad))
+    lo = knot_floor - float(margin)
     hi = float(cfg.drop_top_bin_above)
     return np.linspace(lo, hi, int(K))
 
@@ -5498,6 +5538,28 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     between the two floors)."""
     if logN_fit_floor is None:
         logN_fit_floor = getattr(cfg, "v3_logN_fit_floor", 19.5)
+    # DECOUPLED BASIS-PADDING FLOOR (2026-06-17 sub-DLA edge bracket). basis_pad_floor
+    # lowers ONLY the deconvolution basis + the marked-Poisson normalizer support — NOT
+    # the detection set (keep_in_base), the molly C/ρ, or the FP μ_FP/λ_fp (all stay at
+    # logN_fit_floor). None => equals logN_fit_floor (BYTE-IDENTICAL: every site below
+    # collapses to the original code). When < logN_fit_floor, an edge object whose
+    # broadened kernel leaks below the fit floor has BASIS columns in [basis_pad_floor,
+    # logN_fit_floor) to carry that mass, and μ_det = Σ_b M_b f_b extends to the same
+    # support so the padding contributes to BOTH λ_real and μ_det (Bayesian coherence:
+    # else dumping f into the padding is free). The C used in the padding is the
+    # constant-extrapolation of the molly's lowest cell — automatic and CONSISTENT across
+    # A and M because both build_*'s segment→molly-cell map is searchsorted(nhi_edges)→
+    # clip(0), and the nhi195 molly's lowest cell is [19.5,20.0); so any sub-floor segment
+    # reads C of cell 0. Reduction/report stays >= logN_fit_floor (the padding is
+    # unreported support).
+    basis_pad_floor = getattr(cfg, "basis_pad_floor", None)
+    if basis_pad_floor is None:
+        basis_pad_floor = logN_fit_floor
+    basis_pad_floor = float(basis_pad_floor)
+    if basis_pad_floor > logN_fit_floor + 1e-9:
+        raise ValueError(
+            f"basis_pad_floor ({basis_pad_floor}) must be <= v3_logN_fit_floor "
+            f"({logN_fit_floor}); padding only EXTENDS the basis DOWN, never up.")
     z_edges_fine = _fine_z_grid(cfg)
     fine = (logN_lo, logN_hi, N_b, dN_b, z_edges_fine)
     s2n = np.asarray(cat_cut["S2N_RED"], float)
@@ -5524,6 +5586,13 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     # lower the A-column floor too so the floor-17.2 run GENUINELY extends the active
     # columns down (else the two floors share columns and the Finding-5 agreement test
     # is near-trivial). Restored in finally so no other estimator's column set changes.
+    # 2026-06-17 BRACKET: gate the A-column floor on basis_pad_floor (= logN_fit_floor by
+    # default) so the DECOUPLED basis padding lowers the A column-skip to basis_pad_floor
+    # — giving an edge object's leaked sub-floor kernel mass columns to land in — WITHOUT
+    # admitting [basis_pad_floor, logN_fit_floor) detections (keep_in_base/xhat/μ_FP stay
+    # at logN_fit_floor). For the legacy floor-17.2 arm basis_pad_floor==logN_fit_floor so
+    # this is the same as gating on logN_fit_floor (byte-identical).
+    _a_col_floor = min(float(logN_fit_floor), float(basis_pad_floor))
     _saved_v2floor = getattr(cfg, "v2_logN_fit_floor", logN_lo[0])
     # Phase-3d 2-D calibrated kernel: when cfg carries a cached kappa
     # [n_op_base, n_Nbins, n_zf] (op_base order — see build_posterior_kernel), slice
@@ -5539,8 +5608,8 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
             f"{int(op_base.sum())} — kernel must be built in the SAME op order")
         pk_arg = kappa2d[keep_in_base]
     try:
-        if float(logN_fit_floor) < _saved_v2floor - 1e-9:
-            cfg.v2_logN_fit_floor = float(logN_fit_floor)
+        if float(_a_col_floor) < _saved_v2floor - 1e-9:
+            cfg.v2_logN_fit_floor = float(_a_col_floor)
         A_meta = build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
                             Xcalc, cfg, kernel=cfg.v2_kernel,
                             posterior_kernel=pk_arg)[1]
@@ -5549,6 +5618,17 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     qlo, qhi, qsnr = qso_per_sl
     M_meta = build_M_b(qlo, qhi, qsnr, mm, logN_lo, logN_hi, N_b, dN_b,
                        z_edges_fine, Xcalc, cfg)
+    # COMPLETENESS C in the padding [basis_pad_floor, logN_fit_floor): the constant-
+    # extrapolation of the molly's LOWEST cell ([19.5,20.0)), applied IDENTICALLY to
+    # A_full (_apply_C_to_A) and M_full (_apply_C_to_M). This consistency is automatic —
+    # both _build_A_ib_kappa2d and build_M_b map each fine segment to a molly NHI cell by
+    # searchsorted(mm.nhi_edges, mid)->clip(0,..), so any segment whose midpoint < the
+    # molly's lowest edge (19.5) reads cell 0's C. Bayesian coherence (gate #4): because
+    # the padding contributes to λ_real = A_full·f via the new A columns, it MUST also
+    # contribute to μ_det = Σ_b M_b·f_b with the SAME completeness — else the loss rewards
+    # dumping mass into the unpenalized padding (which would then leak UP into [19.5,19.6)
+    # via the smooth bspbody). Extending M_full to basis_pad_floor with the same C closes
+    # that gap. (No-op when basis_pad_floor == logN_fit_floor: the original behavior.)
     C_matrix = mm.completeness
     A_full = _apply_C_to_A(A_meta, C_matrix)
     M_full = _apply_C_to_M(M_meta, C_matrix)
@@ -5565,7 +5645,11 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     # likelihood without touching the reduction (Bayesian F1a / Numerical F1 /
     # cs F2 / lya F5). Cushion the cut one fine bin below the floor so a kernel
     # whose center is just below the floor still contributes its mass.
-    active_bin_lo = float(logN_fit_floor) - (logN_hi[0] - logN_lo[0]) - 1e-9
+    # 2026-06-17 BRACKET: the normalizer support extends to basis_pad_floor (= the A
+    # column floor), so μ_det covers the SAME [basis_pad_floor, ∞) support as λ_real and
+    # the padding f is penalized in the loss (coherent). basis_pad_floor == logN_fit_floor
+    # by default => identical to the original active_bin_lo (byte-identical).
+    active_bin_lo = float(basis_pad_floor) - (logN_hi[0] - logN_lo[0]) - 1e-9
     # SYMMETRIC fit CEILING (throw-away-high-N, v3_logN_fit_ceil; default 99 = none).
     # Mirror of the floor: restrict the LIKELIHOOD support to logN<=fit_ceil so the
     # parametric family is constrained ONLY by well-localized low-N detections and
@@ -5916,7 +6000,20 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
     """WALL-2 joint Monte-Carlo on the parametric fit (the HEADLINE band — Finding 6).
     Each draw resamples molly C/ρ (Jeffreys-Beta), the per-object NHI width, and
     bootstraps sightlines, then re-MAPs θ warm-started at the point. Returns θ + the
-    reductions q16/q50/q84/q2.5/q97.5."""
+    reductions q16/q50/q84/q2.5/q97.5.
+
+    FP-FREEZE GUARD (adversarial review 2026-06-19): the per-draw ``lam_fp`` below
+    HARD-CODES the purity-mixture ``(1−ρ)·boot_w`` form and IGNORES cfg.fp_estimator.
+    For a loa-0 (frozen forest-background) point estimate this would silently produce
+    purity-mixture error bars — an incoherent point/band pair. Use
+    ``wall1_explain_partA.loa0_full_posterior_mc`` for the loa-0 band (it threads the
+    frozen loa-0 FP + the per-draw Gehrels Gamma). Refuse here rather than mis-band."""
+    if cfg.fp_estimator != "purity_mixture":
+        raise NotImplementedError(
+            f"v3x_joint_mc hard-codes the purity-mixture (1−ρ) FP per draw; "
+            f"fp_estimator={cfg.fp_estimator!r} is a FROZEN external background whose "
+            f"band must come from loa0_full_posterior_mc (spec §4/§7). The point "
+            f"estimate (v3x_refit) handles loa0 correctly; only this MC band does not.")
     if rng is None:
         rng = np.random.default_rng(cfg.rng_seed)
     if n_mc is None:
@@ -6038,7 +6135,18 @@ def make_v3x_refit_fn(cfg, point_v3x, mm):
     """Build the per-draw θ-refit closure for the WALL-1 MC band (run_one_tilt _v3x
     branch). Each draw resamples C/ρ/σ_i + bootstrap, re-MAPs θ warm at the tilted MAP,
     reduces — the SAME machinery as v3x_joint_mc, exposed in the joint_mc_errors
-    refit_fn(C_draw, rho_draw, nhi_m, boot_w, m) contract."""
+    refit_fn(C_draw, rho_draw, nhi_m, boot_w, m) contract.
+
+    FP-FREEZE GUARD (adversarial review 2026-06-19): the per-draw ``lam_fp`` HARD-CODES
+    the purity-mixture ``(1−ρ)·boot_w`` and IGNORES cfg.fp_estimator. For loa-0 this
+    would mis-band; the WALL-1 tilt caller (cddf_tilt_closure.run_one_tilt) already
+    refuses loa-0 before reaching here, but a direct caller would not — so refuse
+    explicitly and point at the dedicated loa-0 band."""
+    if cfg.fp_estimator != "purity_mixture":
+        raise NotImplementedError(
+            f"make_v3x_refit_fn hard-codes the purity-mixture (1−ρ) FP per draw; "
+            f"fp_estimator={cfg.fp_estimator!r} (frozen loa-0 background) must use "
+            f"loa0_full_posterior_mc for its band (spec §4/§7), not this refit hook.")
     fwd = point_v3x["fwd"]; family = point_v3x["family"]; fine = point_v3x["fine"]
     M_meta = point_v3x["M_meta"]; theta_map = point_v3x["theta_map"]
     A_meta = fwd["A_meta"]; cat_op = fwd["cat_op"]

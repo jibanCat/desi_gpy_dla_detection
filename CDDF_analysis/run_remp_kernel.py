@@ -82,52 +82,42 @@ def _make_cfg(args) -> HBIConfig:
     return cfg
 
 
-def build_R_emp(cfg, cat_cut, good_mask, fine_grid, mm,
-                smooth_bins=1.0, n_floor=20, host_col="NHI_TILT_HOST",
-                verbose=True):
-    """Build the empirical truth-match response kernel cube in op_base order.
+def compute_R_response(cfg, cat_cut, good_mask, fine_grid, mm,
+                       smooth_bins=1.0, n_floor=20, host_col="NHI_TILT_HOST",
+                       verbose=False):
+    """Measure the UNTILTED 2-D (x_hat, x_true) response matrix R[s, jhat, jtru].
 
-    Returns (kappa, ess, info) where
-      kappa : float32 [n_op, n_Nbins, n_zf]  -- per-op-object p(x_true,z_true|det i):
-              N-axis = empirical p(x_true | x_hat-bin(x_hat_i), SNR-cell s_i);
-              z-axis = near-delta at the fine z-bin containing z_hat_i (sigma_z<<0.1).
-              Each row renormalized to sum=1 over (jN,kz); rows with no R_emp support
-              fall back to the SNR-marginal response, then to a delta at x_hat.
-      ess   : dict tier->float32[n_op]  -- per-object effective sample size of the
-              EMPIRICAL response restricted to logN>=tier (the count of TP training
-              pairs in the (s_i, x_hat-bin_i) response cell whose x_true>=tier,
-              shrinkage-pooled). Feeds the gate band-ESS<30 KILL (gate doc B), the
-              R_emp analogue of the SIR kernel's (Sum w/pi)^2/Sum(w/pi)^2.
+    This is the SLOPE-AGNOSTIC, population-FROZEN operator (design §2): it records
+    only how x_hat scatters around a given x_true per SNR cell, NOT how many absorbers
+    sit at each x_true. Built ONCE on the untilted truth-match; ``assign_R_emp_to_catalog``
+    then re-binds it onto ANY (re-inferred, possibly-tilted) catalog without rebuilding.
 
-    R_emp definition (the 2-D (x_hat,x_true) response per SNR bin):
-      training set = truth-matched TPs (finite host_col) passing the SAME op_base mask
-        (so the response is measured on the very detections we forward-model).
+    R definition (the 2-D (x_hat,x_true) response per SNR bin):
+      training set = truth-matched TPs (finite host_col) passing the op_base mask
+        (S2N_RED>snr_min & P_DLA>p_dla_min & good_mask) on cat_cut — the response is
+        measured on the very detections we forward-model.
       bin x_hat and x_true on the SAME fine logN grid; bin SNR by molly snr_edges.
       cube R[s, jhat, jN_true] = count of training TPs in (SNR cell s, x_hat-bin jhat,
-        x_true-bin jN_true). SNR-pool SHRINKAGE: response cells (s, jhat) with < n_floor
-        training pairs borrow the all-SNR marginal R_par[jhat, jN_true] (deep-tail
-        cells are sparse per-SNR). 2-D Gaussian smoothing (smooth_bins fine bins, in
-        BOTH x_hat and x_true) regularizes the response before column-normalization.
+        x_true-bin jN_true). 2-D Gaussian smoothing (smooth_bins fine bins, in BOTH
+        x_hat and x_true) regularizes the response before column-normalization. The
+        all-SNR marginal R_par and the PRE-smoothing per-cell / per-x_hat-bin occupancy
+        (occ_cell, occ_par) are kept for the SNR-pool shrinkage at re-bind time.
+
+    Returns a dict ``R_response`` carrying everything ``assign_R_emp_to_catalog`` needs:
+      R          float64 [n_snr, n_Nbins, n_Nbins]  -- smoothed per-SNR response counts
+      R_par      float64 [n_Nbins, n_Nbins]         -- smoothed all-SNR marginal
+      occ_cell   float64 [n_snr, n_Nbins]           -- PRE-smoothing per-cell occupancy
+      occ_par    float64 [n_Nbins]                  -- PRE-smoothing per-x_hat-bin occ
+      edges_N, n_Nbins, n_snr, n_train, host_col    -- grid/provenance metadata
     """
     logN_lo, logN_hi, N_b, dN_b = fine_grid
-    z_edges_fine = _fine_z_grid(cfg)
     n_Nbins = len(logN_lo)
-    n_zf = len(z_edges_fine) - 1
     edges_N = np.concatenate([logN_lo, [logN_hi[-1]]])
     n_snr = len(mm.snr_edges) - 1
 
-    # ---- op_base set (the EXACT order v3x_build_forward rebuilds) ----
-    op_mask, slot_op, tid_op, dlaid_op = _op_mask_and_slots(cat_cut, good_mask, cfg)
+    # op_base set (only its size + the host match define the training TPs here).
+    op_mask, _slot_op, _tid_op, _dlaid_op = _op_mask_and_slots(cat_cut, good_mask, cfg)
     n_op = int(op_mask.sum())
-    xhat_op = np.asarray(cat_cut["NHI"], float)[op_mask]
-    zhat_op = np.asarray(cat_cut["Z_DLA"], float)[op_mask]
-    snr_op = np.asarray(cat_cut["S2N_RED"], float)[op_mask]
-    i_snr_op = _cell_index(mm, xhat_op, snr_op)[0]              # molly SNR cell per op
-    jhat_op = np.searchsorted(edges_N, xhat_op, side="right") - 1
-    jhat_op = np.clip(jhat_op, 0, n_Nbins - 1)
-    # fine z-bin of each op object (near-delta z-kernel)
-    kz_op = np.searchsorted(z_edges_fine, zhat_op, side="right") - 1
-    kz_valid = (kz_op >= 0) & (kz_op < n_zf)
 
     # ---- training TP set for the response (truth-matched, op-cut) ----
     host = np.asarray(cat_cut[host_col], float)
@@ -164,6 +154,56 @@ def build_R_emp(cfg, cat_cut, good_mask, fine_grid, mm,
     occ_cell = np.zeros((n_snr, n_Nbins))                      # PRE-smoothing occupancy
     np.add.at(occ_cell, (i_snr_tr[valid_tr], jhat_tr[valid_tr]), 1.0)
     occ_par = occ_cell.sum(axis=0)                             # per x_hat-bin parent occ
+
+    return dict(R=R, R_par=R_par, occ_cell=occ_cell, occ_par=occ_par,
+                edges_N=edges_N, n_Nbins=n_Nbins, n_snr=n_snr, n_train=n_train,
+                host_col=host_col, smooth_bins=smooth_bins, n_floor=n_floor)
+
+
+def assign_R_emp_to_catalog(R_response, cfg, cat_cut, good_mask, fine_grid, mm,
+                            verbose=False):
+    """Re-bind a FROZEN untilted ``R_response`` (from :func:`compute_R_response`) onto an
+    ARBITRARY catalog's op detections, producing the per-op-object kappa cube.
+
+    This is the load-bearing WALL-1 full-injection mechanism (design §5.3): each op
+    detection i of ``cat_cut`` (which may be a GENUINELY RE-INFERRED, tilted catalog) is
+    assigned the UNTILTED response row p(x_true | x_hat-bin(x_hat_i), SNR-cell s_i) from
+    ``R_response``, with SNR-pool shrinkage in starved cells, and a near-delta z-kernel at
+    z_hat_i. NOTHING about the response is re-measured from ``cat_cut`` — the operator is
+    frozen at the untilted slope and merely BINNED to the new detections' (x_hat, SNR).
+
+    On the SAME catalog/grid that built ``R_response``, this reproduces
+    :func:`build_R_emp` byte-for-byte (TDD-gated, tests/test_remp_rebind.py).
+
+    Returns (kappa, ess, info) with the SAME shapes/keys as :func:`build_R_emp`:
+      kappa : float32 [n_op, n_Nbins, n_zf]  -- per-op p(x_true,z_true|det i).
+      ess   : dict tier->float32[n_op]       -- per-object response ESS >= tier.
+      info  : n_op / n_train / n_snr / fallback counts / tid_op / slot_op / dlaid_op.
+    """
+    logN_lo, logN_hi, N_b, dN_b = fine_grid
+    z_edges_fine = _fine_z_grid(cfg)
+    n_zf = len(z_edges_fine) - 1
+
+    R = R_response["R"]
+    R_par = R_response["R_par"]
+    occ_cell = R_response["occ_cell"]
+    occ_par = R_response["occ_par"]
+    edges_N = R_response["edges_N"]
+    n_Nbins = R_response["n_Nbins"]
+    n_floor = R_response["n_floor"]
+
+    # ---- op_base set of THIS catalog (the EXACT order v3x_build_forward rebuilds) ----
+    op_mask, slot_op, tid_op, dlaid_op = _op_mask_and_slots(cat_cut, good_mask, cfg)
+    n_op = int(op_mask.sum())
+    xhat_op = np.asarray(cat_cut["NHI"], float)[op_mask]
+    zhat_op = np.asarray(cat_cut["Z_DLA"], float)[op_mask]
+    snr_op = np.asarray(cat_cut["S2N_RED"], float)[op_mask]
+    i_snr_op = _cell_index(mm, xhat_op, snr_op)[0]             # molly SNR cell per op
+    jhat_op = np.searchsorted(edges_N, xhat_op, side="right") - 1
+    jhat_op = np.clip(jhat_op, 0, n_Nbins - 1)
+    # fine z-bin of each op object (near-delta z-kernel)
+    kz_op = np.searchsorted(z_edges_fine, zhat_op, side="right") - 1
+    kz_valid = (kz_op >= 0) & (kz_op < n_zf)
 
     # ---- assemble per-op-object kappa ----
     kappa = np.zeros((n_op, n_Nbins, n_zf), dtype=np.float32)
@@ -222,11 +262,32 @@ def build_R_emp(cfg, cat_cut, good_mask, fine_grid, mm,
                 std = float(np.sqrt((p * (mids - mean) ** 2).sum()))
                 print(f"[R_emp]  x_hat={xh:.1f}: E[x_true]={mean:.3f} "
                       f"(bias {mean-xh:+.3f}), sd(x_true)={std:.3f}")
-    info = dict(n_op=n_op, n_train=n_train, n_snr=n_snr,
+    info = dict(n_op=n_op, n_train=int(R_response["n_train"]), n_snr=int(R_response["n_snr"]),
                 n_fallback_par=n_fallback_par, n_fallback_delta=n_fallback_delta,
                 tid_op=tid_op, slot_op=slot_op,
                 dlaid_op=np.array(dlaid_op, dtype=object))
     return kappa, ess, info
+
+
+def build_R_emp(cfg, cat_cut, good_mask, fine_grid, mm,
+                smooth_bins=1.0, n_floor=20, host_col="NHI_TILT_HOST",
+                verbose=True):
+    """Build the empirical truth-match response kernel cube in op_base order.
+
+    Now a thin composition of :func:`compute_R_response` (measure the slope-agnostic
+    untilted response R[s,jhat,jtru]) + :func:`assign_R_emp_to_catalog` (re-bind it onto
+    THIS cat's op detections). Byte-identical to the pre-refactor monolith (TDD-gated,
+    tests/test_remp_rebind.py): the decomposition exists so the full-injection test can
+    freeze the response on the untilted cat and re-bind it onto the re-inferred tilted
+    catalog (design §5.3) — never re-measuring the response from the tilted population.
+
+    Returns (kappa, ess, info) — see :func:`assign_R_emp_to_catalog` for the schema.
+    """
+    R_response = compute_R_response(
+        cfg, cat_cut, good_mask, fine_grid, mm,
+        smooth_bins=smooth_bins, n_floor=n_floor, host_col=host_col, verbose=verbose)
+    return assign_R_emp_to_catalog(
+        R_response, cfg, cat_cut, good_mask, fine_grid, mm, verbose=verbose)
 
 
 def stage_build(cfg, args):

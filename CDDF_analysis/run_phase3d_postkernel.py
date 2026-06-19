@@ -56,7 +56,12 @@ def _make_cfg(args) -> HBIConfig:
         bal_cat_path=args.bal_cat, molly_tsv=args.molly_tsv, out_dir=args.out,
         mockdir=args.mockdir or os.path.dirname(args.truth),
         zbins=zbins, n_mc=args.n_mc, rng_seed=args.seed,
-        fp_estimator="purity_mixture", no_bal=True,
+        # FP estimator GATE (analysis-side; default purity_mixture is byte-identical
+        # to the historical hardcode). 'loa0' = non-circular forest-FP product (the
+        # honest DLA-tier number); requires --fp-product (npz from
+        # build_loa0_fp_product.py) wired into cfg.loa0_product_path.
+        fp_estimator=args.fp_estimator, loa0_product_path=args.fp_product,
+        no_bal=True,
         report_logN_limits=report_limits,
         v3_family=args.family,
         v3_logN_fit_floor=args.fit_floor,
@@ -130,6 +135,7 @@ def stage2_v3_fit(cfg: HBIConfig, args, out_npz: str):
     print("=" * 70)
     from CDDF_analysis.cddf_catalog_hbi import (
         load_molly_matrix, regenerate_molly_counts, make_C_interpolator,
+        make_rho_interpolator, make_fp_model,
         build_pathlength, v3x_refit, kernel_pit_coverage, _op_mask_and_slots,
     )
     _load_kernel_into_cfg(cfg, out_npz)
@@ -143,6 +149,23 @@ def stage2_v3_fit(cfg: HBIConfig, args, out_npz: str):
     C_interp = make_C_interpolator(mm)
     X_tot, n_sl, qzl, qzh, qsn, Xcalc = build_pathlength(
         cfg, qso_lookup=qso_lookup, return_per_sl=True)
+    # FP-model setup (GATE on cfg.fp_estimator). purity_mixture: v3x_refit/v3x_build_forward
+    # resolves (1−ρ) internally per-row → no setup needed (byte-identical default path).
+    # loa0: the frozen forest-FP product needs cfg.n_sl_prod (the production SNR>2
+    # sightline count, for the Gehrels Gamma exposure ℓ_eff/μ_FP scale) AND cfg._loa0_fp
+    # (attached by make_fp_model, which bins the op-passing detections into the loa-0
+    # cell grid for the per-DETECTION FP share). v3x_build_forward then reads
+    # cfg._loa0_fp via _forward_fp_terms. The UNTILTED point fit (boot_weights=None) is
+    # the supported loa0 path (the WALL-1 tilt refuses a frozen background — spec §7/§4).
+    if cfg.fp_estimator == "loa0":
+        cfg.n_sl_prod = int(n_sl)
+        rho_interp = make_rho_interpolator(mm)
+        s2n = np.asarray(cat_cut["S2N_RED"], float)
+        pdla = np.asarray(cat_cut["P_DLA"], float)
+        op_mask = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
+        _fp_model, _ = make_fp_model(cfg, cat_cut, op_mask, rho_interp)
+        print(f"    [loa0] cfg._loa0_fp attached (n_sl_prod={cfg.n_sl_prod}, "
+              f"product={cfg.loa0_product_path})")
     logN_lo, logN_hi, N_b, dN_b = build_fine_grid(cfg)
 
     # bayesian-review item 4: run+record the parameter-free isolated-TP PIT-coverage
@@ -372,6 +395,18 @@ def main(argv=None):
                         "Default 40.0. Set 0.0 to neutralize the anchor — a WALL-1 "
                         "slope-robustness probe (does the fixed-slope prior memory drive "
                         "the tilt-closure pull?). Pair with a low --lambda-bspbody.")
+    p.add_argument("--fp-estimator", choices=["purity_mixture", "loa0"],
+                   default="purity_mixture",
+                   help="False-positive model. 'purity_mixture' (default, BYTE-IDENTICAL "
+                        "to the historical hardcode): per-row (1−ρ) contamination. 'loa0': "
+                        "non-circular frozen forest-FP product (the honest DLA-tier number); "
+                        "requires --fp-product. Only the UNTILTED stage-2 point fit supports "
+                        "loa0 here (the WALL-1 tilt closure refuses a frozen background — "
+                        "spec §7/§4; use ab_loa0_fp_baseline / wall1_explain_partA for loa0 "
+                        "bands/closure).")
+    p.add_argument("--fp-product", default=None,
+                   help="Path to the loa-0 FP product npz (from build_loa0_fp_product.py); "
+                        "wired into cfg.loa0_product_path. Required when --fp-estimator loa0.")
     p.add_argument("--dalpha", type=float, default=0.5)
     p.add_argument("--host-truth-floor", type=float, default=19.0)
     p.add_argument("--n-mc", type=int, default=200)

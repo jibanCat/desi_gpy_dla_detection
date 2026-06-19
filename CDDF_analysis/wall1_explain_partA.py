@@ -1,0 +1,396 @@
+"""wall1_explain_partA.py — recovered CDDF / dN/dX / Ω with the FULL population
+posterior (credible bands) for the explanatory doc (reduce-only, cached kernel,
+NO inference, NO SLURM, NO tilt).
+
+The "current HBI" config (calibrated, corrected loa-0 FP): kernel = the cached
+broaden012 2-D posterior kernel; molly = lya_only nhi195; FP = loa0; v3 bspbody,
+fit floor 19.5, lam_rf_min 1025, sigma_add 0.12.
+
+Posterior bands (state clearly which components each includes):
+  * THETA-Laplace  : Gaussian posterior N(theta_map, H^-1) at the MAP, draws
+                     reduced through v3x_reduce. NUISANCE FROZEN (C/rho/kernel/FP
+                     at point). The pure POPULATION-theta band.
+  * THETA-emcee    : same likelihood, full MCMC on theta (banana-safe cross-check).
+  * FULL (t+nuis)  : the joint-MC band — resamples C/rho (Wilson/Jeffreys-Beta),
+                     per-object NHI width (sigma_i), the loa-0 FP Gamma (Gehrels
+                     +1/2), and bootstraps sightlines, re-MAPping theta each draw.
+                     This is the population-theta (+) nuisance posterior the doc
+                     reports as the headline band.
+  * FULL (PM xref) : the WIRED purity_mixture joint_mc_errors band (cross-check;
+                     same nuisance set but the per-row purity FP).
+
+Builds ingredients ONCE via ab_loa0_fp_baseline.build_ingredients (the exact
+WALL-1 calibrated bundle), reuses the cddf_catalog_hbi posterior machinery, and
+writes an npz the figure driver consumes.
+"""
+from __future__ import annotations
+
+import argparse
+import functools
+import os
+import sys
+import time
+
+import numpy as np
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+
+from CDDF_analysis import cddf_catalog_hbi as H
+from CDDF_analysis.cddf_catalog_hbi import (
+    v3x_refit, v3x_fit_map, v3x_laplace, v3x_emcee_check, v3x_reduce,
+    truth_reductions, joint_mc_errors, omega_hi_prefactor,
+    _draw_beta_cell, _rescale_unitC_active, _apply_C_to_M, _cell_index,
+    _slice_active_unitC, C_FLOOR, _forward_fp_terms, make_rho_interpolator,
+)
+from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, _resolve_molly
+
+
+# -----------------------------------------------------------------------------
+# loa0-aware full-posterior joint-MC (mirrors v3x_joint_mc EXACTLY but threads the
+# FROZEN loa-0 FP via _forward_fp_terms, resampled per-draw Gehrels Gamma). The
+# wired v3x_joint_mc / joint_mc_errors refit_fn hardcode lam_fp=(1-rho)*boot_w
+# (purity-mixture), so they cannot carry the loa-0 background. Identical draw
+# structure (C/rho Wilson, sigma_i width, sightline bootstrap) + the loa-0 Gamma.
+# -----------------------------------------------------------------------------
+def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
+    mm = ing["mm"]; cat_cut = ing["cat_cut"]; family = point["_v3x"]["family"]
+    fwd = point["_v3x"]["fwd"]; theta_map = point["_v3x"]["theta_map"]
+    A_meta = fwd["A_meta"]; M_meta = fwd["M_meta"]; cat_op = fwd["cat_op"]
+    fine = fwd["fine"]
+    logN_lo, logN_hi, N_b, dN_b, z_edges_fine = fine
+    n_flat = len(logN_lo) * (len(z_edges_fine) - 1)
+    unitC = _slice_active_unitC(A_meta, np.arange(n_flat),
+                                np.ones(A_meta["n_obs"], bool))
+    xhat = cat_op["xhat"]; snr_op = cat_op["snr"]; i_snr0 = cat_op["i_snr"]
+    active_flat = fwd["active_flat"]
+    op = fwd["op_mask"]
+    nhi_err_op = np.asarray(cat_cut["NHI_ERR"], float)[op]
+    nhi_err_op = np.where(np.isfinite(nhi_err_op) & (nhi_err_op > 0), nhi_err_op, 0.0)
+    tids_op = np.asarray(cat_cut["TARGETID"], np.int64)[op]
+    uniq, inv = np.unique(tids_op, return_inverse=True)
+    n_uniq = len(uniq)
+    rho_interp = make_rho_interpolator(mm)
+    loa0_fp = getattr(cfg, "_loa0_fp", None)
+    floor = fwd["logN_fit_floor"]
+    limits = cfg.report_logN_limits
+    n_zc = len(np.asarray(cfg.zbins, float)) - 1
+
+    f_bs = []; thetas = []
+    dndx = {l: [] for l in limits}; omega = {l: [] for l in limits}
+    dndx_z = {l: [] for l in limits}
+    seeds = rng.integers(0, 2**31 - 1, size=n_mc)
+    for s in seeds:
+        rg = np.random.default_rng(int(s))
+        C_draw = _draw_beta_cell(rg, mm.cmp_nfound, mm.cmp_nfid)
+        rho_draw = _draw_beta_cell(rg, mm.pur_ntp, mm.pur_ntot)
+        C_draw = np.where(mm.cmp_nfid > 0, C_draw, C_FLOOR)
+        rho_draw = np.where(mm.pur_ntot > 0, rho_draw, 0.0)
+        nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
+        boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
+        A_draw = _rescale_unitC_active(unitC, C_draw)
+        M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
+        # FROZEN loa-0 FP, resampled (Gehrels Gamma) — NOT bootstrap/tilt scaled
+        loa0_d = loa0_fp.resample(rg)
+        lam_fp, mu_fp = _forward_fp_terms(
+            cfg, rho_interp, nhi_m, snr_op, obj_weights_extra=None,
+            loa0_fp=loa0_d, logN_fit_floor=floor)
+        fit = v3x_fit_map(A_draw, M_draw, lam_fp, mu_fp, fine, family, cfg,
+                          obj_weights=boot_w, theta0=theta_map, n_restart=2, rng=rg,
+                          lit_start=False)
+        rr = v3x_reduce(cfg, fit["theta_map"], fine, family, M_meta)
+        f_bs.append(rr["f_b"]); thetas.append(fit["theta_map"])
+        for l in limits:
+            dndx[l].append(rr["dndx_total"][l]); omega[l].append(rr["omega"][l])
+            dndx_z[l].append(rr["dndx_z"][l])
+    f_bs = np.array(f_bs); thetas = np.array(thetas)
+    out = dict(f_b_samples=f_bs, theta_samples=thetas, n_mc=int(n_mc))
+    for l in limits:
+        out[f"dndx_{l}_samples"] = np.array(dndx[l])
+        out[f"omega_{l}_samples"] = np.array(omega[l])
+        out[f"dndx_z_{l}_samples"] = np.array(dndx_z[l])   # (n_mc, n_zbins)
+    return out
+
+
+def theta_band_reduce(cfg, point, draws):
+    """Reduce a stack of theta draws (n_draw, n_param) through v3x_reduce -> posterior
+    samples of f_b, dN/dX, Omega, dN/dX(z). Nuisance FROZEN (C/rho/kernel/FP at point)."""
+    family = point["_v3x"]["family"]; fine = point["_v3x"]["fine"]
+    M_meta = point["_v3x"]["M_meta"]
+    limits = cfg.report_logN_limits
+    f_bs = []; dndx = {l: [] for l in limits}; omega = {l: [] for l in limits}
+    dndx_z = {l: [] for l in limits}
+    for th in draws:
+        rr = v3x_reduce(cfg, th, fine, family, M_meta)
+        f_bs.append(rr["f_b"])
+        for l in limits:
+            dndx[l].append(rr["dndx_total"][l]); omega[l].append(rr["omega"][l])
+            dndx_z[l].append(rr["dndx_z"][l])
+    out = dict(f_b_samples=np.array(f_bs))
+    for l in limits:
+        out[f"dndx_{l}_samples"] = np.array(dndx[l])
+        out[f"omega_{l}_samples"] = np.array(omega[l])
+        out[f"dndx_z_{l}_samples"] = np.array(dndx_z[l])
+    return out
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--catalog-dir",
+                   default=("/scratch/cavestru_root/cavestru0/mfho/"
+                            "gl_prod_2lpt0_v1_20260526/combined_catalog/"))
+    p.add_argument("--truth",
+                   default=("/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/"
+                            "qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits"))
+    p.add_argument("--bal-cat",
+                   default=("/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/"
+                            "qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits"))
+    p.add_argument("--molly-tsv", default=None)
+    p.add_argument("--kernel",
+                   default=("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+                            "phase3d_experiments/mollynhi195_lyaonly1025_broaden012/"
+                            "posterior_kernel_2lpt0.npz"))
+    p.add_argument("--loa0-product",
+                   default=("/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/"
+                            "outputs/loa0_fp_product_lyaonly1025.npz"))
+    p.add_argument("--out",
+                   default="/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+                           "wall1_explain_partA")
+    p.add_argument("--mockdir", default=None)
+    p.add_argument("--zbins", default="2.0,2.5,3.0,3.5")
+    p.add_argument("--report-limits", default="20.0,20.3,20.6")
+    p.add_argument("--family", default="bspbody")
+    p.add_argument("--fit-floor", type=float, default=19.5)
+    p.add_argument("--fit-ceil", type=float, default=99.0)
+    p.add_argument("--lambda-bspbody", type=float, default=30.0)
+    p.add_argument("--lam-rf-min", type=float, default=1025.0)
+    p.add_argument("--edge-slope-lam", type=float, default=40.0)
+    p.add_argument("--gl-nodes", type=int, default=1)
+    p.add_argument("--host-truth-floor", type=float, default=19.0)
+    p.add_argument("--n-lap", type=int, default=2000, help="Laplace theta draws")
+    p.add_argument("--n-mc", type=int, default=300, help="full-posterior joint-MC draws")
+    p.add_argument("--n-emcee-steps", type=int, default=1500)
+    p.add_argument("--skip-emcee", action="store_true")
+    p.add_argument("--skip-pm-xref", action="store_true")
+    p.add_argument("--seed", type=int, default=0)
+    args = p.parse_args(argv)
+    os.makedirs(args.out, exist_ok=True)
+    limits = tuple(float(x) for x in args.report_limits.split(","))
+    rng = np.random.default_rng(args.seed)
+
+    t0 = time.time()
+    print("=" * 70)
+    print("[partA] build loa0 ingredients (calibrated WALL-1 bundle, kernel ON)")
+    print("=" * 70)
+    ing = build_ingredients(args, "loa0", loa0_product=args.loa0_product)
+    cfg = ing["cfg"]
+    cfg.report_logN_limits = limits
+    cfg._wall1_estimator = "v3"
+    cfg.v3_n_lap = args.n_lap
+    cfg.v3_n_emcee_steps = args.n_emcee_steps
+    logN_lo = ing["logN_lo"]; logN_hi = ing["logN_hi"]
+    N_b = ing["N_b"]; dN_b = ing["dN_b"]; X_tot = ing["X_tot"]
+    print(f"    n_sl_prod={ing['n_sl']}, X_tot={X_tot}  ({time.time()-t0:.0f}s)")
+
+    # ---- POINT MAP (untilted; boot_weights=None — loa0 is allowed) ----
+    # ing["estimator_fn"] = functools.partial(v3x_refit, mm=..., qso_per_sl=...,
+    # Xcalc=..., rng=...) — the calibrated WALL-1 estimator with the cached kernel.
+    print("[partA] v3x point MAP (loa0 FP, kernel ON)")
+    point = ing["estimator_fn"](
+        ing["cat_cut"], ing["is_TP"], ing["good_mask"], ing["C_interp"],
+        ing["fp_model"], X_tot, logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"], cfg)
+    theta_map = point["_v3x"]["theta_map"]
+    fwd = point["_v3x"]["fwd"]
+    print(f"    MAP dN/dX(>=20.0/20.3/20.6) = "
+          + ", ".join(f"{point['dndx_total'][l]:.5f}" for l in limits))
+    print(f"    MAP Omega(>=20.0/20.3/20.6)  = "
+          + ", ".join(f"{point['omega'][l]:.4e}" for l in limits))
+    print(f"    theta_map = {np.array2string(theta_map, precision=3)}")
+    print(f"    multistart_logP_spread={point['_v3x']['multistart_logP_spread']:.3g}, "
+          f"at_bound={point['_v3x']['at_bound']}")
+
+    # ---- THETA-Laplace band (nuisance FROZEN) ----
+    print(f"[partA] Laplace posterior at MAP (n_draw={args.n_lap})")
+    lap = v3x_laplace(theta_map, fwd["A_full"], fwd["M_full"], fwd["lam_fp"],
+                      fwd["mu_fp"], fwd["fine"], point["_v3x"]["family"], cfg,
+                      obj_weights=fwd["cat_op"].get("op_weights"),
+                      n_draw=args.n_lap, rng=np.random.default_rng(args.seed + 1))
+    print(f"    Hessian cond={lap['cond']:.3g}, sigma_theta="
+          f"{np.array2string(lap['sigma'], precision=3)}")
+    lap_band = theta_band_reduce(cfg, point, lap["draws"])
+    print(f"    Laplace band reduced ({time.time()-t0:.0f}s)")
+
+    # ---- THETA-emcee cross-check (optional) ----
+    emcee_band = None; emcee_info = None
+    if not args.skip_emcee:
+        try:
+            print(f"[partA] emcee theta posterior (n_steps={args.n_emcee_steps})")
+            ec = v3x_emcee_check(fwd["A_full"], fwd["M_full"], fwd["lam_fp"],
+                                 fwd["mu_fp"], fwd["fine"], point["_v3x"]["family"],
+                                 cfg, theta_map, sigma0=lap["sigma"],
+                                 n_steps=args.n_emcee_steps,
+                                 rng=np.random.default_rng(args.seed + 2))
+            print(f"    emcee acc_frac={ec['acceptance_frac']:.3f}, "
+                  f"n_samples={ec['n_samples']}")
+            # thin to ~n_lap draws for the reduce
+            ch = ec["chain"]
+            idx = np.linspace(0, len(ch) - 1, min(args.n_lap, len(ch))).astype(int)
+            emcee_band = theta_band_reduce(cfg, point, ch[idx])
+            emcee_info = dict(acc=ec["acceptance_frac"], n=ec["n_samples"],
+                              theta_sigma=ec["theta_sigma"], theta_mean=ec["theta_mean"])
+            print(f"    emcee band reduced ({time.time()-t0:.0f}s)")
+        except Exception as e:
+            print(f"    emcee SKIPPED (exception): {e}")
+
+    # ---- FULL posterior band: loa0-aware joint-MC (theta + nuisance) ----
+    print(f"[partA] FULL posterior joint-MC (loa0, n_mc={args.n_mc}) "
+          "[C/rho Wilson + sigma_i + loa0-FP Gamma + sightline bootstrap]")
+    full = loa0_full_posterior_mc(cfg, ing, point, args.n_mc,
+                                  np.random.default_rng(args.seed + 3))
+    print(f"    full band done ({time.time()-t0:.0f}s)")
+
+    # ---- FULL purity_mixture wired joint_mc_errors cross-check (optional) ----
+    pm_band = None
+    if not args.skip_pm_xref:
+        print(f"[partA] purity_mixture wired joint_mc_errors xref (n_mc={args.n_mc})")
+        try:
+            ing_pm = build_ingredients(args, "purity_mixture")
+            cfg_pm = ing_pm["cfg"]; cfg_pm.report_logN_limits = limits
+            cfg_pm.n_mc = args.n_mc; cfg_pm._wall1_estimator = "v3"
+            point_pm = ing_pm["estimator_fn"](
+                ing_pm["cat_cut"], ing_pm["is_TP"], ing_pm["good_mask"],
+                ing_pm["C_interp"], ing_pm["fp_model"], ing_pm["X_tot"],
+                ing_pm["logN_lo"], ing_pm["logN_hi"], ing_pm["N_b"], ing_pm["dN_b"],
+                ing_pm["truth_cut"], cfg_pm)
+            from CDDF_analysis.cddf_catalog_hbi import make_v3x_refit_fn
+            refit_fn = make_v3x_refit_fn(cfg_pm, point_pm["_v3x"], ing_pm["mm"])
+            mc_pm = joint_mc_errors(
+                ing_pm["cat_cut"], ing_pm["is_TP"], ing_pm["good_mask"], ing_pm["mm"],
+                ing_pm["fp_model"], ing_pm["X_tot"], ing_pm["logN_lo"], ing_pm["logN_hi"],
+                ing_pm["N_b"], ing_pm["dN_b"], ing_pm["truth_cut"], cfg_pm,
+                np.random.default_rng(args.seed + 4), refit_fn=refit_fn)
+            pm_band = dict(
+                f_b_samples=mc_pm["_samples"]["f_b"], point=point_pm,
+                **{f"dndx_{l}_samples": mc_pm["_samples"]["dndx_total"][l] for l in limits},
+                **{f"omega_{l}_samples": mc_pm["_samples"]["omega"][l] for l in limits},
+                **{f"dndx_z_{l}_samples": mc_pm["_samples"]["dndx_z"][l] for l in limits})
+            print(f"    PM xref done ({time.time()-t0:.0f}s)")
+        except Exception as e:
+            print(f"    PM xref SKIPPED: {e}")
+
+    # ---- TRUTH over the same searched pathlength/SNR>2/z-window ----
+    print("[partA] truth reductions (same pathlength/SNR/z-window)")
+    tr = truth_reductions(cfg, ing["truth_cut"], logN_lo, logN_hi, N_b, dN_b, X_tot)
+    # truth dN/dX(z): per-zbin truth counts / X(z), per limit
+    zbins = np.asarray(cfg.zbins, float)
+    from CDDF_analysis.cddf_catalog_hbi import _bin_index_logN, _zbin_index
+    t_nhi = np.asarray(ing["truth_cut"]["NHI"], float)
+    t_z = np.asarray(ing["truth_cut"]["Z_DLA"], float)
+    t_snr = np.asarray(ing["truth_cut"]["S2N_RED"], float)
+    keep = t_snr > cfg.snr_min
+    t_nhi, t_z = t_nhi[keep], t_z[keep]
+    t_zidx = _zbin_index(t_z, zbins)
+    Xz = np.asarray(X_tot, float)
+    truth_dndx_z = {}
+    for l in limits:
+        dz = np.zeros(len(zbins) - 1)
+        for k in range(len(zbins) - 1):
+            sel = (t_nhi >= l - 1e-9) & (t_nhi < cfg.drop_top_bin_above) & (t_zidx == k)
+            dz[k] = sel.sum() / Xz[k] if Xz[k] > 0 else np.nan
+        truth_dndx_z[l] = dz
+
+    # ---- save everything ----
+    savez = dict(
+        logN_lo=logN_lo, logN_hi=logN_hi, N_b=N_b, dN_b=dN_b,
+        X_tot=np.asarray(X_tot), zbins=zbins, n_sl_prod=int(ing["n_sl"]),
+        report_limits=np.asarray(limits),
+        # point
+        f_b_point=point["f_b"], theta_map=theta_map,
+        # truth
+        f_truth=tr["f_truth"],
+        sigma_theta_laplace=lap["sigma"], hess_cond=float(lap["cond"]),
+        multistart_logP_spread=float(point["_v3x"]["multistart_logP_spread"]),
+        # band sample stacks
+        lap_f_b_samples=lap_band["f_b_samples"],
+        full_f_b_samples=full["f_b_samples"],
+    )
+    for l in limits:
+        savez[f"dndx_{l}_point"] = float(point["dndx_total"][l])
+        savez[f"omega_{l}_point"] = float(point["omega"][l])
+        savez[f"dndx_{l}_truth"] = float(tr["dndx_total"][l])
+        savez[f"omega_{l}_truth"] = float(tr["omega"][l])
+        savez[f"truth_dndx_z_{l}"] = truth_dndx_z[l]
+        savez[f"lap_dndx_{l}_samples"] = lap_band[f"dndx_{l}_samples"]
+        savez[f"lap_omega_{l}_samples"] = lap_band[f"omega_{l}_samples"]
+        savez[f"lap_dndx_z_{l}_samples"] = lap_band[f"dndx_z_{l}_samples"]
+        savez[f"full_dndx_{l}_samples"] = full[f"dndx_{l}_samples"]
+        savez[f"full_omega_{l}_samples"] = full[f"omega_{l}_samples"]
+        savez[f"full_dndx_z_{l}_samples"] = full[f"dndx_z_{l}_samples"]
+    if emcee_band is not None:
+        savez["emcee_f_b_samples"] = emcee_band["f_b_samples"]
+        for l in limits:
+            savez[f"emcee_dndx_{l}_samples"] = emcee_band[f"dndx_{l}_samples"]
+            savez[f"emcee_omega_{l}_samples"] = emcee_band[f"omega_{l}_samples"]
+        if emcee_info is not None:
+            savez["emcee_acc"] = float(emcee_info["acc"])
+            savez["emcee_theta_sigma"] = emcee_info["theta_sigma"]
+    if pm_band is not None:
+        savez["pm_f_b_samples"] = pm_band["f_b_samples"]
+        savez["pm_f_b_point"] = pm_band["point"]["f_b"]
+        for l in limits:
+            savez[f"pm_dndx_{l}_samples"] = pm_band[f"dndx_{l}_samples"]
+            savez[f"pm_omega_{l}_samples"] = pm_band[f"omega_{l}_samples"]
+            savez[f"pm_dndx_{l}_point"] = float(pm_band["point"]["dndx_total"][l])
+    out_npz = os.path.join(args.out, "partA_posterior.npz")
+    np.savez(out_npz, **savez)
+    print(f"\n[partA] saved -> {out_npz}  (total {time.time()-t0:.0f}s)")
+
+    # ---- console summary: recovered vs truth + per-bin coverage ----
+    def _bands(samp):
+        return (np.nanpercentile(samp, 2.5, axis=0), np.nanpercentile(samp, 16, axis=0),
+                np.nanpercentile(samp, 50, axis=0), np.nanpercentile(samp, 84, axis=0),
+                np.nanpercentile(samp, 97.5, axis=0))
+    print("\n" + "=" * 70)
+    print("RECOVERED dN/dX & Omega (MAP) vs TRUTH, with FULL-posterior 68/95% band")
+    print("=" * 70)
+    for l in limits:
+        ds = full[f"dndx_{l}_samples"]; os_ = full[f"omega_{l}_samples"]
+        dlo95, dlo68, dmed, dhi68, dhi95 = (np.nanpercentile(ds, q) for q in
+                                            (2.5, 16, 50, 84, 97.5))
+        olo95, olo68, omed, ohi68, ohi95 = (np.nanpercentile(os_, q) for q in
+                                            (2.5, 16, 50, 84, 97.5))
+        dt = tr["dndx_total"][l]; ot = tr["omega"][l]
+        dpull = (point["dndx_total"][l] - dt) / np.nanstd(ds)
+        opull = (point["omega"][l] - ot) / np.nanstd(os_)
+        print(f"  >={l}: dN/dX MAP={point['dndx_total'][l]:.5f} "
+              f"[68:{dlo68:.5f},{dhi68:.5f}] [95:{dlo95:.5f},{dhi95:.5f}] "
+              f"truth={dt:.5f} pull={dpull:+.2f}")
+        print(f"         Omega MAP={point['omega'][l]:.4e} "
+              f"[68:{olo68:.3e},{ohi68:.3e}] [95:{olo95:.3e},{ohi95:.3e}] "
+              f"truth={ot:.4e} pull={opull:+.2f}")
+    # per-bin f(N) coverage incl the [21,21.5] tail
+    print("\nPer-bin f(N) coverage (FULL band) and the [21,21.5] tail verdict:")
+    fb_lo95, fb_lo68, fb_med, fb_hi68, fb_hi95 = _bands(full["f_b_samples"])
+    fb_std = np.nanstd(full["f_b_samples"], axis=0)
+    mid = 0.5 * (logN_lo + logN_hi)
+    in68 = (tr["f_truth"] >= fb_lo68) & (tr["f_truth"] <= fb_hi68)
+    in95 = (tr["f_truth"] >= fb_lo95) & (tr["f_truth"] <= fb_hi95)
+    rep = (logN_lo >= 20.0 - 1e-9) & (tr["f_truth"] > 0)
+    tail = (mid >= 21.0 - 1e-9) & (mid <= 21.5 + 1e-9) & (tr["f_truth"] > 0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pull = (point["f_b"] - tr["f_truth"]) / fb_std
+    print(f"  reported bins >=20.0: 68%-cov={in68[rep].mean():.2f}, "
+          f"95%-cov={in95[rep].mean():.2f} (n={rep.sum()})")
+    print(f"  [21.0,21.5] tail bins: 68%-cov={in68[tail].mean():.2f}, "
+          f"95%-cov={in95[tail].mean():.2f} (n={tail.sum()})")
+    for b in np.where(tail)[0]:
+        print(f"    logN={mid[b]:.2f}: MAP f={point['f_b'][b]:.3e} truth={tr['f_truth'][b]:.3e} "
+              f"[95:{fb_lo95[b]:.3e},{fb_hi95[b]:.3e}] pull={pull[b]:+.2f} "
+              f"in95={bool(in95[b])}")
+    return out_npz
+
+
+if __name__ == "__main__":
+    main()

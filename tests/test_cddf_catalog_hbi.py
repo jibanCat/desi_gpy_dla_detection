@@ -2219,3 +2219,128 @@ def test_make_fp_model_loa0_bins_n_cat_from_op_set_fix1(monkeypatch):
     assert fp.n_cat_molly.sum() == 4   # the excluded row is not counted
     # cfg._loa0_fp is stashed for the forward builders and carries n_cat
     assert cfg._loa0_fp.n_cat_molly is not None
+
+
+# ===========================================================================
+# ===== basis_pad_floor decoupled basis-padding (2026-06-17 sub-DLA edge) ====
+# ===========================================================================
+def _bp_forward_inputs():
+    """A tiny, no-I/O v3x_build_forward fixture: a 2-object catalog whose detections
+    sit just above a 19.5 fit floor, on a fine grid spanning [19.0, 20.5) with a molly
+    whose lowest cell is [19.5, 20.0) (the nhi195 layout). Returns the kwargs to call
+    H.v3x_build_forward with, varying only cfg.basis_pad_floor."""
+    cfg = _make_cfg(logN_lo=19.0, logN_hi=20.5, dlogN=0.1, drop_top_bin_above=20.5,
+                    v2_logN_fit_floor=19.5, v3_logN_fit_floor=19.5,
+                    v3_family="bspbody", occupancy_floor=1,
+                    v2_z_fit_lo=2.4, v2_z_fit_hi=2.6, v2_z_fit_step=0.2,
+                    zbins=(2.4, 2.6), snr_min=2.0, p_dla_min=0.99)
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    z_edges = H._fine_z_grid(cfg)
+    n_N = len(logN_lo); n_z = len(z_edges) - 1
+    # molly: ONE SNR cell, lowest NHI cell [19.5,20.0) (nhi195 layout) so any sub-floor
+    # segment's searchsorted->clip(0) reads cell 0's C — the constant-extrapolation.
+    nhi_edges = np.array([19.5, 20.0, 20.5])
+    mm = H.MollyMatrix(snr_edges=np.array([0.0, np.inf]), nhi_edges=nhi_edges,
+                       purity=np.full((1, 2), 0.6), completeness=np.full((1, 2), 0.8))
+    # two op-passing detections at N̂ ~ 19.55 (edge) — both clear the 19.5 fit floor
+    from astropy.table import Table
+    cat = Table(dict(
+        TARGETID=np.array([1, 2], np.int64),
+        S2N_RED=np.array([5.0, 6.0]), P_DLA=np.array([1.0, 1.0]),
+        NHI=np.array([19.55, 19.62]), Z_DLA=np.array([2.5, 2.5]),
+        NHI_ERR=np.array([0.1, 0.1]), Z_DLA_ERR=np.array([1e-4, 1e-4]),
+        DLAFLAG=np.zeros(2, int)))
+    good_mask = np.ones(2, bool)
+    # per-object 2-D kernel whose mass straddles the 19.5 floor (some leaks below)
+    Nmid = 0.5 * (logN_lo + logN_hi)
+    zk = int(np.clip(np.searchsorted(z_edges, 2.5, side="right") - 1, 0, n_z - 1))
+    kappa = np.zeros((2, n_N, n_z), dtype=np.float32)
+    for i, c in enumerate((19.55, 19.62)):
+        g = np.exp(-((Nmid - c) ** 2) / (2 * 0.15 ** 2))
+        kappa[i, :, zk] = (g / g.sum()).astype(np.float32)
+    cfg._posterior_kernel_2d = kappa
+    Xc = _FakeXcalc(cfg.Omega_m)
+    # qso_per_sl: a few sightlines covering z in [2.4,2.6]
+    qzl = np.array([2.4, 2.4, 2.4]); qzh = np.array([2.6, 2.6, 2.6])
+    qsn = np.array([5.0, 6.0, 7.0])
+    return dict(cfg=cfg, cat_cut=cat, good_mask=good_mask, mm=mm,
+                qso_per_sl=(qzl, qzh, qsn), logN_lo=logN_lo, logN_hi=logN_hi,
+                N_b=N_b, dN_b=dN_b, Xcalc=Xc)
+
+
+def test_basis_pad_floor_default_byte_identical():
+    """basis_pad_floor=None must produce A_full/M_full/lam_fp/mu_fp/active_flat
+    byte-identical to an explicit basis_pad_floor==v3_logN_fit_floor (=19.5). This is
+    the ADDITIVE+GATED contract: the default path is unchanged."""
+    ins = _bp_forward_inputs()
+    cfg = ins["cfg"]
+    def build(pad):
+        cfg.basis_pad_floor = pad
+        return H.v3x_build_forward(cfg, ins["cat_cut"], ins["good_mask"], ins["mm"],
+                                   ins["qso_per_sl"], ins["logN_lo"], ins["logN_hi"],
+                                   ins["N_b"], ins["dN_b"], ins["Xcalc"])
+    a = build(None); b = build(19.5)
+    np.testing.assert_array_equal(np.asarray(a["A_full"].todense()),
+                                  np.asarray(b["A_full"].todense()))
+    np.testing.assert_array_equal(a["M_full"], b["M_full"])
+    np.testing.assert_array_equal(a["lam_fp"], b["lam_fp"])
+    assert a["mu_fp"] == b["mu_fp"]
+    np.testing.assert_array_equal(a["active_flat"], b["active_flat"])
+
+
+def test_basis_pad_floor_extends_basis_keeps_detections_and_fp():
+    """basis_pad_floor=19.0 must (a) EXTEND the A-column + M-normalizer support below
+    19.5, but (b) leave the DETECTION set, lam_fp and mu_fp byte-identical to the
+    floor-19.5 build (gate #3: no [pad,19.5) detections; FP normalizer unchanged)."""
+    ins = _bp_forward_inputs()
+    cfg = ins["cfg"]
+    def build(pad):
+        cfg.basis_pad_floor = pad
+        return H.v3x_build_forward(cfg, ins["cat_cut"], ins["good_mask"], ins["mm"],
+                                   ins["qso_per_sl"], ins["logN_lo"], ins["logN_hi"],
+                                   ins["N_b"], ins["dN_b"], ins["Xcalc"])
+    f195 = build(None); f190 = build(19.0)
+    logN_lo = ins["logN_lo"]; logN_hi = ins["logN_hi"]
+    n_z = f195["active_flat"].size // len(logN_lo)
+    am195 = f195["active_flat"].reshape(len(logN_lo), n_z).any(axis=1)
+    am190 = f190["active_flat"].reshape(len(logN_lo), n_z).any(axis=1)
+    # (a) M normalizer support extends below 19.5
+    assert logN_lo[am195].min() >= 19.4 - 1e-6      # floor-19.5: support starts ~19.4
+    assert logN_lo[am190].min() < 19.4              # pad-19.0: support reaches below
+    # A columns also extend below 19.5
+    Acol195 = np.asarray((f195["A_full"] != 0).sum(axis=0)).ravel().reshape(
+        len(logN_lo), n_z).any(axis=1)
+    Acol190 = np.asarray((f190["A_full"] != 0).sum(axis=0)).ravel().reshape(
+        len(logN_lo), n_z).any(axis=1)
+    assert logN_lo[Acol190].min() < logN_lo[Acol195].min() - 1e-6
+    # (b) detections + FP UNCHANGED (gate #3)
+    assert f195["A_full"].shape[0] == f190["A_full"].shape[0]
+    np.testing.assert_array_equal(f195["keep_in_base"], f190["keep_in_base"])
+    np.testing.assert_array_equal(f195["lam_fp"], f190["lam_fp"])
+    assert f195["mu_fp"] == f190["mu_fp"]
+
+
+def test_basis_pad_floor_above_fit_floor_raises():
+    """basis_pad_floor may only EXTEND the basis DOWN — a value above v3_logN_fit_floor
+    is a misconfiguration and must raise (it never narrows the support)."""
+    ins = _bp_forward_inputs()
+    cfg = ins["cfg"]
+    cfg.basis_pad_floor = 19.8
+    with pytest.raises(ValueError):
+        H.v3x_build_forward(cfg, ins["cat_cut"], ins["good_mask"], ins["mm"],
+                            ins["qso_per_sl"], ins["logN_lo"], ins["logN_hi"],
+                            ins["N_b"], ins["dN_b"], ins["Xcalc"])
+
+
+def test_basis_pad_floor_knots_span_padding():
+    """The bspbody knot grid must reach basis_pad_floor (gate #5) so the edge-slope
+    prior pins the padding; default (None) keeps the lowest knot at fit_floor-margin."""
+    cfg = _make_cfg(v3_logN_fit_floor=19.5, v3_bspbody_knot_margin=0.3,
+                    v3_bspbody_n_knots=12, drop_top_bin_above=22.4)
+    cfg.basis_pad_floor = None
+    k_def = H._v3x_bspbody_knots(cfg)
+    assert k_def[0] == pytest.approx(19.5 - 0.3)        # default unchanged
+    cfg.basis_pad_floor = 19.0
+    k_pad = H._v3x_bspbody_knots(cfg)
+    assert k_pad[0] == pytest.approx(19.0 - 0.3)        # spans down to pad - margin
+    assert k_pad[0] <= 19.0 + 1e-9                      # reaches the padding floor

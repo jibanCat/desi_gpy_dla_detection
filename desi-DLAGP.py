@@ -411,6 +411,19 @@ def parse(options=None):
         help="external healpix list",
     )
 
+    # external TARGETID subset (mock mode only). When provided, the mock
+    # catalog is restricted to these TARGETIDs *after* the standard z-cut /
+    # BAL handling. Used for cheap targeted re-inference subsets (e.g. the
+    # tau_eb high-z falsifier). Additive + config-only: it filters the QSO
+    # catalog passed to dlasearch; the per-spectrum inference is unchanged.
+    parser.add_argument(
+        "--external_tid_list",
+        type=str,
+        default=None,
+        help="path to a text/csv file of TARGETIDs (one per line) to restrict "
+             "the mock catalog to. Mock mode only; ignored for healpix/tile runs.",
+    )
+
     if options is None:
         args = parser.parse_args()
     else:
@@ -506,6 +519,25 @@ def main(args=None):
         log.info(f"level2 from {all_level2[0]} to {all_level2[-1]}")
 
         catalog = read_mock_catalog(args.qsocat, args.balmask, args.mockdir)
+
+        # Optional TARGETID subset (cheap targeted re-inference, e.g. the
+        # tau_eb high-z falsifier). Filters the QSO catalog only; inference
+        # is byte-identical. dlasearch_mock further intersects this with each
+        # spectra-16 file's TARGETIDs, so empty-overlap files are skipped fast.
+        if args.external_tid_list is not None:
+            ext_tids = np.loadtxt(args.external_tid_list, dtype=np.int64, ndmin=1)
+            ext_tids = np.unique(ext_tids)
+            n_before = len(catalog)
+            tidmask = np.isin(np.asarray(catalog["TARGETID"]), ext_tids)
+            catalog = catalog[tidmask]
+            log.info(
+                f"external_tid_list={args.external_tid_list}: restricting mock "
+                f"catalog from {n_before} to {len(catalog)} spectra "
+                f"({len(ext_tids)} unique TARGETIDs requested)"
+            )
+            if len(catalog) < 1:
+                log.error("external_tid_list left 0 spectra in catalog; aborting")
+                exit(1)
     else:
         # running in between healpix pixels: hpx_start - hpx_end
         catalog = read_catalog(args.qsocat, args.balmask, args.tilebased)
