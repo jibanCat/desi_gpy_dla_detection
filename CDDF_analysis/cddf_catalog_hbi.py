@@ -136,6 +136,27 @@ class HBIConfig:
     #                                    molly C is used, BYTE-IDENTICAL. (Phase 1: the MC
     #                                    C-perturbation still draws on the 2-D molly C and g
     #                                    is applied as a fixed deterministic factor.)
+    # --- Track-C T-BC: FORWARD-RESPONSE deconvolution kernel A (gated, DEFAULT byte-identical) ---
+    resp_kind: str = "kappa"          # "kappa" (DEFAULT, byte-identical: build A from the
+    #                                    cached GP-POSTERIOR kappa2d as today) | "forward"
+    #                                    (build A from the FORWARD LIKELIHOOD p(x̂_i|N,SNR_i,z_i)
+    #                                    = the skew-normal density at the detection's observed
+    #                                    x̂_i as a function of TRUE N, from a ForwardResponseModel).
+    #                                    The forward density is NOT renormalized over N (Σ_N≠1)
+    #                                    — it is a density in x̂ — which is exactly why it removes
+    #                                    the narrow-kappa high-N over-recovery (track_c_forward_
+    #                                    toy_certificate). When "forward", kernel_forward_model
+    #                                    MUST be set. "kappa" ⇒ kernel_forward_model is ignored.
+    kernel_forward_model: Optional[str] = None  # path to a ForwardResponseModel NPZ
+    #                                    (save_forward_response). Loaded by _build_A_ib_forward
+    #                                    when resp_kind=="forward". None + resp_kind=="kappa"
+    #                                    (DEFAULT) ⇒ the forward path is never entered (byte-id).
+    resp_family: str = "skewnorm"     # forward-response family A/B sub-knob (only meaningful
+    #                                    when resp_kind=="forward"): "skewnorm" (DEFAULT, the
+    #                                    parametric per-cell skew-normal density) | "empirical"
+    #                                    (the smoothed-empirical per-cell forward response — the
+    #                                    T-A ~15% heavy-tail residual A/B, T-F). Wired; default
+    #                                    parametric. "kappa" path ignores this.
     # --- v2 forward-HBI knobs (all defaulted; v1 callers byte-unaffected) ---
     v2_lambda_smooth: Optional[float] = None   # None => choose by L-curve over the grid
     v2_lambda_grid: tuple = (1e-3, 3e-3, 1e-2, 3e-2, 1e-1)  # G4 sensitivity range
@@ -2230,6 +2251,166 @@ def _build_A_ib_kappa2d(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg,
     return A_unitC, meta
 
 
+# Track-C T-BC: forward-response model load cache (keyed on path; load once per process).
+_FORWARD_MODEL_CACHE = {}
+
+
+def _load_forward_model(path: str):
+    """Load (and cache) a ForwardResponseModel NPZ for _build_A_ib_forward."""
+    frm = _FORWARD_MODEL_CACHE.get(path)
+    if frm is None:
+        from CDDF_analysis.znz_kernel import load_forward_response
+        frm = load_forward_response(path)
+        _FORWARD_MODEL_CACHE[path] = frm
+    return frm
+
+
+def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg):
+    """Track-C T-BC: build A_{i,jN,kz} from the FORWARD LIKELIHOOD p(x̂_i | N, SNR_i, z_i)
+    instead of the GP-posterior kappa2d (the deconvolution-kernel fix).
+
+    The per-cell rate-form forward response, mirroring _build_A_ib_kappa2d's factors:
+
+        A_{i, jN, kz} (unit-C) = (∫_{seg}(N ln10) dx) · p(x̂_i | N_seg, SNR_i, z_QSO_i)
+                                  · (z-mass of ẑ_i in bin kz) · dX/dz(kz)
+
+    The CRITICAL difference vs the kappa path (and the whole reason the fix works):
+    ``p(x̂_i | N, ...)`` is the skew-normal DENSITY in x̂ evaluated at the detection's
+    observed x̂_i, as a function of TRUE N. A density is NOT a per-bin MASS — it is already
+    per-unit-x̂ — so it is NOT divided by Δx_seg the way kappa (a Σ=1 posterior mass) and the
+    Gaussian xmass (a CDF mass) are. It is also NOT normalized over N (Σ_N ≠ 1): the forward
+    likelihood is normalized over x̂ at fixed N, not over N at fixed x̂. The mass→density
+    ÷Δx_seg that _build_A_ib_kappa2d / the Gaussian branch apply would be DOUBLE-dividing
+    here; we apply ONLY the ∫(N ln10)dx = dN_seg forward factor (per segment, density·dN_seg),
+    exactly as the toy's column build deposits p(x̂|N) (build_empirical_fwd_kernel). This is
+    the certified construction (notes/2026-06-20_track_c_forward_toy_certificate.md).
+
+    z-handling mirrors the Gaussian branch (NOT kappa): the forward response is a 1-D
+    density in N per detection (z enters only via the detection's SCALAR z_QSO covariate),
+    so the z-grid distribution comes from the detection's own ẑ (=Z_DLA) measurement
+    Gaussian (σ_z near-delta), erf-mass per fine z-bin × dX/dz — IDENTICAL to the Gaussian
+    branch's Pz[i,kz]. C is factored out per molly cell EXACTLY as the other branches.
+    """
+    frm = _load_forward_model(getattr(cfg, "kernel_forward_model", None))
+    family = getattr(cfg, "resp_family", "skewnorm")
+
+    xhat = np.asarray(cat_op["xhat"], float)
+    zhat = np.asarray(cat_op["zhat"], float)
+    sig_z = np.asarray(cat_op["sig_z"], float)
+    snr = np.asarray(cat_op["snr"], float)
+    i_snr = np.asarray(cat_op["i_snr"], int)
+    # z_QSO covariate for the forward response (per detection). Fall back to ẑ (z_DLA) when
+    # absent — the certificate/eddington-verify show z_DLA≈z_QSO (r=0.92); the model's z
+    # axis is a secondary location effect, so this is a safe degrade, never the headline.
+    zqso = np.asarray(cat_op.get("zqso", zhat), float)
+
+    n_obs = len(xhat)
+    n_nbins = len(logN_lo)
+    z_lo = z_edges_fine[:-1]; z_hi = z_edges_fine[1:]
+    n_zf = len(z_lo)
+    flat_shape = (n_obs, n_nbins * n_zf)
+
+    # ---- z-weights per object × fine z-bin: Pz[i,kz] = (erf z-mass) · dX/dz ----
+    # IDENTICAL to build_A_ib's Gaussian branch (the forward response carries the z
+    # dependence via the per-detection z_QSO covariate, not a z-grid kernel).
+    zmid = 0.5 * (z_lo + z_hi)
+    ZL = z_lo[None, :]; ZH = z_hi[None, :]
+    zh = zhat[:, None]; sz = sig_z[:, None]
+    with np.errstate(invalid="ignore"):
+        zmass = np.where(
+            sz > 0,
+            0.5 * (_erf((ZH - zh) / (_SQRT2 * np.where(sz > 0, sz, 1.0)))
+                   - _erf((ZL - zh) / (_SQRT2 * np.where(sz > 0, sz, 1.0)))),
+            ((ZL <= zh) & (zh < ZH)).astype(float),
+        )
+    zrep = np.where((ZL <= zh) & (zh < ZH), zh, zmid[None, :])
+    Ez = np.sqrt(cfg.Omega_m * (1.0 + zrep) ** 3 + (1.0 - cfg.Omega_m))
+    dXdz = (1.0 + zrep) ** 2 / Ez
+    Pz = zmass * dXdz                                   # (n_obs, n_zf)
+
+    nhi_edges = mm.nhi_edges
+    rows = []; cols = []; vals = []; cell_isnr = []; cell_jnhi = []
+
+    # column-skip: only build x-bins at/above the fit floor (mirrors _build_A_ib_kappa2d).
+    fit_floor = getattr(cfg, "v2_logN_fit_floor", logN_lo[0])
+    j_min = 0
+    for jstart in range(n_nbins):
+        if logN_hi[jstart] >= fit_floor - 1e-9:
+            j_min = jstart
+            break
+
+    # the forward density's reach: evaluate a true-N segment for ALL detections whose x̂ is
+    # within a generous window of the segment (the response width σ is ~0.1–0.2 dex, the
+    # up-bias μ_b ~ +0.05; ±2 dex covers the full skew-normal tail to <1e-12). This keeps
+    # the build sparse without truncating mass.
+    REACH = 2.0
+
+    for j in range(j_min, n_nbins):
+        a0 = logN_lo[j]; b0 = logN_hi[j]
+        inside = nhi_edges[(nhi_edges > a0 + 1e-12) & (nhi_edges < b0 - 1e-12)]
+        seg_edges = np.unique(np.concatenate(([a0], inside, [b0])))
+        for s in range(len(seg_edges) - 1):
+            sa = seg_edges[s]; sb = seg_edges[s + 1]
+            Nmid = 0.5 * (sa + sb)
+            jcell = int(np.searchsorted(mm.nhi_edges, Nmid, side="right") - 1)
+            jcell = min(max(jcell, 0), len(mm.nhi_edges) - 2)
+            dN_seg = 10.0 ** sb - 10.0 ** sa               # ∫(N ln10)dx over [sa,sb]
+            # detections within REACH of this true-N segment (response support)
+            ov = np.where(np.abs(xhat - Nmid) <= REACH)[0]
+            if ov.size == 0:
+                continue
+            # FORWARD DENSITY p(x̂_i | N=Nmid, SNR_i, z_QSO_i): the skew-normal density at the
+            # detection's observed x̂_i as a function of the TRUE N (= Nmid for this segment).
+            # NOT a mass → NOT divided by Δx_seg (the Σ_N≠1 / density handling).
+            Nvec = np.full(ov.size, Nmid)
+            if family == "empirical":
+                dens = _forward_density_empirical(frm, xhat[ov], Nvec, snr[ov], zqso[ov])
+            else:
+                dens = frm.response_density(xhat[ov], Nvec, snr[ov], zqso[ov])
+            xm = dens * dN_seg                              # density · ∫(N ln10)dx (NO ÷Δx)
+            nz = np.where(xm > 1e-300)[0]
+            if nz.size == 0:
+                continue
+            gi = ov[nz]
+            block = Pz[gi, :] * xm[nz][:, None]             # (nz, n_zf)
+            rr, kk = np.where(block > 1e-300)
+            if rr.size == 0:
+                continue
+            gj = gi[rr]
+            rows.append(gj)
+            cols.append(j * n_zf + kk)
+            vals.append(block[rr, kk])
+            cell_isnr.append(i_snr[gj])
+            cell_jnhi.append(np.full(rr.size, jcell, dtype=int))
+
+    if rows:
+        rows = np.concatenate(rows); cols = np.concatenate(cols)
+        vals = np.concatenate(vals)
+        cell_isnr = np.concatenate(cell_isnr); cell_jnhi = np.concatenate(cell_jnhi)
+    else:
+        rows = np.zeros(0, int); cols = np.zeros(0, int)
+        vals = np.zeros(0, float)
+        cell_isnr = np.zeros(0, int); cell_jnhi = np.zeros(0, int)
+    A_unitC = _sp.csr_matrix((vals, (rows, cols)), shape=flat_shape)
+    meta = dict(rows=rows, cols=cols, vals=vals,
+                cell_isnr=cell_isnr, cell_jnhi=cell_jnhi,
+                n_obs=n_obs, n_nbins=n_nbins, n_zf=n_zf, flat_shape=flat_shape)
+    return A_unitC, meta
+
+
+def _forward_density_empirical(frm, xhat, N, snr, zqso):
+    """SMOOTHED-EMPIRICAL forward response density A/B (cfg.resp_family=='empirical').
+
+    The T-A parametric skew-normal leaves a ~15% heavy-tail residual; this A/B path
+    evaluates the density from the SAME ForwardResponseModel surfaces but lets T-F swap in
+    a non-parametric per-cell residual. For now (wired; default parametric is skewnorm) it
+    falls back to the parametric density — the empirical envelope (a per-cell residual KDE)
+    is the T-F deliverable. Kept as a distinct hook so the A/B switch is real config, not a
+    code edit.
+    """
+    return frm.response_density(xhat, N, snr, zqso)
+
+
 def build_A_ib(cat_op: dict, mm: MollyMatrix, logN_lo, logN_hi, N_b, dN_b,
                z_edges_fine, Xcalc, cfg: HBIConfig,
                kernel: str = "gaussian", posterior_kernel: np.ndarray = None):
@@ -2269,7 +2450,18 @@ def build_A_ib(cat_op: dict, mm: MollyMatrix, logN_lo, logN_hi, N_b, dN_b,
     directly, carrying its skew + N-z correlation). A 1-D ``posterior_kernel`` keeps
     the legacy spread-+/(sb−sa) branch; ``None`` keeps the Gaussian branch. The
     Gaussian branch below is UNTOUCHED.
+
+    FORWARD DISPATCH (Track-C T-BC): if ``cfg.resp_kind == "forward"`` the deconvolution
+    kernel is built from the FORWARD LIKELIHOOD p(x̂_i | N, SNR_i, z_i) (a ForwardResponseModel
+    skew-normal density at the detection's x̂_i, as a function of true N) instead of the
+    posterior kappa2d — the high-N-over-recovery fix. ``cfg.resp_kind == "kappa"`` (DEFAULT)
+    keeps the kappa/Gaussian dispatch BIT-FOR-BIT unchanged.
     """
+    if getattr(cfg, "resp_kind", "kappa") == "forward":
+        if getattr(cfg, "kernel_forward_model", None) is None:
+            raise ValueError("cfg.resp_kind=='forward' requires cfg.kernel_forward_model "
+                             "(path to a ForwardResponseModel NPZ from save_forward_response)")
+        return _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg)
     if (posterior_kernel is not None and np.ndim(posterior_kernel) == 3):
         return _build_A_ib_kappa2d(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg,
                                    np.asarray(posterior_kernel, float))
@@ -6099,6 +6291,13 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     sig_z = np.where(np.isfinite(sig_z) & (sig_z > 0), sig_z, 0.0)
     i_snr_op = _cell_index(mm, xhat, snr_op)[0]
     cat_op = dict(xhat=xhat, zhat=zhat, sig_x=sig_x, sig_z=sig_z, snr=snr_op, i_snr=i_snr_op)
+    # Track-C T-BC forward path: carry per-detection z_QSO (the forward response's z
+    # covariate). Only read by _build_A_ib_forward when cfg.resp_kind=='forward'; the
+    # default kappa path never touches it (no byte-impact). z_DLA fallback if absent.
+    if "Z_QSO" in cat_cut.colnames:
+        cat_op["zqso"] = np.asarray(cat_cut["Z_QSO"], float)[op_base][keep_in_base]
+    else:
+        cat_op["zqso"] = zhat
     # cs Finding 3: build_A_ib's column-skip reads cfg.v2_logN_fit_floor (default 19.5);
     # when this v3 call requests a LOWER floor (the 17.2 dual-floor arm), temporarily
     # lower the A-column floor too so the floor-17.2 run GENUINELY extends the active

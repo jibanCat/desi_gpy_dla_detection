@@ -1204,6 +1204,37 @@ def _moment_to_skewnormal(mean: float, sd: float, skew: float):
     return float(xi), float(omega), float(a)
 
 
+def _moment_to_skewnormal_vec(mean, sd, skew):
+    """VECTORIZED ``_moment_to_skewnormal`` — map per-element (mean, sd, skewness) arrays
+    → (xi, omega, a) skew-normal-parameter arrays.
+
+    Identical math to the scalar ``_moment_to_skewnormal``, element-wise (CS minor: the
+    per-N loop in ``response_skewnormal`` is too slow at per-sightline × N scale). Matches
+    the scalar function to 1e-12 (asserted by the test suite). The ``abs(skew)<1e-9`` Gaussian
+    branch is handled by a mask (delta=0 → a=0, omega=sd, xi=mean) so noise-free symmetric
+    cells are exact.
+    """
+    mean = np.asarray(mean, float)
+    sd = np.clip(np.asarray(sd, float), 1e-9, None)
+    s = np.clip(np.asarray(skew, float), -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX)
+    b = np.sqrt(2.0 / np.pi)
+    c = 0.5 * (4.0 - np.pi)
+    sym = np.abs(s) < 1e-9                          # Gaussian (a=0) cells
+    r = (np.abs(s) / c) ** (2.0 / 3.0)
+    g = r / (1.0 + r)                               # g = (b·delta)^2 ∈ (0,1)
+    bdelta = np.sqrt(g)
+    delta = np.clip(np.sign(s) * bdelta / b, -0.999, 0.999)
+    delta = np.where(sym, 0.0, delta)               # symmetric → delta 0
+    a = delta / np.sqrt(np.clip(1.0 - delta * delta, 1e-12, None))
+    omega = sd / np.sqrt(np.clip(1.0 - (b * delta) ** 2, 1e-12, None))
+    xi = mean - omega * b * delta
+    # exact Gaussian-branch values where symmetric (mirrors the scalar early-return)
+    a = np.where(sym, 0.0, a)
+    omega = np.where(sym, sd, omega)
+    xi = np.where(sym, mean, xi)
+    return xi, omega, a
+
+
 @dataclass
 class ForwardResponseModel:
     """Forward response  p(x̂ | N_true, SNR, z_QSO)  as a per-cell skew-normal whose
@@ -1259,7 +1290,14 @@ class ForwardResponseModel:
                                        side="right") - 1, 0, len(self.z_edges) - 2)
 
     def _eval_surface(self, coef_grid, N, i_snr, i_z):
-        """Evaluate a per-cell N-polynomial surface at (N, i_snr, i_z) (vectorized)."""
+        """Evaluate a per-cell N-polynomial surface at (N, i_snr, i_z) (vectorized).
+
+        BROADCAST CONTRACT (CS minor): ``N``, ``i_snr`` and ``i_z`` are each ``ravel()``-ed
+        to 1-D and MUST be the SAME length (one (N, SNR-cell, z-cell) triple per element) —
+        this is NOT an outer product. The caller (``mu_b``/``sigma``/``skew`` via
+        ``_i_snr``/``_i_z``) guarantees this: ``snr``/``zqso`` are first mapped to integer
+        cell indices of the same shape as ``N``. Returns a 1-D array of length len(N).
+        """
         N = np.asarray(N, float).ravel()
         i_snr = np.asarray(i_snr, int).ravel()
         i_z = np.asarray(i_z, int).ravel()
@@ -1284,6 +1322,14 @@ class ForwardResponseModel:
 
         Above ``N_skew_collapse`` the skew is linearly ramped to 0 over a 0.5-dex window
         so no spurious right-skew is extrapolated into the saturated high-N regime.
+
+        NOTE (C1 kink at N = N_skew_collapse, default 21.0): the ``np.clip((N−21)/0.5,0,1)``
+        ramp is CONTINUOUS but only C0 — its derivative is discontinuous at N=21.0 and at
+        N=21.5 (the ramp endpoints). The kernel-build segment integration is over ΔN_seg
+        regions and the response is sampled at segment midpoints, so this kink is harmless
+        for the forward A-build (no derivative of γ is taken); it only means the recovered
+        f(N) has a (tiny) slope feature at 21.0 where the right-skew correction switches off.
+        Documented so a future tail-shape audit near 21.0 is not mistaken for a bug.
         """
         N = np.asarray(N, float).ravel()
         g = self._eval_surface(self.skew_coef, N, self._i_snr(snr), self._i_z(zqso))
@@ -1297,15 +1343,35 @@ class ForwardResponseModel:
 
         The response is centered so its MEAN is N + μ_b (the absolute x̂ location); the
         caller adds nothing — ``xi`` is already the absolute skew-normal location.
+
+        VECTORIZED (CS minor): the (mean, sd, skew) → (xi, omega, a) moment-match runs over
+        the whole N array at once via ``_moment_to_skewnormal_vec`` (the per-N scipy/loop was
+        too slow at per-sightline × N scale). Matches the scalar loop to 1e-12.
         """
         N = np.asarray(N, float).ravel()
         mean = N + self.mu_b(N, snr, zqso)
         sd = self.sigma(N, snr, zqso)
         sk = self.skew(N, snr, zqso)
-        xi = np.empty_like(N); om = np.empty_like(N); aa = np.empty_like(N)
-        for j in range(len(N)):
-            xi[j], om[j], aa[j] = _moment_to_skewnormal(mean[j], sd[j], sk[j])
-        return xi, om, aa
+        return _moment_to_skewnormal_vec(mean, sd, sk)
+
+    def response_density(self, xhat, N, snr, zqso):
+        """Forward-LIKELIHOOD density p(x̂ | N_true, SNR, z_QSO) evaluated AT the observed x̂.
+
+        This is the object the deconvolution kernel A is built from (T-BC): for a detection
+        with observed ``xhat`` (a scalar or per-element array), SNR ``snr`` and z_QSO
+        ``zqso``, evaluate the skew-normal DENSITY in x̂ as a function of the TRUE N. The
+        result is a density in x̂ (∫ over x̂ = 1 per (N,SNR,z)) — it is NOT normalized over N
+        (Σ_N ≠ 1); that asymmetry vs the renormalized posterior kappa is the whole reason
+        the forward kernel removes the high-N over-recovery. Mirrors the certified toy's
+        column build (``build_empirical_fwd_kernel`` deposits the same p(x̂|N) mass).
+
+        ``xhat``, ``N``, ``snr``, ``zqso`` broadcast element-wise (all ravel to 1-D). Returns
+        the per-element skew-normal pdf value at ``xhat``.
+        """
+        from scipy.stats import skewnorm as _skewnorm
+        xhat = np.asarray(xhat, float).ravel()
+        xi, om, a = self.response_skewnormal(N, snr, zqso)
+        return _skewnorm.pdf(xhat, a, loc=xi, scale=om)
 
 
 def measure_forward_response(cat_cut, good_mask, cfg,

@@ -24,6 +24,7 @@ from CDDF_analysis.znz_kernel import (
     save_forward_response,
     load_forward_response,
     _moment_to_skewnormal,
+    _moment_to_skewnormal_vec,
     _empirical_forward_cells,
     _SN_SKEW_MAX,
 )
@@ -295,3 +296,73 @@ def test_forward_response_skewnormal_mean_matches_surface():
     # skewness sign matches the right-skew surface
     skew_realized = _sn.stats(a[0], moments="s")
     assert np.sign(skew_realized) == np.sign(frm.skew(N, s, z)[0])
+
+
+# ---------------------------------------------------------------------------
+# Track-C T-BC: vectorized moment-match + forward-density (the deconvolution kernel A)
+# ---------------------------------------------------------------------------
+
+def test_moment_to_skewnormal_vec_matches_scalar_loop():
+    """The VECTORIZED _moment_to_skewnormal_vec matches the scalar _moment_to_skewnormal
+    element-wise to 1e-12 (CS minor: the per-N loop was too slow; vectorize without drift).
+    Covers right-skew, left-skew, near-symmetric, ceiling-clamped, and varied (mean, sd)."""
+    rng = np.random.default_rng(7)
+    mean = rng.uniform(19.5, 22.0, 500)
+    sd = rng.uniform(0.05, 0.30, 500)
+    skew = np.concatenate([
+        rng.uniform(-0.99 * _SN_SKEW_MAX, 0.99 * _SN_SKEW_MAX, 480),
+        np.array([0.0, 1e-12, -1e-12, _SN_SKEW_MAX * 2, -_SN_SKEW_MAX * 2,
+                  0.9, -0.9, 0.5, 1e-10, -1e-10, 0.93, 0.0, -0.0, 0.3, 0.7, -0.4,
+                  0.8, -0.8, 0.6, -0.6]),
+    ])
+    xi_v, om_v, a_v = _moment_to_skewnormal_vec(mean, sd, skew)
+    for i in range(len(mean)):
+        xi_s, om_s, a_s = _moment_to_skewnormal(mean[i], sd[i], skew[i])
+        assert abs(xi_v[i] - xi_s) < 1e-12, f"xi[{i}] {xi_v[i]} != {xi_s}"
+        assert abs(om_v[i] - om_s) < 1e-12, f"omega[{i}] {om_v[i]} != {om_s}"
+        assert abs(a_v[i] - a_s) < 1e-12, f"a[{i}] {a_v[i]} != {a_s}"
+
+
+def test_forward_response_density_is_skewnorm_pdf_at_xhat():
+    """response_density(x̂, N, snr, zqso) equals scipy skewnorm.pdf(x̂; ξ(N),ω(N),a(N))
+    EXACTLY — the forward-likelihood density at the observed x̂ as a function of true N.
+    This is the per-cell value the deconvolution kernel A is built from (T-BC correctness)."""
+    from scipy.stats import skewnorm as _sn
+    meas = _synthetic_forward_meas(seed=3)
+    frm = fit_forward_response(meas)
+    # one detection's observed x̂; vary the TRUE N (the kernel column axis)
+    xhat = 20.6
+    N = np.linspace(19.6, 21.8, 23)
+    snr = np.full_like(N, 5.0)
+    zqso = np.full_like(N, 2.75)
+    dens = frm.response_density(np.full_like(N, xhat), N, snr, zqso)
+    xi, om, a = frm.response_skewnormal(N, snr, zqso)
+    ref = _sn.pdf(np.full_like(N, xhat), a, loc=xi, scale=om)
+    np.testing.assert_allclose(dens, ref, rtol=0, atol=1e-12)
+    # the density is a DENSITY (per unit x̂), NOT normalized over N: Σ_N density·ΔN ≠ 1.
+    # (the Σ_N≠1 property is the whole point of the forward kernel vs the renormalized
+    # posterior). Its INTEGRAL over x̂ at fixed N is 1 — verify that instead.
+    fine_x = np.linspace(18.0, 24.0, 60001)
+    xi0, om0, a0 = frm.response_skewnormal(np.array([20.4]), np.array([5.0]),
+                                           np.array([2.75]))
+    pdf_over_x = _sn.pdf(fine_x, a0[0], loc=xi0[0], scale=om0[0])
+    _trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))  # numpy 2.x compat
+    assert abs(_trapz(pdf_over_x, fine_x) - 1.0) < 1e-4, "p(x̂|N) must integrate to 1 over x̂"
+
+
+def test_forward_response_density_right_skew_tail_heavier_above():
+    """The forward density carries the measured RIGHT-skew: for a detection observed near
+    the response mode, the density as a function of true N is HEAVIER toward LOWER true N
+    (because the response up-scatters x̂ ABOVE the true N → an x̂ is more likely to have come
+    from a true N BELOW it). The Eddington emergence at the kernel level."""
+    meas = _synthetic_forward_meas(seed=5)
+    frm = fit_forward_response(meas)
+    xhat = 20.5
+    snr = np.array([5.0]); z = np.array([2.75])
+    # density at a true N below x̂ vs symmetric distance above
+    d_below = frm.response_density(np.array([xhat]), np.array([xhat - 0.25]), snr, z)[0]
+    d_above = frm.response_density(np.array([xhat]), np.array([xhat + 0.25]), snr, z)[0]
+    # right-skewed forward (x̂ up-scattered) ⇒ given x̂, the true N just below is more
+    # probable than the symmetric point above (the kernel leans the recovery low = Eddington)
+    assert d_below > d_above, (
+        f"forward density not leaning low: below={d_below:.4f} above={d_above:.4f}")

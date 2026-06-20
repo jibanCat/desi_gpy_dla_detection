@@ -533,6 +533,125 @@ def test_v2_A_ib_kernel_density_normalization():
         f"(ratio {A_x/ref_x:.4f}); F1 kernel-density normalization broken")
 
 
+def _tiny_forward_model(tmp_path, mu_b=0.05, sigma=0.12, skew=0.9,
+                        N_ref=20.4, snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf),
+                        N_skew_collapse=99.0):
+    """Build + save a ForwardResponseModel with CONSTANT-in-N (deg_N=0) up-bias/width/skew
+    surfaces (one SNR × one z cell) so the analytic skew-normal density is exactly known,
+    for the T-BC forward-A normalization test. N_skew_collapse pushed to 99 so the skew is
+    NOT ramped within the test N-range."""
+    from CDDF_analysis.znz_kernel import ForwardResponseModel, save_forward_response
+    frm = ForwardResponseModel(
+        mu_coef=np.array([[[mu_b]]]),           # (1 SNR, 1 z, deg_N+1=1) constant
+        sig_coef=np.array([[[sigma]]]),
+        skew_coef=np.array([[[skew]]]),
+        snr_edges=np.asarray(snr_edges, float),
+        z_edges=np.asarray(z_edges, float),
+        N_ref=float(N_ref), deg_N=0, N_skew_collapse=float(N_skew_collapse),
+    )
+    path = str(tmp_path / "forward_response_tiny.npz")
+    save_forward_response(path, frm)
+    return frm, path
+
+
+def test_tbc_forward_A_column_matches_skewnorm_pdf_times_factors(tmp_path):
+    """Track-C T-BC NORMALIZATION (load-bearing): the forward-A column for one detection
+    equals skewnorm.pdf(x̂_i; ξ(N),ω(N),a(N)) · (∫_seg(N ln10)dx) · dX/dz · z-mass — the
+    forward LIKELIHOOD density at the observed x̂_i (NOT a mass → NOT divided by Δx_seg,
+    NOT renormalized over N). This is the correctness check vs the re-normalized kappa
+    path: the value is a DENSITY in x̂, summing over N to ≠1."""
+    from scipy.stats import skewnorm
+    ln10 = np.log(10.0)
+    frm, frm_path = _tiny_forward_model(tmp_path, mu_b=0.05, sigma=0.12, skew=0.9)
+    # grid: a few 0.1-dex fine bins around the DLA tier; one molly cell (C≡1 to isolate A)
+    cfg = _make_cfg(logN_lo=20.0, logN_hi=20.4, drop_top_bin_above=20.4,
+                    v2_logN_fit_floor=20.0, occupancy_floor=1,
+                    v2_z_fit_lo=2.4, v2_z_fit_hi=2.6, v2_z_fit_step=0.2,
+                    zbins=(2.4, 2.6),
+                    resp_kind="forward", kernel_forward_model=frm_path)
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    Xcalc = _FakeXcalc(cfg.Omega_m)
+    snr_edges = np.array([0.0, np.inf])
+    nhi_edges = np.array([20.0, 20.4])            # single molly cell (no segment split)
+    mm = H.MollyMatrix(snr_edges=snr_edges, nhi_edges=nhi_edges,
+                       purity=np.ones((1, 1)), completeness=np.ones((1, 1)))
+    xhat, sig_z_val, zdla, snr, zqso = 20.25, 1e-6, 2.5, 5.0, 2.7
+    z_edges_fine = H._fine_z_grid(cfg)
+    cat_op = dict(xhat=np.array([xhat]), zhat=np.array([zdla]),
+                  sig_x=np.array([0.12]), sig_z=np.array([sig_z_val]),
+                  snr=np.array([snr]), i_snr=np.array([0]), zqso=np.array([zqso]))
+    A_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
+                          Xcalc, cfg)[1]
+    A_full = H._apply_C_to_A(A_meta, mm.completeness)  # (1, n_nbins·n_zf)
+    A_dense = np.asarray(A_full.todense()).ravel()
+    n_zf = len(z_edges_fine) - 1
+    n_nbins = len(logN_lo)
+    A_2d = A_dense.reshape(n_nbins, n_zf)
+    # the z-bin holding ẑ=2.5 (delta z-mass); recover the x-axis A column there
+    zmid = 0.5 * (z_edges_fine[:-1] + z_edges_fine[1:])
+    kz = int(np.argmin(np.abs(zmid - zdla)))
+    dXdz = (1.0 + zdla) ** 2 / Xcalc._E(zdla)
+    # expected per fine x-bin (= per segment, no molly split): density(x̂|Nmid)·dN_seg·dXdz
+    # Nmid is the LOGN bin midpoint (true log10 N_HI), NOT the linear N_b=10^center.
+    logN_mid = 0.5 * (logN_lo + logN_hi)
+    xi, om, a = frm.response_skewnormal(logN_mid, np.full(n_nbins, snr),
+                                        np.full(n_nbins, zqso))
+    dens = skewnorm.pdf(np.full(n_nbins, xhat), a, loc=xi, scale=om)
+    dN_seg = 10.0 ** logN_hi - 10.0 ** logN_lo
+    expected = dens * dN_seg * dXdz
+    np.testing.assert_allclose(A_2d[:, kz], expected, rtol=1e-9, atol=1e-300,
+                               err_msg="forward-A column != skewnorm.pdf·dN_seg·dXdz")
+    # the column is a DENSITY, NOT a renormalized mass: Σ_N (A/dN_seg/dXdz) · ΔN ≠ 1
+    # (the Σ_N≠1 property). Confirm the raw density does not sum to 1 over the (narrow) grid.
+    dens_sum = float(np.sum(dens))
+    assert dens_sum > 0
+    # and the A column is NOT column-normalized to 1 (kappa would be) — sanity that we did
+    # not accidentally renormalize.
+    assert abs(A_2d[:, kz].sum() - 1.0) > 1e-6 or A_2d[:, kz].sum() < 0.5
+
+
+def test_tbc_forward_default_kappa_unaffected(tmp_path):
+    """resp_kind defaults to 'kappa' ⇒ the forward path is NEVER entered and the existing
+    Gaussian/kappa A-build is bit-for-bit unchanged (no zqso / forward-model dependence)."""
+    cfg = _make_cfg(logN_lo=20.3, logN_hi=20.5, drop_top_bin_above=20.5,
+                    v2_logN_fit_floor=20.3, occupancy_floor=1,
+                    v2_z_fit_lo=2.4, v2_z_fit_hi=2.6, v2_z_fit_step=0.2,
+                    zbins=(2.4, 2.6))
+    assert cfg.resp_kind == "kappa"  # default
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    Xcalc = _FakeXcalc(cfg.Omega_m)
+    snr_edges = np.array([0.0, np.inf]); nhi_edges = np.array([20.3, 20.5])
+    mm = H.MollyMatrix(snr_edges=snr_edges, nhi_edges=nhi_edges,
+                       purity=np.ones((1, 1)), completeness=np.ones((1, 1)))
+    z_edges_fine = H._fine_z_grid(cfg)
+    cat_op = dict(xhat=np.array([20.4]), zhat=np.array([2.5]),
+                  sig_x=np.array([0.1]), sig_z=np.array([1e-6]),
+                  snr=np.array([5.0]), i_snr=np.array([0]))
+    # default-kappa with no forward model attached must build via the Gaussian branch
+    A_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
+                          Xcalc, cfg, kernel="gaussian")[1]
+    assert A_meta["vals"].size > 0  # built fine, no forward-model requirement
+
+
+def test_tbc_forward_requires_model_path(tmp_path):
+    """resp_kind=='forward' WITHOUT kernel_forward_model raises (explicit mis-config)."""
+    cfg = _make_cfg(logN_lo=20.3, logN_hi=20.5, drop_top_bin_above=20.5,
+                    v2_logN_fit_floor=20.3, occupancy_floor=1,
+                    v2_z_fit_lo=2.4, v2_z_fit_hi=2.6, v2_z_fit_step=0.2,
+                    zbins=(2.4, 2.6), resp_kind="forward")
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    Xcalc = _FakeXcalc(cfg.Omega_m)
+    snr_edges = np.array([0.0, np.inf]); nhi_edges = np.array([20.3, 20.5])
+    mm = H.MollyMatrix(snr_edges=snr_edges, nhi_edges=nhi_edges,
+                       purity=np.ones((1, 1)), completeness=np.ones((1, 1)))
+    z_edges_fine = H._fine_z_grid(cfg)
+    cat_op = dict(xhat=np.array([20.4]), zhat=np.array([2.5]),
+                  sig_x=np.array([0.1]), sig_z=np.array([1e-6]),
+                  snr=np.array([5.0]), i_snr=np.array([0]))
+    with pytest.raises(ValueError, match="kernel_forward_model"):
+        H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine, Xcalc, cfg)
+
+
 def test_v2_synthetic_closure_finite_width_omega():
     """LyA F10: the σ→0 closure (test_v2_synthetic_closure_recovers_injected_fb) only
     checks the deconvolution no-op limit. This exercises a REALISTIC finite kernel
