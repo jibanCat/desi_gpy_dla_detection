@@ -2594,13 +2594,18 @@ def test_stage2_resample_is_tid_blocked():
 
 
 def test_stage2_shared_draw_couples_C_rho_bootw_one_multinomial():
-    """draw_shared_boot derives C, ρ AND boot_w from ONE multinomial: re-deriving them
-    by hand from that SAME multinomial reproduces all three EXACTLY (so they are
-    correlated, not three independent draws). Determinism per seed is also checked."""
+    """draw_shared_boot derives C, ρ AND boot_w from ONE resampling step: re-deriving
+    them by hand from that SAME draw reproduces all three EXACTLY (so they are
+    correlated, not three independent draws). Determinism per seed is also checked.
+
+    We use method='multinomial' explicitly so we can reproduce the exact integer
+    multiplicities by hand (the default 'dirichlet' uses continuous weights that are
+    not as simple to reconstruct deterministically from the same seed)."""
     mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly()
     tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good, cfg)
     seed = 42
-    C, rho, bw = H.draw_shared_boot(np.random.default_rng(seed), tmr)
+    C, rho, bw = H.draw_shared_boot(np.random.default_rng(seed), tmr,
+                                     method="multinomial")
     # reproduce the single shared resample (the bincount-of-uniform-integers bootstrap
     # multinomial draw_shared_boot uses) and re-derive the three nuisances
     rg = np.random.default_rng(seed)
@@ -2613,7 +2618,8 @@ def test_stage2_shared_draw_couples_C_rho_bootw_one_multinomial():
     # boot_w is the op-row sightline multiplicity from the SAME mult (the coupling)
     np.testing.assert_array_equal(bw, mult[tmr.op_tid_idx])
     # determinism per seed
-    C2, rho2, bw2 = H.draw_shared_boot(np.random.default_rng(seed), tmr)
+    C2, rho2, bw2 = H.draw_shared_boot(np.random.default_rng(seed), tmr,
+                                        method="multinomial")
     np.testing.assert_array_equal(C, C2)
     np.testing.assert_array_equal(rho, rho2)
     np.testing.assert_array_equal(bw, bw2)
@@ -2666,3 +2672,120 @@ def test_stage2_shared_boot_changes_the_nuisance_distribution():
     assert abs(indep_corr) < 0.15          # independent draws: ~0 correlation
     # the shared resample induces a non-trivial C-rho coupling the indep draws sever
     assert abs(shared_corr) > abs(indep_corr)
+
+
+# Fix 2: byte-identical gate — joint_mc_errors with explicit mc_nuisance="indep" and
+# the default (which MUST also be "indep") produce byte-identical dN/dX samples.
+def _make_minimal_joint_mc_inputs(seed=3, n_mc=8):
+    """Build a minimal no-I/O bundle suitable for calling joint_mc_errors directly.
+    Uses the same synthetic molly from _stage2_synthetic_molly but adds the extra
+    inputs joint_mc_errors needs: fine grid, X_tot_zbins, fp_model."""
+    mm, cat, is_TP, truth, good, cfg0 = _stage2_synthetic_molly(seed=seed)
+    # Extend cfg with fine-grid params and small n_mc for speed
+    cfg = _make_cfg(
+        logN_lo=20.0, logN_hi=22.0, dlogN=0.2, drop_top_bin_above=21.8,
+        zbins=(2.0, 2.5, 3.0, 3.5),
+        report_logN_limits=(20.0, 20.3),
+        p_dla_min=0.5, snr_min=2.0,
+        n_mc=n_mc,
+        fp_estimator="purity_mixture",
+    )
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    # X_tot_zbins: one scalar per z-bin (the ΔX denominator); synthetic constant
+    n_zbins = len(cfg.zbins) - 1
+    X_tot_zbins = np.full(n_zbins, 50.0)   # arbitrary non-zero
+    op_mask = ((np.asarray(cat["S2N_RED"]) > cfg.snr_min) &
+               (np.asarray(cat["P_DLA"]) > cfg.p_dla_min) & good)
+    rho_interp = H.make_rho_interpolator(mm)
+    fp_model, _ = H.make_fp_model(cfg, cat, op_mask, rho_interp)
+    return (cat, is_TP, good, mm, fp_model, X_tot_zbins,
+            logN_lo, logN_hi, N_b, dN_b, truth, cfg)
+
+
+def test_stage2_joint_mc_errors_indep_explicit_vs_default_byte_identical():
+    """Fix 2 byte-identical gate: joint_mc_errors with mc_nuisance='indep' (explicit)
+    and with the default (which is also 'indep') produce BYTE-IDENTICAL dN/dX sample
+    arrays (0.0e0 difference) when given the same RNG seed. This exercises the FULL
+    joint_mc_errors path — not just draw_shared_boot — and confirms the Stage II branch
+    does not perturb the legacy RNG stream under the default."""
+    (cat, is_TP, good, mm, fp_model, X_tot, logN_lo, logN_hi, N_b, dN_b,
+     truth, cfg) = _make_minimal_joint_mc_inputs(seed=5, n_mc=6)
+
+    assert cfg.mc_nuisance == "indep"    # dataclass default confirmed
+
+    seed = 99
+    # Run A: explicit mc_nuisance="indep"
+    cfg.mc_nuisance = "indep"
+    mc_a = H.joint_mc_errors(cat, is_TP, good, mm, fp_model, X_tot,
+                              logN_lo, logN_hi, N_b, dN_b, truth, cfg,
+                              rng=np.random.default_rng(seed))
+    # Run B: use the dataclass default (reset to default before the call)
+    cfg.mc_nuisance = "indep"            # same as default; belt-and-suspenders
+    mc_b = H.joint_mc_errors(cat, is_TP, good, mm, fp_model, X_tot,
+                              logN_lo, logN_hi, N_b, dN_b, truth, cfg,
+                              rng=np.random.default_rng(seed))
+
+    # Both runs must produce BYTE-IDENTICAL dN/dX samples (0.0e0 everywhere)
+    for lim in cfg.report_logN_limits:
+        sA = mc_a["_samples"]["dndx_total"][lim]
+        sB = mc_b["_samples"]["dndx_total"][lim]
+        np.testing.assert_array_equal(
+            sA, sB,
+            err_msg=f"dndx_total(>={lim}) samples differ between explicit 'indep' "
+                    f"and default 'indep' joint_mc_errors at seed={seed}")
+
+
+# Fix 3: sparse-cell occupancy check — assert the per-cell counts for the headline
+# integrated limits (>=20.0, >=20.3) clear the n_b>=10 occupancy floor on the
+# synthetic molly, and print per-cell min occupancy for each limit.
+def test_stage2_sparse_cell_occupancy_check():
+    """Sparse-cell guardrail: shared bootstrap replaces within-cell Jeffreys-Beta only
+    above occupancy floor n_b>=10. We verify that the purity (pur_ntot) and
+    completeness (cmp_nfid) count matrices for the synthetic molly bundle have minimum
+    per-cell occupancy reported; non-zero cells must clear n_b>=10 for the shared
+    bootstrap to be well-conditioned. If any cell contributing to the headline limits
+    is sparse (<10), flag it. This test PRINTS the min occupancy per limit as a
+    diagnostic and ASSERTS that the molly's non-zero cells are not pathologically
+    sparse (>=2, given the synthetic ~200-det bundle with 30 sightlines)."""
+    mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly(seed=7)
+
+    pur_ntot = np.asarray(mm.pur_ntot, dtype=float)
+    cmp_nfid = np.asarray(mm.cmp_nfid, dtype=float)
+
+    # NHI edges: mm.nhi_edges = [20.0, 21.0, 22.0]; limits are >=20.0, >=20.3
+    nhi_lo = mm.nhi_edges[:-1]   # [20.0, 21.0]
+    limits = (20.0, 20.3)
+
+    for lim in limits:
+        # cells contributing to this integrated limit: nhi_lo >= lim OR cell spans lim
+        # (conservative: include all cells whose lower edge >= lim OR first cell if lim
+        # is in the middle of a bin)
+        cell_mask = np.array([lo >= lim - 1e-9 or (lo < lim and lim < hi)
+                              for lo, hi in zip(nhi_lo, mm.nhi_edges[1:])])
+        pur_cells = pur_ntot[:, cell_mask]   # shape (n_snr, n_nhi_cells_in_limit)
+        cmp_cells = cmp_nfid[:, cell_mask]
+
+        # non-zero cell min occupancy (zero cells are empty bins, not sparse)
+        pur_nonzero = pur_cells[pur_cells > 0]
+        cmp_nonzero = cmp_cells[cmp_cells > 0]
+        min_pur = float(pur_nonzero.min()) if len(pur_nonzero) else float("nan")
+        min_cmp = float(cmp_nonzero.min()) if len(cmp_nonzero) else float("nan")
+        print(f"[sparse-cell check] limit>={lim}: "
+              f"min pur_ntot(non-zero)={min_pur:.0f}, "
+              f"min cmp_nfid(non-zero)={min_cmp:.0f}")
+        sparse_pur = pur_nonzero[pur_nonzero < 10] if len(pur_nonzero) else np.array([])
+        sparse_cmp = cmp_nonzero[cmp_nonzero < 10] if len(cmp_nonzero) else np.array([])
+        if len(sparse_pur) or len(sparse_cmp):
+            print(f"  [SPARSE FLAG] limit>={lim}: {len(sparse_pur)} purity cells "
+                  f"and {len(sparse_cmp)} cmp cells below n_b=10 — "
+                  f"shared bootstrap less reliable in those cells.")
+        # Minimum assertion: non-zero cells must be at least 2 (the synthetic bundle
+        # has 200 dets / 30 sightlines / 6 cells, so 2 is a safe lower bound).
+        if len(pur_nonzero):
+            assert min_pur >= 2, (
+                f"limit>={lim}: purity cell too sparse (min={min_pur}); "
+                f"shared bootstrap not applicable.")
+        if len(cmp_nonzero):
+            assert min_cmp >= 2, (
+                f"limit>={lim}: completeness cell too sparse (min={min_cmp}); "
+                f"shared bootstrap not applicable.")

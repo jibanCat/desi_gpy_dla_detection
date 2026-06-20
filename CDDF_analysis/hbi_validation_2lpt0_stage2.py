@@ -102,12 +102,22 @@ def report(tag, res, limits):
             pv = (pt["dndx_total"][l] if q == "dndx" else pt["omega"][l])
             tv = (tr["dndx_total"][l] if q == "dndx" else tr["omega"][l])
             wi = bi[2] - bi[0]; ws = bs[2] - bs[0]
+            # ALERT THRESHOLD RULE: if w68(shared_boot) < w68(indep)/2 at any reported
+            # limit, Stage II tightens enough to force a plan re-eval before Stage III.
+            # A w_ratio < 0.5 means the shared correlation removes >50% of the indep
+            # band width, which is a sign that the double-counted D_t noise was dominant
+            # rather than the genuine systematic; this would imply the indep band was
+            # substantially miscalibrated and the Stage III kernel marginalization plan
+            # should be reassessed. Flag clearly in the report output.
             cov_i = bi[0] <= tv <= bi[2]; cov_s = bs[0] <= tv <= bs[2]
+            w_ratio = ws / wi if wi > 0 else float("nan")
+            alert = " *** ALERT: w_ratio<0.5 -> plan re-eval before Stage III ***" \
+                if (wi > 0 and w_ratio < 0.5) else ""
             ln = (f"  {q:5s}>={l}: point={pv:.4e} truth={tv:.4e}\n"
                   f"        indep   q16/q50/q84 = {bi[0]:.4e}/{bi[1]:.4e}/{bi[2]:.4e}  "
                   f"w68={wi:.3e}  cover68={cov_i}\n"
                   f"        shared  q16/q50/q84 = {bs[0]:.4e}/{bs[1]:.4e}/{bs[2]:.4e}  "
-                  f"w68={ws:.3e}  cover68={cov_s}  (w_ratio={ws/wi if wi>0 else np.nan:.3f})")
+                  f"w68={ws:.3e}  cover68={cov_s}  (w_ratio={w_ratio:.3f}){alert}")
             print(ln); lines.append(ln)
     return lines
 

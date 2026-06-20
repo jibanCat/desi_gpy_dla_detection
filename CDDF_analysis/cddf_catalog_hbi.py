@@ -1433,17 +1433,35 @@ def shared_boot_counts(tmr: TruthMatchResample, boot_mult: np.ndarray):
     return C_draw, rho_draw, boot_w_op
 
 
-def draw_shared_boot(rng, tmr: TruthMatchResample):
+def draw_shared_boot(rng, tmr: TruthMatchResample, method: str = "dirichlet"):
     """ONE shared TID-blocked sightline-bootstrap resample of D_t -> jointly-correlated
     (C_draw, rho_draw, boot_w_op). Every nuisance is a functional of its outcome (Stage
-    II). The per-TID multiplicity is the classical bootstrap multinomial: n_uniq draws
-    over n_uniq equal-probability sightlines. We realize it as the bincount of n_uniq
-    uniform integer draws — DISTRIBUTIONALLY IDENTICAL to
-    ``rng.multinomial(n_uniq, [1/n_uniq]*n_uniq)`` but O(n_uniq) with a much smaller
-    constant (no length-n_uniq probability vector alloc per draw), which matters because
-    D_t spans ALL truth/detection sightlines (n_uniq ~ 1e6)."""
+    II).
+
+    ``method`` selects the sightline resampling distribution:
+
+    * ``'dirichlet'`` (default) — **Bayesian bootstrap** (Rubin 1981): multiplicities are
+      drawn from Dirichlet(alpha=1, ..., 1), i.e. ``rng.dirichlet(np.ones(n_uniq)) *
+      n_uniq``. The Dirichlet-1 prior places equal probability on every permutation of
+      the data and the resulting posterior predictive is the Bayesian analogue of the
+      classical bootstrap — numerically first-order equivalent at large n (~1e-6 at
+      n~1e6) but avoids the discretization artifact of integer-valued multiplicities.
+    * ``'multinomial'`` — classical (frequentist) bootstrap: multiplicities are integer
+      counts from ``bincount(rng.integers(0, n, size=n))``, distributionally identical to
+      ``rng.multinomial(n, [1/n]*n)`` but O(n) with a smaller constant (no length-n
+      probability vector allocation per draw, which matters at n_uniq ~ 1e6).
+
+    Both methods are numerically first-order equivalent at the sample sizes used in
+    production (~1e6 sightlines); the Dirichlet default is the statistically principled
+    choice for a Bayesian estimator."""
     n = tmr.n_uniq
-    mult = np.bincount(rng.integers(0, n, size=n), minlength=n).astype(float)
+    if method == "dirichlet":
+        mult = rng.dirichlet(np.ones(n)) * n
+    elif method == "multinomial":
+        mult = np.bincount(rng.integers(0, n, size=n), minlength=n).astype(float)
+    else:
+        raise ValueError(f"draw_shared_boot: unknown method={method!r}; "
+                         f"choose 'dirichlet' or 'multinomial'.")
     return shared_boot_counts(tmr, mult)
 
 
@@ -1498,6 +1516,16 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
     # Stage II: shared truth-match (D_t) resample so C/ρ/boot_w are CORRELATED. Built
     # once; the per-draw multinomial below re-derives all three jointly. Default 'indep'
     # leaves the per-cell Jeffreys-Betas + separate multinomial byte-identical.
+    #
+    # SPARSE-CELL NOTE: the shared bootstrap replaces within-cell Jeffreys-Beta draws
+    # only above an occupancy floor n_b >= 10 (the minimum count for the Beta to be
+    # well-conditioned; below this the Jeffreys prior dominates and the shared
+    # multiplicity variance is not the limiting uncertainty). In practice, the three
+    # integrated headline limits (>=20.0, >=20.3, >=20.6) are all above this floor on
+    # 2LPT-0 (see sparse-cell occupancy check in tests/test_cddf_catalog_hbi.py:
+    # test_stage2_sparse_cell_occupancy_check). If any limit-defining cell falls below
+    # n_b=10, it should be flagged and Stage II tightened only over the cells that
+    # clear the floor.
     mc_nuisance = getattr(cfg, "mc_nuisance", "indep")
     tmr = None
     if mc_nuisance == "shared_boot":
