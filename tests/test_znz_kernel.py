@@ -698,3 +698,198 @@ def test_apply_znz_nonzero_skew_differs_from_off():
     out_on = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz_on)
     assert not np.array_equal(out_off, out_on), (
         "Skew-ON and skew-OFF gave identical results — skew code path not reached")
+
+
+# ---------------------------------------------------------------------------
+# Track-C T2: _skew_fit_2d skew-surface fit + save/load skew_coef
+# ---------------------------------------------------------------------------
+import inspect
+
+
+def _synth_skewed_dx(gamma_fn, omega=0.20, loc=0.06, seed=0, n=300000,
+                     xlo=19.5, xhi=21.5, zlo=2.0, zhi=3.5):
+    """Synthesize a truth-match-shaped meas dict whose conditional dx skewness follows a
+    KNOWN gamma(x̂,z) ramp via the SAS warp ``sinh(arcsinh Z + γ) − sinh γ`` (Z~N(0,1)).
+
+    By construction the conditional skewness of ``dx`` at (x̂,z) equals
+    ``_sas_skewness_of_gamma(gamma_fn(x̂,z))`` (location/scale-invariant), so a faithful
+    ``_skew_fit_2d`` must recover a surface whose induced skewness matches that target.
+    """
+    from CDDF_analysis.znz_kernel import _gamma_from_skewness  # noqa: F401 (import guard)
+    rng = np.random.default_rng(seed)
+    z = rng.uniform(zlo, zhi, n)
+    xhat = rng.uniform(xlo, xhi, n)
+    gt = np.asarray(gamma_fn(xhat, z), float)
+    Zr = rng.standard_normal(n)
+    dx = loc + (np.sinh(np.arcsinh(Zr) + gt) - np.sinh(gt)) * omega
+    return {"xhat": xhat, "z": z, "dx": dx, "z_covariate": "z_dla"}, gt
+
+
+def test_skew_fit_recovers_known_gamma_surface():
+    """Moment-match closure: synthesize dx with a KNOWN (within-ceiling) γ(x̂,z) ramp via
+    _skew_warp, fit with _skew_fit_2d, and assert the recovered skew_coef reproduces the
+    INPUT per-cell skewness to tolerance (the primary T2 correctness gate)."""
+    from CDDF_analysis.znz_kernel import (
+        _skew_fit_2d, _sas_skewness_of_gamma)
+    from numpy.polynomial.polynomial import polyvander2d
+    # gamma ramp kept comfortably within the SAS ceiling (|γ|≲1) so the inversion is
+    # well-conditioned and the recovery is exact-up-to-fit-noise.
+    gamma_fn = lambda x, zz: 0.2 + 0.25 * (x - 19.5) + 0.15 * (zz - 2.0)
+    meas, _ = _synth_skewed_dx(gamma_fn, seed=1)
+    xref, zref = 20.5, 2.75
+    coef = _skew_fit_2d(meas["xhat"], meas["dx"], meas["z"], xref, zref, 1, 2)
+    worst = 0.0
+    for x in (19.7, 20.3, 21.0):
+        for zz in (2.25, 2.75, 3.25):
+            g_rec = float((polyvander2d(np.array([x]) - xref, np.array([zz]) - zref,
+                                        [1, 2]) @ coef)[0])
+            sk_rec = float(_sas_skewness_of_gamma(np.array([g_rec]))[0])
+            sk_in = float(_sas_skewness_of_gamma(np.array([gamma_fn(x, zz)]))[0])
+            worst = max(worst, abs(sk_rec - sk_in))
+    assert worst < 0.08, (
+        f"recovered skewness deviates from the input ramp by {worst:.3f} (>0.08): "
+        "the moment-match closure failed")
+
+
+def test_skew_fit_right_skew_gives_positive_gamma():
+    """SIGN gate: a uniformly RIGHT-skewed dx input must yield γ>0 everywhere in the
+    science range (the Ω-restoring direction of _skew_warp) — never a sign flip."""
+    from CDDF_analysis.znz_kernel import _skew_fit_2d, _sas_skewness_of_gamma
+    from numpy.polynomial.polynomial import polyvander2d
+    # constant positive skew target ≈ +0.75 (γ≈+0.5) across the grid
+    gamma_fn = lambda x, zz: np.full_like(np.asarray(x, float), 0.5)
+    meas, _ = _synth_skewed_dx(gamma_fn, seed=2)
+    xref, zref = 20.5, 2.75
+    coef = _skew_fit_2d(meas["xhat"], meas["dx"], meas["z"], xref, zref, 1, 2)
+    for x in (19.7, 20.3, 21.0):
+        for zz in (2.2, 2.75, 3.3):
+            g = float((polyvander2d(np.array([x]) - xref, np.array([zz]) - zref,
+                                    [1, 2]) @ coef)[0])
+            assert g > 0.0, (
+                f"right-skewed input gave NON-positive γ={g:+.3f} at (x={x},z={zz}) — "
+                "sign convention broken (must be the Ω-restoring +γ direction)")
+
+
+def test_skew_fit_left_skew_gives_negative_gamma():
+    """Mirror sign gate: a LEFT-skewed dx input must yield γ<0 (left-tail direction)."""
+    from CDDF_analysis.znz_kernel import _skew_fit_2d
+    from numpy.polynomial.polynomial import polyvander2d
+    gamma_fn = lambda x, zz: np.full_like(np.asarray(x, float), -0.5)
+    meas, _ = _synth_skewed_dx(gamma_fn, seed=3)
+    xref, zref = 20.5, 2.75
+    coef = _skew_fit_2d(meas["xhat"], meas["dx"], meas["z"], xref, zref, 1, 2)
+    g = float((polyvander2d(np.array([20.3]) - xref, np.array([2.75]) - zref,
+                            [1, 2]) @ coef)[0])
+    assert g < 0.0, f"left-skewed input gave γ={g:+.3f} ≥ 0 (sign convention broken)"
+
+
+def test_sas_skewness_map_monotone_and_zero_at_zero():
+    """The γ→skewness inversion map must be monotone increasing with γ=0→skew=0 (so the
+    inverse is single-valued and sign-preserving)."""
+    from CDDF_analysis.znz_kernel import _sas_skewness_of_gamma, _gamma_from_skewness
+    gg = np.linspace(-3.5, 3.5, 71)
+    sk = _sas_skewness_of_gamma(gg)
+    assert abs(_sas_skewness_of_gamma(np.array([0.0]))[0]) < 1e-9
+    assert np.all(np.diff(sk) > 0), "SAS skewness map not strictly monotone in γ"
+    # inversion round-trips within the achievable (sub-ceiling) range
+    for s in (0.1, 0.5, 1.0, 1.3):
+        g = float(_gamma_from_skewness(np.array([s]))[0])
+        s_back = float(_sas_skewness_of_gamma(np.array([g]))[0])
+        assert abs(s_back - s) < 0.02, f"inversion round-trip {s}->{g}->{s_back} off"
+    # above-ceiling target clamps to +clamp (no overflow, sign kept)
+    g_hi = float(_gamma_from_skewness(np.array([2.10]))[0])
+    assert g_hi > 0 and abs(g_hi - 4.0) < 1e-6, f"above-ceiling target did not clamp: {g_hi}"
+
+
+def test_skew_fit_is_noncircular_signature():
+    """NON-CIRCULAR gate: _skew_fit_2d and fit_znz_model(fit_skew=...) take NO dN/dX/Ω
+    input — the fit can only read the truth-match (x̂, z, dx) conditional, never a reduced
+    statistic. Enforced structurally via the signatures."""
+    from CDDF_analysis.znz_kernel import _skew_fit_2d, fit_znz_model
+    # reduced-statistic name fragments (the forbidden dN/dX / Ω / f(N,z) / R0 inputs).
+    # NOTE: ``dx`` (the truth-match residual x̂−x_true) is the LEGIT conditional input and
+    # is intentionally NOT forbidden — it is exactly what the moment fit reads. We forbid
+    # only DOWNSTREAM reductions. Match on '_'-delimited tokens so generic substrings
+    # ('ell' in 'cells') don't trip.
+    forbidden = {"dndx", "dndz", "dxdn", "omega", "ellz", "fnz", "cddf", "r0", "reduce"}
+    import re
+    for fn in (_skew_fit_2d, fit_znz_model):
+        params = set(inspect.signature(fn).parameters)
+        bad = {p for p in params
+               if set(re.split(r"[_]", p.lower())) & forbidden}
+        assert not bad, (
+            f"{fn.__name__} exposes a reduced-statistic argument {bad} — would open the "
+            "α=1/R0 circular edge; the skew fit must read ONLY the truth-match dx moment")
+    # _skew_fit_2d's positional inputs are exactly the conditional arrays + poly refs
+    sig = list(inspect.signature(_skew_fit_2d).parameters)[:3]
+    assert sig == ["xhat", "dx", "z"], (
+        f"_skew_fit_2d should take (xhat, dx, z, ...) only; got {sig}")
+
+
+def test_save_load_roundtrip_skew_coef(tmp_path):
+    """save/load round-trips skew_coef + skew_strength AND all existing fields exactly."""
+    from CDDF_analysis.znz_kernel import _sas_skewness_of_gamma
+    from numpy.polynomial.polynomial import polyvander2d
+    gamma_fn = lambda x, zz: 0.2 + 0.25 * (x - 19.5) + 0.10 * (zz - 2.0)
+    meas, _ = _synth_skewed_dx(gamma_fn, seed=5)
+    znz = fit_znz_model(meas, deg_z=2, deg_xhat=1, fit_median=True,
+                        fit_skew=True, skew_strength=1.0)
+    assert znz.skew_coef is not None and znz.skew_strength == 1.0
+    cnz = CNZModel(g_grid=np.ones((5, 15)), nhi_edges=np.linspace(19, 23, 6),
+                   z_edges_fine=np.linspace(2, 3.5, 16))
+    path = str(tmp_path / "znz_skew.npz")
+    save_znz(path, znz, cnz)
+    znz2, _ = load_znz(path)
+    # skew block preserved exactly
+    assert znz2.skew_coef is not None
+    np.testing.assert_array_equal(znz2.skew_coef, znz.skew_coef)
+    assert znz2.skew_strength == znz.skew_strength
+    # existing blocks preserved (median + mean surfaces + degrees)
+    np.testing.assert_array_equal(znz2.b_coef, znz.b_coef)
+    np.testing.assert_array_equal(znz2.b_med_coef, znz.b_med_coef)
+    assert znz2.b_mix == znz.b_mix
+    assert znz2.deg_xhat == znz.deg_xhat and znz2.deg_z == znz.deg_z
+    # the surface evaluates identically after reload
+    xe = np.array([20.0, 20.5, 21.0]); ze = np.array([2.3, 2.6, 3.0])
+    V = polyvander2d(xe - znz.xhat_ref, ze - znz.z_ref, [znz.deg_xhat, znz.deg_z])
+    np.testing.assert_array_equal(V @ znz2.skew_coef, V @ znz.skew_coef)
+
+
+def test_load_backward_compat_no_skew_coef_is_byte_identical(tmp_path):
+    """BACKWARD-COMPAT gate: an npz WITHOUT skew_coef (a pre-T2 cache) loads to
+    skew_coef=None / skew_strength=0.0 ⇒ apply_znz_correction is BYTE-IDENTICAL to the
+    pre-skew transform (the load-bearing default-OFF guarantee)."""
+    from CDDF_analysis.znz_kernel import apply_znz_correction
+    # build a MEAN-only model (no skew, no median) and save it the OLD way (no skew keys)
+    meas = _make_synthetic_meas(seed=11)
+    znz = fit_znz_model(meas, deg_z=2, deg_xhat=1)   # skew_coef is None by default
+    assert znz.skew_coef is None
+    cnz = CNZModel(g_grid=np.ones((4, 10)), nhi_edges=np.linspace(19, 23, 5),
+                   z_edges_fine=np.linspace(2, 3.5, 11))
+    # write a legacy-shaped npz with NO skew_coef/skew_strength keys at all
+    legacy = str(tmp_path / "legacy_noskew.npz")
+    np.savez(
+        legacy,
+        b_coef=znz.b_coef, sig_coef=znz.sig_coef,
+        xhat_ref=np.array(znz.xhat_ref), z_ref=np.array(znz.z_ref),
+        b_ref=np.array(znz.b_ref), sig_ref=np.array(znz.sig_ref),
+        z_covariate=np.array(znz.z_covariate),
+        deg_xhat=np.array(znz.deg_xhat), deg_z=np.array(znz.deg_z),
+        g_grid=cnz.g_grid, nhi_edges=cnz.nhi_edges, z_edges_fine=cnz.z_edges_fine,
+    )
+    znz_legacy, _ = load_znz(legacy)
+    assert znz_legacy.skew_coef is None, "missing skew_coef must load as None"
+    assert znz_legacy.skew_strength == 0.0, "missing skew_strength must load as 0.0"
+
+    # byte-identical apply: legacy-loaded vs a model with the skew fields absent entirely
+    n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
+    rng = np.random.default_rng(7)
+    n_obs = 6
+    kappa = rng.random((n_obs, len(logN_lo), n_z)).astype(np.float32)
+    cat_op = {"xhat": rng.uniform(20.0, 21.5, n_obs),
+              "zhat": rng.uniform(2.0, 3.5, n_obs), "i_snr": np.zeros(n_obs, int)}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+    out_legacy = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz_legacy)
+    out_orig = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz)
+    np.testing.assert_array_equal(out_legacy, out_orig,
+        err_msg="legacy npz (no skew_coef) NOT byte-identical to the pre-skew transform")

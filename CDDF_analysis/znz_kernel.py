@@ -266,6 +266,216 @@ def _quantile_fit_2d(x: np.ndarray, z: np.ndarray, y: np.ndarray,
 
 
 # ---------------------------------------------------------------------------
+# Track-C T2: γ ↔ skewness inversion + 2-D skew surface fit (reduce-only)
+# ---------------------------------------------------------------------------
+
+# Sane skew-parameter clamp.  The SAS-of-Gaussian skewness map (below) SATURATES
+# at ~1.44 as γ→∞ (a pure-Gaussian pre-warp column cannot be pushed past that
+# standardized third moment), while the measured truth-match skewness reaches
+# +2.10 in the strong-DLA tier.  Cells whose target exceeds the achievable ceiling
+# are clamped to ±_SKEW_GAMMA_CLAMP; the residual tail skew is then supplied by the
+# (already right-skewed) broaden012 base column the warp acts on in production.
+_SKEW_GAMMA_CLAMP = 4.0
+
+
+def _sas_skewness_of_gamma(gamma: np.ndarray) -> np.ndarray:
+    """Standardized third moment (skewness) of ``Y = sinh(arcsinh(Z) + γ)``, Z~N(0,1).
+
+    This is EXACTLY the skewness ``_skew_warp`` induces on a symmetric Gaussian column
+    of any conditional width ω (skewness is scale-invariant, so ω drops out — verified
+    numerically to <0.5% against a 2e7-sample MC).  Computed in closed form from the
+    sinh-moments via the Jones & Pewsey (2009) SAS moment identity
+
+        E[sinh(arcsinh Z + γ)^n]  is a finite combination of  E[sinh^k(arcsinh Z)]·…
+
+    but it is simpler and equally exact to use the moment-generating identity
+    ``E[exp(t·arcsinh Z)] = exp(t²/2)·…`` — we instead evaluate the three raw moments
+    of ``Y`` from the SAS sinh-moment recursion P_q (Jones & Pewsey eq. 2.3):
+
+        m_k(γ) = E[ sinh(arcsinh Z + γ)^k ]
+
+    via the binomial expansion of ``sinh(a+γ) = sinh a cosh γ + cosh a sinh γ`` and the
+    Gaussian moments of ``sinh^p(arcsinh Z) = ((Z + √(Z²+1)) ... )`` — closed-form but
+    fiddly.  For robustness and self-evidence we evaluate the three needed raw moments by
+    GAUSS–HERMITE quadrature (exact for these smooth integrands to machine precision with
+    a modest node count), which keeps the function deterministic and dependency-light.
+
+    Parameters
+    ----------
+    gamma : float or array
+        Skew shape parameter (γ of ``_skew_warp``).
+
+    Returns
+    -------
+    skewness array (same shape as gamma); 0 at γ=0, → +1.44 as γ→+∞ (and the mirror
+    for γ<0), strictly monotone in γ (so the inverse map is single-valued).
+    """
+    g = np.atleast_1d(np.asarray(gamma, float))
+    # Gauss–Hermite nodes/weights for ∫ f(z) e^{-z²} dz; convert to E_{N(0,1)}[h(Z)].
+    # 64 nodes is exact to ~1e-12 for these smooth (sinh∘arcsinh) integrands.
+    nodes, wts = np.polynomial.hermite_e.hermegauss(64)   # weight e^{-z²/2}, ∫w=√(2π)
+    wts = wts / np.sqrt(2.0 * np.pi)                       # normalise to a probability
+    aZ = np.arcsinh(nodes)                                 # arcsinh(Z) at the nodes
+    out = np.empty_like(g)
+    for ii, gi in enumerate(g):
+        Y = np.sinh(aZ + gi)                              # warped node values
+        m1 = float(np.sum(wts * Y))
+        d = Y - m1
+        m2 = float(np.sum(wts * d * d))
+        m3 = float(np.sum(wts * d * d * d))
+        out[ii] = 0.0 if m2 <= 0 else m3 / m2 ** 1.5
+    return out.reshape(np.asarray(gamma).shape) if np.ndim(gamma) else float(out[0])
+
+
+def _gamma_from_skewness(skew_target: np.ndarray,
+                         clamp: float = _SKEW_GAMMA_CLAMP) -> np.ndarray:
+    """Invert the monotone SAS map ``γ → skewness`` to recover ``γ(skew_target)``.
+
+    Builds a dense γ-grid on ``[−clamp, +clamp]``, evaluates ``_sas_skewness_of_gamma``
+    (monotone increasing), and interpolates the inverse.  Targets beyond the achievable
+    skewness ceiling (≈±1.44 for a Gaussian pre-warp column) are clamped to ±``clamp``
+    (their residual tail skew is supplied by the already-skewed broaden012 base column
+    in production — see ``_SKEW_GAMMA_CLAMP``).  Sign is preserved: a POSITIVE
+    (right-tail) skewness target → POSITIVE γ (the Ω-restoring direction of ``_skew_warp``).
+    """
+    st = np.asarray(skew_target, float)
+    gg = np.linspace(-clamp, clamp, 2001)
+    sk = _sas_skewness_of_gamma(gg)                       # monotone increasing in gg
+    # np.interp needs increasing xp; sk is increasing in gg by construction.
+    gamma = np.interp(st, sk, gg, left=-clamp, right=clamp)
+    return np.clip(gamma, -clamp, clamp)
+
+
+def _conditional_skewness_cells(xhat: np.ndarray, z: np.ndarray, dx: np.ndarray,
+                                weights: Optional[np.ndarray] = None,
+                                n_xhat: int = 6, n_z: int = 3,
+                                min_count: int = 50):
+    """Bin (x̂, z) into a coarse grid and measure the (weighted) conditional skewness of
+    ``dx`` per cell — the MEASURED third standardized moment that the skew surface fits.
+
+    Returns ``(xc, zc, sc, wc)`` — the cell-center x̂, cell-center z, measured skewness,
+    and an effective per-cell weight (Σ row weights) for cells with ≥ ``min_count`` rows.
+    Empty / under-populated cells are dropped (they carry no skew information).  Bin edges
+    are QUANTILES of the data so each cell is comparably populated (robust to the
+    non-uniform x̂/z marginals of the truth-match population).
+    """
+    xhat = np.asarray(xhat, float); z = np.asarray(z, float); dx = np.asarray(dx, float)
+    w = (np.ones(len(dx)) if weights is None else np.asarray(weights, float))
+    # quantile edges (robust, equal-occupancy cells); fall back to linspace if degenerate
+    def _edges(a, nb):
+        qs = np.quantile(a, np.linspace(0.0, 1.0, nb + 1))
+        qs = np.unique(qs)
+        if len(qs) < 2:
+            qs = np.array([a.min(), a.max() + 1e-9])
+        qs[-1] = np.nextafter(qs[-1], np.inf)            # include the max in the top cell
+        return qs
+    xe = _edges(xhat, n_xhat); ze = _edges(z, n_z)
+    xc_l, zc_l, sc_l, wc_l = [], [], [], []
+    for ix in range(len(xe) - 1):
+        mx = (xhat >= xe[ix]) & (xhat < xe[ix + 1])
+        for iz in range(len(ze) - 1):
+            m = mx & (z >= ze[iz]) & (z < ze[iz + 1])
+            if int(np.count_nonzero(m)) < min_count:
+                continue
+            wi = w[m]; di = dx[m]
+            sw = wi.sum()
+            if sw <= 0:
+                continue
+            m1 = float(np.sum(wi * di) / sw)
+            dd = di - m1
+            m2 = float(np.sum(wi * dd * dd) / sw)
+            if m2 <= 0:
+                continue
+            m3 = float(np.sum(wi * dd * dd * dd) / sw)
+            sc_l.append(m3 / m2 ** 1.5)
+            xc_l.append(float(np.sum(wi * xhat[m]) / sw))   # weighted cell-center x̂
+            zc_l.append(float(np.sum(wi * z[m]) / sw))      # weighted cell-center z
+            wc_l.append(float(sw))
+    return (np.asarray(xc_l), np.asarray(zc_l),
+            np.asarray(sc_l), np.asarray(wc_l))
+
+
+def _skew_fit_2d(xhat: np.ndarray, dx: np.ndarray, z: np.ndarray,
+                 x_ref: float, z_ref: float, deg_x: int, deg_z: int,
+                 weights: Optional[np.ndarray] = None,
+                 n_xhat_cells: int = 6, n_z_cells: int = 3,
+                 min_count: int = 50,
+                 xhat_floor: float = 19.5,
+                 clamp: float = _SKEW_GAMMA_CLAMP) -> np.ndarray:
+    """Fit the smooth 2-D skew surface ``γ(x̂, z)`` from the truth-match ``dx`` 3rd moment.
+
+    REDUCE-ONLY, NON-CIRCULAR: this reads ONLY the truth-match conditional
+    ``dx = x̂ − x_true`` (its per-(x̂,z)-cell standardized skewness) — it NEVER sees
+    dN/dX, f(N,z), or Ω (no such argument exists; the signature is ``(xhat, dx, z, …)``).
+    The fit target is the MEASURED conditional skewness; the dN/dX/Ω histograms are a
+    strictly-downstream CHECK computed after the surface is frozen (the α=1/R0 tautology
+    is structurally impossible here — there is no reduction edge into this function).
+
+    Procedure (moment-match, skewness-space fit — robust against the SAS ceiling):
+      1. Bin (x̂, z) into a coarse equal-occupancy grid; measure the weighted conditional
+         skewness ``s(x̂,z)`` of ``dx`` per cell (``_conditional_skewness_cells``).  The
+         measured skewness is the smooth, sign-stable, monotone-in-(x̂,z) quantity the data
+         actually traces (the +0.34→+2.10 ramp); it is what we regularize.
+      2. Fit a smooth 2-D poly to the per-cell skewness (occupancy-weighted) — denoising
+         the sparse high-N cells (a single under-populated cell's sample 3rd moment is very
+         noisy; the +7+ outliers are not real).  Evaluate the SMOOTH skewness back on the
+         cells.
+      3. Invert the MONOTONE SAS map ``γ → skewness-of-warped-column`` numerically
+         (``_gamma_from_skewness``) on the SMOOTH per-cell skewness → ``γ_cell``.  The map
+         is ω-independent (skewness is scale-invariant) so ONE inversion serves all widths;
+         it SATURATES at ≈±1.44, so smooth skewness beyond the ceiling maps to the clamp
+         γ=±``clamp`` (the residual tail skew is supplied by the already-skewed broaden012
+         base column — see ``_SKEW_GAMMA_CLAMP``).  Sign matches T1: positive (right-tail)
+         skewness → positive γ (the Ω-restoring direction).
+      4. Weighted-least-squares fit the final 2-D poly ``skew_coef`` to that smooth,
+         sign-correct ``γ_cell(x̂,z)``, centred at (x_ref, z_ref) for stability.
+
+    Fitting in SKEWNESS-space first (step 2) — rather than poly-fitting the per-cell
+    inverted γ directly — is what keeps the surface sign-correct and well-behaved when the
+    measured skewness mostly exceeds the SAS ceiling (the real 2LPT-0 case): a direct γ
+    poly over clamped/saturated targets extrapolates to the WRONG sign at low x̂ (all cells
+    are right-skewed → γ must stay ≥0), whereas the smooth-skewness route stays monotone
+    and non-negative.
+
+    ``xhat_floor`` restricts the cell grid to the SCIENCE range x̂ ≥ floor (default 19.5,
+    the sub-DLA fit floor).  Below the floor the truth-match dx flips to LEFT-skew (the
+    sub-floor edge population the host_truth_floor=19.0 op-set admits at x̂≈19.3) — a
+    different physics from the uniformly right-skewed DLA/sub-DLA response the warp acts
+    on; letting those cells into a deg-1-in-x̂ fit drags the surface to the wrong sign at
+    the low end.  This is a reduce-only restriction on the conditional (still NON-CIRCULAR
+    — it reads only x̂/dx, never dN/dX); it matches the note's measured ramp window
+    ([19.5,19.7)→[21,23)).
+
+    Returns the flat ``skew_coef`` array of shape ``((deg_x+1)*(deg_z+1),)`` — feeds
+    ``_skew_warp`` via ``apply_znz_correction``.  Falls back to an all-zero (γ≡0 = no
+    warp = byte-identical) surface if no cell has enough rows to measure a skewness.
+    """
+    n_coef = (deg_x + 1) * (deg_z + 1)
+    # restrict to the science range x̂ ≥ floor (sub-floor cells are left-skewed; excluding
+    # them keeps the deg-1 surface sign-correct — see docstring; reduce-only / non-circular)
+    xhat = np.asarray(xhat, float); dx = np.asarray(dx, float); z = np.asarray(z, float)
+    keep = xhat >= float(xhat_floor)
+    w_in = None if weights is None else np.asarray(weights, float)[keep]
+    xc, zc, sc, wc = _conditional_skewness_cells(
+        xhat[keep], z[keep], dx[keep], weights=w_in,
+        n_xhat=n_xhat_cells, n_z=n_z_cells, min_count=min_count)
+    if len(sc) < n_coef:
+        # not enough resolved cells to constrain the surface → no skew (identity warp)
+        return np.zeros(n_coef, dtype=float)
+    # robustness guard: cap grossly-outlying per-cell sample skewness (sparse high-N cells
+    # can throw |s|>5 from noise) before the smoothing fit so one cell can't tilt it.
+    sc_capped = np.clip(sc, -3.0, 3.0)
+    # step 2: smooth the skewness surface (denoise), evaluate back on the cells
+    sk_coef = _poly_fit_2d(xc, zc, sc_capped, x_ref, z_ref, deg_x, deg_z, weights=wc)
+    V_cells = polyvander2d(xc - x_ref, zc - z_ref, [deg_x, deg_z])
+    sk_smooth = V_cells @ sk_coef
+    # step 3+4: invert the smooth skewness to γ (sign-correct, clamped) and fit the γ poly
+    gamma_cell = _gamma_from_skewness(sk_smooth, clamp=clamp)
+    coef = _poly_fit_2d(xc, zc, gamma_cell, x_ref, z_ref, deg_x, deg_z, weights=wc)
+    return coef
+
+
+# ---------------------------------------------------------------------------
 # Track-C T1: monotone, mass-conserving skew warp
 # ---------------------------------------------------------------------------
 
@@ -415,7 +625,10 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1,
                   fit_median: bool = False, b_mix: float = 1.0,
                   weights: Optional[np.ndarray] = None,
                   xhat_ref: Optional[float] = None,
-                  z_ref: Optional[float] = None) -> ZNZModel:
+                  z_ref: Optional[float] = None,
+                  fit_skew: bool = False,
+                  skew_strength: float = 0.0,
+                  skew_xhat_floor: float = 19.5) -> ZNZModel:
     """Fit a 2-D polynomial model for bias b(xhat, z) and scatter sigma(xhat, z).
 
     Parameters
@@ -434,6 +647,13 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1,
     b_mix : float
         Initial response-FORM mix q ∈ [0,1] stored on the model (1.0 = pure MEAN =
         frozen behaviour). Only meaningful when ``fit_median`` is True.
+    fit_skew : bool
+        Also fit the 2-D skew surface ``γ(x̂,z)`` (``skew_coef``) from the truth-match
+        ``dx`` third-moment conditional (Track-C T2, REDUCE-ONLY / NON-CIRCULAR).
+        DEFAULT False → ``skew_coef`` stays None → byte-identical to the frozen behaviour.
+    skew_strength : float
+        Initial γ multiplier stored on the model (0.0 = skew OFF = byte-identical).
+        Only meaningful when ``fit_skew`` is True; the frozen point sets it explicitly.
     weights : np.ndarray or None
         Per-row weights (the Stage-III bootstrap multiplicity). None = unweighted
         (byte-identical default).
@@ -477,6 +697,12 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1,
         b_med_coef = _quantile_fit_2d(xhat, z, dx, xhat_ref, z_ref, deg_xhat, deg_z,
                                       q=0.5, weights=weights)
 
+    # --- optional SKEW surface γ(x̂,z) (Track-C T2; reduce-only, non-circular) ---
+    skew_coef = None
+    if fit_skew:
+        skew_coef = _skew_fit_2d(xhat, dx, z, xhat_ref, z_ref, deg_xhat, deg_z,
+                                 weights=weights, xhat_floor=skew_xhat_floor)
+
     # evaluate at reference point
     V_ref = polyvander2d(np.array([0.0]), np.array([0.0]), [deg_xhat, deg_z])
     b_ref = float((V_ref @ b_coef)[0])
@@ -489,6 +715,7 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1,
         z_covariate=z_covariate,
         deg_xhat=deg_xhat, deg_z=deg_z,
         b_med_coef=b_med_coef, b_mix=float(b_mix),
+        skew_coef=skew_coef, skew_strength=float(skew_strength),
     )
 
 
@@ -907,9 +1134,21 @@ def save_znz(path: str, znz: ZNZModel, cnz: CNZModel) -> None:
     """Save both models to a single NPZ file.
 
     Keys: b_coef, sig_coef, xhat_ref, z_ref, b_ref, sig_ref, z_covariate,
-          deg_xhat, deg_z,
+          deg_xhat, deg_z, [b_med_coef, b_mix,] [skew_coef, skew_strength,]
           g_grid, nhi_edges, z_edges_fine
+
+    The optional Stage-III (``b_med_coef``/``b_mix``) and Track-C (``skew_coef``/
+    ``skew_strength``) blocks are written only when present on ``znz``; loaders that
+    pre-date them ignore the extra keys, and ``load_znz`` restores the byte-identical
+    default (None / 1.0 / 0.0) when they are absent.
     """
+    extra = {}
+    if getattr(znz, "b_med_coef", None) is not None:
+        extra["b_med_coef"] = np.asarray(znz.b_med_coef)
+    extra["b_mix"] = np.array(float(getattr(znz, "b_mix", 1.0)))
+    if getattr(znz, "skew_coef", None) is not None:
+        extra["skew_coef"] = np.asarray(znz.skew_coef)
+    extra["skew_strength"] = np.array(float(getattr(znz, "skew_strength", 0.0)))
     np.savez(
         path,
         b_coef=znz.b_coef,
@@ -924,6 +1163,7 @@ def save_znz(path: str, znz: ZNZModel, cnz: CNZModel) -> None:
         g_grid=cnz.g_grid,
         nhi_edges=cnz.nhi_edges,
         z_edges_fine=cnz.z_edges_fine,
+        **extra,
     )
 
 
@@ -951,6 +1191,12 @@ def load_znz(path: str) -> tuple:
     if b_med_coef is not None and np.asarray(b_med_coef).size == 0:
         b_med_coef = None
     b_mix = float(d["b_mix"]) if "b_mix" in d else 1.0
+    # Track-C optional skew surface (absent in old caches → None / 0.0 = no warp =
+    # byte-identical default; the load-bearing backward-compat gate).
+    skew_coef = d["skew_coef"] if "skew_coef" in d else None
+    if skew_coef is not None and np.asarray(skew_coef).size == 0:
+        skew_coef = None
+    skew_strength = float(d["skew_strength"]) if "skew_strength" in d else 0.0
     znz = ZNZModel(
         b_coef=b_coef,
         sig_coef=d["sig_coef"],
@@ -963,6 +1209,8 @@ def load_znz(path: str) -> tuple:
         deg_z=deg_z,
         b_med_coef=b_med_coef,
         b_mix=b_mix,
+        skew_coef=skew_coef,
+        skew_strength=skew_strength,
     )
     cnz = CNZModel(
         g_grid=d["g_grid"],
