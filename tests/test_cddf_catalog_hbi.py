@@ -2344,3 +2344,156 @@ def test_basis_pad_floor_knots_span_padding():
     k_pad = H._v3x_bspbody_knots(cfg)
     assert k_pad[0] == pytest.approx(19.0 - 0.3)        # spans down to pad - margin
     assert k_pad[0] <= 19.0 + 1e-9                      # reaches the padding floor
+
+
+# ---------------------------------------------------------------------------
+# Stage I: inner MAP -> Laplace SAMPLE in the joint-MC band (mc_inner knob)
+# ---------------------------------------------------------------------------
+def _stage1_synthetic_forward(seed=11):
+    """Build a small synthetic v3x forward problem (A_full/M_full/lam_fp/mu_fp/fine/
+    family) + a synthetic M_meta with a PX pathlength, for the Stage-I inner-draw
+    tests. No catalog/FITS/GP — pure synthetic, like the gradient tests."""
+    rng = np.random.default_rng(seed)
+    cfg = _make_cfg(logN_lo=18.5, logN_hi=22.5, drop_top_bin_above=22.4,
+                    v3_logN_fit_floor=18.5, v3_bspbody_n_knots=8,
+                    v3_bspbody_knot_margin=0.0, v3_lambda_bspbody=30.0,
+                    report_logN_limits=(20.0, 20.3))
+    fine = _v3x_fine_bundle(cfg)
+    logN_lo, logN_hi, N_b, dN_b, z_edges_fine = fine
+    n_nbins = len(logN_lo); n_zf = len(z_edges_fine) - 1
+    n_flat = n_nbins * n_zf
+    n_obs = 60
+    A_dense = np.abs(rng.normal(0, 1, (n_obs, n_flat))) * (rng.random((n_obs, n_flat)) < 0.15)
+    A_full = H._sp.csr_matrix(A_dense)
+    M_full = np.abs(rng.normal(1.0, 0.3, n_flat))
+    lam_fp = np.abs(rng.normal(0.2, 0.1, n_obs))
+    mu_fp = 3.0
+    # synthetic M_meta with a positive per-(N,z) pathlength PX (only key _v2_reduce reads)
+    PX = np.abs(rng.normal(50.0, 5.0, (n_nbins, n_zf)))
+    M_meta = dict(PX=PX)
+    family = "bspbody"
+    return cfg, fine, family, A_full, M_full, lam_fp, mu_fp, M_meta, n_obs
+
+
+def test_mc_inner_map_default_returns_exact_theta_map_byte_identical():
+    """Stage I default: cfg.mc_inner='map' => v3x_mc_inner_theta returns the SAME
+    object as fit['theta_map'], so the band is BYTE-IDENTICAL to the pre-Stage-I
+    behaviour (no rng draw, no perturbation)."""
+    cfg, fine, family, A_full, M_full, lam_fp, mu_fp, M_meta, _ = _stage1_synthetic_forward()
+    assert cfg.mc_inner == "map"     # the dataclass default
+    rng = np.random.default_rng(3)
+    fit = H.v3x_fit_map(A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
+                        obj_weights=None, n_restart=1, rng=rng, lit_start=False)
+    # the rng state must not matter for 'map'; call with a FRESH rng and an ADVANCED one
+    th_a = H.v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp, mu_fp, fine, family,
+                                None, np.random.default_rng(999))
+    th_b = H.v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp, mu_fp, fine, family,
+                                None, np.random.default_rng(0))
+    # exactly fit['theta_map'] (identity), bit-for-bit, independent of rng
+    assert th_a is fit["theta_map"]
+    np.testing.assert_array_equal(th_a, fit["theta_map"])
+    np.testing.assert_array_equal(th_a, th_b)               # 0.0e0 difference
+
+
+def test_mc_inner_laplace_is_exactly_v3x_laplace_one_draw():
+    """Stage I 'laplace': v3x_mc_inner_theta is a THIN wrapper over v3x_laplace with
+    n_draw=1 (the SAME central-difference Hessian + f_b≥0/bound clipping). For a given
+    rng it must return EXACTLY v3x_laplace(...,n_draw=1,rng=same)['draws'][0] — the
+    contract is 'one Laplace sample at this draw's ψ', not the MAP."""
+    cfg, fine, family, A_full, M_full, lam_fp, mu_fp, M_meta, _ = _stage1_synthetic_forward()
+    rng = np.random.default_rng(3)
+    fit = H.v3x_fit_map(A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
+                        obj_weights=None, n_restart=2, rng=rng, lit_start=False)
+    cfg.mc_inner = "laplace"
+    # the wrapper draw (a fresh seeded rng)
+    got = H.v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp, mu_fp, fine, family,
+                               None, np.random.default_rng(42))
+    # the reference: v3x_laplace with the SAME θ̂, the SAME rng seed, n_draw=1
+    ref = H.v3x_laplace(fit["theta_map"], A_full, M_full, lam_fp, mu_fp, fine, family,
+                        cfg, obj_weights=None, n_draw=1,
+                        rng=np.random.default_rng(42))["draws"][0]
+    np.testing.assert_array_equal(got, ref)        # exact: same Hessian + same draw
+    # and it is NOT the MAP (the whole point — it widens off the mode)
+    assert not np.array_equal(np.asarray(got, float), np.asarray(fit["theta_map"], float))
+
+
+def test_mc_inner_laplace_draws_have_spread_and_center_near_map():
+    """Stage I 'laplace': over many calls the draws have NON-ZERO spread (the within-ψ
+    width 'map' drops) and their well-constrained components sit near θ̂. (The deep
+    low-N bspbody coeffs are near-flat on this synthetic A and clip at the wide bounds,
+    so we check the spread property globally and centering on the SLOPE/gz params that
+    the data localize.)"""
+    cfg, fine, family, A_full, M_full, lam_fp, mu_fp, M_meta, _ = _stage1_synthetic_forward()
+    rng = np.random.default_rng(3)
+    fit = H.v3x_fit_map(A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
+                        obj_weights=None, n_restart=2, rng=rng, lit_start=False)
+    theta_map = np.asarray(fit["theta_map"], float)
+    lap = H.v3x_laplace(theta_map, A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
+                        obj_weights=None, n_draw=2, rng=np.random.default_rng(0))
+    sig = lap["sigma"]
+    cfg.mc_inner = "laplace"
+    n = 400
+    draws = np.array([
+        H.v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp, mu_fp, fine, family,
+                             None, np.random.default_rng(2000 + i))
+        for i in range(n)])
+    # every parameter that the Laplace cov says is constrained (finite, non-zero σ) has
+    # genuine spread in the draws — 'map' would give zero everywhere
+    assert np.all(draws.std(axis=0) > 0)
+    # the gz evolution param (last; tightly constrained, well inside its [-3,5] bound)
+    # is centered at θ̂ to MC tolerance — confirms the draw is N(θ̂, H⁻¹), not shifted
+    se_gz = draws[:, -1].std() / np.sqrt(n)
+    assert abs(draws[:, -1].mean() - theta_map[-1]) <= 6 * se_gz + 1e-6
+    # and its empirical σ tracks the analytic Laplace σ (same H⁻¹), within MC tolerance
+    assert draws[:, -1].std() == pytest.approx(sig[-1], rel=0.3)
+
+
+def test_mc_inner_band_map_byte_identical_laplace_widens_end_to_end():
+    """End-to-end Stage-I guard mirroring the production MC loop (per draw: re-MAP θ
+    at a perturbed ψ, route through v3x_mc_inner_theta, reduce). 'map' reproduces the
+    pre-Stage-I band to 0.0e0; 'laplace' STRICTLY widens the dN/dX / Ω band."""
+    cfg, fine, family, A_full, M_full, lam_fp0, mu_fp0, M_meta, n_obs = \
+        _stage1_synthetic_forward()
+
+    def _run_band(mc_inner, n_mc=24):
+        cfg.mc_inner = mc_inner
+        master = np.random.default_rng(7)
+        seeds = master.integers(0, 2**31 - 1, size=n_mc)
+        dndx = []; omega = []
+        for s in seeds:
+            rg = np.random.default_rng(int(s))
+            # outer draw: perturb the FP nuisance (stand-in for C/ρ/σ/bootstrap) + re-MAP
+            scale = 1.0 + 0.15 * rg.normal(0, 1, n_obs)
+            lam_fp = np.clip(lam_fp0 * scale, 1e-6, None)
+            mu_fp = float(np.sum(lam_fp))
+            fit = H.v3x_fit_map(A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
+                                obj_weights=None, theta0=None, n_restart=1, rng=rg,
+                                lit_start=False)
+            theta_inner = H.v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp,
+                                               mu_fp, fine, family, None, rg)
+            rr = H.v3x_reduce(cfg, theta_inner, fine, family, M_meta)
+            dndx.append(rr["dndx_total"][20.3]); omega.append(rr["omega"][20.3])
+        return np.array(dndx), np.array(omega)
+
+    d_map, o_map = _run_band("map")
+    # rerun 'map' => identical seeds, identical (no rng draw consumed by the inner step)
+    d_map2, o_map2 = _run_band("map")
+    np.testing.assert_array_equal(d_map, d_map2)            # 0.0e0: deterministic 'map'
+    np.testing.assert_array_equal(o_map, o_map2)
+
+    d_lap, o_lap = _run_band("laplace")
+    # 'laplace' adds the within-ψ width on TOP of the same between-ψ draws => wider band
+    assert np.nanstd(d_lap) > np.nanstd(d_map)
+    assert np.nanstd(o_lap) > np.nanstd(o_map)
+
+
+def test_mc_inner_invalid_value_raises():
+    """An unknown cfg.mc_inner is a hard error (no silent fallback to the wrong band)."""
+    cfg, fine, family, A_full, M_full, lam_fp, mu_fp, M_meta, _ = _stage1_synthetic_forward()
+    rng = np.random.default_rng(3)
+    fit = H.v3x_fit_map(A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
+                        obj_weights=None, n_restart=1, rng=rng, lit_start=False)
+    cfg.mc_inner = "median"
+    with pytest.raises(ValueError, match="mc_inner"):
+        H.v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp, mu_fp, fine, family,
+                             None, np.random.default_rng(0))

@@ -282,6 +282,20 @@ class HBIConfig:
     v3_kernel_smooth_bins: float = 1.0 # R_emp 2-D Gaussian smoothing in fine bins (0.1 dex)
     v3_kernel_n_floor: int = 20        # SNR-pool shrinkage occupancy floor (deep-tail cells)
     v3_kernel_cube_path: str = ""      # path to a prebuilt R_emp_cube.npz (build once, reuse)
+    # --- Stage I: inner-θ draw in the joint-MC band (gated, DEFAULT-OFF byte-identical) ---
+    mc_inner: str = "map"              # {"map","laplace"}. Per outer MC draw (which already
+    #                                    resamples C/ρ/σ_i/FP + sightline bootstrap and re-MAPs
+    #                                    θ) which inner θ to REDUCE:
+    #                                      "map"     => record the MODE θ̂(ψ) — BYTE-IDENTICAL to
+    #                                                   the pre-Stage-I band (DEFAULT).
+    #                                      "laplace" => record ONE Laplace SAMPLE
+    #                                                   θ⁽ᵐ⁾ ~ N(θ̂(ψ), H⁻¹(ψ)) per draw (the
+    #                                                   v3x_laplace Hessian + f_b≥0/bound clip),
+    #                                                   so the band folds in the WITHIN-ψ
+    #                                                   population-fit width the MAP drops (law of
+    #                                                   total variance; toy: Ω coverage 0.25→0.90).
+    #                                    Affects ONLY the BAND — the reported central
+    #                                    dN/dX/Ω (the headline MAP point) is unchanged.
 
 
 # -----------------------------------------------------------------------------
@@ -5536,6 +5550,38 @@ def v3x_laplace(theta_map, A_full, M_full, lam_fp, mu_fp, fine, family, cfg,
                 at_bound=_v3x_at_bound(th, bnds))
 
 
+def v3x_mc_inner_theta(cfg, fit, A_full, M_full, lam_fp, mu_fp, fine, family,
+                       obj_weights, rng):
+    """Stage-I shared inner-θ selector for the joint-MC band (THE one place the three
+    MC paths — ``loa0_full_posterior_mc``, ``make_v3x_refit_fn``, ``v3x_joint_mc`` —
+    decide WHICH θ to reduce per outer draw).
+
+    The outer MC draw has already resampled the nuisances ψ⁽ᵐ⁾ = (C, ρ, σ_i, FP, the
+    sightline bootstrap) and re-MAPed θ̂(ψ⁽ᵐ⁾) = ``fit["theta_map"]``. This helper turns
+    that into the θ that is reduced to dN/dX(z)/Ω(z):
+
+      * ``cfg.mc_inner == 'map'`` (DEFAULT): return ``fit["theta_map"]`` UNCHANGED — the
+        band is BYTE-IDENTICAL to the pre-Stage-I behaviour (the MAP θ̂, the mode).
+      * ``cfg.mc_inner == 'laplace'``: return ONE Laplace SAMPLE
+        θ⁽ᵐ⁾ ~ N(θ̂, H⁻¹) at THIS draw's ψ, reusing ``v3x_laplace`` (its central-difference
+        Hessian on the analytic gradient + its f_b≥0/bound clipping) with ``n_draw=1``.
+        Folding the within-ψ population-fit width into the band is the load-bearing fix
+        (law of total variance; the MAP-only band keeps only the between-ψ spread and
+        under-covers — toy: Ω coverage 0.25→0.90; within-ψ fraction ≈0.69 dN/dX, ≈0.96 Ω).
+
+    NOTE: this changes ONLY the BAND. The reported central (point) dN/dX/Ω comes from the
+    point-estimate MAP (``v3x_refit``), never from this MC loop, so it is unaffected.
+    """
+    mc_inner = getattr(cfg, "mc_inner", "map")
+    if mc_inner == "map":
+        return fit["theta_map"]
+    if mc_inner == "laplace":
+        lap = v3x_laplace(fit["theta_map"], A_full, M_full, lam_fp, mu_fp, fine,
+                          family, cfg, obj_weights=obj_weights, n_draw=1, rng=rng)
+        return lap["draws"][0]
+    raise ValueError(f"cfg.mc_inner must be 'map' or 'laplace', got {mc_inner!r}")
+
+
 def v3x_emcee_check(A_full, M_full, lam_fp, mu_fp, fine, family, cfg, theta_map,
                     sigma0=None, n_steps=None, rng=None, pool=None):
     """Short emcee on +logP(θ) WITHOUT obj_weights (the genuine unweighted likelihood,
@@ -6159,8 +6205,12 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
         fit = v3x_fit_map(A_draw, M_draw, lam_fp, mu_fp, fine, family, cfg,
                           obj_weights=boot_w, theta0=theta_map, n_restart=2, rng=rg,
                           lit_start=False)
-        rr = v3x_reduce(cfg, fit["theta_map"], fine, family, M_meta)
-        return dict(theta=fit["theta_map"],
+        # Stage I: 'map' (default) => fit["theta_map"] (byte-identical);
+        #          'laplace' => one N(θ̂, H⁻¹) draw at THIS draw's ψ (within-ψ width).
+        theta_inner = v3x_mc_inner_theta(cfg, fit, A_draw, M_draw, lam_fp, mu_fp,
+                                         fine, family, boot_w, rg)
+        rr = v3x_reduce(cfg, theta_inner, fine, family, M_meta)
+        return dict(theta=theta_inner,
                     **{f"dndx_{l}": rr["dndx_total"][l] for l in cfg.report_logN_limits},
                     **{f"omega_{l}": rr["omega"][l] for l in cfg.report_logN_limits},
                     dndx_subdla=rr["dndx_subdla_band"], omega_subdla=rr["omega_subdla_band"],
@@ -6272,12 +6322,16 @@ def make_v3x_refit_fn(cfg, point_v3x, mm):
         rho_i = rho_draw[i_snr0, j_nhi]
         lam_fp = (1.0 - rho_i) * boot_w
         mu_fp = float(np.sum(lam_fp))
+        rg = np.random.default_rng(int(abs(hash((float(boot_w.sum()), m))) % (2**31)))
         fit = v3x_fit_map(A_draw, M_draw, lam_fp, mu_fp, fine, family, cfg,
                           obj_weights=boot_w, theta0=theta_map,
                           n_restart=getattr(cfg, "v3_mc_n_restart", 2),
-                          rng=np.random.default_rng(int(abs(hash((float(boot_w.sum()), m))) % (2**31))),
-                          lit_start=False)
-        rr = v3x_reduce(cfg, fit["theta_map"], fine, family, M_meta)
+                          rng=rg, lit_start=False)
+        # Stage I: 'map' (default) => fit["theta_map"] (byte-identical);
+        #          'laplace' => one N(θ̂, H⁻¹) draw at THIS draw's ψ (within-ψ width).
+        theta_inner = v3x_mc_inner_theta(cfg, fit, A_draw, M_draw, lam_fp, mu_fp,
+                                         fine, family, boot_w, rg)
+        rr = v3x_reduce(cfg, theta_inner, fine, family, M_meta)
         n_zc = len(np.asarray(cfg.zbins, float)) - 1
         return dict(f_b=rr["f_b"], f_bk=np.repeat(rr["f_b"][:, None], n_zc, axis=1),
                     dndx_z=rr["dndx_z"], dndx_total=rr["dndx_total"], omega=rr["omega"])

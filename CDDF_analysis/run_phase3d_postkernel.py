@@ -115,6 +115,9 @@ def _make_cfg(args) -> HBIConfig:
         v3_bspbody_edge_slope_lam=args.edge_slope_lam,
         v3_fine_density_gl_nodes=args.gl_nodes,
         v2_z_fit_lo=zbins[0], v2_z_fit_hi=zbins[-1], v2_z_fit_step=0.1,
+        # Stage I: inner-θ per MC draw — 'map' (MODE, byte-identical default) or
+        # 'laplace' (one N(θ̂,H⁻¹) sample, the faithful marginalized WALL-1 band).
+        mc_inner=getattr(args, "mc_inner", "map"),
     )
     return cfg
 
@@ -453,6 +456,10 @@ def main(argv=None):
     p.add_argument("--dalpha", type=float, default=0.5)
     p.add_argument("--host-truth-floor", type=float, default=19.0)
     p.add_argument("--n-mc", type=int, default=200)
+    p.add_argument("--mc-inner", choices=["map", "laplace"], default="map",
+                   help="Stage I: inner-θ per WALL-1 MC draw — 'map' (MODE, "
+                        "byte-identical default) or 'laplace' (one N(θ̂,H⁻¹) sample, "
+                        "folds in the within-ψ population-fit width).")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-jobs", type=int, default=16)
     # S3 falsifier (dense-synthetic) knobs

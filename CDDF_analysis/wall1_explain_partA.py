@@ -40,6 +40,7 @@ if _REPO not in sys.path:
 from CDDF_analysis import cddf_catalog_hbi as H
 from CDDF_analysis.cddf_catalog_hbi import (
     v3x_refit, v3x_fit_map, v3x_laplace, v3x_emcee_check, v3x_reduce,
+    v3x_mc_inner_theta,
     truth_reductions, joint_mc_errors, omega_hi_prefactor,
     _draw_beta_cell, _rescale_unitC_active, _apply_C_to_M, _cell_index,
     _slice_active_unitC, C_FLOOR, _forward_fp_terms, make_rho_interpolator,
@@ -99,8 +100,12 @@ def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
         fit = v3x_fit_map(A_draw, M_draw, lam_fp, mu_fp, fine, family, cfg,
                           obj_weights=boot_w, theta0=theta_map, n_restart=2, rng=rg,
                           lit_start=False)
-        rr = v3x_reduce(cfg, fit["theta_map"], fine, family, M_meta)
-        f_bs.append(rr["f_b"]); thetas.append(fit["theta_map"])
+        # Stage I: 'map' (default) => fit["theta_map"] (byte-identical);
+        #          'laplace' => one N(θ̂, H⁻¹) draw at THIS draw's ψ (within-ψ width).
+        theta_inner = v3x_mc_inner_theta(cfg, fit, A_draw, M_draw, lam_fp, mu_fp,
+                                         fine, family, boot_w, rg)
+        rr = v3x_reduce(cfg, theta_inner, fine, family, M_meta)
+        f_bs.append(rr["f_b"]); thetas.append(theta_inner)
         for l in limits:
             dndx[l].append(rr["dndx_total"][l]); omega[l].append(rr["omega"][l])
             dndx_z[l].append(rr["dndx_z"][l])
@@ -171,6 +176,10 @@ def main(argv=None):
     p.add_argument("--host-truth-floor", type=float, default=19.0)
     p.add_argument("--n-lap", type=int, default=2000, help="Laplace theta draws")
     p.add_argument("--n-mc", type=int, default=300, help="full-posterior joint-MC draws")
+    p.add_argument("--mc-inner", choices=["map", "laplace"], default="map",
+                   help="Stage I: inner-θ per MC draw — 'map' (MODE, byte-identical "
+                        "default) or 'laplace' (one N(θ̂,H⁻¹) sample, the faithful "
+                        "marginalized band that folds in the within-ψ population-fit width).")
     p.add_argument("--n-emcee-steps", type=int, default=1500)
     p.add_argument("--skip-emcee", action="store_true")
     p.add_argument("--skip-pm-xref", action="store_true")
@@ -190,6 +199,7 @@ def main(argv=None):
     cfg._wall1_estimator = "v3"
     cfg.v3_n_lap = args.n_lap
     cfg.v3_n_emcee_steps = args.n_emcee_steps
+    cfg.mc_inner = args.mc_inner   # Stage I: 'map' (default) | 'laplace' (faithful band)
     logN_lo = ing["logN_lo"]; logN_hi = ing["logN_hi"]
     N_b = ing["N_b"]; dN_b = ing["dN_b"]; X_tot = ing["X_tot"]
     print(f"    n_sl_prod={ing['n_sl']}, X_tot={X_tot}  ({time.time()-t0:.0f}s)")
@@ -259,6 +269,7 @@ def main(argv=None):
             ing_pm = build_ingredients(args, "purity_mixture")
             cfg_pm = ing_pm["cfg"]; cfg_pm.report_logN_limits = limits
             cfg_pm.n_mc = args.n_mc; cfg_pm._wall1_estimator = "v3"
+            cfg_pm.mc_inner = args.mc_inner   # Stage I honored by the PM xref band too
             point_pm = ing_pm["estimator_fn"](
                 ing_pm["cat_cut"], ing_pm["is_TP"], ing_pm["good_mask"],
                 ing_pm["C_interp"], ing_pm["fp_model"], ing_pm["X_tot"],
