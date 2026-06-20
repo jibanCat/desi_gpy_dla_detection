@@ -269,19 +269,42 @@ def _quantile_fit_2d(x: np.ndarray, z: np.ndarray, y: np.ndarray,
 # Track-C T1: monotone, mass-conserving skew warp
 # ---------------------------------------------------------------------------
 
-def _skew_warp(centers: np.ndarray, mu: float, gamma: float) -> np.ndarray:
-    """Monotone, mass-conserving warp of a column's bin carriers that introduces
-    right-skew ``gamma`` about the column center ``mu``.
+def _skew_warp(centers: np.ndarray, mu: float, gamma: float,
+               omega: float) -> np.ndarray:
+    """Monotone, mass-conserving, **pivot-preserving** warp of a column's bin carriers
+    that introduces right-skew ``gamma`` about the column center ``mu`` WITHOUT moving
+    the median the affine relocate placed at ``mu``.
 
-    Design: **sinh-arcsinh (Jones & Pewsey 2009) reparameterization** of the
-    offset ``u = centers - mu``.  The map ``f(u) = sinh(arcsinh(u/s) + γ) * s``
-    is:
-      - strictly monotone for any ``γ`` (sinh and arcsinh are both strictly
-        increasing; their composition preserves order);
-      - smooth and invertible (the inverse is ``f⁻¹(v) = sinh(arcsinh(v/s) - γ) * s``);
-      - identity at ``γ=0``: ``sinh(arcsinh(u/s)) = u/s`` → ``f(u) = u`` (exact);
-      - scale-normalised by ``s = std(centers)`` so the shape parameter ``γ`` is
-        dimensionless and comparable across columns of varying spread.
+    Design: **pivot-corrected sinh-arcsinh (Jones & Pewsey 2009)** of the offset
+    ``u = centers − mu`` scaled by the CONDITIONAL WIDTH ``ω`` (the response σ for
+    this (x̂, z) object — NOT the carrier-grid std).  The map is
+
+        f(u) = (sinh(arcsinh(u/ω) + γ) − sinh(γ)) · ω
+
+    which is:
+      - **pivot-preserving**: ``f(0) = (sinh(0 + γ) − sinh(γ)) · ω = 0`` for ANY γ.
+        The pre-skew column is symmetric about ``mu`` (the affine relocate centres it
+        there), so its median sits at u=0, which maps to f(0)=0 → the warped column's
+        **median stays at ``mu`` = m_tgt**.  This is the count-fixing property: dN/dX
+        is set by the median, the skew must be ORTHOGONAL to it.  The mass-weighted
+        MEAN is ALLOWED to drift up for γ>0 — that drift IS the skew restoring the Ω
+        upper tail.  No mean re-centering is applied (that would undo the Ω restoration);
+        pivot correction alone preserves the median for this monotone map.
+      - strictly monotone for any ``γ`` (sinh and arcsinh are strictly increasing; an
+        added constant ``−sinh(−γ)·ω`` does not affect ordering);
+      - smooth and invertible;
+      - identity at ``γ=0``: ``sinh(arcsinh(u/ω)) = u/ω`` and ``sinh(0)=0`` →
+        ``f(u) = u`` (exact);
+      - scale-normalised by the conditional width ``ω`` so the shape parameter ``γ``
+        is dimensionless and acts on ``u/ω`` (the natural response units).
+
+    Sign convention: with the pivot held fixed (f(0)=0), the map
+    ``sinh(arcsinh(u/ω) + γ)`` for γ>0 stretches the right-side (positive u) offsets and
+    compresses the left-side offsets, growing the RIGHT tail while the bulk stays at the
+    pivot → POSITIVE (right-tail) skewness and a POSITIVE mean drift (the Ω-restoring
+    direction).  γ<0 → left tail / mean drifts down.  (Note: this is the OPPOSITE sign to
+    the pre-pivot-correction code, where the un-subtracted bulk translation reversed the
+    apparent skew direction; with the pivot fixed the genuine shape skew sign is +γ.)
 
     Mass conservation: this function warps only the CARRIER positions (bin centers)
     of an existing column mass vector.  The caller is responsible for rebinning the
@@ -295,34 +318,37 @@ def _skew_warp(centers: np.ndarray, mu: float, gamma: float) -> np.ndarray:
         Current bin carrier positions (the ``mids`` after affine relocate + scale).
     mu : float
         Pivot for the warp (the bias-corrected target mean ``m_tgt`` of this column).
-        The warp leaves the location of ``mu`` invariant (f(0) = 0).
+        The warp leaves the location of ``mu`` invariant (f(0) = 0), so the column's
+        median stays at ``mu``.
     gamma : float
-        Skew parameter.  γ>0 → right-skewed (positive skewness); γ<0 → left-skewed;
-        γ=0 → identity (bit-for-bit unchanged).
+        Skew parameter.  γ>0 → right-skewed (positive skewness, mean drifts UP);
+        γ<0 → left-skewed (mean drifts DOWN); γ=0 → identity (bit-for-bit unchanged).
+    omega : float
+        Conditional width of the column (the response σ for this (x̂, z) object, ~0.19–0.21
+        dex) — γ acts on ``u/ω``.  Must be > 0; a non-positive ω is treated as degenerate
+        (no warp) so the call is a safe no-op.
 
     Returns
     -------
-    (n,) float array — warped carrier positions, strictly monotone when γ≠0.
+    (n,) float array — warped carrier positions, strictly monotone when γ≠0, with the
+    pivot ``mu`` (hence the column median) left invariant.
     """
     centers = np.asarray(centers, float)
     if gamma == 0.0:
         # FAST GATE: strict γ=0 ⇒ bit-for-bit identity (no arithmetic applied).
         return centers
-    u = centers - mu
-    s = float(np.std(u))
-    if s <= 0.0:
-        # Degenerate column (all carriers at the same point) — no sensible warp.
+    omega = float(omega)
+    if not (omega > 0.0):
+        # Degenerate conditional width — no sensible warp; safe no-op.
         return centers
-    u_norm = u / s
-    # Sign convention: the sinh-arcsinh map sinh(arcsinh(u/s) + δ) with δ > 0
-    # pushes all carriers rightward (positive u stretch), which concentrates mass
-    # at the right boundary and produces NEGATIVE skewness in the output column.
-    # To honour the convention γ > 0 → positive skewness (right tail), use δ = -γ:
-    #   sinh(arcsinh(u/s) − γ)  for γ > 0
-    # shrinks the right-side offsets and expands the left-side offsets, spreading
-    # mass toward the LEFT → bulk on the left → positive (right-tail) skewness.
-    warped_norm = np.sinh(np.arcsinh(u_norm) - gamma)
-    return mu + warped_norm * s
+    u = centers - mu
+    u_norm = u / omega
+    # Pivot-corrected sinh-arcsinh on the CONDITIONAL width ω.  Subtracting sinh(γ)
+    # forces f(0)=0 so the pivot mu (and hence the median of the symmetric pre-skew
+    # column) is left invariant; only the SHAPE (skew / mean drift) changes.
+    # Sign: +γ so γ>0 → positive (right-tail) skewness + positive mean drift.
+    warped_norm = np.sinh(np.arcsinh(u_norm) + gamma) - np.sinh(gamma)
+    return mu + warped_norm * omega
 
 
 # ---------------------------------------------------------------------------
@@ -832,6 +858,9 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
     kf = kappa.astype(np.float64)
     for i in range(n_obs):
         si = float(scale[i]); mt = float(m_tgt[i])
+        # Conditional width ω_i for the skew warp: the response σ(x̂_i, z_i) already in
+        # the model (NOT the carrier-grid std).  γ acts on (center − m_tgt)/ω_i.
+        omega_i = float(sig_i[i])
         # Per-object skew γ_i: eval the 2-D surface at (x̂_i, z_i) scaled by
         # skew_strength. Done once per object (not per kz) since (x̂,z) is the
         # per-detection covariate.
@@ -856,7 +885,8 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
             # interp.  With gamma_i==0 (skew_coef=None or skew_strength==0) the warp
             # is the identity and this call returns new_centers unchanged bit-for-bit.
             if gamma_i != 0.0:
-                new_centers = _skew_warp(new_centers, mu=mt, gamma=gamma_i)
+                new_centers = _skew_warp(new_centers, mu=mt, gamma=gamma_i,
+                                         omega=omega_i)
             # Stage III α: interpolate toward the identity (mids) so α=0 leaves the column
             # at its own broaden012 center (OFF). α=1 (default) is the full transform.
             if alpha < 1.0 - 1e-12:

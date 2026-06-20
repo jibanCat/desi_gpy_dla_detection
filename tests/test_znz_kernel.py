@@ -424,14 +424,135 @@ def test_stage3_draw_response_params_alpha_axis():
 # Track-C T1: _skew_warp unit tests + apply_znz_correction gate
 # ---------------------------------------------------------------------------
 
+# Conditional response width ω (the per-object σ surface ~0.19–0.21 dex) on which γ
+# acts — NOT the carrier-grid std.  All T1 warp tests use a narrow off-center column.
+_OMEGA = 0.19
+
+
+def _narrow_col(mids, mu, sigma=0.19):
+    """A normalized Gaussian-like mass column of width ``sigma`` centred at ``mu``.
+
+    This is the FAITHFUL test substrate: the affine relocate in apply_znz_correction
+    produces a column centred at m_tgt with the conditional width σ(x̂,z)~0.19–0.21 dex,
+    NOT a wide column spanning the whole grid.  Testing on a narrow off-center column is
+    what exposes the C1 pivot bug (a wide grid-center column hides it).
+    """
+    col = np.exp(-0.5 * ((mids - mu) / sigma) ** 2)
+    return col / col.sum()
+
+
+def _wmedian(col, mids):
+    """Weighted median of a (mass, carrier) column — lands on the bin straddling 0.5."""
+    o = np.argsort(mids)
+    cs = np.cumsum(col[o])
+    return float(mids[o][np.searchsorted(cs, 0.5 * cs[-1])])
+
+
+def _skewness(col, mids):
+    """Standardized third central moment of a mass column."""
+    m1 = (col * mids).sum()
+    m2 = (col * (mids - m1) ** 2).sum()
+    if m2 <= 0:
+        return 0.0
+    m3 = (col * (mids - m1) ** 3).sum()
+    return m3 / m2 ** 1.5
+
+
 def test_skew_warp_gamma_zero_is_identity():
     """_skew_warp(gamma=0) must return centers UNCHANGED, bit-for-bit (assert_array_equal)."""
     from CDDF_analysis.znz_kernel import _skew_warp
     rng = np.random.default_rng(42)
     centers = rng.uniform(19.0, 22.5, 35)
-    result = _skew_warp(centers, mu=float(np.mean(centers)), gamma=0.0)
+    result = _skew_warp(centers, mu=float(np.mean(centers)), gamma=0.0, omega=_OMEGA)
     np.testing.assert_array_equal(result, centers,
         err_msg="_skew_warp(gamma=0) must be bit-for-bit identical to centers")
+
+
+def test_skew_warp_pivot_is_exact_continuous():
+    """The carrier AT the pivot mu must map EXACTLY back to mu (f(0)=0) for any γ, ω, μ.
+
+    This is the continuous C1 fix: the pre-skew column is symmetric about mu so its
+    median sits at u=0; pivot-correction forces f(0)=0, so the median is invariant.
+    (The broken pre-fix warp translated this point by ≈−sinh(γ)·s — up to −1.18 dex.)
+    """
+    from CDDF_analysis.znz_kernel import _skew_warp
+    for omega in (0.19, 0.21, 0.05):
+        for mu in (19.6, 20.3, 21.0):
+            for gamma in (+0.5, +1.0, +2.0, -0.5, -1.0, -2.0):
+                centers = np.array([mu - 0.3, mu, mu + 0.3])
+                w = _skew_warp(centers, mu=mu, gamma=gamma, omega=omega)
+                assert abs(w[1] - mu) < 1e-12, (
+                    f"pivot not preserved: omega={omega} mu={mu} gamma={gamma} "
+                    f"f(mu)-mu={w[1]-mu:.3e} (must be 0 — median would move otherwise)")
+
+
+def test_skew_warp_preserves_median_narrow_offcenter():
+    """C1 FIX (the test the original suite lacked): warp a NARROW (σ≈0.19) column centred
+    OFF the grid-center at μ∈{19.6,20.3,21.0} and assert the warped column's MEDIAN stays
+    at μ to within one bin (the discretization granularity of a weighted median).
+
+    The MEDIAN fixes the count / dN/dX — it MUST be invariant.  The broken warp moved it
+    by ≈−1.1 dex (s=carrier-grid std + no pivot correction).  The residual here is pure
+    histogram-median quantization (≤ a couple of bins, vanishing as the grid refines —
+    test_skew_warp_pivot_is_exact_continuous proves the continuous f(0)=0 exactly), NOT a
+    bulk translation."""
+    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    dN = 0.02
+    logN_lo = np.arange(19.0, 22.5, dN); logN_hi = logN_lo + dN
+    mids = 0.5 * (logN_lo + logN_hi)
+    edges = np.concatenate([logN_lo, [float(logN_hi[-1])]])
+    tol = 2.0 * dN  # histogram-median quantization bound (continuous pivot is exact)
+    for mu in (19.6, 20.3, 21.0):
+        col = _narrow_col(mids, mu)
+        for gamma in (+1.0, +2.0, -1.0, -2.0):
+            warped = _skew_warp(mids, mu=mu, gamma=gamma, omega=_OMEGA)
+            rebinned = _mass_conserving_rebin(col, warped, edges)
+            rebinned /= rebinned.sum()
+            med = _wmedian(rebinned, mids)
+            assert abs(med - mu) <= tol, (
+                f"median moved off mu: mu={mu} gamma={gamma} warped_median={med:.4f} "
+                f"shift={med - mu:+.4f} (must stay within {tol} = histogram quantization; "
+                f"C1 would give ~-1.1 dex)")
+    # Convergence: refining the grid shrinks the discretized median shift toward 0 (proving
+    # it's quantization, not a bulk move).  At dN=0.005 the worst-case shift must be < dN at
+    # dN=0.02 — i.e. it strictly improves with resolution.
+    mu = 20.3; gamma = 2.0
+    for dN_fine in (0.01, 0.005):
+        lo = np.arange(19.0, 22.5, dN_fine); hi = lo + dN_fine
+        m = 0.5 * (lo + hi); e = np.concatenate([lo, [float(hi[-1])]])
+        col = _narrow_col(m, mu)
+        w = _skew_warp(m, mu=mu, gamma=gamma, omega=_OMEGA)
+        rb = _mass_conserving_rebin(col, w, e); rb /= rb.sum()
+        assert abs(_wmedian(rb, m) - mu) <= 2.0 * dN_fine, (
+            f"median shift at dN={dN_fine} exceeds 2*dN — not pure quantization")
+
+
+def test_skew_warp_mean_drifts_up_for_positive_gamma():
+    """The Ω-restoring direction: for γ>0 the mass-weighted MEAN of the warped NARROW
+    column INCREASES vs the pre-warp column (the right tail the skew restores); for γ<0
+    it DECREASES.  (Median stays put — only the mean drifts; this is the whole point.)"""
+    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    dN = 0.02
+    logN_lo = np.arange(19.0, 22.5, dN); logN_hi = logN_lo + dN
+    mids = 0.5 * (logN_lo + logN_hi)
+    edges = np.concatenate([logN_lo, [float(logN_hi[-1])]])
+    for mu in (19.6, 20.3, 21.0):
+        col = _narrow_col(mids, mu)
+        mean_pre = float((col * mids).sum())
+        for gamma in (+1.0, +2.0):
+            warped = _skew_warp(mids, mu=mu, gamma=gamma, omega=_OMEGA)
+            rb = _mass_conserving_rebin(col, warped, edges); rb /= rb.sum()
+            mean_post = float((rb * mids).sum())
+            assert mean_post > mean_pre + 1e-4, (
+                f"mean did NOT drift up for gamma={gamma} at mu={mu}: "
+                f"pre={mean_pre:.4f} post={mean_post:.4f} (Ω restoration broken)")
+        for gamma in (-1.0, -2.0):
+            warped = _skew_warp(mids, mu=mu, gamma=gamma, omega=_OMEGA)
+            rb = _mass_conserving_rebin(col, warped, edges); rb /= rb.sum()
+            mean_post = float((rb * mids).sum())
+            assert mean_post < mean_pre - 1e-4, (
+                f"mean did NOT drift down for gamma={gamma} at mu={mu}: "
+                f"pre={mean_pre:.4f} post={mean_post:.4f}")
 
 
 def test_skew_warp_is_monotone():
@@ -442,7 +563,7 @@ def test_skew_warp_is_monotone():
     logN_hi = logN_lo + 0.1
     centers = 0.5 * (logN_lo + logN_hi)                        # fine logN mids
     for gamma in [+0.5, +1.0, +2.0, -0.5, -1.0, -2.0]:
-        warped = _skew_warp(centers, mu=float(centers.mean()), gamma=gamma)
+        warped = _skew_warp(centers, mu=float(centers.mean()), gamma=gamma, omega=_OMEGA)
         diffs = np.diff(warped)
         assert np.all(diffs > 0), (
             f"_skew_warp(gamma={gamma}) broke monotonicity: min(diff)={diffs.min():.3e}")
@@ -463,7 +584,7 @@ def test_skew_warp_mass_conserving():
     col = rng.exponential(1.0, len(mids))                        # non-negative mass column
     col /= col.sum()                                             # normalize to Σ=1
     for gamma in [+0.3, +1.0, +2.0, -0.3, -1.0]:
-        warped = _skew_warp(mids, mu=float(np.mean(mids)), gamma=gamma)
+        warped = _skew_warp(mids, mu=float(np.mean(mids)), gamma=gamma, omega=_OMEGA)
         rebinned = _mass_conserving_rebin(col, warped, edges)
         tot_before = col.sum()
         tot_after = rebinned.sum()
@@ -473,41 +594,30 @@ def test_skew_warp_mass_conserving():
 
 
 def test_skew_warp_positive_gamma_gives_positive_skewness():
-    """gamma > 0 must produce positive skewness of the warped column; gamma < 0 negative."""
+    """C2 (FAITHFUL): γ>0 must give POSITIVE skewness of a NARROW OFF-CENTER column at
+    μ∈{19.6,20.3,21.0} (not just a wide grid-center column); γ<0 → negative skewness.
+
+    The narrow off-center column is the real substrate (conditional width ω after the
+    affine relocate).  The pivot-corrected warp keeps the sign robust at every μ."""
     from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
-    # Build a symmetric column (mass centred, no skew) and warp it.
-    logN_lo = np.arange(19.0, 22.5, 0.05)           # finer grid so skewness is measurable
-    logN_hi = logN_lo + 0.05
+    dN = 0.02
+    logN_lo = np.arange(19.0, 22.5, dN); logN_hi = logN_lo + dN
     mids = 0.5 * (logN_lo + logN_hi)
     edges = np.concatenate([logN_lo, [float(logN_hi[-1])]])
-    mu = float(np.mean(mids))
-    # Symmetric Gaussian-like column centred at mu
-    col = np.exp(-0.5 * ((mids - mu) / 0.4) ** 2)
-    col /= col.sum()
-
-    def _skewness(col, mids):
-        """Standardized third central moment of a mass column."""
-        m1 = (col * mids).sum()
-        m2 = (col * (mids - m1) ** 2).sum()
-        if m2 <= 0:
-            return 0.0
-        m3 = (col * (mids - m1) ** 3).sum()
-        return m3 / m2 ** 1.5
-
-    for gamma in [+1.0, +2.0]:
-        warped = _skew_warp(mids, mu=mu, gamma=gamma)
-        rebinned = _mass_conserving_rebin(col, warped, edges)
-        rebinned /= rebinned.sum()
-        sk = _skewness(rebinned, mids)
-        assert sk > 0.0, (
-            f"gamma={gamma} expected positive skewness of warped column but got {sk:.4f}")
-    for gamma in [-1.0, -2.0]:
-        warped = _skew_warp(mids, mu=mu, gamma=gamma)
-        rebinned = _mass_conserving_rebin(col, warped, edges)
-        rebinned /= rebinned.sum()
-        sk = _skewness(rebinned, mids)
-        assert sk < 0.0, (
-            f"gamma={gamma} expected negative skewness of warped column but got {sk:.4f}")
+    for mu in (19.6, 20.3, 21.0):
+        col = _narrow_col(mids, mu)
+        for gamma in (+1.0, +2.0):
+            warped = _skew_warp(mids, mu=mu, gamma=gamma, omega=_OMEGA)
+            rb = _mass_conserving_rebin(col, warped, edges); rb /= rb.sum()
+            sk = _skewness(rb, mids)
+            assert sk > 0.0, (
+                f"gamma={gamma} at mu={mu}: expected positive skewness, got {sk:.4f}")
+        for gamma in (-1.0, -2.0):
+            warped = _skew_warp(mids, mu=mu, gamma=gamma, omega=_OMEGA)
+            rb = _mass_conserving_rebin(col, warped, edges); rb /= rb.sum()
+            sk = _skewness(rb, mids)
+            assert sk < 0.0, (
+                f"gamma={gamma} at mu={mu}: expected negative skewness, got {sk:.4f}")
 
 
 def test_apply_znz_skew_off_is_byte_identical():
