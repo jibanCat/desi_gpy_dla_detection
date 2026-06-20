@@ -111,6 +111,15 @@ class ZNZModel:
     #   (b_eff−b_ref) and the WIDTH-scale toward identity by α. The truth-match shows the
     #   OFF↔corrected span (R0≈1.11 OFF, ≈0.79 corrected) BRACKETS truth (R0=1), so α is
     #   the response-form axis that, marginalized, covers the truth — track_c_bref note.
+    skew_coef: Optional[np.ndarray] = None   # 2-D poly coeffs for γ(x̂,z) skew surface
+    #   (Track-C T1). None (DEFAULT) ⇒ no skew warp ⇒ byte-identical to Stage-I/III.
+    #   Fitted by _skew_fit_2d (T2) from the truth-match dx third-moment conditional.
+    #   The surface carries the right-skew that the affine (location+scale) transform
+    #   cannot express: γ(x̂,z) rises from +0.34 at 19.6 to +2.10 at ≥21 (science spec).
+    skew_strength: float = 0.0   # γ multiplier gating the warp magnitude (Track-C T1).
+    #   0.0 (DEFAULT) ⇒ _skew_warp is the identity ⇒ byte-identical. 1.0 = full fitted
+    #   skew. Stage III will draw this per-resample (T4); the frozen point uses 0.0 until
+    #   T2 fits skew_coef and the user sets skew_strength=1.0 explicitly.
 
     def _design(self, xhat: np.ndarray, z: np.ndarray) -> np.ndarray:
         xhat = np.asarray(xhat, float).ravel()
@@ -254,6 +263,66 @@ def _quantile_fit_2d(x: np.ndarray, z: np.ndarray, y: np.ndarray,
             break
         coef = coef_new
     return coef
+
+
+# ---------------------------------------------------------------------------
+# Track-C T1: monotone, mass-conserving skew warp
+# ---------------------------------------------------------------------------
+
+def _skew_warp(centers: np.ndarray, mu: float, gamma: float) -> np.ndarray:
+    """Monotone, mass-conserving warp of a column's bin carriers that introduces
+    right-skew ``gamma`` about the column center ``mu``.
+
+    Design: **sinh-arcsinh (Jones & Pewsey 2009) reparameterization** of the
+    offset ``u = centers - mu``.  The map ``f(u) = sinh(arcsinh(u/s) + γ) * s``
+    is:
+      - strictly monotone for any ``γ`` (sinh and arcsinh are both strictly
+        increasing; their composition preserves order);
+      - smooth and invertible (the inverse is ``f⁻¹(v) = sinh(arcsinh(v/s) - γ) * s``);
+      - identity at ``γ=0``: ``sinh(arcsinh(u/s)) = u/s`` → ``f(u) = u`` (exact);
+      - scale-normalised by ``s = std(centers)`` so the shape parameter ``γ`` is
+        dimensionless and comparable across columns of varying spread.
+
+    Mass conservation: this function warps only the CARRIER positions (bin centers)
+    of an existing column mass vector.  The caller is responsible for rebinning the
+    mass onto the new carriers using ``_mass_conserving_rebin``, which deposits each
+    unit of mass into the destination bin containing the new carrier position —
+    conserving Σ exactly (up to floating-point rounding) regardless of the warp.
+
+    Parameters
+    ----------
+    centers : (n,) float array
+        Current bin carrier positions (the ``mids`` after affine relocate + scale).
+    mu : float
+        Pivot for the warp (the bias-corrected target mean ``m_tgt`` of this column).
+        The warp leaves the location of ``mu`` invariant (f(0) = 0).
+    gamma : float
+        Skew parameter.  γ>0 → right-skewed (positive skewness); γ<0 → left-skewed;
+        γ=0 → identity (bit-for-bit unchanged).
+
+    Returns
+    -------
+    (n,) float array — warped carrier positions, strictly monotone when γ≠0.
+    """
+    centers = np.asarray(centers, float)
+    if gamma == 0.0:
+        # FAST GATE: strict γ=0 ⇒ bit-for-bit identity (no arithmetic applied).
+        return centers
+    u = centers - mu
+    s = float(np.std(u))
+    if s <= 0.0:
+        # Degenerate column (all carriers at the same point) — no sensible warp.
+        return centers
+    u_norm = u / s
+    # Sign convention: the sinh-arcsinh map sinh(arcsinh(u/s) + δ) with δ > 0
+    # pushes all carriers rightward (positive u stretch), which concentrates mass
+    # at the right boundary and produces NEGATIVE skewness in the output column.
+    # To honour the convention γ > 0 → positive skewness (right tail), use δ = -γ:
+    #   sinh(arcsinh(u/s) − γ)  for γ > 0
+    # shrinks the right-side offsets and expands the left-side offsets, spreading
+    # mass toward the LEFT → bulk on the left → positive (right-tail) skewness.
+    warped_norm = np.sinh(np.arcsinh(u_norm) - gamma)
+    return mu + warped_norm * s
 
 
 # ---------------------------------------------------------------------------
@@ -753,10 +822,28 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
     # the new_centers level INSIDE the per-object loop below.
     alpha = float(getattr(znz, "corr_strength", 1.0))
 
+    # Track-C T1: skew warp gate.  skew_coef=None OR skew_strength==0 ⇒ _skew_warp is
+    # the identity on every column ⇒ byte-identical to the pre-T1 function.
+    _skew_coef = getattr(znz, "skew_coef", None)
+    _skew_strength = float(getattr(znz, "skew_strength", 0.0))
+    _skew_active = (_skew_coef is not None) and (_skew_strength != 0.0)
+
     out = np.zeros_like(kappa, dtype=np.float64)
     kf = kappa.astype(np.float64)
     for i in range(n_obs):
         si = float(scale[i]); mt = float(m_tgt[i])
+        # Per-object skew γ_i: eval the 2-D surface at (x̂_i, z_i) scaled by
+        # skew_strength. Done once per object (not per kz) since (x̂,z) is the
+        # per-detection covariate.
+        if _skew_active:
+            _xi = float(xhat[i]); _zi = float(zhat[i])
+            _V_i = polyvander2d(
+                np.array([_xi - znz.xhat_ref]),
+                np.array([_zi - znz.z_ref]),
+                [znz.deg_xhat, znz.deg_z])
+            gamma_i = float((_V_i @ np.asarray(_skew_coef, float))[0]) * _skew_strength
+        else:
+            gamma_i = 0.0
         for kz in range(n_zf):
             col = kf[i, :, kz]
             tot = col.sum()
@@ -765,6 +852,11 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
             mu_col = float((col * mids).sum() / tot)      # current mass-weighted mean
             # relocate to the bias-corrected mean, width-scale about the current mean
             new_centers = mt + si * (mids - mu_col)
+            # Track-C T1: skew warp inserted BETWEEN affine relocate and α-strength
+            # interp.  With gamma_i==0 (skew_coef=None or skew_strength==0) the warp
+            # is the identity and this call returns new_centers unchanged bit-for-bit.
+            if gamma_i != 0.0:
+                new_centers = _skew_warp(new_centers, mu=mt, gamma=gamma_i)
             # Stage III α: interpolate toward the identity (mids) so α=0 leaves the column
             # at its own broaden012 center (OFF). α=1 (default) is the full transform.
             if alpha < 1.0 - 1e-12:

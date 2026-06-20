@@ -418,3 +418,173 @@ def test_stage3_draw_response_params_alpha_axis():
     alphas = np.array([H.draw_response_params(rg, cfg)[1] for _ in range(2000)])
     assert alphas.min() >= 0.0 and alphas.max() <= 1.0
     assert 0.4 < alphas.mean() < 0.6                      # ~uniform mean 0.5
+
+
+# ---------------------------------------------------------------------------
+# Track-C T1: _skew_warp unit tests + apply_znz_correction gate
+# ---------------------------------------------------------------------------
+
+def test_skew_warp_gamma_zero_is_identity():
+    """_skew_warp(gamma=0) must return centers UNCHANGED, bit-for-bit (assert_array_equal)."""
+    from CDDF_analysis.znz_kernel import _skew_warp
+    rng = np.random.default_rng(42)
+    centers = rng.uniform(19.0, 22.5, 35)
+    result = _skew_warp(centers, mu=float(np.mean(centers)), gamma=0.0)
+    np.testing.assert_array_equal(result, centers,
+        err_msg="_skew_warp(gamma=0) must be bit-for-bit identical to centers")
+
+
+def test_skew_warp_is_monotone():
+    """For gamma != 0, _skew_warp must preserve strict ordering (no bin crossing)."""
+    from CDDF_analysis.znz_kernel import _skew_warp
+    # sorted centers (as produced by the affine relocate in apply_znz_correction)
+    logN_lo = np.arange(19.0, 22.5, 0.1)
+    logN_hi = logN_lo + 0.1
+    centers = 0.5 * (logN_lo + logN_hi)                        # fine logN mids
+    for gamma in [+0.5, +1.0, +2.0, -0.5, -1.0, -2.0]:
+        warped = _skew_warp(centers, mu=float(centers.mean()), gamma=gamma)
+        diffs = np.diff(warped)
+        assert np.all(diffs > 0), (
+            f"_skew_warp(gamma={gamma}) broke monotonicity: min(diff)={diffs.min():.3e}")
+
+
+def test_skew_warp_mass_conserving():
+    """_skew_warp + _mass_conserving_rebin preserves total column mass to 1e-12.
+
+    The warp remaps carrier positions; the rebin deposits mass at the new carriers
+    — together they must conserve Σ(mass) exactly (up to floating-point rounding).
+    """
+    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    rng = np.random.default_rng(7)
+    logN_lo = np.arange(19.0, 22.5, 0.1)
+    logN_hi = logN_lo + 0.1
+    mids = 0.5 * (logN_lo + logN_hi)
+    edges = np.concatenate([logN_lo, [float(logN_hi[-1])]])
+    col = rng.exponential(1.0, len(mids))                        # non-negative mass column
+    col /= col.sum()                                             # normalize to Σ=1
+    for gamma in [+0.3, +1.0, +2.0, -0.3, -1.0]:
+        warped = _skew_warp(mids, mu=float(np.mean(mids)), gamma=gamma)
+        rebinned = _mass_conserving_rebin(col, warped, edges)
+        tot_before = col.sum()
+        tot_after = rebinned.sum()
+        assert abs(tot_after - tot_before) < 1e-12, (
+            f"Mass not conserved at gamma={gamma}: before={tot_before:.15g} "
+            f"after={tot_after:.15g} diff={tot_after - tot_before:.3e}")
+
+
+def test_skew_warp_positive_gamma_gives_positive_skewness():
+    """gamma > 0 must produce positive skewness of the warped column; gamma < 0 negative."""
+    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    # Build a symmetric column (mass centred, no skew) and warp it.
+    logN_lo = np.arange(19.0, 22.5, 0.05)           # finer grid so skewness is measurable
+    logN_hi = logN_lo + 0.05
+    mids = 0.5 * (logN_lo + logN_hi)
+    edges = np.concatenate([logN_lo, [float(logN_hi[-1])]])
+    mu = float(np.mean(mids))
+    # Symmetric Gaussian-like column centred at mu
+    col = np.exp(-0.5 * ((mids - mu) / 0.4) ** 2)
+    col /= col.sum()
+
+    def _skewness(col, mids):
+        """Standardized third central moment of a mass column."""
+        m1 = (col * mids).sum()
+        m2 = (col * (mids - m1) ** 2).sum()
+        if m2 <= 0:
+            return 0.0
+        m3 = (col * (mids - m1) ** 3).sum()
+        return m3 / m2 ** 1.5
+
+    for gamma in [+1.0, +2.0]:
+        warped = _skew_warp(mids, mu=mu, gamma=gamma)
+        rebinned = _mass_conserving_rebin(col, warped, edges)
+        rebinned /= rebinned.sum()
+        sk = _skewness(rebinned, mids)
+        assert sk > 0.0, (
+            f"gamma={gamma} expected positive skewness of warped column but got {sk:.4f}")
+    for gamma in [-1.0, -2.0]:
+        warped = _skew_warp(mids, mu=mu, gamma=gamma)
+        rebinned = _mass_conserving_rebin(col, warped, edges)
+        rebinned /= rebinned.sum()
+        sk = _skewness(rebinned, mids)
+        assert sk < 0.0, (
+            f"gamma={gamma} expected negative skewness of warped column but got {sk:.4f}")
+
+
+def test_apply_znz_skew_off_is_byte_identical():
+    """apply_znz_correction with skew_coef=None and skew_strength=0.0 (the T1 defaults)
+    must be bit-for-bit identical to the result WITHOUT the skew fields at all.
+
+    This is the LOAD-BEARING T1 gate: the skew warp path must be an exact no-op when
+    inactive so the existing broaden012 headline is reproduced to 0.0e0.
+    """
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    rng = np.random.default_rng(99)
+    n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
+    n_obs = 8
+    kappa = rng.random((n_obs, len(logN_lo), n_z)).astype(np.float32)
+    cat_op = {"xhat": rng.uniform(20.0, 21.5, n_obs),
+              "zhat": rng.uniform(2.0, 3.5, n_obs),
+              "i_snr": np.zeros(n_obs, int)}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+
+    # --- model WITHOUT any skew fields (pre-T1 baseline) ---
+    znz_baseline = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                            b_ref=0.0, sig_ref=0.12, z_covariate="z_dla")
+    znz_baseline.b = lambda x, z: np.full_like(np.asarray(x, float), 0.08)
+    znz_baseline.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.10)
+
+    # --- model WITH skew fields at their gate-off defaults ---
+    znz_t1 = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                      b_ref=0.0, sig_ref=0.12, z_covariate="z_dla",
+                      skew_coef=None, skew_strength=0.0)
+    znz_t1.b = znz_baseline.b
+    znz_t1.sigma = znz_baseline.sigma
+
+    out_baseline = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi,
+                                        znz_baseline)
+    out_t1 = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz_t1)
+    np.testing.assert_array_equal(out_baseline, out_t1,
+        err_msg="apply_znz_correction with skew_coef=None/skew_strength=0 is NOT "
+                "byte-identical to the pre-T1 baseline (gate broken)")
+
+
+def test_apply_znz_nonzero_skew_differs_from_off():
+    """When skew_coef is set and skew_strength != 0, apply_znz_correction must produce
+    a DIFFERENT result from the no-skew baseline — proving the warp code path is reached."""
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from numpy.polynomial.polynomial import polyvander2d as _pv2d
+    rng = np.random.default_rng(55)
+    n_z = 10; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
+    n_obs = 4
+    # Use a smooth non-trivial kappa (not all-zeros) so the warp has mass to move.
+    kappa = rng.random((n_obs, len(logN_lo), n_z)).astype(np.float32)
+    cat_op = {"xhat": np.array([20.5, 20.8, 21.0, 21.2]),
+              "zhat": np.array([2.5, 2.7, 3.0, 3.2]),
+              "i_snr": np.zeros(n_obs, int)}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+
+    # A skew surface: constant γ=1.0 everywhere (simple scalar coef, deg=(1,2)).
+    # polyvander2d with deg=[1,2] → 6 basis terms; intercept is coef[0].
+    deg_xhat, deg_z = 1, 2
+    n_coef = (deg_xhat + 1) * (deg_z + 1)
+    skew_coef = np.zeros(n_coef)
+    skew_coef[0] = 1.0                                    # constant surface γ≡1.0
+
+    znz_off = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                       b_ref=0.0, sig_ref=0.12, z_covariate="z_dla",
+                       deg_xhat=deg_xhat, deg_z=deg_z,
+                       skew_coef=None, skew_strength=0.0)
+    znz_off.b = lambda x, z: np.full_like(np.asarray(x, float), 0.08)
+    znz_off.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.10)
+
+    znz_on = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                      b_ref=0.0, sig_ref=0.12, z_covariate="z_dla",
+                      deg_xhat=deg_xhat, deg_z=deg_z,
+                      skew_coef=skew_coef, skew_strength=1.0)
+    znz_on.b = znz_off.b
+    znz_on.sigma = znz_off.sigma
+
+    out_off = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz_off)
+    out_on = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz_on)
+    assert not np.array_equal(out_off, out_on), (
+        "Skew-ON and skew-OFF gave identical results — skew code path not reached")
