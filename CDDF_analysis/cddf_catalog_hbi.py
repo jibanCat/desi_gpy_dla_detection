@@ -318,6 +318,53 @@ class HBIConfig:
     #                                    Affects ONLY the BAND — the headline MAP point is
     #                                    unchanged. (θ_K response marginalization = Stage III,
     #                                    hooks the same shared resample.)
+    # --- Stage III: response (θ_K) marginalization in the band (gated, DEFAULT-OFF) ---
+    mc_response: str = "frozen"        # {"frozen","marginalize"}. How the (N,z) RESPONSE
+    #                                    correction θ_K (the kernel re-center b(x̂,z)/σ + the
+    #                                    response FORM) is treated per outer MC draw. REQUIRES
+    #                                    cfg.kernel_znz_model (the response transform) — a no-op
+    #                                    otherwise.
+    #                                      "frozen"      => the response is FROZEN at the cached
+    #                                                       point functional (the b/σ surfaces in
+    #                                                       cfg.kernel_znz_model, b_mix per the
+    #                                                       cache) and the per-draw kernel/A are
+    #                                                       built ONCE — BYTE-IDENTICAL to the
+    #                                                       pre-Stage-III band (DEFAULT).
+    #                                      "marginalize" => per draw, RE-FIT θ_K on the SHARED
+    #                                                       truth-match resample (the SAME
+    #                                                       boot_mult that re-derives C/ρ/g, so
+    #                                                       θ_K is jointly CORRELATED), DRAW the
+    #                                                       response-FORM mix q∈[0,1] from its
+    #                                                       prior (mean↔median, the right-skew
+    #                                                       ambiguity that spans R0≈0.79–1.11 and
+    #                                                       BRACKETS truth — track_c_bref note),
+    #                                                       RE-APPLY apply_znz_correction to the
+    #                                                       BASE kernel, and REBUILD A. This folds
+    #                                                       the genuine response uncertainty (the
+    #                                                       dominant Ω/coverage systematic) into
+    #                                                       the band. Requires mc_nuisance=
+    #                                                       'shared_boot' (the shared boot_mult).
+    #                                    Affects ONLY the BAND — the headline MAP point is
+    #                                    unchanged (the point uses the frozen cached θ_K). The
+    #                                    marginalized POINT of the band (response ON) is the
+    #                                    response-corrected MEDIAN, NOT byte-identical to broaden012.
+    mc_response_q_lo: float = 0.0      # response-FORM mix prior support [q_lo, q_hi]; q=1 ⇒
+    mc_response_q_hi: float = 1.0      # pure MEAN (full skew correction), q=0 ⇒ conditional
+    #                                    MEDIAN (skew-robust bulk). The truth-match shows BOTH
+    #                                    are admissible single-stat targets for a right-skewed
+    #                                    response, so a UNIFORM(q_lo,q_hi) prior over the form is
+    #                                    the genuine response-form uncertainty (default [0,1]).
+    mc_response_alpha_lo: float = 1.0  # response-STRENGTH prior support [α_lo, α_hi]. α=1 ⇒
+    mc_response_alpha_hi: float = 1.0  # FULL correction (the cached functional); α=0 ⇒ OFF
+    #                                    (the un-corrected broaden012 kernel). DEFAULT [1,1] =
+    #                                    Step-1 (PARAMETER-only) marginalization: the response
+    #                                    form is held at full strength, only the b/σ PARAMETER
+    #                                    scatter (re-fit per resample) + the q form-mix vary.
+    #                                    Step-2 (FORM marginalization) sets α_lo<1 (e.g. [0,1])
+    #                                    so the OFF↔corrected span — which the b_ref note shows
+    #                                    BRACKETS truth (R0≈1.11 OFF ↔ 0.79 corrected) — enters
+    #                                    the band. This is the genuine response-form uncertainty
+    #                                    that should COVER the truth on a same-mock validation.
 
 
 # -----------------------------------------------------------------------------
@@ -1454,15 +1501,26 @@ def draw_shared_boot(rng, tmr: TruthMatchResample, method: str = "dirichlet"):
     Both methods are numerically first-order equivalent at the sample sizes used in
     production (~1e6 sightlines); the Dirichlet default is the statistically principled
     choice for a Bayesian estimator."""
+    C_draw, rho_draw, boot_w_op, _mult = draw_shared_boot_with_mult(rng, tmr, method)
+    return C_draw, rho_draw, boot_w_op
+
+
+def draw_shared_boot_with_mult(rng, tmr: TruthMatchResample, method: str = "dirichlet"):
+    """Like ``draw_shared_boot`` but ALSO returns the per-TID multiplicity ``boot_mult``
+    (length ``tmr.n_uniq``). Stage III re-weights the response (θ_K) fit by the SAME
+    ``boot_mult`` so θ_K is jointly correlated with (C, ρ, g). Returns
+    ``(C_draw, rho_draw, boot_w_op, boot_mult)``. ``draw_shared_boot`` wraps this and
+    drops the mult, so its draws are BYTE-IDENTICAL (same RNG stream)."""
     n = tmr.n_uniq
     if method == "dirichlet":
         mult = rng.dirichlet(np.ones(n)) * n
     elif method == "multinomial":
         mult = np.bincount(rng.integers(0, n, size=n), minlength=n).astype(float)
     else:
-        raise ValueError(f"draw_shared_boot: unknown method={method!r}; "
+        raise ValueError(f"draw_shared_boot_with_mult: unknown method={method!r}; "
                          f"choose 'dirichlet' or 'multinomial'.")
-    return shared_boot_counts(tmr, mult)
+    C_draw, rho_draw, boot_w_op = shared_boot_counts(tmr, mult)
+    return C_draw, rho_draw, boot_w_op, mult
 
 
 def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
@@ -6428,6 +6486,132 @@ def v3x_family_vs_truth(cfg, truth_cut, fine, M_meta, family, rng, n_boot=200,
                 deep_tail_ok=bool(deep_tail_ok), deep_tail_ratios=deep_tail_ratios,
                 gate_pass=gate_pass,
                 resid_logN_range=resid_logN_range, n_boot=n_boot)
+
+
+# -----------------------------------------------------------------------------
+# Stage III: response (θ_K) marginalization — per-draw kernel re-fit + A rebuild
+# -----------------------------------------------------------------------------
+def _unif(rng, lo, hi):
+    lo = float(lo); hi = float(hi)
+    return lo if hi <= lo else float(rng.uniform(lo, hi))
+
+
+def draw_response_q(rng, cfg) -> float:
+    """Draw the response-FORM mix q ∈ [q_lo, q_hi] (UNIFORM). q=1 ⇒ pure MEAN shift
+    (full skew correction); q=0 ⇒ conditional MEDIAN (skew-robust bulk)."""
+    return _unif(rng, getattr(cfg, "mc_response_q_lo", 0.0),
+                 getattr(cfg, "mc_response_q_hi", 1.0))
+
+
+def draw_response_alpha(rng, cfg) -> float:
+    """Draw the response-STRENGTH α ∈ [α_lo, α_hi] (UNIFORM). α=1 ⇒ FULL correction
+    (the cached functional); α=0 ⇒ OFF (un-corrected broaden012). The OFF↔corrected
+    span brackets truth (track_c_bref note) — Step-2 form marginalization."""
+    return _unif(rng, getattr(cfg, "mc_response_alpha_lo", 1.0),
+                 getattr(cfg, "mc_response_alpha_hi", 1.0))
+
+
+def draw_response_params(rng, cfg):
+    """Draw (q, α) for one Stage-III MC draw: q = response-FORM mix (mean↔median),
+    α = response-STRENGTH (OFF↔full). Both UNIFORM over their config prior support.
+    DEFAULT prior (q∈[0,1], α∈[1,1]) = Step-1 (parameter+form-mix, full strength);
+    α_lo<1 ⇒ Step-2 (the truth-bracketing OFF↔corrected form axis)."""
+    return draw_response_q(rng, cfg), draw_response_alpha(rng, cfg)
+
+
+def v3x_response_setup(cfg, cat_cut, good_mask, mm, fwd, tmr):
+    """Build the Stage-III per-draw response-rebuild context ONCE (mc_response=
+    'marginalize'). Returns a dict the per-draw rebuild consumes, or None when the
+    response transform is OFF (cfg.kernel_znz_model is None ⇒ nothing to marginalize).
+
+    Captures: the BASE (untransformed) op-floored kernel (so each draw re-applies its OWN
+    apply_znz_correction), the floored cat_op (xhat/zhat/i_snr — row-aligned with the
+    kernel), the fine grids, the frozen-point ZNZModel (for the reference + a unit-weight
+    invariance check), and the ResponseFitResample aligned to tmr.uniq_tids (so the SAME
+    boot_mult re-weights θ_K). The active-column / keep-row slicing matches the frozen A.
+    """
+    znz_path = getattr(cfg, "kernel_znz_model", None)
+    if znz_path is None:
+        return None
+    from CDDF_analysis.znz_kernel import (
+        load_znz, measure_znz_response, build_response_fit_resample)
+    znz_point = load_znz(znz_path)[0]
+
+    fine = fwd["fine"]
+    logN_lo, logN_hi, N_b, dN_b, z_edges_fine = fine
+    cat_op = fwd["cat_op"]
+    keep_in_base = fwd["keep_in_base"]
+    logN_fit_floor = fwd["logN_fit_floor"]
+
+    # BASE kernel (untransformed) sliced to THIS path's floored op set, exactly as
+    # v3x_build_forward slices cfg._posterior_kernel_2d (op_base then keep_in_base).
+    kappa2d = getattr(cfg, "_posterior_kernel_2d", None)
+    if kappa2d is None:
+        return None
+    kappa2d = np.asarray(kappa2d)
+    s2n = np.asarray(cat_cut["S2N_RED"], float)
+    pdla = np.asarray(cat_cut["P_DLA"], float)
+    op_base = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
+    assert kappa2d.shape[0] == int(op_base.sum()), (
+        f"v3x_response_setup: base kernel rows {kappa2d.shape[0]} != op_base "
+        f"{int(op_base.sum())}")
+    base_pk = kappa2d[keep_in_base]  # untransformed, floored-op order (= cat_op order)
+
+    # the active-column / keep-row slicing the frozen unitC used (mirror loa0/joint paths)
+    n_flat = len(logN_lo) * (len(z_edges_fine) - 1)
+    active_flat_cols = np.arange(n_flat)
+    A_meta0 = fwd["A_meta"]
+    keep_rows = np.ones(A_meta0["n_obs"], bool)
+
+    # response-fit population (TP detections) aligned to the SHARED tmr unique-TID basis
+    fine_grid = (logN_lo, logN_hi, N_b, dN_b)
+    meas = measure_znz_response(cat_cut, good_mask, cfg, mm, fine_grid,
+                                z_covariate="z_dla", host_col="NHI_TILT_HOST")
+    # det_tids for meas: same op + TP cut measure_znz_response applied, in the SAME order
+    op_meas = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
+    true_col = "NHI_TILT_HOST" if "NHI_TILT_HOST" in cat_cut.colnames else "NHI_TRUE"
+    xtrue_op = np.asarray(cat_cut[true_col], float)[op_meas]
+    tp_meas = np.isfinite(xtrue_op)
+    det_tids = np.asarray(cat_cut["TARGETID"], np.int64)[op_meas][tp_meas]
+    rfr = build_response_fit_resample(meas, det_tids, tmr.uniq_tids, znz_point)
+
+    return dict(base_pk=base_pk, cat_op=cat_op, mm=mm, fine=fine,
+                logN_lo=logN_lo, logN_hi=logN_hi, N_b=N_b, dN_b=dN_b,
+                z_edges_fine=z_edges_fine, znz_point=znz_point, rfr=rfr,
+                active_flat_cols=active_flat_cols, keep_rows=keep_rows,
+                logN_fit_floor=logN_fit_floor, Xcalc=None,
+                v2_logN_fit_floor=getattr(cfg, "v2_logN_fit_floor", logN_lo[0]),
+                basis_pad_floor=getattr(cfg, "basis_pad_floor", None))
+
+
+def v3x_response_rebuild_unitC(cfg, rctx, znz_draw):
+    """Per-draw Stage-III A rebuild: re-apply apply_znz_correction to the BASE kernel with
+    the per-draw ZNZModel ``znz_draw``, rebuild A_meta (build_A_ib 2-D path), and return a
+    FRESH sliced unit-C COO (the same _slice_active_unitC the frozen band uses). The
+    DOMINANT per-draw cost (the kappa2d A-build). Mirrors v3x_build_forward's A path
+    EXACTLY (same A-column floor handling) so a unit-weight / q=1 znz_draw reproduces the
+    frozen unitC.
+    """
+    from CDDF_analysis.znz_kernel import apply_znz_correction
+    cat_op = rctx["cat_op"]; mm = rctx["mm"]
+    logN_lo = rctx["logN_lo"]; logN_hi = rctx["logN_hi"]
+    N_b = rctx["N_b"]; dN_b = rctx["dN_b"]; z_edges_fine = rctx["z_edges_fine"]
+    pk = apply_znz_correction(rctx["base_pk"], cat_op, z_edges_fine,
+                              logN_lo, logN_hi, znz_draw).astype(rctx["base_pk"].dtype)
+    # match v3x_build_forward's A-column floor handling (basis_pad_floor gating)
+    basis_pad_floor = rctx["basis_pad_floor"]
+    fit_floor = rctx["logN_fit_floor"]
+    a_col_floor = (fit_floor if basis_pad_floor is None
+                   else min(float(fit_floor), float(basis_pad_floor)))
+    saved = getattr(cfg, "v2_logN_fit_floor", logN_lo[0])
+    try:
+        if float(a_col_floor) < saved - 1e-9:
+            cfg.v2_logN_fit_floor = float(a_col_floor)
+        A_meta = build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
+                            None, cfg, kernel=cfg.v2_kernel, posterior_kernel=pk)[1]
+    finally:
+        cfg.v2_logN_fit_floor = saved
+    return _slice_active_unitC(A_meta, rctx["active_flat_cols"], rctx["keep_rows"])
 
 
 # -----------------------------------------------------------------------------

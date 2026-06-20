@@ -44,8 +44,10 @@ from CDDF_analysis.cddf_catalog_hbi import (
     truth_reductions, joint_mc_errors, omega_hi_prefactor,
     _draw_beta_cell, _rescale_unitC_active, _apply_C_to_M, _cell_index,
     _slice_active_unitC, C_FLOOR, _forward_fp_terms, make_rho_interpolator,
-    build_truth_match_resample, draw_shared_boot,
+    build_truth_match_resample, draw_shared_boot, draw_shared_boot_with_mult,
+    v3x_response_setup, v3x_response_rebuild_unitC, draw_response_params,
 )
+from CDDF_analysis.znz_kernel import refit_znz_from_resample
 from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, _resolve_molly
 
 
@@ -91,16 +93,37 @@ def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
         tmr = build_truth_match_resample(
             mm, cat_cut, ing["is_TP"], ing["truth_cut"], ing["good_mask"], cfg)
 
+    # Stage III: response (θ_K) marginalization. Per draw RE-FIT the kernel correction on
+    # the SAME shared resample (boot_mult) + DRAW the response-FORM mix q, RE-APPLY the
+    # transform to the BASE kernel, REBUILD A. The DOMINANT coverage lever. Requires the
+    # response transform (cfg.kernel_znz_model) AND the shared resample (mc_nuisance).
+    mc_response = getattr(cfg, "mc_response", "frozen")
+    rctx = None
+    if mc_response == "marginalize":
+        if mc_nuisance != "shared_boot":
+            raise ValueError("mc_response='marginalize' requires mc_nuisance="
+                             "'shared_boot' (the shared boot_mult that θ_K re-uses).")
+        rctx = v3x_response_setup(cfg, cat_cut, ing["good_mask"], mm, fwd, tmr)
+        if rctx is None:
+            raise ValueError("mc_response='marginalize' requires cfg.kernel_znz_model "
+                             "(the response transform) — nothing to marginalize.")
+
     f_bs = []; thetas = []
     dndx = {l: [] for l in limits}; omega = {l: [] for l in limits}
     dndx_z = {l: [] for l in limits}
     seeds = rng.integers(0, 2**31 - 1, size=n_mc)
     for s in seeds:
         rg = np.random.default_rng(int(s))
+        boot_mult = None
         if mc_nuisance == "shared_boot":
             # ONE shared TID-blocked resample -> jointly-correlated (C, ρ, boot_w_base);
-            # slice the op_base-order boot_w to the floored op set this path uses.
-            C_draw, rho_draw, boot_w_base = draw_shared_boot(rg, tmr)
+            # slice the op_base-order boot_w to the floored op set this path uses. Stage
+            # III also re-weights θ_K by the SAME boot_mult (keep it via *_with_mult).
+            if mc_response == "marginalize":
+                C_draw, rho_draw, boot_w_base, boot_mult = \
+                    draw_shared_boot_with_mult(rg, tmr)
+            else:
+                C_draw, rho_draw, boot_w_base = draw_shared_boot(rg, tmr)
             boot_w = boot_w_base[keep_in_base]
             nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
         else:
@@ -110,7 +133,16 @@ def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
             rho_draw = np.where(mm.pur_ntot > 0, rho_draw, 0.0)
             nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
             boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
-        A_draw = _rescale_unitC_active(unitC, C_draw)
+        # Stage III: per-draw response θ_K -> per-draw unitC (REBUILD A). 'frozen' (default)
+        # reuses the ONE frozen unitC (byte-identical). 'marginalize' re-fits θ_K on this
+        # draw's boot_mult + the drawn FORM-mix q, re-applies the transform, rebuilds A.
+        unitC_draw = unitC
+        if mc_response == "marginalize":
+            q_draw, alpha_draw = draw_response_params(rg, cfg)
+            znz_draw = refit_znz_from_resample(rctx["rfr"], boot_mult,
+                                               b_mix=q_draw, corr_strength=alpha_draw)
+            unitC_draw = v3x_response_rebuild_unitC(cfg, rctx, znz_draw)
+        A_draw = _rescale_unitC_active(unitC_draw, C_draw)
         M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
         # FROZEN loa-0 FP, resampled (Gehrels Gamma) — NOT bootstrap/tilt scaled
         loa0_d = loa0_fp.resample(rg)
@@ -206,6 +238,30 @@ def main(argv=None):
                         "byte-identical default) or 'shared_boot' (ONE shared TID-blocked "
                         "resample of the truth-match D_t per draw, re-deriving C, ρ, boot_w "
                         "JOINTLY so the C–ρ correlation is restored, not double-counted).")
+    p.add_argument("--mc-response", choices=["frozen", "marginalize"], default="frozen",
+                   help="Stage III: response (θ_K) treatment — 'frozen' (the response is "
+                        "held at the cached point functional; A built once; byte-identical "
+                        "default = the broaden012 headline when --kernel-znz is unset) or "
+                        "'marginalize' (per draw re-fit θ_K on the shared resample + draw "
+                        "the response-FORM mix q, re-apply the transform, REBUILD A — the "
+                        "dominant coverage lever; requires --kernel-znz + --mc-nuisance "
+                        "shared_boot).")
+    p.add_argument("--kernel-znz", default=None,
+                   help="path to the znz NPZ (znz_kernel.save_znz). When set, the (N,z) "
+                        "response correction is APPLIED (Track-C); REQUIRED for "
+                        "--mc-response marginalize. When unset the kernel is the cached "
+                        "broaden012 (frozen-response headline).")
+    p.add_argument("--q-lo", type=float, default=0.0,
+                   help="Stage III response-FORM mix prior lower edge (q=0 ⇒ median).")
+    p.add_argument("--q-hi", type=float, default=1.0,
+                   help="Stage III response-FORM mix prior upper edge (q=1 ⇒ mean).")
+    p.add_argument("--alpha-lo", type=float, default=1.0,
+                   help="Stage III response-STRENGTH prior lower edge (α=0 ⇒ OFF / "
+                        "un-corrected; α=1 ⇒ full correction). DEFAULT 1.0 = Step-1 "
+                        "(parameter+form-mix only). Set <1 (e.g. 0.0) for Step-2 (the "
+                        "truth-bracketing OFF↔corrected form marginalization).")
+    p.add_argument("--alpha-hi", type=float, default=1.0,
+                   help="Stage III response-STRENGTH prior upper edge (default 1.0).")
     p.add_argument("--n-emcee-steps", type=int, default=1500)
     p.add_argument("--skip-emcee", action="store_true")
     p.add_argument("--skip-pm-xref", action="store_true")
@@ -227,6 +283,19 @@ def main(argv=None):
     cfg.v3_n_emcee_steps = args.n_emcee_steps
     cfg.mc_inner = args.mc_inner   # Stage I: 'map' (default) | 'laplace' (faithful band)
     cfg.mc_nuisance = args.mc_nuisance  # Stage II: 'indep' (default) | 'shared_boot'
+    cfg.mc_response = args.mc_response  # Stage III: 'frozen' (default) | 'marginalize'
+    cfg.mc_response_q_lo = args.q_lo
+    cfg.mc_response_q_hi = args.q_hi
+    cfg.mc_response_alpha_lo = args.alpha_lo
+    cfg.mc_response_alpha_hi = args.alpha_hi
+    # Stage III: the response transform must be ON (the cached znz) to be marginalizable.
+    # When --kernel-znz is set, A is built with apply_znz_correction (Track-C corrected);
+    # the marginalized POINT is then the response-corrected estimate (NOT broaden012).
+    if args.kernel_znz is not None:
+        cfg.kernel_znz_model = args.kernel_znz
+    if args.mc_response == "marginalize" and getattr(cfg, "kernel_znz_model", None) is None:
+        raise SystemExit("--mc-response marginalize requires --kernel-znz "
+                         "(the response transform to marginalize).")
     logN_lo = ing["logN_lo"]; logN_hi = ing["logN_hi"]
     N_b = ing["N_b"]; dN_b = ing["dN_b"]; X_tot = ing["X_tot"]
     print(f"    n_sl_prod={ing['n_sl']}, X_tot={X_tot}  ({time.time()-t0:.0f}s)")

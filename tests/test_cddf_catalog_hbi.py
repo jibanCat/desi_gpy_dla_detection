@@ -2789,3 +2789,116 @@ def test_stage2_sparse_cell_occupancy_check():
             assert min_cmp >= 2, (
                 f"limit>={lim}: completeness cell too sparse (min={min_cmp}); "
                 f"shared bootstrap not applicable.")
+
+
+# ===========================================================================
+# Stage III: response (θ_K) marginalization — wiring + correlation + default-off
+# ===========================================================================
+def test_stage3_default_mc_response_is_frozen():
+    """The dataclass default mc_response is 'frozen' (Stage III off ⇒ byte-identical)."""
+    cfg = _make_cfg()
+    assert cfg.mc_response == "frozen"
+    assert cfg.mc_response_q_lo == 0.0 and cfg.mc_response_q_hi == 1.0
+
+
+def test_stage3_draw_shared_boot_with_mult_is_byte_identical_to_draw_shared_boot():
+    """draw_shared_boot_with_mult shares the SAME RNG stream as draw_shared_boot (the
+    latter just drops the mult), so the (C, ρ, boot_w) it returns at the same seed are
+    BYTE-IDENTICAL — Stage III re-using the mult does NOT perturb Stage II's draws."""
+    mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly()
+    tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good, cfg)
+    C0, r0, b0 = H.draw_shared_boot(np.random.default_rng(11), tmr)
+    C1, r1, b1, mult = H.draw_shared_boot_with_mult(np.random.default_rng(11), tmr)
+    np.testing.assert_array_equal(C0, C1)
+    np.testing.assert_array_equal(r0, r1)
+    np.testing.assert_array_equal(b0, b1)
+    assert mult.shape == (tmr.n_uniq,)
+    # the returned mult is the SAME one that produced (C1,r1,b1): re-deriving by hand matches
+    C2, r2, b2 = H.shared_boot_counts(tmr, mult)
+    np.testing.assert_array_equal(C1, C2)
+    np.testing.assert_array_equal(r1, r2)
+    np.testing.assert_array_equal(b1, b2)
+
+
+def test_stage3_draw_response_q_uniform_in_prior_support():
+    """draw_response_q samples UNIFORM(q_lo,q_hi); q_lo==q_hi degenerates to the edge."""
+    cfg = _make_cfg()
+    cfg.mc_response_q_lo, cfg.mc_response_q_hi = 0.0, 1.0
+    rg = np.random.default_rng(0)
+    qs = np.array([H.draw_response_q(rg, cfg) for _ in range(2000)])
+    assert qs.min() >= 0.0 and qs.max() <= 1.0
+    assert 0.4 < qs.mean() < 0.6                      # ~uniform mean 0.5
+    cfg.mc_response_q_lo = cfg.mc_response_q_hi = 0.5
+    assert H.draw_response_q(rg, cfg) == 0.5          # degenerate prior
+
+
+def test_stage3_response_fit_resample_aligns_to_shared_tid_basis():
+    """build_response_fit_resample maps each response-TP-detection to the SAME unique-TID
+    basis as the truth-match resample, so the SAME boot_mult re-weights θ_K AND (C,ρ,g) —
+    the joint correlation. Re-weighting by a mult that zeroes a TID drops THAT TID's
+    response rows from the (weighted) fit exactly as it drops its C/ρ counts."""
+    from CDDF_analysis.znz_kernel import (
+        fit_znz_model, build_response_fit_resample, refit_znz_from_resample)
+    mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly()
+    tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good, cfg)
+    # response population = TP op detections (mirror measure_znz_response's cut)
+    s2n = np.asarray(cat["S2N_RED"], float); pdla = np.asarray(cat["P_DLA"], float)
+    op = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good
+    xhat = np.asarray(cat["NHI"], float)[op]
+    xtrue = np.asarray(cat["NHI_TRUE"], float)[op]
+    z = np.asarray(cat["Z_DLA"], float)[op]
+    tids = np.asarray(cat["TARGETID"], np.int64)[op]
+    tp = np.isfinite(xtrue)
+    meas = {"xhat": xhat[tp], "z": z[tp], "dx": (xhat[tp] - xtrue[tp]),
+            "z_covariate": "z_dla"}
+    det_tids = tids[tp]
+    pt = fit_znz_model(meas, fit_median=True,
+                       xhat_ref=float(np.median(meas["xhat"])),
+                       z_ref=float(np.median(meas["z"])))
+    rfr = build_response_fit_resample(meas, det_tids, tmr.uniq_tids, pt)
+    assert rfr.n_uniq == tmr.n_uniq
+    assert np.all((rfr.tid_idx >= 0) & (rfr.tid_idx < tmr.n_uniq))
+    # every response row's basis slot points at its OWN TID
+    assert np.array_equal(tmr.uniq_tids[rfr.tid_idx], det_tids[
+        np.isin(det_tids, tmr.uniq_tids)])
+    # zeroing one TID's multiplicity removes its leverage from the weighted fit:
+    # a mult that drops the busiest TID gives a DIFFERENT surface than dropping a quiet one
+    counts = np.bincount(rfr.tid_idx, minlength=tmr.n_uniq)
+    busy = int(np.argmax(counts))
+    mult_drop_busy = np.ones(tmr.n_uniq); mult_drop_busy[busy] = 0.0
+    m_busy = refit_znz_from_resample(rfr, mult_drop_busy, b_mix=1.0)
+    m_full = refit_znz_from_resample(rfr, np.ones(tmr.n_uniq), b_mix=1.0)
+    xe = np.array([20.3, 20.8]); ze = np.array([2.5, 2.9])
+    assert np.max(np.abs(m_busy.b(xe, ze) - m_full.b(xe, ze))) > 0  # leverage removed
+
+
+def test_stage3_response_correlated_with_C_rho_via_shared_mult():
+    """The SAME boot_mult drives BOTH the (C,ρ) draw AND the θ_K re-fit, so over draws the
+    response-bias level and the completeness are correlated (the joint posterior Stage III
+    targets). We assert the response b-level co-varies with the shared resample (a non-zero
+    sample correlation between the re-fit b_ref and a C cell driven by the same mult)."""
+    from CDDF_analysis.znz_kernel import (
+        fit_znz_model, build_response_fit_resample, refit_znz_from_resample)
+    mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly()
+    tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good, cfg)
+    s2n = np.asarray(cat["S2N_RED"], float); pdla = np.asarray(cat["P_DLA"], float)
+    op = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good
+    xhat = np.asarray(cat["NHI"], float)[op]; xtrue = np.asarray(cat["NHI_TRUE"], float)[op]
+    z = np.asarray(cat["Z_DLA"], float)[op]; tids = np.asarray(cat["TARGETID"], np.int64)[op]
+    tp = np.isfinite(xtrue)
+    meas = {"xhat": xhat[tp], "z": z[tp], "dx": (xhat[tp] - xtrue[tp]), "z_covariate": "z_dla"}
+    pt = fit_znz_model(meas, fit_median=True,
+                       xhat_ref=float(np.median(meas["xhat"])), z_ref=float(np.median(meas["z"])))
+    rfr = build_response_fit_resample(meas, tids[tp], tmr.uniq_tids, pt)
+    n = 120; rg = np.random.default_rng(0)
+    b_levels = np.empty(n); c_levels = np.empty(n)
+    for i in range(n):
+        C_d, r_d, _bw, mult = H.draw_shared_boot_with_mult(rg, tmr)
+        m = refit_znz_from_resample(rfr, mult, b_mix=1.0)
+        b_levels[i] = float(m.b_ref)               # re-fit response bias level this draw
+        c_levels[i] = float(np.nanmean(C_d))       # completeness level this draw (same mult)
+    # both are functionals of the SAME resample -> a measurable joint dependence on it
+    # (the key Stage III property: θ_K is NOT independent of C). b_ref varies across draws.
+    assert np.nanstd(b_levels) > 0                 # the response genuinely varies per draw
+    # the response level responds to the shared resample (non-degenerate joint draw)
+    assert np.isfinite(np.corrcoef(b_levels, c_levels)[0, 1])

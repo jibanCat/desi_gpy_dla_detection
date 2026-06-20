@@ -269,3 +269,152 @@ def test_znz_off_is_bit_identical():
     assert live == frozen, (
         f"default-OFF NOT byte-identical: live={live!r} frozen={frozen!r} "
         f"diff={live - frozen:.3e} (must be 0.0e0)")
+
+
+# ---------------------------------------------------------------------------
+# Stage III: response (θ_K) FORM marginalization (median surface + b_mix + resample)
+# ---------------------------------------------------------------------------
+def _skewed_meas(seed=0, n=40000):
+    """Right-skewed dx (the prior-edge pile-up) so MEAN > MEDIAN, as in the truth-match."""
+    rng = np.random.default_rng(seed)
+    z = rng.uniform(2.0, 3.5, n)
+    xhat = rng.uniform(20.0, 21.5, n)
+    tid = rng.integers(0, 5000, n)             # ~5000 sightlines (TID blocks)
+    base = 0.04 + 0.06 * (z - 2.0)             # genuine z-trend
+    # log-normal-ish right skew (mean ABOVE median): exp jitter, centred so median≈base
+    dx = base + (np.exp(rng.normal(0.0, 0.35, n)) - np.exp(0.35**2 / 2)) * 0.06
+    return {"xhat": xhat, "z": z, "dx": dx, "z_covariate": "z_dla"}, tid
+
+
+def test_stage3_b_eff_is_byte_identical_to_mean_at_q1():
+    """b_mix=1 (or no median surface) ⇒ b_eff == b EXACTLY (the frozen-default gate)."""
+    meas, _ = _skewed_meas()
+    m_mean = fit_znz_model(meas)                                  # no median surface
+    m_q1 = fit_znz_model(meas, fit_median=True, b_mix=1.0)        # median fit, q=1
+    xe = np.array([20.0, 20.3, 20.6, 21.0]); ze = np.array([2.2, 2.5, 2.8, 3.2])
+    assert m_mean.b_med_coef is None
+    np.testing.assert_array_equal(m_mean.b(xe, ze), m_mean.b_eff(xe, ze))
+    np.testing.assert_array_equal(m_q1.b(xe, ze), m_q1.b_eff(xe, ze))
+    assert float(m_q1.b_eff_ref()) == float(m_q1.b_ref)
+
+
+def test_stage3_median_surface_is_below_mean_for_right_skew():
+    """For a RIGHT-skewed dx the conditional MEDIAN is BELOW the MEAN (~less correction),
+    so b_eff at q<1 lands BETWEEN the two and tracks the median as q→0 (the response-form
+    axis from the b_ref note)."""
+    meas, _ = _skewed_meas()
+    m = fit_znz_model(meas, fit_median=True)
+    xe = np.array([20.3, 20.6, 21.0]); ze = np.array([2.5, 2.7, 3.0])
+    bmean = m.b(xe, ze); bmed = m.b_median(xe, ze)
+    assert np.all(bmed < bmean)                                   # skew: median < mean
+    # b_eff interpolates monotonically mean(q=1) -> median(q=0)
+    m.b_mix = 1.0; np.testing.assert_allclose(m.b_eff(xe, ze), bmean)
+    m.b_mix = 0.0; np.testing.assert_allclose(m.b_eff(xe, ze), bmed)
+    m.b_mix = 0.5
+    np.testing.assert_allclose(m.b_eff(xe, ze), 0.5 * (bmean + bmed))
+
+
+def test_stage3_refit_resample_unit_weight_q1_reproduces_mean_fit():
+    """At unit multiplicity AND q=1, refit_znz_from_resample reproduces the point MEAN
+    surface (the invariance the marginalized band rests on: boot_mult==1 ⇒ frozen θ_K)."""
+    from CDDF_analysis.znz_kernel import (
+        build_response_fit_resample, refit_znz_from_resample)
+    meas, tid = _skewed_meas()
+    uniq = np.unique(tid)
+    # point model fit on the FULL population (fixed reference so surfaces are comparable)
+    pt = fit_znz_model(meas, fit_median=True,
+                       xhat_ref=float(np.median(meas["xhat"])),
+                       z_ref=float(np.median(meas["z"])))
+    rfr = build_response_fit_resample(meas, tid, uniq, pt)
+    m1 = refit_znz_from_resample(rfr, np.ones(len(uniq)), b_mix=1.0)
+    xe = np.array([20.0, 20.5, 21.0]); ze = np.array([2.3, 2.6, 3.0])
+    # unit-weight refit on the same rows with the same reference == the point mean surface
+    np.testing.assert_allclose(m1.b(xe, ze), pt.b(xe, ze), rtol=0, atol=1e-9)
+    np.testing.assert_allclose(m1.b_eff(xe, ze), pt.b(xe, ze), rtol=0, atol=1e-9)
+
+
+def test_stage3_refit_resample_perturbs_surface_with_boot_mult():
+    """A non-unit bootstrap multiplicity (the SHARED resample) PERTURBS the re-fit b
+    surface — i.e. θ_K genuinely varies per draw (the parameter scatter Stage III folds
+    into the band), and the perturbation tracks the multiplicity (re-weighting the SAME
+    TID twice gives the SAME surface: determinism)."""
+    from CDDF_analysis.znz_kernel import (
+        build_response_fit_resample, refit_znz_from_resample)
+    meas, tid = _skewed_meas()
+    uniq = np.unique(tid)
+    pt = fit_znz_model(meas, fit_median=True,
+                       xhat_ref=float(np.median(meas["xhat"])),
+                       z_ref=float(np.median(meas["z"])))
+    rfr = build_response_fit_resample(meas, tid, uniq, pt)
+    rg = np.random.default_rng(3)
+    mult = rg.dirichlet(np.ones(len(uniq))) * len(uniq)
+    m_a = refit_znz_from_resample(rfr, mult, b_mix=1.0)
+    m_b = refit_znz_from_resample(rfr, mult.copy(), b_mix=1.0)   # same mult -> same fit
+    xe = np.array([20.3, 20.6]); ze = np.array([2.5, 2.8])
+    np.testing.assert_allclose(m_a.b(xe, ze), m_b.b(xe, ze), atol=1e-12)  # deterministic
+    # the resampled surface DIFFERS from the unit-weight (point) surface (real scatter)
+    assert np.max(np.abs(m_a.b(xe, ze) - pt.b(xe, ze))) > 1e-6
+
+
+def test_stage3_corr_strength_one_is_byte_identical():
+    """corr_strength=1 (DEFAULT) ⇒ apply_znz_correction is BYTE-IDENTICAL to the
+    pre-Stage-III transform (the α-scaling is a no-op at α=1)."""
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    rng = np.random.default_rng(1)
+    n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
+    n_obs = 6
+    kappa = rng.random((n_obs, len(logN_lo), n_z)).astype(np.float32)
+    cat_op = {"xhat": rng.uniform(20.0, 21.5, n_obs),
+              "zhat": rng.uniform(2.0, 3.5, n_obs),
+              "i_snr": np.zeros(n_obs, int)}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+    znz = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                   b_ref=0.0, sig_ref=0.12, z_covariate="z_dla", corr_strength=1.0)
+    znz.b = lambda x, z: np.full_like(np.asarray(x, float), 0.08)
+    znz.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.10)
+    znz1 = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                    b_ref=0.0, sig_ref=0.12, z_covariate="z_dla")  # default corr_strength=1
+    znz1.b = znz.b; znz1.sigma = znz.sigma
+    a = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz)
+    b = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz1)
+    np.testing.assert_array_equal(a, b)
+
+
+def test_stage3_corr_strength_zero_is_off_identity():
+    """corr_strength=0 ⇒ OFF: the transform is the IDENTITY (new_centers == mids), so a
+    column is left at its OWN broaden012 center — un-corrected — regardless of b/σ. This
+    is the truth-bracketing OFF endpoint (the b_ref note's R0≈1.11 reference)."""
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
+    kappa = np.zeros((1, len(logN_lo), n_z), np.float32)
+    j0 = np.searchsorted(logN_lo, 20.5); kappa[0, j0, 7] = 1.0     # delta in bin [20.5,20.6)
+    cat_op = {"xhat": np.array([20.5]), "zhat": np.array([3.0]), "i_snr": np.array([0])}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+    znz = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                   b_ref=0.0, sig_ref=0.1, z_covariate="z_dla", corr_strength=0.0)
+    znz.b = lambda x, z: np.full_like(np.asarray(x, float), 0.10)   # would shift -0.10
+    znz.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.2)  # would width-scale
+    kc = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz)
+    # OFF (α=0): mass UNCHANGED — still entirely in its original bin (identity transform)
+    assert kc[0, j0, 7] == pytest.approx(1.0)
+    assert abs(kc[0, :, 7].sum() - 1.0) < 1e-6
+
+
+def test_stage3_draw_response_params_alpha_axis():
+    """draw_response_params returns (q, α); α∈[α_lo,α_hi] (UNIFORM). DEFAULT α∈[1,1]
+    (Step-1, full strength); a Step-2 prior α∈[0,1] spans OFF↔full."""
+    import importlib
+    H = importlib.import_module("CDDF_analysis.cddf_catalog_hbi")
+    from CDDF_analysis.cddf_catalog_hbi import HBIConfig
+    cfg = HBIConfig(catalog_dir="x", truth_path="x", bal_cat_path="x",
+                    molly_tsv="x", out_dir="x")
+    # default: full strength
+    assert cfg.mc_response_alpha_lo == 1.0 and cfg.mc_response_alpha_hi == 1.0
+    rg = np.random.default_rng(0)
+    q, a = H.draw_response_params(rg, cfg)
+    assert a == 1.0                                       # degenerate [1,1]
+    # Step-2 prior: alpha spans [0,1]
+    cfg.mc_response_alpha_lo = 0.0
+    alphas = np.array([H.draw_response_params(rg, cfg)[1] for _ in range(2000)])
+    assert alphas.min() >= 0.0 and alphas.max() <= 1.0
+    assert 0.4 < alphas.mean() < 0.6                      # ~uniform mean 0.5

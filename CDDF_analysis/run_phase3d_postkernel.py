@@ -121,6 +121,12 @@ def _make_cfg(args) -> HBIConfig:
         # Stage II: calibration-nuisance draw — 'indep' (byte-identical default) or
         # 'shared_boot' (one shared TID-blocked resample -> C, ρ, boot_w correlated).
         mc_nuisance=getattr(args, "mc_nuisance", "indep"),
+        # Stage III: response (θ_K) treatment — 'frozen' (byte-identical default) or
+        # 'marginalize' (per-draw re-fit θ_K + draw the response form q/strength α,
+        # re-apply the transform, rebuild A). The validated Stage-III coverage path is
+        # the loa0 band (wall1_explain_partA.loa0_full_posterior_mc); this WALL-1 tilt
+        # closure path threads the knob for config consistency. Requires kernel_znz_model.
+        mc_response=getattr(args, "mc_response", "frozen"),
     )
     return cfg
 
@@ -468,6 +474,12 @@ def main(argv=None):
                         "per-cell Jeffreys-Betas, byte-identical default) or "
                         "'shared_boot' (ONE shared TID-blocked resample of the "
                         "truth-match per draw -> C, ρ, boot_w correlated).")
+    p.add_argument("--mc-response", choices=["frozen", "marginalize"], default="frozen",
+                   help="Stage III: response (θ_K) treatment — 'frozen' (byte-identical "
+                        "default) or 'marginalize' (per-draw re-fit θ_K + draw the "
+                        "response form/strength, re-apply the transform, rebuild A; "
+                        "requires kernel_znz_model + mc_nuisance shared_boot). The "
+                        "validated coverage path is the loa0 band (wall1_explain_partA).")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-jobs", type=int, default=16)
     # S3 falsifier (dense-synthetic) knobs

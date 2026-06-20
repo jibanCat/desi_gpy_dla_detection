@@ -77,6 +77,22 @@ class ZNZModel:
         Polynomial degree in xhat dimension (stored for robust _design recovery).
     deg_z : int
         Polynomial degree in z dimension (stored for robust _design recovery).
+    b_med_coef : np.ndarray or None
+        Flat coefficient array for the conditional MEDIAN of dx (the q=0.5 quantile
+        surface, IRLS-fit). OPTIONAL — Stage III (response-FORM marginalization). When
+        present together with ``b_mix`` < 1, ``b_eff`` returns the form-mixed shift
+        ``(1-q)·b_med + q·b_mean``. When None (DEFAULT), ``b_eff`` == ``b`` (the MEAN
+        surface) so the model is byte-identical to the frozen Stage-1 behaviour. The
+        median is ~+0.035 dex LESS up-correction than the mean (the right-skew of dx;
+        2026-06-19_track_c_bref_noncircular.md) — the response-form ambiguity spanned by
+        ``b_mix`` ∈ [0,1] is the genuine Track-C response uncertainty Stage III folds
+        into the band.
+    b_mix : float
+        Response-FORM mixing parameter q ∈ [0,1] (DEFAULT 1.0 = pure MEAN shift =
+        byte-identical frozen behaviour). ``b_eff = (1-q)·b_med + q·b_mean`` — q=1 →
+        mean (full correction), q=0 → median (the skew-robust bulk target). Stage III
+        draws q per resample from a truth-match-justified prior; the frozen point uses
+        q=1.
     """
     b_coef: np.ndarray
     sig_coef: np.ndarray
@@ -87,6 +103,14 @@ class ZNZModel:
     z_covariate: str
     deg_xhat: int = 1
     deg_z: int = 2
+    b_med_coef: Optional[np.ndarray] = None
+    b_mix: float = 1.0
+    corr_strength: float = 1.0   # response-STRENGTH α ∈ [0,1] (Stage III). 1 = FULL
+    #   correction (DEFAULT, byte-identical); 0 = OFF (no re-center, no width-scale =
+    #   the broaden012 kernel un-corrected). apply_znz_correction interpolates the SHIFT
+    #   (b_eff−b_ref) and the WIDTH-scale toward identity by α. The truth-match shows the
+    #   OFF↔corrected span (R0≈1.11 OFF, ≈0.79 corrected) BRACKETS truth (R0=1), so α is
+    #   the response-form axis that, marginalized, covers the truth — track_c_bref note.
 
     def _design(self, xhat: np.ndarray, z: np.ndarray) -> np.ndarray:
         xhat = np.asarray(xhat, float).ravel()
@@ -97,13 +121,40 @@ class ZNZModel:
                             [self.deg_xhat, self.deg_z])
 
     def b(self, xhat: np.ndarray, z: np.ndarray) -> np.ndarray:
-        """E[xhat - xtrue | xhat, z] at given (xhat, z) points.
+        """E[xhat - xtrue | xhat, z] at given (xhat, z) points (the MEAN surface).
 
         b is the mean of a right-skewed dx distribution driven by the prior-edge
         pile-up at log N_HI ~ 20.3.  b RISES with xhat (closer to prior edge →
         more up-migration) and RISES with z (denser forest → more blending).
         """
         return self._design(xhat, z) @ self.b_coef
+
+    def b_median(self, xhat: np.ndarray, z: np.ndarray) -> np.ndarray:
+        """Conditional MEDIAN of dx (q=0.5 surface). Falls back to the MEAN surface
+        when no median surface was fit (so b_eff == b in that case)."""
+        if self.b_med_coef is None:
+            return self.b(xhat, z)
+        return self._design(xhat, z) @ np.asarray(self.b_med_coef, float)
+
+    def b_eff(self, xhat: np.ndarray, z: np.ndarray) -> np.ndarray:
+        """The EFFECTIVE per-object shift used by apply_znz_correction. Mixes the MEAN
+        and MEDIAN surfaces by the response-form parameter ``b_mix`` (q):
+            b_eff = (1-q)·b_median + q·b_mean.
+        q=1 (DEFAULT) or b_med_coef=None → pure MEAN = byte-identical frozen behaviour.
+        """
+        q = float(self.b_mix)
+        if self.b_med_coef is None or q >= 1.0 - 1e-12:
+            return self.b(xhat, z)
+        if q <= 1e-12:
+            return self.b_median(xhat, z)
+        return q * self.b(xhat, z) + (1.0 - q) * self.b_median(xhat, z)
+
+    def b_eff_ref(self) -> float:
+        """b_eff at the reference point (xhat_ref, z_ref) — the form-mixed b_ref the
+        transform subtracts as the reference shift. With b_mix=1 / no median surface
+        this is exactly ``b_ref`` (byte-identical)."""
+        return float(self.b_eff(np.array([self.xhat_ref]),
+                                np.array([self.z_ref]))[0])
 
     def sigma(self, xhat: np.ndarray, z: np.ndarray) -> np.ndarray:
         """Conditional scatter (> 0) at given (xhat, z) points."""
@@ -154,13 +205,54 @@ def _deg_from_coef(coef: np.ndarray, deg_xhat: int) -> int:
 
 def _poly_fit_2d(x: np.ndarray, z: np.ndarray, y: np.ndarray,
                  x_ref: float, z_ref: float,
-                 deg_x: int, deg_z: int) -> np.ndarray:
-    """Least-squares 2-D polynomial fit of y ~ poly(x-x_ref, z-z_ref).
+                 deg_x: int, deg_z: int,
+                 weights: Optional[np.ndarray] = None) -> np.ndarray:
+    """Weighted least-squares 2-D polynomial fit of y ~ poly(x-x_ref, z-z_ref).
+
+    ``weights`` (>=0, per-row) — when None (DEFAULT) this is the plain unweighted
+    lstsq (byte-identical to the original). When given, solves the WLS normal
+    equations (used by the Stage-III bootstrap re-fit, where ``weights`` is the
+    per-detection TID multiplicity from the SHARED resample).
 
     Returns flat coefficient array of shape ((deg_x+1)*(deg_z+1),).
     """
     V = polyvander2d(x - x_ref, z - z_ref, [deg_x, deg_z])
-    coef, _, _, _ = np.linalg.lstsq(V, y, rcond=None)
+    if weights is None:
+        coef, _, _, _ = np.linalg.lstsq(V, y, rcond=None)
+        return coef
+    w = np.asarray(weights, float)
+    sw = np.sqrt(np.clip(w, 0.0, None))
+    coef, _, _, _ = np.linalg.lstsq(V * sw[:, None], y * sw, rcond=None)
+    return coef
+
+
+def _quantile_fit_2d(x: np.ndarray, z: np.ndarray, y: np.ndarray,
+                     x_ref: float, z_ref: float, deg_x: int, deg_z: int,
+                     q: float = 0.5, weights: Optional[np.ndarray] = None,
+                     n_iter: int = 30, eps: float = 1e-4) -> np.ndarray:
+    """IRLS quantile (default MEDIAN, q=0.5) 2-D polynomial fit of y ~ poly(...).
+
+    Minimises the (weighted) pinball/check loss by iteratively-reweighted LS with the
+    quantile-asymmetric weights w_i = q or (1-q) over |resid| (Huber-smoothed by
+    ``eps``). ``weights`` multiplies in the per-row resample multiplicity (Stage III).
+    Returns flat coefficient array — the conditional-q surface (q=0.5 ⇒ MEDIAN of dx).
+    """
+    V = polyvander2d(x - x_ref, z - z_ref, [deg_x, deg_z])
+    base_w = (np.ones(len(y)) if weights is None
+              else np.asarray(weights, float))
+    # warm-start from the (weighted) mean LS fit
+    coef = _poly_fit_2d(x, z, y, x_ref, z_ref, deg_x, deg_z, weights=weights)
+    for _ in range(n_iter):
+        r = y - V @ coef
+        # check-loss IRLS weight: quantile asymmetry / smoothed |r|
+        asym = np.where(r >= 0.0, q, 1.0 - q)
+        wr = base_w * asym / np.maximum(np.abs(r), eps)
+        swr = np.sqrt(np.clip(wr, 0.0, None))
+        coef_new, _, _, _ = np.linalg.lstsq(V * swr[:, None], (y * swr), rcond=None)
+        if np.max(np.abs(coef_new - coef)) < 1e-9:
+            coef = coef_new
+            break
+        coef = coef_new
     return coef
 
 
@@ -224,7 +316,11 @@ def measure_znz_response(cat_cut, good_mask, cfg, mm, fine_grid,
 # Fit
 # ---------------------------------------------------------------------------
 
-def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1) -> ZNZModel:
+def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1,
+                  fit_median: bool = False, b_mix: float = 1.0,
+                  weights: Optional[np.ndarray] = None,
+                  xhat_ref: Optional[float] = None,
+                  z_ref: Optional[float] = None) -> ZNZModel:
     """Fit a 2-D polynomial model for bias b(xhat, z) and scatter sigma(xhat, z).
 
     Parameters
@@ -236,6 +332,20 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1) -> ZNZModel:
         Polynomial degree in z (default 2).
     deg_xhat : int
         Polynomial degree in xhat (default 1).
+    fit_median : bool
+        Also fit the conditional MEDIAN-of-dx surface (Stage III response-FORM
+        marginalization). DEFAULT False → ``b_med_coef`` stays None and the model is
+        byte-identical to the original (MEAN-only) fit.
+    b_mix : float
+        Initial response-FORM mix q ∈ [0,1] stored on the model (1.0 = pure MEAN =
+        frozen behaviour). Only meaningful when ``fit_median`` is True.
+    weights : np.ndarray or None
+        Per-row weights (the Stage-III bootstrap multiplicity). None = unweighted
+        (byte-identical default).
+    xhat_ref, z_ref : float or None
+        Fix the polynomial reference point (so a bootstrap re-fit shares the SAME
+        centering as the point model — required for the surfaces to be comparable
+        across resamples). None = median of THIS sample (the original behaviour).
 
     Returns
     -------
@@ -246,17 +356,31 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1) -> ZNZModel:
     dx = np.asarray(meas["dx"], float)
     z_covariate = meas.get("z_covariate", "z_dla")
 
-    xhat_ref = float(np.median(xhat))
-    z_ref = float(np.median(z))
+    if xhat_ref is None:
+        xhat_ref = float(np.median(xhat))
+    else:
+        xhat_ref = float(xhat_ref)
+    if z_ref is None:
+        z_ref = float(np.median(z))
+    else:
+        z_ref = float(z_ref)
 
-    # --- fit bias surface b(xhat, z) ---
-    b_coef = _poly_fit_2d(xhat, z, dx, xhat_ref, z_ref, deg_xhat, deg_z)
+    # --- fit bias surface b(xhat, z) (MEAN) ---
+    b_coef = _poly_fit_2d(xhat, z, dx, xhat_ref, z_ref, deg_xhat, deg_z,
+                          weights=weights)
 
     # --- fit scatter surface: |dx - b_pred| ---
     V = polyvander2d(xhat - xhat_ref, z - z_ref, [deg_xhat, deg_z])
     b_pred = V @ b_coef
     abs_resid = np.abs(dx - b_pred)
-    sig_coef = _poly_fit_2d(xhat, z, abs_resid, xhat_ref, z_ref, deg_xhat, deg_z)
+    sig_coef = _poly_fit_2d(xhat, z, abs_resid, xhat_ref, z_ref, deg_xhat, deg_z,
+                            weights=weights)
+
+    # --- optional MEDIAN-of-dx surface (Stage III response-form axis) ---
+    b_med_coef = None
+    if fit_median:
+        b_med_coef = _quantile_fit_2d(xhat, z, dx, xhat_ref, z_ref, deg_xhat, deg_z,
+                                      q=0.5, weights=weights)
 
     # evaluate at reference point
     V_ref = polyvander2d(np.array([0.0]), np.array([0.0]), [deg_xhat, deg_z])
@@ -269,7 +393,115 @@ def fit_znz_model(meas: dict, deg_z: int = 2, deg_xhat: int = 1) -> ZNZModel:
         b_ref=b_ref, sig_ref=sig_ref,
         z_covariate=z_covariate,
         deg_xhat=deg_xhat, deg_z=deg_z,
+        b_med_coef=b_med_coef, b_mix=float(b_mix),
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage III: response (θ_K) RESAMPLE — re-fit the kernel correction per MC draw
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ResponseFitResample:
+    """Resamplable representation of the θ_K (response) fit population.
+
+    Holds the per-TP-detection response arrays ``(xhat, z, dx)`` that ``fit_znz_model``
+    regresses, plus ``tid_idx`` — each detection's index into a unique-TID basis
+    (``uniq_tids``) so a length-``n_uniq`` per-TID multiplicity (the SAME shared
+    bootstrap that re-derives C/ρ/g in Stage II) re-weights the response fit. Re-fitting
+    θ_K from this resample with the shared multiplicity makes the response a
+    marginalized nuisance JOINTLY correlated with (C, ρ, g) — the load-bearing Stage III
+    coverage lever (the truth-band gap is the FROZEN response).
+
+    The point model's reference (``xhat_ref``/``z_ref``) and degrees are stored so every
+    resample shares the SAME polynomial centering (the surfaces are then comparable
+    across draws and the unit-weight resample reproduces the point model).
+    """
+    xhat: np.ndarray
+    z: np.ndarray
+    dx: np.ndarray
+    tid_idx: np.ndarray          # detection -> unique-TID basis index
+    n_uniq: int
+    z_covariate: str
+    xhat_ref: float
+    z_ref: float
+    deg_xhat: int
+    deg_z: int
+
+
+def build_response_fit_resample(meas: dict, det_tids: np.ndarray,
+                                uniq_tids: np.ndarray, znz_point: ZNZModel
+                                ) -> ResponseFitResample:
+    """Build the response-fit resample table aligned to the SHARED unique-TID basis.
+
+    Parameters
+    ----------
+    meas : dict
+        ``measure_znz_response`` output (the TP-detection xhat/z/dx response population).
+    det_tids : np.ndarray
+        TARGETID of EACH row in ``meas`` (the SAME op + TP cut), length == len(meas[xhat]).
+    uniq_tids : np.ndarray
+        The shared unique-TID basis (``TruthMatchResample.uniq_tids``) — so the SAME
+        per-TID multiplicity re-weights C/ρ/g AND the response fit (joint correlation).
+    znz_point : ZNZModel
+        The frozen-point model — supplies the reference (xhat_ref/z_ref) + degrees so
+        every resample uses the SAME centering (and unit-weight ⇒ the point surfaces).
+
+    Detections whose TID is not in ``uniq_tids`` (none in practice — the response
+    population ⊆ the purity population) are mapped to the nearest basis slot and given
+    zero effective leverage by construction (their multiplicity comes from a real TID).
+    """
+    xhat = np.asarray(meas["xhat"], float)
+    z = np.asarray(meas["z"], float)
+    dx = np.asarray(meas["dx"], float)
+    det_tids = np.asarray(det_tids, np.int64)
+    if not (len(xhat) == len(z) == len(dx) == len(det_tids)):
+        raise ValueError("build_response_fit_resample: meas arrays and det_tids must "
+                         f"be equal length; got {len(xhat)}/{len(z)}/{len(dx)}/"
+                         f"{len(det_tids)}")
+    uniq_tids = np.asarray(uniq_tids, np.int64)
+    pos = np.searchsorted(uniq_tids, det_tids)
+    pos = np.clip(pos, 0, len(uniq_tids) - 1)
+    # membership guard: any response-TID missing from the shared basis is a logic error
+    # (the response population is the TP subset of the purity population). Keep only the
+    # matched rows (drop unmatched so a stray TID cannot mis-weight the fit).
+    matched = uniq_tids[pos] == det_tids
+    if not np.all(matched):
+        xhat = xhat[matched]; z = z[matched]; dx = dx[matched]; pos = pos[matched]
+    return ResponseFitResample(
+        xhat=xhat, z=z, dx=dx, tid_idx=pos, n_uniq=len(uniq_tids),
+        z_covariate=meas.get("z_covariate", "z_dla"),
+        xhat_ref=float(znz_point.xhat_ref), z_ref=float(znz_point.z_ref),
+        deg_xhat=int(znz_point.deg_xhat), deg_z=int(znz_point.deg_z))
+
+
+def refit_znz_from_resample(rfr: ResponseFitResample, boot_mult: np.ndarray,
+                            b_mix: float = 1.0,
+                            corr_strength: float = 1.0) -> ZNZModel:
+    """Re-fit the response model θ_K on a bootstrap resample of the response population.
+
+    ``boot_mult`` (length ``rfr.n_uniq``) is the per-TID multiplicity from the SHARED
+    resample (so θ_K is correlated with C/ρ/g — Stage II's ``boot_mult``). ``b_mix`` is
+    the response-FORM mix q ∈ [0,1] (1.0 = pure MEAN; 0.0 = conditional MEDIAN — the
+    skew-justified axis). ``corr_strength`` is the response-STRENGTH α ∈ [0,1] (1.0 =
+    FULL correction; 0.0 = OFF/un-corrected) — the OFF↔corrected axis that BRACKETS truth
+    (2026-06-19_track_c_bref_noncircular.md). Returns a per-draw ``ZNZModel`` carrying
+    BOTH the mean and median surfaces and the drawn (b_mix, corr_strength); the b/σ
+    PARAMETER scatter (re-fit on the resampled rows) AND the FORM ambiguity (q, α) all
+    vary per draw.
+
+    The polynomial reference is fixed from the point model so surfaces are comparable
+    across draws; at ``boot_mult == 1``, ``b_mix == 1`` AND ``corr_strength == 1`` the
+    MEAN surface reproduces the frozen point model's ``b`` (the unit-weight invariance
+    Stage III rests on).
+    """
+    w = np.asarray(boot_mult, float)[rfr.tid_idx]
+    meas = {"xhat": rfr.xhat, "z": rfr.z, "dx": rfr.dx, "z_covariate": rfr.z_covariate}
+    m = fit_znz_model(meas, deg_z=rfr.deg_z, deg_xhat=rfr.deg_xhat,
+                      fit_median=True, b_mix=float(b_mix), weights=w,
+                      xhat_ref=rfr.xhat_ref, z_ref=rfr.z_ref)
+    m.corr_strength = float(corr_strength)
+    return m
 
 
 # ---------------------------------------------------------------------------
@@ -498,14 +730,28 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
         "the kernel must be row-aligned with the floored op set (cat_op)")
 
     # per-object bias + scatter (vectorized over objects)
-    b_i = np.asarray(znz.b(xhat, zhat), float).ravel()
+    # Stage III: b_eff mixes the MEAN/MEDIAN surfaces by znz.b_mix (response FORM).
+    # With b_mix=1 / no median surface, b_eff == b and b_eff_ref == b_ref EXACTLY, so
+    # the default path is byte-identical to the frozen Stage-1 transform.
+    if getattr(znz, "b_med_coef", None) is None or float(getattr(znz, "b_mix", 1.0)) >= 1.0 - 1e-12:
+        b_i = np.asarray(znz.b(xhat, zhat), float).ravel()
+        b_ref = float(znz.b_ref)
+    else:
+        b_i = np.asarray(znz.b_eff(xhat, zhat), float).ravel()
+        b_ref = float(znz.b_eff_ref())
     sig_i = np.asarray(znz.sigma(xhat, zhat), float).ravel()
-    b_ref = float(znz.b_ref)
     sig_ref = float(znz.sig_ref)
     m_tgt = xhat - (b_i - b_ref)                          # bias-corrected target mean
     with np.errstate(divide="ignore", invalid="ignore"):
         scale = np.where(sig_i > 0, sig_ref / sig_i, 1.0)
     scale = np.where(np.isfinite(scale) & (scale > 0), scale, 1.0)
+    # Stage III response-STRENGTH α (corr_strength): interpolate the WHOLE map toward the
+    # IDENTITY (mass left at its own column center = the un-corrected broaden012 kernel).
+    # α=1 (DEFAULT) ⇒ the full transform (byte-identical); α=0 ⇒ new_centers == mids ⇒
+    # mass UNCHANGED == broaden012-OFF. The OFF↔corrected span is the response-form axis
+    # that BRACKETS truth (track_c_bref note: R0≈1.11 OFF ↔ 0.79 corrected). Applied at
+    # the new_centers level INSIDE the per-object loop below.
+    alpha = float(getattr(znz, "corr_strength", 1.0))
 
     out = np.zeros_like(kappa, dtype=np.float64)
     kf = kappa.astype(np.float64)
@@ -519,6 +765,10 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
             mu_col = float((col * mids).sum() / tot)      # current mass-weighted mean
             # relocate to the bias-corrected mean, width-scale about the current mean
             new_centers = mt + si * (mids - mu_col)
+            # Stage III α: interpolate toward the identity (mids) so α=0 leaves the column
+            # at its own broaden012 center (OFF). α=1 (default) is the full transform.
+            if alpha < 1.0 - 1e-12:
+                new_centers = (1.0 - alpha) * mids + alpha * new_centers
             rebinned = _mass_conserving_rebin(col, new_centers, edges)
             s = rebinned.sum()
             if s > 0:
@@ -574,6 +824,11 @@ def load_znz(path: str) -> tuple:
     else:
         deg_xhat = 1  # production default
         deg_z = _deg_from_coef(b_coef, deg_xhat)
+    # Stage III optional surfaces (absent in old caches → None / 1.0 = frozen MEAN).
+    b_med_coef = d["b_med_coef"] if "b_med_coef" in d else None
+    if b_med_coef is not None and np.asarray(b_med_coef).size == 0:
+        b_med_coef = None
+    b_mix = float(d["b_mix"]) if "b_mix" in d else 1.0
     znz = ZNZModel(
         b_coef=b_coef,
         sig_coef=d["sig_coef"],
@@ -584,6 +839,8 @@ def load_znz(path: str) -> tuple:
         z_covariate=str(d["z_covariate"]),
         deg_xhat=deg_xhat,
         deg_z=deg_z,
+        b_med_coef=b_med_coef,
+        b_mix=b_mix,
     )
     cnz = CNZModel(
         g_grid=d["g_grid"],
