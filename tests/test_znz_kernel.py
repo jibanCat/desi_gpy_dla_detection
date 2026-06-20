@@ -237,8 +237,11 @@ _BROADEN012_KERNEL = _BROADEN012_DIR + "/posterior_kernel_2lpt0.npz"
 _BROADEN012_POINT = _BROADEN012_DIR + "/phase3d_v3_point_kernel.npz"
 
 
-@pytest.mark.skipif(not os.path.exists(_BROADEN012_KERNEL),
-                    reason="broaden012 bundle not present (scratch-only integration)")
+@pytest.mark.skipif(
+    not (os.path.exists(_BROADEN012_KERNEL) and os.path.exists(_BROADEN012_POINT)),
+    reason="broaden012 bundle not present (scratch-only integration): "
+           "requires both posterior_kernel_2lpt0.npz and phase3d_v3_point_kernel.npz",
+)
 def test_znz_off_is_bit_identical():
     """Knobs default-None ⇒ the v3 point fit reproduces the FROZEN broaden012 headline
     BIT-IDENTICALLY (the load-bearing default-OFF gate).
@@ -249,15 +252,20 @@ def test_znz_off_is_bit_identical():
     the real requirement (plan: "reproduce the broaden012 numbers to 0.0e0") is exact
     equality with the pre-change result, which this asserts. A loose check confirms the
     value still rounds to the published headline.
+
+    The skipif now requires BOTH the kernel file AND the point-cache file.  Previously
+    only the kernel was checked, so a fresh clone with kernel-present / point-cache-absent
+    would silently pass via the loose < 1e-4 sanity check alone, never reaching the
+    exact-equality assert.  The fix: gate jointly so the exact assert is always reached
+    when this test runs (no inner conditional).
     """
     from CDDF_analysis.run_phase3d_postkernel import _run_point_for_test
     a = _run_point_for_test(kernel_znz_model=None, c_nz_model=None)
     live = a["dndx"][20.0]
     # rounds to the published 0.09010 headline (sanity)
     assert abs(live - 0.09010) < 1e-4, f"off-path {live} != broaden012 headline 0.09010"
-    if os.path.exists(_BROADEN012_POINT):
-        frozen = float(np.load(_BROADEN012_POINT, allow_pickle=True)["dndx_total_20.0"])
-        # THE GATE: default-OFF reproduces the frozen broaden012 number to 0.0e0.
-        assert live == frozen, (
-            f"default-OFF NOT byte-identical: live={live!r} frozen={frozen!r} "
-            f"diff={live - frozen:.3e} (must be 0.0e0)")
+    frozen = float(np.load(_BROADEN012_POINT, allow_pickle=True)["dndx_total_20.0"])
+    # THE GATE: default-OFF reproduces the frozen broaden012 number to 0.0e0.
+    assert live == frozen, (
+        f"default-OFF NOT byte-identical: live={live!r} frozen={frozen!r} "
+        f"diff={live - frozen:.3e} (must be 0.0e0)")
