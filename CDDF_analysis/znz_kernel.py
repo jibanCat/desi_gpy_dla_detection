@@ -420,6 +420,114 @@ def fit_c_nz_model(meas_c: dict, smooth: float = 1.0) -> CNZModel:
 
 
 # ---------------------------------------------------------------------------
+# Stage-1 application: transform the cached posterior kernel in place
+# ---------------------------------------------------------------------------
+
+def _mass_conserving_rebin(src_mass: np.ndarray, src_centers: np.ndarray,
+                           edges: np.ndarray) -> np.ndarray:
+    """Redistribute a per-bin mass vector whose carriers sit at NEW centers
+    ``src_centers`` back onto the histogram defined by ``edges`` (len = n+1),
+    conserving total mass.
+
+    Each unit of mass at ``src_centers[j]`` is deposited into the destination bin
+    containing it (a clip-into-grid nearest-bin / piecewise-constant rebin). This is
+    the mass-conserving linear rebin in the degenerate limit where each source bin is
+    treated as a point mass at its (transformed) center — exact for the delta-kernel
+    test and a faithful 1st-order rebin for smooth kernels at the fine grid spacing.
+
+    Mass whose transformed center falls outside [edges[0], edges[-1]] is clipped into
+    the boundary bin (so Σ is preserved); for the production kernel the fine grid spans
+    the full prior so this is a no-op edge guard.
+
+    Parameters
+    ----------
+    src_mass : (n,) per-source-bin mass.
+    src_centers : (n,) transformed center of each source bin.
+    edges : (n+1,) destination bin edges (the fine logN grid edges).
+
+    Returns
+    -------
+    (n,) destination mass vector (Σ == Σ src_mass up to fp).
+    """
+    n = len(src_mass)
+    out = np.zeros(n, dtype=np.float64)
+    # destination bin index for each transformed center (clip into grid)
+    dest = np.searchsorted(edges, src_centers, side="right") - 1
+    dest = np.clip(dest, 0, n - 1)
+    np.add.at(out, dest, src_mass)
+    return out
+
+
+def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
+                         znz: "ZNZModel") -> np.ndarray:
+    """Transform a cached posterior kernel ``kappa[i, jN, kz]`` IN N-RESPONSE per
+    object i and z-bin kz using the conditional (x̂, z) bias/scatter model ``znz``.
+
+    For each object i (covariate z = ``cat_op['zhat'][i]``, x̂ = ``cat_op['xhat'][i]``):
+      * target mean   m_tgt = x̂_i − (b(x̂_i, z_i) − b_ref)   (the bias-corrected mean)
+      * width scale   s     = sig_ref / σ(x̂_i, z_i)
+    Each fine-N bin's mass in column kz is moved so that its center maps as
+        mid'_j = m_tgt + s · (mid_j − μ_col)
+    where μ_col is the CURRENT mass-weighted mean of that (i, kz) column. This relocates
+    the column to the bias-corrected mean m_tgt and width-scales the deviations about the
+    column's own current mean by s (so s=1 ⇒ no spread change). The result is re-binned
+    onto the fine logN grid (mass-conserving) and renormalized so Σ_jN is preserved per
+    (i, kz). The z-axis (kz) is left untouched (the kernel already carries the
+    z-distribution; this is an N-only correction). When b(x̂,z)=b_ref, σ=sig_ref AND the
+    column is already centred at x̂, the transform is the identity.
+
+    Empty (i, kz) columns (Σ=0) pass through unchanged. The returned array has the SAME
+    shape and dtype as ``kappa``.
+
+    NOTE (Phase 1, default-OFF gate): this is only CALLED when ``cfg.kernel_znz_model``
+    is set; with the knob None v3x_build_forward never invokes it, so the estimator is
+    byte-identical to the broaden012 headline.
+    """
+    kappa = np.asarray(kappa)
+    out_dtype = kappa.dtype
+    n_obs, n_nbins, n_zf = kappa.shape
+    assert n_nbins == len(logN_lo) == len(logN_hi), (
+        f"kappa N-axis {n_nbins} != logN grid {len(logN_lo)}")
+    mids = 0.5 * (np.asarray(logN_lo, float) + np.asarray(logN_hi, float))
+    edges = np.concatenate([np.asarray(logN_lo, float),
+                            [float(logN_hi[-1])]])
+    xhat = np.asarray(cat_op["xhat"], float)
+    zhat = np.asarray(cat_op["zhat"], float)
+    assert len(xhat) == n_obs and len(zhat) == n_obs, (
+        f"cat_op xhat/zhat length {len(xhat)}/{len(zhat)} != kappa rows {n_obs}; "
+        "the kernel must be row-aligned with the floored op set (cat_op)")
+
+    # per-object bias + scatter (vectorized over objects)
+    b_i = np.asarray(znz.b(xhat, zhat), float).ravel()
+    sig_i = np.asarray(znz.sigma(xhat, zhat), float).ravel()
+    b_ref = float(znz.b_ref)
+    sig_ref = float(znz.sig_ref)
+    m_tgt = xhat - (b_i - b_ref)                          # bias-corrected target mean
+    with np.errstate(divide="ignore", invalid="ignore"):
+        scale = np.where(sig_i > 0, sig_ref / sig_i, 1.0)
+    scale = np.where(np.isfinite(scale) & (scale > 0), scale, 1.0)
+
+    out = np.zeros_like(kappa, dtype=np.float64)
+    kf = kappa.astype(np.float64)
+    for i in range(n_obs):
+        si = float(scale[i]); mt = float(m_tgt[i])
+        for kz in range(n_zf):
+            col = kf[i, :, kz]
+            tot = col.sum()
+            if tot <= 0.0:
+                continue                                  # empty column: leave as zeros
+            mu_col = float((col * mids).sum() / tot)      # current mass-weighted mean
+            # relocate to the bias-corrected mean, width-scale about the current mean
+            new_centers = mt + si * (mids - mu_col)
+            rebinned = _mass_conserving_rebin(col, new_centers, edges)
+            s = rebinned.sum()
+            if s > 0:
+                rebinned *= (tot / s)                     # renormalize per (i, kz)
+            out[i, :, kz] = rebinned
+    return out.astype(out_dtype)
+
+
+# ---------------------------------------------------------------------------
 # Serialisation
 # ---------------------------------------------------------------------------
 

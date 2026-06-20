@@ -48,6 +48,49 @@ from CDDF_analysis.cddf_catalog_hbi import (
 )
 
 
+def _run_point_for_test(kernel_znz_model=None, c_nz_model=None,
+                        report_limits=(20.0, 20.3, 20.6)):
+    """Thin TEST helper: run the v3 (bspbody) UNTILTED point fit on the canonical
+    broaden012 WALL-1 bundle with the Track-C knobs set, returning the reduced dN/dX.
+
+    Reuses ``ab_loa0_fp_baseline.build_ingredients`` (the SAME cat_cut / frozen molly
+    C/ρ / pathlength / cached 2-D posterior kernel the WALL-1 stage 2/3 uses) so that
+    with the knobs default-None this reproduces the frozen broaden012 headline
+    dN/dX(≥20.0)=0.09010 BIT-IDENTICALLY (the load-bearing default-OFF gate). The knobs
+    set ``cfg.kernel_znz_model`` / ``cfg.c_nz_model`` which gate the (N,z) transform +
+    C(N,z) threading in ``v3x_build_forward`` — both OFF (None) by default.
+
+    Returns ``{"dndx": {lim: float}, "omega": {lim: float}}`` keyed by report limit.
+    Scratch-only integration helper (needs the broaden012 bundle); the unit tests guard
+    its caller with skipif.
+    """
+    import argparse as _ap
+    from CDDF_analysis import ab_loa0_fp_baseline as AB
+
+    ns = _ap.Namespace(
+        catalog_dir=AB.DEF_CAT, truth=AB.DEF_TRUTH, bal_cat=AB.DEF_BAL,
+        molly_tsv=None, kernel=AB.DEF_KERNEL, loa0_product=AB.DEF_LOA0_PRODUCT,
+        out="/tmp/track_c_point_for_test", mockdir=None, zbins="2.0,2.5,3.0,3.5",
+        report_limits=",".join(str(x) for x in report_limits), family="bspbody",
+        fit_floor=19.5, fit_ceil=99.0, lambda_bspbody=30.0, lam_rf_min=1025.0,
+        edge_slope_lam=40.0, gl_nodes=1, host_truth_floor=19.0,
+    )
+    os.makedirs(ns.out, exist_ok=True)
+    ing = AB.build_ingredients(ns, "purity_mixture")
+    cfg = ing["cfg"]
+    # gate the Track-C knobs (None => byte-identical to the frozen broaden012 headline)
+    cfg.kernel_znz_model = kernel_znz_model
+    cfg.c_nz_model = c_nz_model
+    res = ing["estimator_fn"](
+        ing["cat_cut"], ing["is_TP"], ing["good_mask"], ing["C_interp"],
+        ing["fp_model"], ing["X_tot"], ing["logN_lo"], ing["logN_hi"],
+        ing["N_b"], ing["dN_b"], ing["truth_cut"], cfg, boot_weights=None)
+    return {
+        "dndx": {lim: float(res["dndx_total"][lim]) for lim in report_limits},
+        "omega": {lim: float(res["omega"][lim]) for lim in report_limits},
+    }
+
+
 def _make_cfg(args) -> HBIConfig:
     zbins = tuple(float(x) for x in args.zbins.split(","))
     report_limits = tuple(float(x) for x in args.report_limits.split(","))

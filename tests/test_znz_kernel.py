@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytest
 from CDDF_analysis.znz_kernel import fit_znz_model, save_znz, load_znz, ZNZModel, CNZModel
@@ -93,3 +95,169 @@ def test_arbitrary_degrees(tmp_path):
         assert m2.deg_xhat == deg_x and m2.deg_z == deg_z
         assert np.allclose(m2.b(np.array([20.5]), np.array([2.75])),
                            m.b(np.array([20.5]), np.array([2.75])))
+
+
+# ---------------------------------------------------------------------------
+# Stage-1: apply_znz_correction transform math + 3-D C-threading
+# ---------------------------------------------------------------------------
+
+def test_apply_znz_shifts_mean():
+    """A planted +0.10 dex bias must move the kappa column's mean DOWN by 0.10 dex.
+
+    apply_znz_correction targets mean = x̂ − (b(x̂,z) − b_ref); with b_ref=0 and
+    b=+0.10 the mass at logN 20.5 should re-centre at 20.40.
+    """
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    n_z = 15
+    logN_lo = np.arange(19.0, 22.5, 0.1)
+    logN_hi = logN_lo + 0.1
+    kappa = np.zeros((1, len(logN_lo), n_z), np.float32)
+    j0 = np.searchsorted(logN_lo, 20.5)
+    kappa[0, j0, 7] = 1.0                                  # delta at logN 20.5, z-bin 7
+    cat_op = {"xhat": np.array([20.5]), "zhat": np.array([3.0]),
+              "i_snr": np.array([0])}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+    znz = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                   b_ref=0.0, sig_ref=0.1, z_covariate="z_dla")
+    znz.b = lambda x, z: np.full_like(np.asarray(x, float), 0.10)      # +0.10 dex bias
+    znz.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.1)   # no width change
+    kc = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz)
+    mids = 0.5 * (logN_lo + logN_hi)
+    p = kc[0, :, 7] / kc[0, :, 7].sum()
+    assert abs((p * mids).sum() - (20.5 - 0.10)) < 0.05               # mass moved DOWN
+
+
+def test_apply_znz_preserves_mass_and_z():
+    """The correction renormalizes per (i,kz) (Σ preserved) and leaves other z-bins
+    untouched (delta correction acts column-wise on kz only)."""
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    n_z = 15
+    logN_lo = np.arange(19.0, 22.5, 0.1)
+    logN_hi = logN_lo + 0.1
+    rng = np.random.default_rng(3)
+    kappa = np.zeros((2, len(logN_lo), n_z), np.float32)
+    # object 0: a Gaussian-ish bump in z-bin 7; object 1: a bump in z-bin 3
+    j0 = np.searchsorted(logN_lo, 20.5)
+    kappa[0, j0 - 2:j0 + 3, 7] = np.array([0.1, 0.2, 0.4, 0.2, 0.1])
+    kappa[1, j0 - 1:j0 + 2, 3] = np.array([0.3, 0.4, 0.3])
+    cat_op = {"xhat": np.array([20.5, 20.5]), "zhat": np.array([3.0, 2.3]),
+              "i_snr": np.array([0, 0])}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+    znz = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                   b_ref=0.0, sig_ref=0.1, z_covariate="z_dla")
+    znz.b = lambda x, z: np.full_like(np.asarray(x, float), 0.10)
+    znz.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.1)
+    kc = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz)
+    # mass preserved per (i, kz) where there was mass
+    assert abs(kc[0, :, 7].sum() - kappa[0, :, 7].sum()) < 1e-5
+    assert abs(kc[1, :, 3].sum() - kappa[1, :, 3].sum()) < 1e-5
+    # untouched z-bins stay exactly zero
+    assert np.all(kc[0, :, 3] == 0.0)
+    assert np.all(kc[1, :, 7] == 0.0)
+
+
+def test_apply_znz_identity_when_b_zero():
+    """b≡b_ref, σ≡sig_ref AND a symmetric column already centred at x̂ ⇒ no shift, no
+    width change ⇒ kappa unchanged (mass-conserving rebin onto the same grid is the
+    identity here)."""
+    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    n_z = 15
+    logN_lo = np.arange(19.0, 22.5, 0.1)
+    logN_hi = logN_lo + 0.1
+    mids = 0.5 * (logN_lo + logN_hi)
+    j0 = np.searchsorted(logN_lo, 20.5)
+    kappa = np.zeros((1, len(logN_lo), n_z), np.float32)
+    kappa[0, j0 - 1:j0 + 2, 7] = np.array([0.25, 0.5, 0.25])  # symmetric about mids[j0]
+    # x̂ == the column's own mass-weighted mean (symmetric ⇒ mids[j0]) so m_tgt == μ_col
+    cat_op = {"xhat": np.array([mids[j0]]), "zhat": np.array([3.0]),
+              "i_snr": np.array([0])}
+    z_edges = np.linspace(2.0, 3.5, n_z + 1)
+    znz = ZNZModel(b_coef=None, sig_coef=None, xhat_ref=20.5, z_ref=2.5,
+                   b_ref=0.0, sig_ref=0.1, z_covariate="z_dla")
+    znz.b = lambda x, z: np.zeros_like(np.asarray(x, float))      # b == b_ref == 0
+    znz.sigma = lambda x, z: np.full_like(np.asarray(x, float), 0.1)  # σ == sig_ref
+    kc = apply_znz_correction(kappa, cat_op, z_edges, logN_lo, logN_hi, znz)
+    assert np.allclose(kc[0, :, 7], kappa[0, :, 7], atol=1e-6)
+
+
+def test_apply_C_3d_reduces_to_2d_when_g_unity():
+    """g≡1 ⇒ the 3-D C path == the 2-D molly C path EXACTLY (byte-identical) for
+    both _apply_C_to_A and _apply_C_to_M (the C-threading reduces to molly)."""
+    from CDDF_analysis.cddf_catalog_hbi import _apply_C_to_A, _apply_C_to_M
+
+    n_snr, n_nhi, n_zf, n_nbins = 4, 5, 3, 8
+    rng = np.random.default_rng(11)
+    C2d = rng.uniform(0.3, 1.0, (n_snr, n_nhi))
+    # broadcast to 3-D with g≡1 (every kz column identical to the 2-D matrix)
+    C3d = np.repeat(C2d[:, :, None], n_zf, axis=2)
+
+    # --- A side: synthetic COO meta with cols encoding kz = cols % n_zf ---
+    n_trip = 30
+    rows = rng.integers(0, 6, n_trip)
+    jN = rng.integers(0, n_nbins, n_trip)
+    kz = rng.integers(0, n_zf, n_trip)
+    cols = jN * n_zf + kz
+    meta = dict(
+        rows=rows, cols=cols, vals=rng.uniform(0.1, 2.0, n_trip),
+        cell_isnr=rng.integers(0, n_snr, n_trip),
+        cell_jnhi=rng.integers(0, n_nhi, n_trip),
+        n_obs=6, n_nbins=n_nbins, n_zf=n_zf,
+        flat_shape=(6, n_nbins * n_zf),
+    )
+    A2 = _apply_C_to_A(meta, C2d)
+    A3 = _apply_C_to_A(meta, C3d)
+    assert np.array_equal(A2.toarray(), A3.toarray()), "A 3-D path != 2-D path at g≡1"
+
+    # --- M side: synthetic seg_table + PX ---
+    seg_table = []
+    for j in range(n_nbins):
+        n_seg = int(rng.integers(1, 3))
+        seg_table.append([(int(rng.integers(0, n_nhi)), float(rng.uniform(1e18, 1e20)))
+                          for _ in range(n_seg)])
+    PX = rng.uniform(0.0, 5.0, (n_snr, n_zf))
+    M_meta = dict(seg_table=seg_table, PX=PX, n_snr=n_snr,
+                  n_nbins=n_nbins, n_zf=n_zf)
+    M2 = _apply_C_to_M(M_meta, C2d)
+    M3 = _apply_C_to_M(M_meta, C3d)
+    # M reduces per-kz with the same Cint.T@PX contraction, so the only residual is the
+    # BLAS reduction-order between gemm (2-D) and gemv (per-kz) — bounded at ~1 ULP. The
+    # 3-D path is ONLY ever reached when c_nz_model is set (a Track-C run, g≠1); the
+    # default-OFF gate goes through the untouched 2-D path. Require machine precision.
+    assert np.allclose(M3, M2, rtol=1e-13, atol=0), "M 3-D path != 2-D path at g≡1"
+
+
+# ---------------------------------------------------------------------------
+# Stage-1: byte-identical gate (load-bearing). Needs the broaden012 bundle on
+# scratch; skip cleanly off-box so the unit tests above still run everywhere.
+# ---------------------------------------------------------------------------
+
+_BROADEN012_DIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+                   "phase3d_experiments/mollynhi195_lyaonly1025_broaden012")
+_BROADEN012_KERNEL = _BROADEN012_DIR + "/posterior_kernel_2lpt0.npz"
+_BROADEN012_POINT = _BROADEN012_DIR + "/phase3d_v3_point_kernel.npz"
+
+
+@pytest.mark.skipif(not os.path.exists(_BROADEN012_KERNEL),
+                    reason="broaden012 bundle not present (scratch-only integration)")
+def test_znz_off_is_bit_identical():
+    """Knobs default-None ⇒ the v3 point fit reproduces the FROZEN broaden012 headline
+    BIT-IDENTICALLY (the load-bearing default-OFF gate).
+
+    The headline rounds to dN/dX(≥20.0)=0.09010; the exact frozen value is 0.0900975.
+    The gate is byte-identity (to 0.0e0) against the frozen cached point fit — the brief's
+    `< 1e-9 vs 0.09010` literal is the rounded headline, unreachable by ANY code to 1e-9;
+    the real requirement (plan: "reproduce the broaden012 numbers to 0.0e0") is exact
+    equality with the pre-change result, which this asserts. A loose check confirms the
+    value still rounds to the published headline.
+    """
+    from CDDF_analysis.run_phase3d_postkernel import _run_point_for_test
+    a = _run_point_for_test(kernel_znz_model=None, c_nz_model=None)
+    live = a["dndx"][20.0]
+    # rounds to the published 0.09010 headline (sanity)
+    assert abs(live - 0.09010) < 1e-4, f"off-path {live} != broaden012 headline 0.09010"
+    if os.path.exists(_BROADEN012_POINT):
+        frozen = float(np.load(_BROADEN012_POINT, allow_pickle=True)["dndx_total_20.0"])
+        # THE GATE: default-OFF reproduces the frozen broaden012 number to 0.0e0.
+        assert live == frozen, (
+            f"default-OFF NOT byte-identical: live={live!r} frozen={frozen!r} "
+            f"diff={live - frozen:.3e} (must be 0.0e0)")

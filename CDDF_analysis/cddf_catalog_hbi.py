@@ -122,6 +122,20 @@ class HBIConfig:
     fp_estimator: str = "purity_mixture"
     n_sl_prod: Optional[int] = None  # for loa-0 ell_eff variance scale
     loa0_product_path: Optional[str] = None  # npz from build_loa0_fp_product.py (loa0 FP)
+    # --- Track-C (N,z) kernel + completeness knobs (gated, DEFAULT-OFF byte-identical) ---
+    kernel_znz_model: Optional[str] = None  # path to znz NPZ (save_znz). When set,
+    #                                    v3x_build_forward applies apply_znz_correction to
+    #                                    the cached 2-D posterior kernel (shifts/width-scales
+    #                                    the per-object N-response by the conditional
+    #                                    b(x̂,z)/σ(x̂,z) model). None => the kernel is used as
+    #                                    cached, BYTE-IDENTICAL to the broaden012 headline.
+    c_nz_model: Optional[str] = None  # path to znz NPZ (carries the CNZModel g(N,z)). When
+    #                                    set, the 2-D molly completeness C[i_snr,j_nhi] is
+    #                                    promoted to a 3-D C[i_snr,j_nhi,kz] = C·g[j_nhi,kz]
+    #                                    threaded through _apply_C_to_{A,M}. None => the 2-D
+    #                                    molly C is used, BYTE-IDENTICAL. (Phase 1: the MC
+    #                                    C-perturbation still draws on the 2-D molly C and g
+    #                                    is applied as a fixed deterministic factor.)
     # --- v2 forward-HBI knobs (all defaulted; v1 callers byte-unaffected) ---
     v2_lambda_smooth: Optional[float] = None   # None => choose by L-curve over the grid
     v2_lambda_grid: tuple = (1e-3, 3e-3, 1e-2, 3e-2, 1e-1)  # G4 sensitivity range
@@ -2681,9 +2695,19 @@ def dense_synthetic_wall1_inputs(cfg, fine_grid, mm, qso_per_sl, Xcalc,
 
 
 def _apply_C_to_A(meta, C_matrix):
-    """Build the C-scaled CSR A from the unit-C COO triples + a completeness matrix
-    C_matrix[i_snr, j_nhi]. Used at the point estimate AND per-MC-draw (cheap)."""
-    cfac = C_matrix[meta["cell_isnr"], meta["cell_jnhi"]]
+    """Build the C-scaled CSR A from the unit-C COO triples + a completeness matrix.
+
+    2-D ``C_matrix[i_snr, j_nhi]`` (legacy molly C): the historical path, byte-identical.
+    3-D ``C_matrix[i_snr, j_nhi, kz]`` (Track-C c_nz_model g(N,z) threading): the per-
+    triple z-bin kz is recovered from the flat column index ``cols = j_nhi_fine·n_zf+kz``,
+    so ``kz = cols % n_zf`` (Track-C gated, OFF by default). Used at the point estimate
+    AND per-MC-draw (cheap)."""
+    C_matrix = np.asarray(C_matrix)
+    if C_matrix.ndim == 3:
+        kz = np.asarray(meta["cols"], int) % int(meta["n_zf"])
+        cfac = C_matrix[meta["cell_isnr"], meta["cell_jnhi"], kz]
+    else:
+        cfac = C_matrix[meta["cell_isnr"], meta["cell_jnhi"]]
     cfac = np.where(np.isfinite(cfac) & (cfac > 0), cfac, C_FLOOR)
     vals = meta["vals"] * cfac
     return _sp.csr_matrix((vals, (meta["rows"], meta["cols"])),
@@ -2755,10 +2779,36 @@ def build_M_b(qso_zlo, qso_zhi, qso_snr, mm: MollyMatrix,
 
 def _apply_C_to_M(M_meta, C_matrix):
     """Build M[jN,kz] flat from the seg table + PX + a completeness matrix.
-    M_{jN,kz} = (Σ_seg C[c,jcell]·ΔN_seg) contracted with PX[c,kz] summed over c.
-    Returns flat M of length n_nbins·n_zf."""
+
+    2-D ``C_matrix[i_snr, j_nhi]`` (legacy molly C): byte-identical historical path,
+        M_{jN,kz} = (Σ_seg C[c,jcell]·ΔN_seg) contracted with PX[c,kz] summed over c.
+    3-D ``C_matrix[i_snr, j_nhi, kz]`` (Track-C c_nz_model g(N,z) threading, OFF by
+    default): the completeness is z-dependent, so the C-weighted ΔN table carries kz,
+        M_{jN,kz} = Σ_c (Σ_seg C[c,jcell,kz]·ΔN_seg)·PX[c,kz].
+    At g≡1 (C3d[c,jcell,kz]=C2d[c,jcell] ∀kz) the 3-D result is bit-identical to the 2-D
+    path. Returns flat M of length n_nbins·n_zf."""
     n_nbins = M_meta["n_nbins"]; n_zf = M_meta["n_zf"]; n_snr = M_meta["n_snr"]
     PX = M_meta["PX"]
+    C_matrix = np.asarray(C_matrix)
+    if C_matrix.ndim == 3:
+        # Cint[c, jN, kz] — the completeness ΔN table is now z-dependent.
+        Cint = np.zeros((n_snr, n_nbins, n_zf))
+        for j, segs in enumerate(M_meta["seg_table"]):
+            for (jcell, dN_seg) in segs:
+                cmat = C_matrix[:, jcell, :]                         # (n_snr, n_zf)
+                # M-side empty-cell convention (review F5): C=0 (no pathlength searched),
+                # NOT the A-side 1/C-guard floor.
+                cmat = np.where(np.isfinite(cmat) & (cmat > 0), cmat, 0.0)
+                Cint[:, j, :] += cmat * dN_seg
+        # M[jN, kz] = Σ_c Cint[c,jN,kz]·PX[c,kz]. Reduce PER kz with the SAME `Cint.T @ PX`
+        # contraction the 2-D path uses (column kz = Cint[:,:,kz].T @ PX[:,kz]) so that at
+        # g≡1 (Cint[:,:,kz] == the 2-D Cint ∀kz) the result is BIT-IDENTICAL to the 2-D
+        # path (einsum reorders the c-sum and breaks bit-equality; per-column @ does not).
+        M = np.zeros((n_nbins, n_zf))
+        for kz in range(n_zf):
+            M[:, kz] = Cint[:, :, kz].T @ PX[:, kz]
+        return M.reshape(-1)
+    # --- legacy 2-D path (byte-identical) ---
     # Cint[c, jN]
     Cint = np.zeros((n_snr, n_nbins))
     for j, segs in enumerate(M_meta["seg_table"]):
@@ -2775,6 +2825,35 @@ def _apply_C_to_M(M_meta, C_matrix):
     # M[jN, kz] = Σ_c Cint[c,jN] PX[c,kz]
     M = Cint.T @ PX                       # (n_nbins, n_zf)
     return M.reshape(-1)
+
+
+def _build_C_nz_3d(C_matrix_2d, cnz, mm, n_zf):
+    """Promote the 2-D molly completeness C[i_snr, j_nhi] to a 3-D z-dependent
+    C[i_snr, j_nhi, kz] = C·g(j_nhi, kz) using the CNZModel completeness z-correction.
+
+    The CNZModel ``g_grid[j_nhi_cell, kz]`` lives on the SAME molly nhi-cell axis as
+    ``C_matrix_2d`` and the fine-z grid the forward uses (built by build_cache from the
+    same molly + cfg fine-z step). We assert grid compatibility (n_nhi, n_zf) and the
+    molly nhi_edges match, then broadcast: C3[s, j, kz] = C_matrix_2d[s, j]·g_grid[j, kz].
+
+    Track-C only (gated). g(j, z_ref)=1 by construction so the integrated z-marginal
+    completeness is unchanged at the reference column; g moves recovery toward higher z
+    (denser forest) per the diagnosis. Returns a (n_snr, n_nhi, n_zf) float array."""
+    C2 = np.asarray(C_matrix_2d, float)
+    n_snr, n_nhi = C2.shape
+    g = np.asarray(cnz.g_grid, float)
+    if g.shape != (n_nhi, n_zf):
+        raise ValueError(
+            f"CNZModel g_grid {g.shape} != (molly n_nhi={n_nhi}, fwd n_zf={n_zf}); the "
+            "completeness model must be built on the SAME molly nhi-cell × fine-z grid "
+            "the forward uses (rebuild the znz cache with the matching molly + z step).")
+    if not np.allclose(np.asarray(cnz.nhi_edges, float), np.asarray(mm.nhi_edges, float),
+                       equal_nan=True):
+        raise ValueError(
+            "CNZModel nhi_edges != molly nhi_edges; g(N,z) was measured on a different "
+            "NHI grid than the completeness it multiplies — refusing to mis-thread.")
+    # C3[s, j, kz] = C2[s, j] · g[j, kz]
+    return C2[:, :, None] * g[None, :, :]
 
 
 # -----------------------------------------------------------------------------
@@ -5607,6 +5686,19 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
             f"cfg._posterior_kernel_2d rows {kappa2d.shape[0]} != op_base rows "
             f"{int(op_base.sum())} — kernel must be built in the SAME op order")
         pk_arg = kappa2d[keep_in_base]
+        # --- Track-C (N,z) KERNEL TRANSFORM (gated, DEFAULT-OFF byte-identical) ---
+        # When cfg.kernel_znz_model is set, transform the floored op kernel pk_arg IN
+        # N-RESPONSE per object/z-bin using the conditional b(x̂,z)/σ(x̂,z) model. pk_arg
+        # is row-aligned with cat_op (both sliced by keep_in_base), so apply_znz_correction
+        # consumes cat_op (xhat/zhat/i_snr) directly. None => pk_arg used as cached
+        # (apply_znz_correction is NEVER called → bit-identical to broaden012).
+        _znz_path = getattr(cfg, "kernel_znz_model", None)
+        if _znz_path is not None:
+            from CDDF_analysis.znz_kernel import apply_znz_correction, load_znz
+            znz_model = load_znz(_znz_path)[0]
+            pk_arg = apply_znz_correction(
+                pk_arg, cat_op, z_edges_fine, logN_lo, logN_hi, znz_model
+            ).astype(pk_arg.dtype)
     try:
         if float(_a_col_floor) < _saved_v2floor - 1e-9:
             cfg.v2_logN_fit_floor = float(_a_col_floor)
@@ -5630,6 +5722,19 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     # via the smooth bspbody). Extending M_full to basis_pad_floor with the same C closes
     # that gap. (No-op when basis_pad_floor == logN_fit_floor: the original behavior.)
     C_matrix = mm.completeness
+    # --- Track-C C(N,z) THREADING (gated, DEFAULT-OFF byte-identical) ---
+    # When cfg.c_nz_model is set, promote the 2-D molly completeness C[i_snr,j_nhi] to a
+    # 3-D C[i_snr,j_nhi,kz] = C·g[j_nhi,kz] (the CNZModel z-correction), threaded through
+    # _apply_C_to_{A,M} (which detect ndim==3 and index kz = cols % n_zf). None => the 2-D
+    # molly C is passed unchanged → the ndim==2 path → bit-identical to broaden012.
+    # PHASE 1: the per-MC-draw C-perturbation (make_v3x_refit_fn) still draws on the 2-D
+    # molly C and DOES NOT carry g — g is a fixed deterministic factor on the POINT forward
+    # only (documented; the MC band's C-jitter is g-free for now).
+    _cnz_path = getattr(cfg, "c_nz_model", None)
+    if _cnz_path is not None:
+        from CDDF_analysis.znz_kernel import load_znz
+        cnz_model = load_znz(_cnz_path)[1]
+        C_matrix = _build_C_nz_3d(C_matrix, cnz_model, mm, len(z_edges_fine) - 1)
     A_full = _apply_C_to_A(A_meta, C_matrix)
     M_full = _apply_C_to_M(M_meta, C_matrix)
     # ---- FIT-SUPPORT FIX (4-lens review, all 4 referees, BLOCKER) -------------
