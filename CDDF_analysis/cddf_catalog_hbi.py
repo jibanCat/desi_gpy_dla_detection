@@ -1594,6 +1594,10 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
         "dndx_z": {lim: np.full((cfg.n_mc, n_zbins), np.nan) for lim in limits},
         "dndx_total": {lim: np.full(cfg.n_mc, np.nan) for lim in limits},
         "omega": {lim: np.full(cfg.n_mc, np.nan) for lim in limits},
+        # ADDITIVE per-z differential CDDF (n_mc, n_nbins, n_zbins); populated only on
+        # the v3x refit path (genuine 2-D f). NaN otherwise. Extra key — does not change
+        # f_b / dndx_z / dndx_total / omega.
+        "f_bk_coarse": np.full((cfg.n_mc, n_nbins, n_zbins), np.nan),
     }
 
     is_purity_mix = isinstance(fp_model, PurityMixtureFP)
@@ -1636,6 +1640,8 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
         if refit_fn is not None:
             red = refit_fn(C_draw, rho_draw, nhi_m, boot_w, m)
             samples["f_b"][m] = red["f_b"]
+            if red.get("f_bk_coarse") is not None:
+                samples["f_bk_coarse"][m] = red["f_bk_coarse"]
             for lim in limits:
                 samples["dndx_z"][lim][m] = red["dndx_z"][lim]
                 samples["dndx_total"][lim][m] = red["dndx_total"][lim]
@@ -3763,6 +3769,43 @@ def _v2_reduce(cfg, f_2d, logN_lo, logN_hi, N_b, dN_b, z_edges_fine, M_meta):
         dndx_total[lim] = float(np.nansum(f_b[sel] * dN_b[sel]))
         omega[lim] = float(K * np.nansum(N_b[sel] * f_b[sel] * dN_b[sel]))
     return dict(f_b=f_b, dndx_z=dndx_z, dndx_total=dndx_total, omega=omega)
+
+
+def _coarse_z_differential_f(f_2d, z_edges_fine, zbins_coarse, M_meta):
+    """The GENUINE per-coarse-z differential CDDF f(N | z_coarse), built from the SAME
+    z-resolved fine-grid ``f_2d`` (shape (n_nbins, n_zf)) that ``_v2_reduce`` integrates
+    for ``dndx_z``. NOT the v1-parity ``np.repeat(f_b, ...)`` filler.
+
+    Returns ``f_bk_coarse`` of shape (n_nbins, n_zc) where, for coarse z bin c,
+
+        f_bk_coarse[:, c] = ( Σ_{kz∈c} f_2d[:, kz] · PXz[kz] ) / X_coarse[c]
+
+    i.e. the pathlength-weighted average of the fine-z density over the fine sub-bins
+    that fall in coarse bin c — the EXACT same PXz / X_coarse / zfmap weighting that
+    ``_v2_reduce`` uses for ``dndx_z``. This makes the per-z f correct BY CONSTRUCTION,
+    tying it to the already-reported per-z dN/dX:
+
+        Σ_{N≥lim} f_bk_coarse[:, c] · dN_b      == dndx_z[lim][c]
+        K · Σ_{N≥lim} N_b · f_bk_coarse[:, c] · dN_b == omega_z[lim][c]
+
+    (proven in the consistency assertion of hbi_fNz_coverage.py). Coarse bins with no
+    fine sub-bins / zero pathlength are NaN."""
+    zbins = np.asarray(zbins_coarse, float)
+    n_zc = len(zbins) - 1
+    n_nbins = f_2d.shape[0]
+    zfmap = _fine_to_coarse_zmap(z_edges_fine, zbins)
+    PXz = M_meta["PX"].sum(axis=0)  # (n_zf,) total pathlength per fine z-bin
+    X_coarse = np.zeros(n_zc)
+    for kz in range(len(zfmap)):
+        if zfmap[kz] >= 0:
+            X_coarse[zfmap[kz]] += PXz[kz]
+    f_bk_coarse = np.full((n_nbins, n_zc), np.nan)
+    for c in range(n_zc):
+        cols = np.where(zfmap == c)[0]
+        if cols.size == 0 or X_coarse[c] <= 0:
+            continue
+        f_bk_coarse[:, c] = (f_2d[:, cols] * PXz[None, cols]).sum(axis=1) / X_coarse[c]
+    return f_bk_coarse
 
 
 # -----------------------------------------------------------------------------
@@ -5981,6 +6024,11 @@ def v3x_reduce(cfg, theta, fine, family, M_meta) -> dict:
     sel_lls = (logN_lo >= 17.2 - 1e-9) & (logN_hi <= 19.5 + 1e-9)
     out = dict(red)
     out["f_2d"] = f_2d
+    # ADDITIVE (per-z differential CDDF deliverable): the genuine 2-D f at the COARSE
+    # report z-bins, tied by construction to dndx_z (see _coarse_z_differential_f).
+    # Extra key only — no existing output is changed.
+    out["f_bk_coarse"] = _coarse_z_differential_f(
+        f_2d, z_edges_fine, cfg.zbins, M_meta)
     out["dndx_subdla_band"] = float(np.nansum(f_b[selb] * dN_b[selb]))
     out["omega_subdla_band"] = float(K * np.nansum(N_b[selb] * f_b[selb] * dN_b[selb]))
     out["ell_lls_extrap"] = float(np.nansum(f_b[sel_lls] * dN_b[sel_lls]))  # NOT a measurement
@@ -6704,12 +6752,13 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
                     **{f"dndx_{l}": rr["dndx_total"][l] for l in cfg.report_logN_limits},
                     **{f"omega_{l}": rr["omega"][l] for l in cfg.report_logN_limits},
                     dndx_subdla=rr["dndx_subdla_band"], omega_subdla=rr["omega_subdla_band"],
-                    f_b=rr["f_b"])
+                    f_b=rr["f_b"], f_bk_coarse=rr["f_bk_coarse"])
     seeds = rng.integers(0, 2**31 - 1, size=n_mc)
     results = (pool.map(_draw, list(seeds)) if (pool is not None and n_mc > 1)
                else [_draw(int(s)) for s in seeds])
     thetas = np.array([r["theta"] for r in results])
     f_bs = np.array([r["f_b"] for r in results])
+    f_bks = np.array([r["f_bk_coarse"] for r in results])  # (n_mc, n_nbins, n_zc)
 
     def _q(a, axis=0):
         return dict(mean=np.nanmean(a, axis=axis), std=np.nanstd(a, axis=axis),
@@ -6723,6 +6772,8 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
     out["dndx_subdla"] = _q(np.array([r["dndx_subdla"] for r in results]))
     out["omega_subdla"] = _q(np.array([r["omega_subdla"] for r in results]))
     out["_theta_samples"] = thetas; out["_f_b_samples"] = f_bs
+    # ADDITIVE per-z differential CDDF band: genuine 2-D f at coarse z, (n_mc,nN,nzc).
+    out["_f_bk_coarse_samples"] = f_bks
     return out
 
 
@@ -6823,7 +6874,10 @@ def make_v3x_refit_fn(cfg, point_v3x, mm):
                                          fine, family, boot_w, rg)
         rr = v3x_reduce(cfg, theta_inner, fine, family, M_meta)
         n_zc = len(np.asarray(cfg.zbins, float)) - 1
+        # f_bk = v1-PARITY FILLER (np.repeat of the z-marginal f_b), retained for
+        # backward-compat. f_bk_coarse = the GENUINE 2-D f at coarse z (additive).
         return dict(f_b=rr["f_b"], f_bk=np.repeat(rr["f_b"][:, None], n_zc, axis=1),
+                    f_bk_coarse=rr["f_bk_coarse"],
                     dndx_z=rr["dndx_z"], dndx_total=rr["dndx_total"], omega=rr["omega"])
     return refit_fn
 
