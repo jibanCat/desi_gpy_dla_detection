@@ -44,6 +44,9 @@ import numpy as np
 from numpy.polynomial.polynomial import polyvander2d
 from scipy.ndimage import gaussian_filter1d
 
+# numpy 2.0 renamed np.trapz -> np.trapezoid; alias preserves both (numpy 1.22+ and 2.x).
+_trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -1269,6 +1272,14 @@ class ForwardResponseModel:
         collapse — no spurious right-skew extrapolated past N≈21).
     sig_floor : float
         Lower clip on σ (keeps the skew-normal well-defined; default 1e-3 dex).
+    emp : EmpiricalForwardDensity or None
+        OPTIONAL smoothed-empirical per-cell forward residual density (the A/B
+        ``resp_family="empirical"`` path, T-BC FIX).  When present, ``response_density_empirical``
+        evaluates p(x̂|N,SNR,z) from a per-(SNR,z) smoothed histogram of the truth-match
+        residual r = x̂ − N_true, resolved/interpolated in N_true — so it carries the TRUE
+        high-N response SHAPE (the narrowing + skew collapse at N≈21) that the parametric
+        skew-normal OVERSHOOTS.  ``None`` ⇒ only the parametric skew-normal density is available
+        (backward-compatible; older NPZs load with ``emp=None``).
     """
     mu_coef: np.ndarray
     sig_coef: np.ndarray
@@ -1279,6 +1290,7 @@ class ForwardResponseModel:
     deg_N: int = 2
     N_skew_collapse: float = 21.0
     sig_floor: float = 1e-3
+    emp: Optional["EmpiricalForwardDensity"] = None
 
     # --- cell lookup ---------------------------------------------------------
     def _i_snr(self, snr):
@@ -1372,6 +1384,267 @@ class ForwardResponseModel:
         xhat = np.asarray(xhat, float).ravel()
         xi, om, a = self.response_skewnormal(N, snr, zqso)
         return _skewnorm.pdf(xhat, a, loc=xi, scale=om)
+
+    def response_density_empirical(self, xhat, N, snr, zqso):
+        """SMOOTHED-EMPIRICAL forward density p(x̂ | N_true, SNR, z_QSO) from ``self.emp``.
+
+        The GENUINE T-BC empirical density: for each detection, evaluate the per-(SNR,z)
+        smoothed residual density of r = x̂ − N_true, interpolated in N_true, at the
+        residual r = x̂ − N.  This carries the TRUE high-N response SHAPE — the narrowing +
+        skew collapse at N≈21 — that the parametric skew-normal moment-fit OVERSHOOTS (the
+        Ω lever).  The density is per-unit-x̂ (dr/dx̂ = 1) and integrates to 1 over x̂ at
+        fixed N (the normalization convention), so the deconvolution kernel A is the SAME
+        marked-Poisson object as the parametric path — only the column SHAPE differs.
+
+        Requires ``self.emp`` (an ``EmpiricalForwardDensity``); raises if ``None`` (the
+        loader leaves it None for legacy NPZs, and the build wires it explicitly).
+
+        ``xhat``, ``N``, ``snr``, ``zqso`` broadcast element-wise (ravel to a common length).
+        """
+        if self.emp is None:
+            raise ValueError(
+                "response_density_empirical requires the model's empirical density "
+                "(ForwardResponseModel.emp); rebuild with build_empirical_forward_density "
+                "(or use resp_family='skewnorm').")
+        return self.emp.density(xhat, N, snr, zqso)
+
+
+# =====================================================================
+# Smoothed-empirical per-cell forward density (the T-BC Ω lever)
+# =====================================================================
+
+@dataclass
+class EmpiricalForwardDensity:
+    """SMOOTHED-EMPIRICAL forward response p(x̂ | N_true, SNR, z_QSO), stored as a per-cell
+    grid of residual (r = x̂ − N_true) densities resolved in N_true.
+
+    This is the GENUINE non-parametric forward density (the T-BC fix, the toy's
+    ``build_empirical_fwd_kernel`` analog): for each (SNR-bin, z-bin) cell it carries a
+    smoothed/normalized histogram of the truth-match residual r on a SHARED fixed residual
+    grid ``r_grid``, evaluated at several N_true anchors.  ``density(x̂,N,snr,z)`` looks up
+    the cell, interpolates the residual density LINEARLY in N_true between anchors and
+    LINEARLY in r on ``r_grid``, and returns p(x̂|N) = ρ(r = x̂ − N).
+
+    Because the residual density is built per N_true anchor directly from the truth-match
+    (NOT moment-matched to a parametric family), it carries the TRUE high-N shape — the
+    width narrowing and the right-skew COLLAPSE at N≈21 that the skew-normal over-spreads.
+
+    NON-CIRCULAR: every cell is a histogram of (x̂ − N_true) binned on the TRUE value
+    N_true (× SNR × z_QSO) — there is NO dN/dX / f / Ω input.  Reproducible: the build is a
+    deterministic histogram + fixed-σ Gaussian smoothing (no RNG).
+
+    Normalization: each per-anchor residual density integrates to 1 over r on ``r_grid``
+    (trapezoid), so ∫ p(x̂|N) dx̂ = 1 (the forward-likelihood convention).  It is NEVER
+    renormalized over N (Σ_N ≠ 1) — that asymmetry vs the renormalized posterior kappa is
+    the whole reason the forward kernel removes the high-N over-recovery.
+
+    Attributes
+    ----------
+    rho : (n_snr, n_z, n_anchor, n_r) float
+        Per-cell, per-N-anchor smoothed residual density on ``r_grid`` (each ∫dr = 1).
+    N_anchors : (n_snr, n_z, n_anchor) float
+        The N_true anchor centers per cell (ascending; the interpolation knots in N).
+    r_grid : (n_r,) float
+        Shared residual axis r = x̂ − N_true (uniform; the density is evaluated/interp'd here).
+    snr_edges, z_edges : (n_snr+1,), (n_z+1,) float
+        Cell edges (SHARED with the parent ForwardResponseModel; same _i_snr/_i_z mapping).
+    """
+    rho: np.ndarray
+    N_anchors: np.ndarray
+    r_grid: np.ndarray
+    snr_edges: np.ndarray
+    z_edges: np.ndarray
+
+    def _i_snr(self, snr):
+        return np.clip(np.searchsorted(self.snr_edges, np.asarray(snr, float),
+                                       side="right") - 1, 0, len(self.snr_edges) - 2)
+
+    def _i_z(self, zqso):
+        return np.clip(np.searchsorted(self.z_edges, np.asarray(zqso, float),
+                                       side="right") - 1, 0, len(self.z_edges) - 2)
+
+    def density(self, xhat, N, snr, zqso):
+        """p(x̂|N,SNR,z) = ρ_cell(r = x̂ − N), interpolated linearly in N_true and in r.
+
+        ``xhat``, ``N``, ``snr``, ``zqso`` broadcast element-wise (ravel to a common length).
+        Out-of-grid residuals (|r| beyond ``r_grid``) evaluate to 0 (the smoothed-empirical
+        density has compact support — its tail mass is captured inside the residual window).
+        """
+        xhat = np.asarray(xhat, float).ravel()
+        N = np.asarray(N, float).ravel()
+        i_snr = np.asarray(self._i_snr(snr), int).ravel()
+        i_z = np.asarray(self._i_z(zqso), int).ravel()
+        n = max(xhat.size, N.size, i_snr.size, i_z.size)
+        xhat = np.broadcast_to(xhat, (n,))
+        N = np.broadcast_to(N, (n,))
+        i_snr = np.broadcast_to(i_snr, (n,))
+        i_z = np.broadcast_to(i_z, (n,))
+        r = xhat - N
+        r_grid = self.r_grid
+        r0 = float(r_grid[0]); dr = float(r_grid[1] - r_grid[0]); n_r = len(r_grid)
+        out = np.zeros(n)
+        # group by (i_snr, i_z) cell so the per-anchor interpolation is vectorized per cell
+        cells = np.unique(np.stack([i_snr, i_z], axis=1), axis=0)
+        for a, b in cells:
+            sel = (i_snr == a) & (i_z == b)
+            if not sel.any():
+                continue
+            Ncen = self.N_anchors[a, b]                # (n_anchor,) ascending
+            rho_ab = self.rho[a, b]                    # (n_anchor, n_r)
+            Nsel = N[sel]; rsel = r[sel]
+            # --- linear interp in N_true between anchors (clamped to the anchor range) ---
+            ki = np.clip(np.searchsorted(Ncen, Nsel, side="right") - 1, 0,
+                         len(Ncen) - 2)
+            N0 = Ncen[ki]; N1 = Ncen[ki + 1]
+            wN = np.clip((Nsel - N0) / np.where(N1 > N0, N1 - N0, 1.0), 0.0, 1.0)
+            # --- linear interp in r on the uniform residual grid ---
+            fr = (rsel - r0) / dr
+            j0 = np.floor(fr).astype(int)
+            inb = (j0 >= 0) & (j0 < n_r - 1)
+            wr = np.zeros(rsel.shape); jj = np.zeros(rsel.shape, int)
+            wr[inb] = (fr[inb] - j0[inb]); jj[inb] = j0[inb]
+            # bilinear over (anchor, r): blend the two bracketing anchor rows then the two r cols
+            d_lo = rho_ab[ki, jj] * (1.0 - wr) + rho_ab[ki, jj + 1] * wr
+            d_hi = rho_ab[ki + 1, jj] * (1.0 - wr) + rho_ab[ki + 1, jj + 1] * wr
+            dens = d_lo * (1.0 - wN) + d_hi * wN
+            dens = np.where(inb, dens, 0.0)
+            out[sel] = np.clip(dens, 0.0, None)
+        return out
+
+
+def build_empirical_forward_density(meas: dict,
+                                    snr_edges=(2.0, 3.5, 6.5, np.inf),
+                                    z_edges=(0.0, 2.56, 2.96, np.inf),
+                                    n_N_cells: int = 7,
+                                    min_count: int = 60,
+                                    r_lo: float = -1.5,
+                                    r_hi: float = 1.5,
+                                    n_r: int = 121,
+                                    smooth_dr: float = 0.05) -> "EmpiricalForwardDensity":
+    """Build the smoothed-empirical forward residual density from the truth-match (the
+    GENUINE T-BC empirical kernel; the toy's ``build_empirical_fwd_kernel`` analog).
+
+    For each (SNR-bin × z-bin) cell, slice N_true into ``n_N_cells`` quantile sub-bins, and
+    in each sub-bin form a SMOOTHED, NORMALIZED histogram of the residual r = x̂ − N_true on
+    the shared grid ``r_grid`` = linspace(r_lo, r_hi, n_r).  Smoothing is a fixed-width
+    Gaussian (σ = ``smooth_dr`` dex) — a reproducible KDE — and each per-anchor density is
+    renormalized to ∫dr = 1.  The N_true anchor of a sub-bin is its mean N_true (ascending).
+
+    Cells with too few rows fall back to the SNR-marginalized residual for that z; still-empty
+    cells inherit the nearest populated cell (preserves the high-N tail shape, like the toy).
+    Sub-bins below ``min_count`` fall back to the cell-pooled residual density.
+
+    REDUCE-ONLY, NON-CIRCULAR: reads ``meas`` (N_true, snr, zqso, dx) only — no dN/dX / f / Ω.
+    DETERMINISTIC (no RNG): a histogram + fixed-σ smoothing → reproducible/STAMP-able.
+
+    Parameters mirror ``fit_forward_response``'s binning (``snr_edges``/``z_edges``/
+    ``n_N_cells``/``min_count``) so the empirical and parametric paths share cell geometry.
+    """
+    N_true = np.asarray(meas["N_true"], float)
+    snr = np.asarray(meas["snr"], float)
+    zqso = np.asarray(meas["zqso"], float)
+    dx = np.asarray(meas["dx"], float)
+    snr_edges = np.asarray(snr_edges, float)
+    z_edges = np.asarray(z_edges, float)
+    n_snr = len(snr_edges) - 1
+    n_z = len(z_edges) - 1
+    r_grid = np.linspace(r_lo, r_hi, int(n_r))
+    dr = float(r_grid[1] - r_grid[0])
+    sigma_bins = max(smooth_dr / dr, 1e-6)
+
+    i_snr = np.clip(np.searchsorted(snr_edges, snr, "right") - 1, 0, n_snr - 1)
+    i_z = np.clip(np.searchsorted(z_edges, zqso, "right") - 1, 0, n_z - 1)
+    fin = np.isfinite(zqso) & np.isfinite(N_true) & np.isfinite(dx)
+
+    def _smoothed_density(dvals):
+        """Normalized, Gaussian-smoothed residual density on r_grid from raw residuals."""
+        if dvals.size == 0:
+            return None
+        edges = np.concatenate([[r_grid[0] - 0.5 * dr],
+                                0.5 * (r_grid[:-1] + r_grid[1:]),
+                                [r_grid[-1] + 0.5 * dr]])
+        hist, _ = np.histogram(dvals, bins=edges)
+        h = gaussian_filter1d(hist.astype(float), sigma_bins, mode="constant")
+        area = _trapz(h, r_grid)
+        if area <= 0:
+            return None
+        return h / area
+
+    # pooled-per-cell density (the sub-bin fallback) + the cell N-anchor grid
+    rho = np.zeros((n_snr, n_z, int(n_N_cells), int(n_r)))
+    N_anchors = np.zeros((n_snr, n_z, int(n_N_cells)))
+    # SNR-marginalized (per-z) pooled density, used when a whole SNR cell is too sparse
+    z_pool_dens = {}
+    for b in range(n_z):
+        sel = fin & (i_z == b)
+        z_pool_dens[b] = _smoothed_density(dx[sel]) if sel.any() else None
+    global_pool = _smoothed_density(dx[fin])
+
+    cell_built = np.zeros((n_snr, n_z), bool)
+    for a in range(n_snr):
+        for b in range(n_z):
+            sel = fin & (i_snr == a) & (i_z == b)
+            Ns = N_true[sel]; ds = dx[sel]
+            cell_pool = (_smoothed_density(ds) if int(sel.sum()) >= min_count
+                         else (z_pool_dens[b] if z_pool_dens[b] is not None
+                               else global_pool))
+            if int(sel.sum()) >= min_count and Ns.size:
+                qs = np.unique(np.quantile(Ns, np.linspace(0, 1, int(n_N_cells) + 1)))
+                qs[-1] = np.nextafter(qs[-1], np.inf) if len(qs) >= 2 else qs[-1]
+            else:
+                qs = np.array([])
+            anchors = []
+            dens_rows = []
+            for k in range(int(n_N_cells)):
+                if len(qs) >= k + 2:
+                    m = (Ns >= qs[k]) & (Ns < qs[k + 1])
+                    if int(m.sum()) >= min_count:
+                        d_k = _smoothed_density(ds[m])
+                        if d_k is not None:
+                            anchors.append(float(np.mean(Ns[m])))
+                            dens_rows.append(d_k)
+                            continue
+                # sparse sub-bin → pooled cell density at a spread-out anchor (filled below)
+            if anchors:
+                # fill remaining anchor slots by extending the populated anchor range with
+                # the cell-pooled density (preserves the cell's bulk where N sub-bins are
+                # sparse, while the populated anchors carry the per-N shape — incl. high-N).
+                cell_built[a, b] = True
+                anchors = np.asarray(anchors, float)
+                dens_rows = np.asarray(dens_rows, float)
+                # pad to n_N_cells anchors so the stored array is regular: append anchors
+                # just above the top populated one with the pooled density (flat extrapolation)
+                while len(anchors) < int(n_N_cells):
+                    anchors = np.append(anchors, anchors[-1] + 0.1)
+                    dens_rows = np.vstack([dens_rows,
+                                           cell_pool if cell_pool is not None
+                                           else dens_rows[-1]])
+                rho[a, b] = dens_rows
+                N_anchors[a, b] = anchors
+            else:
+                # whole cell too sparse: a single pooled density spread over the anchor grid
+                pool = (cell_pool if cell_pool is not None else
+                        (global_pool if global_pool is not None
+                         else np.full(int(n_r), 1.0 / (r_grid[-1] - r_grid[0]))))
+                N_anchors[a, b] = np.linspace(19.5, 22.0, int(n_N_cells))
+                rho[a, b] = np.tile(pool, (int(n_N_cells), 1))
+
+    # still-empty cells (never built and no pool) inherit the nearest BUILT cell
+    if cell_built.any() and not cell_built.all():
+        built_idx = np.argwhere(cell_built)
+        for a in range(n_snr):
+            for b in range(n_z):
+                if cell_built[a, b]:
+                    continue
+                d = np.abs(built_idx[:, 0] - a) + np.abs(built_idx[:, 1] - b)
+                an, bn = built_idx[int(np.argmin(d))]
+                rho[a, b] = rho[an, bn]
+                N_anchors[a, b] = N_anchors[an, bn]
+
+    return EmpiricalForwardDensity(
+        rho=rho, N_anchors=N_anchors, r_grid=r_grid,
+        snr_edges=snr_edges, z_edges=z_edges,
+    )
 
 
 def measure_forward_response(cat_cut, good_mask, cfg,
@@ -1474,7 +1747,8 @@ def fit_forward_response(meas: dict,
                          n_N_cells: int = 7,
                          min_count: int = 60,
                          N_skew_collapse: float = 21.0,
-                         N_ref: Optional[float] = None) -> ForwardResponseModel:
+                         N_ref: Optional[float] = None,
+                         build_empirical: bool = True) -> ForwardResponseModel:
     """Fit the FORWARD response p(x̂ | N_true, SNR, z_QSO) — a per-cell skew-normal whose
     (up-bias, width, skew) moments are SMOOTH polynomials in N_true, resolved across
     ≥3 SNR × 2–3 z_QSO bins.
@@ -1512,6 +1786,13 @@ def fit_forward_response(meas: dict,
         N above which skew is ramped to 0 (carried onto the model).
     N_ref : float or None
         Polynomial reference in N (median N_true if None).
+    build_empirical : bool
+        If True (default) ALSO build the smoothed-empirical per-cell residual density
+        (``EmpiricalForwardDensity``) and attach it as ``ForwardResponseModel.emp`` — the
+        genuine T-BC ``resp_family="empirical"`` path (carries the true high-N shape the
+        parametric skew-normal overshoots).  The parametric (skewnorm) surfaces are built
+        regardless; this only adds the optional empirical density.  Set False for a
+        parametric-only model (smaller NPZ; ``emp=None``).
 
     Returns
     -------
@@ -1585,10 +1866,16 @@ def fit_forward_response(meas: dict,
             sk_cap = np.clip(sk, -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX)
             skew_coef[a, b] = _fit_poly(Nc, sk_cap, wt, pooled_sk)
 
+    emp = None
+    if build_empirical:
+        emp = build_empirical_forward_density(
+            meas, snr_edges=snr_edges, z_edges=z_edges,
+            n_N_cells=n_N_cells, min_count=min_count)
+
     return ForwardResponseModel(
         mu_coef=mu_coef, sig_coef=sig_coef, skew_coef=skew_coef,
         snr_edges=snr_edges, z_edges=z_edges, N_ref=N_ref, deg_N=int(deg_N),
-        N_skew_collapse=float(N_skew_collapse),
+        N_skew_collapse=float(N_skew_collapse), emp=emp,
     )
 
 
@@ -1599,8 +1886,7 @@ def save_forward_response(path: str, frm: ForwardResponseModel) -> None:
     self-describing (carries deg_N / collapse / sig_floor) so a future loader needs no
     external metadata.
     """
-    np.savez(
-        path,
+    payload = dict(
         _fwd_response_kind=np.array("skewnormal_per_cell"),
         mu_coef=frm.mu_coef,
         sig_coef=frm.sig_coef,
@@ -1612,11 +1898,37 @@ def save_forward_response(path: str, frm: ForwardResponseModel) -> None:
         N_skew_collapse=np.array(frm.N_skew_collapse),
         sig_floor=np.array(frm.sig_floor),
     )
+    # OPTIONAL empirical density block (T-BC resp_family='empirical'). Written ONLY when
+    # present so a parametric-only model stays byte-compatible with the legacy envelope;
+    # the loader keys off ``emp_rho`` (absent ⇒ emp=None, backward-compatible).
+    if frm.emp is not None:
+        payload.update(
+            emp_rho=frm.emp.rho,
+            emp_N_anchors=frm.emp.N_anchors,
+            emp_r_grid=frm.emp.r_grid,
+            emp_snr_edges=frm.emp.snr_edges,
+            emp_z_edges=frm.emp.z_edges,
+        )
+    np.savez(path, **payload)
 
 
 def load_forward_response(path: str) -> ForwardResponseModel:
-    """Load a ForwardResponseModel saved by ``save_forward_response``."""
+    """Load a ForwardResponseModel saved by ``save_forward_response``.
+
+    Backward-compatible: legacy NPZs without the empirical block load with ``emp=None``
+    (only the parametric skew-normal density is available); newer NPZs restore the
+    ``EmpiricalForwardDensity`` for the ``resp_family='empirical'`` path.
+    """
     d = np.load(path, allow_pickle=True)
+    emp = None
+    if "emp_rho" in d:
+        emp = EmpiricalForwardDensity(
+            rho=d["emp_rho"],
+            N_anchors=d["emp_N_anchors"],
+            r_grid=d["emp_r_grid"],
+            snr_edges=d["emp_snr_edges"],
+            z_edges=d["emp_z_edges"],
+        )
     return ForwardResponseModel(
         mu_coef=d["mu_coef"],
         sig_coef=d["sig_coef"],
@@ -1627,6 +1939,7 @@ def load_forward_response(path: str) -> ForwardResponseModel:
         deg_N=int(d["deg_N"]),
         N_skew_collapse=float(d["N_skew_collapse"]) if "N_skew_collapse" in d else 21.0,
         sig_floor=float(d["sig_floor"]) if "sig_floor" in d else 1e-3,
+        emp=emp,
     )
 
 

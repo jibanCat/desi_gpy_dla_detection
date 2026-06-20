@@ -2401,14 +2401,22 @@ def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg):
 def _forward_density_empirical(frm, xhat, N, snr, zqso):
     """SMOOTHED-EMPIRICAL forward response density A/B (cfg.resp_family=='empirical').
 
-    The T-A parametric skew-normal leaves a ~15% heavy-tail residual; this A/B path
-    evaluates the density from the SAME ForwardResponseModel surfaces but lets T-F swap in
-    a non-parametric per-cell residual. For now (wired; default parametric is skewnorm) it
-    falls back to the parametric density — the empirical envelope (a per-cell residual KDE)
-    is the T-F deliverable. Kept as a distinct hook so the A/B switch is real config, not a
-    code edit.
+    The T-A parametric skew-normal moment-fit OVERSHOOTS the high-N tail (the fitted σ is
+    wider than the TRUE response where the width narrows + the right-skew collapses at
+    N≈21) → it over-spreads high-N mass DOWN → the Ω under-recovery. This A/B path evaluates
+    the GENUINE smoothed-empirical per-cell forward residual density (the toy's
+    build_empirical_fwd_kernel analog): a per-(SNR,z) smoothed/normalized histogram of the
+    truth-match residual r = x̂ − N_true, resolved/interpolated in N_true, so the true
+    high-N narrowing + skew-collapse SHAPE is CARRIED (not extrapolated like the parametric).
+
+    The density is per-unit-x̂ and ∫dx̂ = 1 at fixed N (the SAME normalization convention as
+    the parametric path) — so the deconvolution kernel A is the identical marked-Poisson
+    object; ONLY the column shape differs. NON-CIRCULAR (true-N binned, truth-match only).
+
+    Requires the model's empirical density (``frm.emp``, an ``EmpiricalForwardDensity`` built
+    by build_empirical_forward_density). Raises if absent (rebuild the forward NPZ).
     """
-    return frm.response_density(xhat, N, snr, zqso)
+    return frm.response_density_empirical(xhat, N, snr, zqso)
 
 
 def build_A_ib(cat_op: dict, mm: MollyMatrix, logN_lo, logN_hi, N_b, dN_b,

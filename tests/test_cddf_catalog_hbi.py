@@ -601,13 +601,19 @@ def test_tbc_forward_A_column_matches_skewnorm_pdf_times_factors(tmp_path):
     expected = dens * dN_seg * dXdz
     np.testing.assert_allclose(A_2d[:, kz], expected, rtol=1e-9, atol=1e-300,
                                err_msg="forward-A column != skewnorm.pdf·dN_seg·dXdz")
-    # the column is a DENSITY, NOT a renormalized mass: Σ_N (A/dN_seg/dXdz) · ΔN ≠ 1
-    # (the Σ_N≠1 property). Confirm the raw density does not sum to 1 over the (narrow) grid.
-    dens_sum = float(np.sum(dens))
-    assert dens_sum > 0
-    # and the A column is NOT column-normalized to 1 (kappa would be) — sanity that we did
-    # not accidentally renormalize.
-    assert abs(A_2d[:, kz].sum() - 1.0) > 1e-6 or A_2d[:, kz].sum() < 0.5
+    # MEANINGFUL Σ_N≠1 gate (I-1): the forward density is normalized over x̂ at fixed N
+    # (∫p dx̂ = 1), NEVER over N. So Σ_N p(x̂_i|N)·ΔN_logN is a number ≠ 1 with NO reason
+    # to be near 1 — it is the response evaluated at the FIXED x̂_i across the true-N grid.
+    # (The renormalized kappa column WOULD sum to 1; this is the discriminant.) We assert
+    # the actual value is genuinely away from 1, not just positive.
+    dlogN = float(logN_hi[0] - logN_lo[0])
+    sum_N = float(np.sum(dens) * dlogN)            # Σ_N p(x̂_i|N)·Δ(logN)
+    assert sum_N > 0.0
+    assert abs(sum_N - 1.0) > 0.05, (
+        f"Σ_N p·ΔlogN = {sum_N:.4f} is suspiciously close to 1 — the forward density must "
+        "NOT be renormalized over N (Σ_N≠1 is the whole point vs the kappa posterior)")
+    # and the realized A column over the narrow grid is likewise NOT a normalized mass.
+    assert abs(float(A_2d[:, kz].sum()) - 1.0) > 0.05
 
 
 def test_tbc_forward_default_kappa_unaffected(tmp_path):
@@ -650,6 +656,152 @@ def test_tbc_forward_requires_model_path(tmp_path):
                   snr=np.array([5.0]), i_snr=np.array([0]))
     with pytest.raises(ValueError, match="kernel_forward_model"):
         H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine, Xcalc, cfg)
+
+
+def _kappa_path_fixture():
+    """Shared deterministic kappa-path A-build fixture for the bit-for-bit regression
+    (one object, all posterior mass in one (logN,z) fine cell; C≡1, single SNR cell)."""
+    cfg = _make_cfg(logN_lo=20.3, logN_hi=20.5, drop_top_bin_above=20.5,
+                    v2_logN_fit_floor=20.3, occupancy_floor=1,
+                    v2_z_fit_lo=2.4, v2_z_fit_hi=2.6, v2_z_fit_step=0.2,
+                    zbins=(2.4, 2.6))
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    z_edges = H._fine_z_grid(cfg)
+    n_N = len(logN_lo); n_z = len(z_edges) - 1
+    mm = H.MollyMatrix(snr_edges=np.array([0.0, np.inf]),
+                       nhi_edges=np.array([20.3, 20.4, 20.5]),
+                       purity=np.ones((1, 2)), completeness=np.ones((1, 2)))
+    kappa = np.zeros((1, n_N, n_z), dtype=np.float32)
+    kappa[0, 1, 0] = 1.0
+    cat_op = dict(xhat=np.array([20.45]), zhat=np.array([2.5]),
+                  sig_x=np.array([0.1]), sig_z=np.array([1e-6]),
+                  snr=np.array([5.0]), i_snr=np.array([0]))
+    Xc = _FakeXcalc(cfg.Omega_m)
+    return cfg, logN_lo, logN_hi, N_b, dN_b, z_edges, mm, kappa, cat_op, Xc
+
+
+def test_kappa_path_bit_for_bit_regression():
+    """I-2 (CS rigor): the DEFAULT kappa A-build output is bit-for-bit equal to a STORED
+    reference vector — a genuine regression, not merely "the call does not crash".
+
+    The reference is the analytic value computed independently (the kappa2d consume math:
+    populated cell = (ΔN_bin/Δx_seg)·dX/dz(zmid), empty cells = 0) AND the byte-identical
+    re-run of the build. Locks the byte-identical default so any future drift to the kappa
+    path (the historical headline) trips this test."""
+    cfg, logN_lo, logN_hi, N_b, dN_b, z_edges, mm, kappa, cat_op, Xc = _kappa_path_fixture()
+    A_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges, Xc, cfg,
+                          kernel="gaussian", posterior_kernel=kappa)[1]
+    A = np.asarray(H._apply_C_to_A(A_meta, mm.completeness).todense()).ravel()
+    # --- STORED REFERENCE (analytic, recomputed here independently of the build) ---
+    zmid = 0.5 * (z_edges[0] + z_edges[1])
+    dXdz = (1.0 + zmid) ** 2 / np.sqrt(cfg.Omega_m * (1 + zmid) ** 3 + (1 - cfg.Omega_m))
+    ref = np.array([0.0, (10.0 ** 20.5 - 10.0 ** 20.4) / (20.5 - 20.4) * dXdz])
+    np.testing.assert_allclose(A, ref, rtol=1e-12, atol=0.0,
+                               err_msg="kappa-path A drifted from the stored reference")
+    # --- BIT-FOR-BIT determinism: a second identical build is byte-identical ---
+    A2_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges, Xc, cfg,
+                           kernel="gaussian", posterior_kernel=kappa)[1]
+    A2 = np.asarray(H._apply_C_to_A(A2_meta, mm.completeness).todense()).ravel()
+    np.testing.assert_array_equal(A, A2)
+    # --- attaching a forward model + resp_family to a kappa cfg does NOT touch the path ---
+    cfg.kernel_forward_model = "/nonexistent/should/be/ignored.npz"
+    cfg.resp_family = "empirical"
+    assert cfg.resp_kind == "kappa"
+    A3_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges, Xc, cfg,
+                           kernel="gaussian", posterior_kernel=kappa)[1]
+    A3 = np.asarray(H._apply_C_to_A(A3_meta, mm.completeness).todense()).ravel()
+    np.testing.assert_array_equal(A, A3)
+
+
+def _empirical_forward_model(tmp_path):
+    """Build + save a ForwardResponseModel WITH a genuine EmpiricalForwardDensity from a
+    synthetic truth-match whose width NARROWS with N (the high-N shape the parametric
+    skew-normal overshoots). One SNR × one z cell so the density is fully determined."""
+    from CDDF_analysis.znz_kernel import (
+        fit_forward_response, save_forward_response, _moment_to_skewnormal_vec)
+    from scipy.stats import skewnorm
+    rng = np.random.default_rng(7)
+    n = 300000
+    N_true = rng.uniform(19.6, 21.8, n)
+    snr = np.full(n, 5.0)
+    zqso = np.full(n, 2.75)
+    sd = 0.22 - 0.10 * np.clip((N_true - 20.0) / 1.8, 0.0, 1.0)   # NARROWS with N
+    sk = np.where(N_true < 21.0, 0.9, 0.0)                        # skew collapses
+    xi, om, a = _moment_to_skewnormal_vec(np.zeros(n), sd, sk)
+    dx = skewnorm.rvs(a, loc=xi, scale=om, random_state=rng)
+    meas = {"N_true": N_true, "snr": snr, "zqso": zqso, "dx": dx, "xhat": N_true + dx}
+    frm = fit_forward_response(meas, snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf),
+                               build_empirical=True)
+    path = str(tmp_path / "forward_response_emp.npz")
+    save_forward_response(path, frm)
+    return frm, path
+
+
+def test_tbc_empirical_density_integrates_to_one_and_carries_shape(tmp_path):
+    """The GENUINE smoothed-empirical forward density (resp_family='empirical') (a) is a
+    real density (∫p(x̂|N)dx̂=1, the normalization gate) and (b) CARRIES the true high-N
+    narrowing (width drops with N — the Ω lever), not the parametric extrapolation."""
+    _trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
+    frm, _ = _empirical_forward_model(tmp_path)
+    assert frm.emp is not None
+    fine = np.linspace(18.0, 24.0, 60001)
+    for N0 in (20.3, 20.6, 21.0):
+        dens = frm.response_density_empirical(
+            fine, np.full_like(fine, N0), np.full_like(fine, 5.0), np.full_like(fine, 2.75))
+        assert abs(_trapz(dens, fine) - 1.0) < 1e-3, (
+            f"empirical p(x̂|N={N0}) must integrate to 1 over x̂")
+    # the empirical density NARROWS with N (the injected 0.22→0.12 swing): realized width at
+    # N=21.0 < at N=20.0. (The realized width is the true σ smoothed by the σ=0.05-dex KDE in
+    # quadrature, so the SWING is the diagnostic, not the absolute level vs the parametric.)
+    def emp_width(N0):
+        r = frm.emp.r_grid
+        d = frm.response_density_empirical(N0 + r, np.full_like(r, N0),
+                                           np.full_like(r, 5.0), np.full_like(r, 2.75))
+        d = d / _trapz(d, r); m = _trapz(r * d, r)
+        return float(np.sqrt(_trapz((r - m) ** 2 * d, r)))
+    w_lo = emp_width(20.0)
+    w_hi = emp_width(21.0)
+    assert w_hi < w_lo - 0.03, (
+        f"empirical width did not narrow with N: N=20.0 {w_lo:.3f} N=21.0 {w_hi:.3f}")
+
+
+def test_tbc_empirical_A_differs_from_skewnorm_and_default_kappa_byte_identical(tmp_path):
+    """resp_family='empirical' builds a DIFFERENT forward-A column than 'skewnorm' (the
+    A/B is a REAL config switch, no longer a no-op stub), while the kappa DEFAULT stays
+    byte-identical regardless of resp_family."""
+    frm, frm_path = _empirical_forward_model(tmp_path)
+    cfg_kw = dict(logN_lo=20.0, logN_hi=21.2, drop_top_bin_above=21.2,
+                  v2_logN_fit_floor=20.0, occupancy_floor=1,
+                  v2_z_fit_lo=2.4, v2_z_fit_hi=2.6, v2_z_fit_step=0.2, zbins=(2.4, 2.6))
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(_make_cfg(**cfg_kw))
+    Xcalc = _FakeXcalc(0.3147)
+    mm = H.MollyMatrix(snr_edges=np.array([0.0, np.inf]),
+                       nhi_edges=np.array([20.0, 21.2]),
+                       purity=np.ones((1, 1)), completeness=np.ones((1, 1)))
+    z_edges_fine = H._fine_z_grid(_make_cfg(**cfg_kw))
+    cat_op = dict(xhat=np.array([20.9]), zhat=np.array([2.5]),
+                  sig_x=np.array([0.12]), sig_z=np.array([1e-6]),
+                  snr=np.array([5.0]), i_snr=np.array([0]), zqso=np.array([2.7]))
+
+    def _col(resp_kind, resp_family):
+        cfg = _make_cfg(**cfg_kw)
+        cfg.resp_kind = resp_kind
+        cfg.kernel_forward_model = frm_path if resp_kind == "forward" else None
+        cfg.resp_family = resp_family
+        A_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
+                              Xcalc, cfg, kernel="gaussian")[1]
+        return np.asarray(H._apply_C_to_A(A_meta, mm.completeness).todense()).ravel()
+
+    A_skew = _col("forward", "skewnorm")
+    A_emp = _col("forward", "empirical")
+    assert A_skew.shape == A_emp.shape and A_skew.size > 0
+    # the empirical and parametric columns are genuinely DIFFERENT (no-op stub is fixed)
+    assert not np.allclose(A_skew, A_emp, rtol=1e-6, atol=0.0), (
+        "empirical forward-A column is identical to skewnorm — the A/B is still a no-op")
+    # kappa default is byte-identical regardless of resp_family
+    A_k1 = _col("kappa", "skewnorm")
+    A_k2 = _col("kappa", "empirical")
+    np.testing.assert_array_equal(A_k1, A_k2)
 
 
 def test_v2_synthetic_closure_finite_width_omega():

@@ -21,6 +21,8 @@ from CDDF_analysis.znz_kernel import (
     fit_forward_response,
     measure_forward_response,
     ForwardResponseModel,
+    EmpiricalForwardDensity,
+    build_empirical_forward_density,
     save_forward_response,
     load_forward_response,
     _moment_to_skewnormal,
@@ -28,6 +30,8 @@ from CDDF_analysis.znz_kernel import (
     _empirical_forward_cells,
     _SN_SKEW_MAX,
 )
+
+_TRAPZ = getattr(np, "trapezoid", getattr(np, "trapz", None))
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +268,15 @@ def test_forward_save_load_roundtrip(tmp_path):
     np.testing.assert_array_equal(xi2, xi1)
     np.testing.assert_array_equal(om2, om1)
     np.testing.assert_array_equal(a2, a1)
+    # the empirical density block round-trips too (built by default) and evaluates identically
+    assert frm.emp is not None and frm2.emp is not None
+    np.testing.assert_array_equal(frm2.emp.rho, frm.emp.rho)
+    np.testing.assert_array_equal(frm2.emp.N_anchors, frm.emp.N_anchors)
+    np.testing.assert_array_equal(frm2.emp.r_grid, frm.emp.r_grid)
+    xh = np.array([20.5, 20.7, 21.1])
+    np.testing.assert_array_equal(
+        frm2.response_density_empirical(xh, Ne, se, ze),
+        frm.response_density_empirical(xh, Ne, se, ze))
 
 
 def test_forward_fit_is_reproducible():
@@ -366,3 +379,117 @@ def test_forward_response_density_right_skew_tail_heavier_above():
     # probable than the symmetric point above (the kernel leans the recovery low = Eddington)
     assert d_below > d_above, (
         f"forward density not leaning low: below={d_below:.4f} above={d_above:.4f}")
+
+
+# ---------------------------------------------------------------------------
+# Track-C T-BC FIX: the GENUINE smoothed-empirical per-cell forward density
+# ---------------------------------------------------------------------------
+
+def _emp_meas_narrowing(seed=0, n=400000):
+    """Truth-match whose forward response NARROWS with N + SKEW-COLLAPSES at high N — the
+    true high-N shape the parametric skew-normal moment-fit OVERSHOOTS (one SNR × one z)."""
+    rng = np.random.default_rng(seed)
+    N_true = rng.uniform(19.6, 21.8, n)
+    snr = np.full(n, 5.0)
+    zqso = np.full(n, 2.75)
+    sd = 0.22 - 0.10 * np.clip((N_true - 20.0) / 1.8, 0.0, 1.0)   # width NARROWS with N
+    sk = np.where(N_true < 21.0, 0.9, 0.0)                        # skew collapses high-N
+    xi, om, a = _moment_to_skewnormal_vec(np.zeros(n), sd, sk)
+    dx = skewnorm.rvs(a, loc=xi, scale=om, random_state=rng)
+    return {"N_true": N_true, "snr": snr, "zqso": zqso, "dx": dx, "xhat": N_true + dx}
+
+
+def test_empirical_density_integrates_to_one_over_xhat():
+    """∫ p(x̂|N) dx̂ = 1 at fixed N (the normalization gate) across the DLA tier."""
+    frm = fit_forward_response(_emp_meas_narrowing(seed=1),
+                               snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf))
+    assert frm.emp is not None
+    fine = np.linspace(18.0, 24.0, 60001)
+    for N0 in (20.0, 20.4, 20.8, 21.2):
+        d = frm.response_density_empirical(fine, np.full_like(fine, N0),
+                                           np.full_like(fine, 5.0), np.full_like(fine, 2.75))
+        assert abs(_TRAPZ(d, fine) - 1.0) < 1e-3, f"∫p(x̂|N={N0})dx̂ != 1"
+        assert np.all(d >= 0.0), "density must be non-negative"
+
+
+def _emp_width(frm, N0, snr=5.0, z=2.75):
+    r = frm.emp.r_grid
+    d = frm.response_density_empirical(N0 + r, np.full_like(r, N0),
+                                       np.full_like(r, snr), np.full_like(r, z))
+    d = d / _TRAPZ(d, r)
+    m = _TRAPZ(r * d, r)
+    return float(np.sqrt(_TRAPZ((r - m) ** 2 * d, r)))
+
+
+def test_empirical_density_narrows_with_N():
+    """The empirical density CARRIES the true high-N narrowing: realized width at N=21.2 is
+    smaller than at N=20.0 (the parametric overshoot's lever)."""
+    frm = fit_forward_response(_emp_meas_narrowing(seed=2),
+                               snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf))
+    w_lo = _emp_width(frm, 20.0)
+    w_hi = _emp_width(frm, 21.2)
+    # the empirical density NARROWS with N (the lever): realized width drops by the injected
+    # ~0.10-dex swing direction (the realized width is the true σ smoothed by the σ=0.05-dex
+    # KDE in quadrature, so it is BROADER than the bare injected value — the swing, not the
+    # absolute level, is the diagnostic).
+    assert w_hi < w_lo - 0.05, f"empirical width did not narrow: lo={w_lo:.3f} hi={w_hi:.3f}"
+    # the realized widths bracket the injected 0.22→0.12 (KDE-broadened by ≈0.05 in quad)
+    assert 0.18 < w_lo < 0.28, f"low-N realized width {w_lo:.3f} out of range"
+    assert 0.10 < w_hi < 0.18, f"high-N realized width {w_hi:.3f} out of range"
+
+
+def test_empirical_density_save_load_and_eval_identical(tmp_path):
+    """The EmpiricalForwardDensity round-trips through save/load and evaluates byte-identical."""
+    frm = fit_forward_response(_emp_meas_narrowing(seed=3),
+                               snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf))
+    path = str(tmp_path / "fwd_emp.npz")
+    save_forward_response(path, frm)
+    frm2 = load_forward_response(path)
+    assert isinstance(frm2.emp, EmpiricalForwardDensity)
+    xh = np.linspace(19.8, 21.6, 37)
+    N = np.full_like(xh, 20.5); s = np.full_like(xh, 5.0); z = np.full_like(xh, 2.75)
+    np.testing.assert_array_equal(
+        frm2.response_density_empirical(xh, N, s, z),
+        frm.response_density_empirical(xh, N, s, z))
+
+
+def test_empirical_density_backward_compat_missing_block_is_none(tmp_path):
+    """A parametric-only model (build_empirical=False) loads with emp=None; the legacy NPZ
+    (no empirical block) is still readable; response_density_empirical raises clearly."""
+    frm = fit_forward_response(_emp_meas_narrowing(seed=4),
+                               snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf),
+                               build_empirical=False)
+    assert frm.emp is None
+    path = str(tmp_path / "fwd_param_only.npz")
+    save_forward_response(path, frm)
+    # the saved NPZ has NO empirical block
+    d = np.load(path, allow_pickle=True)
+    assert "emp_rho" not in d.files
+    frm2 = load_forward_response(path)
+    assert frm2.emp is None
+    with pytest.raises(ValueError, match="empirical"):
+        frm2.response_density_empirical(np.array([20.5]), np.array([20.4]),
+                                        np.array([5.0]), np.array([2.75]))
+
+
+def test_build_empirical_forward_density_is_reproducible():
+    """The empirical build is DETERMINISTIC (histogram + fixed-σ smoothing, no RNG): two
+    builds from the same meas are byte-identical."""
+    meas = _emp_meas_narrowing(seed=5)
+    e1 = build_empirical_forward_density(meas, snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf))
+    e2 = build_empirical_forward_density(meas, snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf))
+    np.testing.assert_array_equal(e1.rho, e2.rho)
+    np.testing.assert_array_equal(e1.N_anchors, e2.N_anchors)
+    np.testing.assert_array_equal(e1.r_grid, e2.r_grid)
+
+
+def test_build_empirical_forward_density_is_noncircular_signature():
+    """REDUCE-ONLY / NON-CIRCULAR: the empirical builder reads the truth-match conditional
+    only (N_true/snr/zqso/dx) — no dN/dX / f / Ω argument anywhere in its signature."""
+    sig = inspect.signature(build_empirical_forward_density)
+    allnames = " ".join(sig.parameters).lower()
+    assert "dndx" not in allnames and "omega" not in allnames and "f_b" not in allnames
+    # the meas keys it consumes are the conditional only
+    src = inspect.getsource(build_empirical_forward_density)
+    for forbidden in ("dndx", "omega", '"f"', "f_of_N"):
+        assert forbidden not in src.lower(), f"empirical builder references {forbidden}"
