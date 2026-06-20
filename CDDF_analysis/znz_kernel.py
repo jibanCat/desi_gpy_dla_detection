@@ -1126,6 +1126,444 @@ def apply_znz_correction(kappa, cat_op, z_edges_fine, logN_lo, logN_hi,
     return out.astype(out_dtype)
 
 
+# ===========================================================================
+# Track-C T-A: the FORWARD response  p(x̂ | N_true, SNR, z_QSO)
+# ===========================================================================
+#
+# This is a NEW object, DISTINCT from the ZNZModel posterior-warp above.  The
+# ZNZModel re-shapes the GP POSTERIOR column p(x_true | x̂); the forward response
+# is the LIKELIHOOD / instrument response p(x̂ | N_true) measured by binning the
+# truth-match on the TRUE value N_true (NOT on x̂).  Binning on the truth removes
+# the Eddington population-mixing (a property of f, not of the instrument), so the
+# fit is NON-CIRCULAR (it never sees dN/dX, f, or Ω — only x̂, N_true, SNR, z_QSO).
+#
+# Measured shape (2026-06-20 eddington-verification, .superpowers/sdd/
+# track_c_eddington_verify.md):
+#   - RIGHT-skewed: skew(x̂ | N_true) ≈ +0.8…+1.1 across the DLA tier (mid-tier +0.93),
+#     COLLAPSING to ~0 above N_true ≈ 21.0 (the 22.5 prior ceiling crowds the up-tail).
+#   - width WIDENS at low SNR: std(dx) 0.11 (hi-SNR) → 0.20 (lo-SNR), a ~1.8× swing.
+#   - up-bias mean(dx) RISES with z_QSO: +0.036 → +0.074.
+# The forward response carries its measured right-skew, SNR-dependent width and z up-bias;
+# the parametric per-bin family is the SKEW-NORMAL (its attainable skew ~|0.995| comfortably
+# brackets the measured +0.9, UNLIKE the −1.9 posterior the ZNZModel must express).
+
+
+# Skew-normal attainable skewness ceiling (|skew| → ~0.9953 as a→∞).  Used to clamp the
+# moment-match so a noisy high-N cell can never demand an impossible shape parameter.
+_SN_SKEW_MAX = 0.5 * (4.0 - np.pi) * (np.sqrt(2.0 / np.pi) ** 3) / \
+    (1.0 - 2.0 / np.pi) ** 1.5
+
+
+def _sn_median0(a: np.ndarray) -> np.ndarray:
+    """Standardized skew-normal median m0(a) of SN(loc=0, scale=1, shape=a).
+
+    The median has no elementary closed form; evaluated via the cached scipy
+    quantile and a small monotone table + linear interp (mirrors the toy's
+    ``_sn_median0``).  Used to convert a median-anchored response into the
+    skew-normal location parameter.
+    """
+    from scipy import stats as _stats
+    a = np.asarray(a, float)
+    s = np.sign(a)
+    aa = np.abs(a)
+    if _SN_MED0_GRID[0] is None:           # lazily build the table once
+        ag = np.concatenate([[0.0], np.geomspace(0.05, 80.0, 220)])
+        mg = np.array([_stats.skewnorm.ppf(0.5, av) for av in ag])
+        _SN_MED0_GRID[0] = (ag, mg)
+    ag, mg = _SN_MED0_GRID[0]
+    return s * np.interp(aa, ag, mg)
+
+
+_SN_MED0_GRID = [None]   # lazily-populated (a_grid, median_grid) cache
+
+
+def _moment_to_skewnormal(mean: float, sd: float, skew: float):
+    """Map a response (mean, sd, skewness) → skew-normal (xi, omega, a).
+
+    Closed-form inverse of the skew-normal moment relations (reduce-only):
+        delta = a/sqrt(1+a^2),  b = sqrt(2/pi)
+        skewness = (4-pi)/2 · (b·delta)^3 / (1 − b²delta²)^{3/2}
+        omega = sd / sqrt(1 − b²delta²)
+        xi    = mean − omega·b·delta
+    |skew| is clamped to ~0.995·_SN_SKEW_MAX (the attainable ceiling).  skew≈0 →
+    Gaussian (a=0).  Mirrors the certified toy's ``_moment_to_skewnormal``.
+    """
+    b = np.sqrt(2.0 / np.pi)
+    s = float(np.clip(skew, -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX))
+    sd = float(max(sd, 1e-9))
+    if abs(s) < 1e-9:
+        return float(mean), sd, 0.0
+    c = 0.5 * (4.0 - np.pi)
+    r = (abs(s) / c) ** (2.0 / 3.0)
+    g = r / (1.0 + r)                      # g = (b·delta)^2 ∈ (0,1)
+    bdelta = np.sqrt(g)
+    delta = float(np.clip(np.sign(s) * bdelta / b, -0.999, 0.999))
+    a = delta / np.sqrt(max(1.0 - delta * delta, 1e-12))
+    omega = sd / np.sqrt(max(1.0 - (b * delta) ** 2, 1e-12))
+    xi = float(mean) - omega * b * delta
+    return float(xi), float(omega), float(a)
+
+
+@dataclass
+class ForwardResponseModel:
+    """Forward response  p(x̂ | N_true, SNR, z_QSO)  as a per-cell skew-normal whose
+    moments are SMOOTH surfaces in N_true, resolved discretely in (SNR, z_QSO).
+
+    The response at a true column N (given an object's SNR-bin ``i_snr`` and z_QSO-bin
+    ``i_z``) is the skew-normal with
+        mean      = N + μ_b(N, i_snr, i_z)          (μ_b = E[x̂ − N_true], the up-bias)
+        sd        = σ(N, i_snr, i_z)                (widens at low SNR)
+        skewness  = γ(N, i_snr, i_z)                (right-skew, collapses above N≈21)
+    μ_b, σ, γ are each a degree-``deg_N`` polynomial in (N − N_ref) PER (SNR-bin, z-bin)
+    cell — i.e. smooth in N_true, piecewise across the ≥3 SNR × 2–3 z_QSO bins (the
+    measured ~1.8× width swing axis and the z up-bias axis).
+
+    NON-CIRCULAR by construction: every coefficient is fit from the truth-match
+    conditional (x̂, N_true, SNR, z_QSO) only — there is NO dN/dX / f / Ω input anywhere.
+
+    Attributes
+    ----------
+    mu_coef, sig_coef, skew_coef : (n_snr, n_z, deg_N+1) float arrays
+        Per-cell polynomial coefficients for the up-bias, width and skewness surfaces.
+    snr_edges : (n_snr+1,) float
+        SNR bin edges (the response width axis; ≥3 bins → ≥4 edges).
+    z_edges : (n_z+1,) float
+        z_QSO bin edges (the up-bias axis; 2–3 bins).
+    N_ref : float
+        Polynomial reference in N_true (centering, numerical stability).
+    deg_N : int
+        Polynomial degree in N_true for all three surfaces.
+    N_skew_collapse : float
+        N_true above which the fitted skew is ramped toward 0 (the prior-ceiling
+        collapse — no spurious right-skew extrapolated past N≈21).
+    sig_floor : float
+        Lower clip on σ (keeps the skew-normal well-defined; default 1e-3 dex).
+    """
+    mu_coef: np.ndarray
+    sig_coef: np.ndarray
+    skew_coef: np.ndarray
+    snr_edges: np.ndarray
+    z_edges: np.ndarray
+    N_ref: float
+    deg_N: int = 2
+    N_skew_collapse: float = 21.0
+    sig_floor: float = 1e-3
+
+    # --- cell lookup ---------------------------------------------------------
+    def _i_snr(self, snr):
+        return np.clip(np.searchsorted(self.snr_edges, np.asarray(snr, float),
+                                       side="right") - 1, 0, len(self.snr_edges) - 2)
+
+    def _i_z(self, zqso):
+        return np.clip(np.searchsorted(self.z_edges, np.asarray(zqso, float),
+                                       side="right") - 1, 0, len(self.z_edges) - 2)
+
+    def _eval_surface(self, coef_grid, N, i_snr, i_z):
+        """Evaluate a per-cell N-polynomial surface at (N, i_snr, i_z) (vectorized)."""
+        N = np.asarray(N, float).ravel()
+        i_snr = np.asarray(i_snr, int).ravel()
+        i_z = np.asarray(i_z, int).ravel()
+        dN = N - self.N_ref
+        # Vandermonde in N (deg_N+1 columns), pick the per-row cell coefficients.
+        V = np.vander(dN, self.deg_N + 1, increasing=True)     # (n, deg_N+1)
+        cf = coef_grid[i_snr, i_z, :]                          # (n, deg_N+1)
+        return np.einsum("nd,nd->n", V, cf)
+
+    # --- public surfaces -----------------------------------------------------
+    def mu_b(self, N, snr, zqso):
+        """Up-bias surface μ_b(N,SNR,z) = E[x̂ − N_true]."""
+        return self._eval_surface(self.mu_coef, N, self._i_snr(snr), self._i_z(zqso))
+
+    def sigma(self, N, snr, zqso):
+        """Width surface σ(N,SNR,z) (>0)."""
+        s = self._eval_surface(self.sig_coef, N, self._i_snr(snr), self._i_z(zqso))
+        return np.clip(s, self.sig_floor, None)
+
+    def skew(self, N, snr, zqso):
+        """Skewness surface γ(N,SNR,z), with the high-N (prior-ceiling) collapse applied.
+
+        Above ``N_skew_collapse`` the skew is linearly ramped to 0 over a 0.5-dex window
+        so no spurious right-skew is extrapolated into the saturated high-N regime.
+        """
+        N = np.asarray(N, float).ravel()
+        g = self._eval_surface(self.skew_coef, N, self._i_snr(snr), self._i_z(zqso))
+        g = np.clip(g, -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX)
+        # prior-ceiling collapse: ramp skew → 0 across [N_collapse, N_collapse+0.5]
+        ramp = np.clip((N - self.N_skew_collapse) / 0.5, 0.0, 1.0)
+        return g * (1.0 - ramp)
+
+    def response_skewnormal(self, N, snr, zqso):
+        """Return (xi, omega, a) skew-normal params of p(x̂ | N, SNR, z_QSO) per element.
+
+        The response is centered so its MEAN is N + μ_b (the absolute x̂ location); the
+        caller adds nothing — ``xi`` is already the absolute skew-normal location.
+        """
+        N = np.asarray(N, float).ravel()
+        mean = N + self.mu_b(N, snr, zqso)
+        sd = self.sigma(N, snr, zqso)
+        sk = self.skew(N, snr, zqso)
+        xi = np.empty_like(N); om = np.empty_like(N); aa = np.empty_like(N)
+        for j in range(len(N)):
+            xi[j], om[j], aa[j] = _moment_to_skewnormal(mean[j], sd[j], sk[j])
+        return xi, om, aa
+
+
+def measure_forward_response(cat_cut, good_mask, cfg,
+                             host_col: str = "NHI_TILT_HOST",
+                             xhat_floor: float = 19.5) -> dict:
+    """Measure the per-detection forward-response arrays (N_true, SNR, z_QSO, dx).
+
+    Reduce-only.  Replicates the EXACT op-set of measure_znz_response / the eddington
+    verification (lya-only, S2N_RED > snr_min, P_DLA > p_dla_min, good_mask), keeps TPs
+    (finite matched true NHI) with x̂ ≥ ``xhat_floor``, and returns the conditioning
+    variables for the FORWARD fit binned on the TRUE value.
+
+    NON-CIRCULAR: reads ONLY x̂ (``NHI``), the matched true host NHI (``host_col``),
+    ``S2N_RED`` and ``Z_QSO`` — never a reduced population statistic.
+
+    Returns
+    -------
+    dict with keys
+        "N_true" : matched true host log NHI (the binning value)
+        "snr"    : S2N_RED of the detection
+        "zqso"   : Z_QSO of the detection's sightline
+        "dx"     : x̂ − N_true   (the response residual; right-skewed up-bias)
+        "xhat"   : the predicted log NHI (kept for cross-checks)
+    """
+    s2n = np.asarray(cat_cut["S2N_RED"], float)
+    pdla = np.asarray(cat_cut["P_DLA"], float)
+    op = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
+
+    xhat = np.asarray(cat_cut["NHI"], float)[op]
+    true_col = host_col if host_col in cat_cut.colnames else "NHI_TRUE"
+    xtrue = np.asarray(cat_cut[true_col], float)[op]
+    snr = s2n[op]
+    zqso = (np.asarray(cat_cut["Z_QSO"], float)[op]
+            if "Z_QSO" in cat_cut.colnames else np.full(int(op.sum()), np.nan))
+
+    tp = np.isfinite(xtrue)
+    xhat, xtrue, snr, zqso = xhat[tp], xtrue[tp], snr[tp], zqso[tp]
+    keep = xhat >= float(xhat_floor)
+    xhat, xtrue, snr, zqso = xhat[keep], xtrue[keep], snr[keep], zqso[keep]
+
+    return {"N_true": xtrue, "snr": snr, "zqso": zqso,
+            "dx": xhat - xtrue, "xhat": xhat}
+
+
+def _empirical_forward_cells(N_true, snr, zqso, dx,
+                             snr_edges, z_edges,
+                             n_N_cells: int = 7, min_count: int = 60):
+    """Measure the SMOOTHED-EMPIRICAL per-bin forward response in (N_true × SNR × z_QSO).
+
+    For every (SNR-bin, z-bin) cell, slice N_true into ``n_N_cells`` quantile sub-bins and
+    measure the per-sub-bin mean(dx), std(dx) and skewness(dx) — the MEASURED forward
+    response the parametric fit must reproduce.  Returns a structured dict of per-cell
+    arrays used both to fit the surfaces and as the cross-check ("smoothed-empirical").
+
+    Returns a dict: for each (i_snr, i_z) key a list of (N_center, mean, sd, skew, count)
+    sub-bin tuples (sub-bins with < ``min_count`` rows dropped).
+    """
+    N_true = np.asarray(N_true, float); snr = np.asarray(snr, float)
+    zqso = np.asarray(zqso, float); dx = np.asarray(dx, float)
+    i_snr = np.clip(np.searchsorted(snr_edges, snr, "right") - 1, 0, len(snr_edges) - 2)
+    i_z = np.clip(np.searchsorted(z_edges, zqso, "right") - 1, 0, len(z_edges) - 2)
+    n_snr = len(snr_edges) - 1
+    n_z = len(z_edges) - 1
+    out = {}
+    for a in range(n_snr):
+        for b in range(n_z):
+            sel = (i_snr == a) & (i_z == b) & np.isfinite(zqso)
+            if int(np.count_nonzero(sel)) < min_count:
+                out[(a, b)] = []
+                continue
+            Ns = N_true[sel]; ds = dx[sel]
+            qs = np.unique(np.quantile(Ns, np.linspace(0, 1, n_N_cells + 1)))
+            if len(qs) < 2:
+                out[(a, b)] = []
+                continue
+            qs[-1] = np.nextafter(qs[-1], np.inf)
+            cells = []
+            for k in range(len(qs) - 1):
+                m = (Ns >= qs[k]) & (Ns < qs[k + 1])
+                c = int(np.count_nonzero(m))
+                if c < min_count:
+                    continue
+                di = ds[m]
+                m1 = float(np.mean(di))
+                dd = di - m1
+                m2 = float(np.mean(dd * dd))
+                if m2 <= 0:
+                    continue
+                m3 = float(np.mean(dd * dd * dd))
+                cells.append((float(np.mean(Ns[m])), m1, np.sqrt(m2),
+                              m3 / m2 ** 1.5, c))
+            out[(a, b)] = cells
+    return out
+
+
+def fit_forward_response(meas: dict,
+                         snr_edges=(2.0, 3.5, 6.5, np.inf),
+                         z_edges=(0.0, 2.56, 2.96, np.inf),
+                         deg_N: int = 2,
+                         n_N_cells: int = 7,
+                         min_count: int = 60,
+                         N_skew_collapse: float = 21.0,
+                         N_ref: Optional[float] = None) -> ForwardResponseModel:
+    """Fit the FORWARD response p(x̂ | N_true, SNR, z_QSO) — a per-cell skew-normal whose
+    (up-bias, width, skew) moments are SMOOTH polynomials in N_true, resolved across
+    ≥3 SNR × 2–3 z_QSO bins.
+
+    REDUCE-ONLY, NON-CIRCULAR (asserted by the test suite): ``meas`` carries ONLY the
+    truth-match conditional (N_true, snr, zqso, dx); there is NO dN/dX / f / Ω argument.
+    The dN/dX/Ω reductions are strictly-downstream CHECKS computed after this model is
+    frozen — the α=1/R0 tautology is structurally impossible because no reduced statistic
+    enters the fit.
+
+    Procedure
+    ---------
+    1. Slice the truth-match into (SNR × z_QSO × N_true) sub-bins; measure the per-sub-bin
+       mean(dx), std(dx), skewness(dx) — the smoothed-empirical forward response.
+    2. Per (SNR, z) cell, weighted-least-squares fit a degree-``deg_N`` polynomial in
+       N_true to each of mean / std / skew over the populated N sub-bins.  Cells with too
+       few populated sub-bins fall back to a CONSTANT (the cell mean / pooled value).
+    3. The high-N (≳21) skew collapse is applied at EVALUATION time
+       (``ForwardResponseModel.skew`` ramps γ→0 above ``N_skew_collapse``) so the
+       fit never extrapolates a spurious right-skew into the prior-ceiling regime.
+
+    Parameters
+    ----------
+    meas : dict
+        Output of ``measure_forward_response`` (keys N_true, snr, zqso, dx).
+    snr_edges : sequence
+        SNR bin edges (≥4 → ≥3 bins).  Default tertile-like (2,3.5,6.5,∞) matching the
+        measured ~1.8× width swing (hi/mid/lo SNR).
+    z_edges : sequence
+        z_QSO bin edges (default (0,2.56,2.96,∞) → 3 bins matching the measured z up-bias
+        tertiles +0.036/+0.050/+0.074).
+    deg_N, n_N_cells, min_count : int
+        Polynomial degree in N, N sub-bins per cell, per-sub-bin minimum count.
+    N_skew_collapse : float
+        N above which skew is ramped to 0 (carried onto the model).
+    N_ref : float or None
+        Polynomial reference in N (median N_true if None).
+
+    Returns
+    -------
+    ForwardResponseModel
+    """
+    N_true = np.asarray(meas["N_true"], float)
+    snr = np.asarray(meas["snr"], float)
+    zqso = np.asarray(meas["zqso"], float)
+    dx = np.asarray(meas["dx"], float)
+    snr_edges = np.asarray(snr_edges, float)
+    z_edges = np.asarray(z_edges, float)
+    n_snr = len(snr_edges) - 1
+    n_z = len(z_edges) - 1
+    if N_ref is None:
+        N_ref = float(np.median(N_true))
+    else:
+        N_ref = float(N_ref)
+
+    cells = _empirical_forward_cells(N_true, snr, zqso, dx, snr_edges, z_edges,
+                                     n_N_cells=n_N_cells, min_count=min_count)
+
+    n_coef = deg_N + 1
+    mu_coef = np.zeros((n_snr, n_z, n_coef))
+    sig_coef = np.zeros((n_snr, n_z, n_coef))
+    skew_coef = np.zeros((n_snr, n_z, n_coef))
+
+    # global pooled fallbacks (used when a cell has too few populated sub-bins)
+    pooled_mu = float(np.mean(dx)) if len(dx) else 0.0
+    pooled_sd = float(np.std(dx)) if len(dx) else 0.1
+    pooled_sk = 0.0
+    if len(dx) > 2 and pooled_sd > 0:
+        dd = dx - pooled_mu
+        pooled_sk = float(np.mean(dd ** 3) / pooled_sd ** 3)
+
+    def _fit_poly(Nc, yc, wc, fallback):
+        """Weighted poly-in-N fit; degrade to a lower degree / constant when too sparse."""
+        Nc = np.asarray(Nc, float); yc = np.asarray(yc, float)
+        wc = np.asarray(wc, float)
+        c = np.zeros(n_coef)
+        npts = len(Nc)
+        if npts == 0:
+            c[0] = fallback
+            return c
+        if npts == 1:
+            c[0] = float(yc[0])
+            return c
+        use_deg = min(deg_N, npts - 1)
+        V = np.vander(Nc - N_ref, use_deg + 1, increasing=True)
+        sw = np.sqrt(np.clip(wc, 0.0, None))
+        coef, _, _, _ = np.linalg.lstsq(V * sw[:, None], yc * sw, rcond=None)
+        c[:use_deg + 1] = coef
+        return c
+
+    for a in range(n_snr):
+        for b in range(n_z):
+            cl = cells.get((a, b), [])
+            if len(cl) == 0:
+                mu_coef[a, b, 0] = pooled_mu
+                sig_coef[a, b, 0] = pooled_sd
+                skew_coef[a, b, 0] = pooled_sk
+                continue
+            Nc = np.array([c[0] for c in cl])
+            mn = np.array([c[1] for c in cl])
+            sd = np.array([c[2] for c in cl])
+            sk = np.array([c[3] for c in cl])
+            wt = np.array([c[4] for c in cl], float)
+            mu_coef[a, b] = _fit_poly(Nc, mn, wt, pooled_mu)
+            sig_coef[a, b] = _fit_poly(Nc, sd, wt, pooled_sd)
+            # clip per-cell skewness to the SN ceiling before the smooth fit (a single
+            # under-populated sub-bin can throw |skew|>2 from sample noise).
+            sk_cap = np.clip(sk, -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX)
+            skew_coef[a, b] = _fit_poly(Nc, sk_cap, wt, pooled_sk)
+
+    return ForwardResponseModel(
+        mu_coef=mu_coef, sig_coef=sig_coef, skew_coef=skew_coef,
+        snr_edges=snr_edges, z_edges=z_edges, N_ref=N_ref, deg_N=int(deg_N),
+        N_skew_collapse=float(N_skew_collapse),
+    )
+
+
+def save_forward_response(path: str, frm: ForwardResponseModel) -> None:
+    """Save a ForwardResponseModel to its OWN NPZ envelope (distinct from save_znz).
+
+    Backward-compat: ``load_forward_response`` restores all fields; the envelope is
+    self-describing (carries deg_N / collapse / sig_floor) so a future loader needs no
+    external metadata.
+    """
+    np.savez(
+        path,
+        _fwd_response_kind=np.array("skewnormal_per_cell"),
+        mu_coef=frm.mu_coef,
+        sig_coef=frm.sig_coef,
+        skew_coef=frm.skew_coef,
+        snr_edges=frm.snr_edges,
+        z_edges=frm.z_edges,
+        N_ref=np.array(frm.N_ref),
+        deg_N=np.array(frm.deg_N),
+        N_skew_collapse=np.array(frm.N_skew_collapse),
+        sig_floor=np.array(frm.sig_floor),
+    )
+
+
+def load_forward_response(path: str) -> ForwardResponseModel:
+    """Load a ForwardResponseModel saved by ``save_forward_response``."""
+    d = np.load(path, allow_pickle=True)
+    return ForwardResponseModel(
+        mu_coef=d["mu_coef"],
+        sig_coef=d["sig_coef"],
+        skew_coef=d["skew_coef"],
+        snr_edges=d["snr_edges"],
+        z_edges=d["z_edges"],
+        N_ref=float(d["N_ref"]),
+        deg_N=int(d["deg_N"]),
+        N_skew_collapse=float(d["N_skew_collapse"]) if "N_skew_collapse" in d else 21.0,
+        sig_floor=float(d["sig_floor"]) if "sig_floor" in d else 1e-3,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Serialisation
 # ---------------------------------------------------------------------------
@@ -1346,12 +1784,140 @@ def build_cache(argv=None):
     return znz, cnz
 
 
+# ---------------------------------------------------------------------------
+# build_forward_cache — reproducible Track-C T-A forward-response NPZ entrypoint
+# ---------------------------------------------------------------------------
+
+def build_forward_cache(argv=None):
+    """CLI entrypoint: build (or rebuild) the Track-C T-A FORWARD-response NPZ cache.
+
+    Reduce-only, reproducible (deterministic — the fit reads only the frozen truth-match,
+    no RNG).  Uses the IDENTICAL op-set / loader as ``build_cache`` (ab_loa0_fp_baseline
+    ingredients), then fits ``fit_forward_response`` on the truth-match conditional
+    (N_true, SNR, z_QSO, dx) — NON-CIRCULAR (no dN/dX / f / Ω input).
+
+    Prints a STAMP of the recovered surfaces at a few (N, SNR, z) cells for verification
+    against the measured forward response (mid-tier skew ≈+0.9, width 0.11→0.20 across
+    SNR, up-bias rising with z_QSO).
+
+    Usage
+    -----
+    python -m CDDF_analysis.znz_kernel build-forward-cache \\
+        --out /scratch/.../track_c/stage0/forward_response_2lpt0.npz
+    """
+    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _REPO not in sys.path:
+        sys.path.insert(0, _REPO)
+    from CDDF_analysis.ab_loa0_fp_baseline import (
+        build_ingredients, DEF_CAT, DEF_TRUTH, DEF_BAL, DEF_KERNEL, DEF_LOA0_PRODUCT,
+    )
+
+    p = argparse.ArgumentParser(
+        description="Build Track-C T-A forward-response NPZ cache (reproducible, "
+                    "non-circular: reads x̂/N_true/SNR/z_QSO only).",
+        formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
+    p.add_argument("--catalog-dir", default=DEF_CAT)
+    p.add_argument("--truth", default=DEF_TRUTH)
+    p.add_argument("--bal-cat", default=DEF_BAL)
+    p.add_argument("--molly-tsv", default=None)
+    p.add_argument("--kernel", default=DEF_KERNEL)
+    p.add_argument("--loa0-product", default=DEF_LOA0_PRODUCT)
+    p.add_argument("--out",
+                   default=("/scratch/cavestru_root/cavestru0/mfho/"
+                            "cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz"))
+    p.add_argument("--mockdir", default=None)
+    p.add_argument("--zbins", default="2.0,2.5,3.0,3.5")
+    p.add_argument("--report-limits", default="20.0,20.3,20.6")
+    p.add_argument("--family", default="bspbody")
+    p.add_argument("--fit-floor", type=float, default=19.5)
+    p.add_argument("--fit-ceil", type=float, default=99.0)
+    p.add_argument("--lambda-bspbody", type=float, default=30.0)
+    p.add_argument("--lam-rf-min", type=float, default=1025.0)
+    p.add_argument("--edge-slope-lam", type=float, default=40.0)
+    p.add_argument("--gl-nodes", type=int, default=1)
+    p.add_argument("--host-truth-floor", type=float, default=19.0)
+    p.add_argument("--deg-N", type=int, default=2)
+    p.add_argument("--snr-edges", default="2.0,3.5,6.5,inf",
+                   help="SNR bin edges (≥4 → ≥3 bins); the response WIDTH axis")
+    p.add_argument("--z-edges", default="0.0,2.56,2.96,inf",
+                   help="z_QSO bin edges (default 3 tertile-like bins; the UP-BIAS axis)")
+    p.add_argument("--n-N-cells", type=int, default=7)
+    p.add_argument("--min-count", type=int, default=60)
+    p.add_argument("--N-skew-collapse", type=float, default=21.0)
+    p.add_argument("--xhat-floor", type=float, default=19.5)
+    args = p.parse_args(argv)
+
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+
+    def _parse_edges(s):
+        return [np.inf if e.strip().lower() in ("inf", "+inf") else float(e)
+                for e in s.split(",")]
+    snr_edges = _parse_edges(args.snr_edges)
+    z_edges = _parse_edges(args.z_edges)
+
+    print("[build_forward_cache] loading ingredients (same op-set as ab_loa0_fp_baseline)...")
+    ing = build_ingredients(args, fp_estimator="purity_mixture")
+    cfg = ing["cfg"]
+    cat_cut = ing["cat_cut"]
+    good_mask = ing["good_mask"]
+
+    print("[build_forward_cache] measuring forward response (N_true, SNR, z_QSO, dx)...")
+    meas = measure_forward_response(cat_cut, good_mask, cfg,
+                                    host_col="NHI_TILT_HOST",
+                                    xhat_floor=args.xhat_floor)
+    N_tp = len(meas["N_true"])
+    print(f"[build_forward_cache] N (truth-matched TPs, x̂>={args.xhat_floor}) = {N_tp:,}")
+
+    frm = fit_forward_response(
+        meas, snr_edges=snr_edges, z_edges=z_edges, deg_N=args.deg_N,
+        n_N_cells=args.n_N_cells, min_count=args.min_count,
+        N_skew_collapse=args.N_skew_collapse)
+
+    print(f"[build_forward_cache] saving -> {args.out}")
+    save_forward_response(args.out, frm)
+    frm2 = load_forward_response(args.out)
+    assert np.array_equal(frm2.mu_coef, frm.mu_coef), "round-trip mu_coef mismatch"
+    assert np.array_equal(frm2.skew_coef, frm.skew_coef), "round-trip skew_coef mismatch"
+    print("[build_forward_cache] round-trip verified OK.")
+
+    # --- STAMP: recovered surfaces vs the measured forward response ---
+    print("\n[build_forward_cache] STAMP (recovered forward-response surfaces):")
+    print(f"  N            = {N_tp:,}")
+    print(f"  snr_edges    = {snr_edges}")
+    print(f"  z_edges      = {z_edges}")
+    print(f"  N_ref        = {frm.N_ref:.4f},  deg_N = {frm.deg_N},  "
+          f"N_skew_collapse = {frm.N_skew_collapse}")
+    snr_probe = [2.5, 5.0, 20.0]      # hi-deficit (lo-SNR), mid, hi-SNR
+    z_probe = [2.25, 2.75, 3.25]
+    print("  --- mid-tier (N_true=20.4): width should swing 0.11→0.20 across SNR ---")
+    for s in snr_probe:
+        sd = float(frm.sigma(np.array([20.4]), np.array([s]), np.array([2.75]))[0])
+        sk = float(frm.skew(np.array([20.4]), np.array([s]), np.array([2.75]))[0])
+        print(f"    SNR={s:>5}: sigma={sd:.3f}  skew={sk:+.3f}")
+    print("  --- up-bias mean(dx) should RISE with z_QSO (N_true=20.4, SNR=5) ---")
+    for z in z_probe:
+        mu = float(frm.mu_b(np.array([20.4]), np.array([5.0]), np.array([z]))[0])
+        print(f"    z_QSO={z}: mu_b={mu:+.4f}")
+    print("  --- high-N skew collapse (SNR=5, z=2.75) ---")
+    for Nv in [20.4, 21.0, 21.5]:
+        sk = float(frm.skew(np.array([Nv]), np.array([5.0]), np.array([2.75]))[0])
+        print(f"    N_true={Nv}: skew={sk:+.3f}")
+    print(f"  host_col     = NHI_TILT_HOST,  host_truth_floor = {args.host_truth_floor}")
+    print(f"  op-cut       = (S2N_RED>{cfg.snr_min}) & (P_DLA>{cfg.p_dla_min}) & good_mask")
+    print(f"  NON-CIRCULAR = fit read x̂/N_true/SNR/z_QSO only (no dN/dX/f/Ω)")
+    return frm
+
+
 if __name__ == "__main__":
     import sys as _sys
     if len(_sys.argv) > 1 and _sys.argv[1] == "build-cache":
         _sys.argv.pop(1)
         build_cache()
+    elif len(_sys.argv) > 1 and _sys.argv[1] == "build-forward-cache":
+        _sys.argv.pop(1)
+        build_forward_cache()
     else:
         print("Usage: python -m CDDF_analysis.znz_kernel build-cache [options]")
+        print("       python -m CDDF_analysis.znz_kernel build-forward-cache [options]")
         print("       python znz_kernel.py build-cache [options]")
         _sys.exit(1)
