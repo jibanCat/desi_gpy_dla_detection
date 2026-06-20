@@ -296,6 +296,28 @@ class HBIConfig:
     #                                                   total variance; toy: Ω coverage 0.25→0.90).
     #                                    Affects ONLY the BAND — the reported central
     #                                    dN/dX/Ω (the headline MAP point) is unchanged.
+    # --- Stage II: calibration-nuisance draw in the joint-MC band (gated, DEFAULT-OFF) ---
+    mc_nuisance: str = "indep"         # {"indep","shared_boot"}. How C, ρ (and the
+    #                                    detection sightline bootstrap boot_w) are drawn per
+    #                                    outer MC draw:
+    #                                      "indep"      => C and ρ from INDEPENDENT per-cell
+    #                                                      Jeffreys-Beta draws + a SEPARATE
+    #                                                      detection-side TID multinomial for
+    #                                                      boot_w — BYTE-IDENTICAL to the
+    #                                                      pre-Stage-II band (DEFAULT).
+    #                                      "shared_boot"=> ONE shared TID-blocked multinomial
+    #                                                      resample of the truth-match D_t per
+    #                                                      draw, from which C, ρ AND boot_w are
+    #                                                      re-derived JOINTLY (ψ=(C,ρ,g) are all
+    #                                                      functionals of the SAME D_t ⇒ a
+    #                                                      posteriori CORRELATED; the independent
+    #                                                      Betas double-count the D_t noise and
+    #                                                      sever the C–ρ correlation). The cell
+    #                                                      index that selects ρ_i (under the σ_i
+    #                                                      width-perturbed N̂) still couples g in.
+    #                                    Affects ONLY the BAND — the headline MAP point is
+    #                                    unchanged. (θ_K response marginalization = Stage III,
+    #                                    hooks the same shared resample.)
 
 
 # -----------------------------------------------------------------------------
@@ -1207,6 +1229,224 @@ def _draw_beta_cell(rng, ntp, ntot):
     return rng.beta(a, b)
 
 
+# -----------------------------------------------------------------------------
+# Stage II — shared truth-match (D_t) resample for the calibration nuisances
+# -----------------------------------------------------------------------------
+#
+# The Bayesian-referee finding (binding): the calibration nuisances ψ=(C, ρ, g) are
+# all FUNCTIONALS of the SAME truth-match table D_t (the molly per-cell purity and
+# completeness COUNTS), so they are a posteriori CORRELATED. The legacy joint-MC draws
+# C and ρ from INDEPENDENT per-cell Jeffreys-Betas (``_draw_beta_cell``), which
+# DOUBLE-COUNTS the D_t sampling noise and SEVERS the C–ρ correlation. Stage II makes
+# D_t a resamplable, TID-BLOCKED (sightline-blocked) record table; per outer MC draw ONE
+# shared multinomial over sightlines reweights every record, and (C, ρ, boot_w) are
+# re-derived JOINTLY from those shared resampled counts — the correct correlation,
+# without rebuilding the molly matrices. (θ_K, the response, is Stage III: it hooks the
+# same shared resample to re-fit the (N,z) kernel; the plumbing is built to accept it.)
+#
+# Record sets (all keyed by the sightline TARGETID so the bootstrap blocks correctly):
+#   * purity     — one record per op-passing DETECTION: cell (i_snr_pred, j_nhi_pred),
+#                  is_TP flag. Reweighted counts -> pur_ntot, pur_ntp -> ρ.
+#   * cmp_found  — one record per op-passing TRUE-POSITIVE detection (the completeness
+#                  numerator), binned by the detection's (S2N_RED, matched-NHI_TRUE) and
+#                  gated by pred>floor & P_DLA>min & good_mask exactly as molly's
+#                  ``completeness_snr_nhi_bins`` n_found.
+#   * cmp_fid    — one record per fiducial TRUTH system (truth_cut row), binned by
+#                  (S2N_RED, NHI_true) — molly's n_fid denominator.
+# A single TID multinomial multiplicity (length n_uniq) reweights ALL three; that SAME
+# multiplicity, mapped to the op-detection rows, is boot_w. So C, ρ and boot_w share one
+# resample (correlated), instead of three independent draws.
+
+@dataclass
+class TruthMatchResample:
+    """Resamplable, TID-blocked representation of the molly truth-match D_t.
+
+    Holds, per record set, the unique-TID index (``*_tid_idx``), the flat molly-cell
+    index (``*_cell``), and (purity/found) the per-record numerator flag. ``n_uniq`` is
+    the number of unique sightlines across ALL record sets; a length-``n_uniq``
+    multinomial multiplicity reweights every record. ``op_tid_idx`` maps the op-passing
+    detection rows (in op-order) to the unique-TID index so the SAME multiplicity yields
+    the detection bootstrap weight ``boot_w`` coherently with C/ρ.
+    """
+    n_snr: int
+    n_nhi: int
+    uniq_tids: np.ndarray
+    n_uniq: int
+    # purity (detection-side): cell + is_TP per op-passing detection
+    pur_tid_idx: np.ndarray
+    pur_cell: np.ndarray          # flat cell index = i_snr * n_nhi + j_nhi
+    pur_is_tp: np.ndarray
+    # completeness numerator (op-passing TP detections, binned by true cell)
+    cf_tid_idx: np.ndarray
+    cf_cell: np.ndarray
+    # completeness denominator (fiducial truth systems)
+    cd_tid_idx: np.ndarray
+    cd_cell: np.ndarray
+    # op-row -> unique-TID index (for boot_w; op-order)
+    op_tid_idx: np.ndarray
+
+    def _recon_counts(self, boot_mult: np.ndarray):
+        """Reweight the four per-cell counts by the per-TID multiplicity ``boot_mult``
+        (length n_uniq). Returns (pur_ntp, pur_ntot, cmp_nfound, cmp_nfid), each
+        (n_snr, n_nhi). With ``boot_mult == 1`` this reproduces the molly counts."""
+        ncell = self.n_snr * self.n_nhi
+        w_pur = boot_mult[self.pur_tid_idx]
+        ntot = np.bincount(self.pur_cell, weights=w_pur, minlength=ncell)
+        ntp = np.bincount(self.pur_cell, weights=w_pur * self.pur_is_tp,
+                          minlength=ncell)
+        w_cf = boot_mult[self.cf_tid_idx]
+        nfound = np.bincount(self.cf_cell, weights=w_cf, minlength=ncell)
+        w_cd = boot_mult[self.cd_tid_idx]
+        nfid = np.bincount(self.cd_cell, weights=w_cd, minlength=ncell)
+        sh = (self.n_snr, self.n_nhi)
+        return (ntp.reshape(sh), ntot.reshape(sh),
+                nfound.reshape(sh), nfid.reshape(sh))
+
+
+def build_truth_match_resample(mm: MollyMatrix, cat_cut: Table, is_TP: np.ndarray,
+                               truth_cut: Table, good_mask: np.ndarray,
+                               cfg: HBIConfig,
+                               cmp_min_pred_nhi: float = None,
+                               validate: bool = True) -> TruthMatchResample:
+    """Build the TID-blocked D_t record table whose unit-weight reduction reproduces the
+    molly counts in ``mm`` (``regenerate_molly_counts`` must have run first). See the
+    module note above. Mirrors ``purity_snr_nhi_bins`` / ``completeness_snr_nhi_bins``
+    cut bundles EXACTLY so a unit-weight resample is byte-identical to the matrices.
+
+    ``validate`` (default True): assert the unit-weight reconstruction matches
+    ``mm.pur_ntp/pur_ntot/cmp_nfound/cmp_nfid`` to 0 (raises otherwise) — the in-build
+    guarantee that the shared bootstrap reduces to the frozen point at multiplicity 1.
+    """
+    if mm.pur_ntp is None:
+        raise ValueError("build_truth_match_resample requires regenerate_molly_counts "
+                         "to have populated mm.pur_ntp/pur_ntot/cmp_nfound/cmp_nfid.")
+    n_snr = len(mm.snr_edges) - 1
+    n_nhi = len(mm.nhi_edges) - 1
+    if cmp_min_pred_nhi is None:
+        cmp_min_pred_nhi = float(mm.nhi_edges[0])
+
+    # ---- shared op-cut on the DETECTION catalog (purity denominator population) ----
+    s2n = np.asarray(cat_cut["S2N_RED"], float)
+    pdla = np.asarray(cat_cut["P_DLA"], float)
+    nhi_pred = np.asarray(cat_cut["NHI"], float)
+    nhi_true = np.asarray(cat_cut["NHI_TRUE"], float)
+    tids = np.asarray(cat_cut["TARGETID"], np.int64)
+    # molly purity bin requires SNR in (edge, edge), pred in (edge, edge), P_DLA>min,
+    # good_mask — i.e. finite cell AND P_DLA>min AND good. The molly grid is the full
+    # SNR/NHI range; cells outside the edges contribute nothing (clipped index would
+    # mis-assign), so restrict to the matrix support.
+    in_snr = (s2n > mm.snr_edges[0]) & (s2n < mm.snr_edges[-1])
+    in_nhi = (nhi_pred > mm.nhi_edges[0]) & (nhi_pred < mm.nhi_edges[-1])
+    pur_mask = in_snr & in_nhi & (pdla > cfg.p_dla_min) & good_mask
+
+    # ---- completeness numerator: op-passing TP detections (binned by TRUE cell) ----
+    in_true = (nhi_true > mm.nhi_edges[0]) & (nhi_true < mm.nhi_edges[-1])
+    cf_mask = (in_snr & in_true & (nhi_pred > cmp_min_pred_nhi)
+               & (pdla > cfg.p_dla_min) & good_mask & is_TP)
+
+    # ---- completeness denominator: fiducial truth systems ----
+    t_s2n = np.asarray(truth_cut["S2N_RED"], float)
+    t_nhi = np.asarray(truth_cut["NHI"], float)
+    t_tids = np.asarray(truth_cut["TARGETID"], np.int64)
+    t_in_snr = (t_s2n > mm.snr_edges[0]) & (t_s2n < mm.snr_edges[-1])
+    t_in_nhi = (t_nhi > mm.nhi_edges[0]) & (t_nhi < mm.nhi_edges[-1])
+    cd_mask = t_in_snr & t_in_nhi
+
+    # unified unique-TID basis across ALL record sets (sightline blocking)
+    all_tids = np.concatenate([tids[pur_mask], tids[cf_mask], t_tids[cd_mask]])
+    uniq_tids = np.unique(all_tids)
+    n_uniq = len(uniq_tids)
+
+    def _flat_cell(snr, nhi):
+        i = np.searchsorted(mm.snr_edges, np.asarray(snr, float), side="right") - 1
+        j = np.searchsorted(mm.nhi_edges, np.asarray(nhi, float), side="right") - 1
+        i = np.clip(i, 0, n_snr - 1)
+        j = np.clip(j, 0, n_nhi - 1)
+        return i * n_nhi + j
+
+    pur_tid_idx = np.searchsorted(uniq_tids, tids[pur_mask])
+    pur_cell = _flat_cell(s2n[pur_mask], nhi_pred[pur_mask])
+    pur_is_tp = is_TP[pur_mask].astype(float)
+
+    cf_tid_idx = np.searchsorted(uniq_tids, tids[cf_mask])
+    cf_cell = _flat_cell(s2n[cf_mask], nhi_true[cf_mask])
+
+    cd_tid_idx = np.searchsorted(uniq_tids, t_tids[cd_mask])
+    cd_cell = _flat_cell(t_s2n[cd_mask], t_nhi[cd_mask])
+
+    # op-row (the headline op = SNR>snr_min & P_DLA>min & good) -> unique-TID index.
+    # The joint-MC boot_w resamples THIS op set; in shared mode it must use the SAME
+    # multinomial. op-rows whose TID is not in uniq_tids (none, since the op set ⊆ the
+    # purity population) would map to -1; guard with clip + a membership check below.
+    op = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
+    op_tids = tids[op]
+    op_pos = np.searchsorted(uniq_tids, op_tids)
+    op_pos = np.clip(op_pos, 0, n_uniq - 1)
+    # any op TID missing from the unified basis would be a logic error (op ⊄ pur):
+    if not np.all(uniq_tids[op_pos] == op_tids):
+        # fall back to extending the basis with the missing op TIDs (correctness over
+        # speed); recompute every index against the extended basis.
+        uniq_tids = np.unique(np.concatenate([uniq_tids, op_tids]))
+        n_uniq = len(uniq_tids)
+        pur_tid_idx = np.searchsorted(uniq_tids, tids[pur_mask])
+        cf_tid_idx = np.searchsorted(uniq_tids, tids[cf_mask])
+        cd_tid_idx = np.searchsorted(uniq_tids, t_tids[cd_mask])
+        op_pos = np.searchsorted(uniq_tids, op_tids)
+
+    tmr = TruthMatchResample(
+        n_snr=n_snr, n_nhi=n_nhi, uniq_tids=uniq_tids, n_uniq=n_uniq,
+        pur_tid_idx=pur_tid_idx, pur_cell=pur_cell, pur_is_tp=pur_is_tp,
+        cf_tid_idx=cf_tid_idx, cf_cell=cf_cell,
+        cd_tid_idx=cd_tid_idx, cd_cell=cd_cell, op_tid_idx=op_pos)
+
+    if validate:
+        ntp, ntot, nfound, nfid = tmr._recon_counts(np.ones(n_uniq))
+        for name, recon, ref in (("pur_ntp", ntp, mm.pur_ntp),
+                                 ("pur_ntot", ntot, mm.pur_ntot),
+                                 ("cmp_nfound", nfound, mm.cmp_nfound),
+                                 ("cmp_nfid", nfid, mm.cmp_nfid)):
+            d = np.nanmax(np.abs(recon - np.asarray(ref, float)))
+            if d > 1e-9:
+                raise AssertionError(
+                    f"build_truth_match_resample: unit-weight {name} differs from mm "
+                    f"by {d:.6g} — the record cut bundle does not match the molly regen.")
+    return tmr
+
+
+def shared_boot_counts(tmr: TruthMatchResample, boot_mult: np.ndarray):
+    """Map ONE per-TID multiplicity (length n_uniq) to (C_draw, rho_draw, boot_w_op).
+
+    * ``C_draw`` = cmp_nfound_resampled / cmp_nfid_resampled  (NaN/empty -> C_FLOOR)
+    * ``rho_draw`` = pur_ntp_resampled / pur_ntot_resampled   (NaN/empty -> 0.0)
+    * ``boot_w_op`` = the per-op-row sightline multiplicity in op_BASE order (the full
+      purity population, SNR>snr_min & P_DLA>min & good — NO fit floor). Consumers that
+      work on the floored op set (loa0_full_posterior_mc, v3x_joint_mc) slice it with
+      fwd["keep_in_base"]; joint_mc_errors uses it as-is (its op IS op_base).
+
+    The three are derived from the SAME ``boot_mult`` so they are correctly correlated
+    (the Stage II fix). Cell shapes match the molly matrices."""
+    ntp, ntot, nfound, nfid = tmr._recon_counts(boot_mult)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        C_draw = np.where(nfid > 0, nfound / np.maximum(nfid, 1e-30), C_FLOOR)
+        rho_draw = np.where(ntot > 0, ntp / np.maximum(ntot, 1e-30), 0.0)
+    boot_w_op = boot_mult[tmr.op_tid_idx].astype(float)
+    return C_draw, rho_draw, boot_w_op
+
+
+def draw_shared_boot(rng, tmr: TruthMatchResample):
+    """ONE shared TID-blocked sightline-bootstrap resample of D_t -> jointly-correlated
+    (C_draw, rho_draw, boot_w_op). Every nuisance is a functional of its outcome (Stage
+    II). The per-TID multiplicity is the classical bootstrap multinomial: n_uniq draws
+    over n_uniq equal-probability sightlines. We realize it as the bincount of n_uniq
+    uniform integer draws — DISTRIBUTIONALLY IDENTICAL to
+    ``rng.multinomial(n_uniq, [1/n_uniq]*n_uniq)`` but O(n_uniq) with a much smaller
+    constant (no length-n_uniq probability vector alloc per draw), which matters because
+    D_t spans ALL truth/detection sightlines (n_uniq ~ 1e6)."""
+    n = tmr.n_uniq
+    mult = np.bincount(rng.integers(0, n, size=n), minlength=n).astype(float)
+    return shared_boot_counts(tmr, mult)
+
+
 def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
                     mm: MollyMatrix, fp_model: FPModel,
                     X_tot_zbins, logN_lo, logN_hi, N_b, dN_b, truth_cut: Table,
@@ -1255,6 +1495,14 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
     uniq_tids, inv = np.unique(tids_op, return_inverse=True)
     n_uniq = len(uniq_tids)
 
+    # Stage II: shared truth-match (D_t) resample so C/ρ/boot_w are CORRELATED. Built
+    # once; the per-draw multinomial below re-derives all three jointly. Default 'indep'
+    # leaves the per-cell Jeffreys-Betas + separate multinomial byte-identical.
+    mc_nuisance = getattr(cfg, "mc_nuisance", "indep")
+    tmr = None
+    if mc_nuisance == "shared_boot":
+        tmr = build_truth_match_resample(mm, cat_cut, is_TP, truth_cut, good_mask, cfg)
+
     samples = {
         "f_b": np.full((cfg.n_mc, n_nbins), np.nan),
         "dndx_z": {lim: np.full((cfg.n_mc, n_zbins), np.nan) for lim in limits},
@@ -1265,15 +1513,21 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
     is_purity_mix = isinstance(fp_model, PurityMixtureFP)
 
     for m in range(cfg.n_mc):
-        # 1. Wilson draws on C and ρ per molly cell
-        C_draw = _draw_beta_cell(rng, mm.cmp_nfound, mm.cmp_nfid)
-        rho_draw = _draw_beta_cell(rng, mm.pur_ntp, mm.pur_ntot)
-        # keep NaN cells -> floors
-        C_draw = np.where((mm.cmp_nfid > 0), C_draw, C_FLOOR)
-        rho_draw = np.where((mm.pur_ntot > 0), rho_draw, 0.0)
-
-        # 3. σ_i (NHI_ERR) width draw -> perturbed NHI
-        nhi_m = nhi0 + rng.normal(0.0, 1.0, n_op) * nhi_err
+        if mc_nuisance == "shared_boot":
+            # ONE shared TID-blocked resample -> jointly-correlated (C, ρ, boot_w_op).
+            C_draw, rho_draw, boot_w_shared = draw_shared_boot(rng, tmr)
+            # σ_i (NHI_ERR) width draw -> perturbed NHI (g; couples ρ_i via cell index)
+            nhi_m = nhi0 + rng.normal(0.0, 1.0, n_op) * nhi_err
+        else:
+            # 1. Wilson draws on C and ρ per molly cell (INDEPENDENT — legacy)
+            C_draw = _draw_beta_cell(rng, mm.cmp_nfound, mm.cmp_nfid)
+            rho_draw = _draw_beta_cell(rng, mm.pur_ntp, mm.pur_ntot)
+            # keep NaN cells -> floors
+            C_draw = np.where((mm.cmp_nfid > 0), C_draw, C_FLOOR)
+            rho_draw = np.where((mm.pur_ntot > 0), rho_draw, 0.0)
+            boot_w_shared = None
+            # 3. σ_i (NHI_ERR) width draw -> perturbed NHI
+            nhi_m = nhi0 + rng.normal(0.0, 1.0, n_op) * nhi_err
 
         # cell index per op-row (under perturbed NHI for ρ; SNR fixed)
         i_snr, j_nhi = _cell_index(mm, nhi_m, snr_op)
@@ -1281,9 +1535,14 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
         C_i = C_draw[i_snr, j_nhi]
         rho_i = rho_draw[i_snr, j_nhi]
 
-        # 4. bootstrap sightlines: TID multiplicity -> per-op-row weight
-        mult = rng.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq))
-        boot_w = mult[inv].astype(float)
+        # 4. bootstrap sightlines: TID multiplicity -> per-op-row weight. In shared_boot
+        # mode this came from the SAME multinomial that set C/ρ (correlated); in indep
+        # mode it is a SEPARATE draw (legacy, byte-identical).
+        if boot_w_shared is not None:
+            boot_w = boot_w_shared
+        else:
+            mult = rng.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq))
+            boot_w = mult[inv].astype(float)
         if tilt_weights_op is not None:
             boot_w = boot_w * tilt_weights_op
 
@@ -6147,11 +6406,18 @@ def v3x_family_vs_truth(cfg, truth_cut, fine, M_meta, family, rng, n_boot=200,
 # v3.x.7  WALL-2 joint-MC band on θ (resample C/ρ + bootstrap + NHI_ERR, re-MAP)
 # -----------------------------------------------------------------------------
 def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
-                 obj_weights_extra=None, n_mc=None, rng=None, pool=None) -> dict:
+                 obj_weights_extra=None, n_mc=None, rng=None, pool=None,
+                 tmr=None) -> dict:
     """WALL-2 joint Monte-Carlo on the parametric fit (the HEADLINE band — Finding 6).
     Each draw resamples molly C/ρ (Jeffreys-Beta), the per-object NHI width, and
     bootstraps sightlines, then re-MAPs θ warm-started at the point. Returns θ + the
     reductions q16/q50/q84/q2.5/q97.5.
+
+    Stage II: with ``cfg.mc_nuisance == 'shared_boot'`` pass a prebuilt ``tmr``
+    (``build_truth_match_resample``); C, ρ AND boot_w are then drawn from ONE shared
+    TID-blocked resample per draw (correlated). Default 'indep' is byte-identical and
+    ignores ``tmr``. This function lacks is_TP/truth_cut so it cannot build ``tmr``
+    itself — the caller supplies it.
 
     FP-FREEZE GUARD (adversarial review 2026-06-19): the per-draw ``lam_fp`` below
     HARD-CODES the purity-mixture ``(1−ρ)·boot_w`` form and IGNORES cfg.fp_estimator.
@@ -6185,15 +6451,27 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
     uniq, inv = np.unique(tids_op, return_inverse=True)
     n_uniq = len(uniq)
     w_extra = cat_op.get("op_weights")  # already op-sliced in v3x_build_forward
+    mc_nuisance = getattr(cfg, "mc_nuisance", "indep")
+    keep_in_base = fwd["keep_in_base"]   # op_base -> floored op_full slice (shared boot_w)
+    if mc_nuisance == "shared_boot" and tmr is None:
+        raise ValueError(
+            "v3x_joint_mc: cfg.mc_nuisance=='shared_boot' requires a prebuilt tmr "
+            "(build_truth_match_resample) — this function lacks is_TP/truth_cut.")
 
     def _draw(seed):
         rg = np.random.default_rng(seed)
-        C_draw = _draw_beta_cell(rg, mm.cmp_nfound, mm.cmp_nfid)
-        rho_draw = _draw_beta_cell(rg, mm.pur_ntp, mm.pur_ntot)
-        C_draw = np.where(mm.cmp_nfid > 0, C_draw, C_FLOOR)
-        rho_draw = np.where(mm.pur_ntot > 0, rho_draw, 0.0)
-        nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
-        boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
+        if mc_nuisance == "shared_boot":
+            # op_base-order shared boot_w sliced to the floored op set this path uses.
+            C_draw, rho_draw, boot_w_base = draw_shared_boot(rg, tmr)
+            boot_w = boot_w_base[keep_in_base]
+            nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
+        else:
+            C_draw = _draw_beta_cell(rg, mm.cmp_nfound, mm.cmp_nfid)
+            rho_draw = _draw_beta_cell(rg, mm.pur_ntp, mm.pur_ntot)
+            C_draw = np.where(mm.cmp_nfid > 0, C_draw, C_FLOOR)
+            rho_draw = np.where(mm.pur_ntot > 0, rho_draw, 0.0)
+            nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
+            boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
         if w_extra is not None:
             boot_w = boot_w * w_extra
         A_draw = _rescale_unitC_active(unitC, C_draw)

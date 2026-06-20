@@ -44,6 +44,7 @@ from CDDF_analysis.cddf_catalog_hbi import (
     truth_reductions, joint_mc_errors, omega_hi_prefactor,
     _draw_beta_cell, _rescale_unitC_active, _apply_C_to_M, _cell_index,
     _slice_active_unitC, C_FLOOR, _forward_fp_terms, make_rho_interpolator,
+    build_truth_match_resample, draw_shared_boot,
 )
 from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, _resolve_molly
 
@@ -78,18 +79,37 @@ def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
     limits = cfg.report_logN_limits
     n_zc = len(np.asarray(cfg.zbins, float)) - 1
 
+    # Stage II: shared truth-match (D_t) resample so C, ρ, boot_w are CORRELATED.
+    # tmr.op_tid_idx is in op_BASE order (the full purity population, no fit floor); the
+    # loa0 path works on the FLOORED op set (op_full = op_base & nhi>=fit_floor), so the
+    # shared boot_w is sliced to the floored subset via fwd["keep_in_base"] — exactly the
+    # slice the legacy [inv] index implicitly applies (tids_op already = floored op).
+    mc_nuisance = getattr(cfg, "mc_nuisance", "indep")
+    tmr = None
+    keep_in_base = fwd["keep_in_base"]
+    if mc_nuisance == "shared_boot":
+        tmr = build_truth_match_resample(
+            mm, cat_cut, ing["is_TP"], ing["truth_cut"], ing["good_mask"], cfg)
+
     f_bs = []; thetas = []
     dndx = {l: [] for l in limits}; omega = {l: [] for l in limits}
     dndx_z = {l: [] for l in limits}
     seeds = rng.integers(0, 2**31 - 1, size=n_mc)
     for s in seeds:
         rg = np.random.default_rng(int(s))
-        C_draw = _draw_beta_cell(rg, mm.cmp_nfound, mm.cmp_nfid)
-        rho_draw = _draw_beta_cell(rg, mm.pur_ntp, mm.pur_ntot)
-        C_draw = np.where(mm.cmp_nfid > 0, C_draw, C_FLOOR)
-        rho_draw = np.where(mm.pur_ntot > 0, rho_draw, 0.0)
-        nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
-        boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
+        if mc_nuisance == "shared_boot":
+            # ONE shared TID-blocked resample -> jointly-correlated (C, ρ, boot_w_base);
+            # slice the op_base-order boot_w to the floored op set this path uses.
+            C_draw, rho_draw, boot_w_base = draw_shared_boot(rg, tmr)
+            boot_w = boot_w_base[keep_in_base]
+            nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
+        else:
+            C_draw = _draw_beta_cell(rg, mm.cmp_nfound, mm.cmp_nfid)
+            rho_draw = _draw_beta_cell(rg, mm.pur_ntp, mm.pur_ntot)
+            C_draw = np.where(mm.cmp_nfid > 0, C_draw, C_FLOOR)
+            rho_draw = np.where(mm.pur_ntot > 0, rho_draw, 0.0)
+            nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
+            boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
         A_draw = _rescale_unitC_active(unitC, C_draw)
         M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
         # FROZEN loa-0 FP, resampled (Gehrels Gamma) — NOT bootstrap/tilt scaled
@@ -180,6 +200,12 @@ def main(argv=None):
                    help="Stage I: inner-θ per MC draw — 'map' (MODE, byte-identical "
                         "default) or 'laplace' (one N(θ̂,H⁻¹) sample, the faithful "
                         "marginalized band that folds in the within-ψ population-fit width).")
+    p.add_argument("--mc-nuisance", choices=["indep", "shared_boot"], default="indep",
+                   help="Stage II: calibration-nuisance draw — 'indep' (independent "
+                        "per-cell Jeffreys-Betas for C/ρ + separate detection bootstrap, "
+                        "byte-identical default) or 'shared_boot' (ONE shared TID-blocked "
+                        "resample of the truth-match D_t per draw, re-deriving C, ρ, boot_w "
+                        "JOINTLY so the C–ρ correlation is restored, not double-counted).")
     p.add_argument("--n-emcee-steps", type=int, default=1500)
     p.add_argument("--skip-emcee", action="store_true")
     p.add_argument("--skip-pm-xref", action="store_true")
@@ -200,6 +226,7 @@ def main(argv=None):
     cfg.v3_n_lap = args.n_lap
     cfg.v3_n_emcee_steps = args.n_emcee_steps
     cfg.mc_inner = args.mc_inner   # Stage I: 'map' (default) | 'laplace' (faithful band)
+    cfg.mc_nuisance = args.mc_nuisance  # Stage II: 'indep' (default) | 'shared_boot'
     logN_lo = ing["logN_lo"]; logN_hi = ing["logN_hi"]
     N_b = ing["N_b"]; dN_b = ing["dN_b"]; X_tot = ing["X_tot"]
     print(f"    n_sl_prod={ing['n_sl']}, X_tot={X_tot}  ({time.time()-t0:.0f}s)")
@@ -270,6 +297,7 @@ def main(argv=None):
             cfg_pm = ing_pm["cfg"]; cfg_pm.report_logN_limits = limits
             cfg_pm.n_mc = args.n_mc; cfg_pm._wall1_estimator = "v3"
             cfg_pm.mc_inner = args.mc_inner   # Stage I honored by the PM xref band too
+            cfg_pm.mc_nuisance = args.mc_nuisance  # Stage II honored by the PM xref too
             point_pm = ing_pm["estimator_fn"](
                 ing_pm["cat_cut"], ing_pm["is_TP"], ing_pm["good_mask"],
                 ing_pm["C_interp"], ing_pm["fp_model"], ing_pm["X_tot"],

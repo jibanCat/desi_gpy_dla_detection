@@ -118,6 +118,9 @@ def _make_cfg(args) -> HBIConfig:
         # Stage I: inner-θ per MC draw — 'map' (MODE, byte-identical default) or
         # 'laplace' (one N(θ̂,H⁻¹) sample, the faithful marginalized WALL-1 band).
         mc_inner=getattr(args, "mc_inner", "map"),
+        # Stage II: calibration-nuisance draw — 'indep' (byte-identical default) or
+        # 'shared_boot' (one shared TID-blocked resample -> C, ρ, boot_w correlated).
+        mc_nuisance=getattr(args, "mc_nuisance", "indep"),
     )
     return cfg
 
@@ -460,6 +463,11 @@ def main(argv=None):
                    help="Stage I: inner-θ per WALL-1 MC draw — 'map' (MODE, "
                         "byte-identical default) or 'laplace' (one N(θ̂,H⁻¹) sample, "
                         "folds in the within-ψ population-fit width).")
+    p.add_argument("--mc-nuisance", choices=["indep", "shared_boot"], default="indep",
+                   help="Stage II: calibration-nuisance draw — 'indep' (independent "
+                        "per-cell Jeffreys-Betas, byte-identical default) or "
+                        "'shared_boot' (ONE shared TID-blocked resample of the "
+                        "truth-match per draw -> C, ρ, boot_w correlated).")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--n-jobs", type=int, default=16)
     # S3 falsifier (dense-synthetic) knobs
