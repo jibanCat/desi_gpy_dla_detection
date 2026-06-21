@@ -2535,10 +2535,17 @@ def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg, frm_ove
     the certified construction (notes/2026-06-20_track_c_forward_toy_certificate.md).
 
     z-handling mirrors the Gaussian branch (NOT kappa): the forward response is a 1-D
-    density in N per detection (z enters only via the detection's SCALAR z_QSO covariate),
+    density in N per detection (z enters only via the detection's SCALAR z covariate),
     so the z-grid distribution comes from the detection's own ẑ (=Z_DLA) measurement
     Gaussian (σ_z near-delta), erf-mass per fine z-bin × dX/dz — IDENTICAL to the Gaussian
     branch's Pz[i,kz]. C is factored out per molly cell EXACTLY as the other branches.
+
+    The forward response's SCALAR z covariate (the cell-axis lookup) is selected to MATCH
+    the model's binning (``frm.z_covariate``): the detection's Z_QSO (default, byte-identical)
+    or its Z_DLA (= ẑ; Track-C (b), the causal mean-flux axis the per-z reduction resolves).
+    The z-GRID distribution Pz[i,kz] always uses ẑ=Z_DLA (the absorber location) regardless —
+    the covariate switch only changes WHICH redshift indexes the response cell, not the
+    z-localisation of the detection on the fine grid.
     """
     # frm_override (T-D): the per-draw resampled ForwardResponseModel (kernel-calibration
     # uncertainty carry). None ⇒ load the frozen point model from the NPZ cache (byte-identical
@@ -2552,10 +2559,19 @@ def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg, frm_ove
     sig_z = np.asarray(cat_op["sig_z"], float)
     snr = np.asarray(cat_op["snr"], float)
     i_snr = np.asarray(cat_op["i_snr"], int)
-    # z_QSO covariate for the forward response (per detection). Fall back to ẑ (z_DLA) when
-    # absent — the certificate/eddington-verify show z_DLA≈z_QSO (r=0.92); the model's z
-    # axis is a secondary location effect, so this is a safe degrade, never the headline.
-    zqso = np.asarray(cat_op.get("zqso", zhat), float)
+    # z covariate for the forward response (per detection) — MUST match the redshift the
+    # ForwardResponseModel's (SNR, z) cell axis was BINNED ON (frm.z_covariate). Track-C (b):
+    #   - "zqso" (DEFAULT, byte-identical): the detection's Z_QSO (cat_op["zqso"]), falling
+    #     back to ẑ (=Z_DLA) when absent — z_DLA≈z_QSO (r=0.92) so the degrade is safe.
+    #   - "zdla": the detection's OWN ẑ (= Z_DLA), so the kernel column is conditioned on the
+    #     SAME absorber redshift the per-z dN/dX(z) reduction (_v2_reduce z_pred = Z_DLA) is
+    #     resolved in — the causal mean-flux axis (z_QSO redundant). This makes the fit-side
+    #     covariate and the deconvolution-side covariate CONSISTENT (both z_DLA).
+    z_cov = str(getattr(frm, "z_covariate", "zqso")).lower()
+    if z_cov in ("zdla", "z_dla"):
+        zqso = zhat                                  # condition on the detection's own ẑ=z_DLA
+    else:
+        zqso = np.asarray(cat_op.get("zqso", zhat), float)
 
     n_obs = len(xhat)
     n_nbins = len(logN_lo)
@@ -7173,8 +7189,12 @@ def v3x_forward_response_setup(cfg, cat_cut, good_mask, mm, fwd, tmr):
     # order so the resample weights line up row-for-row.
     host_col = "NHI_TILT_HOST"
     xhat_floor = 19.5
+    # the Stage-III per-draw forward refit must condition on the SAME redshift covariate the
+    # frozen point model was built with (frm_point.z_covariate), else the resampled kernel's
+    # z-axis would not align with the point kernel (and the unit-weight invariance would break).
     meas = measure_forward_response(cat_cut, good_mask, cfg,
-                                    host_col=host_col, xhat_floor=xhat_floor)
+                                    host_col=host_col, xhat_floor=xhat_floor,
+                                    z_covariate=str(getattr(frm_point, "z_covariate", "zqso")))
     s2n = np.asarray(cat_cut["S2N_RED"], float)
     pdla = np.asarray(cat_cut["P_DLA"], float)
     op_meas = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask

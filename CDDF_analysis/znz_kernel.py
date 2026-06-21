@@ -1272,6 +1272,11 @@ class ForwardResponseModel:
         collapse — no spurious right-skew extrapolated past N≈21).
     sig_floor : float
         Lower clip on σ (keeps the skew-normal well-defined; default 1e-3 dex).
+    z_covariate : str
+        Which redshift the (SNR, z) cell axis was binned on: "zqso" (DEFAULT, Z_QSO) or
+        "zdla" (Z_DLA, the absorber/detection redshift). A self-describing label so the
+        deconvolution conditions each detection's kernel column on the SAME z the model
+        was fit with. Default "zqso" keeps the legacy NPZ / build byte-identical.
     emp : EmpiricalForwardDensity or None
         OPTIONAL smoothed-empirical per-cell forward residual density (the A/B
         ``resp_family="empirical"`` path, T-BC FIX).  When present, ``response_density_empirical``
@@ -1291,6 +1296,13 @@ class ForwardResponseModel:
     N_skew_collapse: float = 21.0
     sig_floor: float = 1e-3
     emp: Optional["EmpiricalForwardDensity"] = None
+    z_covariate: str = "zqso"   # which redshift the (SNR, z) cell axis is binned on:
+    #   "zqso" (DEFAULT — Z_QSO, byte-identical to the frozen forward_response_2lpt0.npz) or
+    #   "zdla" (Z_DLA, the absorber/detection redshift — Track-C (b) z_DLA-binned response).
+    #   This is a LABEL the deconvolution (_build_A_ib_forward) reads to pick the matching
+    #   per-detection z covariate; the model's z_edges/coefficients carry the binning itself.
+    #   Stage-0 found z_DLA is the causal mean-flux axis (z_QSO redundant, r=0.92); the
+    #   z_DLA model conditions the kernel column on the SAME z the per-z reduction resolves.
 
     # --- cell lookup ---------------------------------------------------------
     def _i_snr(self, snr):
@@ -1660,8 +1672,9 @@ def build_empirical_forward_density(meas: dict,
 
 def measure_forward_response(cat_cut, good_mask, cfg,
                              host_col: str = "NHI_TILT_HOST",
-                             xhat_floor: float = 19.5) -> dict:
-    """Measure the per-detection forward-response arrays (N_true, SNR, z_QSO, dx).
+                             xhat_floor: float = 19.5,
+                             z_covariate: str = "zqso") -> dict:
+    """Measure the per-detection forward-response arrays (N_true, SNR, z, dx).
 
     Reduce-only.  Replicates the EXACT op-set of measure_znz_response / the eddington
     verification (lya-only, S2N_RED > snr_min, P_DLA > p_dla_min, good_mask), keeps TPs
@@ -1669,17 +1682,38 @@ def measure_forward_response(cat_cut, good_mask, cfg,
     variables for the FORWARD fit binned on the TRUE value.
 
     NON-CIRCULAR: reads ONLY x̂ (``NHI``), the matched true host NHI (``host_col``),
-    ``S2N_RED`` and ``Z_QSO`` — never a reduced population statistic.
+    ``S2N_RED`` and the redshift column (``Z_QSO`` or ``Z_DLA``) — never a reduced
+    population statistic.
+
+    Parameters
+    ----------
+    z_covariate : str
+        Which redshift the forward (SNR, z) cell axis conditions on:
+          "zqso" (DEFAULT) → Z_QSO, byte-identical to the frozen forward_response_2lpt0.npz;
+          "zdla"           → Z_DLA, the absorber/detection redshift (Track-C (b), the causal
+                             mean-flux axis the per-z dN/dX(z) reduction is resolved in).
+        Stored back in the returned dict's ``z_covariate`` key so ``fit_forward_response``
+        stamps the matching label onto the ForwardResponseModel.
 
     Returns
     -------
     dict with keys
-        "N_true" : matched true host log NHI (the binning value)
-        "snr"    : S2N_RED of the detection
-        "zqso"   : Z_QSO of the detection's sightline
-        "dx"     : x̂ − N_true   (the response residual; right-skewed up-bias)
-        "xhat"   : the predicted log NHI (kept for cross-checks)
+        "N_true"      : matched true host log NHI (the binning value)
+        "snr"         : S2N_RED of the detection
+        "zqso"        : the chosen redshift covariate of the detection (Z_QSO or Z_DLA per
+                        ``z_covariate``).  The dict key stays ``"zqso"`` (the internal field
+                        name the fit/empirical builders consume) regardless of which column
+                        it carries — ``z_covariate`` records WHICH redshift it actually is.
+        "dx"          : x̂ − N_true   (the response residual; right-skewed up-bias)
+        "xhat"        : the predicted log NHI (kept for cross-checks)
+        "z_covariate" : the redshift the ``"zqso"`` array actually carries ("zqso"/"zdla")
     """
+    z_covariate = str(z_covariate).lower()
+    z_col_map = {"zqso": "Z_QSO", "z_qso": "Z_QSO", "zdla": "Z_DLA", "z_dla": "Z_DLA"}
+    z_col = z_col_map.get(z_covariate, "Z_QSO")
+    # normalize the stored label to the canonical short form
+    z_covariate = "zdla" if z_col == "Z_DLA" else "zqso"
+
     s2n = np.asarray(cat_cut["S2N_RED"], float)
     pdla = np.asarray(cat_cut["P_DLA"], float)
     op = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
@@ -1688,8 +1722,8 @@ def measure_forward_response(cat_cut, good_mask, cfg,
     true_col = host_col if host_col in cat_cut.colnames else "NHI_TRUE"
     xtrue = np.asarray(cat_cut[true_col], float)[op]
     snr = s2n[op]
-    zqso = (np.asarray(cat_cut["Z_QSO"], float)[op]
-            if "Z_QSO" in cat_cut.colnames else np.full(int(op.sum()), np.nan))
+    zqso = (np.asarray(cat_cut[z_col], float)[op]
+            if z_col in cat_cut.colnames else np.full(int(op.sum()), np.nan))
 
     tp = np.isfinite(xtrue)
     xhat, xtrue, snr, zqso = xhat[tp], xtrue[tp], snr[tp], zqso[tp]
@@ -1697,7 +1731,7 @@ def measure_forward_response(cat_cut, good_mask, cfg,
     xhat, xtrue, snr, zqso = xhat[keep], xtrue[keep], snr[keep], zqso[keep]
 
     return {"N_true": xtrue, "snr": snr, "zqso": zqso,
-            "dx": xhat - xtrue, "xhat": xhat}
+            "dx": xhat - xtrue, "xhat": xhat, "z_covariate": z_covariate}
 
 
 def _empirical_forward_cells(N_true, snr, zqso, dx,
@@ -1782,6 +1816,11 @@ def fit_forward_response(meas: dict,
     The dN/dX/Ω reductions are strictly-downstream CHECKS computed after this model is
     frozen — the α=1/R0 tautology is structurally impossible because no reduced statistic
     enters the fit.
+
+    The ``"zqso"`` array of ``meas`` is the chosen redshift covariate (Z_QSO by default, or
+    Z_DLA when ``measure_forward_response(..., z_covariate="zdla")`` was used).  The label
+    ``meas["z_covariate"]`` (default "zqso") is stamped onto the returned model's
+    ``z_covariate`` so the deconvolution conditions each detection on the SAME redshift.
 
     Procedure
     ---------
@@ -1909,10 +1948,15 @@ def fit_forward_response(meas: dict,
             meas, snr_edges=snr_edges, z_edges=z_edges,
             n_N_cells=n_N_cells, min_count=min_count, weights=W)
 
+    # carry the z-covariate label measure_forward_response stamped (default "zqso" ⇒
+    # byte-identical to the legacy build / the frozen forward_response_2lpt0.npz).
+    z_cov = str(meas.get("z_covariate", "zqso")).lower()
+    z_cov = "zdla" if z_cov in ("zdla", "z_dla") else "zqso"
+
     return ForwardResponseModel(
         mu_coef=mu_coef, sig_coef=sig_coef, skew_coef=skew_coef,
         snr_edges=snr_edges, z_edges=z_edges, N_ref=N_ref, deg_N=int(deg_N),
-        N_skew_collapse=float(N_skew_collapse), emp=emp,
+        N_skew_collapse=float(N_skew_collapse), emp=emp, z_covariate=z_cov,
     )
 
 
@@ -1950,6 +1994,7 @@ class ForwardResponseFitResample:
     n_N_cells: int
     min_count: int
     build_empirical: bool
+    z_covariate: str = "zqso"    # the redshift the ``zqso`` array carries (point-model label)
 
 
 def build_forward_response_fit_resample(
@@ -1997,7 +2042,8 @@ def build_forward_response_fit_resample(
         deg_N=int(frm_point.deg_N), N_ref=float(frm_point.N_ref),
         N_skew_collapse=float(frm_point.N_skew_collapse),
         n_N_cells=int(n_N_cells), min_count=int(min_count),
-        build_empirical=bool(build_empirical))
+        build_empirical=bool(build_empirical),
+        z_covariate=str(getattr(frm_point, "z_covariate", "zqso")))
 
 
 def refit_forward_response_from_resample(
@@ -2015,7 +2061,8 @@ def refit_forward_response_from_resample(
     """
     w = np.asarray(boot_mult, float)[rfr.tid_idx]
     meas = {"N_true": rfr.N_true, "snr": rfr.snr, "zqso": rfr.zqso, "dx": rfr.dx,
-            "xhat": rfr.N_true + rfr.dx}
+            "xhat": rfr.N_true + rfr.dx,
+            "z_covariate": str(getattr(rfr, "z_covariate", "zqso"))}
     return fit_forward_response(
         meas, snr_edges=rfr.snr_edges, z_edges=rfr.z_edges,
         deg_N=rfr.deg_N, n_N_cells=rfr.n_N_cells, min_count=rfr.min_count,
@@ -2041,6 +2088,7 @@ def save_forward_response(path: str, frm: ForwardResponseModel) -> None:
         deg_N=np.array(frm.deg_N),
         N_skew_collapse=np.array(frm.N_skew_collapse),
         sig_floor=np.array(frm.sig_floor),
+        z_covariate=np.array(getattr(frm, "z_covariate", "zqso")),
     )
     # OPTIONAL empirical density block (T-BC resp_family='empirical'). Written ONLY when
     # present so a parametric-only model stays byte-compatible with the legacy envelope;
@@ -2084,6 +2132,8 @@ def load_forward_response(path: str) -> ForwardResponseModel:
         N_skew_collapse=float(d["N_skew_collapse"]) if "N_skew_collapse" in d else 21.0,
         sig_floor=float(d["sig_floor"]) if "sig_floor" in d else 1e-3,
         emp=emp,
+        # legacy NPZs (no z_covariate key) load as "zqso" → byte-identical behaviour.
+        z_covariate=(str(d["z_covariate"]) if "z_covariate" in d else "zqso"),
     )
 
 
@@ -2363,7 +2413,11 @@ def build_forward_cache(argv=None):
     p.add_argument("--snr-edges", default="2.0,3.5,6.5,inf",
                    help="SNR bin edges (≥4 → ≥3 bins); the response WIDTH axis")
     p.add_argument("--z-edges", default="0.0,2.56,2.96,inf",
-                   help="z_QSO bin edges (default 3 tertile-like bins; the UP-BIAS axis)")
+                   help="redshift bin edges (default 3 tertile-like bins; the UP-BIAS axis)")
+    p.add_argument("--z-covariate", default="zqso", choices=["zqso", "zdla"],
+                   help="which redshift the (SNR, z) cell axis conditions on: 'zqso' "
+                        "(DEFAULT — Z_QSO, byte-identical to the frozen NPZ) or 'zdla' "
+                        "(Z_DLA, the absorber/detection redshift — Track-C (b))")
     p.add_argument("--n-N-cells", type=int, default=7)
     p.add_argument("--min-count", type=int, default=60)
     p.add_argument("--N-skew-collapse", type=float, default=21.0)
@@ -2384,10 +2438,12 @@ def build_forward_cache(argv=None):
     cat_cut = ing["cat_cut"]
     good_mask = ing["good_mask"]
 
-    print("[build_forward_cache] measuring forward response (N_true, SNR, z_QSO, dx)...")
+    print(f"[build_forward_cache] measuring forward response (N_true, SNR, "
+          f"z={args.z_covariate}, dx)...")
     meas = measure_forward_response(cat_cut, good_mask, cfg,
                                     host_col="NHI_TILT_HOST",
-                                    xhat_floor=args.xhat_floor)
+                                    xhat_floor=args.xhat_floor,
+                                    z_covariate=args.z_covariate)
     N_tp = len(meas["N_true"])
     print(f"[build_forward_cache] N (truth-matched TPs, x̂>={args.xhat_floor}) = {N_tp:,}")
 
@@ -2410,6 +2466,8 @@ def build_forward_cache(argv=None):
     print(f"  z_edges      = {z_edges}")
     print(f"  N_ref        = {frm.N_ref:.4f},  deg_N = {frm.deg_N},  "
           f"N_skew_collapse = {frm.N_skew_collapse}")
+    print(f"  z_covariate  = {frm.z_covariate}  "
+          f"({'Z_DLA (absorber redshift)' if frm.z_covariate == 'zdla' else 'Z_QSO'})")
     snr_probe = [2.5, 5.0, 20.0]      # hi-deficit (lo-SNR), mid, hi-SNR
     z_probe = [2.25, 2.75, 3.25]
     print("  --- mid-tier (N_true=20.4): width should swing 0.11→0.20 across SNR ---")
@@ -2417,17 +2475,18 @@ def build_forward_cache(argv=None):
         sd = float(frm.sigma(np.array([20.4]), np.array([s]), np.array([2.75]))[0])
         sk = float(frm.skew(np.array([20.4]), np.array([s]), np.array([2.75]))[0])
         print(f"    SNR={s:>5}: sigma={sd:.3f}  skew={sk:+.3f}")
-    print("  --- up-bias mean(dx) should RISE with z_QSO (N_true=20.4, SNR=5) ---")
+    z_lab = "z_DLA" if frm.z_covariate == "zdla" else "z_QSO"
+    print(f"  --- up-bias mean(dx) vs {z_lab} (N_true=20.4, SNR=5) ---")
     for z in z_probe:
         mu = float(frm.mu_b(np.array([20.4]), np.array([5.0]), np.array([z]))[0])
-        print(f"    z_QSO={z}: mu_b={mu:+.4f}")
+        print(f"    {z_lab}={z}: mu_b={mu:+.4f}")
     print("  --- high-N skew collapse (SNR=5, z=2.75) ---")
     for Nv in [20.4, 21.0, 21.5]:
         sk = float(frm.skew(np.array([Nv]), np.array([5.0]), np.array([2.75]))[0])
         print(f"    N_true={Nv}: skew={sk:+.3f}")
     print(f"  host_col     = NHI_TILT_HOST,  host_truth_floor = {args.host_truth_floor}")
     print(f"  op-cut       = (S2N_RED>{cfg.snr_min}) & (P_DLA>{cfg.p_dla_min}) & good_mask")
-    print(f"  NON-CIRCULAR = fit read x̂/N_true/SNR/z_QSO only (no dN/dX/f/Ω)")
+    print(f"  NON-CIRCULAR = fit read x̂/N_true/SNR/{z_lab} only (no dN/dX/f/Ω)")
     return frm
 
 
