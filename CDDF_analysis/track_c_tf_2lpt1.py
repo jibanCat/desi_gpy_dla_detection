@@ -461,8 +461,17 @@ def make_figure(out_path, variants, args):
         Xn = X / np.nansum(X)
         map_fb = np.nansum(map_fbk * Xn[None, :], axis=1)
         ft_fb = np.nansum(f_truth * Xn[None, :], axis=1)
-        lo68 = np.nanpercentile(np.nansum(fbk_samp * Xn[None, None, :], axis=2), 16, axis=0)
-        hi68 = np.nanpercentile(np.nansum(fbk_samp * Xn[None, None, :], axis=2), 84, axis=0)
+        fb_samp = np.nansum(fbk_samp * Xn[None, None, :], axis=2)  # (n_mc, n_nbins)
+        # recenter-on-point (Track-C #34) for the DIFFERENTIAL f(N) band — match panels
+        # 0/1 (dN/dX, Ω) and the headline. Per-bin additive median->point shift
+        # (width-preserving); without it the convex-bspline-MAP Jensen offset puts the
+        # band ~17.5% above the plotted MAP line.
+        if getattr(args, "band_recenter", False):
+            _med = np.nanmedian(fb_samp, axis=0)
+            _sh = np.where(np.isfinite(_med) & np.isfinite(map_fb), map_fb - _med, 0.0)
+            fb_samp = fb_samp + _sh[None, :]
+        lo68 = np.nanpercentile(fb_samp, 16, axis=0)
+        hi68 = np.nanpercentile(fb_samp, 84, axis=0)
         m = (mid >= 20.0) & (mid <= 22.0) & np.isfinite(map_fb) & (map_fb > 0)
         ax.fill_between(mid[m], np.clip(lo68[m], 1e-30, None),
                         np.clip(hi68[m], 1e-30, None), color=C95, alpha=0.5, label="HBI 68%")

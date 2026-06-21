@@ -623,6 +623,14 @@ def make_figure(out_path, res, args, lit):
     # panel 2: CDDF f(N) z-marginal + literature (Ho21 z3-4, N12)
     ax = axes[2]
     map_fb = res["map_fb"]; fb_samp = res["fb_samp"]
+    # recenter-on-point (Track-C #34) for the DIFFERENTIAL f(N) band — panels 0/1
+    # (dN/dX(z), Ω(z)) already recenter via recenter_band_on_point; panel 2 must match.
+    # Per-bin additive median->point shift (width-preserving); without it the convex-
+    # bspline-MAP Jensen offset puts the band ~17.5% above the plotted MAP line.
+    if getattr(args, "band_recenter", False):
+        _med = np.nanmedian(fb_samp, axis=0)
+        _sh = np.where(np.isfinite(_med) & np.isfinite(map_fb), map_fb - _med, 0.0)
+        fb_samp = fb_samp + _sh[None, :]
     lo68 = np.nanpercentile(fb_samp, 16, axis=0)
     hi68 = np.nanpercentile(fb_samp, 84, axis=0)
     m = (mid >= 20.0) & (mid <= 22.0) & np.isfinite(map_fb) & (map_fb > 0)
