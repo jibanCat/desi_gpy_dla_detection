@@ -64,6 +64,17 @@ _DEF_FORWARD = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
 _DEF_OUT = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/perz_band")
 
 
+def _git_commit():
+    """Short HEAD commit for the reproducibility STAMP (best-effort)."""
+    try:
+        import subprocess
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=_REPO,
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return "unknown"
+
+
 # -----------------------------------------------------------------------------
 # per-z reductions from the genuine 2-D f(N | z_coarse)
 # -----------------------------------------------------------------------------
@@ -475,8 +486,14 @@ def write_report(out_path, res, cov, limits, args, wallclock, headline_limit=20.
              f"(integrated_shoulder={cov['_meta']['omega_slope_extrap_integrated']})")
     L.append(f"- Consistency gate (MAP per-z dN/dX from f_bk_coarse vs e0.dndx_z): "
              f"max rel err = {res['consistency_err']:.2e}  (< 1e-7)")
-    L.append("- Inference (gpy_dla_detection/) byte-FROZEN; estimator (cddf_catalog_hbi.py) "
-             "and band driver (track_c_td_band.py) NOT edited; this script IMPORTS them.")
+    _cz = bool(getattr(args, "cz_resolved", False))
+    _czk = getattr(res["cfg"], "_cnz_resolved", None)
+    L.append(f"- STAMP: code_commit=`{_git_commit()}`  cz_resolved={_cz} "
+             f"(cnz g_grid shape {_czk.g_grid.shape if _czk is not None else None}; "
+             f"min_count={getattr(args,'cz_min_count',None)})  seed={args.seed}")
+    L.append("- Inference (gpy_dla_detection/) byte-FROZEN. The estimator's z-resolved "
+             "completeness C(N,z) is GATED (cfg.completeness_z_resolved, default OFF = "
+             "z-marginalized molly C = byte-identical); ON here only when cz_resolved=True.")
     L.append("")
     L.append("## Per-z coverage table (dN/dX(z) & Ω(z) at NHI ≥ 20.3)")
     L.append("")
@@ -596,6 +613,12 @@ def main(argv=None):
     p.add_argument("--slope-edge", type=float, default=21.2)
     p.add_argument("--slope-fit-dex", type=float, default=0.6)
     p.add_argument("--sigma-slope", type=float, default=0.5)
+    # Track-C #39: z-RESOLVED COMPLETENESS (gated; default OFF = z-marginalized molly C)
+    p.add_argument("--cz-resolved", action="store_true",
+                   help="Track-C #39: z-resolved completeness C(N,z) (gated; default OFF "
+                        "= byte-identical z-marginalized molly C).")
+    p.add_argument("--cz-min-count", type=float, default=30.0,
+                   help="occupancy floor for the z-resolved g build (sparse-cell shrinkage).")
     args = p.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
     limits = tuple(float(x) for x in args.report_limits.split(","))

@@ -136,6 +136,32 @@ class HBIConfig:
     #                                    molly C is used, BYTE-IDENTICAL. (Phase 1: the MC
     #                                    C-perturbation still draws on the 2-D molly C and g
     #                                    is applied as a fixed deterministic factor.)
+    completeness_z_resolved: bool = False  # Track-C #39 z-RESOLVED COMPLETENESS (gated,
+    #                                    DEFAULT-OFF byte-identical). When True, the 2-D molly
+    #                                    completeness C[i_snr,j_nhi] (built per (N,SNR) and
+    #                                    z-MARGINALIZED, then mis-applied at all z) is promoted
+    #                                    to a 3-D C[i_snr,j_nhi,kz] = C·g[j_nhi,kz] using a
+    #                                    CNZModel g(N,z) measured INTERNALLY from the same
+    #                                    truth-match (TP-detection / truth counts per (N,z)
+    #                                    cell — NON-CIRCULAR; no dN/dX/Ω/f). g(j,z_ref)=1 so the
+    #                                    z-marginal LEVEL (the headline-validated molly C) is
+    #                                    preserved; g only re-distributes recovery toward the z
+    #                                    where the TRUE completeness actually is (rises with z:
+    #                                    [20.3,20.5) C_true 0.46→0.53→0.63). The CNZModel is
+    #                                    built ONCE (where truth_cut is in scope) and stashed on
+    #                                    cfg._cnz_resolved; v3x_build_forward reads it and threads
+    #                                    the 3-D C through _apply_C_to_{A,M} at the POINT, AND
+    #                                    v3x_joint_mc promotes each draw's resampled 2-D C_draw to
+    #                                    the SAME 3-D C·g so the BAND is also z-resolved (the g
+    #                                    z-SHAPE is frozen across draws; only the C LEVEL resamples
+    #                                    — unlike the c_nz_model Phase-1 g-free band). Sparse
+    #                                    high-z cells are occupancy-shrunk toward the z-marginal so
+    #                                    a few-count cell cannot blow up 1/C. False => the 2-D molly
+    #                                    C is used unchanged → the ndim==2 path → BYTE-IDENTICAL.
+    completeness_z_min_count: float = 30.0  # occupancy floor for the z-resolved g build: a
+    #                                    raw (N,z) cell with fewer truth systems than this is
+    #                                    shrunk toward g=1 (the z-marginal) by w=n/(n+this), so a
+    #                                    sparse deep-tail high-z cell cannot inject a noisy g.
     # --- Track-C T-BC: FORWARD-RESPONSE deconvolution kernel A (gated, DEFAULT byte-identical) ---
     resp_kind: str = "kappa"          # "kappa" (DEFAULT, byte-identical: build A from the
     #                                    cached GP-POSTERIOR kappa2d as today) | "forward"
@@ -2224,6 +2250,13 @@ def run_pipeline(cfg: HBIConfig) -> dict:
     C_interp = make_C_interpolator(mm)
     rho_interp = make_rho_interpolator(mm)
 
+    # Track-C #39: build-and-stash the z-resolved completeness (no-op when the flag is OFF
+    # → cfg._cnz_resolved stays None → v3x_build_forward byte-identical).
+    if getattr(cfg, "completeness_z_resolved", False):
+        ensure_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm)
+        print(f"    [Track-C #39] z-resolved completeness g(N,z) built "
+              f"(shape {cfg._cnz_resolved.g_grid.shape})")
+
     print("[3] pathlength (SNR-restricted)")
     X_tot, n_sl_used = build_pathlength(cfg, qso_lookup=qso_lookup)
     print(f"    X_tot per zbin = {X_tot}, n_sl_used={n_sl_used}")
@@ -3697,6 +3730,94 @@ def _build_C_nz_3d(C_matrix_2d, cnz, mm, n_zf):
     return C2[:, :, None] * g[None, :, :]
 
 
+def build_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm):
+    """Track-C #39 — build the z-RESOLVED completeness model g(N,z) INTERNALLY from the
+    truth-match (NON-CIRCULAR: op-passing TRUE-POSITIVE detections / truth systems per
+    (N,z) cell; no dN/dX/Ω/f anywhere).
+
+    Returns a ``CNZModel`` on the molly nhi-cell axis × the forward fine-z grid
+    (``_fine_z_grid(cfg)``), normalised so g(j, z_ref)=1 at the reference z column. The
+    z-marginal LEVEL is therefore unchanged (it stays the headline-validated molly C);
+    g only re-distributes recovery in z to where the TRUE completeness is — which the
+    STEP-0 diagnosis showed RISES with z at fixed N (the lever for the per-z amplitude
+    tilt). Sparse high-z cells are occupancy-shrunk toward g=1 (the z-marginal) with
+    weight w = n_true/(n_true + completeness_z_min_count) so a few-count deep-tail cell
+    cannot inject a noisy g (and 1/C cannot blow up). The result is consumed by
+    ``_build_C_nz_3d`` exactly like the external ``c_nz_model`` CNZModel (same grids,
+    same threading), so the rest of the pipeline is unchanged.
+
+    Reuses ``measure_c_nz`` (the raw count grid) so the op-set / cell-binning is
+    IDENTICAL to the z-marginalized completeness denominators (no second convention)."""
+    from CDDF_analysis.znz_kernel import measure_c_nz, CNZModel
+    z_edges_fine = _fine_z_grid(cfg)
+    n_zf = len(z_edges_fine) - 1
+    meas = measure_c_nz(cat_cut, truth_cut, cfg, mm, z_edges_fine, good_mask=good_mask)
+    n_rec = np.asarray(meas["n_rec"], float)      # (n_nhi, n_zf)
+    n_true = np.asarray(meas["n_true"], float)
+    nhi_edges = np.asarray(meas["nhi_edges"], float)
+    n_nhi = n_rec.shape[0]
+
+    # z-marginal completeness per N-cell (the level the molly C already carries; the
+    # shrinkage target and the row reference at z columns with no counts).
+    rec_marg = n_rec.sum(axis=1)
+    true_marg = n_true.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        C_marg = np.where(true_marg > 0, rec_marg / true_marg, np.nan)
+        C_cell = np.where(n_true > 0, n_rec / n_true, np.nan)
+
+    # occupancy shrinkage toward the z-marginal: C_reg = w·C_cell + (1−w)·C_marg,
+    # w = n_true/(n_true + k). Empty cells (n_true=0) → C_marg (w=0). This keeps a
+    # well-occupied cell at its measured C_true(N,z) and pulls sparse cells back to the
+    # z-flat marginal so g→1 there (no noisy 1/C).
+    k = float(getattr(cfg, "completeness_z_min_count", 30.0))
+    w = np.where(n_true > 0, n_true / (n_true + k), 0.0)
+    Cm_b = np.where(np.isfinite(C_marg), C_marg, np.nan)[:, None]
+    Cc_b = np.where(np.isfinite(C_cell), C_cell, np.nan)
+    # where C_cell is NaN (empty cell) fall back fully to the marginal
+    Cc_b = np.where(np.isfinite(Cc_b), Cc_b, np.where(np.isfinite(Cm_b), Cm_b, np.nan))
+    C_reg = w * Cc_b + (1.0 - w) * np.where(np.isfinite(Cm_b), Cm_b, 0.0)
+    # rows whose marginal is undefined (no truth at all in this N-cell): g≡1 (no info).
+    row_has_marg = np.isfinite(C_marg)
+
+    # g(N,z) = C_reg(N,z) / C_marg(N): the z-SHAPE relative to the marginal. Normalise so
+    # the TRUTH-OCCUPANCY-weighted z-mean of g is 1 PER ROW — the HEADLINE-NEUTRAL anchor
+    # (NOT the single z_ref column the external CNZModel uses): it pins the per-N z-mean
+    # of the APPLIED completeness C_molly·g to the molly z-marginal C_molly so the
+    # z-INTEGRATED recovery is unchanged to first order (only the z-DISTRIBUTION of the
+    # recovery shifts). Rows with no truth at all carry g≡1 (no info).
+    g = np.ones((n_nhi, n_zf), float)
+    for j in range(n_nhi):
+        if not row_has_marg[j] or not (C_marg[j] > 0):
+            g[j, :] = 1.0
+            continue
+        gj = C_reg[j, :] / C_marg[j]
+        wt = n_true[j, :].copy()
+        good = np.isfinite(gj) & (wt > 0)
+        if good.any():
+            gbar = float(np.sum(gj[good] * wt[good]) / np.sum(wt[good]))
+            if np.isfinite(gbar) and gbar > 0:
+                gj = gj / gbar      # occupancy-weighted z-mean of g == 1
+        g[j, :] = np.where(np.isfinite(gj), gj, 1.0)
+    g = np.clip(np.where(np.isfinite(g), g, 1.0), 0.01, 10.0)
+    return CNZModel(g_grid=g, nhi_edges=nhi_edges, z_edges_fine=z_edges_fine)
+
+
+def ensure_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm):
+    """Track-C #39 — build-and-stash the z-resolved CNZModel on cfg._cnz_resolved IFF
+    cfg.completeness_z_resolved is True (and not already built). No-op (and leaves
+    cfg._cnz_resolved=None) when the flag is OFF → the downstream v3x_build_forward
+    branch is never entered → BYTE-IDENTICAL. Call ONCE after the cut bundle is loaded
+    (where truth_cut is in scope); v3x_build_forward then reads the frozen model on the
+    POINT and every MC draw."""
+    if not getattr(cfg, "completeness_z_resolved", False):
+        cfg._cnz_resolved = None
+        return None
+    if getattr(cfg, "_cnz_resolved", None) is not None:
+        return cfg._cnz_resolved
+    cfg._cnz_resolved = build_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm)
+    return cfg._cnz_resolved
+
+
 # -----------------------------------------------------------------------------
 # v2.3  Smoothness operator + regularized log-posterior with closed-form gradient
 # -----------------------------------------------------------------------------
@@ -4305,15 +4426,29 @@ def _slice_active_unitC(A_meta, active_flat_cols, keep_rows):
     new_c = col_map[cols]
     new_r = row_map[rows]
     sel = (new_c >= 0) & (new_r >= 0)
+    # Track-C #39: carry the per-triple fine-z bin kz = cols % n_zf so a per-draw 3-D
+    # z-resolved C-rescale can be applied (recovered from the ORIGINAL flat col before
+    # the active remap; the 2-D path ignores it → byte-identical).
+    kz = (cols[sel] % A_meta["n_zf"]).astype(int)
     return dict(rr=new_r[sel], cc=new_c[sel], vv=vals[sel],
-                isnr=cisnr[sel], jnhi=cjnhi[sel],
+                isnr=cisnr[sel], jnhi=cjnhi[sel], kz=kz,
                 shape=(len(kept_idx), len(active_flat_cols)))
 
 
 def _rescale_unitC_active(unitC, C_matrix):
     """Build the C-scaled active CSR A from the compact unit-C COO (cheap; no
-    Gaussian rebuild). value = unitC value × C[i_snr, j_nhi] (floored)."""
-    cfac = C_matrix[unitC["isnr"], unitC["jnhi"]]
+    Gaussian rebuild). value = unitC value × C[i_snr, j_nhi] (floored).
+
+    2-D ``C_matrix`` (legacy): byte-identical. 3-D ``C_matrix[i_snr,j_nhi,kz]``
+    (Track-C #39 z-resolved C-rescale in the MC band): index the per-triple fine-z bin
+    ``unitC['kz']`` so the per-draw A carries the SAME z-resolved completeness the point
+    does — making the band fully z-coherent (NOT the Phase-1 g-free band). Falls back to
+    the 2-D path when the unitC predates the kz carry (backward-compat)."""
+    C_matrix = np.asarray(C_matrix)
+    if C_matrix.ndim == 3 and "kz" in unitC:
+        cfac = C_matrix[unitC["isnr"], unitC["jnhi"], unitC["kz"]]
+    else:
+        cfac = C_matrix[unitC["isnr"], unitC["jnhi"]]
     cfac = np.where(np.isfinite(cfac) & (cfac > 0), cfac, C_FLOOR)
     return _sp.csr_matrix((unitC["vv"] * cfac, (unitC["rr"], unitC["cc"])),
                           shape=unitC["shape"])
@@ -6655,7 +6790,18 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     # molly C and DOES NOT carry g — g is a fixed deterministic factor on the POINT forward
     # only (documented; the MC band's C-jitter is g-free for now).
     _cnz_path = getattr(cfg, "c_nz_model", None)
-    if _cnz_path is not None:
+    # Track-C #39 z-RESOLVED COMPLETENESS (gated). When cfg.completeness_z_resolved is
+    # True the CNZModel is built INTERNALLY from the truth-match (build_cnz_resolved) and
+    # stashed on cfg._cnz_resolved (ONCE, where truth_cut is in scope). Reading it here
+    # threads the SAME 3-D C·g(N,z) through _apply_C_to_{A,M} at the POINT AND every MC
+    # draw (g is frozen across draws — the Phase-1 carry, like c_nz_model). It takes
+    # precedence over an external c_nz_model path if both are set (the internal build is
+    # self-consistent with THIS run's cat_cut/molly). Default OFF => this branch is never
+    # entered → the 2-D molly C → ndim==2 path → BYTE-IDENTICAL.
+    _cnz_resolved = getattr(cfg, "_cnz_resolved", None)
+    if getattr(cfg, "completeness_z_resolved", False) and _cnz_resolved is not None:
+        C_matrix = _build_C_nz_3d(C_matrix, _cnz_resolved, mm, len(z_edges_fine) - 1)
+    elif _cnz_path is not None:
         from CDDF_analysis.znz_kernel import load_znz
         cnz_model = load_znz(_cnz_path)[1]
         C_matrix = _build_C_nz_3d(C_matrix, cnz_model, mm, len(z_edges_fine) - 1)
@@ -7384,13 +7530,22 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
             boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
         if w_extra is not None:
             boot_w = boot_w * w_extra
+        # Track-C #39: promote the per-draw 2-D molly C_draw to the 3-D z-resolved
+        # C·g(N,z) so the BAND uses the SAME z-resolved completeness as the point (NOT
+        # the Phase-1 g-free band). g is the FROZEN cnz (g does not re-jitter per draw —
+        # the C LEVEL still resamples via C_draw; only the z-SHAPE g is held). Default OFF
+        # (or no cnz stashed) => C_draw stays 2-D => byte-identical band.
+        C_draw_use = C_draw
+        if getattr(cfg, "completeness_z_resolved", False) and \
+                getattr(cfg, "_cnz_resolved", None) is not None:
+            C_draw_use = _build_C_nz_3d(C_draw, cfg._cnz_resolved, mm, n_zf)
         # Stage III: per-draw response θ -> per-draw unitC (REBUILD A). 'frozen' uses the ONE
         # frozen unitC (byte-identical).
         unitC_draw = unitC
         if mc_response == "marginalize":
             unitC_draw = v3x_stage3_rebuild_unitC(cfg, stage3_kind, sctx, rg, boot_mult)
-        A_draw = _rescale_unitC_active(unitC_draw, C_draw)
-        M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
+        A_draw = _rescale_unitC_active(unitC_draw, C_draw_use)
+        M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw_use), 0.0)
         j_nhi = _cell_index(mm, nhi_m, snr_op)[1]
         rho_i = rho_draw[i_snr0, j_nhi]
         lam_fp = (1.0 - rho_i) * boot_w

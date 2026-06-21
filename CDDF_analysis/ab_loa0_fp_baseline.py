@@ -112,6 +112,8 @@ def build_ingredients(args, fp_estimator: str, loa0_product=None):
         v3_fine_density_gl_nodes=args.gl_nodes,
         v2_z_fit_lo=2.0, v2_z_fit_hi=3.5, v2_z_fit_step=0.1,
         rng_seed=0,
+        completeness_z_resolved=bool(getattr(args, "cz_resolved", False)),
+        completeness_z_min_count=float(getattr(args, "cz_min_count", 30.0)),
     )
     # attach the cached calibrated kernel (same as stage 2/3)
     d = np.load(args.kernel, allow_pickle=True)
@@ -132,6 +134,14 @@ def build_ingredients(args, fp_estimator: str, loa0_product=None):
         cfg, qso_lookup=qso_lookup, return_per_sl=True)
     cfg.n_sl_prod = int(n_sl)   # production SNR>2 sightlines -> loa-0 ell_eff/μ_FP scale
     logN_lo, logN_hi, N_b, dN_b = build_fine_grid(cfg)
+
+    # Track-C #39: build-and-stash the z-resolved completeness if requested on cfg
+    # (set by the runner BEFORE build_ingredients — no-op/None when OFF → byte-identical).
+    from CDDF_analysis.cddf_catalog_hbi import ensure_cnz_resolved
+    if getattr(cfg, "completeness_z_resolved", False):
+        ensure_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm)
+        print(f"  [Track-C #39] z-resolved completeness g(N,z) built "
+              f"(shape {cfg._cnz_resolved.g_grid.shape})")
 
     s2n = np.asarray(cat_cut["S2N_RED"], float)
     pdla = np.asarray(cat_cut["P_DLA"], float)
@@ -178,6 +188,11 @@ def main(argv=None):
     p.add_argument("--edge-slope-lam", type=float, default=40.0)
     p.add_argument("--gl-nodes", type=int, default=1)
     p.add_argument("--host-truth-floor", type=float, default=19.0)
+    p.add_argument("--cz-resolved", action="store_true",
+                   help="Track-C #39: z-resolved completeness C(N,z) (gated; default OFF "
+                        "= byte-identical z-marginalized molly C).")
+    p.add_argument("--cz-min-count", type=float, default=30.0,
+                   help="occupancy floor for the z-resolved g build (sparse-cell shrinkage).")
     p.add_argument("--only", choices=["both", "purity_mixture", "loa0"], default="both")
     args = p.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)

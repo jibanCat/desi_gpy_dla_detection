@@ -3499,3 +3499,96 @@ def test_driver_band_helper_recenter_off_byte_identical():
     b_on = _band(s, point=7.0, recenter=True)
     assert b_on["q50"] == 7.0                    # median == point exactly
     assert np.isclose(b_on["q84"] - b_on["q16"], b_raw["q84"] - b_raw["q16"], atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Track-C #39: z-RESOLVED COMPLETENESS C(N,z) (gated, default-OFF byte-identical)
+# ---------------------------------------------------------------------------
+def test_completeness_z_resolved_default_off():
+    """The new knobs default OFF / to the documented occupancy floor on HBIConfig."""
+    cfg = H.HBIConfig(catalog_dir="x", truth_path="y", bal_cat_path="z",
+                      molly_tsv="m", out_dir="o")
+    assert cfg.completeness_z_resolved is False
+    assert cfg.completeness_z_min_count == 30.0
+
+
+def test_ensure_cnz_resolved_noop_when_off():
+    """ensure_cnz_resolved is a no-op when the flag is OFF: stashes None, never builds,
+    so v3x_build_forward's branch is never entered (byte-identical default)."""
+    cfg = _make_cfg(completeness_z_resolved=False)
+    out = H.ensure_cnz_resolved(cfg, cat_cut=None, truth_cut=None,
+                                good_mask=None, mm=None)
+    assert out is None
+    assert cfg._cnz_resolved is None
+
+
+def test_build_C_nz_3d_g_identity_is_bit_identical():
+    """When g≡1, _build_C_nz_3d's 3-D C·g reduces to the 2-D molly C broadcast over z,
+    so _apply_C_to_{A,M} produce the SAME result as the 2-D path (the byte-identity
+    contract the gated default relies on). This locks the threading invariant."""
+    from CDDF_analysis.znz_kernel import CNZModel
+    cfg, logN_lo, logN_hi, N_b, dN_b, z_edges, mm, kappa, cat_op, Xc = _kappa_path_fixture()
+    n_zf = len(z_edges) - 1
+    n_nhi = mm.completeness.shape[1]
+    cnz_unit = CNZModel(g_grid=np.ones((n_nhi, n_zf)),
+                        nhi_edges=mm.nhi_edges, z_edges_fine=z_edges)
+    C3 = H._build_C_nz_3d(mm.completeness, cnz_unit, mm, n_zf)
+    assert C3.shape == (mm.completeness.shape[0], n_nhi, n_zf)
+    # A side: 3-D-with-g≡1 == 2-D
+    A_meta = H.build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges, Xc, cfg,
+                          kernel="gaussian", posterior_kernel=kappa)[1]
+    A2 = np.asarray(H._apply_C_to_A(A_meta, mm.completeness).todense()).ravel()
+    A3 = np.asarray(H._apply_C_to_A(A_meta, C3).todense()).ravel()
+    np.testing.assert_array_equal(A2, A3)
+    # M side: 3-D-with-g≡1 == 2-D
+    M_meta = H.build_M_b(np.array([2.4]), np.array([2.6]), np.array([5.0]), mm,
+                         logN_lo, logN_hi, N_b, dN_b, z_edges, Xc, cfg)
+    M2 = H._apply_C_to_M(M_meta, mm.completeness)
+    M3 = H._apply_C_to_M(M_meta, C3)
+    np.testing.assert_array_equal(M2, M3)
+
+
+def test_build_cnz_resolved_recovers_known_z_trend():
+    """build_cnz_resolved measures g(N,z) from a synthetic truth-match whose completeness
+    RISES with z at fixed N (the 2LPT-0 signature). Checks: (a) g rises with z in the
+    populated DLA cell, (b) the occupancy-weighted z-mean of g is ~1 per row (the
+    headline-neutral anchor), (c) sparse cells are shrunk toward g≈1 (no blow-up)."""
+    from astropy.table import Table
+    rng = np.random.default_rng(11)
+    # one molly N-cell that matters: [20.3, 20.5). 3 fine-z columns map to 3 z regions.
+    # Build a truth-match where detection prob rises linearly with z.
+    cfg = _make_cfg(snr_min=2.0, p_dla_min=0.5, v2_z_fit_lo=2.0, v2_z_fit_hi=3.5,
+                    v2_z_fit_step=0.5, completeness_z_resolved=True)
+    # molly with nhi_edges including [20.3,20.5); snr single bin > 2
+    snr_e = np.array([0.0, np.inf]); nhi_e = np.array([20.3, 20.5, np.inf])
+    C = np.array([[0.5, 0.5]])
+    mm = H.MollyMatrix(snr_edges=snr_e, nhi_edges=nhi_e,
+                       purity=np.ones_like(C), completeness=C)
+    n = 60000
+    # truth in cell [20.3,20.5), z in [2.0,3.5)
+    t_nhi = rng.uniform(20.3, 20.5, n)
+    t_z = rng.uniform(2.0, 3.5, n)
+    # detection prob rises with z: 0.35 at z=2.0 -> 0.65 at z=3.5
+    p_det = 0.35 + 0.30 * (t_z - 2.0) / 1.5
+    det = rng.random(n) < p_det
+    # cat_cut = the detected TPs (carry the TRUE N,z + op columns)
+    nd = int(det.sum())
+    cat_cut = Table(dict(
+        S2N_RED=np.full(nd, 5.0), P_DLA=np.full(nd, 0.9),
+        NHI=t_nhi[det], NHI_TRUE=t_nhi[det],
+        Z_DLA=t_z[det], Z_QSO=t_z[det] + 0.3))
+    truth_cut = Table(dict(NHI=t_nhi, Z_DLA=t_z, S2N_RED=np.full(n, 5.0)))
+    good_mask = np.ones(nd, bool)
+    cnz = H.build_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm)
+    g = cnz.g_grid
+    assert g.shape[0] == 2  # two molly N cells
+    n_zf = g.shape[1]
+    # (a) g rises with z in cell 0 (the populated [20.3,20.5))
+    assert g[0, -1] > g[0, 0] + 0.1, f"g should rise with z: {g[0]}"
+    # (b) occupancy-weighted z-mean of g ~ 1 (uniform truth in z -> ~uniform weights)
+    gbar = float(np.mean(g[0]))
+    assert abs(gbar - 1.0) < 0.05, f"row z-mean of g should be ~1, got {gbar}"
+    # (c) the empty top cell (no truth) carries g≡1 (no blow-up)
+    np.testing.assert_allclose(g[1], 1.0, atol=1e-9)
+    # values stay in the safety-clip range
+    assert (g >= 0.01).all() and (g <= 10.0).all()
