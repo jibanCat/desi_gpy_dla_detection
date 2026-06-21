@@ -493,3 +493,109 @@ def test_build_empirical_forward_density_is_noncircular_signature():
     src = inspect.getsource(build_empirical_forward_density)
     for forbidden in ("dndx", "omega", '"f"', "f_of_N"):
         assert forbidden not in src.lower(), f"empirical builder references {forbidden}"
+
+
+# ---------------------------------------------------------------------------
+# Track-C T-D: resample-aware forward response (kernel-calibration uncertainty carry)
+# ---------------------------------------------------------------------------
+
+def test_forward_fit_weights_unit_reproduces_unweighted():
+    """fit_forward_response(meas, weights=ones) == fit_forward_response(meas) bit-for-bit
+    (the unit-weight invariance the marginalized band rests on — boot_mult==1 ⇒ point fit)."""
+    meas = _synthetic_forward_meas(seed=21)
+    frm0 = fit_forward_response(meas)
+    w = np.ones(len(meas["N_true"]))
+    frm1 = fit_forward_response(meas, weights=w)
+    np.testing.assert_array_equal(frm0.mu_coef, frm1.mu_coef)
+    np.testing.assert_array_equal(frm0.sig_coef, frm1.sig_coef)
+    np.testing.assert_array_equal(frm0.skew_coef, frm1.skew_coef)
+    # the empirical density block too
+    np.testing.assert_array_equal(frm0.emp.rho, frm1.emp.rho)
+    np.testing.assert_array_equal(frm0.emp.N_anchors, frm1.emp.N_anchors)
+
+
+def test_forward_fit_weighted_subbin_moment_matches_replication():
+    """The per-sub-bin WEIGHTED moments equal the moments of the row-replicated population
+    WITHIN FIXED N sub-bin edges (the genuine correctness of the weighted reduction). The
+    sub-bin EDGES are set by unweighted np.quantile (preserving unit-weight byte-identity),
+    so we compare the cell moments computed on the SAME edge geometry rather than the fitted
+    surfaces (whose edges drift under replication)."""
+    from CDDF_analysis.znz_kernel import _empirical_forward_cells
+    rng = np.random.default_rng(3)
+    n = 60000
+    N_true = rng.uniform(19.7, 21.3, n)
+    snr = np.full(n, 5.0); zqso = np.full(n, 2.7)
+    dx = rng.normal(0.05, 0.15, n) + 0.02 * (N_true - 20.0)   # mild N-dependence
+    mult = rng.integers(0, 4, size=n).astype(float)           # 0..3 copies per object
+    edges_snr = (0.0, np.inf); edges_z = (0.0, np.inf)
+    cells_w = _empirical_forward_cells(N_true, snr, zqso, dx, edges_snr, edges_z,
+                                       n_N_cells=5, min_count=10, weights=mult)
+    # explicit replication
+    idx = np.repeat(np.arange(n), mult.astype(int))
+    cells_rep = _empirical_forward_cells(N_true[idx], snr[idx], zqso[idx], dx[idx],
+                                         edges_snr, edges_z, n_N_cells=5, min_count=10)
+    cw = np.asarray(cells_w[(0, 0)]); cr = np.asarray(cells_rep[(0, 0)])
+    assert len(cw) == len(cr) and len(cw) >= 3
+    # N_center, weighted mean(dx), weighted sd(dx) agree closely; the small residual is the
+    # quantile-edge geometry difference (unweighted quantile on the unique vs replicated set).
+    np.testing.assert_allclose(cw[:, 0], cr[:, 0], rtol=0, atol=6e-3)   # N center
+    np.testing.assert_allclose(cw[:, 1], cr[:, 1], rtol=0, atol=3e-3)   # weighted mean(dx)
+    np.testing.assert_allclose(cw[:, 2], cr[:, 2], rtol=0, atol=3e-3)   # weighted sd(dx)
+    # effective (weighted) count tracks the replicated row count to within edge drift
+    np.testing.assert_allclose(cw[:, 4].sum(), cr[:, 4].sum(), rtol=2e-3)
+
+
+def test_forward_fit_weights_noncircular_signature():
+    """The weights argument is a per-object resample multiplicity, NOT a reduced statistic:
+    fit_forward_response's signature still exposes no dN/dX / f / Ω, only `weights`."""
+    sig = inspect.signature(fit_forward_response)
+    names = " ".join(sig.parameters).lower()
+    assert "weights" in names
+    assert "dndx" not in names and "omega" not in names and "f_b" not in names
+
+
+def test_refit_forward_response_unit_weight_reproduces_point():
+    """refit_forward_response_from_resample(rfr, ones) reproduces the frozen point
+    ForwardResponseModel surfaces to ~1e-9 (the Stage-III unit-weight invariance)."""
+    from CDDF_analysis.znz_kernel import (
+        build_forward_response_fit_resample, refit_forward_response_from_resample)
+    meas = _synthetic_forward_meas(seed=23, n=120000)
+    det_tids = np.arange(len(meas["N_true"]), dtype=np.int64)   # 1 detection per TID
+    uniq = np.unique(det_tids)
+    frm_point = fit_forward_response(meas)
+    rfr = build_forward_response_fit_resample(meas, det_tids, uniq, frm_point)
+    frm_unit = refit_forward_response_from_resample(rfr, np.ones(len(uniq)))
+    np.testing.assert_allclose(frm_unit.mu_coef, frm_point.mu_coef, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(frm_unit.sig_coef, frm_point.sig_coef, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(frm_unit.skew_coef, frm_point.skew_coef, rtol=0, atol=1e-9)
+
+
+def test_refit_forward_response_perturbs_and_is_reproducible():
+    """A non-unit boot_mult PERTURBS the surfaces (genuine resample), and the SAME mult
+    gives the SAME fit (deterministic — no hidden RNG)."""
+    from CDDF_analysis.znz_kernel import (
+        build_forward_response_fit_resample, refit_forward_response_from_resample)
+    meas = _synthetic_forward_meas(seed=24, n=120000)
+    det_tids = np.arange(len(meas["N_true"]), dtype=np.int64)
+    uniq = np.unique(det_tids)
+    frm_point = fit_forward_response(meas)
+    rfr = build_forward_response_fit_resample(meas, det_tids, uniq, frm_point)
+    rng = np.random.default_rng(9)
+    mult = rng.multinomial(len(uniq), np.full(len(uniq), 1.0 / len(uniq))).astype(float)
+    frm_a = refit_forward_response_from_resample(rfr, mult)
+    frm_b = refit_forward_response_from_resample(rfr, mult.copy())
+    np.testing.assert_array_equal(frm_a.sig_coef, frm_b.sig_coef)   # same mult → same fit
+    # perturbed away from the point (at least one surface differs materially)
+    moved = (not np.allclose(frm_a.mu_coef, frm_point.mu_coef, atol=1e-6)
+             or not np.allclose(frm_a.sig_coef, frm_point.sig_coef, atol=1e-6))
+    assert moved, "non-unit boot_mult did not perturb the forward surfaces"
+
+
+def test_refit_forward_response_noncircular_signature():
+    """refit_forward_response_from_resample takes only the resample table + multiplicity +
+    fit knobs — no reduced statistic (the α=1/R0 tautology stays structurally impossible)."""
+    from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+    sig = inspect.signature(refit_forward_response_from_resample)
+    names = " ".join(sig.parameters).lower()
+    assert "boot_mult" in names
+    assert "dndx" not in names and "omega" not in names and "f_b" not in names

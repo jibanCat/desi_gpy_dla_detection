@@ -1520,7 +1520,8 @@ def build_empirical_forward_density(meas: dict,
                                     r_lo: float = -1.5,
                                     r_hi: float = 1.5,
                                     n_r: int = 121,
-                                    smooth_dr: float = 0.05) -> "EmpiricalForwardDensity":
+                                    smooth_dr: float = 0.05,
+                                    weights=None) -> "EmpiricalForwardDensity":
     """Build the smoothed-empirical forward residual density from the truth-match (the
     GENUINE T-BC empirical kernel; the toy's ``build_empirical_fwd_kernel`` analog).
 
@@ -1539,11 +1540,19 @@ def build_empirical_forward_density(meas: dict,
 
     Parameters mirror ``fit_forward_response``'s binning (``snr_edges``/``z_edges``/
     ``n_N_cells``/``min_count``) so the empirical and parametric paths share cell geometry.
+
+    ``weights`` (Track-C T-D, REDUCE-ONLY): an optional per-object resample multiplicity.
+    When given, the histograms become WEIGHTED (np.histogram weights) and the cell/sub-bin
+    occupancy uses the EFFECTIVE (weighted) count — the SAME shared boot_mult that re-derives
+    C/ρ/g, so the empirical kernel's calibration uncertainty is jointly correlated. Unit
+    weights reproduce the unweighted density bit-for-bit. Still NON-CIRCULAR (multiplicity).
     """
     N_true = np.asarray(meas["N_true"], float)
     snr = np.asarray(meas["snr"], float)
     zqso = np.asarray(meas["zqso"], float)
     dx = np.asarray(meas["dx"], float)
+    W = (np.ones(len(N_true)) if weights is None
+         else np.asarray(weights, float))
     snr_edges = np.asarray(snr_edges, float)
     z_edges = np.asarray(z_edges, float)
     n_snr = len(snr_edges) - 1
@@ -1556,14 +1565,15 @@ def build_empirical_forward_density(meas: dict,
     i_z = np.clip(np.searchsorted(z_edges, zqso, "right") - 1, 0, n_z - 1)
     fin = np.isfinite(zqso) & np.isfinite(N_true) & np.isfinite(dx)
 
-    def _smoothed_density(dvals):
-        """Normalized, Gaussian-smoothed residual density on r_grid from raw residuals."""
+    def _smoothed_density(dvals, wvals=None):
+        """Normalized, Gaussian-smoothed residual density on r_grid from raw residuals.
+        ``wvals`` (per-residual weight) makes the histogram the resampled one; None ⇒ unit."""
         if dvals.size == 0:
             return None
         edges = np.concatenate([[r_grid[0] - 0.5 * dr],
                                 0.5 * (r_grid[:-1] + r_grid[1:]),
                                 [r_grid[-1] + 0.5 * dr]])
-        hist, _ = np.histogram(dvals, bins=edges)
+        hist, _ = np.histogram(dvals, bins=edges, weights=wvals)
         h = gaussian_filter1d(hist.astype(float), sigma_bins, mode="constant")
         area = _trapz(h, r_grid)
         if area <= 0:
@@ -1577,18 +1587,19 @@ def build_empirical_forward_density(meas: dict,
     z_pool_dens = {}
     for b in range(n_z):
         sel = fin & (i_z == b)
-        z_pool_dens[b] = _smoothed_density(dx[sel]) if sel.any() else None
-    global_pool = _smoothed_density(dx[fin])
+        z_pool_dens[b] = (_smoothed_density(dx[sel], W[sel]) if sel.any() else None)
+    global_pool = _smoothed_density(dx[fin], W[fin])
 
     cell_built = np.zeros((n_snr, n_z), bool)
     for a in range(n_snr):
         for b in range(n_z):
             sel = fin & (i_snr == a) & (i_z == b)
-            Ns = N_true[sel]; ds = dx[sel]
-            cell_pool = (_smoothed_density(ds) if int(sel.sum()) >= min_count
+            Ns = N_true[sel]; ds = dx[sel]; ws = W[sel]
+            n_eff = float(np.sum(ws))
+            cell_pool = (_smoothed_density(ds, ws) if n_eff >= min_count
                          else (z_pool_dens[b] if z_pool_dens[b] is not None
                                else global_pool))
-            if int(sel.sum()) >= min_count and Ns.size:
+            if n_eff >= min_count and Ns.size:
                 qs = np.unique(np.quantile(Ns, np.linspace(0, 1, int(n_N_cells) + 1)))
                 qs[-1] = np.nextafter(qs[-1], np.inf) if len(qs) >= 2 else qs[-1]
             else:
@@ -1598,10 +1609,10 @@ def build_empirical_forward_density(meas: dict,
             for k in range(int(n_N_cells)):
                 if len(qs) >= k + 2:
                     m = (Ns >= qs[k]) & (Ns < qs[k + 1])
-                    if int(m.sum()) >= min_count:
-                        d_k = _smoothed_density(ds[m])
+                    if float(np.sum(ws[m])) >= min_count:
+                        d_k = _smoothed_density(ds[m], ws[m])
                         if d_k is not None:
-                            anchors.append(float(np.mean(Ns[m])))
+                            anchors.append(float(np.sum(ws[m] * Ns[m]) / np.sum(ws[m])))
                             dens_rows.append(d_k)
                             continue
                 # sparse sub-bin → pooled cell density at a spread-out anchor (filled below)
@@ -1691,7 +1702,8 @@ def measure_forward_response(cat_cut, good_mask, cfg,
 
 def _empirical_forward_cells(N_true, snr, zqso, dx,
                              snr_edges, z_edges,
-                             n_N_cells: int = 7, min_count: int = 60):
+                             n_N_cells: int = 7, min_count: int = 60,
+                             weights=None):
     """Measure the SMOOTHED-EMPIRICAL per-bin forward response in (N_true × SNR × z_QSO).
 
     For every (SNR-bin, z-bin) cell, slice N_true into ``n_N_cells`` quantile sub-bins and
@@ -1701,9 +1713,18 @@ def _empirical_forward_cells(N_true, snr, zqso, dx,
 
     Returns a dict: for each (i_snr, i_z) key a list of (N_center, mean, sd, skew, count)
     sub-bin tuples (sub-bins with < ``min_count`` rows dropped).
+
+    ``weights`` (Track-C T-D, REDUCE-ONLY): an optional per-object resample multiplicity.
+    When given, the cell/sub-bin membership counts and the per-sub-bin moments become
+    WEIGHTED (the bootstrap-resampled statistic; the SAME shared boot_mult that re-derives
+    C/ρ/g so the kernel-calibration uncertainty is jointly correlated). Unit weights
+    reproduce the unweighted result bit-for-bit (each row contributes 1×). It is a
+    multiplicity, NOT a reduced statistic — non-circularity is preserved.
     """
     N_true = np.asarray(N_true, float); snr = np.asarray(snr, float)
     zqso = np.asarray(zqso, float); dx = np.asarray(dx, float)
+    w = (np.ones(len(N_true)) if weights is None
+         else np.asarray(weights, float))
     i_snr = np.clip(np.searchsorted(snr_edges, snr, "right") - 1, 0, len(snr_edges) - 2)
     i_z = np.clip(np.searchsorted(z_edges, zqso, "right") - 1, 0, len(z_edges) - 2)
     n_snr = len(snr_edges) - 1
@@ -1712,10 +1733,11 @@ def _empirical_forward_cells(N_true, snr, zqso, dx,
     for a in range(n_snr):
         for b in range(n_z):
             sel = (i_snr == a) & (i_z == b) & np.isfinite(zqso)
-            if int(np.count_nonzero(sel)) < min_count:
+            # cell occupancy is the EFFECTIVE (weighted) count when resampling
+            if float(np.sum(w[sel])) < min_count:
                 out[(a, b)] = []
                 continue
-            Ns = N_true[sel]; ds = dx[sel]
+            Ns = N_true[sel]; ds = dx[sel]; ws = w[sel]
             qs = np.unique(np.quantile(Ns, np.linspace(0, 1, n_N_cells + 1)))
             if len(qs) < 2:
                 out[(a, b)] = []
@@ -1724,17 +1746,18 @@ def _empirical_forward_cells(N_true, snr, zqso, dx,
             cells = []
             for k in range(len(qs) - 1):
                 m = (Ns >= qs[k]) & (Ns < qs[k + 1])
-                c = int(np.count_nonzero(m))
+                wm = ws[m]
+                c = float(np.sum(wm))
                 if c < min_count:
                     continue
                 di = ds[m]
-                m1 = float(np.mean(di))
+                m1 = float(np.sum(wm * di) / c)
                 dd = di - m1
-                m2 = float(np.mean(dd * dd))
+                m2 = float(np.sum(wm * dd * dd) / c)
                 if m2 <= 0:
                     continue
-                m3 = float(np.mean(dd * dd * dd))
-                cells.append((float(np.mean(Ns[m])), m1, np.sqrt(m2),
+                m3 = float(np.sum(wm * dd * dd * dd) / c)
+                cells.append((float(np.sum(wm * Ns[m]) / c), m1, np.sqrt(m2),
                               m3 / m2 ** 1.5, c))
             out[(a, b)] = cells
     return out
@@ -1748,7 +1771,8 @@ def fit_forward_response(meas: dict,
                          min_count: int = 60,
                          N_skew_collapse: float = 21.0,
                          N_ref: Optional[float] = None,
-                         build_empirical: bool = True) -> ForwardResponseModel:
+                         build_empirical: bool = True,
+                         weights=None) -> ForwardResponseModel:
     """Fit the FORWARD response p(x̂ | N_true, SNR, z_QSO) — a per-cell skew-normal whose
     (up-bias, width, skew) moments are SMOOTH polynomials in N_true, resolved across
     ≥3 SNR × 2–3 z_QSO bins.
@@ -1793,6 +1817,13 @@ def fit_forward_response(meas: dict,
         parametric skew-normal overshoots).  The parametric (skewnorm) surfaces are built
         regardless; this only adds the optional empirical density.  Set False for a
         parametric-only model (smaller NPZ; ``emp=None``).
+    weights : array or None
+        Per-object resample multiplicity (Track-C T-D). When given, the per-cell/sub-bin
+        moments AND the empirical density become WEIGHTED — the SAME shared boot_mult that
+        re-derives C/ρ/g per MC draw, so the forward kernel's calibration uncertainty enters
+        the marginalized band JOINTLY correlated with the other nuisances. REDUCE-ONLY (a
+        multiplicity, not a reduced statistic): unit weights reproduce the point fit
+        bit-for-bit; non-circularity is preserved.
 
     Returns
     -------
@@ -1802,6 +1833,8 @@ def fit_forward_response(meas: dict,
     snr = np.asarray(meas["snr"], float)
     zqso = np.asarray(meas["zqso"], float)
     dx = np.asarray(meas["dx"], float)
+    W = (np.ones(len(N_true)) if weights is None
+         else np.asarray(weights, float))
     snr_edges = np.asarray(snr_edges, float)
     z_edges = np.asarray(z_edges, float)
     n_snr = len(snr_edges) - 1
@@ -1812,20 +1845,24 @@ def fit_forward_response(meas: dict,
         N_ref = float(N_ref)
 
     cells = _empirical_forward_cells(N_true, snr, zqso, dx, snr_edges, z_edges,
-                                     n_N_cells=n_N_cells, min_count=min_count)
+                                     n_N_cells=n_N_cells, min_count=min_count,
+                                     weights=W)
 
     n_coef = deg_N + 1
     mu_coef = np.zeros((n_snr, n_z, n_coef))
     sig_coef = np.zeros((n_snr, n_z, n_coef))
     skew_coef = np.zeros((n_snr, n_z, n_coef))
 
-    # global pooled fallbacks (used when a cell has too few populated sub-bins)
-    pooled_mu = float(np.mean(dx)) if len(dx) else 0.0
-    pooled_sd = float(np.std(dx)) if len(dx) else 0.1
+    # global pooled fallbacks (used when a cell has too few populated sub-bins) — WEIGHTED
+    # so the unit-weight path is byte-identical and a resample shifts the fallback too.
+    Wsum = float(np.sum(W))
+    pooled_mu = float(np.sum(W * dx) / Wsum) if Wsum > 0 else 0.0
+    pdd = dx - pooled_mu
+    pooled_var = float(np.sum(W * pdd * pdd) / Wsum) if Wsum > 0 else 0.0
+    pooled_sd = float(np.sqrt(pooled_var)) if pooled_var > 0 else 0.1
     pooled_sk = 0.0
-    if len(dx) > 2 and pooled_sd > 0:
-        dd = dx - pooled_mu
-        pooled_sk = float(np.mean(dd ** 3) / pooled_sd ** 3)
+    if Wsum > 2 and pooled_sd > 0:
+        pooled_sk = float(np.sum(W * pdd ** 3) / Wsum / pooled_sd ** 3)
 
     def _fit_poly(Nc, yc, wc, fallback):
         """Weighted poly-in-N fit; degrade to a lower degree / constant when too sparse."""
@@ -1870,13 +1907,120 @@ def fit_forward_response(meas: dict,
     if build_empirical:
         emp = build_empirical_forward_density(
             meas, snr_edges=snr_edges, z_edges=z_edges,
-            n_N_cells=n_N_cells, min_count=min_count)
+            n_N_cells=n_N_cells, min_count=min_count, weights=W)
 
     return ForwardResponseModel(
         mu_coef=mu_coef, sig_coef=sig_coef, skew_coef=skew_coef,
         snr_edges=snr_edges, z_edges=z_edges, N_ref=N_ref, deg_N=int(deg_N),
         N_skew_collapse=float(N_skew_collapse), emp=emp,
     )
+
+
+# ---------------------------------------------------------------------------
+# Track-C T-D: resample-aware FORWARD-response refit (kernel-calibration uncertainty
+# carry).  Mirrors ResponseFitResample / build_response_fit_resample /
+# refit_znz_from_resample, but for the ForwardResponseModel (p(x̂|N_true,SNR,z_QSO)).
+# Per MC draw the SAME shared boot_mult that re-derives C/ρ/g also re-fits the forward
+# response, so the empirical-kernel jitter enters the inner covariance (the toy's flagged
+# over-confidence fix at high count).
+# ---------------------------------------------------------------------------
+@dataclass
+class ForwardResponseFitResample:
+    """Resamplable representation of the FORWARD-response fit population.
+
+    Holds the per-TP-detection forward-response arrays ``(N_true, snr, zqso, dx)`` that
+    ``fit_forward_response`` regresses, plus ``tid_idx`` — each detection's index into a
+    unique-TID basis (``uniq_tids``) so a length-``n_uniq`` per-TID multiplicity (the SAME
+    shared bootstrap that re-derives C/ρ/g in Stage II) re-weights the forward fit. The
+    point-model binning (snr/z edges, deg_N, N_ref, N_skew_collapse, n_N_cells, min_count,
+    build_empirical) is stored so every resample shares the SAME cell geometry/centering and
+    the unit-weight resample reproduces the point model.
+    """
+    N_true: np.ndarray
+    snr: np.ndarray
+    zqso: np.ndarray
+    dx: np.ndarray
+    tid_idx: np.ndarray          # detection -> unique-TID basis index
+    n_uniq: int
+    snr_edges: np.ndarray
+    z_edges: np.ndarray
+    deg_N: int
+    N_ref: float
+    N_skew_collapse: float
+    n_N_cells: int
+    min_count: int
+    build_empirical: bool
+
+
+def build_forward_response_fit_resample(
+        meas: dict, det_tids: np.ndarray, uniq_tids: np.ndarray,
+        frm_point: ForwardResponseModel,
+        n_N_cells: int = 7, min_count: int = 60,
+        build_empirical: bool = True) -> ForwardResponseFitResample:
+    """Build the forward-response-fit resample table aligned to the SHARED unique-TID basis.
+
+    Parameters mirror ``build_response_fit_resample``:
+      meas       : ``measure_forward_response`` output (N_true/snr/zqso/dx) — the TP-detection
+                   forward population, ALL rows carrying a matched true N_true.
+      det_tids   : TARGETID of each row in ``meas`` (same op + TP cut), len == len(meas[dx]).
+      uniq_tids  : the shared unique-TID basis (``TruthMatchResample.uniq_tids``) so the SAME
+                   per-TID multiplicity re-weights C/ρ/g AND the forward fit.
+      frm_point  : the frozen-point ForwardResponseModel — supplies the binning
+                   (snr/z edges, deg_N, N_ref, collapse) so a unit-weight resample reproduces
+                   the point surfaces.
+      n_N_cells, min_count, build_empirical : the point-fit knobs (must match the point fit).
+
+    Detections whose TID is not in ``uniq_tids`` (none in practice — the forward population ⊆
+    the purity population) are dropped (matched-only), exactly as build_response_fit_resample.
+    """
+    N_true = np.asarray(meas["N_true"], float)
+    snr = np.asarray(meas["snr"], float)
+    zqso = np.asarray(meas["zqso"], float)
+    dx = np.asarray(meas["dx"], float)
+    det_tids = np.asarray(det_tids, np.int64)
+    if not (len(N_true) == len(snr) == len(zqso) == len(dx) == len(det_tids)):
+        raise ValueError("build_forward_response_fit_resample: meas arrays and det_tids "
+                         f"must be equal length; got {len(N_true)}/{len(snr)}/{len(zqso)}/"
+                         f"{len(dx)}/{len(det_tids)}")
+    uniq_tids = np.asarray(uniq_tids, np.int64)
+    pos = np.searchsorted(uniq_tids, det_tids)
+    pos = np.clip(pos, 0, len(uniq_tids) - 1)
+    matched = uniq_tids[pos] == det_tids
+    if not np.all(matched):
+        N_true = N_true[matched]; snr = snr[matched]
+        zqso = zqso[matched]; dx = dx[matched]; pos = pos[matched]
+    return ForwardResponseFitResample(
+        N_true=N_true, snr=snr, zqso=zqso, dx=dx, tid_idx=pos,
+        n_uniq=len(uniq_tids),
+        snr_edges=np.asarray(frm_point.snr_edges, float),
+        z_edges=np.asarray(frm_point.z_edges, float),
+        deg_N=int(frm_point.deg_N), N_ref=float(frm_point.N_ref),
+        N_skew_collapse=float(frm_point.N_skew_collapse),
+        n_N_cells=int(n_N_cells), min_count=int(min_count),
+        build_empirical=bool(build_empirical))
+
+
+def refit_forward_response_from_resample(
+        rfr: ForwardResponseFitResample, boot_mult: np.ndarray) -> ForwardResponseModel:
+    """Re-fit the FORWARD response on a bootstrap resample of the forward population.
+
+    ``boot_mult`` (length ``rfr.n_uniq``) is the per-TID multiplicity from the SHARED
+    resample (so the forward kernel is correlated with C/ρ/g — Stage II's ``boot_mult``).
+    Expands the per-TID multiplicity to per-detection weights via ``rfr.tid_idx`` (the
+    refit_znz_from_resample pattern), re-fits ``fit_forward_response`` with those weights,
+    reusing the point-model binning/centering. At ``boot_mult == 1`` the surfaces reproduce
+    the frozen point model (the unit-weight invariance the marginalized band rests on).
+
+    REDUCE-ONLY / NON-CIRCULAR: ``boot_mult`` is a multiplicity; no dN/dX/f/Ω enters.
+    """
+    w = np.asarray(boot_mult, float)[rfr.tid_idx]
+    meas = {"N_true": rfr.N_true, "snr": rfr.snr, "zqso": rfr.zqso, "dx": rfr.dx,
+            "xhat": rfr.N_true + rfr.dx}
+    return fit_forward_response(
+        meas, snr_edges=rfr.snr_edges, z_edges=rfr.z_edges,
+        deg_N=rfr.deg_N, n_N_cells=rfr.n_N_cells, min_count=rfr.min_count,
+        N_skew_collapse=rfr.N_skew_collapse, N_ref=rfr.N_ref,
+        build_empirical=rfr.build_empirical, weights=w)
 
 
 def save_forward_response(path: str, frm: ForwardResponseModel) -> None:

@@ -3173,3 +3173,159 @@ def test_stage3_response_correlated_with_C_rho_via_shared_mult():
     assert np.nanstd(b_levels) > 0                 # the response genuinely varies per draw
     # the response level responds to the shared resample (non-degenerate joint draw)
     assert np.isfinite(np.corrcoef(b_levels, c_levels)[0, 1])
+
+
+# ---------------------------------------------------------------------------
+# Track-C T-D: forward-empirical kernel in the marginalized band (Stage III forward)
+# ---------------------------------------------------------------------------
+
+def _forward_stage3_fixture(tmp_path, seed=0):
+    """A no-I/O forward Stage-III fixture: a catalog of TP detections (with matched truth
+    NHI_TILT_HOST) on a single SNR/z cell, a saved ForwardResponseModel NPZ fit from the
+    truth-match, a v3x forward `fwd` bundle, and a shared truth-match resample (tmr). Returns
+    everything v3x_forward_response_setup / v3x_forward_rebuild_unitC need."""
+    from astropy.table import Table
+    from CDDF_analysis.znz_kernel import (
+        measure_forward_response, fit_forward_response, save_forward_response)
+    rng = np.random.default_rng(seed)
+    n = 4000
+    cfg = _make_cfg(logN_lo=19.0, logN_hi=22.0, dlogN=0.2, drop_top_bin_above=22.0,
+                    v2_logN_fit_floor=19.5, v3_logN_fit_floor=19.5,
+                    v3_family="bspbody", occupancy_floor=1,
+                    v2_z_fit_lo=2.4, v2_z_fit_hi=2.8, v2_z_fit_step=0.2,
+                    zbins=(2.4, 2.8), snr_min=2.0, p_dla_min=0.5)
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    z_edges = H._fine_z_grid(cfg)
+    n_N = len(logN_lo); n_z = len(z_edges) - 1
+    nhi_edges = np.array([19.5, 20.0, 20.3, 22.0])
+    mm = H.MollyMatrix(snr_edges=np.array([0.0, np.inf]), nhi_edges=nhi_edges,
+                       purity=np.full((1, 3), 0.7), completeness=np.full((1, 3), 0.8))
+    N_true = rng.uniform(19.7, 21.4, n)
+    dx = rng.normal(0.05, 0.15, n)                 # right-ish up-bias response
+    xhat = N_true + dx
+    keep = xhat >= 19.5
+    N_true, dx, xhat = N_true[keep], dx[keep], xhat[keep]
+    m = len(xhat)
+    zqso = rng.uniform(2.4, 2.8, m)
+    tids = np.arange(1, m + 1, dtype=np.int64)     # 1 detection per TID
+    cat = Table(dict(
+        TARGETID=tids, S2N_RED=np.full(m, 5.0), P_DLA=np.full(m, 1.0),
+        NHI=xhat, Z_DLA=zqso, Z_QSO=zqso,
+        NHI_ERR=np.full(m, 0.1), Z_DLA_ERR=np.full(m, 1e-4),
+        NHI_TILT_HOST=N_true, NHI_TRUE=N_true, DLAFLAG=np.zeros(m, int)))
+    good_mask = np.ones(m, bool)
+    # forward model from the truth-match (single SNR/z cell to keep it well-populated)
+    meas = measure_forward_response(cat, good_mask, cfg,
+                                    host_col="NHI_TILT_HOST", xhat_floor=19.5)
+    frm = fit_forward_response(meas, snr_edges=(0.0, np.inf), z_edges=(0.0, np.inf),
+                               n_N_cells=5, min_count=30, build_empirical=True)
+    npz = str(tmp_path / "forward_model.npz")
+    save_forward_response(npz, frm)
+    cfg.resp_kind = "forward"; cfg.resp_family = "empirical"; cfg.kernel_forward_model = npz
+    cfg.forward_n_N_cells = 5; cfg.forward_min_count = 30
+    # truth bundle for tmr (is_TP all True; truth_cut = the matched hosts)
+    is_TP = np.ones(m, bool)
+    truth = Table(dict(TARGETID=tids, NHI=N_true, Z_DLA=zqso,
+                       S2N_RED=np.full(m, 5.0)))
+    # populate mm's purity/completeness COUNTS so the shared resample reduces to them
+    mm = H.regenerate_molly_counts(mm, cat, is_TP, truth, good_mask, cfg)
+    Xc = _FakeXcalc(cfg.Omega_m)
+    qzl = np.full(8, 2.4); qzh = np.full(8, 2.8); qsn = np.full(8, 5.0)
+    fwd = H.v3x_build_forward(cfg, cat, good_mask, mm, (qzl, qzh, qsn),
+                              logN_lo, logN_hi, N_b, dN_b, Xc)
+    cfg.mc_nuisance = "shared_boot"
+    tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good_mask, cfg)
+    return dict(cfg=cfg, cat=cat, good_mask=good_mask, mm=mm, fwd=fwd, tmr=tmr,
+                frm=frm, n_det=m)
+
+
+def test_stage3_forward_setup_aligns_to_shared_tid_basis(tmp_path):
+    """v3x_forward_response_setup builds the forward ResponseFitResample aligned to the SAME
+    tmr.uniq_tids as the shared truth-match resample (so the SAME boot_mult re-weights the
+    forward kernel AND C/ρ/g)."""
+    fx = _forward_stage3_fixture(tmp_path, seed=1)
+    cfg = fx["cfg"]
+    kind, sctx = H.v3x_stage3_setup(cfg, fx["cat"], fx["good_mask"], fx["mm"],
+                                    fx["fwd"], fx["tmr"])
+    assert kind == "forward"
+    rfr = sctx["rfr"]
+    assert rfr.n_uniq == fx["tmr"].n_uniq
+    assert np.all((rfr.tid_idx >= 0) & (rfr.tid_idx < fx["tmr"].n_uniq))
+
+
+def test_stage3_forward_rebuild_unit_weight_reproduces_frozen_unitC(tmp_path):
+    """The DOMINANT invariance: a UNIT-weight forward refit + rebuild reproduces the FROZEN
+    forward unitC (the same _slice_active_unitC the band rescales). Without this, the
+    marginalized point would not match the frozen forward headline."""
+    from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+    fx = _forward_stage3_fixture(tmp_path, seed=2)
+    cfg = fx["cfg"]; fwd = fx["fwd"]
+    kind, sctx = H.v3x_stage3_setup(cfg, fx["cat"], fx["good_mask"], fx["mm"], fwd, fx["tmr"])
+    assert kind == "forward"
+    # the frozen forward unitC (what the band rescales by C per draw)
+    A_meta = fwd["A_meta"]
+    fine = fwd["fine"]; logN_lo = fine[0]; z_edges_fine = fine[4]
+    n_flat = len(logN_lo) * (len(z_edges_fine) - 1)
+    unitC_frozen = H._slice_active_unitC(A_meta, np.arange(n_flat),
+                                         np.ones(A_meta["n_obs"], bool))
+    # unit-weight refit + rebuild
+    frm_unit = refit_forward_response_from_resample(sctx["rfr"], np.ones(fx["tmr"].n_uniq))
+    unitC_draw = H.v3x_forward_rebuild_unitC(cfg, sctx, frm_unit)
+    # materialize both as dense CSR (unit C) and compare bit-close
+    ones_C = np.ones((fx["mm"].purity.shape))
+    A_frz = np.asarray(H._rescale_unitC_active(unitC_frozen, ones_C * 0 + 1.0).todense())
+    A_drw = np.asarray(H._rescale_unitC_active(unitC_draw, ones_C * 0 + 1.0).todense())
+    np.testing.assert_allclose(A_frz, A_drw, rtol=0, atol=1e-9)
+
+
+def test_stage3_forward_rebuild_perturbs_with_boot_mult(tmp_path):
+    """A non-unit boot_mult re-fits the forward kernel to a DIFFERENT A (the kernel-
+    calibration uncertainty is genuinely carried — the band-widening lever)."""
+    from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+    fx = _forward_stage3_fixture(tmp_path, seed=3)
+    cfg = fx["cfg"]
+    kind, sctx = H.v3x_stage3_setup(cfg, fx["cat"], fx["good_mask"], fx["mm"],
+                                    fx["fwd"], fx["tmr"])
+    rg = np.random.default_rng(5)
+    _C, _r, _bw, mult = H.draw_shared_boot_with_mult(rg, fx["tmr"])
+    frm_unit = refit_forward_response_from_resample(sctx["rfr"], np.ones(fx["tmr"].n_uniq))
+    frm_draw = refit_forward_response_from_resample(sctx["rfr"], mult)
+    ones_C = np.ones(fx["mm"].purity.shape)
+    A_unit = np.asarray(H._rescale_unitC_active(
+        H.v3x_forward_rebuild_unitC(cfg, sctx, frm_unit), ones_C).todense())
+    A_draw = np.asarray(H._rescale_unitC_active(
+        H.v3x_forward_rebuild_unitC(cfg, sctx, frm_draw), ones_C).todense())
+    assert np.max(np.abs(A_unit - A_draw)) > 0     # the kernel genuinely moved
+
+
+def test_stage3_forward_band_composes_laplace_shared_boot_smoke(tmp_path):
+    """A small-n_mc forward marginalized band runs end-to-end with mc_inner='laplace' +
+    mc_nuisance='shared_boot' + mc_response='marginalize' and produces FINITE, POSITIVE,
+    SPREAD f_b — the COMPOSITION smoke (Stage I laplace ∘ Stage II shared_boot ∘ Stage III
+    forward refit). The kernel-uncertainty WIDTH direction is a high-count claim asserted on
+    the real-data deliverable (track_c_td_band), not on this tiny synthetic; here we only
+    require the carry to CHANGE the band (the kernel genuinely enters it) and stay finite."""
+    fx = _forward_stage3_fixture(tmp_path, seed=4)
+    cfg = fx["cfg"]; fwd = fx["fwd"]
+    theta_map = H.v3x_fit_map(fwd["A_full"], fwd["M_full"], fwd["lam_fp"], fwd["mu_fp"],
+                              fwd["fine"], "bspbody", cfg, obj_weights=None,
+                              n_restart=2, rng=np.random.default_rng(0))["theta_map"]
+    cfg.report_logN_limits = (20.0, 20.3)
+    cfg.mc_inner = "laplace"; cfg.n_mc = 12
+
+    def _band(mc_response):
+        cfg.mc_response = mc_response
+        return H.v3x_joint_mc(cfg, fx["cat"], fx["good_mask"], fx["mm"], "bspbody",
+                              theta_map, fwd, n_mc=12,
+                              rng=np.random.default_rng(7), tmr=fx["tmr"])
+
+    marg = _band("marginalize")
+    froz = _band("frozen")
+    fb = marg["f_b"]["q50"]
+    assert np.all(np.isfinite(fb)) and np.all(np.asarray(fb) >= 0)
+    assert np.nanstd(marg["_f_b_samples"]) > 0          # the band has genuine spread
+    # the marginalized band CHANGES vs frozen (the kernel-calibration uncertainty enters it)
+    def _w(out, l):
+        s = out[f"dndx_{l}"]
+        return float(s["q84"] - s["q16"])
+    assert abs(_w(marg, 20.3) - _w(froz, 20.3)) > 0     # the carry materially moves the band

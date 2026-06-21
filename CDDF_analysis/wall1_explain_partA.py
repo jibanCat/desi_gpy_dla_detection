@@ -46,6 +46,7 @@ from CDDF_analysis.cddf_catalog_hbi import (
     _slice_active_unitC, C_FLOOR, _forward_fp_terms, make_rho_interpolator,
     build_truth_match_resample, draw_shared_boot, draw_shared_boot_with_mult,
     v3x_response_setup, v3x_response_rebuild_unitC, draw_response_params,
+    v3x_stage3_setup, v3x_stage3_rebuild_unitC,
 )
 from CDDF_analysis.znz_kernel import refit_znz_from_resample
 from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, _resolve_molly
@@ -98,15 +99,19 @@ def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
     # transform to the BASE kernel, REBUILD A. The DOMINANT coverage lever. Requires the
     # response transform (cfg.kernel_znz_model) AND the shared resample (mc_nuisance).
     mc_response = getattr(cfg, "mc_response", "frozen")
-    rctx = None
+    stage3_kind = None
+    sctx = None
     if mc_response == "marginalize":
         if mc_nuisance != "shared_boot":
             raise ValueError("mc_response='marginalize' requires mc_nuisance="
-                             "'shared_boot' (the shared boot_mult that θ_K re-uses).")
-        rctx = v3x_response_setup(cfg, cat_cut, ing["good_mask"], mm, fwd, tmr)
-        if rctx is None:
-            raise ValueError("mc_response='marginalize' requires cfg.kernel_znz_model "
-                             "(the response transform) — nothing to marginalize.")
+                             "'shared_boot' (the shared boot_mult the kernel re-uses).")
+        # dispatch on resp_kind: forward (T-D, re-fit the ForwardResponseModel) vs znz
+        stage3_kind, sctx = v3x_stage3_setup(cfg, cat_cut, ing["good_mask"], mm, fwd, tmr)
+        if sctx is None:
+            raise ValueError(
+                "mc_response='marginalize' requires a response model to marginalize — "
+                "cfg.kernel_forward_model (resp_kind='forward') or cfg.kernel_znz_model "
+                "(resp_kind='kappa'). Nothing to marginalize.")
 
     f_bs = []; thetas = []
     dndx = {l: [] for l in limits}; omega = {l: [] for l in limits}
@@ -138,10 +143,7 @@ def loa0_full_posterior_mc(cfg, ing, point, n_mc, rng):
         # draw's boot_mult + the drawn FORM-mix q, re-applies the transform, rebuilds A.
         unitC_draw = unitC
         if mc_response == "marginalize":
-            q_draw, alpha_draw = draw_response_params(rg, cfg)
-            znz_draw = refit_znz_from_resample(rctx["rfr"], boot_mult,
-                                               b_mix=q_draw, corr_strength=alpha_draw)
-            unitC_draw = v3x_response_rebuild_unitC(cfg, rctx, znz_draw)
+            unitC_draw = v3x_stage3_rebuild_unitC(cfg, stage3_kind, sctx, rg, boot_mult)
         A_draw = _rescale_unitC_active(unitC_draw, C_draw)
         M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
         # FROZEN loa-0 FP, resampled (Gehrels Gamma) — NOT bootstrap/tilt scaled

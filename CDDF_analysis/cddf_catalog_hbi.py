@@ -386,6 +386,18 @@ class HBIConfig:
     #                                    BRACKETS truth (R0≈1.11 OFF ↔ 0.79 corrected) — enters
     #                                    the band. This is the genuine response-form uncertainty
     #                                    that should COVER the truth on a same-mock validation.
+    #
+    # FORWARD-KERNEL marginalization (Track-C T-D): when resp_kind=='forward' AND
+    # mc_response=='marginalize', each draw RE-FITS the ForwardResponseModel
+    # (p(x̂|N_true,SNR,z)) on the SAME shared boot_mult (NOT the znz θ_K) and rebuilds A via the
+    # forward dispatch — so the empirical-kernel jitter (the toy's flagged high-count
+    # over-confidence) enters the inner covariance, jointly correlated with C/ρ/g. The forward
+    # path has NO mean↔median form mix (the q/α knobs are inert there); the response uncertainty
+    # is entirely the resampled FIT. Requires cfg.kernel_forward_model + mc_nuisance=='shared_boot'.
+    forward_n_N_cells: int = 7         # forward-fit N sub-bins per (SNR,z) cell (must MATCH the
+    #                                    point fit_forward_response build so the unit-weight
+    #                                    Stage-III resample reproduces the frozen forward kernel).
+    forward_min_count: int = 60        # forward-fit per-sub-bin minimum (effective) count.
 
 
 # -----------------------------------------------------------------------------
@@ -1549,7 +1561,8 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
                     X_tot_zbins, logN_lo, logN_hi, N_b, dN_b, truth_cut: Table,
                     cfg: HBIConfig, rng,
                     tilt_weights_op: np.ndarray = None,
-                    refit_fn: Callable = None) -> dict:
+                    refit_fn: Callable = None,
+                    tmr=None) -> dict:
     """Resample C/ρ (Wilson via Jeffreys-Beta per molly cell) + FP + NHI_ERR width
     + bootstrap sightlines TOGETHER, refit each draw (§5; ΔX held FIXED). M≈n_mc.
 
@@ -1558,7 +1571,9 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
     ``refit_fn``: OPTIONAL per-draw refit hook (v2 forward-HBI reuse). When None
     (default → v1 byte-unchanged) the per-draw reduction is the v1 inline 1/Vmax
     arithmetic. When supplied it is called as
-    ``refit_fn(C_draw, rho_draw, nhi_m, boot_w, draw_index) -> dict`` with keys
+    ``refit_fn(C_draw, rho_draw, nhi_m, boot_w, draw_index, boot_mult=…) -> dict`` with keys
+    (``boot_mult`` is the per-TID shared-resample multiplicity for the Stage-III response
+    refit (T-D); None unless mc_response=='marginalize' & mc_nuisance=='shared_boot')
     ``f_b, dndx_z{lim}, dndx_total{lim}, omega{lim}`` (the v2 solve rebuilds A/M
     with the perturbed C, perturbs λ_FP from the ρ draw, applies the bootstrap as
     per-object likelihood weights + M-sightline reweight, re-solves warm-started).
@@ -1606,9 +1621,13 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
     # n_b=10, it should be flagged and Stage II tightened only over the cells that
     # clear the floor.
     mc_nuisance = getattr(cfg, "mc_nuisance", "indep")
-    tmr = None
-    if mc_nuisance == "shared_boot":
+    # tmr (T-D): the caller MAY pass a prebuilt shared resample so the SAME tmr.uniq_tids
+    # aligns with the Stage-III refit_fn's response-fit resample (forward/znz). None ⇒ build
+    # internally (byte-identical to the pre-T-D path).
+    if mc_nuisance == "shared_boot" and tmr is None:
         tmr = build_truth_match_resample(mm, cat_cut, is_TP, truth_cut, good_mask, cfg)
+    elif mc_nuisance != "shared_boot":
+        tmr = None
 
     samples = {
         "f_b": np.full((cfg.n_mc, n_nbins), np.nan),
@@ -1623,10 +1642,20 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
 
     is_purity_mix = isinstance(fp_model, PurityMixtureFP)
 
+    # Stage III (T-D) carry: when mc_response='marginalize' the refit_fn re-fits the response
+    # kernel on the SAME shared boot_mult, so keep it (draw_shared_boot_with_mult). Default
+    # 'frozen' uses draw_shared_boot (byte-identical; boot_mult stays None).
+    mc_response = getattr(cfg, "mc_response", "frozen")
+
     for m in range(cfg.n_mc):
+        boot_mult = None
         if mc_nuisance == "shared_boot":
             # ONE shared TID-blocked resample -> jointly-correlated (C, ρ, boot_w_op).
-            C_draw, rho_draw, boot_w_shared = draw_shared_boot(rng, tmr)
+            if mc_response == "marginalize":
+                C_draw, rho_draw, boot_w_shared, boot_mult = \
+                    draw_shared_boot_with_mult(rng, tmr)
+            else:
+                C_draw, rho_draw, boot_w_shared = draw_shared_boot(rng, tmr)
             # σ_i (NHI_ERR) width draw -> perturbed NHI (g; couples ρ_i via cell index)
             nhi_m = nhi0 + rng.normal(0.0, 1.0, n_op) * nhi_err
         else:
@@ -1659,7 +1688,7 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
 
         # --- v2 forward-HBI per-draw refit hook (default None => v1 below) ---
         if refit_fn is not None:
-            red = refit_fn(C_draw, rho_draw, nhi_m, boot_w, m)
+            red = refit_fn(C_draw, rho_draw, nhi_m, boot_w, m, boot_mult=boot_mult)
             samples["f_b"][m] = red["f_b"]
             if red.get("f_bk_coarse") is not None:
                 samples["f_bk_coarse"][m] = red["f_bk_coarse"]
@@ -2265,7 +2294,7 @@ def _load_forward_model(path: str):
     return frm
 
 
-def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg):
+def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg, frm_override=None):
     """Track-C T-BC: build A_{i,jN,kz} from the FORWARD LIKELIHOOD p(x̂_i | N, SNR_i, z_i)
     instead of the GP-posterior kappa2d (the deconvolution-kernel fix).
 
@@ -2291,7 +2320,11 @@ def _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg):
     Gaussian (σ_z near-delta), erf-mass per fine z-bin × dX/dz — IDENTICAL to the Gaussian
     branch's Pz[i,kz]. C is factored out per molly cell EXACTLY as the other branches.
     """
-    frm = _load_forward_model(getattr(cfg, "kernel_forward_model", None))
+    # frm_override (T-D): the per-draw resampled ForwardResponseModel (kernel-calibration
+    # uncertainty carry). None ⇒ load the frozen point model from the NPZ cache (byte-identical
+    # to the T-BC point/headline path).
+    frm = (frm_override if frm_override is not None
+           else _load_forward_model(getattr(cfg, "kernel_forward_model", None)))
     family = getattr(cfg, "resp_family", "skewnorm")
 
     xhat = np.asarray(cat_op["xhat"], float)
@@ -2421,7 +2454,8 @@ def _forward_density_empirical(frm, xhat, N, snr, zqso):
 
 def build_A_ib(cat_op: dict, mm: MollyMatrix, logN_lo, logN_hi, N_b, dN_b,
                z_edges_fine, Xcalc, cfg: HBIConfig,
-               kernel: str = "gaussian", posterior_kernel: np.ndarray = None):
+               kernel: str = "gaussian", posterior_kernel: np.ndarray = None,
+               frm_override=None):
     """Build the per-object forward response A_{i,b} on the FINE (logN, z) grid
     (math eq. Aib):
 
@@ -2464,12 +2498,18 @@ def build_A_ib(cat_op: dict, mm: MollyMatrix, logN_lo, logN_hi, N_b, dN_b,
     skew-normal density at the detection's x̂_i, as a function of true N) instead of the
     posterior kappa2d — the high-N-over-recovery fix. ``cfg.resp_kind == "kappa"`` (DEFAULT)
     keeps the kappa/Gaussian dispatch BIT-FOR-BIT unchanged.
+
+    ``frm_override`` (Track-C T-D): an in-memory ForwardResponseModel to use INSTEAD of the
+    cfg.kernel_forward_model NPZ — the per-MC-draw resampled forward kernel (the
+    kernel-calibration uncertainty carry). Only consumed on the forward dispatch; None (the
+    default) loads from the NPZ cache exactly as before (byte-identical).
     """
     if getattr(cfg, "resp_kind", "kappa") == "forward":
-        if getattr(cfg, "kernel_forward_model", None) is None:
+        if frm_override is None and getattr(cfg, "kernel_forward_model", None) is None:
             raise ValueError("cfg.resp_kind=='forward' requires cfg.kernel_forward_model "
                              "(path to a ForwardResponseModel NPZ from save_forward_response)")
-        return _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg)
+        return _build_A_ib_forward(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg,
+                                   frm_override=frm_override)
     if (posterior_kernel is not None and np.ndim(posterior_kernel) == 3):
         return _build_A_ib_kappa2d(cat_op, mm, logN_lo, logN_hi, z_edges_fine, cfg,
                                    np.asarray(posterior_kernel, float))
@@ -4115,7 +4155,9 @@ def make_v2_refit_fn(cfg, internals, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
         _med = np.median(_fw[_fw > 0]) if np.any(_fw > 0) else 1e-22
         fsv_mc = np.maximum(np.abs(_fw), _med * 0.05)
 
-    def refit_fn(C_draw, rho_draw, nhi_m, boot_w, m):
+    def refit_fn(C_draw, rho_draw, nhi_m, boot_w, m, boot_mult=None):
+        # boot_mult (T-D) is the forward/znz Stage-III carry; the v2 closure has no per-draw
+        # response refit, so it is accepted-and-ignored (the signature contract only).
         # cheap C-rescale of the pre-sliced unit-C active A (no rebuild)
         A_act = _rescale_unitC_active(A_act_unitC, C_draw)
         M_full = _apply_C_to_M(M_meta, C_draw)
@@ -6870,6 +6912,142 @@ def v3x_response_rebuild_unitC(cfg, rctx, znz_draw):
 
 
 # -----------------------------------------------------------------------------
+# Stage III (FORWARD): forward-response kernel marginalization — per-draw forward
+# refit + A rebuild (Track-C T-D). Parallel to v3x_response_setup /
+# v3x_response_rebuild_unitC, but the resampled object is the ForwardResponseModel
+# (p(x̂|N_true,SNR,z)) and the per-draw A is built via the FORWARD dispatch (frm_override),
+# so the empirical-kernel jitter enters the inner covariance (the toy's flagged
+# over-confidence carry).
+# -----------------------------------------------------------------------------
+def v3x_forward_response_setup(cfg, cat_cut, good_mask, mm, fwd, tmr):
+    """Build the Stage-III FORWARD-response per-draw rebuild context ONCE
+    (resp_kind='forward', mc_response='marginalize'). Returns a dict the per-draw rebuild
+    consumes, or None when the forward path is OFF (resp_kind != 'forward' ⇒ the kappa/znz
+    Stage-III applies instead).
+
+    Captures: the floored cat_op (row-aligned with the frozen forward A), the fine grids, the
+    frozen-point ForwardResponseModel (the reference + the unit-weight invariance), and the
+    ForwardResponseFitResample aligned to tmr.uniq_tids (so the SAME boot_mult re-weights the
+    forward fit). The det_tids replicate measure_forward_response's op + TP + xhat-floor cut
+    EXACTLY so the per-detection weights align with the point forward fit.
+    """
+    if getattr(cfg, "resp_kind", "kappa") != "forward":
+        return None
+    from CDDF_analysis.znz_kernel import (
+        measure_forward_response, build_forward_response_fit_resample, load_forward_response)
+    frm_point = _load_forward_model(getattr(cfg, "kernel_forward_model", None))
+
+    fine = fwd["fine"]
+    logN_lo, logN_hi, N_b, dN_b, z_edges_fine = fine
+    cat_op = fwd["cat_op"]
+    logN_fit_floor = fwd["logN_fit_floor"]
+
+    # the active-column / keep-row slicing the frozen unitC used (mirror v3x_response_setup)
+    n_flat = len(logN_lo) * (len(z_edges_fine) - 1)
+    active_flat_cols = np.arange(n_flat)
+    A_meta0 = fwd["A_meta"]
+    keep_rows = np.ones(A_meta0["n_obs"], bool)
+
+    # forward-fit population (TP detections) aligned to the SHARED tmr unique-TID basis. The
+    # det_tids must match measure_forward_response's op + TP + xhat-floor cut in the SAME
+    # order so the resample weights line up row-for-row.
+    host_col = "NHI_TILT_HOST"
+    xhat_floor = 19.5
+    meas = measure_forward_response(cat_cut, good_mask, cfg,
+                                    host_col=host_col, xhat_floor=xhat_floor)
+    s2n = np.asarray(cat_cut["S2N_RED"], float)
+    pdla = np.asarray(cat_cut["P_DLA"], float)
+    op_meas = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
+    nhi_op = np.asarray(cat_cut["NHI"], float)[op_meas]
+    true_col = host_col if host_col in cat_cut.colnames else "NHI_TRUE"
+    xtrue_op = np.asarray(cat_cut[true_col], float)[op_meas]
+    tp_meas = np.isfinite(xtrue_op)
+    # measure_forward_response applies the TP cut FIRST then the xhat-floor on the TP subset
+    keep_floor = nhi_op[tp_meas] >= float(xhat_floor)
+    det_tids = np.asarray(cat_cut["TARGETID"], np.int64)[op_meas][tp_meas][keep_floor]
+    if len(det_tids) != len(meas["dx"]):
+        raise AssertionError(
+            f"v3x_forward_response_setup: det_tids {len(det_tids)} != forward meas rows "
+            f"{len(meas['dx'])} — the op/TP/floor cut must match measure_forward_response")
+    rfr = build_forward_response_fit_resample(
+        meas, det_tids, tmr.uniq_tids, frm_point,
+        n_N_cells=getattr(cfg, "forward_n_N_cells", 7),
+        min_count=getattr(cfg, "forward_min_count", 60),
+        build_empirical=True)
+
+    return dict(cat_op=cat_op, mm=mm, fine=fine,
+                logN_lo=logN_lo, logN_hi=logN_hi, N_b=N_b, dN_b=dN_b,
+                z_edges_fine=z_edges_fine, frm_point=frm_point, rfr=rfr,
+                active_flat_cols=active_flat_cols, keep_rows=keep_rows,
+                logN_fit_floor=logN_fit_floor,
+                v2_logN_fit_floor=getattr(cfg, "v2_logN_fit_floor", logN_lo[0]),
+                basis_pad_floor=getattr(cfg, "basis_pad_floor", None))
+
+
+def v3x_forward_rebuild_unitC(cfg, fctx, frm_draw):
+    """Per-draw Stage-III FORWARD A rebuild: build A_meta via the FORWARD dispatch using the
+    per-draw resampled ForwardResponseModel ``frm_draw`` (frm_override), then return a FRESH
+    sliced unit-C COO (the same _slice_active_unitC the frozen band uses). Mirrors
+    v3x_response_rebuild_unitC's A-column floor handling EXACTLY so a unit-weight frm_draw
+    reproduces the frozen forward unitC.
+    """
+    cat_op = fctx["cat_op"]; mm = fctx["mm"]
+    logN_lo = fctx["logN_lo"]; logN_hi = fctx["logN_hi"]
+    N_b = fctx["N_b"]; dN_b = fctx["dN_b"]; z_edges_fine = fctx["z_edges_fine"]
+    basis_pad_floor = fctx["basis_pad_floor"]
+    fit_floor = fctx["logN_fit_floor"]
+    a_col_floor = (fit_floor if basis_pad_floor is None
+                   else min(float(fit_floor), float(basis_pad_floor)))
+    saved = getattr(cfg, "v2_logN_fit_floor", logN_lo[0])
+    try:
+        if float(a_col_floor) < saved - 1e-9:
+            cfg.v2_logN_fit_floor = float(a_col_floor)
+        A_meta = build_A_ib(cat_op, mm, logN_lo, logN_hi, N_b, dN_b, z_edges_fine,
+                            None, cfg, kernel=cfg.v2_kernel,
+                            frm_override=frm_draw)[1]
+    finally:
+        cfg.v2_logN_fit_floor = saved
+    return _slice_active_unitC(A_meta, fctx["active_flat_cols"], fctx["keep_rows"])
+
+
+def v3x_stage3_setup(cfg, cat_cut, good_mask, mm, fwd, tmr):
+    """Stage-III per-draw response-rebuild context — dispatch on cfg.resp_kind.
+
+    resp_kind=='forward'  → v3x_forward_response_setup (re-fits the ForwardResponseModel per
+                            draw; the T-D kernel-calibration uncertainty carry).
+    resp_kind=='kappa'    → v3x_response_setup (re-fits the ZNZ posterior-warp θ_K per draw).
+
+    Returns ``(kind, sctx)`` with kind ∈ {'forward','znz',None}; None ⇒ nothing to
+    marginalize (caller raises if mc_response=='marginalize' was requested).
+    """
+    if getattr(cfg, "resp_kind", "kappa") == "forward":
+        fctx = v3x_forward_response_setup(cfg, cat_cut, good_mask, mm, fwd, tmr)
+        return ("forward", fctx) if fctx is not None else (None, None)
+    rctx = v3x_response_setup(cfg, cat_cut, good_mask, mm, fwd, tmr)
+    return ("znz", rctx) if rctx is not None else (None, None)
+
+
+def v3x_stage3_rebuild_unitC(cfg, kind, sctx, rg, boot_mult):
+    """Per-draw Stage-III unitC rebuild given the dispatch ``kind`` + context.
+
+    forward: draw (q,α) is IGNORED for the forward path (the forward response has no
+             mean↔median form mix; its calibration uncertainty is the resampled FIT). Re-fit
+             the ForwardResponseModel on this draw's boot_mult, rebuild A via frm_override.
+    znz:     draw (q,α), re-fit θ_K on boot_mult, re-apply apply_znz_correction, rebuild A.
+    """
+    if kind == "forward":
+        from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+        frm_draw = refit_forward_response_from_resample(sctx["rfr"], boot_mult)
+        return v3x_forward_rebuild_unitC(cfg, sctx, frm_draw)
+    # znz path
+    from CDDF_analysis.znz_kernel import refit_znz_from_resample
+    q_draw, alpha_draw = draw_response_params(rg, cfg)
+    znz_draw = refit_znz_from_resample(sctx["rfr"], boot_mult,
+                                       b_mix=q_draw, corr_strength=alpha_draw)
+    return v3x_response_rebuild_unitC(cfg, sctx, znz_draw)
+
+
+# -----------------------------------------------------------------------------
 # v3.x.7  WALL-2 joint-MC band on θ (resample C/ρ + bootstrap + NHI_ERR, re-MAP)
 # -----------------------------------------------------------------------------
 def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
@@ -6925,11 +7103,36 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
             "v3x_joint_mc: cfg.mc_nuisance=='shared_boot' requires a prebuilt tmr "
             "(build_truth_match_resample) — this function lacks is_TP/truth_cut.")
 
+    # Stage III (T-D): per-draw response-kernel marginalization. 'frozen' (default) reuses the
+    # ONE frozen unitC (BYTE-IDENTICAL — every branch below is skipped). 'marginalize' re-fits
+    # the response (forward ForwardResponseModel OR znz θ_K) on this draw's shared boot_mult and
+    # rebuilds A — so the kernel-calibration uncertainty enters the inner covariance (the toy's
+    # over-confidence carry). Requires mc_nuisance=='shared_boot' (the shared boot_mult).
+    mc_response = getattr(cfg, "mc_response", "frozen")
+    stage3_kind = None
+    sctx = None
+    if mc_response == "marginalize":
+        if mc_nuisance != "shared_boot":
+            raise ValueError("mc_response='marginalize' requires mc_nuisance="
+                             "'shared_boot' (the shared boot_mult the kernel re-uses).")
+        stage3_kind, sctx = v3x_stage3_setup(cfg, cat_cut, good_mask, mm, fwd, tmr)
+        if sctx is None:
+            raise ValueError(
+                "mc_response='marginalize' requires a response model to marginalize — "
+                "cfg.kernel_forward_model (resp_kind='forward') or cfg.kernel_znz_model "
+                "(resp_kind='kappa').")
+
     def _draw(seed):
         rg = np.random.default_rng(seed)
+        boot_mult = None
         if mc_nuisance == "shared_boot":
-            # op_base-order shared boot_w sliced to the floored op set this path uses.
-            C_draw, rho_draw, boot_w_base = draw_shared_boot(rg, tmr)
+            # op_base-order shared boot_w sliced to the floored op set this path uses. When
+            # marginalizing, keep boot_mult so Stage III re-weights the kernel by the SAME draw.
+            if mc_response == "marginalize":
+                C_draw, rho_draw, boot_w_base, boot_mult = \
+                    draw_shared_boot_with_mult(rg, tmr)
+            else:
+                C_draw, rho_draw, boot_w_base = draw_shared_boot(rg, tmr)
             boot_w = boot_w_base[keep_in_base]
             nhi_m = xhat + rg.normal(0, 1, len(xhat)) * nhi_err_op
         else:
@@ -6941,7 +7144,12 @@ def v3x_joint_mc(cfg, cat_cut, good_mask, mm, family, theta_map, fwd,
             boot_w = rg.multinomial(n_uniq, np.full(n_uniq, 1.0 / n_uniq)).astype(float)[inv]
         if w_extra is not None:
             boot_w = boot_w * w_extra
-        A_draw = _rescale_unitC_active(unitC, C_draw)
+        # Stage III: per-draw response θ -> per-draw unitC (REBUILD A). 'frozen' uses the ONE
+        # frozen unitC (byte-identical).
+        unitC_draw = unitC
+        if mc_response == "marginalize":
+            unitC_draw = v3x_stage3_rebuild_unitC(cfg, stage3_kind, sctx, rg, boot_mult)
+        A_draw = _rescale_unitC_active(unitC_draw, C_draw)
         M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
         j_nhi = _cell_index(mm, nhi_m, snr_op)[1]
         rho_i = rho_draw[i_snr0, j_nhi]
@@ -7034,11 +7242,17 @@ def v3x_refit(cat_cut, is_TP, good_mask, C_interp, fp_model, X_tot,
                           at_bound=fit["at_bound"]))
 
 
-def make_v3x_refit_fn(cfg, point_v3x, mm):
+def make_v3x_refit_fn(cfg, point_v3x, mm, cat_cut=None, good_mask=None, tmr=None):
     """Build the per-draw θ-refit closure for the WALL-1 MC band (run_one_tilt _v3x
     branch). Each draw resamples C/ρ/σ_i + bootstrap, re-MAPs θ warm at the tilted MAP,
     reduces — the SAME machinery as v3x_joint_mc, exposed in the joint_mc_errors
-    refit_fn(C_draw, rho_draw, nhi_m, boot_w, m) contract.
+    refit_fn(C_draw, rho_draw, nhi_m, boot_w, m, boot_mult=None) contract.
+
+    Stage III (T-D): when cfg.mc_response=='marginalize' AND cat_cut/good_mask/tmr are
+    supplied, each draw ALSO re-fits the response kernel (forward ForwardResponseModel or
+    znz θ_K) on the SAME shared boot_mult and rebuilds A — the kernel-calibration uncertainty
+    carry. Default (mc_response=='frozen' or no cat_cut) reuses the frozen unitC
+    (byte-identical to the pre-T-D contract).
 
     FP-FREEZE GUARD (adversarial review 2026-06-19): the per-draw ``lam_fp`` HARD-CODES
     the purity-mixture ``(1−ρ)·boot_w`` and IGNORES cfg.fp_estimator. For loa-0 this
@@ -7060,11 +7274,29 @@ def make_v3x_refit_fn(cfg, point_v3x, mm):
     keep_in_base = fwd["keep_in_base"]   # slice the op_base-ordered boot_w/nhi_m to floored op
     active_flat = fwd["active_flat"]      # fit-support mask for M (zeroed below floor)
 
-    def refit_fn(C_draw, rho_draw, nhi_m, boot_w, m):
+    # Stage III (T-D): per-draw response-kernel rebuild context (forward or znz). Only when
+    # mc_response=='marginalize' AND the catalog/resample are supplied; else None (frozen).
+    mc_response = getattr(cfg, "mc_response", "frozen")
+    stage3_kind = None
+    sctx = None
+    if mc_response == "marginalize" and cat_cut is not None and tmr is not None:
+        stage3_kind, sctx = v3x_stage3_setup(cfg, cat_cut, good_mask, mm, fwd, tmr)
+        if sctx is None:
+            raise ValueError(
+                "make_v3x_refit_fn: mc_response='marginalize' requires a response model — "
+                "cfg.kernel_forward_model (resp_kind='forward') or cfg.kernel_znz_model.")
+
+    def refit_fn(C_draw, rho_draw, nhi_m, boot_w, m, boot_mult=None):
         # joint_mc_errors passes boot_w / nhi_m in op_base order (no floor); slice to ours
         boot_w = np.asarray(boot_w, float)[keep_in_base]
         nhi_m = np.asarray(nhi_m, float)[keep_in_base]
-        A_draw = _rescale_unitC_active(unitC, C_draw)
+        # Stage III: per-draw response θ -> per-draw unitC. 'frozen' reuses the frozen unitC.
+        unitC_use = unitC
+        if sctx is not None and boot_mult is not None:
+            rg_s3 = np.random.default_rng(
+                int(abs(hash(("v3x_refit_s3", float(np.sum(boot_w)), m))) % (2**31)))
+            unitC_use = v3x_stage3_rebuild_unitC(cfg, stage3_kind, sctx, rg_s3, boot_mult)
+        A_draw = _rescale_unitC_active(unitC_use, C_draw)
         M_draw = np.where(active_flat, _apply_C_to_M(M_meta, C_draw), 0.0)
         j_nhi = _cell_index(mm, nhi_m, snr_op)[1]
         rho_i = rho_draw[i_snr0, j_nhi]
