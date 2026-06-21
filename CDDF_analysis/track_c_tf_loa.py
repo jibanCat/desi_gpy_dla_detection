@@ -153,7 +153,7 @@ def build_frozen_calibration(args):
         v3_mc_n_restart=2, lam_rf_min=args.lam_rf_min,
         v3_bspbody_edge_slope_lam=args.edge_slope_lam,
         v3_fine_density_gl_nodes=args.gl_nodes,
-        v2_z_fit_lo=2.0, v2_z_fit_hi=3.5, v2_z_fit_step=0.1, rng_seed=0,
+        v2_z_fit_lo=2.0, v2_z_fit_hi=args.v2_z_fit_hi, v2_z_fit_step=0.1, rng_seed=0,
         completeness_z_resolved=True, completeness_z_min_count=float(args.cz_min_count),
     )
     mm = load_molly_matrix(molly_tsv)
@@ -164,6 +164,29 @@ def build_frozen_calibration(args):
         host_truth_floor=min(args.host_truth_floor, truth_floor))
     mm = regenerate_molly_counts(mm, cat_cut, is_TP, truth_cut, good_mask, cfg)
     g_cnz = build_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm)
+
+    # CALIBRATION-SUPPORT FLAG: per coarse-z report bin, the number of 2LPT-0 TRUTH
+    # DLAs (the calibration mock) with NHI >= the headline limit.  A coarse z-bin with
+    # ZERO (or <cz_min_count) truth has NO z-resolved completeness support — there
+    # build_cnz_resolved's occupancy shrinkage (w=n_true/(n_true+k)) sends g(N,z)->1,
+    # i.e. the z-resolved completeness collapses back to the z-MARGINAL molly C
+    # (EXTRAPOLATION).  The indep statistical band holds g FROZEN, so it will NOT
+    # capture that completeness-extrapolation bias — such bins are FLAGGED, not folded
+    # into any calibrated headline.
+    zbins = np.asarray(cfg.zbins, float)
+    n_zc = len(zbins) - 1
+    t_nhi_all = np.asarray(truth_cut["NHI"], float)
+    t_z_all = np.asarray(truth_cut["Z_DLA"], float)
+    hl = float(max(args._limits))                 # headline limit for the support flag
+    truth_counts_perz = np.zeros(n_zc, dtype=int)
+    for k in range(n_zc):
+        sel = (t_z_all >= zbins[k]) & (t_z_all < zbins[k + 1]) & (t_nhi_all >= hl - 1e-9)
+        truth_counts_perz[k] = int(np.count_nonzero(sel))
+    max_truth_z = float(np.nanmax(t_z_all)) if t_z_all.size else float("nan")
+    print(f"[T-F] 2LPT-0 truth z-support (NHI>={hl:.1f}) per coarse z-bin "
+          f"{[f'[{zbins[k]:.2f},{zbins[k+1]:.2f})={truth_counts_perz[k]}' for k in range(n_zc)]}; "
+          f"max truth z_DLA={max_truth_z:.3f}")
+
     molly_counts = dict(
         pur_ntp=np.array(mm.pur_ntp, float), pur_ntot=np.array(mm.pur_ntot, float),
         cmp_nfound=np.array(mm.cmp_nfound, float), cmp_nfid=np.array(mm.cmp_nfid, float),
@@ -172,7 +195,9 @@ def build_frozen_calibration(args):
     print(f"[T-F] frozen g(N,z) shape={g_cnz.g_grid.shape}; molly counts captured "
           f"(C ratio matrix + forward kernel are frozen files).")
     return dict(g_cnz=g_cnz, molly_counts=molly_counts, molly_tsv=molly_tsv,
-                c0_truth_floor=truth_floor)
+                c0_truth_floor=truth_floor,
+                truth_counts_perz=truth_counts_perz, max_truth_z=max_truth_z,
+                cz_min_count=float(args.cz_min_count), support_limit=hl)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +225,7 @@ def build_loa_ingredients(args, frozen):
         v3_mc_n_restart=2, lam_rf_min=args.lam_rf_min,
         v3_bspbody_edge_slope_lam=args.edge_slope_lam,
         v3_fine_density_gl_nodes=args.gl_nodes,
-        v2_z_fit_lo=2.0, v2_z_fit_hi=3.5, v2_z_fit_step=0.1, rng_seed=0,
+        v2_z_fit_lo=2.0, v2_z_fit_hi=args.v2_z_fit_hi, v2_z_fit_step=0.1, rng_seed=0,
         completeness_z_resolved=True, completeness_z_min_count=float(args.cz_min_count),
     )
     mm = load_molly_matrix(molly_tsv)
@@ -242,23 +267,61 @@ def build_loa_ingredients(args, frozen):
     op_mask = (s2n > cfg.snr_min) & (pdla > cfg.p_dla_min) & good_mask
     fp_model, _ = make_fp_model(cfg, cat_cut, op_mask, rho_interp)
 
+    # ---- FEED-FORWARD (kappa) mode: attach the PER-DETECTION GP-posterior kernel ----
+    # The kappa2d posterior kernel p(N_true,z | x̂_i) is a per-OBJECT property, so unlike
+    # the frozen-from-2LPT-0 forward kernel it is built ON the REAL-LOA detections (the GP
+    # ran on this very catalog; the posterior samples are in its processed-h5). v2_kernel
+    # ='posterior' routes build_A_ib -> _build_A_ib_kappa2d (the pre-Track-C path that
+    # over-counts high-N on-mock — exactly what Track-C's forward kernel replaces).
+    kernel_built_path = None
+    if getattr(args, "resp_kind", "forward") == "kappa":
+        from CDDF_analysis.cddf_catalog_hbi import (
+            build_posterior_kernel, build_targetid_backlink)
+        cfg.v2_kernel = "posterior"
+        loa_kernel = getattr(args, "loa_kernel", None)
+        if loa_kernel and os.path.exists(loa_kernel):
+            d = np.load(loa_kernel, allow_pickle=True)
+            cfg._posterior_kernel_2d = d["kappa"].astype(np.float32)
+            kernel_built_path = loa_kernel
+            print(f"  [LOA-kappa] loaded posterior kernel {cfg._posterior_kernel_2d.shape} "
+                  f"<- {loa_kernel}")
+        else:
+            out_npz = (loa_kernel or
+                       os.path.join(args.out, "posterior_kernel_loa.npz"))
+            print(f"  [LOA-kappa] building per-detection posterior kernel on the REAL-LOA "
+                  f"catalog (glob={args.loa_processed_glob}) ...")
+            backlink, files = build_targetid_backlink(args.loa_processed_glob)
+            kappa, _ess = build_posterior_kernel(
+                cfg, cat_cut, good_mask, (logN_lo, logN_hi, N_b, dN_b),
+                processed_glob=args.loa_processed_glob,
+                pw_samples_path=args.loa_pw_samples,
+                backlink=backlink, files=files, out_npz=out_npz,
+                n_jobs=max(1, int(args.workers)), verbose=False)
+            cfg._posterior_kernel_2d = np.asarray(kappa, np.float32)
+            kernel_built_path = out_npz
+            print(f"  [LOA-kappa] posterior kernel {cfg._posterior_kernel_2d.shape} "
+                  f"built -> {out_npz}")
+
     estimator_fn = functools.partial(
         v3x_refit, mm=mm, qso_per_sl=(qzl, qzh, qsn), Xcalc=Xcalc,
         rng=np.random.default_rng(0))
+    _kmsg = ("kappa NOT attached (forward path)"
+             if getattr(args, "resp_kind", "forward") != "kappa"
+             else f"kappa2d ATTACHED {cfg._posterior_kernel_2d.shape} (feed-forward)")
     print(f"  [LOA] real catalog: n_op_sl={n_sl}, n_cat_cut={len(cat_cut)}, "
-          f"frozen g shape={cfg._cnz_resolved.g_grid.shape}, kappa NOT attached.")
+          f"frozen g shape={cfg._cnz_resolved.g_grid.shape}, {_kmsg}.")
     meta["n_op_detections"] = int(op_mask.sum())
     return dict(cfg=cfg, mm=mm, cat_cut=cat_cut, truth_cut=truth_cut, is_TP=is_TP,
                 good_mask=good_mask, C_interp=C_interp, fp_model=fp_model,
                 X_tot=X_tot, n_sl=n_sl, logN_lo=logN_lo, logN_hi=logN_hi,
                 N_b=N_b, dN_b=dN_b, estimator_fn=estimator_fn, meta=meta,
-                op_mask=op_mask)
+                op_mask=op_mask, kernel_built_path=kernel_built_path)
 
 
 # ---------------------------------------------------------------------------
 # the MEASUREMENT: MAP point + truth-free indep band (NO R0, NO truth scoring)
 # ---------------------------------------------------------------------------
-def run_measurement(args, ing, limits, seed):
+def run_measurement(args, ing, limits, seed, frozen=None):
     """MAP point (frozen kernel) + indep MC band (truth-free).  Returns a `res` dict
     with per-z + integrated dN/dX(z) / Ω(z) MAP + 68/95 bands and the z-marginal CDDF
     f(N) MAP + band.  NO truth, NO R0 — the measurement IS the deliverable."""
@@ -269,6 +332,14 @@ def run_measurement(args, ing, limits, seed):
     # the truth-free band knobs (reviewed): indep C/ρ jitter from FROZEN counts +
     # real-sightline bootstrap + real NHI_ERR width; response held FROZEN across draws.
     PZ._set_forward_cfg(cfg, args)        # sets resp_kind=forward, kernel, recenter, slope-extrap
+    # KERNEL MODE OVERRIDE (default 'forward' = byte-identical to the committed run). In
+    # 'kappa' (feed-forward) mode the forward-kernel dispatch is turned OFF and the
+    # estimator consumes cfg._posterior_kernel_2d via v2_kernel='posterior' (attached in
+    # build_loa_ingredients). The band recipe (indep C/ρ jitter, frozen response, recenter,
+    # slope-extrap) is otherwise IDENTICAL, so the only thing that differs between the two
+    # measurements is the kernel object — isolating exactly the +9% Track-C correction.
+    if getattr(args, "resp_kind", "forward") == "kappa":
+        cfg.resp_kind = "kappa"
     cfg.mc_nuisance = "indep"             # OVERRIDE: no shared_boot (needs truth tmr)
     cfg.mc_response = "frozen"            # OVERRIDE: no Stage-III refit (needs truth tmr)
 
@@ -338,6 +409,26 @@ def run_measurement(args, ing, limits, seed):
         return dict(MAP=float(point), q16=b["q16"], q84=b["q84"],
                     q025=b["q025"], q975=b["q975"], std=b["std"])
 
+    # CALIBRATION-SUPPORT FLAG per coarse-z bin (from the FROZEN 2LPT-0 truth occupancy).
+    # A bin is EXTRAPOLATED (flagged, excluded from headline) when the 2LPT-0 truth count
+    # at the headline NHI limit falls to ZERO (g(N,z)->z-marginal C there; the indep band
+    # holds g frozen so cannot capture that completeness-extrapolation bias).  Also flag
+    # bins whose lower edge sits above the max 2LPT-0 truth z_DLA (no truth above the cap).
+    z_extrapolated = np.zeros(n_zc, dtype=bool)
+    z_thin = np.zeros(n_zc, dtype=bool)
+    truth_counts_perz = None
+    if frozen is not None:
+        tcz = np.asarray(frozen.get("truth_counts_perz", np.full(n_zc, -1)), int)
+        max_tz = float(frozen.get("max_truth_z", np.nan))
+        kmin = float(frozen.get("cz_min_count", 30.0))
+        for k in range(n_zc):
+            cnt = tcz[k] if k < len(tcz) else -1
+            if cnt == 0 or (np.isfinite(max_tz) and zbins[k] >= max_tz):
+                z_extrapolated[k] = True            # NO calibration support -> EXTRAPOLATED
+            elif 0 < cnt < kmin:
+                z_thin[k] = True                    # THIN support -> calibrated but wide band
+        truth_counts_perz = tcz.tolist()
+
     # assemble per-z + integrated band records (MAP-recentered, same as headline)
     out = dict(
         cfg=cfg, H0=cfg.H0, K=K, zbins=zbins, n_zc=n_zc, mid=mid,
@@ -346,6 +437,12 @@ def run_measurement(args, ing, limits, seed):
         n_op_detections=int(ing["meta"].get("n_op_detections", -1)),
         n_op_sl=int(ing["n_sl"]), X_tot=np.asarray(ing["X_tot"], float),
         map_fb=map_fb, fb_samp=fb_samp,
+        z_extrapolated=z_extrapolated, z_thin=z_thin,
+        truth_counts_perz=truth_counts_perz,
+        support_limit=(float(frozen.get("support_limit", max(limits)))
+                       if frozen is not None else float(max(limits))),
+        max_truth_z=(float(frozen.get("max_truth_z", np.nan))
+                     if frozen is not None else float("nan")),
         dndx=dict(), omega=dict(),
     )
     for l in limits:
@@ -434,16 +531,55 @@ def make_figure(out_path, res, args, lit):
     zbins = res["zbins"]; zmid = 0.5 * (zbins[:-1] + zbins[1:])
     n_zc = res["n_zc"]; mid = res["mid"]
     C_MAP = "#1f77b4"; C68 = "#1f77b4"
+    C_FLAG = "#7f7f7f"                                      # grey = extrapolated
+    z_extrap = np.asarray(res.get("z_extrapolated", np.zeros(n_zc, bool)), bool)
+    z_thin = np.asarray(res.get("z_thin", np.zeros(n_zc, bool)), bool)
+    sup_lim = float(res.get("support_limit", hl))
+
+    def _plot_perz(ax, kind, sc):
+        """Plot per-z points: calibrated (filled, blue, with HBI band), thin-but-
+        calibrated (filled blue, lighter, with wide band), extrapolated (open grey,
+        no headline)."""
+        lab_cal = lab_thin = lab_ext = False
+        for k in range(n_zc):
+            c = res[kind][hl]["perz"][k]
+            if not np.isfinite(c["MAP"]):
+                continue                                   # empty bin (no fine-z support)
+            lo, hi = c["q16"] * sc, c["q84"] * sc
+            if z_extrap[k]:
+                ax.vlines(zmid[k], lo, hi, color=C_FLAG, lw=8, alpha=0.30)
+                ax.plot(zmid[k], c["MAP"] * sc, "o", color="white", ms=10,
+                        mec=C_FLAG, mew=2.0, zorder=7,
+                        label=("EXTRAP. (beyond 2LPT-0 truth; C=z-marg)"
+                               if not lab_ext else None))
+                lab_ext = True
+            elif z_thin[k]:
+                ax.vlines(zmid[k], lo, hi, color=C68, lw=8, alpha=0.30)
+                ax.plot(zmid[k], c["MAP"] * sc, "o", color=C_MAP, ms=9, mec="k",
+                        alpha=0.7, zorder=6,
+                        label=("this work (thin calib.)" if not lab_thin else None))
+                lab_thin = True
+            else:
+                ax.vlines(zmid[k], lo, hi, color=C68, lw=8, alpha=0.45)
+                ax.plot(zmid[k], c["MAP"] * sc, "o", color=C_MAP, ms=9, mec="k",
+                        zorder=6,
+                        label=("DESI-LOA GP-DLA (this work)" if not lab_cal else None))
+                lab_cal = True
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
     # panel 0: dN/dX(z) at the headline limit + literature
     ax = axes[0]
+    _plot_perz(ax, "dndx", 1.0)
+    # annotate the extrapolated bin(s)
     for k in range(n_zc):
-        c = res["dndx"][hl]["perz"][k]
-        ax.vlines(zmid[k], c["q16"], c["q84"], color=C68, lw=8, alpha=0.45)
-        ax.plot(zmid[k], c["MAP"], "o", color=C_MAP, ms=9, mec="k", zorder=6,
-                label=("DESI-LOA GP-DLA (this work)" if k == 0 else None))
+        if z_extrap[k] and np.isfinite(res["dndx"][hl]["perz"][k]["MAP"]):
+            ax.annotate("extrapolated\n(beyond 2LPT-0 truth\nsupport; C=z-marg.)",
+                        xy=(zmid[k], res["dndx"][hl]["perz"][k]["MAP"]),
+                        xytext=(0.62, 0.78), textcoords="axes fraction", fontsize=7,
+                        color=C_FLAG, ha="left",
+                        arrowprops=dict(arrowstyle="->", color=C_FLAG, lw=0.8))
+            break
     if "n12_z" in lit:
         ax.plot(lit["n12_z"], lit["n12_dndx"], "s", color="black", ms=6, label="N12")
     if "pw09_z" in lit:
@@ -460,11 +596,15 @@ def make_figure(out_path, res, args, lit):
     # panel 1: 10^3 Ω(z) at headline limit + literature
     ax = axes[1]
     SCALE = 1000.0
+    _plot_perz(ax, "omega", SCALE)
     for k in range(n_zc):
-        c = res["omega"][hl]["perz"][k]
-        ax.vlines(zmid[k], c["q16"] * SCALE, c["q84"] * SCALE, color=C68, lw=8, alpha=0.45)
-        ax.plot(zmid[k], c["MAP"] * SCALE, "o", color=C_MAP, ms=9, mec="k", zorder=6,
-                label=("DESI-LOA GP-DLA (this work)" if k == 0 else None))
+        if z_extrap[k] and np.isfinite(res["omega"][hl]["perz"][k]["MAP"]):
+            ax.annotate("extrapolated\n(beyond 2LPT-0 truth\nsupport; C=z-marg.)",
+                        xy=(zmid[k], res["omega"][hl]["perz"][k]["MAP"] * SCALE),
+                        xytext=(0.62, 0.78), textcoords="axes fraction", fontsize=7,
+                        color=C_FLAG, ha="left",
+                        arrowprops=dict(arrowstyle="->", color=C_FLAG, lw=0.8))
+            break
     if "n12_z" in lit:
         ax.errorbar(lit["n12_z"], lit["n12_omega"], yerr=lit["n12_omega_err"],
                     fmt="s", color="black", ms=6, label="N12")
@@ -540,23 +680,68 @@ def write_report(out_path, res, args, wallclock, lit):
     L.append("")
     L.append("## The measurement")
     L.append("")
+    z_extrap = np.asarray(res.get("z_extrapolated", np.zeros(res["n_zc"], bool)), bool)
+    z_thin = np.asarray(res.get("z_thin", np.zeros(res["n_zc"], bool)), bool)
+    tcz = res.get("truth_counts_perz", None)
     for l in args._limits:
         L.append(f"### NHI ≥ {l:.1f}")
         L.append("")
-        L.append("| reduction | z bin | z≈ | MAP | 68% band | 95% band |")
-        L.append("|---|---|---|---|---|---|")
+        L.append("| reduction | z bin | z≈ | support | MAP | 68% band | 95% band |")
+        L.append("|---|---|---|---|---|---|---|")
         zbins = res["zbins"]; zmid = 0.5 * (zbins[:-1] + zbins[1:])
         for kind, name, sc in (("dndx", "dN/dX(z)", 1.0), ("omega", "10³·Ω(z)", 1000.0)):
             for k in range(res["n_zc"]):
                 c = res[kind][l]["perz"][k]
-                L.append(f"| {name} | [{zbins[k]:.1f},{zbins[k+1]:.1f}] | {zmid[k]:.2f} | "
-                         f"{c['MAP']*sc:.4g} | [{c['q16']*sc:.4g}, {c['q84']*sc:.4g}] | "
+                if z_extrap[k]:
+                    flag = "🔴 EXTRAP"
+                elif z_thin[k]:
+                    flag = "⚠ thin"
+                else:
+                    flag = "calibrated"
+                if tcz is not None and k < len(tcz):
+                    flag += f" (n_truth={tcz[k]})"
+                if not np.isfinite(c["MAP"]):
+                    L.append(f"| {name} | [{zbins[k]:.2f},{zbins[k+1]:.2f}] | {zmid[k]:.2f} "
+                             f"| {flag} | — (empty: no fine-z support) | — | — |")
+                    continue
+                L.append(f"| {name} | [{zbins[k]:.2f},{zbins[k+1]:.2f}] | {zmid[k]:.2f} | "
+                         f"{flag} | {c['MAP']*sc:.4g} | "
+                         f"[{c['q16']*sc:.4g}, {c['q84']*sc:.4g}] | "
                          f"[{c['q025']*sc:.4g}, {c['q975']*sc:.4g}] |")
             ci = res[kind][l]["integrated"]
-            L.append(f"| {name} | INTEGRATED | all | **{ci['MAP']*sc:.4g}** | "
+            L.append(f"| {name} | INTEGRATED (z-marg) | all | calibrated | "
+                     f"**{ci['MAP']*sc:.4g}** | "
                      f"[{ci['q16']*sc:.4g}, {ci['q84']*sc:.4g}] | "
                      f"[{ci['q025']*sc:.4g}, {ci['q975']*sc:.4g}] |")
         L.append("")
+    L.append("## High-z calibration support (the z>3.5 extension)")
+    L.append("")
+    zbins = res["zbins"]
+    sup_lim = float(res.get("support_limit", max(args._limits)))
+    max_tz = float(res.get("max_truth_z", float("nan")))
+    L.append(f"- 2LPT-0 truth (the calibration mock) max z_DLA = {max_tz:.3f}; truth counts "
+             f"(NHI≥{sup_lim:.1f}) per coarse z-bin: "
+             f"{tcz if tcz is not None else 'n/a'}.")
+    cal_bins = [f"[{zbins[k]:.2f},{zbins[k+1]:.2f})" for k in range(res["n_zc"])
+                if not z_extrap[k] and not z_thin[k]]
+    thin_bins = [f"[{zbins[k]:.2f},{zbins[k+1]:.2f})" for k in range(res["n_zc"])
+                 if z_thin[k]]
+    ext_bins = [f"[{zbins[k]:.2f},{zbins[k+1]:.2f})" for k in range(res["n_zc"])
+                if z_extrap[k]]
+    L.append(f"- **Calibrated** z-bins (full truth support): {cal_bins or 'none'}.")
+    if thin_bins:
+        L.append(f"- **Thinly calibrated** z-bins (0<n_truth<{res['cfg'].completeness_z_min_count:.0f}; "
+                 f"reported with their WIDE HBI band, but the z-resolved completeness g(N,z) "
+                 f"is occupancy-shrunk toward the z-marginal there): {thin_bins}.")
+    if ext_bins:
+        L.append(f"- 🔴 **EXTRAPOLATED** z-bins (ZERO 2LPT-0 truth → g(N,z)→1 → completeness "
+                 f"= the z-MARGINAL molly C): {ext_bins}.  These are FLAGGED (open grey "
+                 f"marker on the figure) and EXCLUDED from any calibrated headline.  The "
+                 f"indep statistical band holds g FROZEN, so it does NOT capture the "
+                 f"completeness-extrapolation bias here — the plotted band is a LOWER bound "
+                 f"on the true uncertainty.  Real-LOA detections DO extend into these bins, "
+                 f"but the mock provides no completeness calibration to correct them.")
+    L.append("")
     L.append("## Stated systematics (carried from the london-0 cross-recipe closure)")
     L.append("")
     L.append("- **Mean-flux recipe-dependence (dN/dX ~1–2%)**: the forward-response SHAPE "
@@ -624,6 +809,27 @@ def main(argv=None):
                    help="(unused for forward path; kept for _resolve_molly parity)")
     p.add_argument("--forward-model", default=_DEF_FORWARD)
     p.add_argument("--resp-family", default="empirical", choices=["skewnorm", "empirical"])
+    # KERNEL MODE (default 'forward' = Track-C, byte-identical to the committed run).
+    # 'kappa' = the PRE-Track-C GP-posterior deconvolution kernel (the "feed-forward"
+    # baseline that over-counts high-N on-mock; what Track-C's forward kernel replaces).
+    # In 'kappa' mode the per-detection GP-posterior kappa2d is built ON the real-LOA
+    # detections (it is a per-object posterior property, NOT a frozen population
+    # property) via build_posterior_kernel, or loaded from --loa-kernel if present.
+    p.add_argument("--resp-kind", default="forward", choices=["forward", "kappa"],
+                   help="forward = Track-C (DEFAULT, byte-identical); kappa = pre-Track-C "
+                        "GP-posterior deconvolution kernel (feed-forward baseline).")
+    p.add_argument("--loa-kernel", default=None,
+                   help="(kappa mode) path to a real-LOA posterior_kernel NPZ "
+                        "(build_posterior_kernel output). If missing it is built in-driver.")
+    p.add_argument("--loa-processed-glob", default=(
+        "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/loa_main_dark_v1/"
+        "processed/processed-main-dark-*.h5"),
+                   help="(kappa mode) real-LOA processed-h5 glob for the kernel build.")
+    p.add_argument("--loa-pw-samples", default=(
+        "/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection/"
+        "data/dr12q/processed/pw_samples_a3_172_225_50000.mat"),
+                   help="(kappa mode) the 50k pw_samples grid matching the real-LOA "
+                        "inference (NUM_DLA_SAMPLES=50000 — must match the h5 sample axis).")
     # the REAL LOA data
     p.add_argument("--loa-cat", default=_LOA_CAT)
     p.add_argument("--loa-truth", default=_LOA_TRUTH)
@@ -633,6 +839,16 @@ def main(argv=None):
     p.add_argument("--out", default=_DEF_OUT)
     p.add_argument("--report-out", default=".superpowers/sdd/track_c_TF_loa_report.md")
     p.add_argument("--zbins", default="2.0,2.5,3.0,3.5")
+    # Fine z-fit-grid upper edge.  DEFAULT 3.5 = the committed/byte-identical behavior
+    # (the fine-z reduction grid stops at 3.5, so coarse report bins above 3.5 are empty
+    # by construction).  Raise it (e.g. 4.25) WHEN extending --zbins above 3.5 so the
+    # per-bin BINNED reduction (_v2_reduce / _coarse_z_differential_f) actually has fine
+    # z-columns covering [3.5, hi] — i.e. the z>3.5 detections + path-length + truth are
+    # folded into the high-z report bins (a genuine binned measurement, not an empty bin).
+    # The estimator's own HBIConfig.v2_z_fit_hi default (3.5) is NOT changed.
+    p.add_argument("--v2-z-fit-hi", dest="v2_z_fit_hi", type=float, default=3.5,
+                   help="fine z-fit-grid upper edge (default 3.5 = byte-identical). Raise "
+                        "to match --zbins when reporting bins above z=3.5.")
     p.add_argument("--report-limits", default="20.0,20.3")
     p.add_argument("--family", default="bspbody")
     p.add_argument("--fit-floor", type=float, default=19.5)
@@ -701,7 +917,7 @@ def main(argv=None):
     frozen = build_frozen_calibration(args)
     args.molly_tsv = frozen["molly_tsv"]
     ing = build_loa_ingredients(args, frozen)
-    res = run_measurement(args, ing, limits, args.seed)
+    res = run_measurement(args, ing, limits, args.seed, frozen=frozen)
     wallclock = time.time() - t0
 
     lit = _load_literature()
@@ -712,9 +928,17 @@ def main(argv=None):
     # JSON dump (aggregate only)
     out_json = dict(metadata=dict(
         n_mc=args.n_mc, seed=args.seed, limits=list(limits),
+        resp_kind=getattr(args, "resp_kind", "forward"),
+        loa_kernel=ing.get("kernel_built_path"),
         forward_model=args.forward_model, molly_tsv=args.molly_tsv,
         loa_cat=args.loa_cat, n_op_detections=res["n_op_detections"],
         n_op_sl=res["n_op_sl"], consistency_err=res["consistency_err"],
+        v2_z_fit_hi=float(args.v2_z_fit_hi),
+        z_extrapolated=[bool(x) for x in np.asarray(res.get("z_extrapolated", []))],
+        z_thin=[bool(x) for x in np.asarray(res.get("z_thin", []))],
+        truth_counts_perz=res.get("truth_counts_perz"),
+        max_truth_z=float(res.get("max_truth_z", float("nan"))),
+        support_limit=float(res.get("support_limit", max(limits))),
         wallclock_s=float(wallclock), code_commit=_git_commit()),
         measurement={
             str(l): dict(
