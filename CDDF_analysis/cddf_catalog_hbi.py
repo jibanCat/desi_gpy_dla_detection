@@ -6850,7 +6850,9 @@ def v3x_build_forward(cfg, cat_cut, good_mask, mm, qso_per_sl, logN_lo, logN_hi,
     # op_weights (the tilt) ALWAYS thread to the likelihood Σ-log numerator (cat_op),
     # regardless of FP mode. The FP TERM, however, is gated:
     #   purity_mixture: lam_fp=(1−ρ)·tilt, μ_FP=Σ_i lam_fp (byte-identical to before).
-    #   loa0: lam_fp=b_FP(cell)·(1−η) FROZEN (tilt NOT applied; spec §7), μ_FP=INTEGRAL.
+    #   loa0: lam_fp = per-detection FP share (μ_FP,cell/N_cat,cell)·(1−η) FROZEN
+    #         (tilt NOT applied; spec §7), μ_FP=INTEGRAL. The bare b_FP(cell)·(1−η)
+    #         rate-density form survives only as a guarded n_cat_molly-None fallback.
     if obj_weights_extra is not None:
         # boot_weights is op_base-ordered (WALL-1 contract); slice to the floored subset
         we = np.asarray(obj_weights_extra, float)[keep_in_base]
