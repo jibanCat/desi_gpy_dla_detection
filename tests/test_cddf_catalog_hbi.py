@@ -3501,6 +3501,96 @@ def test_driver_band_helper_recenter_off_byte_identical():
     assert np.isclose(b_on["q84"] - b_on["q16"], b_raw["q84"] - b_raw["q16"], atol=1e-12)
 
 
+def _fN_band_stats(samples):
+    """Reproduce the joint_mc_errors `_stats` reduction for the per-bin differential
+    f(N) band over axis 0 (n_mc draws -> per-bin quantiles), as it is stored in
+    mc['f_b'] and consumed by write_outputs."""
+    return dict(
+        mean=np.nanmean(samples, axis=0),
+        std=np.nanstd(samples, axis=0),
+        q16=np.nanpercentile(samples, 16, axis=0),
+        q50=np.nanpercentile(samples, 50, axis=0),
+        q84=np.nanpercentile(samples, 84, axis=0),
+        q025=np.nanpercentile(samples, 2.5, axis=0),
+        q975=np.nanpercentile(samples, 97.5, axis=0),
+    )
+
+
+def test_differential_fN_band_recenter_brackets_point_and_off_byte_identical():
+    """FIX 1 propagated to the z-marginal DIFFERENTIAL f(N) band reported by
+    write_outputs (mc['f_b'] quantiles recentered on the per-bin MAP point).
+
+    A convex-MAP Jensen offset pushes the un-recentered f(N) band ABOVE the plug-in
+    point, so the MAP can fall OUTSIDE its own 68% band. With band_recenter=True the
+    per-bin band must BRACKET the per-bin MAP point (point in [q16, q84]) for the
+    well-sampled DLA-range bins; with band_recenter=False the reduction must be
+    BYTE-IDENTICAL (np.array_equal) to the raw quantiles. The recenter is the same
+    additive median->point shift used for the integrated/per-z bands, applied to the
+    already-reduced quantiles (width-preserving)."""
+    rng = np.random.default_rng(0)
+    n_mc, n_bins = 4000, 12
+    # per-bin plug-in MAP point (a steep DLA-range CDDF; ~1e-22 down to ~1e-24)
+    point = 10.0 ** np.linspace(-22.0, -24.0, n_bins)
+    # per-draw samples with a deliberate upward (Jensen-like) drift so the raw band
+    # sits ABOVE the point: median ~ +17.5% above point (the empirical offset), with a
+    # tight enough lognormal scatter that q16 still clears the point in most bins.
+    drift = 1.175
+    samples = point[None, :] * drift * np.exp(rng.normal(0.0, 0.08, size=(n_mc, n_bins)))
+    fb_stats = _fN_band_stats(samples)
+
+    # --- band_recenter=False: byte-identical to the raw stored quantiles ---
+    # the OFF path in write_outputs uses fb_stats unchanged; emulate the gate:
+    cfg_off = _make_cfg(band_recenter=False)
+    used_off = (H.recenter_differential_band_quantiles(fb_stats, point)
+                if getattr(cfg_off, "band_recenter", False) else fb_stats)
+    assert used_off is fb_stats                                   # same object, no copy
+    for k in ("q025", "q16", "q50", "q84", "q975"):
+        assert np.array_equal(used_off[k], fb_stats[k])           # BYTE-IDENTICAL default
+
+    # raw band sits ABOVE the point: the MAP is below q16 in the DLA-range bins
+    raw_below = np.sum(fb_stats["q16"] > point)
+    assert raw_below >= n_bins - 1, (
+        f"fixture should put the raw band above the point (Jensen); only {raw_below}/"
+        f"{n_bins} bins have q16 > point")
+
+    # --- band_recenter=True: the recentered band brackets the per-bin MAP point ---
+    cfg_on = _make_cfg(band_recenter=True)
+    used_on = (H.recenter_differential_band_quantiles(fb_stats, point)
+               if getattr(cfg_on, "band_recenter", False) else fb_stats)
+    # q50 lands exactly on the point per bin
+    assert np.allclose(used_on["q50"], point, rtol=1e-12, atol=0.0)
+    # MAP point inside its own 68% band for every well-sampled bin
+    inside = (used_on["q16"] <= point) & (point <= used_on["q84"])
+    assert inside.all(), f"MAP outside [q16,q84] in bins {np.where(~inside)[0]}"
+    # width preserved exactly (rigid per-bin shift)
+    assert np.allclose(used_on["q84"] - used_on["q16"],
+                       fb_stats["q84"] - fb_stats["q16"], rtol=1e-12, atol=0.0)
+    assert np.allclose(used_on["q975"] - used_on["q025"],
+                       fb_stats["q975"] - fb_stats["q025"], rtol=1e-12, atol=0.0)
+    # the shift is algebraically the SAME as recentering each bin's raw samples then
+    # re-reducing (the property the helper relies on): compare to a direct per-bin
+    # recenter_band_on_point of the raw samples.
+    for b in range(n_bins):
+        rc = H.recenter_band_on_point(samples[:, b], float(point[b]))
+        assert np.isclose(used_on["q16"][b], np.percentile(rc, 16), rtol=1e-12)
+        assert np.isclose(used_on["q84"][b], np.percentile(rc, 84), rtol=1e-12)
+
+
+def test_differential_fN_band_recenter_preserves_nonfinite_point_bins():
+    """A bin with a non-finite MAP point (or non-finite median) is left UNSHIFTED by
+    recenter_differential_band_quantiles (no NaN propagation into other bins)."""
+    fb_stats = dict(
+        q025=np.array([1.0, 2.0, 3.0]), q16=np.array([1.5, 2.5, 3.5]),
+        q50=np.array([2.0, 3.0, 4.0]), q84=np.array([2.5, 3.5, 4.5]),
+        q975=np.array([3.0, 4.0, 5.0]))
+    point = np.array([10.0, np.nan, 4.0])     # middle bin has no point
+    out = H.recenter_differential_band_quantiles(fb_stats, point)
+    # bin 0 shifted by +8 (10-2); bin 1 unshifted (nan point); bin 2 unshifted (10... 4-4=0)
+    assert np.isclose(out["q50"][0], 10.0)
+    assert np.array_equal(out["q16"], np.array([1.5 + 8.0, 2.5, 3.5]))
+    assert np.array_equal(out["q50"], np.array([10.0, 3.0, 4.0]))
+
+
 # ---------------------------------------------------------------------------
 # Track-C #39: z-RESOLVED COMPLETENESS C(N,z) (gated, default-OFF byte-identical)
 # ---------------------------------------------------------------------------

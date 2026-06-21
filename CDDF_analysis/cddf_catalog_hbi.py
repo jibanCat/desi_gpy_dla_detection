@@ -1689,6 +1689,54 @@ def recenter_band_on_point(samples, point):
     return s + shift
 
 
+def recenter_differential_band_quantiles(mc_stats, point):
+    """FIX 1 for an ALREADY-REDUCED per-bin DIFFERENTIAL f(N) band.
+
+    The integrated dN/dX/Ω and per-z dN/dX(z)/Ω(z) bands route their RAW per-draw
+    samples through ``recenter_band_on_point`` (additive median→point shift). The
+    z-marginal differential f(N) band, however, is reported from the already-reduced
+    quantile stats ``mc["f_b"] = {q025,q16,q50,q84,q975,...}`` produced by
+    ``joint_mc_errors`` — there is no raw per-bin sample array at the writer. Because
+    the recenter is a RIGID additive shift, every quantile of bin b moves by the SAME
+    per-bin offset ``shift_b = point_b − q50_b``; shifting the stored quantiles is
+    algebraically identical to recentering the raw samples then re-reducing them. This
+    helper applies that per-bin shift to (q025,q16,q50,q84,q975), so q50→point exactly
+    and the band WIDTH is preserved (q84−q16, q975−q025 unchanged).
+
+    The shift assumes the per-bin sampling distribution is SYMMETRIC (median≈point is
+    the correct first-order bias correction; exact for the integrated/CLT case). The
+    sparse high-N tail f(N) bins are mildly right-skewed, so there this is the
+    FIRST-ORDER correction: it relocates the median onto the point and preserves the
+    skew shape, it does not symmetrize the band.
+
+    Parameters
+    ----------
+    mc_stats : dict
+        A ``_stats``-style dict with per-bin arrays under keys
+        ``q025,q16,q50,q84,q975`` (plus optionally ``mean,std,...`` which are
+        passed through unshifted — std is shift-invariant; mean is not recentered).
+    point : array-like
+        Per-bin plug-in MAP point ``f_b`` (same length as the quantile arrays).
+
+    Returns
+    -------
+    dict
+        A NEW dict with the quantile keys shifted per bin; all other keys copied
+        through unchanged. Bins where the point or q50 is non-finite are left
+        unshifted (shift treated as 0 there).
+    """
+    point = np.asarray(point, dtype=float)
+    q50 = np.asarray(mc_stats["q50"], dtype=float)
+    shift = point - q50
+    # non-finite point or median -> no shift for that bin (leave the raw band)
+    shift = np.where(np.isfinite(shift), shift, 0.0)
+    out = dict(mc_stats)
+    for key in ("q025", "q16", "q50", "q84", "q975"):
+        if key in mc_stats:
+            out[key] = np.asarray(mc_stats[key], dtype=float) + shift
+    return out
+
+
 def omega_deep_tail_slope_extrap_samples(f_b_samples, f_b_point, logN_lo, logN_hi,
                                          N_b, dN_b, cfg, rng, lo):
     """FIX 2 — deep-tail Ω with the high-N power-law slope-extrapolation nuisance.
@@ -2056,9 +2104,23 @@ def write_outputs(cfg: HBIConfig, point_est: dict, mc: dict, mm: MollyMatrix,
 
     # f_of_N.csv (z-marginalized, fine grid >= 20.0)
     f_b = point_est["f_b"]
-    f_lo = mc["f_b"]["q16"]
-    f_hi = mc["f_b"]["q84"]
-    f_med = mc["f_b"]["q50"]
+    # FIX 1 (recenter-on-point) for the DIFFERENTIAL f(N) band. GATED on
+    # cfg.band_recenter (default OFF -> byte-identical). The integrated dN/dX/Ω and
+    # per-z bands already recenter their RAW samples; here the band is reported from the
+    # already-reduced joint_mc_errors quantiles, so we apply the SAME additive
+    # median->point shift per bin to the stored quantiles (algebraically identical to
+    # recentering the raw samples then re-reducing; width preserved). The convex-bspline
+    # MAP Jensen offset (track_c_band_offset_diagnosis.md) makes the un-recentered f(N)
+    # band sit ~17.5% above the plug-in MAP line; recentering puts the MAP back inside
+    # its own 68% band. Symmetric at first order (exact for the CLT/integrated case);
+    # the sparse high-N tail bins are mildly right-skewed, so there it relocates the
+    # median onto the point and preserves the skew shape (first-order correction).
+    fb_stats = mc["f_b"]
+    if getattr(cfg, "band_recenter", False):
+        fb_stats = recenter_differential_band_quantiles(fb_stats, f_b)
+    f_lo = fb_stats["q16"]
+    f_hi = fb_stats["q84"]
+    f_med = fb_stats["q50"]
     occ_marg = np.nansum(point_est["occ"], axis=1)
     p = os.path.join(cfg.out_dir, "f_of_N.csv")
     with open(p, "w") as fh:
