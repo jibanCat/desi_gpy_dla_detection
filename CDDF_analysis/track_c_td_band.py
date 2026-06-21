@@ -43,7 +43,8 @@ from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, run_baseline
 from CDDF_analysis.cddf_catalog_hbi import (
     joint_mc_errors, make_v3x_refit_fn, build_truth_match_resample,
     omega_hi_prefactor, recenter_band_on_point,
-    omega_deep_tail_slope_extrap_samples)
+    omega_deep_tail_slope_extrap_samples,
+    omega_integrated_slope_extrap_samples)
 
 _DEF_FORWARD = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
                 "track_c/stage0/forward_response_2lpt0.npz")
@@ -86,6 +87,7 @@ def _set_forward_band_cfg(cfg, args, carry):
     cfg.omega_slope_extrap_edge = float(args.slope_edge)
     cfg.omega_slope_extrap_fit_dex = float(args.slope_fit_dex)
     cfg.omega_slope_extrap_sigma = float(args.sigma_slope)
+    cfg.omega_slope_extrap_integrated = bool(args.omega_slope_extrap_integrated)  # FIX 2b
 
 
 def run_forward_band(args, limits, carry, seed):
@@ -189,8 +191,15 @@ def main(argv=None):
     p.add_argument("--omega-slope-extrap", action="store_true",
                    help="FIX 2: marginalize the high-N power-law slope into the deep-tail "
                         "Ω band (additive nuisance; point unchanged).")
+    p.add_argument("--omega-slope-extrap-integrated", action="store_true",
+                   help="FIX 2b: extend the high-N slope/calibration uncertainty DOWN into the "
+                        "sparse [21,21.5] shoulder of the INTEGRATED headline Ω(≥lim) band "
+                        "(splice slope-perturbed power-law above --slope-edge, re-integrate; "
+                        "point byte-identical, band widens). Requires --omega-slope-extrap.")
     p.add_argument("--slope-edge", type=float, default=21.2,
-                   help="logN data edge above which f(N) is power-law extrapolated (FIX 2).")
+                   help="logN data edge above which f(N) is power-law extrapolated (FIX 2/2b). "
+                        "PRINCIPLED: the N where the per-(N_true) truth-match cell TP count "
+                        "thins (<1000/cell ⇒ 21.2 default; <1500/cell ⇒ 21.1 shoulder).")
     p.add_argument("--slope-fit-dex", type=float, default=0.6,
                    help="dex below the edge over which the local log-slope is fitted (FIX 2).")
     p.add_argument("--sigma-slope", type=float, default=0.5,
@@ -219,27 +228,50 @@ def main(argv=None):
           f"{'95% band':>21} | cover68 cover95")
     print("-" * 92)
     recenter = bool(getattr(res_carry["cfg"], "band_recenter", False))
+    slope_extrap = bool(getattr(res_carry["cfg"], "omega_slope_extrap", False))
+    omega_se_integrated = bool(
+        getattr(res_carry["cfg"], "omega_slope_extrap_integrated", False)) and slope_extrap
     summary = dict(metadata=dict(
         forward_model=args.forward_model, resp_family=args.resp_family,
         n_mc=args.n_mc, seed=args.seed, limits=list(limits),
         kernel=args.kernel, molly=args.molly_tsv, truth=args.truth,
         deep_tail_lo=args.deep_tail_lo,
         band_recenter=recenter,
-        omega_slope_extrap=bool(getattr(res_carry["cfg"], "omega_slope_extrap", False)),
+        omega_slope_extrap=slope_extrap,
+        omega_slope_extrap_integrated=omega_se_integrated,
+        omega_slope_extrap_edge=float(getattr(res_carry["cfg"],
+                                              "omega_slope_extrap_edge", 21.2)),
+        omega_slope_extrap_sigma=float(getattr(res_carry["cfg"],
+                                              "omega_slope_extrap_sigma", 0.5)),
         stages="I=laplace, II=shared_boot, III=marginalize(forward refit)"))
     for kind, samp_key, pt_key, tr_key, r0_key in (
             ("dndx", "dndx_samples", "point_dndx", "truth_dndx", "R0_dndx"),
             ("omega", "omega_samples", "point_omega", "truth_omega", "R0_omega")):
         for l in limits:
             pt = res_carry[pt_key][l]
-            band = _band(res_carry[samp_key][l], point=pt, recenter=recenter)
+            samp = res_carry[samp_key][l]
+            se_note = ""
+            # FIX 2b: for INTEGRATED Ω, splice the slope-perturbed power-law above the data
+            # edge into the per-draw f_b, re-integrate over NHI≥l → the WIDENED shoulder band.
+            # The POINT stays byte-identical (the in-data integral; band recentered on it).
+            if kind == "omega" and omega_se_integrated:
+                samp, pt_in_data = omega_integrated_slope_extrap_samples(
+                    res_carry["f_b_samples"], res_carry["f_b_point"],
+                    res_carry["logN_lo"], res_carry["logN_hi"], res_carry["N_b"],
+                    res_carry["dN_b"], res_carry["cfg"],
+                    np.random.default_rng(args.seed + 77 + int(round(l * 10))), l)
+                # the in-data integral must reproduce the byte-identical headline point
+                assert np.isclose(pt_in_data, pt, rtol=1e-9), (
+                    f"Ω(≥{l}) in-data integral {pt_in_data} != point {pt}")
+                se_note = " [slope-extrap shoulder]"
+            band = _band(samp, point=pt, recenter=recenter)
             truth = res_carry[tr_key][l]
             cov = _cover(band, truth)
             r0 = res_carry[r0_key][l]
             print(f"{kind:>6} {l:>5} | {r0:>8.3f} | "
                   f"[{band['q16']:.4g}, {band['q84']:.4g}] | "
                   f"[{band['q025']:.4g}, {band['q975']:.4g}] | "
-                  f"{str(cov['in68']):>7} {str(cov['in95']):>7}")
+                  f"{str(cov['in68']):>7} {str(cov['in95']):>7}{se_note}")
             band_frozen = _band(res_frozen[samp_key][l])
             w_carry = band["q84"] - band["q16"]
             w_frozen = band_frozen["q84"] - band_frozen["q16"]
@@ -249,7 +281,8 @@ def main(argv=None):
                 band95=[band["q025"], band["q975"]],
                 cover68=cov["in68"], cover95=cov["in95"],
                 width68_carry=float(w_carry), width68_frozen=float(w_frozen),
-                carry_widens=bool(w_carry >= w_frozen))
+                carry_widens=bool(w_carry >= w_frozen),
+                slope_extrap_shoulder=bool(kind == "omega" and omega_se_integrated))
 
     # deep-tail Ω band (data-starvation as honest uncertainty)
     # (a) the kernel-carry deep-tail Ω (no slope-extrap) — the pre-FIX-2 band.
@@ -262,8 +295,7 @@ def main(argv=None):
     # unchanged). The per-draw f_b above the data edge is replaced by a power-law whose
     # log-slope is drawn from N(local-fit, σ_slope); deep-tail Ω re-integrated. The
     # extrap POINT uses the un-perturbed fitted slope, so it is the central value the
-    # widened band is reported relative to. ON iff cfg.omega_slope_extrap.
-    slope_extrap = bool(getattr(res_carry["cfg"], "omega_slope_extrap", False))
+    # widened band is reported relative to. ON iff cfg.omega_slope_extrap (defined above).
     om_dt_se_band = om_dt_se_cov = None
     if slope_extrap:
         om_se, _, om_se_point = omega_deep_tail_slope_extrap_samples(
@@ -315,6 +347,16 @@ def main(argv=None):
     out_json = os.path.join(args.out, "td_band.json")
     with open(out_json, "w") as fh:
         json.dump(summary, fh, indent=2)
+    # persist the per-bin f_b band samples + grid so the integrated-Ω slope-extrap edge /
+    # σ sensitivity (FIX 2b) can be re-derived WITHOUT re-running the expensive band MC.
+    np.savez(os.path.join(args.out, "td_band_fb_samples.npz"),
+             f_b_samples=res_carry["f_b_samples"], f_b_point=res_carry["f_b_point"],
+             f_truth=res_carry["f_truth"], logN_lo=res_carry["logN_lo"],
+             logN_hi=res_carry["logN_hi"], N_b=res_carry["N_b"], dN_b=res_carry["dN_b"],
+             H0=res_carry["H0"],
+             point_omega=np.array([res_carry["point_omega"][l] for l in limits]),
+             truth_omega=np.array([res_carry["truth_omega"][l] for l in limits]),
+             limits=np.array(list(limits)))
     # f(N) per-bin band (carry) for the differential figure
     mid = res_carry["mid"]
     fb_samp = res_carry["f_b_samples"]

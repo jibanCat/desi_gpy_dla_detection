@@ -3424,12 +3424,65 @@ def test_omega_slope_extrap_widens_band():
     assert np.nanstd(om1) > np.nanstd(om0)
 
 
+def test_omega_integrated_in_data_matches_plugin_integral():
+    """FIX 2b: omega_integrated_in_data reproduces the plain plug-in integrated Ω(≥lim)
+    over the in-data f_b (the byte-identical headline point — NO splice)."""
+    cfg, fb, f_pt, logN_lo, logN_hi, N_b, dN_b = _slope_extrap_fixture()
+    for lo in (20.0, 20.3, 20.6):
+        K = H.omega_hi_prefactor(cfg.H0)
+        sel = logN_lo >= lo - 1e-9
+        direct = K * np.nansum(N_b[sel] * f_pt[sel] * dN_b[sel])
+        got = H.omega_integrated_in_data(f_pt, logN_lo, logN_hi, N_b, dN_b, cfg.H0, lo)
+        assert np.isclose(got, direct, rtol=1e-12)
+
+
+def test_omega_integrated_slope_extrap_point_is_in_data_and_band_widens():
+    """FIX 2b: the INTEGRATED Ω(≥lim) slope-extrap returns the BYTE-IDENTICAL in-data point
+    (not the spliced value) AND a band whose spread strictly WIDENS with σ_slope. For a
+    clean power-law f_b the in-data point == the spliced power-law integral (continuous), so
+    we also verify the point matches the direct in-data integral to machine precision."""
+    cfg, fb, f_pt, logN_lo, logN_hi, N_b, dN_b = _slope_extrap_fixture()
+    cfg.omega_slope_extrap_edge = 21.1          # lowered shoulder edge (FIX 2b data-driven)
+    lo = 20.3
+    direct = H.omega_integrated_in_data(f_pt, logN_lo, logN_hi, N_b, dN_b, cfg.H0, lo)
+
+    cfg.omega_slope_extrap_sigma = 0.0
+    om0, pt0 = H.omega_integrated_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(7), lo)
+    cfg.omega_slope_extrap_sigma = 0.5
+    om1, pt1 = H.omega_integrated_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(7), lo)
+    # the returned point is the in-data integral and is INDEPENDENT of σ (byte-identical)
+    assert pt0 == pt1
+    assert np.isclose(pt0, direct, rtol=1e-12)
+    # σ>0 strictly widens the integrated Ω band (shoulder/tail slope uncertainty)
+    assert np.nanstd(om1) > np.nanstd(om0)
+
+
+def test_omega_integrated_slope_extrap_below_edge_is_in_data():
+    """FIX 2b: the integrated Ω band keeps the IN-DATA f_b for bins below the edge (only the
+    bins ABOVE the edge are replaced by the slope-perturbed power-law). With the edge ABOVE
+    the integration limit but the perturbation amplitude → 0 (σ=0), the band must collapse to
+    the in-data integral (the spliced power-law == the local fit, continuous)."""
+    cfg, fb, f_pt, logN_lo, logN_hi, N_b, dN_b = _slope_extrap_fixture()
+    cfg.omega_slope_extrap_edge = 21.1
+    cfg.omega_slope_extrap_sigma = 0.0
+    lo = 20.3
+    om0, _ = H.omega_integrated_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(11), lo)
+    # for the clean power-law fixture, σ=0 splice == in-data band (the per-draw amplitude
+    # jitter is the only spread); the median tracks the in-data integral within MC noise.
+    direct = H.omega_integrated_in_data(f_pt, logN_lo, logN_hi, N_b, dN_b, cfg.H0, lo)
+    assert np.isclose(np.nanmedian(om0), direct, rtol=0.05)
+
+
 def test_band_finalize_config_defaults_off():
     """Both fixes default OFF on HBIConfig (gated, BYTE-IDENTICAL band by default)."""
     cfg = H.HBIConfig(catalog_dir="x", truth_path="y", bal_cat_path="z",
                       molly_tsv="m", out_dir="o")
     assert cfg.band_recenter is False
     assert cfg.omega_slope_extrap is False
+    assert cfg.omega_slope_extrap_integrated is False    # FIX 2b gated default-off
 
 
 def test_driver_band_helper_recenter_off_byte_identical():

@@ -442,6 +442,33 @@ class HBIConfig:
     #                                    CDDF high-N slope spans roughly −2 to −3 across surveys /
     #                                    mean-flux assumptions). The goal is HONEST width, not tuning
     #                                    to truth.
+    omega_slope_extrap_integrated: bool = False  # FIX 2b (Track-C SHOULDER) — extend the high-N
+    #                                    slope/calibration uncertainty DOWN into the sparse
+    #                                    [21,21.5] shoulder of the INTEGRATED headline Ω(≥lim),
+    #                                    not just the separate deep-tail Ω(≥21.3) summary. When ON
+    #                                    (and omega_slope_extrap ON), the integrated Ω(≥lim) BAND is
+    #                                    re-built by splicing the in-data f(N) below
+    #                                    omega_slope_extrap_edge with the slope-perturbed power-law
+    #                                    ABOVE the edge, then re-integrating over NHI ≥ lim. The POINT
+    #                                    stays byte-identical (it is the original in-data integral; the
+    #                                    band is RECENTERED on it via band_recenter), so this widens
+    #                                    only the BAND in the shoulder/deep-tail.
+    #
+    #                                    PRINCIPLED EDGE (PI choice (b), 2026-06-20). The per-(N_true)
+    #                                    truth-match calibration TP count THINS through the shoulder
+    #                                    (2LPT-0 PM, per 0.1-dex N_true cell): 1846@[20.9,21.0),
+    #                                    1510@[21.0,21.1), 1277@[21.1,21.2), 913@[21.2,21.3),
+    #                                    716@[21.3,21.4), 455@[21.4,21.5). The forward-response kernel
+    #                                    is calibrated per true-N cell, so where the cell count drops
+    #                                    the calibration becomes unreliable (AND high-N is physically
+    #                                    unreliable: mean-flux evolution). The data-driven edge is the
+    #                                    N where the cell TP count falls below a stated threshold:
+    #                                    < 1000/cell ⇒ edge 21.2 (the default); < 1500/cell ⇒ edge 21.1
+    #                                    (the shoulder, where the count has already roughly HALVED from
+    #                                    its [20.5,20.6) peak ~3500). Lowering the edge to 21.1 lets the
+    #                                    slope uncertainty BREATHE through the [21.1,21.5] shoulder so
+    #                                    the integrated Ω band honestly covers truth. DEFAULT False ⇒
+    #                                    integrated Ω band unchanged (byte-identical).
 
 
 # -----------------------------------------------------------------------------
@@ -1707,6 +1734,46 @@ def omega_deep_tail_slope_extrap_samples(f_b_samples, f_b_point, logN_lo, logN_h
     s0_pt = _fit_slope(f_b_point)
     om_point = _omega_one(np.asarray(f_b_point, float), s0_pt)
     return om, None, om_point
+
+
+def omega_integrated_in_data(f_b, logN_lo, logN_hi, N_b, dN_b, H0, lo):
+    """The plug-in INTEGRATED Ω(NHI ≥ lo) from the in-data per-bin f_b — the BYTE-IDENTICAL
+    headline point. Ω = K Σ_{logN_lo≥lo} N_b f_b dN_b (the same reduction joint_mc_errors uses
+    for the integrated Ω band)."""
+    K = omega_hi_prefactor(H0)
+    logN_lo = np.asarray(logN_lo, float)
+    sel = logN_lo >= lo - 1e-9
+    return K * float(np.nansum(np.asarray(N_b, float)[sel] * np.asarray(f_b, float)[sel]
+                               * np.asarray(dN_b, float)[sel]))
+
+
+def omega_integrated_slope_extrap_samples(f_b_samples, f_b_point, logN_lo, logN_hi,
+                                          N_b, dN_b, cfg, rng, lo):
+    """FIX 2b (Track-C SHOULDER) — INTEGRATED headline Ω(NHI ≥ ``lo``) BAND with the high-N
+    power-law slope/calibration uncertainty extended DOWN into the [21,21.5] shoulder.
+
+    The integrated Ω(≥lim) headline (lim = 20.0 / 20.3) under-recovers truth because the
+    high-N MASS is mostly in the data-starved deep tail above the forward-response
+    calibration edge (``cfg.omega_slope_extrap_edge``; the per-(N_true) truth-match TP count
+    thins through the [21,21.5] shoulder — see the HBIConfig docstring). The honest
+    uncertainty in that mass is the SLOPE of the high-N extrapolation. This is the same
+    splice-and-re-integrate machinery as ``omega_deep_tail_slope_extrap_samples`` but with
+    ``lo`` set to the HEADLINE LIMIT (not 21.3), so the in-data bins [lim, edge) are kept and
+    only the bins ABOVE the edge are replaced by the slope-perturbed power-law before the
+    Ω integral — the slope uncertainty therefore propagates into the integrated band.
+
+    Returns ``(om_samples, om_point_in_data)``:
+      * ``om_samples`` — the per-draw integrated Ω with the spliced, slope-perturbed tail
+        (the WIDENED band). Reuses ``omega_deep_tail_slope_extrap_samples`` with ``lo=lim``.
+      * ``om_point_in_data`` — the BYTE-IDENTICAL plug-in integrated Ω(≥lim) from the in-data
+        f_b_point (NO splice), so the caller RECENTERS the widened band on the untouched point
+        (band_recenter): the POINT is unchanged; only the BAND widens in the shoulder/tail.
+    """
+    om, _, _ = omega_deep_tail_slope_extrap_samples(
+        f_b_samples, f_b_point, logN_lo, logN_hi, N_b, dN_b, cfg, rng, lo)
+    om_point_in_data = omega_integrated_in_data(
+        f_b_point, logN_lo, logN_hi, N_b, dN_b, cfg.H0, lo)
+    return om, om_point_in_data
 
 
 def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
