@@ -3329,3 +3329,120 @@ def test_stage3_forward_band_composes_laplace_shared_boot_smoke(tmp_path):
         s = out[f"dndx_{l}"]
         return float(s["q84"] - s["q16"])
     assert abs(_w(marg, 20.3) - _w(froz, 20.3)) > 0     # the carry materially moves the band
+
+
+# =============================================================================
+# Track-C BAND-FINALIZE — FIX 1 (recenter-on-point) + FIX 2 (deep-tail Ω
+# slope-extrapolation). BAND-ONLY; the POINT is never touched. Gated default-OFF.
+# =============================================================================
+def test_band_recenter_median_equals_point_spread_preserved():
+    """FIX 1: recenter_band_on_point shifts the band so its median sits EXACTLY at the
+    point, and preserves the spread (std + any quantile half-width are unchanged). This
+    is the percentile-interval pivot used to correct the convex-MAP Jensen offset."""
+    rng = np.random.default_rng(0)
+    s = rng.normal(10.0, 2.0, 8000)
+    pt = 12.345
+    sc = H.recenter_band_on_point(s, pt)
+    # median sits exactly at the point
+    assert np.isclose(np.median(sc), pt, atol=1e-9)
+    # spread preserved exactly (a rigid shift)
+    assert np.allclose(np.std(sc), np.std(s), atol=0.0, rtol=1e-12)
+    # any quantile == point + (raw_quantile - raw_median)
+    med = float(np.median(s))
+    for q in (2.5, 16.0, 84.0, 97.5):
+        assert np.isclose(np.percentile(sc, q), pt + (np.percentile(s, q) - med),
+                          atol=1e-9)
+
+
+def test_band_recenter_preserves_nan_and_handles_empty():
+    """FIX 1 edge cases: NaN entries are preserved (the shift is finite); an all-NaN /
+    empty sample or a non-finite point returns the input unchanged (no crash)."""
+    s = np.array([1.0, 2.0, np.nan, 4.0])
+    sc = H.recenter_band_on_point(s, 5.0)
+    assert np.isnan(sc[2])
+    assert np.isfinite(sc[[0, 1, 3]]).all()
+    # all-NaN -> unchanged
+    allnan = np.full(5, np.nan)
+    assert np.isnan(H.recenter_band_on_point(allnan, 3.0)).all()
+    # non-finite point -> unchanged
+    np.testing.assert_array_equal(H.recenter_band_on_point(s, np.nan), s)
+
+
+def _slope_extrap_fixture():
+    """A synthetic fine grid + a power-law f_b (slope -2.0) point + amplitude-jittered
+    band samples — the minimal setup for the deep-tail Ω slope-extrapolation nuisance."""
+    edges = np.arange(17.2, 22.4 + 0.05, 0.1)
+    logN_lo, logN_hi = edges[:-1], edges[1:]
+    N_b = 10.0 ** (0.5 * (logN_lo + logN_hi))
+    dN_b = 10.0 ** logN_hi - 10.0 ** logN_lo
+    mid = 0.5 * (logN_lo + logN_hi)
+    f_pt = 10.0 ** (-22.0 - 2.0 * (mid - 20.3))           # power law, slope -2.0
+    rng = np.random.default_rng(1)
+    fb = f_pt[None, :] * 10.0 ** (rng.normal(0.0, 0.02, (400, 1)))  # amplitude jitter
+    cfg = H.HBIConfig(catalog_dir="x", truth_path="y", bal_cat_path="z",
+                      molly_tsv="m", out_dir="o")
+    cfg.omega_slope_extrap_edge = 21.2
+    cfg.omega_slope_extrap_fit_dex = 0.6
+    return cfg, fb, f_pt, logN_lo, logN_hi, N_b, dN_b
+
+
+def test_omega_slope_extrap_point_independent_of_sigma_and_matches_powerlaw():
+    """FIX 2: the deep-tail Ω POINT uses the un-perturbed fitted slope, so it is
+    INDEPENDENT of σ_slope (changing σ does not move the point), and for a clean
+    power-law f_b it reproduces the direct in-data deep-tail Ω integral to machine
+    precision (the spliced extrapolation IS the same power law)."""
+    cfg, fb, f_pt, logN_lo, logN_hi, N_b, dN_b = _slope_extrap_fixture()
+    lo = 21.3
+    K = H.omega_hi_prefactor(cfg.H0)
+    sel = logN_lo >= lo - 1e-9
+    om_direct = K * np.nansum(N_b[sel] * f_pt[sel] * dN_b[sel])
+
+    cfg.omega_slope_extrap_sigma = 0.0
+    _, _, pt0 = H.omega_deep_tail_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(5), lo)
+    cfg.omega_slope_extrap_sigma = 0.5
+    _, _, pt1 = H.omega_deep_tail_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(5), lo)
+    # point UNCHANGED by σ
+    assert pt0 == pt1
+    # point reproduces the direct power-law integral
+    assert np.isclose(pt0, om_direct, rtol=1e-10)
+
+
+def test_omega_slope_extrap_widens_band():
+    """FIX 2: turning the slope-extrapolation nuisance ON (σ_slope>0) WIDENS the deep-tail
+    Ω band vs σ=0 (the additive high-N power-law-slope uncertainty). σ=0 is the no-extrap-
+    uncertainty floor; σ>0 must strictly increase the spread."""
+    cfg, fb, f_pt, logN_lo, logN_hi, N_b, dN_b = _slope_extrap_fixture()
+    lo = 21.3
+    cfg.omega_slope_extrap_sigma = 0.0
+    om0, _, _ = H.omega_deep_tail_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(5), lo)
+    cfg.omega_slope_extrap_sigma = 0.5
+    om1, _, _ = H.omega_deep_tail_slope_extrap_samples(
+        fb, f_pt, logN_lo, logN_hi, N_b, dN_b, cfg, np.random.default_rng(5), lo)
+    assert np.nanstd(om1) > np.nanstd(om0)
+
+
+def test_band_finalize_config_defaults_off():
+    """Both fixes default OFF on HBIConfig (gated, BYTE-IDENTICAL band by default)."""
+    cfg = H.HBIConfig(catalog_dir="x", truth_path="y", bal_cat_path="z",
+                      molly_tsv="m", out_dir="o")
+    assert cfg.band_recenter is False
+    assert cfg.omega_slope_extrap is False
+
+
+def test_driver_band_helper_recenter_off_byte_identical():
+    """The driver's _band(point, recenter=False) reproduces the raw-quantile band
+    bit-for-bit (the gated default), and recenter=True puts the median at the point with
+    the spread preserved."""
+    from CDDF_analysis.track_c_td_band import _band
+    rng = np.random.default_rng(3)
+    s = rng.normal(5.0, 1.0, 2000)
+    b_raw = _band(s)
+    b_off = _band(s, point=99.0, recenter=False)
+    for k in b_raw:
+        assert b_off[k] == b_raw[k]              # byte-identical default
+    b_on = _band(s, point=7.0, recenter=True)
+    assert b_on["q50"] == 7.0                    # median == point exactly
+    assert np.isclose(b_on["q84"] - b_on["q16"], b_raw["q84"] - b_raw["q16"], atol=1e-12)

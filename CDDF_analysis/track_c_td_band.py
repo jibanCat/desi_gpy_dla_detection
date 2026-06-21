@@ -42,14 +42,21 @@ from CDDF_analysis import ab_loa0_fp_baseline as AB
 from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, run_baseline
 from CDDF_analysis.cddf_catalog_hbi import (
     joint_mc_errors, make_v3x_refit_fn, build_truth_match_resample,
-    omega_hi_prefactor)
+    omega_hi_prefactor, recenter_band_on_point,
+    omega_deep_tail_slope_extrap_samples)
 
 _DEF_FORWARD = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
                 "track_c/stage0/forward_response_2lpt0.npz")
 
 
-def _band(samp):
+def _band(samp, point=None, recenter=False):
+    """68/95 band quantiles. When ``recenter`` and a finite ``point`` are given, the
+    samples are first SHIFTED so their median sits at ``point`` (FIX 1 — recenter-on-
+    point; the spread is preserved, q50==point exactly). Default ``recenter=False``
+    reproduces the raw-quantile band byte-identically."""
     s = np.asarray(samp, float)
+    if recenter and point is not None and np.isfinite(point):
+        s = recenter_band_on_point(s, point)
     s = s[np.isfinite(s)]
     if s.size == 0:
         return dict(q025=np.nan, q16=np.nan, q50=np.nan, q84=np.nan, q975=np.nan,
@@ -65,14 +72,20 @@ def _cover(band, truth):
                 in95=bool(band["q025"] <= truth <= band["q975"]))
 
 
-def _set_forward_band_cfg(cfg, forward_model, resp_family, carry):
+def _set_forward_band_cfg(cfg, args, carry):
     """Configure the forward-empirical marginalized band on cfg."""
     cfg.resp_kind = "forward"
-    cfg.resp_family = resp_family
-    cfg.kernel_forward_model = forward_model
+    cfg.resp_family = args.resp_family
+    cfg.kernel_forward_model = args.forward_model
     cfg.mc_inner = "laplace"
     cfg.mc_nuisance = "shared_boot"
     cfg.mc_response = "marginalize" if carry else "frozen"
+    # Track-C BAND-FINALIZE (gated; BAND-ONLY, POINT byte-identical)
+    cfg.band_recenter = bool(args.band_recenter)           # FIX 1
+    cfg.omega_slope_extrap = bool(args.omega_slope_extrap)  # FIX 2
+    cfg.omega_slope_extrap_edge = float(args.slope_edge)
+    cfg.omega_slope_extrap_fit_dex = float(args.slope_fit_dex)
+    cfg.omega_slope_extrap_sigma = float(args.sigma_slope)
 
 
 def run_forward_band(args, limits, carry, seed):
@@ -87,7 +100,7 @@ def run_forward_band(args, limits, carry, seed):
     cfg.report_logN_limits = limits
     cfg._wall1_estimator = "v3"
     cfg.n_mc = args.n_mc
-    _set_forward_band_cfg(cfg, args.forward_model, args.resp_family, carry)
+    _set_forward_band_cfg(cfg, args, carry)
 
     # ---- single-source point + truth + R0 (the forward MAP headline) ----
     base = run_baseline(ing)
@@ -169,6 +182,19 @@ def main(argv=None):
     p.add_argument("--n-mc", type=int, default=120)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--deep-tail-lo", type=float, default=21.3)
+    # --- Track-C BAND-FINALIZE knobs (gated; BAND-ONLY, POINT byte-identical) ---
+    p.add_argument("--band-recenter", action="store_true",
+                   help="FIX 1: recenter the MC band on the plug-in point (Jensen bias "
+                        "correction; spread preserved, median->point).")
+    p.add_argument("--omega-slope-extrap", action="store_true",
+                   help="FIX 2: marginalize the high-N power-law slope into the deep-tail "
+                        "Ω band (additive nuisance; point unchanged).")
+    p.add_argument("--slope-edge", type=float, default=21.2,
+                   help="logN data edge above which f(N) is power-law extrapolated (FIX 2).")
+    p.add_argument("--slope-fit-dex", type=float, default=0.6,
+                   help="dex below the edge over which the local log-slope is fitted (FIX 2).")
+    p.add_argument("--sigma-slope", type=float, default=0.5,
+                   help="σ of the Gaussian prior on the extrapolated log-slope (FIX 2).")
     args = p.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
     limits = tuple(float(x) for x in args.report_limits.split(","))
@@ -192,17 +218,21 @@ def main(argv=None):
     print(f"{'q':>6} {'lim':>5} | {'MAP R0':>8} | {'68% band':>21} | "
           f"{'95% band':>21} | cover68 cover95")
     print("-" * 92)
+    recenter = bool(getattr(res_carry["cfg"], "band_recenter", False))
     summary = dict(metadata=dict(
         forward_model=args.forward_model, resp_family=args.resp_family,
         n_mc=args.n_mc, seed=args.seed, limits=list(limits),
         kernel=args.kernel, molly=args.molly_tsv, truth=args.truth,
         deep_tail_lo=args.deep_tail_lo,
+        band_recenter=recenter,
+        omega_slope_extrap=bool(getattr(res_carry["cfg"], "omega_slope_extrap", False)),
         stages="I=laplace, II=shared_boot, III=marginalize(forward refit)"))
     for kind, samp_key, pt_key, tr_key, r0_key in (
             ("dndx", "dndx_samples", "point_dndx", "truth_dndx", "R0_dndx"),
             ("omega", "omega_samples", "point_omega", "truth_omega", "R0_omega")):
         for l in limits:
-            band = _band(res_carry[samp_key][l])
+            pt = res_carry[pt_key][l]
+            band = _band(res_carry[samp_key][l], point=pt, recenter=recenter)
             truth = res_carry[tr_key][l]
             cov = _cover(band, truth)
             r0 = res_carry[r0_key][l]
@@ -222,11 +252,27 @@ def main(argv=None):
                 carry_widens=bool(w_carry >= w_frozen))
 
     # deep-tail Ω band (data-starvation as honest uncertainty)
+    # (a) the kernel-carry deep-tail Ω (no slope-extrap) — the pre-FIX-2 band.
     om_dt, om_dt_truth, om_dt_point = _deep_tail_omega_samples(res_carry, args.deep_tail_lo)
-    om_dt_band = _band(om_dt)
+    om_dt_band = _band(om_dt, point=om_dt_point, recenter=recenter)
     om_dt_cov = _cover(om_dt_band, om_dt_truth)
     om_dt_f, _, _ = _deep_tail_omega_samples(res_frozen, args.deep_tail_lo)
     om_dt_band_f = _band(om_dt_f)
+    # (b) FIX 2 — the slope-extrapolation deep-tail Ω band (additive nuisance; POINT
+    # unchanged). The per-draw f_b above the data edge is replaced by a power-law whose
+    # log-slope is drawn from N(local-fit, σ_slope); deep-tail Ω re-integrated. The
+    # extrap POINT uses the un-perturbed fitted slope, so it is the central value the
+    # widened band is reported relative to. ON iff cfg.omega_slope_extrap.
+    slope_extrap = bool(getattr(res_carry["cfg"], "omega_slope_extrap", False))
+    om_dt_se_band = om_dt_se_cov = None
+    if slope_extrap:
+        om_se, _, om_se_point = omega_deep_tail_slope_extrap_samples(
+            res_carry["f_b_samples"], res_carry["f_b_point"],
+            res_carry["logN_lo"], res_carry["logN_hi"], res_carry["N_b"],
+            res_carry["dN_b"], res_carry["cfg"],
+            np.random.default_rng(args.seed + 99), args.deep_tail_lo)
+        om_dt_se_band = _band(om_se, point=om_se_point, recenter=recenter)
+        om_dt_se_cov = _cover(om_dt_se_band, om_dt_truth)
     print("-" * 92)
     print(f"DEEP-TAIL Ω (NHI>={args.deep_tail_lo}):  MAP={om_dt_point:.4g} "
           f"truth={om_dt_truth:.4g}  68%=[{om_dt_band['q16']:.4g},{om_dt_band['q84']:.4g}]"
@@ -234,6 +280,10 @@ def main(argv=None):
     print(f"  width68 carry={om_dt_band['q84']-om_dt_band['q16']:.4g}  "
           f"frozen={om_dt_band_f['q84']-om_dt_band_f['q16']:.4g}  "
           f"(carry widens deep tail = honest data-starvation uncertainty)")
+    if om_dt_se_band is not None:
+        print(f"  + SLOPE-EXTRAP (FIX 2):  68%=[{om_dt_se_band['q16']:.4g},"
+              f"{om_dt_se_band['q84']:.4g}]  width68={om_dt_se_band['q84']-om_dt_se_band['q16']:.4g}"
+              f"  cover68={om_dt_se_cov['in68']}  cover95={om_dt_se_cov['in95']}")
     summary["omega_deep_tail"] = dict(
         lo=float(args.deep_tail_lo), MAP=float(om_dt_point), truth=float(om_dt_truth),
         band68=[om_dt_band["q16"], om_dt_band["q84"]],
@@ -241,6 +291,14 @@ def main(argv=None):
         cover68=om_dt_cov["in68"], cover95=om_dt_cov["in95"],
         width68_carry=float(om_dt_band["q84"] - om_dt_band["q16"]),
         width68_frozen=float(om_dt_band_f["q84"] - om_dt_band_f["q16"]))
+    if om_dt_se_band is not None:
+        summary["omega_deep_tail"]["slope_extrap"] = dict(
+            band68=[om_dt_se_band["q16"], om_dt_se_band["q84"]],
+            band95=[om_dt_se_band["q025"], om_dt_se_band["q975"]],
+            cover68=om_dt_se_cov["in68"], cover95=om_dt_se_cov["in95"],
+            width68=float(om_dt_se_band["q84"] - om_dt_se_band["q16"]),
+            sigma_slope=float(getattr(res_carry["cfg"], "omega_slope_extrap_sigma", 0.5)),
+            edge=float(getattr(res_carry["cfg"], "omega_slope_extrap_edge", 21.2)))
 
     # ---- carry-widening summary ----
     print("\n" + "=" * 74)
@@ -265,8 +323,9 @@ def main(argv=None):
         if not (20.0 - 1e-9 <= mid[b] <= 22.0 + 1e-9):
             continue
         col = fb_samp[:, b]
-        fb_band = _band(col)
-        fN.append(dict(logN_mid=float(mid[b]), hbi=float(res_carry["f_b_point"][b]),
+        fb_pt = float(res_carry["f_b_point"][b])
+        fb_band = _band(col, point=fb_pt, recenter=recenter)  # FIX 1 applies to f(N,z)
+        fN.append(dict(logN_mid=float(mid[b]), hbi=fb_pt,
                        truth=float(res_carry["f_truth"][b]),
                        band68=[fb_band["q16"], fb_band["q84"]],
                        band95=[fb_band["q025"], fb_band["q975"]]))

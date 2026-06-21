@@ -398,6 +398,50 @@ class HBIConfig:
     #                                    point fit_forward_response build so the unit-weight
     #                                    Stage-III resample reproduces the frozen forward kernel).
     forward_min_count: int = 60        # forward-fit per-sub-bin minimum (effective) count.
+    # --- Track-C BAND-FINALIZE (gated, DEFAULT-OFF; BAND-ONLY, POINT byte-identical) ---
+    band_recenter: bool = False        # FIX 1 — recenter-on-point (bootstrap bias correction;
+    #                                    Jensen). The diagnosis (track_c_band_offset_diagnosis.md)
+    #                                    proved the per-draw positivity-constrained b-spline MAP
+    #                                    θ̂(ψ) is CONVEX in the resampled counts ψ, so
+    #                                    E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the plug-in point (Jensen) — the
+    #                                    whole MC band sits ~2.7σ BELOW the headline MAP even though
+    #                                    the point R0≈0.99 is the near-unbiased estimate. The
+    #                                    sampling distribution is SYMMETRIC (mean≈median in every
+    #                                    config), so the correct first-order bias correction is to
+    #                                    SHIFT the bootstrap band so its median sits at the point and
+    #                                    keep the spread unchanged:
+    #                                        corrected_quantile = point + (quantile − band_median).
+    #                                    This is the percentile-interval pivot / BCa first-order
+    #                                    recentering, justified BECAUSE the distribution is symmetric
+    #                                    (no skew to preserve). DEFAULT False ⇒ raw quantiles =
+    #                                    BYTE-IDENTICAL band. Applies to dN/dX(z), Ω(z), f(N,z).
+    omega_slope_extrap: bool = False   # FIX 2 — deep-tail Ω slope-extrapolation uncertainty (PI
+    #                                    directive; ADDITIVE band nuisance, POINT UNCHANGED). The
+    #                                    deep tail [edge+] is data-starved (truth-match ends ~21.2)
+    #                                    and high-N is physically unreliable (mean-flux evolution),
+    #                                    so the deep-tail Ω cannot be pinned. The honest uncertainty
+    #                                    is the POWER-LAW SLOPE of the high-N extrapolation: per BAND
+    #                                    draw, the local fitted log-slope d(log10 f)/d(logN) just
+    #                                    below the edge is PERTURBED by N(0, σ_slope) and f(N) above
+    #                                    the edge is REPLACED by the power-law extrapolation
+    #                                    f(edge)·10^{slope·(logN−edge)}; deep-tail Ω is re-integrated
+    #                                    to drop_top_bin_above. The POINT uses the un-perturbed fitted
+    #                                    slope (σ contributes 0), so the central deep-tail Ω is
+    #                                    UNCHANGED; only the BAND marginalizes the slope uncertainty
+    #                                    ⇒ the deep-tail Ω band WIDENS. DEFAULT False ⇒ current band.
+    omega_slope_extrap_edge: float = 21.2   # logN above which f(N) is treated as a power-law
+    #                                    extrapolation for the deep-tail Ω slope nuisance (the
+    #                                    truth-match data edge). The fitted slope is measured over
+    #                                    [edge − omega_slope_extrap_fit_dex, edge].
+    omega_slope_extrap_fit_dex: float = 0.6  # dex below the edge over which the local log-slope is
+    #                                    fitted (the slope being extrapolated).
+    omega_slope_extrap_sigma: float = 0.5   # σ of the Gaussian prior on the extrapolated log-slope
+    #                                    (dex^-1). Deliberately WIDE: the data-starvation + mean-flux
+    #                                    unreliability beyond ~21.2 mean the slope is essentially
+    #                                    unconstrained over a ~±0.5 range about the local fit (the DLA
+    #                                    CDDF high-N slope spans roughly −2 to −3 across surveys /
+    #                                    mean-flux assumptions). The goal is HONEST width, not tuning
+    #                                    to truth.
 
 
 # -----------------------------------------------------------------------------
@@ -1554,6 +1598,115 @@ def draw_shared_boot_with_mult(rng, tmr: TruthMatchResample, method: str = "diri
                          f"choose 'dirichlet' or 'multinomial'.")
     C_draw, rho_draw, boot_w_op = shared_boot_counts(tmr, mult)
     return C_draw, rho_draw, boot_w_op, mult
+
+
+# -----------------------------------------------------------------------------
+# Track-C BAND-FINALIZE helpers (FIX 1 recenter-on-point; FIX 2 deep-tail Ω
+# slope-extrapolation). BAND-ONLY — the POINT estimate is never touched. Both are
+# gated default-OFF on HBIConfig (band_recenter / omega_slope_extrap) so the default
+# band is byte-identical.
+# -----------------------------------------------------------------------------
+def recenter_band_on_point(samples, point):
+    """FIX 1 — first-order bootstrap bias correction (recenter-on-point; Jensen).
+
+    Shift a 1-D array of MC band samples so that its MEDIAN sits exactly at the
+    plug-in ``point`` (the headline MAP), keeping the SPREAD unchanged:
+
+        corrected_samples = samples + (point − median(samples))
+
+    so that any quantile q of the corrected band equals ``point + (q − band_median)``.
+
+    Justification (track_c_band_offset_diagnosis.md). The per-draw positivity-
+    constrained b-spline MAP θ̂(ψ) is a CONVEX functional of the resampled counts ψ,
+    so by Jensen E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the point — the whole MC band sits below the
+    headline MAP even though the point (R0≈0.99) is the trustworthy near-unbiased
+    estimate. The sampling distribution is empirically SYMMETRIC (mean≈median in every
+    config of the decomposition), so recentering on the point is the correct first-order
+    bias correction (the percentile-interval pivot / BCa at first order), justified
+    BECAUSE there is no skew to preserve. It changes only the LOCATION of the band, not
+    its width; the POINT is untouched.
+
+    NaNs are preserved (the shift is finite); the median is over finite entries.
+    """
+    s = np.asarray(samples, dtype=float)
+    finite = s[np.isfinite(s)]
+    if finite.size == 0 or not np.isfinite(point):
+        return s
+    shift = float(point) - float(np.median(finite))
+    return s + shift
+
+
+def omega_deep_tail_slope_extrap_samples(f_b_samples, f_b_point, logN_lo, logN_hi,
+                                         N_b, dN_b, cfg, rng, lo):
+    """FIX 2 — deep-tail Ω with the high-N power-law slope-extrapolation nuisance.
+
+    The deep tail [edge+] (edge = cfg.omega_slope_extrap_edge ≈ 21.2) is data-starved
+    (the truth-match ends ~21.2) and high-N is physically unreliable (mean-flux
+    evolution), so the deep-tail Ω cannot be pinned by the data — the honest
+    uncertainty is the SLOPE of the high-N extrapolation. Per BAND draw m:
+
+      1. fit the local log-slope  s0 = d(log10 f)/d(logN)  over
+         [edge − fit_dex, edge]  on THAT draw's per-bin f_b (so the central slope
+         is itself resampled with C/ρ/g/σ/kernel);
+      2. draw  s = s0 + N(0, σ_slope)  (cfg.omega_slope_extrap_sigma; a WIDE prior
+         reflecting the data-starvation / mean-flux unreliability);
+      3. REPLACE f(N) above the edge by the power-law extrapolation anchored at the
+         last in-data bin:  f(N) = f(edge) · 10^{ s·(logN − edge) };
+      4. re-integrate Ω over NHI ≥ ``lo`` from the spliced f (in-data below the edge,
+         extrapolated above) to drop_top_bin_above.
+
+    Returns (om_samples, om_truth_unused=None, om_point). The POINT (om_point) uses the
+    UN-perturbed fitted slope (σ contributes 0 in expectation; here applied with a
+    ZERO draw), so the central deep-tail Ω is the same power-law-spliced value the band
+    is centered on — only the BAND marginalizes σ_slope ⇒ the deep-tail Ω band WIDENS.
+
+    This function does NOT change the dN/dX/Ω headline reductions; it is used ONLY for
+    the deep-tail Ω band when cfg.omega_slope_extrap is ON.
+    """
+    K = omega_hi_prefactor(cfg.H0)
+    logN_lo = np.asarray(logN_lo, float)
+    logN_hi = np.asarray(logN_hi, float)
+    N_b = np.asarray(N_b, float)
+    dN_b = np.asarray(dN_b, float)
+    mid = 0.5 * (logN_lo + logN_hi)
+    edge = float(getattr(cfg, "omega_slope_extrap_edge", 21.2))
+    fit_dex = float(getattr(cfg, "omega_slope_extrap_fit_dex", 0.6))
+    sigma = float(getattr(cfg, "omega_slope_extrap_sigma", 0.5))
+
+    sel_report = logN_lo >= lo - 1e-9          # bins entering the deep-tail Ω integral
+    fit_sel = (mid >= edge - fit_dex - 1e-9) & (mid <= edge + 1e-9)  # local-slope window
+    above = mid > edge + 1e-9                    # bins extrapolated (replaced by power law)
+    # anchor bin = the last in-data bin at/below the edge (highest mid <= edge)
+    at_or_below = np.where(mid <= edge + 1e-9)[0]
+    anchor = int(at_or_below[-1]) if at_or_below.size else None
+
+    def _omega_one(f_b, slope_draw):
+        f = np.array(f_b, dtype=float)
+        if anchor is not None and slope_draw is not None and np.any(above):
+            f_anchor = f[anchor]
+            if np.isfinite(f_anchor) and f_anchor > 0:
+                f_ext = f_anchor * 10.0 ** (slope_draw * (mid[above] - mid[anchor]))
+                f[above] = f_ext
+        return K * float(np.nansum(N_b[sel_report] * f[sel_report] * dN_b[sel_report]))
+
+    def _fit_slope(f_b):
+        f = np.asarray(f_b, float)
+        good = fit_sel & np.isfinite(f) & (f > 0)
+        if good.sum() >= 2:
+            return float(np.polyfit(mid[good], np.log10(f[good]), 1)[0])
+        return None
+
+    fb_samp = np.asarray(f_b_samples, float)
+    n_mc = fb_samp.shape[0]
+    om = np.full(n_mc, np.nan)
+    for m in range(n_mc):
+        s0 = _fit_slope(fb_samp[m])
+        slope_draw = (s0 + rng.normal(0.0, sigma)) if s0 is not None else None
+        om[m] = _omega_one(fb_samp[m], slope_draw)
+    # POINT: un-perturbed fitted slope (no σ draw) on the point f_b.
+    s0_pt = _fit_slope(f_b_point)
+    om_point = _omega_one(np.asarray(f_b_point, float), s0_pt)
+    return om, None, om_point
 
 
 def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
