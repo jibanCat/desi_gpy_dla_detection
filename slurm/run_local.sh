@@ -154,6 +154,7 @@ build_cmd() {
         --dla_samples_file "$DLA_SAMPLES_FILE"
         --sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE"
         --min_z_separation "$MIN_Z_SEPARATION"
+        --max_z_cut "${MAX_Z_CUT:-3000.0}"
         --prev_tau_0 "$PREV_TAU_0"
         --prev_beta "$PREV_BETA"
         --max_dlas "$MAX_DLAS"

@@ -66,14 +66,18 @@ slurm/greatlakes/*.log
 tests/profile/results/*.tsv
 tests/profile/results/trace_*.json
 
-# --- handoff notes: keep current in docs/handoffs/ (tracked); archive old ones locally ---
-docs/handoffs/legacy/
-
 # SLURM job logs in any greatlakes subdir (the old slurm/greatlakes/*.log missed production/logs/)
 slurm/greatlakes/**/*.log
 
-# investigation notes are tracked in a SEPARATE notes repo, not the codebase
+# Claude-oriented working docs (investigation notes, run notes, per-mock stories,
+# session handoffs, design memos) live in the SEPARATE private notes repo to keep the
+# code repo clean for Claude. See docs/NOTES_MOVED_TO_PRIVATE.md for where to find them.
 docs/notes/
+docs/handoffs/
+docs/runs/
+docs/stories/
+docs/superpowers/
+docs/voigt_lsf_sweep_plan.md
 
 # Step A trainset fixtures regenerable from build_2lpt_frozen_test_fixture.py
 tests/fixtures/2lpt_frozen/training_set.mat
@@ -97,3 +101,8 @@ examples/prototype_dla_clustering.png
 # but DO track the published hbi headline figures (the deliverable; overrides the broad `figures/` rule)
 !CDDF_analysis/hbi/figures/
 !CDDF_analysis/hbi/figures/*.png
+
+# Per-healpix QSO spec-count tables hold catalog counts -> keep on CFS, never commit.
+# Regenerate with tools/loa_hpx_spec_counts.py (see loa_cddf_nersc.env / matterhorn_nersc_v1.env).
+# Covers *_qso_counts.txt (matterhorn) and *_spec_counts.txt (loa).
+slurm/nersc/production/*_counts.txt

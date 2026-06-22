@@ -1,0 +1,3 @@
+# transient SLURM logs — do not track
+*
+!.gitignore

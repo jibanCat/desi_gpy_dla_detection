@@ -77,7 +77,8 @@ warnings.simplefilter("error", OptimizeWarning)
 ##########################
 
 
-def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
+def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params,
+                  release=None, pixel_col="HPXPIXEL"):
     """
     Find the best fitting DLA profile(s) for spectra in hpx catalog.
 
@@ -89,6 +90,11 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     datapath (str): path to coadd files
     hpxcat (table): collection of spectra to search for DLAs, all belonging to a single healpix
     model_params (dict): dictionary of parameters for the DLAHolder model
+    release (str): specprod / release name; required to resolve the matterhorn
+        UNIQPIX coadd path via desispec.io.findfile (default None)
+    pixel_col (str): healpix grouping column. Default 'HPXPIXEL' keeps the
+        existing loa/mock coadd path build; 'UNIQPIX' uses the matterhorn
+        spectra/ (uniqpix) coadd layout (default 'HPXPIXEL')
 
     Returns
     -------
@@ -97,8 +103,18 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     t0 = time.time()
 
     # Read spectra from healpix
-    coaddname = f"coadd-{survey}-{program}-{str(healpix)}.fits"
-    coadd = os.path.join(datapath, str(healpix // 100), str(healpix), coaddname)
+    if pixel_col == "UNIQPIX":
+        coadd = desispec.io.findfile(
+            "coadd",
+            survey=survey,
+            faprogram=program,
+            groupname="uniqpix",
+            uniqpix=int(healpix),
+            specprod=release,
+        )
+    else:
+        coaddname = f"coadd-{survey}-{program}-{str(healpix)}.fits"
+        coadd = os.path.join(datapath, str(healpix // 100), str(healpix), coaddname)
 
     if os.path.exists(coadd):
         # Reconstruct the Parameters instance from the dictionary

@@ -10,6 +10,10 @@
 > `/global/cfs/cdirs/desicollab/users/jibancat/` are writable; everything else
 > on `/global/cfs/cdirs/` is read-only.
 
+> **Investigation notes moved out of this repo**: `docs/{notes,handoffs,runs,stories,superpowers}/`
+> now live in the private notes repo. Links below to `docs/notes/…` resolve there —
+> see [`docs/NOTES_MOVED_TO_PRIVATE.md`](docs/NOTES_MOVED_TO_PRIVATE.md) for the map.
+
 ---
 
 ## 1. What This Repository Is
