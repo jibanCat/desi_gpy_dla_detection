@@ -6,7 +6,9 @@ Runs the LITERAL Bayesian posterior CDDF (``calc_cddf.DLACatalogue`` Poisson-bin
 machinery) on the dense FILTER-off single-absorber real-LOA run
 ``nersc_cddf_loa_v1_20260609`` (618 GB, 16,519 healpix). Produces the differential
 f(N_HI) with 68/95% PB credible band, integrated dN/dX(>=thr) and 10^3 Omega(>=thr),
-plus per-z dN/dX / Omega in the Track-C z grid (z [2.0, 3.5]).
+plus per-z dN/dX / Omega AND the per-z DIFFERENTIAL f(N|z) in the Track-C 5-bin z grid
+[2.0,2.5,3.0,3.5,4.0,4.25] (z extended ABOVE 3.5; calc_cddf is raw — no calibration
+support limit — so it runs to 4.25 freely).
 
 WHY THIS IS NOW POSSIBLE (it was not before)
 --------------------------------------------
@@ -43,9 +45,9 @@ the private notes repo only.
 
 CONVENTIONS (matched to rawff_2lpt0 / cddf_catalog_hbi.HBIConfig)
 -----------------------------------------------------------------
-z window [2.0, 3.5]; production Lya-only WindowSpec (z_min_lyb=True, v_prox=v_tail=
-3000 km/s); lnhi ceiling 22.4 (drop_top_bin_above); report thresholds 20.0/20.3/20.6;
-hubble=0.7.
+z window [2.0, 4.25] (extended above 3.5); production Lya-only WindowSpec
+(z_min_lyb=True, v_prox=v_tail=3000 km/s); lnhi ceiling 22.4 (drop_top_bin_above);
+report thresholds 20.0/20.3/20.6; hubble=0.7.
 """
 from __future__ import annotations
 
@@ -74,14 +76,22 @@ CAT = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/"
 OUT = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/"
        "tf_loa_calc_cddf")
 
-Z_MIN, Z_MAX = 2.0, 3.5
+Z_MIN, Z_MAX = 2.0, 4.25
 LNHI_MAX = 22.4          # = HBIConfig.drop_top_bin_above
 THRESHOLDS = (20.0, 20.3, 20.6)
 FN_LNHI_MIN, FN_LNHI_MAX, FN_NBINS = 19.5, 22.0, 25   # differential f(N) grid
 HUBBLE = 0.7
 SUB_DLA = False          # FILTER-off maxdla1 layout: model_posteriors=[Null, 1DLA]
-N_ZBINS = 3              # per-z grid; matches Track-C tf_loa coarse bins [2.0,2.5,3.0,3.5]
-                         # np.linspace(2.0,3.5,4) = [2.0,2.5,3.0,3.5] -> z_mid 2.25/2.75/3.25
+# per-z grid = EXPLICIT Track-C 5-bin coarse grid (z extended above 3.5):
+#   [2.0, 2.5, 3.0, 3.5, 4.0, 4.25] -> 5 bins, z_mid 2.25/2.75/3.25/3.75/4.12.
+# calc_cddf is RAW (no calibration support limit), so it runs to 4.25 freely; the
+# z>3.5 bins are a genuine per-bin Poisson-binomial density (each bin re-computes
+# _split_distributions + path_length over its OWN z-edges, NOT a naive fine-bin mean).
+Z_GRID_COARSE = np.array([2.0, 2.5, 3.0, 3.5, 4.0, 4.25], float)
+N_ZBINS = len(Z_GRID_COARSE) - 1     # 5 coarse z bins
+# fine f(N|z) grid: SAME nhi edges as the z-marginal f(N) so the per-z curves stack to
+# the z-marginal one (up to the per-bin ΔX normalization).
+FNZ_LNHI_MIN, FNZ_LNHI_MAX, FNZ_NBINS = FN_LNHI_MIN, FN_LNHI_MAX, FN_NBINS
 
 DLACAT_KW = dict(sub_dla=SUB_DLA, high_nhi_cut_value=LNHI_MAX)
 
@@ -123,8 +133,8 @@ def _ingredients(processed_file):
             out[f"omega_poissons_{thr}"] = np.asarray(po_o, float)
             out[f"omega_edges_{thr}"] = om_edges
 
-        # ---- per-z dN/dX + Omega at headline 20.3 (Track-C z grid) ----
-        z_grid = np.linspace(Z_MIN, Z_MAX, N_ZBINS + 1)
+        # ---- per-z dN/dX + Omega at headline 20.3 (Track-C 5-bin z grid) ----
+        z_grid = Z_GRID_COARSE
         prz, poz = cat._split_distributions(
             z_grid, lred=Z_MIN, ured=Z_MAX, lnhi_min=20.3, lnhi_max=LNHI_MAX, nhi=False)
         out["perz_dndx_probs"] = prz
@@ -143,6 +153,24 @@ def _ingredients(processed_file):
             perz_om_poissons.append(np.asarray(po_oz, float))
         out["perz_om_probs"] = perz_om_probs
         out["perz_om_poissons"] = perz_om_poissons
+
+        # ---- per-z DIFFERENTIAL f(N|z) ingredients (the NEW deliverable) ----
+        # For each coarse z bin, bin the per-sample DLA probabilities by logN over the
+        # FINE nhi grid, restricted to THAT z-window (lred/ured = the bin edges). This is
+        # the per-(z,N) Poisson-binomial expected count; divided by (ΔX_zbin·ΔN_bin) it is
+        # the differential CDDF f(N_HI) IN that z bin. Same _split_distributions(nhi=True)
+        # call the z-marginal f(N) uses, just with the z-window narrowed per bin.
+        fnz_edges = np.linspace(FNZ_LNHI_MIN, FNZ_LNHI_MAX, FNZ_NBINS + 1)
+        fnz_probs = []
+        fnz_poissons = []
+        for i in range(N_ZBINS):
+            pr_fz, po_fz = cat._split_distributions(
+                fnz_edges, lred=z_grid[i], ured=z_grid[i + 1],
+                lnhi_min=fnz_edges[0], lnhi_max=fnz_edges[-1], nhi=True)
+            fnz_probs.append(pr_fz)
+            fnz_poissons.append(np.asarray(po_fz, float))
+        out["fnz_probs"] = fnz_probs
+        out["fnz_poissons"] = fnz_poissons
 
         # common single-z-bin dX over [Z_MIN, Z_MAX]
         out["dX"] = float(cat.path_length(Z_MIN, Z_MAX))
@@ -235,6 +263,11 @@ def main(n_workers=16, limit=None, subsample=None, seed=0, skip_partition=False)
     perz_om_probs = [[list() for _ in range(FN_NBINS)] for _ in range(N_ZBINS)]
     perz_om_poissons = [np.zeros(FN_NBINS) for _ in range(N_ZBINS)]
 
+    # per-z DIFFERENTIAL f(N|z) accumulators (the NEW deliverable)
+    fnz_edges = np.linspace(FNZ_LNHI_MIN, FNZ_LNHI_MAX, FNZ_NBINS + 1)
+    fnz_probs = [[list() for _ in range(FNZ_NBINS)] for _ in range(N_ZBINS)]
+    fnz_poissons = [np.zeros(FNZ_NBINS) for _ in range(N_ZBINS)]
+
     def _reduce(ing):
         nonlocal fn_dX, dX_single, n_active_total
         _extend_probs(fn_probs, ing["fn_probs"])
@@ -254,6 +287,8 @@ def main(n_workers=16, limit=None, subsample=None, seed=0, skip_partition=False)
         for i in range(N_ZBINS):
             _extend_probs(perz_om_probs[i], ing["perz_om_probs"][i])
             perz_om_poissons[i][:] = perz_om_poissons[i] + ing["perz_om_poissons"][i]
+            _extend_probs(fnz_probs[i], ing["fnz_probs"][i])
+            fnz_poissons[i][:] = fnz_poissons[i] + ing["fnz_poissons"][i]
 
     done = 0
     if n_workers <= 1:
@@ -314,13 +349,25 @@ def main(n_workers=16, limit=None, subsample=None, seed=0, skip_partition=False)
         # per-z dN/dX + Omega at 20.3
         pz_ml, pz68, pz95 = ref._count_ci_from_probs_poissons(
             perz_dndx_probs, perz_dndx_poissons)
-        z_grid = np.linspace(Z_MIN, Z_MAX, N_ZBINS + 1)
+        z_grid = Z_GRID_COARSE
         z_mid = 0.5 * (z_grid[:-1] + z_grid[1:])
+        # per-z DIFFERENTIAL f(N|z): the (per-(z,N) PB expected count)/(ΔX_zbin·ΔN_bin),
+        # with the per-(z,N)-bin 68/95 PB credible band. fN_z[i] is the f(N) curve in
+        # coarse z bin i over the fine nhi grid.
+        dN_fnz = np.array([10**e2 - 10**e1
+                           for e1, e2 in zip(fnz_edges[:-1], fnz_edges[1:])])
+        l_Ncent_fnz = 0.5 * (fnz_edges[:-1] + fnz_edges[1:])
         perz = []
+        perz_fN = []
         for i in range(N_ZBINS):
             dX_i = perz_dX[i]
             if dX_i <= 0:
-                perz.append(dict(z=float(z_mid[i]), dndx=None, omega=None))
+                perz.append(dict(z=float(z_mid[i]), dndx=None, omega=None, dX=float(dX_i)))
+                perz_fN.append(dict(z=float(z_mid[i]), dX=float(dX_i),
+                                    logN_centers=l_Ncent_fnz.tolist(),
+                                    lnhi_edges=fnz_edges.tolist(),
+                                    f=None, f68_lo=None, f68_hi=None,
+                                    f95_lo=None, f95_hi=None))
                 continue
             d_i = float(pz_ml[i]) / dX_i
             d68 = [float(pz68[i][0]) / dX_i, float(pz68[i][1]) / dX_i]
@@ -331,6 +378,19 @@ def main(n_workers=16, limit=None, subsample=None, seed=0, skip_partition=False)
             perz.append(dict(
                 z=float(z_mid[i]), dndx=d_i, dndx68=d68,
                 omega=float(o_i), omega68=o68v, dX=float(dX_i)))
+            # per-z differential f(N|z) with per-(z,N)-bin PB credible band
+            fz_ml, fz68, fz95 = ref._count_ci_from_probs_poissons(
+                fnz_probs[i], fnz_poissons[i])
+            fNz = np.asarray(fz_ml) / dX_i / dN_fnz
+            fNz68 = np.asarray(fz68) / dX_i / np.vstack([dN_fnz, dN_fnz]).T
+            fNz95 = np.asarray(fz95) / dX_i / np.vstack([dN_fnz, dN_fnz]).T
+            perz_fN.append(dict(
+                z=float(z_mid[i]), dX=float(dX_i),
+                logN_centers=l_Ncent_fnz.tolist(),
+                lnhi_edges=fnz_edges.tolist(),
+                f=fNz.tolist(),
+                f68_lo=fNz68[:, 0].tolist(), f68_hi=fNz68[:, 1].tolist(),
+                f95_lo=fNz95[:, 0].tolist(), f95_hi=fNz95[:, 1].tolist()))
     finally:
         try:
             ref.filehandle.close()
@@ -362,6 +422,8 @@ def main(n_workers=16, limit=None, subsample=None, seed=0, skip_partition=False)
         runtime_sec=elapsed,
         results=results,
         perz_20p3=perz,
+        z_grid_coarse=Z_GRID_COARSE.tolist(),
+        perz_fN=perz_fN,        # per-z DIFFERENTIAL f(N|z), the NEW deliverable
         fN_curve=dict(
             logN_centers=l_Ncent.tolist(),
             f=fN.tolist(),

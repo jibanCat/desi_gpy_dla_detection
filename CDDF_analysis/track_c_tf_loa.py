@@ -409,6 +409,41 @@ def run_measurement(args, ing, limits, seed, frozen=None):
         return dict(MAP=float(point), q16=b["q16"], q84=b["q84"],
                     q025=b["q025"], q975=b["q975"], std=b["std"])
 
+    # ---- per-z DIFFERENTIAL f(N | z) (the NEW deliverable) -------------------
+    # MAP = the genuine 2-D MAP f(N | z_coarse) (map_fbk, n_nbins x n_zc; rr_map
+    # ['f_bk_coarse']).  BAND: the indep path stores only the z-MARGINAL f_b samples
+    # (fb_samp), not the 3-D per-z f_bk_coarse samples, so we TRANSPORT the per-z dN/dX
+    # multiplicative fluctuation onto each MAP f(N|z) column — the SAME frozen-kernel
+    # transport the per-z Ω(z) band uses above.  This is faithful here because the N-shape
+    # within a coarse z-bin is FROZEN by the forward kernel + g(N,z), so every logN bin in a
+    # z-column shares ONE per-z normalization fluctuation (= the per-z dN/dX fluctuation at
+    # the headline floor).  Recentered on the MAP per (logN,z) bin via the established
+    # recenter_band_on_point primitive (the differential-f recenter convention used by the
+    # z-marginal CDDF panel and the Ω(z) band).
+    fl_floor = float(min(limits))                       # floor that defines the per-z norm
+    fNz_lo68 = np.full((n_zc, len(mid)), np.nan)
+    fNz_hi68 = np.full((n_zc, len(mid)), np.nan)
+    fNz_lo95 = np.full((n_zc, len(mid)), np.nan)
+    fNz_hi95 = np.full((n_zc, len(mid)), np.nan)
+    for k in range(n_zc):
+        mz = map_dndx_z[fl_floor][k]
+        if not (np.isfinite(mz) and mz > 0):
+            continue
+        ratio = dndx_z_samp[fl_floor][:, k] / mz        # (n_draw,) per-z norm fluctuation
+        for b in range(len(mid)):
+            pt = map_fbk[b, k]
+            if not (np.isfinite(pt) and pt > 0):
+                continue
+            raw = pt * ratio                            # (n_draw,) transported f(N|z) band
+            raw = recenter_band_on_point(raw, pt)
+            raw = raw[np.isfinite(raw)]
+            if raw.size == 0:
+                continue
+            fNz_lo68[k, b] = float(np.percentile(raw, 16.0))
+            fNz_hi68[k, b] = float(np.percentile(raw, 84.0))
+            fNz_lo95[k, b] = float(np.percentile(raw, 2.5))
+            fNz_hi95[k, b] = float(np.percentile(raw, 97.5))
+
     # CALIBRATION-SUPPORT FLAG per coarse-z bin (from the FROZEN 2LPT-0 truth occupancy).
     # A bin is EXTRAPOLATED (flagged, excluded from headline) when the 2LPT-0 truth count
     # at the headline NHI limit falls to ZERO (g(N,z)->z-marginal C there; the indep band
@@ -437,6 +472,10 @@ def run_measurement(args, ing, limits, seed, frozen=None):
         n_op_detections=int(ing["meta"].get("n_op_detections", -1)),
         n_op_sl=int(ing["n_sl"]), X_tot=np.asarray(ing["X_tot"], float),
         map_fb=map_fb, fb_samp=fb_samp,
+        map_fbk=map_fbk,                              # genuine 2-D MAP f(N|z): (n_nbins, n_zc)
+        fNz_lo68=fNz_lo68, fNz_hi68=fNz_hi68,         # per-z f(N|z) band: (n_zc, n_nbins)
+        fNz_lo95=fNz_lo95, fNz_hi95=fNz_hi95,
+        fNz_floor=fl_floor,
         z_extrapolated=z_extrapolated, z_thin=z_thin,
         truth_counts_perz=truth_counts_perz,
         support_limit=(float(frozen.get("support_limit", max(limits)))
@@ -958,6 +997,28 @@ def main(argv=None):
                     integrated=res["omega"][l]["integrated"]),
             ) for l in limits},
         zbins=list(map(float, res["zbins"])))
+    # per-z DIFFERENTIAL f(N|z) curves (MAP + recentered 68/95 band) — the NEW deliverable.
+    # logN_centers = res['mid']; per coarse z bin: MAP f(N|z) + band, with the support flag.
+    out_json["perz_fN"] = dict(
+        logN_centers=np.asarray(res["mid"], float).tolist(),
+        floor=float(res.get("fNz_floor", min(limits))),
+        zbins=list(map(float, res["zbins"])),
+        z_extrapolated=[bool(x) for x in np.asarray(res.get("z_extrapolated", []))],
+        z_thin=[bool(x) for x in np.asarray(res.get("z_thin", []))],
+        truth_counts_perz=res.get("truth_counts_perz"),
+        perz=[dict(
+            z_idx=k,
+            z=float(0.5 * (res["zbins"][k] + res["zbins"][k + 1])),
+            f=np.asarray(res["map_fbk"][:, k], float).tolist(),
+            f68_lo=np.asarray(res["fNz_lo68"][k], float).tolist(),
+            f68_hi=np.asarray(res["fNz_hi68"][k], float).tolist(),
+            f95_lo=np.asarray(res["fNz_lo95"][k], float).tolist(),
+            f95_hi=np.asarray(res["fNz_hi95"][k], float).tolist(),
+            extrapolated=bool(np.asarray(res.get("z_extrapolated",
+                                                 np.zeros(res["n_zc"], bool)))[k]),
+            thin=bool(np.asarray(res.get("z_thin",
+                                         np.zeros(res["n_zc"], bool)))[k]),
+        ) for k in range(res["n_zc"])])
     with open(os.path.join(args.out, "track_c_tf_loa.json"), "w") as fh:
         json.dump(out_json, fh, indent=2, default=float)
     print("\n" + rep)
