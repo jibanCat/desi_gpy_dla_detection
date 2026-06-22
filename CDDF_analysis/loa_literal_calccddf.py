@@ -80,7 +80,8 @@ THRESHOLDS = (20.0, 20.3, 20.6)
 FN_LNHI_MIN, FN_LNHI_MAX, FN_NBINS = 19.5, 22.0, 25   # differential f(N) grid
 HUBBLE = 0.7
 SUB_DLA = False          # FILTER-off maxdla1 layout: model_posteriors=[Null, 1DLA]
-N_ZBINS = 9              # per-z grid; Track-C tf_loa uses 9 bins over [2.0,3.5]
+N_ZBINS = 3              # per-z grid; matches Track-C tf_loa coarse bins [2.0,2.5,3.0,3.5]
+                         # np.linspace(2.0,3.5,4) = [2.0,2.5,3.0,3.5] -> z_mid 2.25/2.75/3.25
 
 DLACAT_KW = dict(sub_dla=SUB_DLA, high_nhi_cut_value=LNHI_MAX)
 
