@@ -34,6 +34,19 @@ posterior tail.
   tail is too flat (drives the Ω over-statement); HBI's kernel deconvolution
   re-steepens it.
 
+> **What the mock validates — and what it does NOT.** The on-mock R0 ≈ 1
+> ("recovers truth to ~3–9%") is a **self-consistency** check, *not* an
+> external-calibration claim. The completeness / kernel correction is fit on the
+> *same* mock's truth, so by construction the corrected estimate is pulled toward
+> that truth — the residual α = 1/R0 → 1 is a near-**tautology**. This demonstrates
+> the estimator's internal machinery (kernel deconvolution + FP subtraction + the
+> marginalized band) is arithmetically sound; it does **not** prove the calibration
+> *transfers*. The real, non-circular test is **cross-mock**: build the
+> kernel/completeness on one mock and check α(z) ≈ 1 on a *held-out* mock or survey
+> (London, Saclay, real LOA) **without refitting**. That cross-mock validation is
+> **not in this PR**. Treat the mock R0 as self-consistency; treat the cross-mock /
+> real-LOA literature agreement as the calibration evidence.
+
 ## Uncertainty budget (read before quoting an error bar)
 
 The HBI MC band is a **statistical** band only — label it "statistical (indep. MC)".
