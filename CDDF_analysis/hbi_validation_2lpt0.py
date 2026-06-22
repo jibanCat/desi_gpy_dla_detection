@@ -299,12 +299,13 @@ def _make_figures(out_dir, res, limits, logN_lo, logN_hi, mid):
     lim = 20.0
 
     def _panel(ax, key, ylabel, scale, title):
-        # NOTE: the MC band is a NUISANCE-resampled WALL-2 band whose center (q50) is
-        # NOT the MAP point — on the steep DLA-tier f(N) the σ_i re-draw scatters
-        # detections across the hard selection edge, drifting the MC distribution AWAY
-        # from the MAP (spec §5 +Eddington note). So the MAP point can sit OUTSIDE
-        # [q16,q84]. We therefore draw the band as ABSOLUTE spans (vspan around q50)
-        # and mark the MAP point + MC median separately — NEVER as point±err.
+        # The MC band is the HBI marked-Poisson joint-MC band. The convex-bspline-MAP
+        # point sits ABOVE the raw-percentile MC median (q50) — the documented Jensen
+        # offset (spec §5 +Eddington note). We RECENTER-ON-POINT (Track-C #34, the same
+        # primitive used for FIG 1): per-x additively shift each band quantile by
+        # (pt - q50) so the band median lands on the MAP point, width-preserving. This
+        # makes [q16,q84] a band ABOUT the plotted estimator (MAP point) rather than a
+        # band about a different (q50) estimator the point would otherwise fall outside.
         labels = ["loa0", "purity_mixture"]
         colors = ["C3", "C0"]
         xs = [0, 1]
@@ -321,20 +322,29 @@ def _make_figures(out_dir, res, limits, logN_lo, logN_hi, mid):
             q975 = np.nanpercentile(samp, 97.5) / scale
             q50 = np.nanpercentile(samp, 50) / scale
             R0 = (r["R0_dndx"][lim] if key == "dndx" else r["R0_omega"][lim])
-            # 95% MC band (thin) + 68% MC band (thick), absolute bounds
+            # recenter-on-point (Track-C #34): shift band quantiles by (point - q50),
+            # width-preserving, so the band median lands on the plotted MAP point.
+            pt_s = pt / scale
+            _sh = (pt_s - q50) if (np.isfinite(q50) and np.isfinite(pt_s)) else 0.0
+            q16 = q16 + _sh; q84 = q84 + _sh
+            q025 = q025 + _sh; q975 = q975 + _sh
+            q50 = q50 + _sh
+            # 95% MC band (thin) + 68% MC band (thick), recentered on the MAP point
             ax.plot([x, x], [q025, q975], color=c, lw=1.2, alpha=0.5, zorder=2)
             ax.plot([x, x], [q16, q84], color=c, lw=5.0, alpha=0.30, zorder=3)
             ax.plot([x], [q50], marker="_", color=c, ms=16, mew=2.0, zorder=4)
-            ax.plot([x], [pt / scale], marker="o", color=c, ms=10, mec="k", mew=0.8,
+            ax.plot([x], [pt_s], marker="o", color=c, ms=10, mec="k", mew=0.8,
                     zorder=5, label=f"{fp}: MAP (R0={R0:.3f})")
-            ax.annotate(f"R0={R0:.3f}", (x, pt / scale), textcoords="offset points",
+            ax.annotate(f"R0={R0:.3f}", (x, pt_s), textcoords="offset points",
                         xytext=(11, 4), fontsize=9, color=c)
         # legend proxies for the band/median glyphs
         from matplotlib.lines import Line2D
-        proxies = [Line2D([0], [0], color="0.4", lw=5, alpha=0.3, label="68% MC band"),
-                   Line2D([0], [0], color="0.4", lw=1.2, alpha=0.5, label="95% MC band"),
+        proxies = [Line2D([0], [0], color="0.4", lw=5, alpha=0.3,
+                          label="68% MC band (recentered)"),
+                   Line2D([0], [0], color="0.4", lw=1.2, alpha=0.5,
+                          label="95% MC band (recentered)"),
                    Line2D([0], [0], color="0.4", marker="_", ls="none", ms=14, mew=2,
-                          label="MC median")]
+                          label="band median (= MAP)")]
         ax.set_xticks(xs); ax.set_xticklabels(labels, fontsize=10)
         ax.set_xlim(-0.5, 1.5)
         ax.set_ylabel(ylabel)

@@ -132,14 +132,20 @@ def make_figure(loa0, pm, limits, out_png):
     for ax, (title, res, q) in zip(axes.ravel(), panels):
         pt = res["point"]; tr = res["truth"]
         xs = np.arange(len(limits))
-        for off, mode, col in ((-0.12, "indep", "C0"), (0.12, "shared_boot", "C1")):
-            med = []; lo = []; hi = []
-            for l in limits:
-                b = _band(res[mode][f"{q}_{l}_samples"])
-                med.append(b[1]); lo.append(b[1] - b[0]); hi.append(b[2] - b[1])
-            ax.errorbar(xs + off, med, yerr=[lo, hi], fmt="o", color=col, capsize=3,
-                        label=f"{mode} (68%)")
         ptv = [pt["dndx_total"][l] if q == "dndx" else pt["omega"][l] for l in limits]
+        for off, mode, col in ((-0.12, "indep", "C0"), (0.12, "shared_boot", "C1")):
+            cen = []; lo = []; hi = []
+            for j, l in enumerate(limits):
+                b = _band(res[mode][f"{q}_{l}_samples"])
+                # RECENTER the HBI marked-Poisson MC band on the MAP point:
+                # the convex-MAP Jensen offset drifts the raw-percentile median b[1]
+                # off the plug-in MAP point ptv[j]. Apply the per-bin additive shift
+                # (point - median) (== cddf_catalog_hbi.recenter_band_on_point) so the
+                # band's center lands on the MAP point while the 68% half-widths
+                # (b[1]-b[0], b[2]-b[1]) are preserved.
+                cen.append(ptv[j]); lo.append(b[1] - b[0]); hi.append(b[2] - b[1])
+            ax.errorbar(xs + off, cen, yerr=[lo, hi], fmt="o", color=col, capsize=3,
+                        label=f"{mode} (68%, recentered)")
         trv = [tr["dndx_total"][l] if q == "dndx" else tr["omega"][l] for l in limits]
         ax.plot(xs, ptv, "kx", ms=9, mew=2, label="MAP point")
         ax.plot(xs, trv, "s", color="C3", ms=7, label="truth")

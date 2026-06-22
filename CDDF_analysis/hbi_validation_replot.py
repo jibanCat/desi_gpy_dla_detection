@@ -84,6 +84,12 @@ def main(json_path):
             pt = blk["point"] / scale; R0 = blk["R0"]
             q16 = b["q16"] / scale; q84 = b["q84"] / scale
             q025 = b["q025"] / scale; q975 = b["q975"] / scale; q50 = b["q50"] / scale
+            # recenter-on-point (Track-C #34): per-x additive shift by (point - q50),
+            # width-preserving, so the HBI marked-Poisson MC band median lands on the
+            # plotted MAP point (the convex-bspline-MAP Jensen offset otherwise drifts
+            # the raw-percentile band BELOW the point — same primitive as FIG 1).
+            _sh = (pt - q50) if (np.isfinite(q50) and np.isfinite(pt)) else 0.0
+            q16 += _sh; q84 += _sh; q025 += _sh; q975 += _sh; q50 += _sh
             ax.plot([x, x], [q025, q975], color=c, lw=1.2, alpha=0.5, zorder=2)
             ax.plot([x, x], [q16, q84], color=c, lw=5.0, alpha=0.30, zorder=3)
             ax.plot([x], [q50], marker="_", color=c, ms=16, mew=2.0, zorder=4)
@@ -91,10 +97,12 @@ def main(json_path):
                     label=f"{fp}: MAP (R0={R0:.3f})")
             ax.annotate(f"R0={R0:.3f}", (x, pt), textcoords="offset points",
                         xytext=(11, 4), fontsize=9, color=c)
-        proxies = [Line2D([0], [0], color="0.4", lw=5, alpha=0.3, label="68% MC band"),
-                   Line2D([0], [0], color="0.4", lw=1.2, alpha=0.5, label="95% MC band"),
+        proxies = [Line2D([0], [0], color="0.4", lw=5, alpha=0.3,
+                          label="68% MC band (recentered)"),
+                   Line2D([0], [0], color="0.4", lw=1.2, alpha=0.5,
+                          label="95% MC band (recentered)"),
                    Line2D([0], [0], color="0.4", marker="_", ls="none", ms=14, mew=2,
-                          label="MC median")]
+                          label="band median (= MAP)")]
         ax.set_xticks(xs); ax.set_xticklabels(labels, fontsize=10)
         ax.set_xlim(-0.5, 1.5); ax.set_ylabel(ylabel); ax.set_title(title)
         h, l_ = ax.get_legend_handles_labels()
@@ -107,7 +115,7 @@ def main(json_path):
     _panel(axes[1], "omega", r"$\Omega_{\rm HI}\ (\geq 20.0)\ /\ 10^{-4}$", 1e-4,
            r"$\Omega_{\rm HI}(\geq 20.0)$ — HBI vs truth")
     fig.suptitle("Catalog-HBI integrated DLA recovery on 2LPT-0 "
-                 "(MAP point + nuisance-MC band vs truth)", fontsize=11.5)
+                 "(MAP point + recentered MC band vs truth)", fontsize=11.5)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     p2 = os.path.join(out_dir, "fig_hbi_validation_dndx_omega.png")
     fig.savefig(p2, dpi=140); plt.close(fig)
