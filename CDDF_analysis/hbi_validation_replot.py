@@ -32,6 +32,14 @@ def main(json_path):
     lo_q16 = np.array([b["mc_q16"] for b in fb["loa0"]])
     lo_q84 = np.array([b["mc_q84"] for b in fb["loa0"]])
     pm_pt = np.array([b["hbi"] for b in fb["purity_mixture"]])
+    # recenter-on-point (Track-C #34): per-bin additively shift the MC band so its median
+    # (mc_q50) lands on the plug-in MAP point (lo_pt), width-preserving. Without it the
+    # convex-bspline-MAP Jensen offset drifts the raw-percentile band off the point.
+    lo_q50 = np.array([b["mc_q50"] for b in fb["loa0"]])
+    _sh = np.where(np.isfinite(lo_q50) & np.isfinite(lo_pt) & (lo_pt > 0),
+                   lo_pt - lo_q50, 0.0)
+    lo_q16 = lo_q16 + _sh
+    lo_q84 = lo_q84 + _sh
 
     def _logsafe(a):
         return np.where(np.asarray(a) > 0, np.log10(np.clip(a, 1e-300, None)), np.nan)

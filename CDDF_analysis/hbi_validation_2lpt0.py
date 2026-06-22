@@ -251,6 +251,16 @@ def _make_figures(out_dir, res, limits, logN_lo, logN_hi, mid):
     ax.plot(mid[tsel], np.log10(ftruth[tsel]), "k-", lw=2.2, label="2LPT-0 truth", zorder=5)
 
     fb_lo = lo["f_b_samples"]
+    # recenter-on-point (Track-C #34): the differential f(N) MC band is plotted around
+    # the plug-in MAP point, so per-bin additively shift each bin's MC samples so their
+    # median lands on the point (width-preserving) BEFORE the percentiles. Without it the
+    # convex-bspline-MAP Jensen offset drifts the raw-percentile band ~17.5% off the point
+    # and the point sits OUTSIDE [q16,q84] across the whole DLA range. Mock-validation
+    # maker (no band_recenter flag) -> recenter unconditionally to match the MAP/headline.
+    _med = np.nanmedian(fb_lo, axis=0)
+    _pt = np.asarray(lo["f_b_point"], float)
+    _sh = np.where(np.isfinite(_med) & np.isfinite(_pt), _pt - _med, 0.0)
+    fb_lo = fb_lo + _sh[None, :]
     lo_q16 = np.nanpercentile(fb_lo, 16, axis=0)
     lo_q84 = np.nanpercentile(fb_lo, 84, axis=0)
     psel = sel & (lo["f_b_point"] > 0)
