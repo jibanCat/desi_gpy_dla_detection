@@ -2016,6 +2016,20 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
         f_b = np.where(X_sum > 0, num_marg / (X_sum * dN_b), np.nan)
         samples["f_b"][m] = f_b
 
+        # ADDITIVE CAPTURE (no point-estimate change): the GENUINE per-(logN, z) v1
+        # differential CDDF for THIS draw, from the SAME num=S-mu_fp grid already used for
+        # f_b and dndx_z. f_bk_coarse[b,k] = num[b,k] / (X[0,k] · dN_b[b]); ties to the
+        # per-z dN/dX BY CONSTRUCTION (Σ_{N≥lim} f_bk_coarse[b,k]·dN_b[b] == dndx_z[lim][k],
+        # since dndx_z[lim][k] = Σ_{N≥lim} num[b,k]/X[0,k] at line below). This is the
+        # per-bin extension of the z-marginal f_b — it does NOT alter f_b / dndx_z /
+        # dndx_total / omega; it only POPULATES the (already-allocated) extra samples key so
+        # the per-(N,z) f(N|z) band can use real draws instead of frozen-shape transport.
+        Xk = X[0, :]                                                  # (n_zbins,)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            f_bk = np.where((Xk[None, :] > 0),
+                            num / (Xk[None, :] * dN_b[:, None]), np.nan)
+        samples["f_bk_coarse"][m] = f_bk
+
         K = omega_hi_prefactor(cfg.H0)
         for lim in limits:
             sel = logN_lo >= lim - 1e-9

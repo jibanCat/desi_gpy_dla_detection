@@ -387,6 +387,13 @@ def run_measurement(args, ing, limits, seed, frozen=None):
     dndx_z_samp = {l: np.asarray(samp["dndx_z"][l], float) for l in limits}   # (n_mc, n_zc)
     dndx_tot_samp = {l: np.asarray(samp["dndx_total"][l], float) for l in limits}  # (n_mc,)
     omega_tot_samp = {l: np.asarray(samp["omega"][l], float) for l in limits}      # (n_mc,)
+    # GENUINE per-(logN, coarse-z) f(N|z) draws (n_mc, n_nbins, n_zc), captured additively
+    # from the SAME num=S-mu_fp inline reduction the dndx_z band uses (NOT frozen-shape
+    # transport). NaN-only on legacy paths that don't populate the key.
+    fbk_samp = np.asarray(samp.get("f_bk_coarse"), float) \
+        if samp.get("f_bk_coarse") is not None else None
+    have_fbk_draws = (fbk_samp is not None and fbk_samp.ndim == 3
+                      and np.isfinite(fbk_samp).any())
     n_draw = fb_samp.shape[0]
 
     # per-z Ω band (recentered-C1 frozen-kernel transport — reviewed): transport the
@@ -411,38 +418,63 @@ def run_measurement(args, ing, limits, seed, frozen=None):
 
     # ---- per-z DIFFERENTIAL f(N | z) (the NEW deliverable) -------------------
     # MAP = the genuine 2-D MAP f(N | z_coarse) (map_fbk, n_nbins x n_zc; rr_map
-    # ['f_bk_coarse']).  BAND: the indep path stores only the z-MARGINAL f_b samples
-    # (fb_samp), not the 3-D per-z f_bk_coarse samples, so we TRANSPORT the per-z dN/dX
-    # multiplicative fluctuation onto each MAP f(N|z) column — the SAME frozen-kernel
-    # transport the per-z Ω(z) band uses above.  This is faithful here because the N-shape
-    # within a coarse z-bin is FROZEN by the forward kernel + g(N,z), so every logN bin in a
-    # z-column shares ONE per-z normalization fluctuation (= the per-z dN/dX fluctuation at
-    # the headline floor).  Recentered on the MAP per (logN,z) bin via the established
-    # recenter_band_on_point primitive (the differential-f recenter convention used by the
-    # z-marginal CDDF panel and the Ω(z) band).
+    # ['f_bk_coarse']) — UNCHANGED below (byte-identical point regardless of band method).
+    #
+    # BAND — PREFERRED (band_method='direct_perN_z'): the indep MC now retains the GENUINE
+    # per-(logN, coarse-z) f draws (fbk_samp, captured additively in joint_mc_errors from
+    # the SAME num=S-mu_fp inline reduction that already feeds dndx_z). We take the DIRECT
+    # per-(logN,z) percentiles, recentered on the MAP per (logN,z) bin via the established
+    # recenter_band_on_point primitive — so every logN bin carries its OWN sampling variance
+    # and the sparse high-N tail widens correctly (it is NOT 100%-correlated with the DLA
+    # body). This is the per-bin extension of the SAME inline draws the dndx_z(z) band uses.
+    #
+    # FALLBACK (band_method='frozen_shape_lower_bound'): if the per-(N,z) draws are absent
+    # (legacy path), TRANSPORT the per-z dN/dX multiplicative fluctuation onto each MAP
+    # f(N|z) column (one per-z normalization fluctuation shared by all logN bins). This is a
+    # 100%-inter-bin-correlated, frozen-shape LOWER BOUND — it UNDERSTATES the sparse high-N
+    # tail. Flagged so the figure caption / JSON can disclose it.
     fl_floor = float(min(limits))                       # floor that defines the per-z norm
     fNz_lo68 = np.full((n_zc, len(mid)), np.nan)
     fNz_hi68 = np.full((n_zc, len(mid)), np.nan)
     fNz_lo95 = np.full((n_zc, len(mid)), np.nan)
     fNz_hi95 = np.full((n_zc, len(mid)), np.nan)
-    for k in range(n_zc):
-        mz = map_dndx_z[fl_floor][k]
-        if not (np.isfinite(mz) and mz > 0):
-            continue
-        ratio = dndx_z_samp[fl_floor][:, k] / mz        # (n_draw,) per-z norm fluctuation
-        for b in range(len(mid)):
-            pt = map_fbk[b, k]
-            if not (np.isfinite(pt) and pt > 0):
+    band_method = "direct_perN_z" if have_fbk_draws else "frozen_shape_lower_bound"
+    if have_fbk_draws:
+        # DIRECT per-(logN, z) percentiles from the real draws, recentered on the MAP bin.
+        for k in range(n_zc):
+            for b in range(len(mid)):
+                pt = map_fbk[b, k]
+                if not (np.isfinite(pt) and pt > 0):
+                    continue
+                raw = fbk_samp[:, b, k]                  # (n_draw,) real per-(N,z) draws
+                raw = recenter_band_on_point(raw, pt)
+                raw = raw[np.isfinite(raw)]
+                if raw.size == 0:
+                    continue
+                fNz_lo68[k, b] = float(np.percentile(raw, 16.0))
+                fNz_hi68[k, b] = float(np.percentile(raw, 84.0))
+                fNz_lo95[k, b] = float(np.percentile(raw, 2.5))
+                fNz_hi95[k, b] = float(np.percentile(raw, 97.5))
+    else:
+        # FALLBACK frozen-shape transport (labeled lower bound).
+        for k in range(n_zc):
+            mz = map_dndx_z[fl_floor][k]
+            if not (np.isfinite(mz) and mz > 0):
                 continue
-            raw = pt * ratio                            # (n_draw,) transported f(N|z) band
-            raw = recenter_band_on_point(raw, pt)
-            raw = raw[np.isfinite(raw)]
-            if raw.size == 0:
-                continue
-            fNz_lo68[k, b] = float(np.percentile(raw, 16.0))
-            fNz_hi68[k, b] = float(np.percentile(raw, 84.0))
-            fNz_lo95[k, b] = float(np.percentile(raw, 2.5))
-            fNz_hi95[k, b] = float(np.percentile(raw, 97.5))
+            ratio = dndx_z_samp[fl_floor][:, k] / mz    # (n_draw,) per-z norm fluctuation
+            for b in range(len(mid)):
+                pt = map_fbk[b, k]
+                if not (np.isfinite(pt) and pt > 0):
+                    continue
+                raw = pt * ratio                        # (n_draw,) transported f(N|z) band
+                raw = recenter_band_on_point(raw, pt)
+                raw = raw[np.isfinite(raw)]
+                if raw.size == 0:
+                    continue
+                fNz_lo68[k, b] = float(np.percentile(raw, 16.0))
+                fNz_hi68[k, b] = float(np.percentile(raw, 84.0))
+                fNz_lo95[k, b] = float(np.percentile(raw, 2.5))
+                fNz_hi95[k, b] = float(np.percentile(raw, 97.5))
 
     # CALIBRATION-SUPPORT FLAG per coarse-z bin (from the FROZEN 2LPT-0 truth occupancy).
     # A bin is EXTRAPOLATED (flagged, excluded from headline) when the 2LPT-0 truth count
@@ -475,7 +507,7 @@ def run_measurement(args, ing, limits, seed, frozen=None):
         map_fbk=map_fbk,                              # genuine 2-D MAP f(N|z): (n_nbins, n_zc)
         fNz_lo68=fNz_lo68, fNz_hi68=fNz_hi68,         # per-z f(N|z) band: (n_zc, n_nbins)
         fNz_lo95=fNz_lo95, fNz_hi95=fNz_hi95,
-        fNz_floor=fl_floor,
+        fNz_floor=fl_floor, fNz_band_method=band_method,
         z_extrapolated=z_extrapolated, z_thin=z_thin,
         truth_counts_perz=truth_counts_perz,
         support_limit=(float(frozen.get("support_limit", max(limits)))
@@ -1002,6 +1034,10 @@ def main(argv=None):
     out_json["perz_fN"] = dict(
         logN_centers=np.asarray(res["mid"], float).tolist(),
         floor=float(res.get("fNz_floor", min(limits))),
+        # 'direct_perN_z' = genuine per-(logN,z) MC percentiles (widens in the sparse
+        # high-N tail). 'frozen_shape_lower_bound' = one-per-z scalar transport (100%
+        # inter-bin correlated; UNDERSTATES the high-N tail — a LOWER bound on the band).
+        band_method=str(res.get("fNz_band_method", "frozen_shape_lower_bound")),
         zbins=list(map(float, res["zbins"])),
         z_extrapolated=[bool(x) for x in np.asarray(res.get("z_extrapolated", []))],
         z_thin=[bool(x) for x in np.asarray(res.get("z_thin", []))],
