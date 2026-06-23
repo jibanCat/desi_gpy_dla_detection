@@ -83,6 +83,7 @@ def save_dndx_combined(
     y95_calibrated,
     *,
     meta=None,
+    calibration_note="Calibrated values include alpha(z) correction derived from london mock (z=2-4.25).",
 ):
     """
     Save combined calibrated + raw dN/dX (or Omega_HI) table to a text file.
@@ -139,7 +140,7 @@ def save_dndx_combined(
         "z  dNdX_calibrated  dndx68_low_calibrated  dndx68_high_calibrated  "
         "dndx95_low_calibrated  dndx95_high_calibrated  "
         "dNdX_raw  dndx68_low_raw  dndx68_high_raw  dndx95_low_raw  dndx95_high_raw",
-        "Calibrated values include alpha(z) correction derived from london mock (z=2-4.25).",
+        calibration_note,
         "68/95 columns are absolute lower/upper bounds (NOT symmetric errors).",
     ]
 

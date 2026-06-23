@@ -115,6 +115,18 @@ from astropy.table import Table
 
 from .set_parameters import *
 
+# WindowSpec (the shared search-window spec) is annotation-only here, imported under
+# TYPE_CHECKING with a string forward-reference annotation. A runtime
+# ``from .cddf_forward.window import WindowSpec`` would run ``cddf_forward/__init__.py``,
+# which eagerly imports ``driver`` → ``from ..calc_cddf import DLACatalogue`` → a
+# circular import while ``calc_cddf`` is still initializing. The constructor only ever
+# duck-types a passed window (``.prox_dz``/``.v_prox_kms``/``.z_min_lyb``), so no
+# runtime class reference is needed and there is exactly ONE WindowSpec class.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .cddf_forward.window import WindowSpec
+
 # prevent cluster session plotting issue
 import matplotlib
 
@@ -274,8 +286,9 @@ class DLACatalogue(object):
         min_obs_wavelength_cut: bool = False,  # Cut out the tail part below certain obs lambda, default 4000 A
         min_obs_wavelength: float = 4000,  # A
         high_nhi_cut: bool = True,  # Cut out the high NHI samples
-        high_nhi_cut_value: float = 22.0,  # log10(cm^-2)
+        high_nhi_cut_value: float = 22.5,  # log10(cm^-2)
         bins_per_z: int = 6, # number of bins of dNdX or Omega_DLA to plot per unit z interval
+        window: "Optional[WindowSpec]" = None,  # shared search-window spec (None = legacy behaviour)
     ):
         # Should we include the second DLA?
         self.second_dla = (
@@ -329,6 +342,39 @@ class DLACatalogue(object):
         self.z_max_lyb = z_max_lyb
         # Exclude spectra between lymanlimit to lymanbeta
         self.z_min_lyb = z_min_lyb  # TODO implement it
+
+        # [Shared WindowSpec] When a window is supplied it becomes the single
+        # source of truth for the proximity/tail cut and the Lyβ edges. We keep
+        # the legacy constant-0.1 path EXACTLY when ``window is None`` so the
+        # existing CDDF numbers (golden + 131 tests) are byte-identical.
+        self.window = window
+        if window is not None:
+            if window.velocity_scaled:
+                raise NotImplementedError(
+                    "WindowSpec(velocity_scaled=True) would require re-running "
+                    "inference with a matching kms_to_z; it does not match the "
+                    "existing posteriors' stored min_z_dlas/max_z_dlas."
+                )
+            # CRITICAL: the stored min_z_dlas/max_z_dlas ALREADY encode the inference
+            # proximity/tail cut (set_parameters.kms_to_z(v_prox)). So we must NOT
+            # re-apply proximity/tail here (that double-cuts: z_qso - 2*v/c) and must
+            # NOT force lowzcut/highzcut (they also trip the lyb-branch asserts). The
+            # WindowSpec's ONLY measurement-side effect is the Lyα-only / Lyman-limit
+            # edge selection; the proximity is the stored edge, and cddf_mock reproduces
+            # that stored edge (z_qso - v/c off raw z_qso) from the SAME spec.
+            self.z_min_lyb = window.z_min_lyb
+            self.z_max_lyb = window.z_max_lyb
+            # The stored min_z_dlas/max_z_dlas ALREADY carry the inference proximity
+            # (lowzcut) AND tail (highzcut) cut, so NEITHER may be re-applied here:
+            # doing so (a) double-cuts the F deposit (z_qso - 2*v/c) and (b) desyncs the
+            # F window from the truth window (diagonal_deposit._search_edges applies
+            # NEITHER cut), inflating n_truth relative to F. The earlier code only
+            # disabled highzcut when z_min_lyb and lowzcut when z_max_lyb, so the
+            # production Lyα-only window (z_min_lyb=True, z_max_lyb=False) silently left
+            # lowzcut=True — a proximity double-cut + truth/F mismatch (~1.43x n_truth
+            # inflation). Disable BOTH unconditionally whenever a WindowSpec is supplied.
+            self.lowzcut = False
+            self.highzcut = False
         # Exclude the dubious part of the obs wavelengths
         self.min_obs_wavelength_cut = min_obs_wavelength_cut
         self.min_obs_wavelength = min_obs_wavelength  # A
@@ -365,8 +411,13 @@ class DLACatalogue(object):
         # Prevent situation where the run fails, which returns -1
         order_mapping[-1] = -1  # TODO: Make sure those -1 are not valid data
 
-        # Step 2: Generate sorting indices for target_ids_to_sort
-        real_index = np.array([order_mapping[val] for val in self.target_ids])
+        # Step 2: Generate sorting indices for target_ids_to_sort. A processed
+        # target NOT present in the catalog maps to -1 (then excluded via
+        # ``self.condition = (real_index != -1)`` below) — this is what the
+        # comment above intends. Using ``.get(val, -1)`` instead of ``[val]`` makes
+        # a SUBSET catalog (e.g. a SNR_REDSIDE/BAL-filtered selection) valid; it is
+        # byte-identical when the catalog covers every processed target.
+        real_index = np.array([order_mapping.get(val, -1) for val in self.target_ids])
 
         self.real_index = real_index
 
@@ -386,7 +437,7 @@ class DLACatalogue(object):
         self.set_snr(snr)
         self.do_resample = False
         # This allows us to filter by quasar redshift later
-        self.condition = np.ones_like(self._z_min, dtype=np.bool)
+        self.condition = np.ones_like(self._z_min, dtype=bool)
         # filter out those detection with target_ids not in the DLA catalog
         self.condition = self.condition * (self.real_index != -1)
 
@@ -498,25 +549,28 @@ class DLACatalogue(object):
             ].T  # DESI: (num_qsos, num_samples, k)
         else:
             log_norm_like = self.filehandle["sample_log_likelihoods_dla"][:].T
-        # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
-        # Each DLA in a spectrum is a different column
-        log_dla_like = self.filehandle["log_likelihoods_dla"][
-            :, 0
-        ]  # DESI: shape (num_qsos, k)
-        # log_norm_like -= (log_dla_like + np.log(np.shape(self.log_norm_like)[0]))
+        # Normalize per-sample posterior weights so sum_j exp(log_norm_like_j) == 1
+        # per spectrum.  SELF-NORMALIZING (softmax over samples): subtract
+        # logsumexp(sample_ll) directly rather than the stored marginal
+        # `log_likelihoods_dla`.  This is convention-AGNOSTIC: it is byte-identical
+        # to the historical `sample_ll - log_likelihoods_dla - log(S)` form on
+        # pre-PR#7 (log-MEAN-exp) outputs, where log_likelihoods_dla = logsumexp -
+        # log(S) so the two -log(S) cancel; and it is CORRECT on post-PR#7
+        # (log-SUM-exp) outputs, where the old form subtracted an extra log(S) and
+        # silently produced f(N)=0 (the guarding assert below is stripped under -O).
+        # The Occam factor (constant across samples) cancels in the softmax exactly.
         for spec in dla_ind[0]:
             # prevent IndexError while using a small test set for sample_log_likelihoods
             try:
+                ll_spec = log_norm_like[:, spec]
                 self.log_norm_like_cache[spec] = np.array(
-                    log_norm_like[:, spec]
-                    - (log_dla_like[spec] + np.log(np.shape(log_norm_like)[0]))
+                    ll_spec - logsumexp(ll_spec)
                 )
             except IndexError as e:
                 print("The sizes of dla_ind and log_norm_like don't match!")
                 print(e)
                 break
         del log_norm_like
-        del log_dla_like
 
     def get_kth_dla_attrs(self, k=2):
         """
@@ -538,7 +592,7 @@ class DLACatalogue(object):
         # Probability of exactly k DLAs in each spectrum
         # `model_posteriors` := (no dla, sub dla, dla(1), dla(2), ...)
         #                      [     0,       1,      2,      3, ...]
-        assert k > 1 and type(k) is np.int
+        assert k > 1 and isinstance(k, (int, np.integer))
         setattr(self, "p_dla_{}".format(k), self.model_posteriors[:, k + self.sub_dla])
 
         # Now build caches for the DLA2 likelihoods and base_sample values
@@ -761,10 +815,11 @@ class DLACatalogue(object):
                     log_norm_like = self.filehandle["sample_log_likelihoods_dla"][
                         spec, :
                     ]  # DESI: (num_qsos, num_samples, k)
-                # Normalize by the total likelihood of a DLA in each spectrum, so that sum_spectrum ( like) == 1
-                # Each DLA in a spectrum is a different column
-                log_dla_like = self.filehandle["log_likelihoods_dla"][spec, 0]
-                log_norm_like -= log_dla_like + np.log(np.shape(log_norm_like)[0])
+                # Self-normalizing (softmax over samples): convention-agnostic, see
+                # the matching note in __init__.  Byte-identical to the historical
+                # `- log_likelihoods_dla - log(S)` form on pre-PR#7 (log-mean-exp)
+                # outputs; correct on post-PR#7 (log-sum-exp) outputs.
+                log_norm_like = log_norm_like - logsumexp(log_norm_like)
                 self.log_norm_like_cache[spec] = log_norm_like
                 assert 0.95 < np.sum(np.exp(log_norm_like)) < 1.05
                 return log_norm_like
@@ -780,7 +835,7 @@ class DLACatalogue(object):
         # The parameters of DLA2 are spectrum dependent and given by nhi[base_sample_inds[i,j]], z[base_sample_inds[i, j]]
         # Mask out nan values by making them very low probability: these correspond to samples where the DLAs are too close.
         try:
-            return getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[
+            return getattr(self, "log_norm_like_{}_cache".format(int(second) + 1))[
                 spec
             ]
             # return self.log_norm_like_2_cache[spec]
@@ -788,17 +843,17 @@ class DLACatalogue(object):
             # log_nhi_like_k (np.ndarray) : dimension, (k-1, num_dla_samples)
             # if it is a DLA(2) model, we will still get a 2-dim array with shape == (1, num_dla_samples)
             # so that we can sum(axis=0) to eliminate the 0th axis.
-            # log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][1:np.int(second) + 1, :, spec]
+            # log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][1:int(second) + 1, :, spec]
             log_nhi_like_k = self.filehandle["sample_log_likelihoods_dla"][
                 spec,
                 :,
-                np.int(second),
+                int(second),
             ]  # DESI: (num_qsos, num_samples, k)
-            getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[spec] = (
-                self._do_norm_log_norm_like_k(log_nhi_like_k, spec, np.int(second))
+            getattr(self, "log_norm_like_{}_cache".format(int(second) + 1))[spec] = (
+                self._do_norm_log_norm_like_k(log_nhi_like_k, spec, int(second))
             )
             # self.log_norm_like_2_cache[spec] = self._do_norm_log_norm_like_2(log_nhi_like, spec)
-            return getattr(self, "log_norm_like_{}_cache".format(np.int(second) + 1))[
+            return getattr(self, "log_norm_like_{}_cache".format(int(second) + 1))[
                 spec
             ]
 
@@ -887,13 +942,13 @@ class DLACatalogue(object):
         If second=True, return the probability of exactly two DLAs in each spectrum.
         If second=k, k is an integer, return the probability of exactly (k+1) DLAs in each spectrum.
         """
-        assert second >= 0 and (type(second) is np.int or type(second) is np.bool)
+        assert second >= 0 and isinstance(second, (int, np.integer, bool, np.bool_))
         if not second:
             if self.do_resample:
                 return self.p_dla[self._resample]
             return self.p_dla
         else:
-            return getattr(self, "p_dla_{}".format(np.int(second) + 1))
+            return getattr(self, "p_dla_{}".format(int(second) + 1))
 
     def z_max(self, spec=None):
         """Returns the maximum redshift of the quasar spectrum."""
@@ -966,12 +1021,15 @@ class DLACatalogue(object):
                 [np.min([max_z_dlas, self.lymanbeta(max_z_dlas)], axis=0), min_z_dlas],
                 axis=0,
             )
-        # remove the lyman beta fprest region to test lybeta-lya detections
+        # remove the lyman beta forest region to test lybeta-lya (Lyα-only) detections.
+        # Floor the blue edge at the QSO Lyβ EMISSION redshift = lymanbeta(z_qso) (NOT
+        # lymanbeta(min_z_dla), which is < min_z_dla and a no-op). This matches
+        # cddf_mock.qso_blue_edge_to_z_abs(z_qso).
         if self.z_min_lyb:
-            print("[Info] testing on the range lybeta-lya")
-            min_z_dlas = np.min(
-                [np.max([min_z_dlas, self.lymanbeta(min_z_dlas)], axis=0), max_z_dlas],
-                axis=0,
+            print("[Info] testing on the range lybeta-lya (Lyα-only)")
+            z_qsos = np.array(self.z_qsos)[ind]
+            min_z_dlas = np.minimum(
+                np.maximum(min_z_dlas, self.lymanbeta(z_qsos)), max_z_dlas
             )
         # Increase the minimum redshift to remove spectra contaminated by the lyman beta forest.
         if self.lowzcut:
@@ -1163,6 +1221,52 @@ class DLACatalogue(object):
         xerrs = (10**l_Ncent - 10 ** l_nhi[:-1], 10 ** l_nhi[1:] - 10**l_Ncent)
         return (l_Ncent, cddf, cddf68, cddf95, xerrs)
 
+    def column_density_function_counts(
+        self, z_min=1.0, z_max=6.0, lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0
+    ):
+        """COUNT-SPACE CDDF accessor (additive; for the O3 diagonal correction).
+
+        Surfaces the per-bin Poisson-binomial expected count (MAP) + 68/95 COUNT
+        intervals the estimator already computes internally in
+        ``_get_confidence_intervals`` — *before* the ΔN·ΔX normalization that
+        ``column_density_function`` applies.  This is the count basis the O3
+        diagonal soft-completeness correction operates in (``(F − b_FP)/C``); the
+        same ``ΔN``/``ΔX`` are returned so a caller can re-normalize back to f(N).
+
+        ADDITIVE: this method does NOT change ``column_density_function``'s output.
+        Re-normalizing the returned counts by ``counts / dX / dN`` reproduces the
+        O1 f(N) byte-identically (pinned by ``test_cddf_count_accessor``).
+
+        Returns
+        -------
+        dict
+            ``logN``      : (nbins,) bin-centre log10(N_HI);
+            ``counts``    : (nbins,) MAP expected DLA count per bin;
+            ``counts68``  : (nbins, 2) 68% COUNT interval [lo, hi];
+            ``counts95``  : (nbins, 2) 95% COUNT interval [lo, hi];
+            ``dN``        : (nbins,) linear N_HI bin width;
+            ``dX``        : float, total absorption path length over [z_min, z_max].
+        """
+        l_nhi = np.linspace(lnhi_min, lnhi_max, num=lnhi_nbins + 1)
+        (ndlas, l68, l95) = self._get_confidence_intervals(
+            q_bins=l_nhi, lred=z_min, ured=z_max, lnhi_min=lnhi_min, nhi=True
+        )
+        dX = self.path_length(z_min, z_max)
+        dN = np.array(
+            [10**lnhi_x - 10**lnhi_m for (lnhi_m, lnhi_x) in zip(l_nhi[:-1], l_nhi[1:])]
+        )
+        l_Ncent = np.array(
+            [(lnhi_x + lnhi_m) / 2.0 for (lnhi_m, lnhi_x) in zip(l_nhi[:-1], l_nhi[1:])]
+        )
+        return {
+            "logN": l_Ncent,
+            "counts": np.array(ndlas),
+            "counts68": np.array(l68),
+            "counts95": np.array(l95),
+            "dN": dN,
+            "dX": dX,
+        }
+
     def plot_cddf(
         self, zmin=1.0, zmax=6.0, label="GP", color=None, moment=False, twosigma=True,
         lnhi_nbins=30, lnhi_min=20.0, lnhi_max=23.0
@@ -1269,6 +1373,48 @@ class DLACatalogue(object):
         )
         xerrs = (z_cent[ii] - z_bins[:-1][ii], z_bins[1:][ii] - z_cent[ii])
         return (z_cent[ii], dNdX, dndx68, dndx95, xerrs)
+
+    def line_density_counts(self, z_min=2, z_max=4, lnhi_min=20.3, lnhi_max=23):
+        """COUNT-SPACE dN/dX accessor (additive; for the O3 diagonal correction).
+
+        Surfaces the per-redshift-bin Poisson-binomial MAP count + 68/95 COUNT
+        intervals before the ``/dX`` normalization that ``line_density`` applies, so
+        the O3 diagonal correction can operate in count space and re-normalize.
+
+        ADDITIVE: does NOT change ``line_density``'s output.  Re-normalizing by
+        ``counts / dX`` reproduces the O1 dN/dX byte-identically.
+
+        Returns
+        -------
+        dict
+            ``z``        : (nbins,) bin-centre redshifts (only dX>0 bins kept,
+                           matching ``line_density``);
+            ``counts``   : (nbins,) MAP expected DLA count per z bin;
+            ``counts68`` : (nbins, 2) 68% COUNT interval;
+            ``counts95`` : (nbins, 2) 95% COUNT interval;
+            ``dX``       : (nbins,) absorption path length per z bin.
+        """
+        nbins = np.max([int((z_max - z_min) * self.bins_per_z), 1])
+        z_bins = np.linspace(z_min, z_max, nbins + 1)
+        (maxlike, l68, l95) = self._get_confidence_intervals(
+            q_bins=z_bins, lred=z_min, ured=z_max, lnhi_min=lnhi_min,
+            lnhi_max=lnhi_max, nhi=False,
+        )
+        dX = np.array(
+            [self.path_length(z_m, z_x) for (z_m, z_x) in zip(z_bins[:-1], z_bins[1:])]
+        )
+        ii = np.where(dX > 0)
+        dX = dX[ii]
+        z_cent = np.array(
+            [(z_x + z_m) / 2.0 for (z_m, z_x) in zip(z_bins[:-1], z_bins[1:])]
+        )
+        return {
+            "z": z_cent[ii],
+            "counts": np.array(maxlike)[ii],
+            "counts68": np.array(l68)[ii],
+            "counts95": np.array(l95)[ii],
+            "dX": dX,
+        }
 
     def plot_line_density(self, zmin=2, zmax=4, label="GP", lnhi_min=20.3, lnhi_max=23):
         """Plot the line density as a function of redshift"""
@@ -1397,6 +1543,25 @@ class DLACatalogue(object):
             lnhi_max=lnhi_bins[-1],
             nhi=True,
         )
+        return self._omega_ci_from_probs_poissons(
+            probs, poissons, lnhi_bins, tailprob=tailprob
+        )
+
+    def _omega_ci_from_probs_poissons(
+        self, probs, poissons, lnhi_bins, *, tailprob=5e-4
+    ):
+        """Ω-CI from PRE-ACCUMULATED ``(probs, poissons)`` over the lnhi grid.
+
+        ADDITIVE helper (no behaviour change): the exact post-``_split_distributions``
+        body of :meth:`_get_omega_confidence_intervals`, factored out so the
+        NO-COMBINE streaming driver can run the SAME N-weighted PDF convolution on
+        the per-z-bin ``(probs, poissons)`` it accumulated across files.  Because
+        ``_split_distributions`` is ADDITIVE over sightlines, the accumulated
+        ingredients reproduce the single-combined-file Ω CI exactly.
+
+        Returns ``(maxlike_NHI, (lo68, hi68), (lo95, hi95))`` — the N-weighted
+        DLA-HI abundance MAP + intervals for one z window.
+        """
         # probs[i] now contains a list of arrays
         # Now we have built a list of probabilities in each z bin of interest and we want to solve for the Poisson binomial coefficients.
         # to get each combined pdf.
@@ -1651,7 +1816,7 @@ class DLACatalogue(object):
             log_norm_posteriors_k = np.empty(log_norm_posteriors.shape)
             log_norm_posteriors_k = -1e30
 
-            for i in range(np.int(second) + 1):
+            for i in range(int(second) + 1):
                 p_dla_k = self.model_posteriors[index, i + 1 + self.sub_dla]
                 log_norm_posteriors_k += (
                     np.exp(self._log_norm_like(spec, second=second)[index]) * p_dla_k
@@ -1692,8 +1857,18 @@ class DLACatalogue(object):
         return (probs, poissons)
 
     def lymanbeta(self, zqso):
-        """Compute the redshift at which the lyman beta forest at the redshift of the quasar will show up."""
-        waveratios = 1026.72 / 1215.67
+        """Compute the redshift at which the lyman beta forest at the redshift of the quasar will show up.
+
+        Uses the UNIFIED Lyβ/Lyα rest wavelengths from ``set_parameters`` (imported
+        via ``from .set_parameters import *``: ``lyb_wavelength = 1025.7223``,
+        ``lya_wavelength = 1215.6701``) — the same values as
+        ``gpy_dla_detection.set_parameters.Parameters.lyb_wavelength`` /
+        ``cddf_mock.LYB_REST`` and the inference — instead of the legacy hard-coded
+        ``1026.72 / 1215.67``. This shifts the Lyβ edge by ~0.0037 in z at z_qso=3.5
+        (i.e. ``Δz ≈ (1+z)·(1026.72-1025.7223)/1215.67``), making all three CDDF
+        pathways agree on the Lyβ blue edge.
+        """
+        waveratios = lyb_wavelength / lya_wavelength
         zlyb = (1 + zqso) * waveratios - 1
         return zlyb
 
@@ -1751,10 +1926,11 @@ class DLACatalogue(object):
             if self.z_max_lyb:
                 assert self.lowzcut == False
                 upper_z = np.min([self.lymanbeta(self.z_max(spec)), ured])
-            # test lybeta - lyalpha only
+            # test lybeta - lyalpha only (Lyα-only): floor at the QSO Lyβ EMISSION
+            # = lymanbeta(z_qso), matching cddf_mock (NOT lymanbeta(z_min), a no-op).
             if self.z_min_lyb:
                 assert self.highzcut == False
-                lower_z = np.max([self.lymanbeta(self.z_min(spec)), lred])
+                lower_z = np.max([self.lymanbeta(self.z_qsos[spec]), lred])
             # The low cutoff redshift.
             if self.lowzcut:
                 upper_z = np.min([self.proximity(self.z_max(spec)), ured])
@@ -1784,7 +1960,7 @@ class DLACatalogue(object):
                     (redshifts - self.z_min(spec))
                     / (self.z_max(spec) - self.z_min(spec))
                     * np.size(pn),
-                    dtype=np.int,
+                    dtype=int,
                 )
                 desired_samples *= pn[pind] < self.noise_thresh
             ind = np.where(desired_samples)
@@ -1899,6 +2075,25 @@ class DLACatalogue(object):
         )
         # probs[i] now contains a list of arrays
         # Now we have built a list of probabilities in each z bin of interest and we want to solve for the Poisson binomial coefficients.
+        return self._count_ci_from_probs_poissons(probs, poissons)
+
+    def _count_ci_from_probs_poissons(self, probs, poissons):
+        """MAP + 68/95 count CIs from PRE-ACCUMULATED ``(probs, poissons)`` per bin.
+
+        ADDITIVE helper (no behaviour change): this is the exact per-bin CI-combine
+        loop that ``_get_confidence_intervals`` used to inline.  It is factored out
+        so the NO-COMBINE streaming driver
+        (``CDDF_analysis.cddf_forward.streaming``) can call the SAME Poisson-binomial
+        + Poisson combine on ``(probs, poissons)`` it accumulated across files —
+        which equals running it on one combined file because the
+        ``_split_distributions_single`` ingredients are ADDITIVE over sightlines
+        (concatenate the per-bin ``probs`` lists, sum the per-bin ``poissons``).
+
+        ``probs`` is a per-bin LIST of arrays of large-p (>= ``p_switch``) DLA
+        probabilities; ``poissons`` is a per-bin array of summed small-p
+        probabilities.  Returns ``(maxlikes, levels68, levels95)`` identically to
+        ``_get_confidence_intervals``.
+        """
         maxlikes = []
         levels68 = []
         levels95 = []
@@ -2205,10 +2400,16 @@ def get_poisson_binomial_pdf(pp):
     Poisson-Binomial Probability Density Function."
     IEEE Transactions on Reliability, 59(3), 615–616.
     """
-    # Check input is reasonable
-    if np.size(pp) == 0:
+    # Check input is reasonable.  ``pp`` is a per-bin LIST of per-sightline arrays
+    # (generally RAGGED — different lengths).  Under numpy 2.x ``np.size(pp)``
+    # raises ValueError on a ragged list (it tries to build an inhomogeneous
+    # array), so guard on ``len(pp)`` and the concatenated size instead.  Behaviour
+    # is identical to the old ``np.size(pp) == 0`` check wherever that did not crash.
+    if len(pp) == 0:
         return np.ones(1)
     ppa = np.array(np.concatenate(pp))
+    if np.size(ppa) == 0:
+        return np.ones(1)
     assert ppa.dtype == np.float64
     assert np.size(np.shape(ppa)) == 1
     Nsamp = np.size(ppa)

@@ -298,23 +298,39 @@ class TestCalibration:
         np.testing.assert_allclose(cal["alpha"], 1.0, atol=1e-10)
 
     def test_alpha_value(self):
+        # alpha = truth / measured: a 50%-complete mock yields a 2x up-correction.
         z_mid = np.array([2.25, 2.75])
         truth = np.array([0.10, 0.08])
         mock = np.array([0.05, 0.04])  # 50% completeness
         out_truth = self._make_dndx_out(z_mid, truth)
         out_mock = self._make_dndx_out(z_mid, mock)
         cal = cm.compute_calibration_alpha(out_truth, out_mock)
-        np.testing.assert_allclose(cal["alpha"], 0.5, atol=1e-10)
+        np.testing.assert_allclose(cal["alpha"], 2.0, atol=1e-10)
 
-    def test_alpha_nan_where_truth_zero(self):
+    def test_alpha_nan_where_measured_zero(self):
+        # With alpha = truth / measured, division-by-zero (NaN) occurs where
+        # the MEASURED mock dN/dX is zero, not where truth is zero.
+        z_mid = np.array([2.25, 2.75])
+        truth = np.array([0.05, 0.08])
+        mock = np.array([0.0, 0.04])
+        out_truth = self._make_dndx_out(z_mid, truth)
+        out_mock = self._make_dndx_out(z_mid, mock)
+        cal = cm.compute_calibration_alpha(out_truth, out_mock)
+        assert np.isnan(cal["alpha"][0])
+        assert np.isfinite(cal["alpha"][1])
+
+    def test_alpha_err_nan_in_truth_empty_bin(self):
+        # truth==0 (alpha collapses to 0) is a degenerate, pure-false-positive bin:
+        # alpha_err must be NaN (flagged), not 0 (which would hide the real noise).
         z_mid = np.array([2.25, 2.75])
         truth = np.array([0.0, 0.08])
         mock = np.array([0.05, 0.04])
         out_truth = self._make_dndx_out(z_mid, truth)
         out_mock = self._make_dndx_out(z_mid, mock)
         cal = cm.compute_calibration_alpha(out_truth, out_mock)
-        assert np.isnan(cal["alpha"][0])
-        assert np.isfinite(cal["alpha"][1])
+        assert cal["alpha"][0] == 0.0
+        assert np.isnan(cal["alpha_err"][0])
+        assert np.isfinite(cal["alpha_err"][1])
 
     def test_apply_calibration_alpha_one_identity(self):
         # When alpha=1 and alpha_err=0, calibrated == raw
@@ -355,3 +371,22 @@ class TestCalibration:
         for key in ("z", "dndx_raw", "dndx_calibrated", "err_raw", "err_calibrated",
                     "alpha", "alpha_err"):
             assert key in result
+
+    def test_apply_calibration_recovers_truth_on_incomplete_mock(self):
+        # End-to-end direction check: a mock measured at 50% of truth must,
+        # after calibration, recover truth (a factor-2 UP-correction).
+        # alpha = truth / measured = 2.0; dndx_calibrated = alpha * real.
+        z_mid = np.array([2.25, 2.75, 3.25])
+        truth = np.array([0.10, 0.08, 0.06])
+        measured = 0.5 * truth  # GP under-counts (50% completeness)
+        out_truth = self._make_dndx_out(z_mid, truth)
+        out_measured_mock = self._make_dndx_out(z_mid, measured)
+
+        cal = cm.compute_calibration_alpha(out_truth, out_measured_mock)
+        # Calibration multiplier must up-correct the under-counted mock.
+        np.testing.assert_allclose(cal["alpha"], 2.0, atol=1e-10)
+
+        # Apply to "real" data that has the same incompleteness as the mock.
+        out_real = self._make_dndx_out(z_mid, measured)
+        result = cm.apply_calibration(out_real, cal)
+        np.testing.assert_allclose(result["dndx_calibrated"], truth, atol=1e-12)

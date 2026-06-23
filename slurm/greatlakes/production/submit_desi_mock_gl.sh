@@ -120,6 +120,10 @@ DLA_BIAS="${DLA_BIAS:-2.0}"
 FILTER_N_INITIAL_FLOOR="${FILTER_N_INITIAL_FLOOR:-}"
 FILTER_EMPTY_MASK_FALLTHROUGH="${FILTER_EMPTY_MASK_FALLTHROUGH:-0}"
 
+# Optional TARGETID subset (cheap targeted re-inference, e.g. the tau_eb
+# high-z falsifier). Empty => not forwarded => production runs unchanged.
+EXTERNAL_TID_LIST="${EXTERNAL_TID_LIST:-}"
+
 START_INDEX="${START_INDEX:-0}"
 END_INDEX="${END_INDEX:-62}"
 STEP="${STEP:-2}"
@@ -191,6 +195,7 @@ for (( i = START_INDEX; i <= END_INDEX; i += STEP )); do
             --dla_bias "$DLA_BIAS" \
             $([ -n "$FILTER_N_INITIAL_FLOOR" ] && echo "--filter_n_initial_floor $FILTER_N_INITIAL_FLOOR") \
             $([ "$FILTER_EMPTY_MASK_FALLTHROUGH" = "1" ] && echo "--filter_empty_mask_fallthrough 1") \
+            $([ -n "$EXTERNAL_TID_LIST" ] && echo "--external_tid_list $EXTERNAL_TID_LIST") \
             --figure_dir "$FIGURE_DIR" \
             --level2_start "$LEVEL2_START" \
             --level2_end "$LEVEL2_END" &

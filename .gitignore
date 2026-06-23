@@ -88,6 +88,20 @@ tests/fixtures/dr16_pca_init.npz
 tests/fixtures/dr16_phase2_cache/
 docs/notes/2026-05-08_matlab_dr16_validation/phase2_result.npz
 
+# --- local scratch / transient artifacts (not for git history) ---
+# downloaded raw mock spectra (bulky, regenerable)
+data/raw_spectra/
+# stray local test artifact
+/dummy_catalog.npy
+# SLURM job stderr (regenerated per submission)
+slurm/greatlakes/**/*.err
+# local prototype figure scratch
+examples/prototype_dla_clustering.png
+
+# but DO track the published hbi headline figures (the deliverable; overrides the broad `figures/` rule)
+!CDDF_analysis/hbi/figures/
+!CDDF_analysis/hbi/figures/*.png
+
 # Per-healpix QSO spec-count tables hold catalog counts -> keep on CFS, never commit.
 # Regenerate with tools/loa_hpx_spec_counts.py (see loa_cddf_nersc.env / matterhorn_nersc_v1.env).
 # Covers *_qso_counts.txt (matterhorn) and *_spec_counts.txt (loa).
