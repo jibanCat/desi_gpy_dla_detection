@@ -1031,7 +1031,25 @@ def main(argv=None):
         zbins=list(map(float, res["zbins"])))
     # per-z DIFFERENTIAL f(N|z) curves (MAP + recentered 68/95 band) — the NEW deliverable.
     # logN_centers = res['mid']; per coarse z bin: MAP f(N|z) + band, with the support flag.
-    out_json["perz_fN"] = dict(
+    out_json["perz_fN"] = assemble_perz_fN(res, limits)
+    with open(os.path.join(args.out, "track_c_tf_loa.json"), "w") as fh:
+        json.dump(out_json, fh, indent=2, default=float)
+    print("\n" + rep)
+    print(f"\n[T-F] DONE in {wallclock:.0f}s")
+    return dict(status="complete", res=res)
+
+
+def assemble_perz_fN(res, limits=(20.0, 20.3)):
+    """Assemble the per-z DIFFERENTIAL f(N|z) ``perz_fN`` JSON record from a
+    ``run_measurement`` result dict ``res``.
+
+    Pure function of ``res`` (plus ``limits`` only for the floor default): emits the
+    logN grid (``mid``), the per-coarse-z MAP f(N|z) curve (``map_fbk``), the
+    recentered 68/95 band (``fNz_{lo,hi}{68,95}``), the band method, and the per-z
+    support flags. Factored out of ``run_measurement`` so the JSON schema is tested
+    against the PRODUCTION code path (tests/test_track_c_perz_fN.py), not a copy.
+    """
+    return dict(
         logN_centers=np.asarray(res["mid"], float).tolist(),
         floor=float(res.get("fNz_floor", min(limits))),
         # 'direct_perN_z' = genuine per-(logN,z) MC percentiles (widens in the sparse
@@ -1055,11 +1073,6 @@ def main(argv=None):
             thin=bool(np.asarray(res.get("z_thin",
                                          np.zeros(res["n_zc"], bool)))[k]),
         ) for k in range(res["n_zc"])])
-    with open(os.path.join(args.out, "track_c_tf_loa.json"), "w") as fh:
-        json.dump(out_json, fh, indent=2, default=float)
-    print("\n" + rep)
-    print(f"\n[T-F] DONE in {wallclock:.0f}s")
-    return dict(status="complete", res=res)
 
 
 if __name__ == "__main__":

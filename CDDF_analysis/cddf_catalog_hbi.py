@@ -1,10 +1,16 @@
-"""cddf_catalog_hbi.py — v1 catalog-HBI CDDF estimator (DIRECT per-object 1/Vmax).
+"""cddf_catalog_hbi.py — catalog-HBI CDDF estimator (v1 / v2 / v3.x; see section banners).
 
 Authoritative against `2026-06-12_catalog_hbi_estimator_spec.md` (§2-§9) and the
-Bayesian-engineer design memo (MODULE 1, v1 only). This module implements the
-**v1 DIRECT completeness-corrected, FP-subtracted 1/Vmax estimator** + the
-WALL-2 joint Monte-Carlo error bars. NO likelihood, NO `μ_det` / `A_{i,b}`, NO
-optimizer, NO sampler — that is the v2 forward-HBI, OUT OF SCOPE for this build.
+Bayesian-engineer design memo. The module grew three estimator generations, each
+under its own section banner:
+  * v1   — DIRECT completeness-corrected, FP-subtracted 1/Vmax + the WALL-2 joint
+           Monte-Carlo error bars (the original MODULE-1 build).
+  * v2   — forward-HBI: marked-Poisson MAP fit (L-BFGS-B) with the deconvolution
+           kernel A_{i,b} and the μ_det / μ_FP rate terms.
+  * v3.x — parametric continuous-CDDF families (power-law … P-spline) for the DOF
+           ladder, on top of the v2 forward machinery + the Track-C kernel.
+Plus the Track-C forward-response kernel + z-resolved completeness used by the
+real-data driver (track_c_tf_loa.py).
 
 Estimand: selection-corrected f(N_HI, X) → dN/dX(z), Ω_HI, from the FILTER-on
 maxdla4 GP catalog + the molly completeness/purity selection function. Pure
@@ -201,9 +207,10 @@ class HBIConfig:
     #                                    (cr≈10 <1%, cr=5 ~4.5%) at higher cost. The runner's
     #                                    identity-draw check + summary row flag the anchoring.
     # --- v3 PARAMETRIC continuous-CDDF HBI knobs (all defaulted; v1/v2 unaffected) ---
-    # NEW correctly-scaled families (the broken gamma/dpl/schechter_z above are left
-    # in place but superseded by these for the DOF ladder — Finding 1 reparameterizes
-    # the amplitude to the PHYSICAL height log10 f(N_piv) so the bound is reachable).
+    # NEW correctly-scaled families (the broken gamma/dpl/schechter_z v3 block was
+    # REMOVED as dead code 2026-06-23; these v3.x families supersede it for the DOF
+    # ladder — Finding 1 reparameterizes the amplitude to the PHYSICAL height
+    # log10 f(N_piv) so the bound is reachable).
     v3_family: str = "plaw"            # ladder rung: plaw|plawcut|bplcut|pspline
     v3_n_pivot: float = 20.3           # log10 N_HI where the amplitude θ_amp = log10 f(N_piv)
     v3_z_pivot: float = 2.5            # z evolution pivot (catalog median)

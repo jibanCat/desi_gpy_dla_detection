@@ -1,34 +1,30 @@
 """Structural test for the `perz_fN` JSON-assembly layer of
 ``CDDF_analysis/track_c_tf_loa.py`` (the per-z DIFFERENTIAL f(N|z) deliverable).
 
-PR-18 #6.3: there was no direct test on the `perz_fN` block. The assembly is
-NOT a separable helper — it is an inline dict-comprehension inside ``main()``
-(``track_c_tf_loa.py`` lines ~1002-1021) that reads a ``res`` dict produced by
-``run_measurement`` and emits the per-z record. Because editing the module is
-out of scope (another agent owns the package surface), this test:
+PR-18 #6.3: a direct test on the `perz_fN` JSON block. The assembly was factored
+out of ``run_measurement`` into the importable ``assemble_perz_fN(res, limits)``
+in ``track_c_tf_loa.py``; this test imports and exercises THAT production function,
+so a schema change in the module is caught here (no shadow copy to drift). The test:
 
   1. Builds a tiny SYNTHETIC ``res`` dict that satisfies the exact contract the
      ``perz_fN`` assembly reads (``mid``, ``map_fbk`` (n_nbins×n_zc), the four
      ``fNz_*`` band arrays (n_zc×n_nbins), ``zbins``, ``z_extrapolated``,
-     ``z_thin``, ``truth_counts_perz``, ``fNz_floor``, ``n_zc``) — NO FITS, NO
-     GP inference, no full driver run (fast, deterministic).
-  2. Re-applies the SAME assembly expression the module uses and asserts the
-     emitted structure: per-z entries, each with the logN grid (``logN_centers``)
-     + f + 68/95 band (lo/hi) + the thin / extrapolation flags.
+     ``z_thin``, ``truth_counts_perz``, ``fNz_floor``, ``fNz_band_method``,
+     ``n_zc``) — NO FITS, NO GP inference, no full driver run (fast, deterministic).
+  2. Calls the real ``assemble_perz_fN`` and asserts the emitted structure: the
+     band method, plus per-z entries each with the logN grid (``logN_centers``) +
+     f + 68/95 band (lo/hi) + the thin / extrapolation flags.
   3. Independently verifies the extrapolation-flag RULE the module applies in
-     ``run_measurement`` (lines ~452-465): a coarse-z bin is flagged
-     ``extrapolated`` when its 2LPT-0 truth count is 0 — here forced for the top
-     [4.0, 4.25) z-bin — and asserts the assembled record carries that flag for
-     the [4.0, 4.25) bin.
-
-The assembly source string is kept in lock-step with the module via the explicit
-comments; if the module's `perz_fN` schema changes, the structural asserts here
-fail and flag the drift.
+     ``run_measurement``: a coarse-z bin is flagged ``extrapolated`` when its
+     2LPT-0 truth count is 0 — here forced for the top [4.0, 4.25) z-bin — and
+     asserts the assembled record carries that flag for the [4.0, 4.25) bin.
 """
 import json
 
 import numpy as np
 import pytest
+
+from CDDF_analysis.track_c_tf_loa import assemble_perz_fN
 
 
 # z-grid that produces a coarse top bin [4.0, 4.25) (the Track-C extended grid).
@@ -88,46 +84,24 @@ def _synthetic_res(n_nbins=8):
         mid=mid, logN_lo=logN_lo, logN_hi=logN_hi, zbins=ZBINS, n_zc=N_ZC,
         map_fbk=map_fbk,
         fNz_lo68=fNz_lo68, fNz_hi68=fNz_hi68, fNz_lo95=fNz_lo95, fNz_hi95=fNz_hi95,
-        fNz_floor=20.0,
+        fNz_floor=20.0, fNz_band_method="direct_perN_z",
         z_extrapolated=z_extrap, z_thin=z_thin,
         truth_counts_perz=truth_counts_perz,
     )
 
 
-def _assemble_perz_fN(res, limits=(20.0, 20.3)):
-    """Re-apply the EXACT ``perz_fN`` assembly from ``track_c_tf_loa.main()``
-    (lines ~1002-1021). Kept byte-for-byte in lock-step with the module."""
-    return dict(
-        logN_centers=np.asarray(res["mid"], float).tolist(),
-        floor=float(res.get("fNz_floor", min(limits))),
-        zbins=list(map(float, res["zbins"])),
-        z_extrapolated=[bool(x) for x in np.asarray(res.get("z_extrapolated", []))],
-        z_thin=[bool(x) for x in np.asarray(res.get("z_thin", []))],
-        truth_counts_perz=res.get("truth_counts_perz"),
-        perz=[dict(
-            z_idx=k,
-            z=float(0.5 * (res["zbins"][k] + res["zbins"][k + 1])),
-            f=np.asarray(res["map_fbk"][:, k], float).tolist(),
-            f68_lo=np.asarray(res["fNz_lo68"][k], float).tolist(),
-            f68_hi=np.asarray(res["fNz_hi68"][k], float).tolist(),
-            f95_lo=np.asarray(res["fNz_lo95"][k], float).tolist(),
-            f95_hi=np.asarray(res["fNz_hi95"][k], float).tolist(),
-            extrapolated=bool(np.asarray(res.get("z_extrapolated",
-                                                 np.zeros(res["n_zc"], bool)))[k]),
-            thin=bool(np.asarray(res.get("z_thin",
-                                         np.zeros(res["n_zc"], bool)))[k]),
-        ) for k in range(res["n_zc"])])
-
-
 def test_perz_fN_top_level_structure():
-    """The perz_fN block carries the logN grid, floor, zbins, the two flag vectors,
-    truth counts, and a per-z list of length n_zc."""
+    """The perz_fN block carries the logN grid, floor, band method, zbins, the two
+    flag vectors, truth counts, and a per-z list of length n_zc."""
     res = _synthetic_res()
-    blk = _assemble_perz_fN(res)
+    blk = assemble_perz_fN(res)
 
     n_nbins = len(res["mid"])
-    assert set(blk) >= {"logN_centers", "floor", "zbins", "z_extrapolated",
-                        "z_thin", "truth_counts_perz", "perz"}
+    assert set(blk) >= {"logN_centers", "floor", "band_method", "zbins",
+                        "z_extrapolated", "z_thin", "truth_counts_perz", "perz"}
+    # the band method must propagate from res (drift guard: the production assembly
+    # carries fNz_band_method; a shadow copy that dropped it would fail here)
+    assert blk["band_method"] == "direct_perN_z"
     assert len(blk["logN_centers"]) == n_nbins
     assert blk["floor"] == pytest.approx(20.0)
     assert blk["zbins"] == [float(z) for z in ZBINS]
@@ -140,7 +114,7 @@ def test_perz_fN_each_entry_has_grid_f_band_and_flags():
     """Every per-z entry carries z_idx/z + the f curve + 68/95 band (lo/hi) on the
     SAME logN grid + the thin/extrapolation flags, all aligned to logN_centers."""
     res = _synthetic_res()
-    blk = _assemble_perz_fN(res)
+    blk = assemble_perz_fN(res)
     n_nbins = len(blk["logN_centers"])
 
     for k, e in enumerate(blk["perz"]):
@@ -166,7 +140,7 @@ def test_perz_fN_extrapolation_flag_set_for_4p0_4p25_bin():
     EXTRAPOLATED both in the top-level vector and the per-z entry; the well-populated
     low-z bins are NOT extrapolated; the thin bin is flagged THIN not EXTRAPOLATED."""
     res = _synthetic_res()
-    blk = _assemble_perz_fN(res)
+    blk = assemble_perz_fN(res)
 
     # the top z-bin is [4.0, 4.25)
     assert ZBINS[EXTRAP_KIDX] == 4.0 and ZBINS[EXTRAP_KIDX + 1] == 4.25
@@ -187,7 +161,7 @@ def test_perz_fN_is_json_serializable():
     """The assembled block round-trips through json.dumps/loads (the driver writes it
     with json.dump(..., default=float)) — no numpy scalars leak into the structure."""
     res = _synthetic_res()
-    blk = _assemble_perz_fN(res)
+    blk = assemble_perz_fN(res)
     s = json.dumps(blk, default=float)
     back = json.loads(s)
     assert len(back["perz"]) == N_ZC
