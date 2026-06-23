@@ -305,6 +305,59 @@ def test_tilted_truth_reductions_fN_is_hand_reweighted_sum():
     assert ttr["dndx_total"][20.0] == pytest.approx(np.sum(w) / X_sum, rel=1e-12)
 
 
+def test_tilted_truth_reductions_drops_truth_below_snr_min():
+    """The truth-side `keep = S2N_RED > snr_min` filter (cddf_tilt_closure.py:~133)
+    drops sub-cut truth rows and keeps above-cut rows EXACTLY (gotcha 4: truth must
+    be restricted to the same SNR-selected sightline set as the ΔX denominator).
+
+    PR-18 #6.2: builds a truth_cut with rows straddling snr_min and asserts the
+    reductions equal the reductions of ONLY the kept (above-cut) rows. Sub-cut rows
+    must contribute nothing to f(N)/dN/dX/Ω; the boundary (== snr_min) is excluded
+    by the strict `>` comparison."""
+    cfg = _make_cfg(logN_lo=20.0, logN_hi=20.4, drop_top_bin_above=20.4,
+                    zbins=(2.0, 3.0), report_logN_limits=(20.0,), snr_min=2.0)
+    logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
+    # 5 truth systems: SNR exactly at the cut (excluded), below the cut (excluded),
+    # and above the cut (kept). Same NHI/z so only the SNR filter distinguishes them.
+    nhi = np.array([20.05, 20.15, 20.25, 20.05, 20.25])
+    z = np.array([2.4, 2.5, 2.6, 2.5, 2.4])
+    snr = np.array([1.0,        # below  -> DROP
+                    2.0,        # == cut -> DROP (strict >)
+                    5.0,        # above  -> KEEP
+                    10.0,       # above  -> KEEP
+                    8.0])       # above  -> KEEP
+    truth_cut = _tiny_truth_cut(nhi, z, snr=snr)
+    X_tot = np.array([1.0e4])
+    da = 0.3
+
+    full = T.tilted_truth_reductions(cfg, truth_cut, logN_lo, logN_hi, N_b, dN_b,
+                                     X_tot, da, pivot=20.3)
+    # the reference: the SAME call on ONLY the above-cut rows (the kept set)
+    kept = snr > cfg.snr_min
+    truth_kept = _tiny_truth_cut(nhi[kept], z[kept], snr=snr[kept])
+    ref = T.tilted_truth_reductions(cfg, truth_kept, logN_lo, logN_hi, N_b, dN_b,
+                                    X_tot, da, pivot=20.3)
+
+    # filtered-in-place == explicitly-pre-filtered, to machine precision
+    np.testing.assert_allclose(full["f_truth"], ref["f_truth"],
+                               rtol=1e-12, atol=0, equal_nan=True)
+    assert full["dndx_total"][20.0] == pytest.approx(ref["dndx_total"][20.0], rel=1e-12)
+    assert full["omega"][20.0] == pytest.approx(ref["omega"][20.0], rel=1e-12)
+
+    # POSITIVE control: the kept reduction equals the hand sum over the 3 kept rows
+    # only (the 2 dropped rows contribute nothing).
+    w_kept = 10.0 ** (da * (nhi[kept] - 20.3))
+    assert full["dndx_total"][20.0] == pytest.approx(
+        float(np.sum(w_kept)) / float(X_tot.sum()), rel=1e-12)
+
+    # NEGATIVE control: if the dropped rows had been (wrongly) kept, dN/dX would be
+    # strictly larger — so the filter is load-bearing, not a no-op on this input.
+    truth_all = _tiny_truth_cut(nhi, z, snr=np.full(len(nhi), 10.0))  # all above cut
+    allkept = T.tilted_truth_reductions(cfg, truth_all, logN_lo, logN_hi, N_b, dN_b,
+                                        X_tot, da, pivot=20.3)
+    assert allkept["dndx_total"][20.0] > full["dndx_total"][20.0]
+
+
 def test_tilted_truth_reductions_plus_tilt_raises_omega_over_dndx():
     """A +Δα tilt up-weights the high-N systems, which carry the Ω integral's
     N·f weight, so Ω grows MORE than dN/dX relative to the untilted truth (the
@@ -511,19 +564,42 @@ def test_omega_closure_resid_frac_sign_tracks_est_minus_pred():
 
 
 def test_omega_closure_resid_frac_unit_mode_uses_bare_tilted_truth():
-    """closure_R0_mode='unit' closes on the BARE tilted truth (R0:=1), so when the
-    baseline R0 would otherwise rescale, 'unit' uses f_truth^tilt directly."""
+    """closure_R0_mode='unit' closes on the BARE tilted truth (R0:=1) — it must
+    use f_truth^tilt directly, NOT the baseline-rescaled R0·f_truth^tilt.
+
+    DISCRIMINATING design (PR-18 #6.1): the baseline here has e0 = 2·t0, so the
+    divide-mode R0 = Ω_est0/Ω_tr0 = 2 (≠ 1). Therefore:
+      * 'unit'   -> o_pred = 1·Ω(ftr)  -> resid = Ω(f)/Ω(ftr) − 1
+      * 'divide' -> o_pred = 2·Ω(ftr)  -> resid = Ω(f)/(2·Ω(ftr)) − 1
+    The two modes give DIFFERENT residuals, so the assertions below FAIL if the
+    `closure_R0_mode == "unit"` branch is removed (regressing unit -> divide), and
+    pin that 'unit' specifically equals the bare-tilted-truth (R0=1) result.
+    """
     logN_lo, logN_hi, N_b, dN_b = _resid_inputs()
     f = 1e-22 * (N_b / 1e20) ** -1.8
     ftr = 0.5 * f          # tilted truth differs from est by 2x
     res = dict(point={"f_b": f.copy()}, ttr={"f_truth": ftr.copy()})
-    # baseline with e0==t0 so the divide-mode R0==1 as well; pick e0=t0=ftr so R0=1.
-    baseline = dict(e0={"f_b": ftr.copy()}, t0={"f_truth": ftr.copy()})
-    out = T._omega_closure_resid_frac(res, logN_lo, logN_hi, N_b, dN_b, 70.0,
-                                      limits=(20.0,), drop_top_above=20.8,
-                                      baseline=baseline, closure_R0_mode="unit")
-    # o_pred = 1.0 * Ω(ftr); o_est = Ω(f) = 2·Ω(ftr) -> residual = +1.0
-    assert out[20.0] == pytest.approx(1.0, rel=1e-9)
+    # baseline with e0 = 2·t0 -> divide-mode R0 == 2 (NOT 1), so unit vs divide differ.
+    t0f = ftr.copy()
+    e0f = 2.0 * ftr
+    baseline = dict(e0={"f_b": e0f}, t0={"f_truth": t0f})
+
+    out_unit = T._omega_closure_resid_frac(
+        res, logN_lo, logN_hi, N_b, dN_b, 70.0,
+        limits=(20.0,), drop_top_above=20.8,
+        baseline=baseline, closure_R0_mode="unit")
+    out_divide = T._omega_closure_resid_frac(
+        res, logN_lo, logN_hi, N_b, dN_b, 70.0,
+        limits=(20.0,), drop_top_above=20.8,
+        baseline=baseline, closure_R0_mode="divide")
+
+    # unit closes on the BARE tilted truth (R0:=1): o_pred = Ω(ftr), o_est = Ω(2·ftr)
+    # = 2·Ω(ftr) -> residual = +1.0 exactly.
+    assert out_unit[20.0] == pytest.approx(1.0, rel=1e-9)
+    # divide-mode uses R0 = Ω(e0)/Ω(t0) = 2 -> o_pred = 2·Ω(ftr) -> residual = 0.0.
+    assert out_divide[20.0] == pytest.approx(0.0, abs=1e-9)
+    # The two MUST differ — this is what makes the test discriminate the unit branch.
+    assert abs(out_unit[20.0] - out_divide[20.0]) > 0.5
 
 
 # ===========================================================================

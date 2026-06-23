@@ -35,8 +35,9 @@ CATALOG (dX coverage)
 ``calc_cddf`` uses ``catalog_file`` ONLY for TID alignment; a processed TID NOT in
 the catalog is dropped from dX (``self.condition``). The shared MAP dlacat covers
 only ~47% of sightlines (one row per MAP detection), which would inflate dN/dX. So
-we pass a TARGETID-only catalog (``loa_tidcat.fits``) covering ALL 942,946 processed
-sightlines, built by ``build_loa_tidcat.py`` — dX is then the FULL SNR/z-filtered
+we pass a TARGETID-only catalog (``loa_tidcat.fits``) covering ALL processed
+sightlines in the full real-LOA z>2 QSO sample (exact count in the private notes
+repo), built by ``build_loa_tidcat.py`` — dX is then the FULL SNR/z-filtered
 path length, exactly as the production CDDF intends.
 
 PRIVACY (real DESI LOA): AGGREGATE f(N)/dN/dX/Omega curves only; NO raw per-sightline
