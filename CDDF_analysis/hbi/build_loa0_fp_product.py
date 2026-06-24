@@ -69,7 +69,7 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.cddf_catalog_hbi import (  # noqa: E402
+from CDDF_analysis.hbi.cddf_catalog_hbi import (  # noqa: E402
     HBIConfig, build_fine_grid, build_pathlength, _build_qso_lookup,
     load_molly_matrix, _cell_index, _bin_index_logN, LYA_REST,
 )

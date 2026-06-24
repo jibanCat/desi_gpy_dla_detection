@@ -37,8 +37,8 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     v3x_refit, v3x_fit_map, v3x_laplace, v3x_emcee_check, v3x_reduce,
     v3x_mc_inner_theta,
     truth_reductions, joint_mc_errors, omega_hi_prefactor,
@@ -48,8 +48,8 @@ from CDDF_analysis.cddf_catalog_hbi import (
     v3x_response_setup, v3x_response_rebuild_unitC, draw_response_params,
     v3x_stage3_setup, v3x_stage3_rebuild_unitC,
 )
-from CDDF_analysis.znz_kernel import refit_znz_from_resample
-from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, _resolve_molly
+from CDDF_analysis.hbi.znz_kernel import refit_znz_from_resample
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients, _resolve_molly
 
 
 # -----------------------------------------------------------------------------
@@ -374,7 +374,7 @@ def main(argv=None):
                 ing_pm["C_interp"], ing_pm["fp_model"], ing_pm["X_tot"],
                 ing_pm["logN_lo"], ing_pm["logN_hi"], ing_pm["N_b"], ing_pm["dN_b"],
                 ing_pm["truth_cut"], cfg_pm)
-            from CDDF_analysis.cddf_catalog_hbi import make_v3x_refit_fn
+            from CDDF_analysis.hbi.cddf_catalog_hbi import make_v3x_refit_fn
             refit_fn = make_v3x_refit_fn(cfg_pm, point_pm["_v3x"], ing_pm["mm"])
             mc_pm = joint_mc_errors(
                 ing_pm["cat_cut"], ing_pm["is_TP"], ing_pm["good_mask"], ing_pm["mm"],
@@ -395,7 +395,7 @@ def main(argv=None):
     tr = truth_reductions(cfg, ing["truth_cut"], logN_lo, logN_hi, N_b, dN_b, X_tot)
     # truth dN/dX(z): per-zbin truth counts / X(z), per limit
     zbins = np.asarray(cfg.zbins, float)
-    from CDDF_analysis.cddf_catalog_hbi import _bin_index_logN, _zbin_index
+    from CDDF_analysis.hbi.cddf_catalog_hbi import _bin_index_logN, _zbin_index
     t_nhi = np.asarray(ing["truth_cut"]["NHI"], float)
     t_z = np.asarray(ing["truth_cut"]["Z_DLA"], float)
     t_snr = np.asarray(ing["truth_cut"]["S2N_RED"], float)

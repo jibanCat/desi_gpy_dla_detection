@@ -80,9 +80,9 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import ab_loa0_fp_baseline as AB
-from CDDF_analysis import track_c_perz_band as PZ
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
+from CDDF_analysis.hbi import track_c_perz_band as PZ
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     HBIConfig, load_molly_matrix, load_and_cut_catalog, build_fine_grid,
     regenerate_molly_counts, make_C_interpolator, build_pathlength,
     make_fp_model, make_rho_interpolator, _build_qso_lookup, v3x_refit,
@@ -299,11 +299,11 @@ def run_tf_variant(args, ing, limits, seed):
 
     logN_lo = ing["logN_lo"]; logN_hi = ing["logN_hi"]
     N_b = ing["N_b"]; dN_b = ing["dN_b"]
-    from CDDF_analysis.cddf_catalog_hbi import (
+    from CDDF_analysis.hbi.cddf_catalog_hbi import (
         joint_mc_errors, make_v3x_refit_fn, v3x_reduce, build_truth_match_resample,
         omega_hi_prefactor,
     )
-    from CDDF_analysis.ab_loa0_fp_baseline import run_baseline
+    from CDDF_analysis.hbi.ab_loa0_fp_baseline import run_baseline
     zbins = np.asarray(cfg.zbins, float)
     n_zc = len(zbins) - 1
     K = omega_hi_prefactor(cfg.H0)

@@ -33,13 +33,13 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     HBIConfig, load_molly_matrix, load_and_cut_catalog, build_fine_grid,
     regenerate_molly_counts, make_C_interpolator, build_pathlength,
     make_fp_model, make_rho_interpolator, _build_qso_lookup, v3x_refit,
 )
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
 
 # the calibrated WALL-1 experiment (frozen kernel + lya_only molly)
 DEF_EXPER = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
@@ -137,7 +137,7 @@ def build_ingredients(args, fp_estimator: str, loa0_product=None):
 
     # Track-C #39: build-and-stash the z-resolved completeness if requested on cfg
     # (set by the runner BEFORE build_ingredients — no-op/None when OFF → byte-identical).
-    from CDDF_analysis.cddf_catalog_hbi import ensure_cnz_resolved
+    from CDDF_analysis.hbi.cddf_catalog_hbi import ensure_cnz_resolved
     if getattr(cfg, "completeness_z_resolved", False):
         ensure_cnz_resolved(cfg, cat_cut, truth_cut, good_mask, mm)
         print(f"  [Track-C #39] z-resolved completeness g(N,z) built "
