@@ -51,7 +51,7 @@ from CDDF_analysis.cddf_mock import (
 )
 
 # --- reuse from examples/ (no __init__.py; add repo root to path) ------------
-_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 from examples.gp_native_pc_plots import load_catalog_dir  # noqa: E402

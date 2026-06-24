@@ -2258,7 +2258,7 @@ def build_cache(argv=None):
     ab_loa0_fp_baseline.py (figures_molly_nhi195, host_truth_floor=19.0,
     NHI_TILT_HOST, snr_min=2.0, p_dla_min=0.99).
     """
-    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if _REPO not in sys.path:
         sys.path.insert(0, _REPO)
 
@@ -2378,7 +2378,7 @@ def build_forward_cache(argv=None):
     python -m CDDF_analysis.znz_kernel build-forward-cache \\
         --out /scratch/.../track_c/stage0/forward_response_2lpt0.npz
     """
-    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if _REPO not in sys.path:
         sys.path.insert(0, _REPO)
     from CDDF_analysis.hbi.ab_loa0_fp_baseline import (
