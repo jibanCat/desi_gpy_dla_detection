@@ -102,5 +102,6 @@ code repo), under `hbi/`.
 | module | role |
 |---|---|
 | `CDDF_analysis/hbi/cddf_catalog_hbi.py` | the catalog-HBI estimator (1/Vmax + FP subtraction + marked-Poisson MAP fit) |
+| `CDDF_analysis/hbi/run_remp_kernel.py` | empirical truth-match response (R_emp) kernel driver — builds the forward-response kernel (QUICKSTART Option A) |
 | `CDDF_analysis/hbi/run_phase3d_postkernel.py` | stage runner (kernel build, point fit, tilt-closure gate) |
 | `CDDF_analysis/calc_cddf.py` | raw feed-forward (uncorrected) baseline |

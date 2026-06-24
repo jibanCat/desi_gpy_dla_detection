@@ -22,6 +22,8 @@ Reduce-only estimator over a frozen catalog (no re-inference). See `hbi/README.m
 - `cddf_forward/`: feed-forward subpackage
 - `diagnostics/`: archived one-off audit scripts (see `diagnostics/README.md`)
 
+The 7 bare `*.py` files at root matching `hbi/` module names (`cddf_catalog_hbi.py`, `cddf_tilt_closure.py`, `znz_kernel.py`, `track_c_td_band.py`, `track_c_tf_loa.py`, `run_phase3d_postkernel.py`, `run_remp_kernel.py`) are back-compat shims (4-line `sys.modules` aliases) so pre-reorg imports `from CDDF_analysis.<mod> import ...` keep working; prefer the `CDDF_analysis.hbi.<mod>` paths.
+
 ## Legacy (SDSS / plotting)
 
 `qso_loader.py` (+ `set_parameters.py`, `voigt.py`) — the QSOLoader plotting utilities
