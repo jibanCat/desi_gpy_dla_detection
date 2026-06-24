@@ -24,7 +24,7 @@ import json
 import numpy as np
 import pytest
 
-from CDDF_analysis.track_c_tf_loa import assemble_perz_fN
+from CDDF_analysis.hbi.track_c_tf_loa import assemble_perz_fN
 
 
 # z-grid that produces a coarse top bin [4.0, 4.25) (the Track-C extended grid).

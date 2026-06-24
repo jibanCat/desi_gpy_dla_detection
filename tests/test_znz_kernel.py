@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 import pytest
-from CDDF_analysis.znz_kernel import fit_znz_model, save_znz, load_znz, ZNZModel, CNZModel
+from CDDF_analysis.hbi.znz_kernel import fit_znz_model, save_znz, load_znz, ZNZModel, CNZModel
 
 
 def _make_synthetic_meas(seed=0, n=20000, deg_xhat=1, deg_z=2):
@@ -107,7 +107,7 @@ def test_apply_znz_shifts_mean():
     apply_znz_correction targets mean = x̂ − (b(x̂,z) − b_ref); with b_ref=0 and
     b=+0.10 the mass at logN 20.5 should re-centre at 20.40.
     """
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     n_z = 15
     logN_lo = np.arange(19.0, 22.5, 0.1)
     logN_hi = logN_lo + 0.1
@@ -130,7 +130,7 @@ def test_apply_znz_shifts_mean():
 def test_apply_znz_preserves_mass_and_z():
     """The correction renormalizes per (i,kz) (Σ preserved) and leaves other z-bins
     untouched (delta correction acts column-wise on kz only)."""
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     n_z = 15
     logN_lo = np.arange(19.0, 22.5, 0.1)
     logN_hi = logN_lo + 0.1
@@ -160,7 +160,7 @@ def test_apply_znz_identity_when_b_zero():
     """b≡b_ref, σ≡sig_ref AND a symmetric column already centred at x̂ ⇒ no shift, no
     width change ⇒ kappa unchanged (mass-conserving rebin onto the same grid is the
     identity here)."""
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     n_z = 15
     logN_lo = np.arange(19.0, 22.5, 0.1)
     logN_hi = logN_lo + 0.1
@@ -183,7 +183,7 @@ def test_apply_znz_identity_when_b_zero():
 def test_apply_C_3d_reduces_to_2d_when_g_unity():
     """g≡1 ⇒ the 3-D C path == the 2-D molly C path EXACTLY (byte-identical) for
     both _apply_C_to_A and _apply_C_to_M (the C-threading reduces to molly)."""
-    from CDDF_analysis.cddf_catalog_hbi import _apply_C_to_A, _apply_C_to_M
+    from CDDF_analysis.hbi.cddf_catalog_hbi import _apply_C_to_A, _apply_C_to_M
 
     n_snr, n_nhi, n_zf, n_nbins = 4, 5, 3, 8
     rng = np.random.default_rng(11)
@@ -259,7 +259,7 @@ def test_znz_off_is_bit_identical():
     exact-equality assert.  The fix: gate jointly so the exact assert is always reached
     when this test runs (no inner conditional).
     """
-    from CDDF_analysis.run_phase3d_postkernel import _run_point_for_test
+    from CDDF_analysis.hbi.run_phase3d_postkernel import _run_point_for_test
     a = _run_point_for_test(kernel_znz_model=None, c_nz_model=None)
     live = a["dndx"][20.0]
     # rounds to the published 0.09010 headline (sanity)
@@ -317,7 +317,7 @@ def test_stage3_median_surface_is_below_mean_for_right_skew():
 def test_stage3_refit_resample_unit_weight_q1_reproduces_mean_fit():
     """At unit multiplicity AND q=1, refit_znz_from_resample reproduces the point MEAN
     surface (the invariance the marginalized band rests on: boot_mult==1 ⇒ frozen θ_K)."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         build_response_fit_resample, refit_znz_from_resample)
     meas, tid = _skewed_meas()
     uniq = np.unique(tid)
@@ -338,7 +338,7 @@ def test_stage3_refit_resample_perturbs_surface_with_boot_mult():
     surface — i.e. θ_K genuinely varies per draw (the parameter scatter Stage III folds
     into the band), and the perturbation tracks the multiplicity (re-weighting the SAME
     TID twice gives the SAME surface: determinism)."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         build_response_fit_resample, refit_znz_from_resample)
     meas, tid = _skewed_meas()
     uniq = np.unique(tid)
@@ -359,7 +359,7 @@ def test_stage3_refit_resample_perturbs_surface_with_boot_mult():
 def test_stage3_corr_strength_one_is_byte_identical():
     """corr_strength=1 (DEFAULT) ⇒ apply_znz_correction is BYTE-IDENTICAL to the
     pre-Stage-III transform (the α-scaling is a no-op at α=1)."""
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     rng = np.random.default_rng(1)
     n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
     n_obs = 6
@@ -384,7 +384,7 @@ def test_stage3_corr_strength_zero_is_off_identity():
     """corr_strength=0 ⇒ OFF: the transform is the IDENTITY (new_centers == mids), so a
     column is left at its OWN broaden012 center — un-corrected — regardless of b/σ. This
     is the truth-bracketing OFF endpoint (the b_ref note's R0≈1.11 reference)."""
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
     kappa = np.zeros((1, len(logN_lo), n_z), np.float32)
     j0 = np.searchsorted(logN_lo, 20.5); kappa[0, j0, 7] = 1.0     # delta in bin [20.5,20.6)
@@ -405,7 +405,7 @@ def test_stage3_draw_response_params_alpha_axis():
     (Step-1, full strength); a Step-2 prior α∈[0,1] spans OFF↔full."""
     import importlib
     H = importlib.import_module("CDDF_analysis.cddf_catalog_hbi")
-    from CDDF_analysis.cddf_catalog_hbi import HBIConfig
+    from CDDF_analysis.hbi.cddf_catalog_hbi import HBIConfig
     cfg = HBIConfig(catalog_dir="x", truth_path="x", bal_cat_path="x",
                     molly_tsv="x", out_dir="x")
     # default: full strength
@@ -460,7 +460,7 @@ def _skewness(col, mids):
 
 def test_skew_warp_gamma_zero_is_identity():
     """_skew_warp(gamma=0) must return centers UNCHANGED, bit-for-bit (assert_array_equal)."""
-    from CDDF_analysis.znz_kernel import _skew_warp
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp
     rng = np.random.default_rng(42)
     centers = rng.uniform(19.0, 22.5, 35)
     result = _skew_warp(centers, mu=float(np.mean(centers)), gamma=0.0, omega=_OMEGA)
@@ -475,7 +475,7 @@ def test_skew_warp_pivot_is_exact_continuous():
     median sits at u=0; pivot-correction forces f(0)=0, so the median is invariant.
     (The broken pre-fix warp translated this point by ≈−sinh(γ)·s — up to −1.18 dex.)
     """
-    from CDDF_analysis.znz_kernel import _skew_warp
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp
     for omega in (0.19, 0.21, 0.05):
         for mu in (19.6, 20.3, 21.0):
             for gamma in (+0.5, +1.0, +2.0, -0.5, -1.0, -2.0):
@@ -496,7 +496,7 @@ def test_skew_warp_preserves_median_narrow_offcenter():
     histogram-median quantization (≤ a couple of bins, vanishing as the grid refines —
     test_skew_warp_pivot_is_exact_continuous proves the continuous f(0)=0 exactly), NOT a
     bulk translation."""
-    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp, _mass_conserving_rebin
     dN = 0.02
     logN_lo = np.arange(19.0, 22.5, dN); logN_hi = logN_lo + dN
     mids = 0.5 * (logN_lo + logN_hi)
@@ -531,7 +531,7 @@ def test_skew_warp_mean_drifts_up_for_positive_gamma():
     """The Ω-restoring direction: for γ>0 the mass-weighted MEAN of the warped NARROW
     column INCREASES vs the pre-warp column (the right tail the skew restores); for γ<0
     it DECREASES.  (Median stays put — only the mean drifts; this is the whole point.)"""
-    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp, _mass_conserving_rebin
     dN = 0.02
     logN_lo = np.arange(19.0, 22.5, dN); logN_hi = logN_lo + dN
     mids = 0.5 * (logN_lo + logN_hi)
@@ -557,7 +557,7 @@ def test_skew_warp_mean_drifts_up_for_positive_gamma():
 
 def test_skew_warp_is_monotone():
     """For gamma != 0, _skew_warp must preserve strict ordering (no bin crossing)."""
-    from CDDF_analysis.znz_kernel import _skew_warp
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp
     # sorted centers (as produced by the affine relocate in apply_znz_correction)
     logN_lo = np.arange(19.0, 22.5, 0.1)
     logN_hi = logN_lo + 0.1
@@ -575,7 +575,7 @@ def test_skew_warp_mass_conserving():
     The warp remaps carrier positions; the rebin deposits mass at the new carriers
     — together they must conserve Σ(mass) exactly (up to floating-point rounding).
     """
-    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp, _mass_conserving_rebin
     rng = np.random.default_rng(7)
     logN_lo = np.arange(19.0, 22.5, 0.1)
     logN_hi = logN_lo + 0.1
@@ -599,7 +599,7 @@ def test_skew_warp_positive_gamma_gives_positive_skewness():
 
     The narrow off-center column is the real substrate (conditional width ω after the
     affine relocate).  The pivot-corrected warp keeps the sign robust at every μ."""
-    from CDDF_analysis.znz_kernel import _skew_warp, _mass_conserving_rebin
+    from CDDF_analysis.hbi.znz_kernel import _skew_warp, _mass_conserving_rebin
     dN = 0.02
     logN_lo = np.arange(19.0, 22.5, dN); logN_hi = logN_lo + dN
     mids = 0.5 * (logN_lo + logN_hi)
@@ -627,7 +627,7 @@ def test_apply_znz_skew_off_is_byte_identical():
     This is the LOAD-BEARING T1 gate: the skew warp path must be an exact no-op when
     inactive so the existing broaden012 headline is reproduced to 0.0e0.
     """
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     rng = np.random.default_rng(99)
     n_z = 15; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
     n_obs = 8
@@ -661,7 +661,7 @@ def test_apply_znz_skew_off_is_byte_identical():
 def test_apply_znz_nonzero_skew_differs_from_off():
     """When skew_coef is set and skew_strength != 0, apply_znz_correction must produce
     a DIFFERENT result from the no-skew baseline — proving the warp code path is reached."""
-    from CDDF_analysis.znz_kernel import apply_znz_correction, ZNZModel
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction, ZNZModel
     from numpy.polynomial.polynomial import polyvander2d as _pv2d
     rng = np.random.default_rng(55)
     n_z = 10; logN_lo = np.arange(19.0, 22.5, 0.1); logN_hi = logN_lo + 0.1
@@ -715,7 +715,7 @@ def _synth_skewed_dx(gamma_fn, omega=0.20, loc=0.06, seed=0, n=300000,
     ``_sas_skewness_of_gamma(gamma_fn(x̂,z))`` (location/scale-invariant), so a faithful
     ``_skew_fit_2d`` must recover a surface whose induced skewness matches that target.
     """
-    from CDDF_analysis.znz_kernel import _gamma_from_skewness  # noqa: F401 (import guard)
+    from CDDF_analysis.hbi.znz_kernel import _gamma_from_skewness  # noqa: F401 (import guard)
     rng = np.random.default_rng(seed)
     z = rng.uniform(zlo, zhi, n)
     xhat = rng.uniform(xlo, xhi, n)
@@ -729,7 +729,7 @@ def test_skew_fit_recovers_known_gamma_surface():
     """Moment-match closure: synthesize dx with a KNOWN (within-ceiling) γ(x̂,z) ramp via
     _skew_warp, fit with _skew_fit_2d, and assert the recovered skew_coef reproduces the
     INPUT per-cell skewness to tolerance (the primary T2 correctness gate)."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         _skew_fit_2d, _sas_skewness_of_gamma)
     from numpy.polynomial.polynomial import polyvander2d
     # gamma ramp kept comfortably within the SAS ceiling (|γ|≲1) so the inversion is
@@ -754,7 +754,7 @@ def test_skew_fit_recovers_known_gamma_surface():
 def test_skew_fit_right_skew_gives_positive_gamma():
     """SIGN gate: a uniformly RIGHT-skewed dx input must yield γ>0 everywhere in the
     science range (the Ω-restoring direction of _skew_warp) — never a sign flip."""
-    from CDDF_analysis.znz_kernel import _skew_fit_2d, _sas_skewness_of_gamma
+    from CDDF_analysis.hbi.znz_kernel import _skew_fit_2d, _sas_skewness_of_gamma
     from numpy.polynomial.polynomial import polyvander2d
     # constant positive skew target ≈ +0.75 (γ≈+0.5) across the grid
     gamma_fn = lambda x, zz: np.full_like(np.asarray(x, float), 0.5)
@@ -772,7 +772,7 @@ def test_skew_fit_right_skew_gives_positive_gamma():
 
 def test_skew_fit_left_skew_gives_negative_gamma():
     """Mirror sign gate: a LEFT-skewed dx input must yield γ<0 (left-tail direction)."""
-    from CDDF_analysis.znz_kernel import _skew_fit_2d
+    from CDDF_analysis.hbi.znz_kernel import _skew_fit_2d
     from numpy.polynomial.polynomial import polyvander2d
     gamma_fn = lambda x, zz: np.full_like(np.asarray(x, float), -0.5)
     meas, _ = _synth_skewed_dx(gamma_fn, seed=3)
@@ -786,7 +786,7 @@ def test_skew_fit_left_skew_gives_negative_gamma():
 def test_sas_skewness_map_monotone_and_zero_at_zero():
     """The γ→skewness inversion map must be monotone increasing with γ=0→skew=0 (so the
     inverse is single-valued and sign-preserving)."""
-    from CDDF_analysis.znz_kernel import _sas_skewness_of_gamma, _gamma_from_skewness
+    from CDDF_analysis.hbi.znz_kernel import _sas_skewness_of_gamma, _gamma_from_skewness
     gg = np.linspace(-3.5, 3.5, 71)
     sk = _sas_skewness_of_gamma(gg)
     assert abs(_sas_skewness_of_gamma(np.array([0.0]))[0]) < 1e-9
@@ -805,7 +805,7 @@ def test_skew_fit_is_noncircular_signature():
     """NON-CIRCULAR gate: _skew_fit_2d and fit_znz_model(fit_skew=...) take NO dN/dX/Ω
     input — the fit can only read the truth-match (x̂, z, dx) conditional, never a reduced
     statistic. Enforced structurally via the signatures."""
-    from CDDF_analysis.znz_kernel import _skew_fit_2d, fit_znz_model
+    from CDDF_analysis.hbi.znz_kernel import _skew_fit_2d, fit_znz_model
     # reduced-statistic name fragments (the forbidden dN/dX / Ω / f(N,z) / R0 inputs).
     # NOTE: ``dx`` (the truth-match residual x̂−x_true) is the LEGIT conditional input and
     # is intentionally NOT forbidden — it is exactly what the moment fit reads. We forbid
@@ -828,7 +828,7 @@ def test_skew_fit_is_noncircular_signature():
 
 def test_save_load_roundtrip_skew_coef(tmp_path):
     """save/load round-trips skew_coef + skew_strength AND all existing fields exactly."""
-    from CDDF_analysis.znz_kernel import _sas_skewness_of_gamma
+    from CDDF_analysis.hbi.znz_kernel import _sas_skewness_of_gamma
     from numpy.polynomial.polynomial import polyvander2d
     gamma_fn = lambda x, zz: 0.2 + 0.25 * (x - 19.5) + 0.10 * (zz - 2.0)
     meas, _ = _synth_skewed_dx(gamma_fn, seed=5)
@@ -859,7 +859,7 @@ def test_load_backward_compat_no_skew_coef_is_byte_identical(tmp_path):
     """BACKWARD-COMPAT gate: an npz WITHOUT skew_coef (a pre-T2 cache) loads to
     skew_coef=None / skew_strength=0.0 ⇒ apply_znz_correction is BYTE-IDENTICAL to the
     pre-skew transform (the load-bearing default-OFF guarantee)."""
-    from CDDF_analysis.znz_kernel import apply_znz_correction
+    from CDDF_analysis.hbi.znz_kernel import apply_znz_correction
     # build a MEAN-only model (no skew, no median) and save it the OLD way (no skew keys)
     meas = _make_synthetic_meas(seed=11)
     znz = fit_znz_model(meas, deg_z=2, deg_xhat=1)   # skew_coef is None by default
