@@ -2,7 +2,7 @@
 # slurm/greatlakes/production/phase3d_postkernel_staged.sbatch
 #
 # Stage-parametrized variant of phase3d_postkernel.sbatch: runs ONE --stage of
-# CDDF_analysis/run_phase3d_postkernel.py per job, so each stage gets a gating
+# CDDF_analysis/hbi/run_phase3d_postkernel.py per job, so each stage gets a gating
 # 4-lens review before the next is launched. Stage 1 (kernel rebuild over 1150
 # processed-h5) is the heavy step; stages 2/3/s3 reuse the cached kernel and are fast.
 #
@@ -90,7 +90,7 @@ NJOBS=16
 for ST in ${STAGES}; do
 echo "[$(date)] phase3d_postkernel_staged STAGE=${ST} start (job ${SLURM_JOB_ID:-local}, ${NJOBS} workers)"
 
-python CDDF_analysis/run_phase3d_postkernel.py \
+python CDDF_analysis/hbi/run_phase3d_postkernel.py \
     --stage "${ST}" \
     --out "${OUT}" \
     --catalog-dir "${CAT}" \

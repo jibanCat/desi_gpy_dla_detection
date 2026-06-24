@@ -103,7 +103,7 @@ KERNEL_NPZ="${OUT}/posterior_kernel_2lpt0.npz"
 run_stage () {
     local ST="$1"
     echo "[$(date)] phase3d_floor190 STAGE=${ST} start (job ${SLURM_JOB_ID:-local}, ${NJOBS} workers)"
-    python CDDF_analysis/run_phase3d_postkernel.py \
+    python CDDF_analysis/hbi/run_phase3d_postkernel.py \
         --stage "${ST}" \
         --out "${OUT}" \
         --catalog-dir "${CAT}" \
@@ -140,7 +140,7 @@ run_stage 1
 # narrow one in-place at KERNEL_NPZ.
 echo "[$(date)] broaden_kernel sigma=${BROADEN_SIGMA} (in-place) -> ${KERNEL_NPZ}"
 BROAD_TMP="${OUT}/posterior_kernel_2lpt0_broad.npz"
-python CDDF_analysis/broaden_kernel.py "${BROADEN_SIGMA}" "${KERNEL_NPZ}" "${BROAD_TMP}"
+python CDDF_analysis/hbi/broaden_kernel.py "${BROADEN_SIGMA}" "${KERNEL_NPZ}" "${BROAD_TMP}"
 mv -f "${BROAD_TMP}" "${KERNEL_NPZ}"
 echo "[$(date)] broaden DONE -> ${KERNEL_NPZ}"
 

@@ -2,7 +2,7 @@
 # slurm/greatlakes/production/phase3d_postkernel.sbatch
 #
 # Phase-3d calibrated 2-D posterior-kernel pipeline (the 1/pi rate-form HBI fix).
-# Self-contained: runs CDDF_analysis/run_phase3d_postkernel.py in three stages on a
+# Self-contained: runs CDDF_analysis/hbi/run_phase3d_postkernel.py in three stages on a
 # single GreatLakes standard node. The human submits this AFTER the login-node build
 # + S2 gate are green:
 #
@@ -93,7 +93,7 @@ NJOBS=16
 
 echo "[$(date)] phase3d_postkernel start (job ${SLURM_JOB_ID:-local}, ${NJOBS} workers)"
 
-python CDDF_analysis/run_phase3d_postkernel.py \
+python CDDF_analysis/hbi/run_phase3d_postkernel.py \
     --stage all \
     --out "${OUT}" \
     --catalog-dir "${CAT}" \
@@ -114,7 +114,7 @@ python CDDF_analysis/run_phase3d_postkernel.py \
 
 # --- S3 falsifiers (settle kernel-vs-starvation; reuse the stage-1 kernel cache) ---
 echo "[$(date)] phase3d_postkernel S3 falsifiers (prior-only null + dense-synthetic)"
-python CDDF_analysis/run_phase3d_postkernel.py \
+python CDDF_analysis/hbi/run_phase3d_postkernel.py \
     --stage s3_all \
     --out "${OUT}" \
     --catalog-dir "${CAT}" \
