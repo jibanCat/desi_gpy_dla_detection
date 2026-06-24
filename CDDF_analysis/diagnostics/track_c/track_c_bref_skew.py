@@ -17,10 +17,10 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.ab_loa0_fp_baseline import (
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import (
     build_ingredients, DEF_CAT, DEF_TRUTH, DEF_BAL, DEF_KERNEL, DEF_LOA0_PRODUCT,
 )
-from CDDF_analysis.cddf_catalog_hbi import _zbin_index, _fine_z_grid
+from CDDF_analysis.hbi.cddf_catalog_hbi import _zbin_index, _fine_z_grid
 
 
 def _mode_kde(x, bw=None):
@@ -140,7 +140,7 @@ def main(argv=None):
     # mass-weighted mean of the N-response (summed over z) per op detection.
     d = np.load(args.kernel, allow_pickle=True)
     kappa = d["kappa"].astype(np.float64)           # (n_obs, n_N, n_z)
-    from CDDF_analysis.cddf_catalog_hbi import build_fine_grid
+    from CDDF_analysis.hbi.cddf_catalog_hbi import build_fine_grid
     logN_lo, logN_hi, N_b, dN_b = build_fine_grid(cfg)
     mids = 0.5 * (np.asarray(logN_lo, float) + np.asarray(logN_hi, float))
     n_obs = kappa.shape[0]

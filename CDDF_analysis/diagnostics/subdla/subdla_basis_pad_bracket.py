@@ -40,9 +40,9 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import ab_loa0_fp_baseline as AB
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery, tilted_truth_reductions
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery, tilted_truth_reductions
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     _draw_beta_cell, _slice_active_unitC, _rescale_unitC_active,
     _apply_C_to_M, v3x_fit_map, v3x_reduce, C_FLOOR,
     load_and_cut_catalog, _build_qso_lookup, HBIConfig,
@@ -288,7 +288,7 @@ def padding_truth_dndx():
     ql = _build_qso_lookup(cfg)
     cat_cut, truth_cut19, is_TP, good_mask, meta = load_and_cut_catalog(
         cfg, truth_nhi_floor=19.0, qso_lookup=ql, host_truth_floor=19.0)
-    from CDDF_analysis.cddf_catalog_hbi import build_pathlength, build_fine_grid
+    from CDDF_analysis.hbi.cddf_catalog_hbi import build_pathlength, build_fine_grid
     X_tot, n_sl = build_pathlength(cfg, qso_lookup=ql)
     lo, hi, N_b, dN_b = build_fine_grid(cfg)
     t = tilted_truth_reductions(cfg, truth_cut19, lo, hi, N_b, dN_b, X_tot, dalpha=0.0)

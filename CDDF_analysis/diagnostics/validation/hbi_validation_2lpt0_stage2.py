@@ -23,12 +23,12 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     truth_reductions, joint_mc_errors, make_v3x_refit_fn,
 )
-from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients
-from CDDF_analysis.wall1_explain_partA import loa0_full_posterior_mc
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients
+from CDDF_analysis.hbi.wall1_explain_partA import loa0_full_posterior_mc
 
 
 def _band(samples, lo=16, hi=84):

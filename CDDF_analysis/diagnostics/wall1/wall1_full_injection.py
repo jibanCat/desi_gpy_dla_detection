@@ -35,15 +35,15 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     HBIConfig, load_molly_matrix, load_and_cut_catalog, build_fine_grid,
     regenerate_molly_counts, make_C_interpolator, build_pathlength,
     make_fp_model, make_rho_interpolator, _build_qso_lookup, v3x_refit,
     _op_mask_and_slots, joint_mc_errors, make_v3x_refit_fn,
 )
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery, tilted_truth_reductions
-from CDDF_analysis.run_remp_kernel import compute_R_response, assign_R_emp_to_catalog
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery, tilted_truth_reductions
+from CDDF_analysis.hbi.run_remp_kernel import compute_R_response, assign_R_emp_to_catalog
 
 # the loa-124 untilted truth that defines the FROZEN R_emp response (design §2/§5.3:
 # the response is measured ONCE on the untilted truth-match and NEVER rebuilt from the

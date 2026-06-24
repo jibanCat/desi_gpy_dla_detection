@@ -37,10 +37,10 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.cddf_tilt_closure import (
+from CDDF_analysis.hbi.cddf_tilt_closure import (
     tilt_weight, tilted_truth_reductions, LOGN_PIVOT,
 )
-from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients
 
 
 def parse_wall1_result(tsv_path):

@@ -25,8 +25,8 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import ab_loa0_fp_baseline as AB
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery
+from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
 
 # the floor-19.0 rebuild inputs (the task's three repointed knobs)
 FLOOR190_KERNEL = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"

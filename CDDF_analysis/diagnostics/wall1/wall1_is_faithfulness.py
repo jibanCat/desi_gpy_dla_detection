@@ -39,10 +39,10 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     HBIConfig, load_molly_matrix, load_and_cut_catalog, _build_qso_lookup,
 )
-from CDDF_analysis.cddf_tilt_closure import tilt_weight, LOGN_PIVOT
+from CDDF_analysis.hbi.cddf_tilt_closure import tilt_weight, LOGN_PIVOT
 
 
 # defaults mirror wall1_full_injection.py

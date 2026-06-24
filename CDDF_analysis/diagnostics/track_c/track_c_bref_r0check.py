@@ -22,12 +22,12 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.ab_loa0_fp_baseline import (
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import (
     build_ingredients, DEF_CAT, DEF_TRUTH, DEF_BAL, DEF_KERNEL, DEF_LOA0_PRODUCT,
 )
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery
-from CDDF_analysis.cddf_catalog_hbi import build_fine_grid, _fine_z_grid
-from CDDF_analysis import znz_kernel as Z
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
+from CDDF_analysis.hbi.cddf_catalog_hbi import build_fine_grid, _fine_z_grid
+from CDDF_analysis.hbi import znz_kernel as Z
 
 
 def _fit_quantile_2d(xhat, z, dx, x_ref, z_ref, deg_x, deg_z, q=0.5, n_iter=30):

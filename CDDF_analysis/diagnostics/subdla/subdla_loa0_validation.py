@@ -27,8 +27,8 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import ab_loa0_fp_baseline as AB
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery
+from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
 
 
 # cumulative report limits: 19.5 floor + 0.1-dex steps through 20.3, then the DLA tier

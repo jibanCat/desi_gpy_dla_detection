@@ -41,8 +41,8 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     truth_reductions, make_v3x_refit_fn,
     _draw_beta_cell, _rescale_unitC_active, _apply_C_to_M, _cell_index,
     _slice_active_unitC, C_FLOOR, make_rho_interpolator,
@@ -50,9 +50,9 @@ from CDDF_analysis.cddf_catalog_hbi import (
     v3x_response_setup, v3x_response_rebuild_unitC, draw_response_params,
     v3x_fit_map, v3x_mc_inner_theta, v3x_reduce,
 )
-from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients
-from CDDF_analysis.wall1_explain_partA import loa0_full_posterior_mc
-from CDDF_analysis.znz_kernel import refit_znz_from_resample
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients
+from CDDF_analysis.hbi.wall1_explain_partA import loa0_full_posterior_mc
+from CDDF_analysis.hbi.znz_kernel import refit_znz_from_resample
 
 DEF_ZNZ = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/"
            "znz_2lpt0.npz")
@@ -119,7 +119,7 @@ def run_loa0(args, limits, seed):
     tr = truth_reductions(cfg, ing["truth_cut"], logN_lo, logN_hi, N_b, dN_b, X_tot)
     # truth dN/dX(z) per zbin per limit (for the per-z-bin coverage)
     zbins = np.asarray(cfg.zbins, float)
-    from CDDF_analysis.cddf_catalog_hbi import _zbin_index
+    from CDDF_analysis.hbi.cddf_catalog_hbi import _zbin_index
     t_nhi = np.asarray(ing["truth_cut"]["NHI"], float)
     t_z = np.asarray(ing["truth_cut"]["Z_DLA"], float)
     t_snr = np.asarray(ing["truth_cut"]["S2N_RED"], float)
@@ -284,7 +284,7 @@ def run_pm(args, limits, seed):
     tr = truth_reductions(cfg, ing["truth_cut"], logN_lo, logN_hi, N_b, dN_b, X_tot)
     # per-z-bin truth dN/dX (same pattern as run_loa0)
     zbins = np.asarray(cfg.zbins, float)
-    from CDDF_analysis.cddf_catalog_hbi import _zbin_index
+    from CDDF_analysis.hbi.cddf_catalog_hbi import _zbin_index
     t_nhi = np.asarray(ing["truth_cut"]["NHI"], float)
     t_z = np.asarray(ing["truth_cut"]["Z_DLA"], float)
     t_snr = np.asarray(ing["truth_cut"]["S2N_RED"], float)

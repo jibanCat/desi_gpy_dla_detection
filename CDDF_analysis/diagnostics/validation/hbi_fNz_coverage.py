@@ -34,8 +34,8 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     truth_reductions,
     _draw_beta_cell, _rescale_unitC_active, _apply_C_to_M, _cell_index,
     _slice_active_unitC, C_FLOOR, _zbin_index, _bin_index_logN,
@@ -43,8 +43,8 @@ from CDDF_analysis.cddf_catalog_hbi import (
     v3x_response_setup, v3x_response_rebuild_unitC, draw_response_params,
     v3x_fit_map, v3x_mc_inner_theta, v3x_reduce,
 )
-from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients
-from CDDF_analysis.znz_kernel import refit_znz_from_resample
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients
+from CDDF_analysis.hbi.znz_kernel import refit_znz_from_resample
 
 # Defaults shared with hbi_validation_2lpt0_stage3.py / ab_loa0_fp_baseline.py
 DEF_ZNZ = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/"

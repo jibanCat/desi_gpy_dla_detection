@@ -35,12 +35,12 @@ if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
 # Reuse stage3 infrastructure verbatim
-from CDDF_analysis.hbi_validation_2lpt0_stage3 import (
+from CDDF_analysis.diagnostics.validation.hbi_validation_2lpt0_stage3 import (
     DEF_ZNZ, DEF_KERNEL, DEF_LOA0, DEF_CAT, DEF_TRUTH, DEF_BAL,
     MODES, MODE_CFG, run_pm,
 )
-from CDDF_analysis.ab_loa0_fp_baseline import build_ingredients, DEF_LYAONLY_MOLLY
-from CDDF_analysis.cddf_catalog_hbi import truth_reductions
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients, DEF_LYAONLY_MOLLY
+from CDDF_analysis.hbi.cddf_catalog_hbi import truth_reductions
 
 
 def _cov_bin(samp_col, truth_val):
@@ -317,7 +317,7 @@ def main(argv=None):
     # Temporarily restrict MODES in stage3 to only what we need (avoid wasted MC)
     # We do this by monkey-patching MODE_CFG visibility — simpler: just call run_pm
     # with a mock that only processes the requested modes.
-    import CDDF_analysis.hbi_validation_2lpt0_stage3 as S3
+    import CDDF_analysis.diagnostics.validation.hbi_validation_2lpt0_stage3 as S3
     # Override MODES in the module to restrict which bands are computed
     original_modes = S3.MODES
     S3.MODES = tuple(modes_run)

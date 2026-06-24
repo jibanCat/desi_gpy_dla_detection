@@ -31,12 +31,12 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.ab_loa0_fp_baseline import (
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import (
     build_ingredients, _resolve_molly,
     DEF_CAT, DEF_TRUTH, DEF_BAL, DEF_KERNEL, DEF_LOA0_PRODUCT,
 )
-from CDDF_analysis.cddf_tilt_closure import baseline_recovery
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     _cell_index, _zbin_index, _bin_index_logN, make_C_interpolator,
     C_FLOOR, _apply_C_to_M,
 )
@@ -288,11 +288,11 @@ def main(argv=None):
     print("H3  M_b normalizer vs independent dX(z)")
     print("=" * 78)
     # rebuild M_meta to inspect PX (pathlength per fine-z, C-free) and C-applied M
-    from CDDF_analysis.cddf_catalog_hbi import build_M_b, build_fine_grid, _fine_z_grid
+    from CDDF_analysis.hbi.cddf_catalog_hbi import build_M_b, build_fine_grid, _fine_z_grid
     logN_lo, logN_hi, N_b, dN_b = build_fine_grid(cfg)
     qlo = ing.get("qzl"); qhi = ing.get("qzh"); qsn = ing.get("qsn")
     # build_ingredients doesn't return per-sl arrays directly; rebuild via build_pathlength
-    from CDDF_analysis.cddf_catalog_hbi import build_pathlength, _build_qso_lookup
+    from CDDF_analysis.hbi.cddf_catalog_hbi import build_pathlength, _build_qso_lookup
     ql = _build_qso_lookup(cfg)
     _, _, qzl, qzh, qsn, Xcalc = build_pathlength(cfg, qso_lookup=ql, return_per_sl=True)
     z_edges_fine = _fine_z_grid(cfg)
@@ -300,7 +300,7 @@ def main(argv=None):
                        z_edges_fine, Xcalc, cfg)
     PXz = M_meta["PX"].sum(axis=0)  # total pathlength per fine-z bin (C-free)
     # map fine-z -> coarse-z and sum
-    from CDDF_analysis.cddf_catalog_hbi import _fine_to_coarse_zmap
+    from CDDF_analysis.hbi.cddf_catalog_hbi import _fine_to_coarse_zmap
     zfmap = _fine_to_coarse_zmap(z_edges_fine, zbins)
     X_from_M = np.zeros(n_zb)
     for kz in range(len(zfmap)):

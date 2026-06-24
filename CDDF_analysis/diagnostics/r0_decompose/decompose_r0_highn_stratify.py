@@ -45,11 +45,11 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis.ab_loa0_fp_baseline import (
+from CDDF_analysis.hbi.ab_loa0_fp_baseline import (
     build_ingredients, DEF_CAT, DEF_TRUTH, DEF_BAL,
     DEF_KERNEL, DEF_LOA0_PRODUCT,
 )
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     LYA_REST, _build_qso_lookup,
 )
 

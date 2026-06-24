@@ -46,9 +46,9 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import ab_loa0_fp_baseline as AB
-from CDDF_analysis.cddf_catalog_hbi import _fine_z_grid
-from CDDF_analysis.znz_kernel import measure_c_nz, fit_c_nz_model
+from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
+from CDDF_analysis.hbi.cddf_catalog_hbi import _fine_z_grid
+from CDDF_analysis.hbi.znz_kernel import measure_c_nz, fit_c_nz_model
 
 
 class _Args:

@@ -8,7 +8,7 @@ splitted files.
 '''
 import h5py
 import numpy as np
-from .qso_loader import QSOLoader
+from CDDF_analysis.qso_loader import QSOLoader
 
 def mat_combine(processed_files, out_filename, chunk_size, maxshape_size):
     '''

@@ -19,11 +19,11 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-from CDDF_analysis import ab_loa0_fp_baseline as AB
-from CDDF_analysis.cddf_catalog_hbi import (
+from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
+from CDDF_analysis.hbi.cddf_catalog_hbi import (
     v3x_reduce, omega_hi_prefactor,
 )
-from CDDF_analysis.track_c_perz_band import (
+from CDDF_analysis.hbi.track_c_perz_band import (
     _set_forward_cfg, perz_dndx_from_fbk, perz_omega_from_fbk, truth_fNz,
     truth_perz_integrals,
 )
