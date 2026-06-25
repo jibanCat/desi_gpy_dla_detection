@@ -79,7 +79,7 @@ STAGES="${STAGES:-build 2 3}"
 for ST in ${STAGES}; do
 echo "[$(date)] remp_kernel STAGE=${ST} start (job ${SLURM_JOB_ID:-local}, ${NJOBS} workers)"
 
-python CDDF_analysis/run_remp_kernel.py \
+python CDDF_analysis/hbi/run_remp_kernel.py \
     --stage "${ST}" \
     --out "${OUT}" \
     --catalog-dir "${CAT}" \

@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from scipy.stats import skewnorm
 
-from CDDF_analysis.znz_kernel import (
+from CDDF_analysis.hbi.znz_kernel import (
     fit_forward_response,
     measure_forward_response,
     ForwardResponseModel,
@@ -520,7 +520,7 @@ def test_forward_fit_weighted_subbin_moment_matches_replication():
     sub-bin EDGES are set by unweighted np.quantile (preserving unit-weight byte-identity),
     so we compare the cell moments computed on the SAME edge geometry rather than the fitted
     surfaces (whose edges drift under replication)."""
-    from CDDF_analysis.znz_kernel import _empirical_forward_cells
+    from CDDF_analysis.hbi.znz_kernel import _empirical_forward_cells
     rng = np.random.default_rng(3)
     n = 60000
     N_true = rng.uniform(19.7, 21.3, n)
@@ -557,7 +557,7 @@ def test_forward_fit_weights_noncircular_signature():
 def test_refit_forward_response_unit_weight_reproduces_point():
     """refit_forward_response_from_resample(rfr, ones) reproduces the frozen point
     ForwardResponseModel surfaces to ~1e-9 (the Stage-III unit-weight invariance)."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         build_forward_response_fit_resample, refit_forward_response_from_resample)
     meas = _synthetic_forward_meas(seed=23, n=120000)
     det_tids = np.arange(len(meas["N_true"]), dtype=np.int64)   # 1 detection per TID
@@ -573,7 +573,7 @@ def test_refit_forward_response_unit_weight_reproduces_point():
 def test_refit_forward_response_perturbs_and_is_reproducible():
     """A non-unit boot_mult PERTURBS the surfaces (genuine resample), and the SAME mult
     gives the SAME fit (deterministic — no hidden RNG)."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         build_forward_response_fit_resample, refit_forward_response_from_resample)
     meas = _synthetic_forward_meas(seed=24, n=120000)
     det_tids = np.arange(len(meas["N_true"]), dtype=np.int64)
@@ -594,7 +594,7 @@ def test_refit_forward_response_perturbs_and_is_reproducible():
 def test_refit_forward_response_noncircular_signature():
     """refit_forward_response_from_resample takes only the resample table + multiplicity +
     fit knobs — no reduced statistic (the α=1/R0 tautology stays structurally impossible)."""
-    from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+    from CDDF_analysis.hbi.znz_kernel import refit_forward_response_from_resample
     sig = inspect.signature(refit_forward_response_from_resample)
     names = " ".join(sig.parameters).lower()
     assert "boot_mult" in names

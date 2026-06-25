@@ -33,8 +33,8 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
-from CDDF_analysis import cddf_catalog_hbi as H
-from CDDF_analysis import cddf_tilt_closure as T
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
+from CDDF_analysis.hbi import cddf_tilt_closure as T
 
 
 # ===========================================================================

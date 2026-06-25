@@ -6,7 +6,7 @@
 #   (a) confirmed per-spec cost ≈ 167 CPU-s (re-measured from the pilot log),
 #   (b) confirmed injected troughs recovered (dlacat NHI ≈ injected),
 #   (c) confirmed the R_emp re-bind + HBI reduce runs end-to-end
-#       (CDDF_analysis/wall1_full_injection.py --arm <pilot_arm>),
+#       (CDDF_analysis/diagnostics/wall1/wall1_full_injection.py --arm <pilot_arm>),
 #   AND a PI go.
 #
 # Two injected arms (the Δα=0 control REUSES the loa-124 production catalog — zero
@@ -79,5 +79,5 @@ for DALPHA in 0.5 -0.5; do
 done
 
 echo "[wall1-full] both arms submitted. Reduce each with:"
-echo "  python CDDF_analysis/wall1_full_injection.py --arm ${GL_SCRATCH}/wall1_inject/full_dalpha0.5  --label plus"
-echo "  python CDDF_analysis/wall1_full_injection.py --arm ${GL_SCRATCH}/wall1_inject/full_dalpha-0.5 --label minus"
+echo "  python CDDF_analysis/diagnostics/wall1/wall1_full_injection.py --arm ${GL_SCRATCH}/wall1_inject/full_dalpha0.5  --label plus"
+echo "  python CDDF_analysis/diagnostics/wall1/wall1_full_injection.py --arm ${GL_SCRATCH}/wall1_inject/full_dalpha-0.5 --label minus"

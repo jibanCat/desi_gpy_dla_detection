@@ -65,7 +65,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def remp_ingredients():
     """Build the R_emp ingredients ONCE (the EXACT cached-build config)."""
-    from CDDF_analysis.cddf_catalog_hbi import (
+    from CDDF_analysis.hbi.cddf_catalog_hbi import (
         HBIConfig, load_molly_matrix, load_and_cut_catalog, build_fine_grid,
         _build_qso_lookup, _fine_z_grid,
     )
@@ -93,7 +93,7 @@ def remp_ingredients():
 
 def test_rebind_reproduces_build_R_emp_byte_for_byte(remp_ingredients):
     """assign_R_emp_to_catalog(compute_R_response(...), <same cat>) == build_R_emp(...)."""
-    from CDDF_analysis.run_remp_kernel import (
+    from CDDF_analysis.hbi.run_remp_kernel import (
         build_R_emp, compute_R_response, assign_R_emp_to_catalog,
     )
 
@@ -124,7 +124,7 @@ def test_rebind_reproduces_cached_npz_byte_for_byte(remp_ingredients):
     """The re-bind reproduces the on-disk frozen r_emp kappa to bit precision."""
     if not os.path.exists(CACHED_NPZ):
         pytest.skip(f"cached r_emp npz absent: {CACHED_NPZ}")
-    from CDDF_analysis.run_remp_kernel import (
+    from CDDF_analysis.hbi.run_remp_kernel import (
         compute_R_response, assign_R_emp_to_catalog,
     )
 

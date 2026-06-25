@@ -16,7 +16,7 @@ drop, K prefactor, nearest-cell molly lookup, omega-on-fine-grid).
 import numpy as np
 import pytest
 
-from CDDF_analysis import cddf_catalog_hbi as H
+from CDDF_analysis.hbi import cddf_catalog_hbi as H
 
 
 def N_to_logN_center(N):
@@ -540,7 +540,7 @@ def _tiny_forward_model(tmp_path, mu_b=0.05, sigma=0.12, skew=0.9,
     surfaces (one SNR × one z cell) so the analytic skew-normal density is exactly known,
     for the T-BC forward-A normalization test. N_skew_collapse pushed to 99 so the skew is
     NOT ramped within the test N-range."""
-    from CDDF_analysis.znz_kernel import ForwardResponseModel, save_forward_response
+    from CDDF_analysis.hbi.znz_kernel import ForwardResponseModel, save_forward_response
     frm = ForwardResponseModel(
         mu_coef=np.array([[[mu_b]]]),           # (1 SNR, 1 z, deg_N+1=1) constant
         sig_coef=np.array([[[sigma]]]),
@@ -717,7 +717,7 @@ def _empirical_forward_model(tmp_path):
     """Build + save a ForwardResponseModel WITH a genuine EmpiricalForwardDensity from a
     synthetic truth-match whose width NARROWS with N (the high-N shape the parametric
     skew-normal overshoots). One SNR × one z cell so the density is fully determined."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         fit_forward_response, save_forward_response, _moment_to_skewnormal_vec)
     from scipy.stats import skewnorm
     rng = np.random.default_rng(7)
@@ -1011,7 +1011,7 @@ def test_deep_tier_discriminant_distinguishes_grow_vs_shrink():
     SHRINKS deep). This is the discriminant that re-classifies v2's WALL-1 FAIL away
     from the inherited MIGRATION_EXPECTED_V1 label."""
     import numpy as np
-    from CDDF_analysis import cddf_tilt_closure as TC
+    from CDDF_analysis.hbi import cddf_tilt_closure as TC
     cfg = H.HBIConfig(catalog_dir="x", truth_path="x", bal_cat_path="x",
                       molly_tsv="x", out_dir="x")
     logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
@@ -1043,7 +1043,7 @@ def test_evaluate_gate_v2_relabels_grow_deep_as_map_overresponse():
     must NOT inherit v1's MIGRATION_EXPECTED label — it must emit MAP_SLOPE_OVERRESPONSE
     _V2 (the demote signal). v1 with the same residual stays MIGRATION_EXPECTED_V1*."""
     import numpy as np
-    from CDDF_analysis import cddf_tilt_closure as TC
+    from CDDF_analysis.hbi import cddf_tilt_closure as TC
     cfg = H.HBIConfig(catalog_dir="x", truth_path="x", bal_cat_path="x",
                       molly_tsv="x", out_dir="x")
     logN_lo, logN_hi, N_b, dN_b = H.build_fine_grid(cfg)
@@ -1392,7 +1392,7 @@ def test_deep_tier_differential_distinguishes_flat_vs_grow():
     a FLAT body residual (v2 over-response GONE) as 'flat' and a v2-like growing
     residual as 'grows_deep'. This is what the v3 hard gate fires on, replacing the
     cumulative-Ω integral that drifts with L (bayesian F1, numerical F4/F6, cs F4)."""
-    from CDDF_analysis.cddf_tilt_closure import _deep_tier_differential_discriminant
+    from CDDF_analysis.hbi.cddf_tilt_closure import _deep_tier_differential_discriminant
     logN_lo = np.arange(20.0, 21.6, 0.1); logN_hi = logN_lo + 0.1
     mid = 0.5 * (logN_lo + logN_hi)
     f_tr = 10.0 ** (-21 - 1.9 * (mid - 20.3))
@@ -1739,7 +1739,7 @@ def test_S2_calc_cddf_reproduction_hard_gate():
     # (4) MUTATION SENSITIVITY: the gate MUST catch a doubled pi divide in the real
     # kernel. Monkeypatch _pi_N_at_logN so inv_pi is squared (== dividing by pi twice
     # in wp); the reproduced shape must then differ from the posterior count.
-    import CDDF_analysis.cddf_catalog_hbi as _Hmod
+    import CDDF_analysis.hbi.cddf_catalog_hbi as _Hmod
     _orig_piN = _Hmod._pi_N_at_logN
     try:
         def _double_pi(logN_vals, *a, **k):
@@ -2001,7 +2001,7 @@ def test_evaluate_gate_band_ess_kill_declares_unconstrained():
     UNCONSTRAINED in that tier (fall back to Gehrels), WITHOUT flipping the integrated
     headline verdict. We feed clean (passing) integrated pulls + a band_ess dict with
     one starved tier and assert the unconstrained-tier list captures exactly it."""
-    from CDDF_analysis import cddf_tilt_closure as TC
+    from CDDF_analysis.hbi import cddf_tilt_closure as TC
     logN_lo = np.array([20.0, 20.3, 20.6, 21.0, 22.0])
     nN = len(logN_lo)
     limits = [20.3, 20.6]
@@ -3108,7 +3108,7 @@ def test_stage3_response_fit_resample_aligns_to_shared_tid_basis():
     basis as the truth-match resample, so the SAME boot_mult re-weights θ_K AND (C,ρ,g) —
     the joint correlation. Re-weighting by a mult that zeroes a TID drops THAT TID's
     response rows from the (weighted) fit exactly as it drops its C/ρ counts."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         fit_znz_model, build_response_fit_resample, refit_znz_from_resample)
     mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly()
     tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good, cfg)
@@ -3148,7 +3148,7 @@ def test_stage3_response_correlated_with_C_rho_via_shared_mult():
     response-bias level and the completeness are correlated (the joint posterior Stage III
     targets). We assert the response b-level co-varies with the shared resample (a non-zero
     sample correlation between the re-fit b_ref and a C cell driven by the same mult)."""
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         fit_znz_model, build_response_fit_resample, refit_znz_from_resample)
     mm, cat, is_TP, truth, good, cfg = _stage2_synthetic_molly()
     tmr = H.build_truth_match_resample(mm, cat, is_TP, truth, good, cfg)
@@ -3185,7 +3185,7 @@ def _forward_stage3_fixture(tmp_path, seed=0):
     truth-match, a v3x forward `fwd` bundle, and a shared truth-match resample (tmr). Returns
     everything v3x_forward_response_setup / v3x_forward_rebuild_unitC need."""
     from astropy.table import Table
-    from CDDF_analysis.znz_kernel import (
+    from CDDF_analysis.hbi.znz_kernel import (
         measure_forward_response, fit_forward_response, save_forward_response)
     rng = np.random.default_rng(seed)
     n = 4000
@@ -3257,7 +3257,7 @@ def test_stage3_forward_rebuild_unit_weight_reproduces_frozen_unitC(tmp_path):
     """The DOMINANT invariance: a UNIT-weight forward refit + rebuild reproduces the FROZEN
     forward unitC (the same _slice_active_unitC the band rescales). Without this, the
     marginalized point would not match the frozen forward headline."""
-    from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+    from CDDF_analysis.hbi.znz_kernel import refit_forward_response_from_resample
     fx = _forward_stage3_fixture(tmp_path, seed=2)
     cfg = fx["cfg"]; fwd = fx["fwd"]
     kind, sctx = H.v3x_stage3_setup(cfg, fx["cat"], fx["good_mask"], fx["mm"], fwd, fx["tmr"])
@@ -3281,7 +3281,7 @@ def test_stage3_forward_rebuild_unit_weight_reproduces_frozen_unitC(tmp_path):
 def test_stage3_forward_rebuild_perturbs_with_boot_mult(tmp_path):
     """A non-unit boot_mult re-fits the forward kernel to a DIFFERENT A (the kernel-
     calibration uncertainty is genuinely carried — the band-widening lever)."""
-    from CDDF_analysis.znz_kernel import refit_forward_response_from_resample
+    from CDDF_analysis.hbi.znz_kernel import refit_forward_response_from_resample
     fx = _forward_stage3_fixture(tmp_path, seed=3)
     cfg = fx["cfg"]
     kind, sctx = H.v3x_stage3_setup(cfg, fx["cat"], fx["good_mask"], fx["mm"],
@@ -3489,7 +3489,7 @@ def test_driver_band_helper_recenter_off_byte_identical():
     """The driver's _band(point, recenter=False) reproduces the raw-quantile band
     bit-for-bit (the gated default), and recenter=True puts the median at the point with
     the spread preserved."""
-    from CDDF_analysis.track_c_td_band import _band
+    from CDDF_analysis.hbi.track_c_td_band import _band
     rng = np.random.default_rng(3)
     s = rng.normal(5.0, 1.0, 2000)
     b_raw = _band(s)
@@ -3616,7 +3616,7 @@ def test_build_C_nz_3d_g_identity_is_bit_identical():
     """When g≡1, _build_C_nz_3d's 3-D C·g reduces to the 2-D molly C broadcast over z,
     so _apply_C_to_{A,M} produce the SAME result as the 2-D path (the byte-identity
     contract the gated default relies on). This locks the threading invariant."""
-    from CDDF_analysis.znz_kernel import CNZModel
+    from CDDF_analysis.hbi.znz_kernel import CNZModel
     cfg, logN_lo, logN_hi, N_b, dN_b, z_edges, mm, kappa, cat_op, Xc = _kappa_path_fixture()
     n_zf = len(z_edges) - 1
     n_nhi = mm.completeness.shape[1]

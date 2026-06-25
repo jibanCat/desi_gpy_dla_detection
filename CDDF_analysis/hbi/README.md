@@ -1,4 +1,8 @@
-# `CDDF_analysis/hbi/` — Catalog-HBI DLA measurement (quick start)
+# `CDDF_analysis/hbi/` — Catalog-HBI DLA measurement
+
+For the shortest runnable path from a frozen catalog to a dN/dX/Omega/f(N) band,
+see **[QUICKSTART.md](QUICKSTART.md)**.
+
 
 The **catalog-HBI** estimator turns a GP-DLA detection catalog into a
 selection-corrected DLA population measurement — the column-density distribution
@@ -97,6 +101,7 @@ code repo), under `hbi/`.
 
 | module | role |
 |---|---|
-| `CDDF_analysis/cddf_catalog_hbi.py` | the catalog-HBI estimator (1/Vmax + FP subtraction + marked-Poisson MAP fit) |
-| `CDDF_analysis/run_phase3d_postkernel.py` | stage runner (kernel build, point fit, tilt-closure gate) |
+| `CDDF_analysis/hbi/cddf_catalog_hbi.py` | the catalog-HBI estimator (1/Vmax + FP subtraction + marked-Poisson MAP fit) |
+| `CDDF_analysis/hbi/run_remp_kernel.py` | empirical truth-match response (R_emp) kernel driver — builds the forward-response kernel (QUICKSTART Option A) |
+| `CDDF_analysis/hbi/run_phase3d_postkernel.py` | stage runner (kernel build, point fit, tilt-closure gate) |
 | `CDDF_analysis/calc_cddf.py` | raw feed-forward (uncorrected) baseline |
