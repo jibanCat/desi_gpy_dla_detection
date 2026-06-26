@@ -891,8 +891,9 @@ def omega_hi_prefactor(H0_km_s_Mpc=70.0):
     Units:
       - N in cm^-2
       - f(N) in cm^2
-      - so N*f(N)*dN is dimensionless
-      - K is dimensionless
+      - so N*f(N)*dN has units cm^-2
+      - K has units cm^2
+      - only their product Omega is dimensionless
 
     Uses cgs constants.
 
@@ -933,7 +934,8 @@ def omega_hi_from_cddf(
 
         Omega_HI(z) = K × Σ_j N_HI,j * f(N_HI,j, z) * ΔN_HI,j
 
-    where K = H₀ m_H / (c ρ_c) (dimensionless, ≈1.38×10⁻²³ for H₀=70).
+    where K = H₀ m_H / (c ρ_c) (units cm², ≈1.38×10⁻²³ for H₀=70; only the
+    product K·Σ N f ΔN is dimensionless).
     Error propagation assumes independence between N bins (Gaussian quadrature).
 
     Parameters
