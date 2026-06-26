@@ -933,7 +933,7 @@ def omega_hi_from_cddf(
 
         Omega_HI(z) = K × Σ_j N_HI,j * f(N_HI,j, z) * ΔN_HI,j
 
-    where K = H₀ m_H / (c ρ_c) (dimensionless, ~2.8×10⁻²⁸ for H₀=70).
+    where K = H₀ m_H / (c ρ_c) (dimensionless, ≈1.38×10⁻²³ for H₀=70).
     Error propagation assumes independence between N bins (Gaussian quadrature).
 
     Parameters
