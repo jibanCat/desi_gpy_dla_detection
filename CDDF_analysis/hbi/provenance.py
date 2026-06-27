@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -169,10 +170,14 @@ def _slug_token(key: str, value: Any) -> str:
         tok = tok.replace("_", "")
         return tok if value else ("no" + tok)
 
-    # list/tuple of numbers (zbins, edges): render as <prefix><first>-<last>.
+    # list/tuple (zbins, edges, model lists): if every element is numeric, render
+    # as <prefix><first>-<last>; otherwise (strings like ["null","dla"]) join the
+    # filesystem-safe stringified elements so non-numeric lists don't crash.
     if isinstance(value, (list, tuple)) and value:
         prefix = "z" if key == "zbins" else key.replace("_", "")
-        return f"{prefix}{_fmt_num(value[0])}-{_fmt_num(value[-1])}"
+        if all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in value):
+            return f"{prefix}{_fmt_num(value[0])}-{_fmt_num(value[-1])}"
+        return prefix + "-".join(_fs_safe(str(x)) for x in value)
 
     # generic scalar.
     return f"{key.replace('_', '')}{_fmt_num(value) if isinstance(value, (int, float)) else value}"
@@ -221,20 +226,50 @@ def _fs_safe(s: str) -> str:
 # --------------------------------------------------------------------------- #
 # privacy contagion                                                            #
 # --------------------------------------------------------------------------- #
+# Recognized spellings of the "mock" (shareable) privacy class, normalized by
+# strip+casefold. Anything else that is a non-empty string is treated as
+# real-LOA / non-shareable — the classifier fails CLOSED on typos.
+_MOCK_SPELLINGS = frozenset({"mock"})
+
+
+def _is_mock_class(raw: object) -> bool:
+    """True iff ``raw`` is a recognized 'mock' spelling (strip/casefold), False
+    for any other non-empty string. ``None``/empty/absent is NOT mock here (the
+    caller handles the no-signal default separately)."""
+    if not isinstance(raw, str):
+        return False
+    return raw.strip().casefold() in _MOCK_SPELLINGS
+
+
 def privacy_class(input_provs: list[dict]) -> dict:
     """Derive a result's privacy class from its inputs' privacy (contagious down).
 
-    A result is ``real-LOA`` iff ANY input's ``privacy.class`` is ``"real-LOA"``;
-    otherwise ``mock``. Only ``mock`` results are shareable. With no inputs the
-    result is ``mock`` (e.g. a pure-mock seed leaf).
+    FAIL-CLOSED: a result is ``mock`` (shareable) ONLY when every input's
+    ``privacy.class`` is a recognized mock spelling (case/space-insensitive). ANY
+    input whose class is ``"real-LOA"`` (any spelling) OR an unrecognized non-empty
+    string (a typo such as ``"Real-LOA"``, ``"real_loa"``, ``"REAL-LOA"``, or
+    ``"reel-loa"``) makes the whole result ``real-LOA`` + not shareable — privacy
+    can never be laundered by a misspelling.
+
+    With NO inputs (or inputs that carry no ``privacy`` signal at all) the result
+    defaults to ``mock`` — the pure-mock-seed case. A declared real-LOA dataset is
+    pinned non-shareable upstream (see ``ResultStore.commit_leaf``); this function
+    only governs input contagion.
 
     Each input is a provenance-like dict carrying at least
     ``{"privacy": {"class": ...}}``.
     """
-    is_real = any(
-        (inp.get("privacy") or {}).get("class") == "real-LOA"
-        for inp in (input_provs or [])
-    )
+    is_real = False
+    for inp in (input_provs or []):
+        raw = (inp.get("privacy") or {}).get("class")
+        # No privacy signal on this input → no contagion from it (mock-by-default
+        # seed inputs / unflagged dicts). Only an actual, non-mock, non-empty
+        # class string is contagious.
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            continue
+        if not _is_mock_class(raw):
+            is_real = True
+            break
     cls = "real-LOA" if is_real else "mock"
     return {"class": cls, "shareable": cls == "mock"}
 
@@ -243,8 +278,15 @@ def privacy_class(input_provs: list[dict]) -> dict:
 # atomic provenance writer (README.md + provenance.json)                       #
 # --------------------------------------------------------------------------- #
 def _atomic_write(path: Path, text: str) -> None:
-    """Write ``text`` to ``path`` atomically (write tmp in same dir + os.replace)."""
-    tmp = path.with_name(path.name + ".tmp")
+    """Write ``text`` to ``path`` atomically (write tmp in same dir + os.replace).
+
+    The tmp leaf is made unique per process+call (``pid`` + a uuid4 hex) so two
+    processes writing the SAME target file don't share a fixed ``<name>.tmp`` and
+    race on ``os.replace`` (the loser would otherwise hit FileNotFoundError when
+    its tmp was already renamed away). ``os.replace`` of the unique tmp onto the
+    final path stays atomic.
+    """
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
     tmp.write_text(text)
     os.replace(tmp, path)
 

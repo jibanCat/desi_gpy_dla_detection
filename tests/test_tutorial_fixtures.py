@@ -157,6 +157,63 @@ def test_leaf_present_but_file_absent_falls_back(monkeypatch, tmp_path):
     assert got == str(TUTORIAL_DATA_DIR / "loa0_fp_product_lyaonly1025.npz")
 
 
+def test_real_loa_leaf_falls_back_to_committed(monkeypatch, tmp_path):
+    """REGRESSION (Fix 5): a store leaf for the queried (dataset, stage) whose
+    privacy is real-LOA must NEVER be handed to a notebook — the shim drops to the
+    committed mock fixture even though the leaf exists AND contains the file."""
+    from CDDF_analysis.results_store import ResultStore
+
+    store_root = tmp_path / "cddf_store"
+    store = ResultStore(root=str(store_root))
+    # A 2lpt0/kernel leaf declared real-LOA (e.g. contagion from a real input).
+    leaf = store.new(
+        dataset="2lpt0", stage="kernel", producer="fake",
+        config={"kind": "forward"}, inputs=[], privacy="real-LOA",
+    )
+    with open(leaf.path("forward_response_2lpt0.npz"), "wb") as f:
+        f.write(b"REAL-LOA-SECRET")
+    store.commit_leaf(
+        leaf, what="real kernel", cli="x", regen_cmd="x",
+        outputs=[("forward_response_2lpt0.npz", "real")],
+    )
+    monkeypatch.setenv("CDDF_STORE", str(store_root))
+
+    got = tutorial_fixture("forward_response_2lpt0.npz")
+    committed = str(TUTORIAL_DATA_DIR / "forward_response_2lpt0.npz")
+    assert got == committed, "must not return the real-LOA leaf path"
+    # and confirm it never points at the real_loa subtree.
+    assert "real_loa" not in got
+    with open(got, "rb") as f:
+        assert f.read() != b"REAL-LOA-SECRET"
+
+
+def test_real_loa_partition_path_not_returned(monkeypatch, tmp_path):
+    """Even if a (typo'd) leaf class read 'mock' but the leaf physically lives
+    under the real_loa/ partition, the shim still refuses it (path component
+    check)."""
+    from CDDF_analysis.results_store import ResultStore
+
+    store_root = tmp_path / "cddf_store"
+    store = ResultStore(root=str(store_root))
+    leaf = store.new(
+        dataset="2lpt0", stage="kernel", producer="fake",
+        config={"kind": "forward"}, inputs=[], privacy="real-LOA",
+    )
+    with open(leaf.path("forward_response_2lpt0.npz"), "wb") as f:
+        f.write(b"SECRET")
+    store.commit_leaf(
+        leaf, what="real kernel", cli="x", regen_cmd="x",
+        outputs=[("forward_response_2lpt0.npz", "real")],
+    )
+    # the leaf must have landed under real_loa/ (sanity for the test premise).
+    assert "real_loa" in leaf.dir
+    monkeypatch.setenv("CDDF_STORE", str(store_root))
+
+    got = tutorial_fixture("forward_response_2lpt0.npz")
+    assert got == str(TUTORIAL_DATA_DIR / "forward_response_2lpt0.npz")
+    assert "real_loa" not in got
+
+
 def test_ambiguous_leaves_fall_back(monkeypatch, tmp_path):
     """>1 leaf for (dataset, stage) -> ResultStore.get raises LookupError -> the
     shim falls back silently to committed (does not propagate the error)."""

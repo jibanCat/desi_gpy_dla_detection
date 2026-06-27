@@ -15,7 +15,8 @@ Flags:
   --dataset      one of pipeline.datasets.DATASETS (2lpt0, real_loa, 2lpt1, london0)
   --stage        a single stage name, or ``all`` (the whole DAG, topo-sorted)
   --store        the store root (else $CDDF_STORE)
-  --resume       skip a stage whose config-hash leaf already exists + is committed
+  --resume       skip a stage ONLY when ITS exact config-hash leaf is already
+                 committed; a changed science knob → new hash → the stage re-runs
   --dry-run      print the topo order + the leaf ids it WOULD create; run nothing
   --cluster-emit make cluster_only stages print their sbatch line instead of raising
 """
@@ -34,14 +35,19 @@ from pipeline import stages as ST
 # dry-run leaf-id preview                                                      #
 # --------------------------------------------------------------------------- #
 def _preview_leaf_id(store: ResultStore, ds: DS.DatasetInputs, stage_name: str) -> str:
-    """Best-effort: the leaf id a stage WOULD create, without running it. Cluster-
-    only stages have no leaf (return a marker)."""
+    """Best-effort: the EXACT leaf id a stage WOULD create, without running it.
+    Cluster-only stages have no leaf (return a marker)."""
     stage = ST.get_stage(stage_name)
     if stage.cluster_only:
         return "<cluster-only: no in-session leaf>"
-    # we don't know the config without running the wrapper's config-building code,
-    # so report the stage's store sub-path. The exact slug/hash is produced at run
-    # time; here we show the (privacy/dataset/store-stage) prefix the leaf lands under.
+    # the stage exposes the config it would build, so we can compute the exact
+    # slug/hash addressed leaf id (the same one --resume checks).
+    try:
+        leaf_id = ST.stage_leaf_id(store, stage_name, ds)
+        if leaf_id is not None:
+            return leaf_id
+    except Exception:
+        pass  # fall back to the prefix form if config-building is unavailable.
     store_stage = _store_stage_for(stage_name)
     sub = "real_loa" if ds.privacy == "real-LOA" else "mock"
     return f"{sub}/{ds.name}/{store_stage}/<slug>__<hash8>"
@@ -67,12 +73,19 @@ def _store_stage_for(stage_name: str) -> str:
 
 
 def _already_done(store: ResultStore, ds: DS.DatasetInputs, stage_name: str) -> bool:
-    """True iff a committed leaf already exists for this (dataset, store-stage).
-    Used by --resume. (We resume at the (dataset, stage) granularity; a config change
-    yields a new hash → a new leaf → not 'done', as the plan intends.)"""
-    store_stage = _store_stage_for(stage_name)
+    """True iff THIS stage's exact config-hash leaf already exists + is committed.
+
+    Used by --resume. Config-aware: it computes the leaf id the stage WOULD create
+    for the current config (via ``stages.stage_leaf_id``) and resume-skips ONLY when
+    that exact ``<slug>__<hash>`` leaf is committed. Editing a science knob changes
+    the hash → a different (not-yet-built) leaf id → NOT done → the stage re-runs into
+    a fresh leaf. (A stale leaf from the OLD config still exists, but it no longer
+    matches, so resume never silently reuses it.)"""
+    leaf_id = ST.stage_leaf_id(store, stage_name, ds)
+    if leaf_id is None:  # cluster-only stage: never an in-session leaf to resume.
+        return False
     try:
-        leaf = store.get(dataset=ds.name, stage=store_stage)
+        leaf = store.by_id(leaf_id)
     except LookupError:
         return False
     return leaf.status in ("current", "superseded")
@@ -91,7 +104,8 @@ def main(argv=None) -> int:
     p.add_argument("--store", default=None,
                    help="store root (else $CDDF_STORE)")
     p.add_argument("--resume", action="store_true",
-                   help="skip a stage whose committed leaf already exists")
+                   help="skip a stage only when its exact config-hash leaf is committed "
+                        "(a changed knob re-hashes → the stage re-runs)")
     p.add_argument("--dry-run", action="store_true",
                    help="print the topo order + would-create leaf ids; run nothing")
     p.add_argument("--cluster-emit", action="store_true",
@@ -142,8 +156,8 @@ def main(argv=None) -> int:
         blocking = set(stage.deps) & deferred
         if blocking:
             print(f"[deferred] SKIP {name} — needs cluster output of "
-                  f"{', '.join(sorted(blocking))} (run those on the cluster, then re-run "
-                  f"with --ingest)")
+                  f"{', '.join(sorted(blocking))} (run those on the cluster; the produced "
+                  f"leaf is then registered in the store)")
             deferred.add(name)
             continue
         if args.resume and _already_done(store, ds, name):

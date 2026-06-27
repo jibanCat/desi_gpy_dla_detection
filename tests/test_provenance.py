@@ -17,6 +17,7 @@ from CDDF_analysis.hbi.provenance import (
     make_slug,
     privacy_class,
     write_provenance,
+    _atomic_write,
 )
 
 
@@ -126,6 +127,46 @@ def test_make_slug_all_defaults_is_base():
     assert " " not in slug and "/" not in slug
 
 
+def test_make_slug_list_of_strings_does_not_crash():
+    """REGRESSION (Fix 1): a list/tuple-of-strings config value (e.g.
+    {"models": ["null", "dla"]}) must NOT raise ValueError from float() — it
+    renders a clean, fs-safe slug by joining the stringified elements."""
+    slug = make_slug({"models": ["null", "dla"]}, {})
+    assert isinstance(slug, str) and slug
+    # fs-safe, and the element names survive.
+    for bad in (" ", "/", "\\", "\n", "\t"):
+        assert bad not in slug
+    assert "null" in slug and "dla" in slug
+
+
+def test_make_slug_tuple_of_strings_and_mixed_lists():
+    """A tuple-of-strings and a list with non-numeric entries both slug cleanly;
+    an all-numeric list still uses the compact <first>-<last> form."""
+    # tuple of strings.
+    s_tuple = make_slug({"models": ("null", "dla", "2dla")}, {})
+    assert "null" in s_tuple and "2dla" in s_tuple
+    # mixed (contains a non-numeric) -> join branch, never float().
+    s_mixed = make_slug({"edges": ["lo", 2.0, "hi"]}, {})
+    assert "lo" in s_mixed and "hi" in s_mixed
+    # all-numeric list keeps the compact first-last rendering.
+    s_num = make_slug({"zbins": [2.0, 2.5, 3.0, 3.5]}, {})
+    assert s_num == "z2-3.5"
+
+
+def test_make_slug_list_of_strings_via_store_new_does_not_raise(tmp_path, monkeypatch):
+    """REGRESSION (Fix 1): store.new(config={"models": [...]}) no longer raises.
+    Drives the slug path through the real ResultStore allocation."""
+    monkeypatch.setenv("CDDF_STORE", str(tmp_path / "store"))
+    from CDDF_analysis.results_store import ResultStore
+
+    store = ResultStore()
+    leaf = store.new(
+        dataset="2lpt0", stage="kernel", producer="p",
+        config={"models": ["null", "dla"]}, inputs=[], privacy="mock",
+    )
+    assert "null" in leaf.dir and "dla" in leaf.dir
+
+
 # --------------------------------------------------------------------------- #
 # privacy_class                                                                #
 # --------------------------------------------------------------------------- #
@@ -154,6 +195,43 @@ def test_privacy_class_empty_is_mock():
     p = privacy_class([])
     assert p["class"] == "mock"
     assert p["shareable"] is True
+
+
+@pytest.mark.parametrize("typo", ["Real-LOA", "real_loa", "REAL-LOA", "reel-loa",
+                                  "real loa", " real-loa ", "secret"])
+def test_privacy_class_fail_closed_on_typo(typo):
+    """REGRESSION (Fix 2): an unrecognized / mis-spelled input class is FAIL-CLOSED
+    — it must classify the result as real-LOA + non-shareable, never silently mock."""
+    p = privacy_class([{"privacy": {"class": typo}}])
+    assert p["class"] == "real-LOA", f"{typo!r} must not pass as shareable"
+    assert p["shareable"] is False
+
+
+def test_privacy_class_mock_spellings_are_shareable():
+    """Recognized mock spellings (case/space-insensitive) stay shareable."""
+    for spelling in ("mock", "Mock", "MOCK", " mock "):
+        p = privacy_class([{"privacy": {"class": spelling}}])
+        assert p["class"] == "mock"
+        assert p["shareable"] is True
+
+
+def test_privacy_class_no_signal_inputs_default_mock():
+    """Inputs that carry no privacy signal at all (no privacy dict / no class /
+    empty class) don't taint — a pure-mock seed stays shareable."""
+    inputs = [{"id": "seed"}, {"privacy": {}}, {"privacy": {"class": ""}}]
+    p = privacy_class(inputs)
+    assert p["class"] == "mock"
+    assert p["shareable"] is True
+
+
+def test_privacy_class_typo_contagion_in_mixed_inputs():
+    """One typo'd input among real mocks still poisons the whole result."""
+    p = privacy_class([
+        {"privacy": {"class": "mock"}},
+        {"privacy": {"class": "Real_LOA"}},  # typo
+    ])
+    assert p["class"] == "real-LOA"
+    assert p["shareable"] is False
 
 
 # --------------------------------------------------------------------------- #
@@ -235,3 +313,51 @@ def test_write_provenance_default_code_commit_is_git_stamp(tmp_path):
     rec = write_provenance(str(tmp_path), **kw)
     assert isinstance(rec["code_commit"], dict)
     assert "commit_short" in rec["code_commit"]
+
+
+# --------------------------------------------------------------------------- #
+# _atomic_write — unique tmp suffix, concurrent-write safe                     #
+# --------------------------------------------------------------------------- #
+def test_atomic_write_unique_tmp_suffix(tmp_path):
+    """REGRESSION (Fix 3): the tmp leaf is unique per call (not a fixed
+    '<name>.tmp'), so it embeds the pid + a uuid hex and leaves no fixed-name
+    artifact behind."""
+    target = tmp_path / "provenance.json"
+    _atomic_write(target, '{"ok": true}')
+    assert json.loads(target.read_text()) == {"ok": True}
+    # the old fixed tmp name must not linger.
+    assert not (tmp_path / "provenance.json.tmp").exists()
+    # no stray tmp files at all after a clean write.
+    assert not list(tmp_path.glob("provenance.json.tmp*"))
+
+
+def test_atomic_write_concurrent_same_leaf_no_race(tmp_path):
+    """REGRESSION (Fix 3, best-effort): many threads writing the SAME file
+    concurrently must not raise (no shared fixed-name tmp -> no os.replace race),
+    and the final file is valid JSON written by exactly one of them."""
+    import threading
+
+    target = tmp_path / "provenance.json"
+    n = 16
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(n)
+
+    def worker(i: int) -> None:
+        try:
+            barrier.wait()
+            for _ in range(20):
+                _atomic_write(target, json.dumps({"writer": i}))
+        except BaseException as exc:  # noqa: BLE001 - record any race failure
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent _atomic_write raised: {errors!r}"
+    # final file is valid JSON from one writer; no stray tmp files survive.
+    data = json.loads(target.read_text())
+    assert "writer" in data and 0 <= data["writer"] < n
+    assert not list(tmp_path.glob("provenance.json.tmp*"))

@@ -195,6 +195,107 @@ def test_repo_sentinel_doc_passes(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# (f) hardening regressions: walk-UP, fail-CLOSED layout, symlink, literal     #
+# --------------------------------------------------------------------------- #
+def test_B1_wrong_case_provenance_blocks(tmp_path, capsys):
+    """B1 bypass: a real-LOA provenance file named with a different CASE
+    (``Provenance.json``) must still taint its leaf — the filename match is
+    case-insensitive."""
+    leaf = tmp_path / "mock" / "ds" / "stage" / "leaf__deadbeef"
+    leaf.mkdir(parents=True, exist_ok=True)
+    rec = {"schema_version": "cddf-provenance/1",
+           "privacy": {"class": "real-LOA", "shareable": False}}
+    (leaf / "Provenance.json").write_text(json.dumps(rec))  # wrong case
+    data = leaf / "per_object_nhi.npz"
+    data.write_text("secret")
+
+    rc = _run([data], tmp_path)
+    assert rc == 1, "wrong-case real-LOA provenance must still block its sibling"
+    assert "per_object_nhi.npz" in capsys.readouterr().err
+
+
+def test_B2_missing_provenance_store_layout_fails_closed(tmp_path, capsys):
+    """B2 bypass: a staged artifact that sits in the store layout
+    ``{partition}/{dataset}/{stage}/{leaf}/`` but has NO provenance.json anywhere
+    up its chain must FAIL CLOSED (it could be a real-LOA artifact whose
+    provenance was simply not staged)."""
+    # NB: use the 'mock' partition name to exercise the layout fail-closed rule,
+    # NOT real_loa (which would trip the cheap partition rule and not prove the
+    # missing-provenance path).
+    leaf = tmp_path / "mock" / "loa_main" / "measurement" / "leaf__abc123"
+    leaf.mkdir(parents=True, exist_ok=True)
+    data = leaf / "per_object_nhi.npz"
+    data.write_text("could be real-LOA")  # NO provenance.json anywhere up.
+
+    rc = _run([data], tmp_path)
+    assert rc == 1, "store-layout file with no provenance must fail closed"
+    err = capsys.readouterr().err
+    assert "SUSPECT" in err
+    assert "per_object_nhi.npz" in err
+
+
+def test_B3_parent_only_provenance_taints_subdir(tmp_path, capsys):
+    """B3 bypass: a real-LOA provenance.json in an ANCESTOR (leaf) dir must taint
+    a file staged from a SUBDIR of that leaf — contagion is downward, so the walk
+    climbs past the immediate parent."""
+    leaf = tmp_path / "mock" / "ds" / "stage" / "leaf__cafef00d"
+    _write_provenance(leaf, privacy_class="real-LOA", shareable=False)
+    subdir = leaf / "nested" / "deeper"
+    subdir.mkdir(parents=True, exist_ok=True)
+    data = subdir / "buried.npz"
+    data.write_text("still secret")
+
+    rc = _run([data], tmp_path)
+    assert rc == 1, "real-LOA in an ancestor must taint a buried subdir file"
+    err = capsys.readouterr().err
+    assert "buried.npz" in err
+    assert "real-LOA" in err
+
+
+def test_symlink_component_to_real_loa_blocks(tmp_path, capsys):
+    """A staged path that LITERALLY contains a ``real_loa/`` component must block
+    on the literal component name, regardless of where the symlink resolves."""
+    # benign real target dir + a symlink named 'real_loa' pointing at it.
+    target = tmp_path / "benign_target"
+    target.mkdir()
+    (target / "anything.txt").write_text("x")
+    link = tmp_path / "real_loa"
+    link.symlink_to(target, target_is_directory=True)
+
+    staged = link / "anything.txt"  # literal path contains 'real_loa/'
+    rc = _run([staged], tmp_path)
+    assert rc == 1, "literal real_loa/ component must block even via a symlink"
+    assert "real_loa" in capsys.readouterr().err
+
+
+def test_symlink_target_under_real_loa_blocks(tmp_path, capsys):
+    """A staged path whose RESOLVED target descends through real_loa/ is also
+    blocked (the resolved-realpath belt-and-suspenders check)."""
+    real_dir = tmp_path / "real_loa" / "ds" / "stage" / "leaf__1"
+    real_dir.mkdir(parents=True, exist_ok=True)
+    secret = real_dir / "secret.npz"
+    secret.write_text("real")
+    # a benignly-named symlink pointing INTO the real_loa subtree.
+    link = tmp_path / "looks_innocent.npz"
+    link.symlink_to(secret)
+
+    rc = _run([link], tmp_path)
+    assert rc == 1, "a symlink whose target is under real_loa/ must block"
+    assert "real_loa" in capsys.readouterr().err
+
+
+def test_mock_leaf_with_valid_provenance_still_passes_after_hardening(tmp_path):
+    """Belt: the hardened walk-up / fail-closed rules must NOT regress the clean
+    mock case — a store-layout file WITH a valid mock provenance up its chain
+    passes."""
+    leaf = tmp_path / "mock" / "2lpt0" / "kernel" / "base__feedbeef"
+    _write_provenance(leaf, privacy_class="mock", shareable=True)
+    data = leaf / "forward_response.npz"
+    data.write_text("ok")
+    assert _run([data], tmp_path) == 0
+
+
+# --------------------------------------------------------------------------- #
 # field-name guard: confirm we key on the producer's actual schema            #
 # --------------------------------------------------------------------------- #
 def test_field_names_match_producer():

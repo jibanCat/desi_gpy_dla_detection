@@ -30,6 +30,7 @@ from CDDF_analysis.hbi.provenance import (
     write_provenance,
     privacy_class,
     git_stamp,
+    _atomic_write,
 )
 
 __all__ = ["ResultStore", "ResultLeaf"]
@@ -40,9 +41,12 @@ _MANIFEST_JSON = "MANIFEST.json"
 # the privacy-class -> top-level subdir map (§4).
 _PRIVACY_SUBDIR = {"mock": "mock", "real-LOA": "real_loa"}
 
+# Documents the manifest `results` table column order. Kept in sync with the
+# CREATE TABLE in `_ensure_schema` / the row dict in `_row_from_prov` — the live
+# column is `commit_stamp` (a serialized git_stamp record), NOT a bare `commit`.
 _RESULTS_COLUMNS = [
     "id", "dataset", "stage", "producer", "config_hash", "config_json",
-    "selection", "commit", "inputs_json", "outputs_json", "date", "status",
+    "selection", "commit_stamp", "inputs_json", "outputs_json", "date", "status",
     "supersedes", "used_by",
 ]
 
@@ -335,11 +339,15 @@ class ResultStore:
             conn.commit()
 
     def _write_json_mirror(self) -> None:
-        """Regenerate the human-diffable MANIFEST.json from the sqlite table."""
+        """Regenerate the human-diffable MANIFEST.json from the sqlite table.
+
+        Written via the same atomic tmp+os.replace helper the provenance writer
+        uses, so a concurrent reader never sees a half-written mirror and two
+        regen processes can't corrupt each other's mirror file."""
         with self._connect() as conn:
             rows = [dict(r) for r in conn.execute(
                 "SELECT * FROM results ORDER BY id")]
-        (self.root / _MANIFEST_JSON).write_text(json.dumps(rows, indent=2))
+        _atomic_write(self.root / _MANIFEST_JSON, json.dumps(rows, indent=2))
 
     # ----- consumer side: get / by_id / list ---------------------------------
     def _leaf_from_row(self, row) -> ResultLeaf:

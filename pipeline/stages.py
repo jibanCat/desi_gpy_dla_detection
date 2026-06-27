@@ -36,10 +36,13 @@ from pipeline.datasets import DatasetInputs
 
 __all__ = [
     "Stage",
+    "StageConfig",
     "STAGES",
     "ClusterOnlyStage",
     "stage_order",
     "get_stage",
+    "stage_config",
+    "stage_leaf_id",
     "TUTORIAL_DATA",
     "external_input",
 ]
@@ -110,6 +113,24 @@ def _upstream_or_none(store: ResultStore, *, dataset: str, stage: str):
         return None
 
 
+def _run_or_cleanup(leaf: ResultLeaf, fn):
+    """Invoke the producer ``fn()`` (which writes into ``leaf.dir``). If it raises
+    BEFORE the leaf is committed, remove the orphaned (empty/partial) leaf dir so a
+    producer failure does not litter the store with an uncommitted ``<slug>__<hash>/``
+    directory, then re-raise. (A committed leaf has its manifest row written by
+    ``commit_leaf``; this only cleans up the pre-commit failure window.)"""
+    import shutil
+    try:
+        return fn()
+    except BaseException:
+        try:
+            if os.path.isdir(leaf.dir):
+                shutil.rmtree(leaf.dir)
+        except OSError:
+            pass  # best-effort cleanup; never mask the original error
+        raise
+
+
 # --------------------------------------------------------------------------- #
 # stage record                                                                 #
 # --------------------------------------------------------------------------- #
@@ -132,21 +153,63 @@ class Stage:
 
 
 # --------------------------------------------------------------------------- #
+# stage config descriptors                                                     #
+# --------------------------------------------------------------------------- #
+# Each in-session stage exposes a ``*_config(ds)`` helper that builds the EXACT
+# (store_stage, producer, config, producer_defaults, privacy) tuple the wrapper would
+# pass to ``store.new(...)`` — WITHOUT running the producer. ``stage_leaf_target`` uses
+# it to compute the leaf id a stage WOULD create, so ``--resume`` can skip only when
+# THAT exact config-hash leaf is already committed (config-aware resume).
+@dataclass(frozen=True)
+class StageConfig:
+    store_stage: str
+    producer: str
+    config: dict
+    producer_defaults: dict
+    privacy: str
+
+
+def stage_config(stage_name: str, ds: DatasetInputs) -> StageConfig | None:
+    """The config a stage WOULD build, without running it. ``None`` for cluster-only
+    stages (no in-session leaf to address)."""
+    fn = _CONFIG_BUILDERS.get(stage_name)
+    return fn(ds) if fn is not None else None
+
+
+def stage_leaf_id(store: ResultStore, stage_name: str, ds: DatasetInputs) -> str | None:
+    """The relative leaf id a stage WOULD create for ``ds`` in ``store`` (the
+    config-hash-addressed handle), or ``None`` for cluster-only stages."""
+    sc = stage_config(stage_name, ds)
+    if sc is None:
+        return None
+    leaf_dir = store.leaf_path(ds.name, sc.store_stage, sc.producer, sc.config,
+                               producer_defaults=sc.producer_defaults, privacy=sc.privacy)
+    return store._id_for_dir(leaf_dir)
+
+
+# --------------------------------------------------------------------------- #
 # stage wrappers                                                               #
 # --------------------------------------------------------------------------- #
-def run_completeness_molly(store, ds, *, resume=False, cluster_emit=False):
-    """completeness_molly → examples/molly_faithful_pc_plots.py (writes
-    molly_matrix.tsv). Lyα-only window, BAL-excluded, the matched headline cut."""
+def completeness_molly_config(ds) -> StageConfig:
     config = {
         "producer": "molly_faithful_pc_plots",
         "lam_rf_min": 1025.0, "lam_rf_max": 1216.0,
         "snr_min": 2.0, "nhi_min": 20.3, "gp_conf": 0.99,
         "no_bal": True, "dz_rel": 0.01, "z_qso_min": 2.0, "z_qso_max": 4.25,
     }
+    return StageConfig("completeness", "molly_faithful_pc_plots", config,
+                       _slug_defaults(config), ds.privacy)
+
+
+def run_completeness_molly(store, ds, *, resume=False, cluster_emit=False):
+    """completeness_molly → examples/molly_faithful_pc_plots.py (writes
+    molly_matrix.tsv). Lyα-only window, BAL-excluded, the matched headline cut."""
+    sc = completeness_molly_config(ds)
+    config = sc.config
     inputs = _ds_external_inputs(ds, "catalog", "truth", "bal")
-    leaf = store.new(dataset=ds.name, stage="completeness", producer="molly_faithful_pc_plots",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
     argv = [
         "--catalog-dir", ds.catalog_dir,
         "--truth", ds.truth,
@@ -159,12 +222,15 @@ def run_completeness_molly(store, ds, *, resume=False, cluster_emit=False):
     cli = "python examples/molly_faithful_pc_plots.py " + " ".join(argv)
     # molly main() reads sys.argv (no argv param) — set it transiently.
     from examples import molly_faithful_pc_plots as MOLLY  # noqa: E402
-    _argv0 = sys.argv
-    try:
-        sys.argv = ["molly_faithful_pc_plots.py", *argv]
-        MOLLY.main()
-    finally:
-        sys.argv = _argv0
+
+    def _produce():
+        _argv0 = sys.argv
+        try:
+            sys.argv = ["molly_faithful_pc_plots.py", *argv]
+            MOLLY.main()
+        finally:
+            sys.argv = _argv0
+    _run_or_cleanup(leaf, _produce)
     store.commit_leaf(
         leaf, what="2LPT-0 molly purity/completeness C/ρ matrix (Lyα-only, BAL-excl).",
         cli=cli,
@@ -175,23 +241,28 @@ def run_completeness_molly(store, ds, *, resume=False, cluster_emit=False):
     return leaf
 
 
-def run_kernel_fwd(store, ds, *, resume=False, cluster_emit=False):
-    """kernel_fwd → znz_kernel.build_forward_cache (writes forward_response_2lpt0.npz).
-    Deterministic Track-C forward-response kernel; reads x̂/N_true/SNR/z_QSO only."""
-    out_npz = os.path.join("$LEAF", "forward_response_2lpt0.npz")  # for the README
+def kernel_fwd_config(ds) -> StageConfig:
     config = {
         "producer": "znz_kernel.build-forward-cache",
         "kind": "forward", "family": "empirical",
         "lam_rf_min": 1025.0, "fit_floor": 19.5, "deg_N": 2,
         "host_truth_floor": 19.0,
     }
-    molly_id = _upstream_or_none(store, dataset=ds.name, stage="completeness")
+    return StageConfig("kernel", "znz_kernel.build-forward-cache", config,
+                       _slug_defaults(config), ds.privacy)
+
+
+def run_kernel_fwd(store, ds, *, resume=False, cluster_emit=False):
+    """kernel_fwd → znz_kernel.build_forward_cache (writes forward_response_2lpt0.npz).
+    Deterministic Track-C forward-response kernel; reads x̂/N_true/SNR/z_QSO only.
+    (Non-circular: it does NOT consume the completeness leaf — the forward fit uses
+    x̂/N/SNR/z only, never ``--molly-tsv``.)"""
+    sc = kernel_fwd_config(ds)
+    config = sc.config
     inputs = _ds_external_inputs(ds, "catalog", "truth", "bal")
-    if molly_id:
-        inputs.append(molly_id)
-    leaf = store.new(dataset=ds.name, stage="kernel", producer="znz_kernel.build-forward-cache",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
     out_path = leaf.path("forward_response_2lpt0.npz")
     argv = [
         "--catalog-dir", ds.catalog_dir,
@@ -201,7 +272,7 @@ def run_kernel_fwd(store, ds, *, resume=False, cluster_emit=False):
     ]
     cli = "python -m CDDF_analysis.hbi.znz_kernel build-forward-cache " + " ".join(argv)
     from CDDF_analysis.hbi import znz_kernel as ZK  # noqa: E402
-    ZK.build_forward_cache(argv)
+    _run_or_cleanup(leaf, lambda: ZK.build_forward_cache(argv))
     store.commit_leaf(
         leaf, what="Track-C forward-response kernel R(x̂→N | SNR, z) on 2LPT-0 (deterministic).",
         cli=cli,
@@ -212,17 +283,24 @@ def run_kernel_fwd(store, ds, *, resume=False, cluster_emit=False):
     return leaf
 
 
-def run_kernel_znz(store, ds, *, resume=False, cluster_emit=False):
-    """kernel_znz → znz_kernel.build_cache (writes znz_2lpt0.npz)."""
+def kernel_znz_config(ds) -> StageConfig:
     config = {
         "producer": "znz_kernel.build-cache",
         "lam_rf_min": 1025.0, "fit_floor": 19.5, "deg_xhat": 1, "deg_z": 2,
         "host_truth_floor": 19.0,
     }
+    return StageConfig("kernel_znz", "znz_kernel.build-cache", config,
+                       _slug_defaults(config), ds.privacy)
+
+
+def run_kernel_znz(store, ds, *, resume=False, cluster_emit=False):
+    """kernel_znz → znz_kernel.build_cache (writes znz_2lpt0.npz)."""
+    sc = kernel_znz_config(ds)
+    config = sc.config
     inputs = _ds_external_inputs(ds, "catalog", "truth", "bal")
-    leaf = store.new(dataset=ds.name, stage="kernel_znz", producer="znz_kernel.build-cache",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
     out_path = leaf.path("znz_2lpt0.npz")
     argv = [
         "--catalog-dir", ds.catalog_dir, "--truth", ds.truth,
@@ -230,7 +308,7 @@ def run_kernel_znz(store, ds, *, resume=False, cluster_emit=False):
     ]
     cli = "python -m CDDF_analysis.hbi.znz_kernel build-cache " + " ".join(argv)
     from CDDF_analysis.hbi import znz_kernel as ZK  # noqa: E402
-    ZK.build_cache(argv)
+    _run_or_cleanup(leaf, lambda: ZK.build_cache(argv))
     store.commit_leaf(
         leaf, what="Track-C stage-0 znz kernel cache on 2LPT-0.",
         cli=cli,
@@ -240,17 +318,24 @@ def run_kernel_znz(store, ds, *, resume=False, cluster_emit=False):
     return leaf
 
 
-def run_fp_loa0(store, ds, *, resume=False, cluster_emit=False):
-    """fp_loa0 → build_loa0_fp_product.main (writes loa0_fp_product.npz). The loa-0
-    forest false-positive product (Lyα-only λ_rest>=1025 to match the headline)."""
+def fp_loa0_config(ds) -> StageConfig:
     config = {
         "producer": "build_loa0_fp_product",
         "snr_min": 2.0, "p_dla_min": 0.99, "lya_only_lam_rf_min": 1025.0,
     }
+    return StageConfig("fp", "build_loa0_fp_product", config,
+                       _slug_defaults(config), ds.privacy)
+
+
+def run_fp_loa0(store, ds, *, resume=False, cluster_emit=False):
+    """fp_loa0 → build_loa0_fp_product.main (writes loa0_fp_product.npz). The loa-0
+    forest false-positive product (Lyα-only λ_rest>=1025 to match the headline)."""
+    sc = fp_loa0_config(ds)
+    config = sc.config
     inputs = _ds_external_inputs(ds, "catalog", "truth", "bal")
-    leaf = store.new(dataset=ds.name, stage="fp", producer="build_loa0_fp_product",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
     out_path = leaf.path("loa0_fp_product.npz")
     argv = [
         "--prod-cat", ds.catalog_dir,
@@ -262,7 +347,7 @@ def run_fp_loa0(store, ds, *, resume=False, cluster_emit=False):
     ]
     cli = "python -m CDDF_analysis.hbi.build_loa0_fp_product " + " ".join(argv)
     from CDDF_analysis.hbi import build_loa0_fp_product as FP  # noqa: E402
-    FP.main(argv)
+    _run_or_cleanup(leaf, lambda: FP.main(argv))
     store.commit_leaf(
         leaf, what="loa-0 forest false-positive product (Lyα-only λ_rest>=1025).",
         cli=cli,
@@ -272,17 +357,24 @@ def run_fp_loa0(store, ds, *, resume=False, cluster_emit=False):
     return leaf
 
 
-def run_kernel_remp(store, ds, *, resume=False, cluster_emit=False):
-    """kernel_remp → run_remp_kernel.py --stage build (~20 min; heavy in-session).
-    The R_emp posterior kernel (no processed-h5 needed)."""
+def kernel_remp_config(ds) -> StageConfig:
     config = {
         "producer": "run_remp_kernel", "stage": "build",
         "lam_rf_min": 911.0, "dalpha": 0.5, "host_truth_floor": 19.0,
     }
+    return StageConfig("kernel_remp", "run_remp_kernel", config,
+                       _slug_defaults(config), ds.privacy)
+
+
+def run_kernel_remp(store, ds, *, resume=False, cluster_emit=False):
+    """kernel_remp → run_remp_kernel.py --stage build (~20 min; heavy in-session).
+    The R_emp posterior kernel (no processed-h5 needed)."""
+    sc = kernel_remp_config(ds)
+    config = sc.config
     inputs = _ds_external_inputs(ds, "catalog", "truth", "bal")
-    leaf = store.new(dataset=ds.name, stage="kernel_remp", producer="run_remp_kernel",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
     argv = [
         "--stage", "build",
         "--catalog-dir", ds.catalog_dir, "--truth", ds.truth, "--bal-cat", ds.bal,
@@ -291,7 +383,7 @@ def run_kernel_remp(store, ds, *, resume=False, cluster_emit=False):
     ]
     cli = "python CDDF_analysis/hbi/run_remp_kernel.py " + " ".join(argv)
     from CDDF_analysis.hbi import run_remp_kernel as REMP  # noqa: E402
-    REMP.main(argv)
+    _run_or_cleanup(leaf, lambda: REMP.main(argv))
     store.commit_leaf(
         leaf, what="R_emp posterior kernel on 2LPT-0 (~20 min, in-session heavy).",
         cli=cli,
@@ -301,20 +393,29 @@ def run_kernel_remp(store, ds, *, resume=False, cluster_emit=False):
     return leaf
 
 
+def _phase3d_config(ds, *, store_stage, sub_stage) -> StageConfig:
+    # Only knobs the stage actually PINS via argv go in the config. The phase3d
+    # producer's `--n-mc`/`--fp-estimator` are NOT passed (the producer default
+    # governs), so recording them here would be a lie — omit them.
+    config = {
+        "producer": "run_phase3d_postkernel", "stage": sub_stage,
+    }
+    return StageConfig(store_stage, "run_phase3d_postkernel", config,
+                       _slug_defaults(config), ds.privacy)
+
+
 def _phase3d_stage(store, ds, *, store_stage, sub_stage, what, out_desc, resume, cluster_emit):
     """Shared wrapper for run_phase3d_postkernel.py --stage {2,3} (fit_map / band).
     Heavy in-session; consumes the SIR kernel produced on the cluster (stage 1)."""
-    config = {
-        "producer": "run_phase3d_postkernel", "stage": sub_stage,
-        "fp_estimator": "purity_mixture", "n_mc": 200,
-    }
+    sc = _phase3d_config(ds, store_stage=store_stage, sub_stage=sub_stage)
+    config = sc.config
     inputs = _ds_external_inputs(ds, "catalog", "truth", "bal")
     sir_id = _upstream_or_none(store, dataset=ds.name, stage="kernel_sir")
     if sir_id:
         inputs.append(sir_id)
-    leaf = store.new(dataset=ds.name, stage=store_stage, producer="run_phase3d_postkernel",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
     argv = [
         "--stage", sub_stage,
         "--catalog-dir", ds.catalog_dir, "--truth", ds.truth, "--bal-cat", ds.bal,
@@ -323,7 +424,7 @@ def _phase3d_stage(store, ds, *, store_stage, sub_stage, what, out_desc, resume,
     ]
     cli = "python CDDF_analysis/hbi/run_phase3d_postkernel.py " + " ".join(argv)
     from CDDF_analysis.hbi import run_phase3d_postkernel as P3D  # noqa: E402
-    P3D.main(argv)
+    _run_or_cleanup(leaf, lambda: P3D.main(argv))
     store.commit_leaf(
         leaf, what=what, cli=cli,
         outputs=[out_desc],
@@ -331,6 +432,14 @@ def _phase3d_stage(store, ds, *, store_stage, sub_stage, what, out_desc, resume,
                   + ("fit_map" if sub_stage == "2" else "band"),
     )
     return leaf
+
+
+def fit_map_config(ds) -> StageConfig:
+    return _phase3d_config(ds, store_stage="fit_map", sub_stage="2")
+
+
+def band_config(ds) -> StageConfig:
+    return _phase3d_config(ds, store_stage="band", sub_stage="3")
 
 
 def run_fit_map(store, ds, *, resume=False, cluster_emit=False):
@@ -368,6 +477,46 @@ def run_kernel_sir(store, ds, *, resume=False, cluster_emit=False):
     raise ClusterOnlyStage("kernel_sir", _SIR_SBATCH)
 
 
+# Reduction knobs the stage PINS (shared by reduction_config + run_reduction so the
+# recorded config and the producer args can never drift). n_mc small for the demo;
+# matches NB5's notebook-sized setting.
+_RED_N_MC, _RED_WORKERS, _RED_ZBINS = 60, 4, "2.0,2.5,3.0,3.5"
+# The EXTRA science knobs the reduction hardcodes into the args namespace `a` that the
+# original config omitted. Pinning them in the config means editing one in code
+# re-hashes the leaf (no stale-leaf reuse). They are kept OUT of the human-readable,
+# length-bounded slug (see reduction_config) so the directory name stays under the
+# 255-char filesystem limit — they still feed the config HASH.
+_RED_EXTRA_KNOBS = {
+    "family": "bspbody", "fit_floor": 19.5, "fit_ceil": 99.0,
+    "lambda_bspbody": 30.0, "lam_rf_min": 1025.0, "edge_slope_lam": 40.0,
+    "host_truth_floor": 19.0, "seed": 0,
+    "band_recenter": True, "omega_slope_extrap": True,
+    "omega_slope_extrap_integrated": True,
+    "slope_edge": 21.2, "slope_fit_dex": 0.6, "sigma_slope": 0.5,
+}
+
+
+def reduction_config(ds) -> StageConfig:
+    """The config the reduction stage pins. Includes every science knob the wrapper
+    hardcodes (so a change re-hashes) and an HONEST n_mc (the value actually passed).
+
+    The headline knobs (fp/n_mc/zbins/snr/no_bal/report_limits) render in the
+    human-readable slug; the extra pinned knobs feed the config HASH but are hidden from
+    the slug (treated as slug-defaults) so the leaf directory name stays under the
+    255-char filesystem limit. Either way, editing ANY pinned knob re-hashes the leaf."""
+    config = {
+        "producer": "track_c_tf_loa", "kernel": "forward_response (frozen)",
+        "fp_estimator": "purity_mixture", "n_mc": _RED_N_MC, "zbins": _RED_ZBINS,
+        "snr_min": 2.0, "no_bal": True, "report_limits": "20.0,20.3",
+        **_RED_EXTRA_KNOBS,
+        "catalog": ds.catalog_dir,
+    }
+    # slug-defaults = the noisy path/producer keys (hidden) + the extra pinned knobs
+    # (in the hash, hidden from the slug). The headline knobs still render.
+    slug_defaults = {**_slug_defaults(config), **_RED_EXTRA_KNOBS}
+    return StageConfig("measurement", "track_c_tf_loa", config, slug_defaults, ds.privacy)
+
+
 def run_reduction(store, ds, *, resume=False, cluster_emit=False):
     """reduction → track_c_tf_loa build_frozen_calibration / build_loa_ingredients /
     run_measurement (the SAME path NB5 uses). The frozen 2LPT-0 calibration is the
@@ -375,7 +524,6 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
     Writes result.json (per-z dN/dX & Ω MAP + band)."""
     import json
     import types
-    import numpy as np
 
     # frozen calibration = the committed tutorial_data/ fixtures (NB5's public mode).
     FROZEN_FORWARD = str(TUTORIAL_DATA / "forward_response_2lpt0.npz")
@@ -396,14 +544,9 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
     from CDDF_analysis.hbi import track_c_tf_loa as TF  # noqa: E402
     from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB  # noqa: E402
 
-    # n_mc small for the demo; matches NB5's notebook-sized setting.
-    N_MC, WORKERS, ZBINS = 60, 4, "2.0,2.5,3.0,3.5"
-    config = {
-        "producer": "track_c_tf_loa", "kernel": "forward_response (frozen)",
-        "fp_estimator": "purity_mixture", "n_mc": N_MC, "zbins": ZBINS,
-        "snr_min": 2.0, "no_bal": True, "report_limits": "20.0,20.3",
-        "catalog": ds.catalog_dir,
-    }
+    N_MC, WORKERS, ZBINS = _RED_N_MC, _RED_WORKERS, _RED_ZBINS
+    sc = reduction_config(ds)
+    config = sc.config
     # frozen-calibration leg (2LPT-0 mock) is always a mock input; the privacy of the
     # RESULT is set by the catalog being reduced (ds.privacy).
     inputs = [
@@ -414,9 +557,9 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
     ]
     if fwd_leaf is not None:
         inputs.append(fwd_leaf.id)
-    leaf = store.new(dataset=ds.name, stage="measurement", producer="track_c_tf_loa",
+    leaf = store.new(dataset=ds.name, stage=sc.store_stage, producer=sc.producer,
                      config=config, inputs=inputs, privacy=ds.privacy,
-                     producer_defaults=_slug_defaults(config))
+                     producer_defaults=sc.producer_defaults)
 
     # assemble the args namespace exactly as NB5 does.
     a = types.SimpleNamespace()
@@ -448,51 +591,53 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
     LIMITS = tuple(float(x) for x in a.report_limits.split(","))
     a._limits = LIMITS   # private field build_frozen_calibration reads (NB5 sets it too)
 
-    frozen = TF.build_frozen_calibration(a)
-    a.molly_tsv = frozen["molly_tsv"]
-    ing = TF.build_loa_ingredients(a, frozen)
-    res = TF.run_measurement(a, ing, LIMITS, a.seed, frozen=frozen)
+    def _produce_and_serialize():
+        frozen = TF.build_frozen_calibration(a)
+        a.molly_tsv = frozen["molly_tsv"]
+        ing = TF.build_loa_ingredients(a, frozen)
+        res = TF.run_measurement(a, ing, LIMITS, a.seed, frozen=frozen)
 
-    # serialize the per-z result into result.json (no numpy in the JSON).
-    ZB = [float(z) for z in res["zbins"]]
-    n_zc = int(res["n_zc"])
-    ZC = [0.5 * (ZB[k] + ZB[k + 1]) for k in range(n_zc)]
+        # serialize the per-z result into result.json (no numpy in the JSON).
+        ZB = [float(z) for z in res["zbins"]]
+        n_zc = int(res["n_zc"])
+        ZC = [0.5 * (ZB[k] + ZB[k + 1]) for k in range(n_zc)]
 
-    def _perz(node, key="MAP", scale=1.0):
-        return [scale * p[key] for p in node["perz"]]
+        def _perz(node, key="MAP", scale=1.0):
+            return [scale * p[key] for p in node["perz"]]
 
-    out = {
-        "dataset": ds.name,
-        "kernel": "forward_response (frozen, Track-C)",
-        "fp_estimator": "purity_mixture",
-        "n_mc": int(res["n_mc"]),
-        "zbins": ZB,
-        "z_centres": ZC,
-        "n_op_detections": int(res.get("n_op_detections", -1)),
-        "n_op_sl": int(res.get("n_op_sl", -1)),
-        "max_truth_z": float(res.get("max_truth_z", float("nan"))),
-        "truth_counts_perz": (list(map(int, res["truth_counts_perz"]))
-                              if res.get("truth_counts_perz") is not None else None),
-        "limits": list(LIMITS),
-        "perz": {},
-        "integrated": {},
-    }
-    for lim in LIMITS:
-        out["perz"][f"{lim:g}"] = {
-            "dndx": {"MAP": _perz(res["dndx"][lim]),
-                     "q16": _perz(res["dndx"][lim], "q16"),
-                     "q84": _perz(res["dndx"][lim], "q84")},
-            "omega": {"MAP": _perz(res["omega"][lim]),
-                      "q16": _perz(res["omega"][lim], "q16"),
-                      "q84": _perz(res["omega"][lim], "q84")},
+        out = {
+            "dataset": ds.name,
+            "kernel": "forward_response (frozen, Track-C)",
+            "fp_estimator": "purity_mixture",
+            "n_mc": int(res["n_mc"]),
+            "zbins": ZB,
+            "z_centres": ZC,
+            "n_op_detections": int(res.get("n_op_detections", -1)),
+            "n_op_sl": int(res.get("n_op_sl", -1)),
+            "max_truth_z": float(res.get("max_truth_z", float("nan"))),
+            "truth_counts_perz": (list(map(int, res["truth_counts_perz"]))
+                                  if res.get("truth_counts_perz") is not None else None),
+            "limits": list(LIMITS),
+            "perz": {},
+            "integrated": {},
         }
-        out["integrated"][f"{lim:g}"] = {
-            "dndx_MAP": float(res["dndx"][lim]["integrated"]["MAP"]),
-            "omega_MAP": float(res["omega"][lim]["integrated"]["MAP"]),
-        }
+        for lim in LIMITS:
+            out["perz"][f"{lim:g}"] = {
+                "dndx": {"MAP": _perz(res["dndx"][lim]),
+                         "q16": _perz(res["dndx"][lim], "q16"),
+                         "q84": _perz(res["dndx"][lim], "q84")},
+                "omega": {"MAP": _perz(res["omega"][lim]),
+                          "q16": _perz(res["omega"][lim], "q16"),
+                          "q84": _perz(res["omega"][lim], "q84")},
+            }
+            out["integrated"][f"{lim:g}"] = {
+                "dndx_MAP": float(res["dndx"][lim]["integrated"]["MAP"]),
+                "omega_MAP": float(res["omega"][lim]["integrated"]["MAP"]),
+            }
 
-    with open(leaf.path("result.json"), "w") as fh:
-        json.dump(out, fh, indent=2)
+        with open(leaf.path("result.json"), "w") as fh:
+            json.dump(out, fh, indent=2)
+    _run_or_cleanup(leaf, _produce_and_serialize)
 
     cli = (f"python -m pipeline.run_pipeline --dataset {ds.name} --stage reduction "
            f"# (track_c_tf_loa build_frozen_calibration -> build_loa_ingredients -> run_measurement)")
@@ -501,8 +646,7 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
         what=("Per-z dN/dX & Ω_DLA CDDF reduction (frozen Track-C forward kernel + "
               f"mock-calibration), catalog={ds.name}."),
         cli=cli,
-        outputs=[("result.json", "per-z + integrated dN/dX & Ω MAP and statistical band"),
-                 ("report.md", "track_c_tf_loa text report")],
+        outputs=[("result.json", "per-z + integrated dN/dX & Ω MAP and statistical band")],
         regen_cmd=f"python -m pipeline.run_pipeline --dataset {ds.name} --stage reduction",
     )
     return leaf
@@ -511,9 +655,13 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
 # --------------------------------------------------------------------------- #
 # the registry                                                                 #
 # --------------------------------------------------------------------------- #
-# DAG: completeness_molly is a precursor; kernel_fwd depends on it; reduction depends
-# on the frozen forward kernel (kernel_fwd) + completeness, but FALLS BACK to the
-# committed tutorial_data/ fixtures so it runs standalone (the NB5 public path).
+# DAG: completeness_molly is a STANDALONE reportable stage (the matched headline
+# purity/completeness matrix); it is NOT a build-dependency of kernel_fwd or reduction.
+# The forward-response fit (kernel_fwd) is non-circular — it reads x̂/N/SNR/z only, never
+# --molly-tsv — and reduction uses the committed nhi19.5 molly fixture (a different cut
+# than completeness's nhi20.3 leaf). reduction depends only on the frozen forward kernel
+# (kernel_fwd), and FALLS BACK to the committed tutorial_data/ fixtures so it runs
+# standalone (the NB5 public path).
 STAGES: dict[str, Stage] = {}
 
 
@@ -525,7 +673,7 @@ _reg(Stage(name="completeness_molly", deps=(), producer="molly_faithful_pc_plots
            run=run_completeness_molly))
 _reg(Stage(name="kernel_znz", deps=(), producer="znz_kernel.build-cache",
            run=run_kernel_znz))
-_reg(Stage(name="kernel_fwd", deps=("completeness_molly",),
+_reg(Stage(name="kernel_fwd", deps=(),
            producer="znz_kernel.build-forward-cache", run=run_kernel_fwd))
 _reg(Stage(name="fp_loa0", deps=(), producer="build_loa0_fp_product",
            run=run_fp_loa0))
@@ -537,8 +685,22 @@ _reg(Stage(name="fit_map", deps=("kernel_sir",), producer="run_phase3d_postkerne
            heavy=True, run=run_fit_map))
 _reg(Stage(name="band", deps=("fit_map",), producer="run_phase3d_postkernel",
            heavy=True, run=run_band))
-_reg(Stage(name="reduction", deps=("kernel_fwd", "completeness_molly"),
+_reg(Stage(name="reduction", deps=("kernel_fwd",),
            producer="track_c_tf_loa", run=run_reduction))
+
+
+# Map stage name -> its ``*_config(ds)`` builder (cluster-only stages have none).
+# Used by ``stage_config`` / ``stage_leaf_id`` for config-aware --resume.
+_CONFIG_BUILDERS = {
+    "completeness_molly": completeness_molly_config,
+    "kernel_znz": kernel_znz_config,
+    "kernel_fwd": kernel_fwd_config,
+    "fp_loa0": fp_loa0_config,
+    "kernel_remp": kernel_remp_config,
+    "fit_map": fit_map_config,
+    "band": band_config,
+    "reduction": reduction_config,
+}
 
 
 def get_stage(name: str) -> Stage:

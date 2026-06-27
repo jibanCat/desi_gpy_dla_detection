@@ -97,6 +97,16 @@ def _store_path(filename: str, dataset, stage, selectors) -> str | None:
         # manifest — fall back silently to the committed fixture.
         return None
 
+    # PRIVACY GUARD: the tutorial fixtures are committed mock data. NEVER hand a
+    # notebook a real-LOA leaf path (the store can hold both). If the resolved
+    # leaf is not unambiguously mock — its provenance class is anything other than
+    # "mock", or its directory descends through a ``real_loa/`` partition — drop
+    # to the committed fixture. Fail-CLOSED: a leaf with no readable class is also
+    # treated as non-mock here.
+    if (leaf.privacy.get("class") != "mock"
+            or "real_loa" in Path(leaf.dir).parts):
+        return None
+
     leaf_file = leaf.path(in_leaf_name)
     if not os.path.exists(leaf_file):
         return None  # leaf exists but this file is not in it -> committed copy.
