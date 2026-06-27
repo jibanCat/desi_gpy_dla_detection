@@ -121,6 +121,24 @@ def test_dry_run_all_marks_cluster_only(tmp_path):
     assert "cluster_only" in out.stdout
 
 
+def test_cluster_emit_defers_descendants_instead_of_crashing(tmp_path):
+    # --cluster-emit on the band path emits the kernel_sir sbatch, then SKIPS its
+    # cluster-blocked descendants (fit_map, band) rather than crashing on the missing
+    # cluster output. Exit 0, no in-session leaf created (no heavy producer invoked).
+    out = _run_cli(
+        ["--dataset", "2lpt0", "--stage", "band", "--cluster-emit"],
+        env={"CDDF_STORE": str(tmp_path / "store")},
+    )
+    assert out.returncode == 0, out.stderr
+    assert "sbatch" in out.stdout                       # emitted the cluster command
+    assert "deferred" in out.stdout.lower()             # descendants deferred
+    assert "fit_map" in out.stdout and "band" in out.stdout
+    store_dir = tmp_path / "store"
+    if store_dir.exists():
+        assert not list(store_dir.rglob("provenance.json")), \
+            "cluster-emit must not create any in-session leaf for the deferred path"
+
+
 def test_dry_run_works_without_store_env(tmp_path):
     # --dry-run should not require a real store root.
     env = dict(os.environ)

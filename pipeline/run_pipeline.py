@@ -133,8 +133,19 @@ def main(argv=None) -> int:
     # ---- real run ----------------------------------------------------------
     store = ResultStore(root=args.store)
     overall_t0 = time.time()
+    # stages whose in-session output does NOT exist this run because they were
+    # cluster-emitted (or transitively depend on one). Their descendants cannot run
+    # in-session either — skip them as deferred instead of crashing on a missing leaf.
+    deferred: set[str] = set()
     for name in order:
         stage = ST.get_stage(name)
+        blocking = set(stage.deps) & deferred
+        if blocking:
+            print(f"[deferred] SKIP {name} — needs cluster output of "
+                  f"{', '.join(sorted(blocking))} (run those on the cluster, then re-run "
+                  f"with --ingest)")
+            deferred.add(name)
+            continue
         if args.resume and _already_done(store, ds, name):
             print(f"[resume] SKIP {name} (committed leaf already exists for {args.dataset})")
             continue
@@ -150,9 +161,13 @@ def main(argv=None) -> int:
         wall = time.time() - t0
         if leaf is None:  # cluster_only under --cluster-emit
             print(f"[{name}] emitted (no in-session leaf)  wall={wall:.1f}s")
+            deferred.add(name)  # its descendants are now cluster-blocked too
         else:
             print(f"[{name}] DONE  leaf={leaf.id}  wall={wall:.1f}s")
-    print(f"\n[pipeline] all requested stages done  total_wall={time.time()-overall_t0:.1f}s")
+    if deferred:
+        print(f"\n[pipeline] {len(deferred)} stage(s) deferred to the cluster: "
+              f"{', '.join(sorted(deferred))}")
+    print(f"\n[pipeline] in-session stages done  total_wall={time.time()-overall_t0:.1f}s")
     return 0
 
 
