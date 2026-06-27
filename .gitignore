@@ -109,3 +109,8 @@ slurm/nersc/production/*_counts.txt
 
 # HBI tutorial mock fixtures (small, 2LPT-0 mock only) must be tracked despite *.npz above
 !CDDF_analysis/hbi/tutorial_data/*.npz
+
+# HBI tutorial: private-mode render scratch (may contain real-LOA) -- never commit
+notebooks/_nb5_reduction_out/
+notebooks/_t*.ipynb
+notebooks/_tpriv.ipynb
