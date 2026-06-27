@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
-# Refresh the small mock-only tutorial fixtures by COPYING from the scratch
-# caches. Not a recompute -- provenance is the 2LPT-0 injection validation run.
-# Mock data only; this script NEVER touches a real-survey (LOA) result file.
+# LEGACY copy-from-scratch fallback. Refreshes the small mock-only tutorial
+# fixtures by COPYING from existing scratch caches -- NOT a recompute (provenance
+# is the 2LPT-0 injection validation run). Mock data only; this script NEVER
+# touches a real-survey (LOA) result file.
+#
+# CANONICAL REGEN (preferred): recompute each fixture in the keyed results store
+# via the pipeline, which stamps provenance (commit, config, inputs) per leaf:
+#
+#     export CDDF_STORE=/scratch/.../cddf_store
+#     python -m pipeline.run_pipeline --dataset 2lpt0 --stage kernel_znz       # znz_2lpt0.npz
+#     python -m pipeline.run_pipeline --dataset 2lpt0 --stage kernel_fwd       # forward_response_2lpt0.npz
+#     python -m pipeline.run_pipeline --dataset 2lpt0 --stage completeness_molly  # molly_matrix.tsv
+#     python -m pipeline.run_pipeline --dataset 2lpt0 --stage fp_loa0          # loa0_fp_product.npz
+#     # ... (see pipeline/IMPLEMENTATION_PLAN.md for the full per-stage list)
+#
+# With $CDDF_STORE set, the notebooks load the fresh leaves automatically via
+# CDDF_analysis/hbi/tutorial_data/fixtures.py::tutorial_fixture(); the committed
+# copies below remain the default (no $CDDF_STORE) source of truth. This script
+# is the legacy fallback for refreshing those committed copies when a full
+# pipeline recompute is not run.
 set -euo pipefail
 B=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata
 V="$B/hbi_validation_2lpt0"
