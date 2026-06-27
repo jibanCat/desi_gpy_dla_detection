@@ -80,8 +80,15 @@ def _already_done(store: ResultStore, ds: DS.DatasetInputs, stage_name: str) -> 
     that exact ``<slug>__<hash>`` leaf is committed. Editing a science knob changes
     the hash → a different (not-yet-built) leaf id → NOT done → the stage re-runs into
     a fresh leaf. (A stale leaf from the OLD config still exists, but it no longer
-    matches, so resume never silently reuses it.)"""
-    leaf_id = ST.stage_leaf_id(store, stage_name, ds)
+    matches, so resume never silently reuses it.)
+
+    Config-building is guarded: a stage whose ``stage_config``/``stage_leaf_id`` raises
+    degrades to 'not done' so ``--resume`` RE-RUNS it (the safe default) rather than
+    crashing the whole resume pass (mirrors the dry-run preview's guard)."""
+    try:
+        leaf_id = ST.stage_leaf_id(store, stage_name, ds)
+    except Exception:
+        return False  # can't predict the leaf id → re-run (safe default), don't crash.
     if leaf_id is None:  # cluster-only stage: never an in-session leaf to resume.
         return False
     try:

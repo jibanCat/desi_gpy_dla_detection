@@ -227,6 +227,46 @@ def test_resume_cluster_only_stage_never_done(tmp_path):
     assert RP._already_done(store, ds, "kernel_sir") is False
 
 
+def test_already_done_degrades_to_rerun_when_config_raises(tmp_path, monkeypatch):
+    # a stage whose config-building (stage_leaf_id) RAISES must not crash --resume:
+    # _already_done returns False (re-run is the safe default), mirroring the dry-run
+    # preview's guard.
+    store = ResultStore(root=str(tmp_path / "store"))
+    ds = DS.dataset_inputs("2lpt0")
+
+    def _boom(*a, **k):
+        raise RuntimeError("stage_config blew up")
+
+    monkeypatch.setattr(ST, "stage_leaf_id", _boom)
+    assert RP._already_done(store, ds, "reduction") is False  # no crash → re-run
+
+
+# --------------------------------------------------------------------------- #
+# end-to-end predicted-id == committed-id (real producer) — fix #4              #
+# --------------------------------------------------------------------------- #
+def _ds_inputs_present(ds) -> bool:
+    """True iff the dataset's primary inputs are on this filesystem (kernel_fwd reads
+    catalog/truth/bal). Lets the integration test skip cleanly off the cluster."""
+    return all(os.path.exists(p) for p in (ds.catalog_dir, ds.truth, ds.bal))
+
+
+def test_kernel_fwd_predicted_id_equals_committed_id_end_to_end(tmp_path):
+    # Pin the predicted-id == committed-id contract against the REAL producer (the
+    # synthetic-leaf resume tests above never call stage.run(), so they don't catch a
+    # config drift between what stage_leaf_id predicts and what run_kernel_fwd commits).
+    # kernel_fwd is the fastest deterministic stage (~15s). Skips if the mock inputs
+    # are not on this filesystem.
+    ds = DS.dataset_inputs("2lpt0")
+    if not _ds_inputs_present(ds):
+        pytest.skip("2lpt0 mock inputs (catalog/truth/bal) not present on this host")
+    store = ResultStore(root=str(tmp_path / "store"))
+    predicted = ST.stage_leaf_id(store, "kernel_fwd", ds)
+    leaf = ST.get_stage("kernel_fwd").run(store, ds)
+    assert leaf.id == predicted, "kernel_fwd committed a different leaf id than predicted"
+    # and config-aware --resume now sees it as done (the full round-trip).
+    assert RP._already_done(store, ds, "kernel_fwd") is True
+
+
 # --------------------------------------------------------------------------- #
 # config honesty + completeness (fix #3)                                        #
 # --------------------------------------------------------------------------- #
@@ -244,6 +284,32 @@ def test_reduction_config_pins_science_knobs(tmp_path):
                          ("lambda_bspbody", 25.0), ("band_recenter", False)]:
         changed = dict(base); changed[knob] = newval
         assert config_hash(changed) != h0, f"changing {knob} did not re-hash"
+
+
+def test_reduction_config_pins_the_four_latent_knobs(tmp_path):
+    # the 4 previously-latent reduction knobs (set on `a.*` but omitted from the
+    # pinned config) must now be in the config AND re-hash when perturbed, so editing
+    # them in code is NOT silently skipped by --resume.
+    from CDDF_analysis.hbi.provenance import config_hash
+    ds = DS.dataset_inputs("2lpt0")
+    base = ST.stage_config("reduction", ds).config
+    # the values match what run_reduction actually sets on `a`.
+    assert base["resp_kind"] == "forward"
+    assert base["v2_z_fit_hi"] == 3.5
+    assert base["cz_min_count"] == 30.0
+    assert base["gl_nodes"] == 1
+    h0 = config_hash(base)
+    # resp_kind = the forward-vs-κ estimator: a different estimator MUST re-hash.
+    for knob, newval in [("resp_kind", "kappa"), ("v2_z_fit_hi", 3.0),
+                         ("cz_min_count", 50.0), ("gl_nodes", 2)]:
+        changed = dict(base); changed[knob] = newval
+        assert config_hash(changed) != h0, f"perturbing {knob} did not re-hash"
+    # the 4 knobs are hidden from the human-readable slug (kept off the dir name).
+    sc = ST.stage_config("reduction", ds)
+    from CDDF_analysis.hbi.provenance import make_slug
+    slug = make_slug(sc.config, sc.producer_defaults)
+    for knob in ("resp_kind", "v2_z_fit_hi", "cz_min_count", "gl_nodes"):
+        assert knob.replace("_", "") not in slug, f"{knob} leaked into the slug"
 
 
 def test_phase3d_config_does_not_record_unpassed_n_mc(tmp_path):

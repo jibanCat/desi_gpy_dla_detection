@@ -493,12 +493,26 @@ _RED_EXTRA_KNOBS = {
     "band_recenter": True, "omega_slope_extrap": True,
     "omega_slope_extrap_integrated": True,
     "slope_edge": 21.2, "slope_fit_dex": 0.6, "sigma_slope": 0.5,
+    # Result-affecting knobs the wrapper sets on `a` but previously omitted from the
+    # pinned config, so editing them in code did NOT re-hash (a stale-leaf-reuse bug):
+    #   resp_kind     — the forward-vs-κ response estimator (a.resp_kind)
+    #   v2_z_fit_hi   — per-z fit upper bound (a.v2_z_fit_hi)
+    #   cz_min_count  — min per-cell count for the completeness/count fit (a.cz_min_count)
+    #   gl_nodes      — Gauss-Legendre quadrature nodes (a.gl_nodes)
+    "resp_kind": "forward", "v2_z_fit_hi": 3.5,
+    "cz_min_count": 30.0, "gl_nodes": 1,
 }
 
 
 def reduction_config(ds) -> StageConfig:
-    """The config the reduction stage pins. Includes every science knob the wrapper
-    hardcodes (so a change re-hashes) and an HONEST n_mc (the value actually passed).
+    """The config the reduction stage pins. Pins the result-affecting science knobs
+    the wrapper hardcodes onto ``a`` — including the response estimator (``resp_kind``),
+    the per-z fit bound (``v2_z_fit_hi``), the per-cell count floor (``cz_min_count``),
+    and the quadrature node count (``gl_nodes``) — so editing any of them in code
+    re-hashes the leaf (no stale-leaf reuse on ``--resume``). ``n_mc`` is HONEST (the
+    value actually passed). The only ``a.*`` knobs NOT pinned are the frozen-fixture
+    paths, the pure-parallelism ``workers``, and ``resp_family`` (a hardcoded
+    "empirical" constant that never varies through this wrapper).
 
     The headline knobs (fp/n_mc/zbins/snr/no_bal/report_limits) render in the
     human-readable slug; the extra pinned knobs feed the config HASH but are hidden from
@@ -531,7 +545,11 @@ def run_reduction(store, ds, *, resume=False, cluster_emit=False):
     FROZEN_FP = str(TUTORIAL_DATA / "loa0_fp_product_lyaonly1025.npz")
 
     # a frozen-calibration upstream leaf takes precedence over the committed fixture
-    # when one exists in the store (so a recomputed kernel feeds the reduction).
+    # when one exists in the store (so a recomputed kernel feeds the reduction). The
+    # store's single-current invariant (commit_leaf supersedes a prior kernel leaf at
+    # the same (dataset, stage)) means this get() resolves the ONE current kernel and
+    # never goes ambiguous — so a recomputed kernel is no longer silently ignored in
+    # favour of the frozen fixture.
     fwd_leaf = None
     try:
         fwd_leaf = store.get(dataset="2lpt0", stage="kernel")

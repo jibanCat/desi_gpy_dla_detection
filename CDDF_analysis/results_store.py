@@ -294,7 +294,46 @@ class ResultStore:
         )
         leaf.provenance = rec
         self._insert_row(rec)
+        # Single-current invariant: a freshly-committed `current` leaf supersedes
+        # any OTHER currently-`current` leaf at the same (dataset, store_stage). We
+        # touch ONLY the manifest status (+ the supersedes/superseded_by columns when
+        # present) — never the superseded leaf's write-once provenance.json payload.
+        if status == "current":
+            self._supersede_prior_current(
+                dataset=pend["dataset"], stage=pend["stage"],
+                new_id=self._leaf_id_from_prov(rec))
         self._write_json_mirror()
+
+    def _supersede_prior_current(self, *, dataset: str, stage: str, new_id: str) -> None:
+        """Mark every OTHER `current` leaf at the same (dataset, store_stage) as
+        `superseded` (manifest only). The newest commit becomes the single current.
+
+        Records the supersession link in the manifest's `supersedes`/`superseded_by`
+        columns when they exist (back-compat: a schema without them just gets the
+        status flip). The superseded leaf's on-disk provenance.json is intentionally
+        left untouched — supersession is manifest metadata, not a payload rewrite.
+        """
+        with self._connect() as conn:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(results)")}
+            prior = [r["id"] for r in conn.execute(
+                "SELECT id FROM results WHERE dataset = ? AND stage = ? "
+                "AND status = 'current' AND id != ?",
+                [dataset, stage, new_id])]
+            if not prior:
+                return
+            for old_id in prior:
+                conn.execute(
+                    "UPDATE results SET status = 'superseded' WHERE id = ?", [old_id])
+                if "superseded_by" in cols:
+                    conn.execute(
+                        "UPDATE results SET superseded_by = ? WHERE id = ?",
+                        [new_id, old_id])
+            if "supersedes" in cols:
+                # the new leaf supersedes the (newest) prior current leaf.
+                conn.execute(
+                    "UPDATE results SET supersedes = ? WHERE id = ?",
+                    [prior[-1], new_id])
+            conn.commit()
 
     # ----- manifest row IO ---------------------------------------------------
     def _row_from_prov(self, rec: dict) -> dict:
@@ -357,6 +396,21 @@ class ResultStore:
         prov_path = os.path.join(leaf_dir, "provenance.json")
         if os.path.exists(prov_path):
             prov = json.loads(Path(prov_path).read_text())
+            # The MANIFEST is authoritative for the LIVE status: supersession flips a
+            # leaf's status in the manifest without rewriting its write-once
+            # provenance.json, so overlay the manifest's status (+ supersedes link)
+            # onto the loaded record. ResultLeaf.status then reflects supersession.
+            try:
+                row_status = row["status"]
+            except (KeyError, IndexError):
+                row_status = None
+            if row_status is not None:
+                prov = {**prov, "status": row_status}
+                try:
+                    if row["supersedes"] is not None:
+                        prov["supersedes"] = row["supersedes"]
+                except (KeyError, IndexError):
+                    pass
         return ResultLeaf(leaf_id=leaf_id, leaf_dir=leaf_dir, provenance=prov)
 
     def get(self, *, dataset: str, stage: str, selection: str | None = None) -> ResultLeaf:
@@ -373,6 +427,20 @@ class ResultStore:
             params.append(selection)
         with self._connect() as conn:
             rows = list(conn.execute(query, params))
+
+        # Prefer `current` leaves; a re-committed leaf supersedes its predecessor, so
+        # the single current leaf is THE match. Only when zero current rows match do we
+        # consider superseded ones (back-compat: a store that has only a superseded
+        # leaf — e.g. the old config — still resolves if there is exactly one).
+        current = [r for r in rows if r["status"] == "current"]
+        superseded = [r for r in rows if r["status"] == "superseded"]
+        if len(current) == 1:
+            return self._leaf_from_row(current[0])
+        if not current and len(superseded) == 1:
+            return self._leaf_from_row(superseded[0])
+        # otherwise (no current + 0/≥2 superseded, or ≥2 current) fall through to the
+        # strict 0/>1 reporting below, scoped to the rows that would have matched.
+        rows = current if current else rows
 
         if len(rows) == 1:
             return self._leaf_from_row(rows[0])
@@ -440,6 +508,7 @@ class ResultStore:
             self._db_path.unlink()
         self._ensure_schema()
 
+        recs = []
         for prov_path in self.root.rglob("provenance.json"):
             try:
                 rec = json.loads(prov_path.read_text())
@@ -447,4 +516,46 @@ class ResultStore:
                 continue
             if rec.get("schema_version", "").startswith("cddf-provenance/"):
                 self._insert_row(rec)
+                recs.append(rec)
+        # Re-derive the single-current invariant from the leaves alone: supersession
+        # is manifest-only metadata (the write-once provenance.json is never edited),
+        # so a rebuild reconstructs it. Per (dataset, stage), if >1 leaf reports
+        # status='current', keep the NEWEST (by date_utc) current and mark the rest
+        # superseded — exactly what commit_leaf would have done in commit order.
+        self._reconcile_current_status(recs)
         self._write_json_mirror()
+
+    def _reconcile_current_status(self, recs: list) -> None:
+        """Enforce one `current` leaf per (dataset, stage) in the manifest, choosing
+        the newest by ``date_utc`` (commit order). Manifest-only; leaves untouched."""
+        groups: dict = {}
+        for rec in recs:
+            if rec.get("status") != "current":
+                continue
+            key = (rec.get("dataset"), rec.get("stage"))
+            groups.setdefault(key, []).append(rec)
+        for key, group in groups.items():
+            if len(group) < 2:
+                continue
+            # newest by date_utc is the survivor; ties broken by leaf id for stability.
+            group.sort(key=lambda r: (r.get("date_utc") or "",
+                                      self._leaf_id_from_prov(r)))
+            survivor = group[-1]
+            survivor_id = self._leaf_id_from_prov(survivor)
+            with self._connect() as conn:
+                cols = {r[1] for r in conn.execute("PRAGMA table_info(results)")}
+                for rec in group[:-1]:
+                    old_id = self._leaf_id_from_prov(rec)
+                    conn.execute(
+                        "UPDATE results SET status = 'superseded' WHERE id = ?",
+                        [old_id])
+                    if "superseded_by" in cols:
+                        conn.execute(
+                            "UPDATE results SET superseded_by = ? WHERE id = ?",
+                            [survivor_id, old_id])
+                if "supersedes" in cols:
+                    prior_id = self._leaf_id_from_prov(group[-2])
+                    conn.execute(
+                        "UPDATE results SET supersedes = ? WHERE id = ?",
+                        [prior_id, survivor_id])
+                conn.commit()

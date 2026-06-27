@@ -132,10 +132,10 @@ def test_get_zero_match_raises_with_candidates(store):
     assert "band" in msg or "candidate" in msg.lower() or "no" in msg.lower()
 
 
-def test_get_two_match_raises_listing_candidates(store):
-    # two leaves sharing (dataset, stage, selection) — ambiguous. The slug only
-    # surfaces first/last of a list, so these two zbins collapse to the SAME slug
-    # (z2-4.0) but differ in the middle edge -> different config hash -> two leaves.
+def test_get_recommit_supersedes_prior_current(store):
+    # Two DIFFERENT-config leaves at the same (dataset, stage): the second commit
+    # supersedes the first (single-current invariant), so a bare get() is NOT
+    # ambiguous — it returns the one current leaf. (Pre-fix this raised Ambiguous.)
     cfg_a = {"snr_min": 2.0, "no_bal": True, "zbins": [2.0, 2.5, 4.0]}
     cfg_b = {"snr_min": 2.0, "no_bal": True, "zbins": [2.0, 3.0, 4.0]}
     a = _make_and_commit(store, dataset="2lpt0", stage="reduction",
@@ -143,9 +143,34 @@ def test_get_two_match_raises_listing_candidates(store):
     b = _make_and_commit(store, dataset="2lpt0", stage="reduction",
                          producer="p", config=cfg_b, inputs=[])
     assert a.id != b.id  # genuinely two leaves
-    sel = "snr2_nobal_z2-4"
+    # the prior current leaf is now superseded; the newest is the single current.
+    assert store.by_id(a.id).status == "superseded"
+    assert store.by_id(b.id).status == "current"
+    # a bare get() resolves to the single current leaf (no ambiguity).
+    got = store.get(dataset="2lpt0", stage="reduction")
+    assert got.id == b.id
+    # by_id still resolves the SUPERSEDED leaf (resume of an old config).
+    assert store.by_id(a.id).id == a.id
+    assert os.path.exists(store.by_id(a.id).path("result.json"))
+
+
+def test_get_two_current_raises_listing_candidates(store):
+    # If two leaves are BOTH current at the same (dataset, stage) — which the
+    # single-current invariant normally prevents but a corrupt/hand-edited manifest
+    # could produce — get() stays strict and lists both candidates. Force the state
+    # by directly flipping the superseded leaf back to current.
+    cfg_a = {"snr_min": 2.0, "no_bal": True, "zbins": [2.0, 2.5, 4.0]}
+    cfg_b = {"snr_min": 2.0, "no_bal": True, "zbins": [2.0, 3.0, 4.0]}
+    a = _make_and_commit(store, dataset="2lpt0", stage="reduction",
+                         producer="p", config=cfg_a, inputs=[])
+    b = _make_and_commit(store, dataset="2lpt0", stage="reduction",
+                         producer="p", config=cfg_b, inputs=[])
+    import sqlite3
+    conn = sqlite3.connect(str(store.root / "MANIFEST.sqlite"))
+    conn.execute("UPDATE results SET status='current' WHERE id=?", [a.id])
+    conn.commit(); conn.close()
     with pytest.raises(LookupError) as exc:
-        store.get(dataset="2lpt0", stage="reduction", selection=sel)
+        store.get(dataset="2lpt0", stage="reduction")
     msg = str(exc.value)
     assert a.id in msg and b.id in msg
 
@@ -181,9 +206,10 @@ def test_by_id_missing_raises(store):
 # list                                                                         #
 # --------------------------------------------------------------------------- #
 def test_list_filters(store):
+    # three DISTINCT (dataset, stage) leaves — no two share a key, so none supersede.
     _make_and_commit(store, dataset="2lpt0", stage="reduction",
                      producer="track_c_tf_loa", config={"snr_min": 2.0}, inputs=[])
-    _make_and_commit(store, dataset="2lpt0", stage="reduction",
+    _make_and_commit(store, dataset="2lpt0", stage="band",
                      producer="track_c_tf_loa", config={"snr_min": 0.0}, inputs=[])
     _make_and_commit(store, dataset="2lpt1", stage="band",
                      producer="track_c_band", config={"snr_min": 0.0}, inputs=[])
@@ -192,6 +218,18 @@ def test_list_filters(store):
     assert len(store.list(dataset="2lpt1")) == 1
     assert len(store.list(status="current")) == 3
     assert len(store.list(status="superseded")) == 0
+
+
+def test_list_filters_supersede(store):
+    # two same-(dataset, stage) leaves: the second supersedes the first, so the
+    # status filters split 1 current / 1 superseded.
+    _make_and_commit(store, dataset="2lpt0", stage="reduction",
+                     producer="track_c_tf_loa", config={"snr_min": 2.0}, inputs=[])
+    _make_and_commit(store, dataset="2lpt0", stage="reduction",
+                     producer="track_c_tf_loa", config={"snr_min": 0.0}, inputs=[])
+    assert len(store.list()) == 2
+    assert len(store.list(status="current")) == 1
+    assert len(store.list(status="superseded")) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -256,3 +294,27 @@ def test_rebuild_manifest_rows_identical(store):
     store.rebuild_manifest()
     rows_after = {r.id: r.provenance for r in store.list()}
     assert rows_before == rows_after
+
+
+def test_rebuild_manifest_preserves_supersession(store):
+    """rebuild_manifest re-derives the single-current invariant from the leaves alone
+    (supersession is manifest-only; the write-once provenance.json is never edited)."""
+    a = _make_and_commit(store, dataset="2lpt0", stage="reduction",
+                         producer="p", config={"snr_min": 2.0, "zbins": [2.0, 2.5, 4.0]},
+                         inputs=[])
+    b = _make_and_commit(store, dataset="2lpt0", stage="reduction",
+                         producer="p", config={"snr_min": 2.0, "zbins": [2.0, 3.0, 4.0]},
+                         inputs=[])
+    # before rebuild: b current, a superseded.
+    assert store.by_id(a.id).status == "superseded"
+    assert store.by_id(b.id).status == "current"
+
+    (store.root / "MANIFEST.sqlite").unlink()
+    store.rebuild_manifest()
+
+    # status survives the rebuild — newest (b) stays current, a stays superseded.
+    statuses = {r.id: r.status for r in store.list()}
+    assert statuses[b.id] == "current"
+    assert statuses[a.id] == "superseded"
+    # and get() still resolves the single current leaf, not ambiguous.
+    assert store.get(dataset="2lpt0", stage="reduction").id == b.id

@@ -214,13 +214,17 @@ def test_real_loa_partition_path_not_returned(monkeypatch, tmp_path):
     assert "real_loa" not in got
 
 
-def test_ambiguous_leaves_fall_back(monkeypatch, tmp_path):
-    """>1 leaf for (dataset, stage) -> ResultStore.get raises LookupError -> the
-    shim falls back silently to committed (does not propagate the error)."""
+def test_supersession_returns_current_leaf(monkeypatch, tmp_path):
+    """Two different-config leaves at the same (dataset, stage) no longer collide:
+    committing the second SUPERSEDES the first (results-store supersession), so
+    ``ResultStore.get`` resolves the single ``current`` leaf and the shim returns THAT
+    (newest) leaf path — not the committed fallback. (The genuine fallback-on-miss path
+    is covered by ``test_store_miss_falls_back_to_committed``.)"""
     from CDDF_analysis.results_store import ResultStore
 
     store_root = tmp_path / "cddf_store"
     store = ResultStore(root=str(store_root))
+    last_leaf = None
     for cfg in ({"kind": "a"}, {"kind": "b"}):
         leaf = store.new(
             dataset="2lpt0", stage="kernel", producer="fake",
@@ -232,7 +236,9 @@ def test_ambiguous_leaves_fall_back(monkeypatch, tmp_path):
             leaf, what="dup", cli="x", regen_cmd="x",
             outputs=[("forward_response_2lpt0.npz", "fake")],
         )
+        last_leaf = leaf
     monkeypatch.setenv("CDDF_STORE", str(store_root))
 
+    # the newest (current) leaf wins; supersession removed the old ambiguity.
     got = tutorial_fixture("forward_response_2lpt0.npz")
-    assert got == str(TUTORIAL_DATA_DIR / "forward_response_2lpt0.npz")
+    assert got == str(last_leaf.path("forward_response_2lpt0.npz"))
