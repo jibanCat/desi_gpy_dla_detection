@@ -143,7 +143,9 @@ fi
 #   sightlines, not just detected ones). If absent we SKIP this leg loudly; london-0 still
 #   runs. When the rsync lands, this leg runs automatically with no edit.
 # =====================================================================================
-C1_CAT="/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1/dlacat-v2.8.5-mockcat.fits"
+# NOTE: pass the catalog DIRECTORY (not the .fits file) — the loader globs dlacat-*.fits
+# inside it, exactly like the london-0 leg (L0_CAT). The dir holds one dlacat-v2.8.5-mockcat.fits.
+C1_CAT="/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1"
 C1_MOCKDIR="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124"
 C1_TRUTH="${C1_MOCKDIR}/hcd_truth_cat.fits"
 C1_BAL="${C1_MOCKDIR}/bal_cat.fits"
