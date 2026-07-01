@@ -90,9 +90,13 @@ _DEF_OUT = "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_2l
 def _git_commit():
     try:
         import subprocess
-        return subprocess.check_output(
+        h = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], cwd=_REPO,
             stderr=subprocess.DEVNULL).decode().strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"], cwd=_REPO,
+            stderr=subprocess.DEVNULL).decode().strip()
+        return h + ("-dirty" if dirty else "")
     except Exception:
         return "unknown"
 
@@ -232,7 +236,8 @@ def build_heldout_ingredients(args, frozen, variant):
         mockdir=args.heldout_mockdir or os.path.dirname(args.heldout_truth),
         zbins=tuple(float(x) for x in args.zbins.split(",")),
         report_logN_limits=tuple(float(x) for x in args.report_limits.split(",")),
-        fp_estimator="purity_mixture", no_bal=True,
+        fp_estimator=args.fp_estimator, no_bal=True,
+        loa0_product_path=(args.loa0_product if args.fp_estimator == "loa0" else None),
         v3_family=args.family, v3_logN_fit_floor=args.fit_floor,
         v3_logN_fit_ceil=args.fit_ceil, v3_lambda_bspbody=args.lambda_bspbody,
         v3_mc_n_restart=2, lam_rf_min=args.lam_rf_min,
@@ -367,6 +372,50 @@ def run_tf_variant(args, ing, limits, seed):
             cerr = max(cerr, float(np.max(np.abs(a[good] - b[good]) / np.abs(b[good]))))
     if cerr >= 1e-7:
         raise AssertionError(f"MAP per-z dN/dX vs e0.dndx_z mismatch: {cerr:.2e}")
+
+    # ---- POINT-ONLY short-circuit (loa0 FP cross-check) ------------------------------
+    # The integrated R0 (integrated_point) is already computed from run_baseline above,
+    # and so are the per-z MAP integrals (map_dndx/map_omega from the e0 MAP f_bk). The
+    # MC BAND below routes through make_v3x_refit_fn, which (correctly) refuses a
+    # non-purity-mixture FP (its band must come from loa0_full_posterior_mc, spec §4/§7).
+    # For --point-only we therefore score the per-z R0 from the MAP + the held-out truth
+    # (band fields = NaN, cover = None) and RETURN before the band. purity_mixture runs
+    # leave --point-only OFF (default) and never reach this branch — byte-identical full
+    # band. The frozen GP inference / estimator code is untouched either way.
+    if getattr(args, "point_only", False):
+        tf = PZ.truth_fNz(cfg, ing["truth_cut"], logN_lo, logN_hi, dN_b, ing["X_tot"])
+        f_truth = tf["f_truth"]
+        tr = PZ.truth_perz_integrals(cfg, f_truth, logN_lo, N_b, dN_b, limits)
+        truth_dndx = tr["dndx"]; truth_omega = tr["omega"]
+        _nan2 = [float("nan"), float("nan")]
+        cov = dict(dndx={}, omega={})
+        for l in limits:
+            cov["dndx"][str(l)] = []
+            cov["omega"][str(l)] = []
+            for k in range(n_zc):
+                pt = float(map_dndx[l][k]); tv = float(truth_dndx[l][k])
+                cov["dndx"][str(l)].append(dict(
+                    z_idx=k, MAP=pt, MAP_R0=(pt / tv if tv > 0 else float("nan")),
+                    truth=tv, band68=list(_nan2), band95=list(_nan2),
+                    cover68=None, cover95=None))
+                pt_o = float(map_omega[l][k]); tv_o = float(truth_omega[l][k])
+                cov["omega"][str(l)].append(dict(
+                    z_idx=k, MAP=pt_o, MAP_R0=(pt_o / tv_o if tv_o > 0 else float("nan")),
+                    truth=tv_o, band68=list(_nan2), band95=list(_nan2),
+                    cover68=None, cover95=None, slope_extrap_shoulder=False))
+        cov["_meta"] = dict(point_only=True, band_recenter=False,
+                            omega_slope_extrap=False, omega_slope_extrap_integrated=False)
+        res = dict(
+            cfg=cfg, H0=cfg.H0, K=K, zbins=zbins, n_zc=n_zc,
+            logN_lo=logN_lo, logN_hi=logN_hi, N_b=N_b, dN_b=dN_b,
+            mid=0.5 * (logN_lo + logN_hi),
+            map_fbk=map_fbk, map_dndx=map_dndx, map_omega=map_omega,
+            dndx_samp=None, omega_samp=None, fbk_samp=None, fb_samp=None,
+            f_truth=f_truth, truth_dndx=truth_dndx, truth_omega=truth_omega,
+            consistency_err=float(cerr), n_mc=0, point_only=True,
+            integrated_point=integrated_point,
+        )
+        return res, cov
 
     # The MC band's resample basis (tmr), per-draw response refit (refit_fn) and the
     # C/ρ-derivation (joint_mc_errors) form ONE coherent system over 2lpt-1's OWN cell
@@ -592,6 +641,13 @@ def main(argv=None):
     p.add_argument("--heldout-truth", default=_C1_TRUTH)
     p.add_argument("--heldout-bal", default=_C1_BAL)
     p.add_argument("--heldout-mockdir", default=_C1_MOCKDIR)
+    # FP estimator for the held-out POINT (build_heldout_ingredients only). Default
+    # purity_mixture = BYTE-IDENTICAL to the prior runs; loa0 = the directly-measured
+    # forest-FP cross-check (Loa0FP.from_product, vol-scaled by cfg.n_sl_prod). The
+    # FROZEN 2LPT-0 calibration (build_frozen_calibration) stays purity_mixture either way.
+    p.add_argument("--fp-estimator", choices=["purity_mixture", "loa0"],
+                   default="purity_mixture")
+    p.add_argument("--loa0-product", default=AB.DEF_LOA0_PRODUCT)
     # run knobs (match the headline perz recipe)
     p.add_argument("--variant", default="both", choices=["A", "B", "both"])
     p.add_argument("--out", default=_DEF_OUT)
@@ -625,6 +681,11 @@ def main(argv=None):
     p.add_argument("--slope-edge", type=float, default=21.2)
     p.add_argument("--slope-fit-dex", type=float, default=0.6)
     p.add_argument("--sigma-slope", type=float, default=0.5)
+    # POINT-ONLY: emit ONLY the POINT R0 (integrated + per-z MAP/truth), NO MC band.
+    # For the loa0 FP cross-check, whose per-z band would need loa0_full_posterior_mc;
+    # purity_mixture runs leave this OFF (default) = byte-identical full-band behavior.
+    p.add_argument("--point-only", dest="point_only", action="store_true", default=False,
+                   help="emit only the POINT R0 (integrated + per-z MAP/truth, no MC band)")
     args = p.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
     limits = tuple(float(x) for x in args.report_limits.split(","))
@@ -691,8 +752,9 @@ def main(argv=None):
               f"Ω(≥{limits[-1]:.1f})={ir0['omega'][limits[-1]]['R0']:.3f}")
 
     wallclock = time.time() - t0
-    fig_path = os.path.join(args.out, "fig_tf_2lpt1.png")
-    make_figure(fig_path, variants, args)
+    if not args.point_only:   # the 3-panel figure needs the MC band (skipped in point-only)
+        fig_path = os.path.join(args.out, "fig_tf_2lpt1.png")
+        make_figure(fig_path, variants, args)
     rep = write_report(os.path.abspath(args.report_out), variants, args, wallclock)
 
     # JSON dump
@@ -700,6 +762,8 @@ def main(argv=None):
         n_mc=args.n_mc, seed=args.seed, limits=list(limits),
         forward_model=args.forward_model, molly_tsv=args.molly_tsv,
         heldout_cat=args.heldout_cat, heldout_truth=args.heldout_truth,
+        fp_estimator=args.fp_estimator, loa0_product=args.loa0_product,
+        point_only=bool(args.point_only),
         wallclock_s=float(wallclock), code_commit=_git_commit()),
         variants={vk: dict(coverage=V["cov"], integrated_R0={
             kind: {str(l): V["int_R0"][kind][l] for l in limits}
