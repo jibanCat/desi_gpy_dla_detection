@@ -463,16 +463,34 @@ def run_tf_variant(args, ing, limits, seed):
     # band on that frozen point. Using ing["mm"] (grafted) here would fail the
     # build_truth_match_resample validate (a per-TID saclay bootstrap can't reproduce the
     # 2LPT-0 count denominators) and would mis-key the per-draw ρ matrix.
-    mm_band = ing.get("mm_resample", ing["mm"])
-    tmr = build_truth_match_resample(
-        mm_band, ing["cat_cut"], ing["is_TP"], ing["truth_cut"], ing["good_mask"], cfg)
-    refit_fn = make_v3x_refit_fn(cfg, e0["_v3x"], mm_band,
-                                 cat_cut=ing["cat_cut"], good_mask=ing["good_mask"], tmr=tmr)
     cfg.n_mc = args.n_mc
-    mc = joint_mc_errors(
-        ing["cat_cut"], ing["is_TP"], ing["good_mask"], mm_band, ing["fp_model"],
-        ing["X_tot"], logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"],
-        cfg, np.random.default_rng(seed + 4), refit_fn=refit_fn, tmr=tmr)
+    if args.fp_estimator == "loa0":
+        # loa0 band: make_v3x_refit_fn (the pm shared_boot+refit path in the else) hard-codes
+        # pm's (1-ρ) FP and refuses loa0. Use the truth-free `indep` band (as track_c_tf_loa.py
+        # does for real data): joint_mc_errors resamples the FROZEN loa-0 FP (Gehrels Γ) per
+        # draw + captures f_bk_coarse natively; the C/ρ Wilson jitter is drawn from the FROZEN
+        # 2LPT-0 counts (ing["mm"], variant A) and the sightline bootstrap is over the held-out
+        # op sightlines. Narrower than the pm shared_boot headline (no Stage-III response
+        # marginalization) — but this is the SAME band we run on real LOA, so validating loa0
+        # here certifies the real-data band. (refit_fn=None ⇒ never touches make_v3x_refit_fn.)
+        _sv_nuis = getattr(cfg, "mc_nuisance", "indep")
+        _sv_resp = getattr(cfg, "mc_response", "frozen")
+        cfg.mc_nuisance, cfg.mc_response = "indep", "frozen"
+        mc = joint_mc_errors(
+            ing["cat_cut"], ing["is_TP"], ing["good_mask"], ing["mm"], ing["fp_model"],
+            ing["X_tot"], logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"],
+            cfg, np.random.default_rng(seed + 4), refit_fn=None, tmr=None)
+        cfg.mc_nuisance, cfg.mc_response = _sv_nuis, _sv_resp
+    else:
+        mm_band = ing.get("mm_resample", ing["mm"])
+        tmr = build_truth_match_resample(
+            mm_band, ing["cat_cut"], ing["is_TP"], ing["truth_cut"], ing["good_mask"], cfg)
+        refit_fn = make_v3x_refit_fn(cfg, e0["_v3x"], mm_band,
+                                     cat_cut=ing["cat_cut"], good_mask=ing["good_mask"], tmr=tmr)
+        mc = joint_mc_errors(
+            ing["cat_cut"], ing["is_TP"], ing["good_mask"], mm_band, ing["fp_model"],
+            ing["X_tot"], logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"],
+            cfg, np.random.default_rng(seed + 4), refit_fn=refit_fn, tmr=tmr)
     fbk_samp = np.asarray(mc["_samples"]["f_bk_coarse"], float)
     fb_samp = np.asarray(mc["_samples"]["f_b"], float)
     dndx_z_samp = {l: np.asarray(mc["_samples"]["dndx_z"][l], float) for l in limits}
