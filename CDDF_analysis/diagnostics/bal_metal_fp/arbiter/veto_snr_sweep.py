@@ -11,8 +11,13 @@ For each candidate BAL veto x SNR_REDSIDE threshold, tabulate on the real high-N
 
 Candidate vetoes (increasing completeness & cost; each keys on the QSO-frame CIV trough):
   BI>0 (production)   : BI_CIV>0 = the DESI altbal v2 BAL_FLAG in dlacat-loa-main-dark-v1.fits
-  broad-trough>2000   : significant AI-CIV with a contiguous trough >2000 km/s (BI's width, lower
-                        velocity floor) — the physically DLA-mimicking population BI misses on onset
+  broad-trough>2000   : DERIVED (NOT a native column) = max over the VMIN/VMAX_CIV_450 troughs of
+                        |VMAX-VMIN| > 2000 km/s + significant AI. The physically DLA-mimicking population
+                        BI misses on onset velocity. CAVEAT: the native >=2000 column NCIV_2000 is
+                        IDENTICAL to BI>0 (no broad-at-any-onset flag exists); this 450-derived proxy
+                        matches BI at only 94.7% (450-troughs fragment) -> likely a slight UNDER-count.
+                        A clean veto needs (a) this + a ~5% fragmentation systematic, or (b) a balfinder
+                        re-run with a lowered BI onset floor. Physical finding robust; implementation open.
   AI>0(sig)           : any significant AI-CIV trough (>=450 km/s) — includes narrow non-DLA-mimicking
 
 Key finding (SNR>2, >=20.3): broad-trough is the frontier knee — 0% CIV-detectable residual at only
