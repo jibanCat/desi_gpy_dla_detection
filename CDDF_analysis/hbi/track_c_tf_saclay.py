@@ -1,18 +1,30 @@
 #!/usr/bin/env python
-"""track_c_tf_london0.py — Track-C T-F LEG 2: the cross-RECIPE non-circular proof.
+"""track_c_tf_saclay.py — Track-C T-F LEG 3: a SECOND cross-RECIPE non-circular proof.
 
 THE TEST.  Apply the FROZEN 2LPT-0 Track-C recipe (forward-response kernel +
 z-resolved completeness C·g(N,z) + band machinery, CALIBRATED ONLY on 2LPT-0) to
-the HELD-OUT london-0 catalog WITHOUT any refit, and check whether the recovered
-dN/dX(z) / Ω(z) match london-0's OWN truth (R0 = recovered / london-0-truth ≈ 1).
+the HELD-OUT saclay-0 catalog WITHOUT any refit, and check whether the recovered
+dN/dX(z) / Ω(z) match saclay-0's OWN truth (R0 = recovered / saclay-0-truth ≈ 1).
 
-LEG 2 vs LEG 1.  Leg 1 (track_c_tf_2lpt1.py) held out 2lpt-1 — the SAME mock recipe,
-a different realization (the gentlest transfer test). Leg 2 holds out london-0 — a
-DIFFERENT mock recipe (CoLoRe/london v5.9.5 vs lyacolore_2lpt v2.8.5). The forest
-mean-flux normalization, the HCD/DLA injection prescription, and the noise model all
-differ between recipes, so this is the STRONGEST transfer test: it probes whether the
-2LPT-0-calibrated forward response generalizes across the recipe boundary, not just
-across realizations.
+LEG 3 vs LEG 1/2.  Leg 1 (track_c_tf_2lpt1.py) held out 2lpt-1 — the SAME mock
+recipe, a different realization (the gentlest transfer test). Leg 2
+(track_c_tf_london0.py) held out london-0 — a DIFFERENT recipe (CoLoRe/london
+v5.9.5). Leg 3 holds out saclay-0 — a THIRD, again DIFFERENT recipe (Saclay
+v4.7.5). The forest mean-flux normalization, the HCD/DLA injection prescription,
+and the noise model all differ between recipes, so this is — like leg 2 — a
+strong cross-recipe transfer test: it probes whether the 2LPT-0-calibrated forward
+response generalizes across yet another recipe boundary. Two passing different
+recipes (london + saclay) is the non-circular generalization claim.
+
+INPUT FORMAT (saclay-0 specifics — adapted vs leg 2):
+  * Saclay truth is `hcd_truth_cat.fits` (cols NHI/Z/TARGETID/DLAID/SNR) — the SAME
+    schema as the 2LPT-0 calibration truth and the 2lpt-1 leg (NOT london's
+    `dla_cat.fits`). The HBI truth loader aliases the z column (Z→Z_DLA→Z_TRUTH)
+    generically, so it threads unchanged.
+  * Saclay's native mockdir HAS a real `snr_cat.fits` (TARGETID/SNR_FOREST/
+    SNR_REDSIDE) plus `zcat.fits`/`seed_zcat.fits` and `bal_cat.fits` — so, unlike
+    london-0, NOTHING is staged: point --heldout-mockdir at the native juraLy8-124
+    directory and the pathlength + truth-match SNR come straight from it.
 
 EXPECTATION (stated up front, honest).  The forward-response kernel is a GP-SET
 property (it encodes how the GP maps a true (N,z) absorber into a detected (N̂,ẑ) +
@@ -25,45 +37,33 @@ transfers and a single scalar rescale restores R0 ≈ 1. A large UNEXPLAINED per
 deviation (or a shape mismatch the A/B decomposition pins on the kernel) would be a
 real finding.
 
-What is FROZEN vs HELD-OUT (the crux — strict, IDENTICAL to leg 1):
+What is FROZEN vs HELD-OUT (the crux — strict, IDENTICAL to legs 1/2):
   * Forward-response kernel  → FROZEN  (forward_response_2lpt0.npz; never re-fit).
   * z-resolved completeness g(N,z)  → FROZEN  (built ONCE on 2LPT-0's truth-match;
-    stashed onto cfg._cnz_resolved BEFORE the london-0 cut so ensure_cnz_resolved
-    returns it unchanged — NOT rebuilt on london-0).
+    stashed onto cfg._cnz_resolved BEFORE the saclay-0 cut so ensure_cnz_resolved
+    returns it unchanged — NOT rebuilt on saclay-0).
   * molly C/ρ ratio matrix (the .tsv)  → FROZEN  (the same 2LPT-0 lya_only-nhi195
     matrix is the default for BOTH mocks; it is a file, not a per-catalog rebuild).
   * The MC-resampling C/ρ COUNT denominators (mm.pur_ntp, cmp_nfound, …):
       - VARIANT A (fully frozen): FROZEN from 2LPT-0 (real-data-applicable — real
         LOA has no truth to rebuild the count denominators).
-      - VARIANT B (kernel+g frozen, molly counts rebuilt on london-0): regenerated
-        on london-0 (keeps the band's Poisson C/ρ jitter matched to the held-out
+      - VARIANT B (kernel+g frozen, molly counts rebuilt on saclay-0): regenerated
+        on saclay-0 (keeps the band's Poisson C/ρ jitter matched to the held-out
         catalog's own cell occupancy). A/B localizes whether the COMPLETENESS
         transfers vs only the kernel.
   * Band machinery (recenter, slope-extrap, Stage I/II/III) — as in the headline.
-  * The london-0 CATALOG, TRUTH (R0 scoring ONLY) and QSO/pathlength — held-out's own.
-
-DATA NOTES (london-0 specifics — adapted vs leg 1):
-  * london truth file is `dla_cat.fits` (NOT `hcd_truth_cat.fits`), cols
-    [NHI, Z_DLA, TARGETID, DLAID]. The HBI truth loader already aliases Z_DLA→Z_TRUTH
-    and does NOT require a per-DLA truth SNR column, so it threads unchanged.
-  * london mockdir has NO snr_cat.fits. The production-correct SNR_REDSIDE (the cut
-    variable) lives in the catalog's processed-spectra-16-*.h5 `snrs` field (verified
-    byte-identical to the dlacat SNR_REDSIDE, 20000/20000). A consolidated snr_cat.fits
-    is pre-built from those h5 via examples/make_snr_cat_from_processed.py and staged in
-    the held-out mockdir; it covers EXACTLY the 926,122 zcat QSOs in z∈(2.0,4.25) =
-    100% of the pathlength population (the ~290k "missing" zcat rows are out-of-z-range
-    QSOs the pathlength excludes anyway). So the pathlength scope is COMPLETE.
+  * The saclay-0 CATALOG, TRUTH (R0 scoring ONLY) and QSO/pathlength — held-out's own.
 
 The cached row-indexed posterior kappa (posterior_kernel_2lpt0.npz) is NOT used:
 resp_kind='forward' builds A_ib from the forward model (cell-keyed, transfers), and
-it is row-aligned to the 2LPT-0 catalog so it CANNOT be attached to london-0. We
+it is row-aligned to the 2LPT-0 catalog so it CANNOT be attached to saclay-0. We
 deliberately do NOT set cfg._posterior_kernel_2d (else the op-row-count assert fires).
 
 Reduce-only / analysis-side. NO GP inference (gpy_dla_detection/ byte-FROZEN).
 No estimator-logic edit (cddf_catalog_hbi.py untouched). conda gpdla; BLAS pinned.
 
 Usage:
-  python CDDF_analysis/track_c_tf_london0.py --variant both --n-mc 120 --workers 4
+  python CDDF_analysis/hbi/track_c_tf_saclay.py --variant both --n-mc 200 --workers 4
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ from CDDF_analysis.hbi.cddf_catalog_hbi import (
 import functools
 
 # ---------------------------------------------------------------------------
-# FROZEN 2LPT-0 recipe artifacts (the calibration; never re-fit on london-0)
+# FROZEN 2LPT-0 recipe artifacts (the calibration; never re-fit on saclay-0)
 # ---------------------------------------------------------------------------
 _DEF_FORWARD = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
                 "track_c/stage0/forward_response_2lpt0.npz")
@@ -101,20 +101,19 @@ _C0_CAT = AB.DEF_CAT
 _C0_TRUTH = AB.DEF_TRUTH
 _C0_BAL = AB.DEF_BAL
 
-# london-0 (HELD-OUT mock) — the catalog/truth/QSO scored against, NO refit.
-_L0_BASE = "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/london0_jura124_v1"
-# load_catalog_dir globs dlacat-*.fits inside the DIRECTORY (not a file path).
-_L0_CAT = _L0_BASE
-# the london mockdir holds the truth (dla_cat.fits) + zcat; snr_cat.fits is the
-# consolidated SNR catalog built from the catalog's processed h5 and staged here (the
-# london mock has no native snr_cat). zcat/dla_cat/bal_cat are symlinks to the read-only
-# london mock; snr_cat.fits is a real file on writable scratch.
-_L0_MOCKDIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-               "track_c/tf_london0/mockdir")
-_L0_TRUTH = _L0_MOCKDIR + "/dla_cat.fits"        # london truth (NOT hcd_truth_cat.fits)
-_L0_BAL = _L0_MOCKDIR + "/bal_cat.fits"
+# saclay-0 (HELD-OUT mock) — the catalog/truth/QSO scored against, NO refit.
+# load_catalog_dir globs dlacat-*.fits inside the combined_catalog DIRECTORY (not a file).
+_S0_CAT = ("/gpfs/accounts/cavestru_root/cavestru0/mfho/gl_prod_saclay0_v1_20260630/"
+           "combined_catalog")
+# Saclay's NATIVE mockdir holds the truth (hcd_truth_cat.fits), zcat/seed_zcat, a real
+# native snr_cat.fits and bal_cat — NOTHING is staged (unlike london-0).
+_S0_MOCKDIR = ("/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/"
+               "v4.7.5/mock-0/juraLy8-124")
+_S0_TRUTH = _S0_MOCKDIR + "/hcd_truth_cat.fits"   # saclay truth (hcd_truth_cat, like 2lpt)
+_S0_BAL = _S0_MOCKDIR + "/bal_cat.fits"
 
-_DEF_OUT = "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0"
+_DEF_OUT = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+            "track_c/crossmock_alpha/tf_saclay")
 
 
 def _git_commit():
@@ -136,6 +135,69 @@ def _exists(p):
     return os.path.exists(p)
 
 
+def _snap_off_molly_edges(cat_cut, truth_cut, mm, eps=1e-9):
+    """Make the molly-count regen agree with build_truth_match_resample's reconstruction
+    for values that land EXACTLY on an interior molly bin edge (the +1 cmp_nfound diff).
+
+    WHY (Saclay-specific boundary case, NOT present in london-0/2lpt-0): the molly count
+    regen (regenerate_molly_counts -> completeness/purity_snr_nhi_bins) bins per cell with
+    STRICT bounds (`v > lo & v < hi`), so a value exactly on an interior edge is dropped
+    from BOTH adjacent cells. The estimator's own cell lookups (build_truth_match_resample
+    `_flat_cell`, and make_C_interpolator -> `_cell_index`) use RIGHT-INCLUSIVE searchsorted
+    (`searchsorted(side='right')-1`), which assigns an exact-edge value to the UPPER cell.
+    build_truth_match_resample asserts (validate=True) that the unit-weight reconstruction
+    reproduces regenerate_molly_counts EXACTLY — so a single exact-edge row makes it differ
+    by 1 and the assertion (rightly) fires. Saclay's truth has one matched-TP HCD at exactly
+    NHI_TRUE=20.0 (= the molly edge 20.0); london-0/2lpt-0 have none, which is why those legs
+    pass unchanged.
+
+    FIX (reduce-only, in the DRIVER; estimator + assertion untouched): nudge any
+    S2N_RED/NHI/NHI_TRUE value sitting exactly on an INTERIOR molly edge by +eps so BOTH
+    binning conventions agree, resolving the tie in favour of the estimator's OWN
+    right-inclusive convention (the cell make_C_interpolator already assigns it to). eps=1e-9
+    is far below NHI (~0.1 dex) / SNR precision and cannot move a value to the far side of a
+    report threshold VALUE (a value at 20.0 stays >=20.0 & <20.3; at 20.3 stays >=20.3). The
+    only R0 effect is that the single boundary truth system at exactly NHI=20.0 is now counted
+    INCLUSIVELY on BOTH the recovered (cmp_nfound +1) and truth (cmp_nfid +1, truth dN/dX) side
+    — matching the recovered side's right-inclusive convention. VERIFIED on saclay-0: truth
+    dN/dX(>=20.3) byte-identical, truth dN/dX(>=20.0) changes by <=3.3e-6 per-z (~7e-5 rel,
+    one system; the definitionally-correct inclusive direction). On london-0/2lpt-0 this is a
+    NO-OP (returns 0). Modifies the tables in place.
+    """
+    nhi_int = np.asarray(mm.nhi_edges, float)[1:-1]
+    nhi_int = nhi_int[np.isfinite(nhi_int)]
+    snr_int = np.asarray(mm.snr_edges, float)[1:-1]
+    snr_int = snr_int[np.isfinite(snr_int)]
+    n_nudged = 0
+    detail = []
+
+    def _nudge(tbl, col, edges):
+        nonlocal n_nudged
+        if tbl is None or col not in tbl.colnames or len(edges) == 0:
+            return
+        v = np.asarray(tbl[col], float).copy()
+        on = np.zeros(v.shape, bool)
+        for e in edges:
+            on |= (v == e)          # NaN never == edge; finite exact-edge hits only
+        k = int(np.count_nonzero(on))
+        if k:
+            v[on] = v[on] + eps
+            tbl[col] = v
+            n_nudged += k
+            detail.append(f"{col}:{k}")
+
+    _nudge(cat_cut, "NHI", nhi_int)        # purity-cell pred-NHI
+    _nudge(cat_cut, "NHI_TRUE", nhi_int)   # completeness-numerator true-NHI (the saclay row)
+    _nudge(cat_cut, "S2N_RED", snr_int)    # SNR cell (both paths)
+    _nudge(truth_cut, "NHI", nhi_int)      # completeness-denominator fiducial true-NHI
+    _nudge(truth_cut, "S2N_RED", snr_int)  # fiducial SNR cell
+    if n_nudged:
+        print(f"  [edge-snap] nudged {n_nudged} exact-on-interior-edge value(s) off the "
+              f"molly grid by +{eps:g} ({', '.join(detail)}) so the molly regen matches the "
+              f"right-inclusive cell convention (build_truth_match_resample validate).")
+    return n_nudged
+
+
 # ---------------------------------------------------------------------------
 # build the FROZEN 2LPT-0 completeness g(N,z) + (optionally) molly counts ONCE
 # ---------------------------------------------------------------------------
@@ -149,7 +211,7 @@ def build_frozen_calibration(args):
 
     The molly C/ρ RATIO matrix and the forward kernel are files (already frozen);
     this only captures the two pieces that a naive rerun would otherwise rebuild on
-    london-0. Returns a dict; this function reads ONLY 2LPT-0 inputs.
+    saclay-0. Returns a dict; this function reads ONLY 2LPT-0 inputs.
     """
     print("[T-F] building FROZEN 2LPT-0 calibration (g(N,z) + molly counts) ...")
     molly_tsv = AB._resolve_molly(args)            # the 2LPT-0 lya_only-nhi195 matrix
@@ -189,14 +251,14 @@ def build_frozen_calibration(args):
 
 
 # ---------------------------------------------------------------------------
-# build the london-0 (HELD-OUT) ingredients with the FROZEN recipe injected
+# build the saclay-0 (HELD-OUT) ingredients with the FROZEN recipe injected
 # ---------------------------------------------------------------------------
 def build_heldout_ingredients(args, frozen, variant):
     """Mirror ab_loa0_fp_baseline.build_ingredients but:
-      - point catalog/truth/bal/QSO at london-0,
-      - inject the FROZEN g(N,z) onto cfg._cnz_resolved (NOT rebuilt on london-0),
+      - point catalog/truth/bal/QSO at saclay-0,
+      - inject the FROZEN g(N,z) onto cfg._cnz_resolved (NOT rebuilt on saclay-0),
       - VARIANT A: also overwrite the molly COUNT denominators with the frozen
-        2LPT-0 ones (fully frozen); VARIANT B: regenerate them on london-0,
+        2LPT-0 ones (fully frozen); VARIANT B: regenerate them on saclay-0,
       - do NOT attach the row-indexed posterior kappa (forward path ignores it; the
         op-row-count assert would otherwise fire on the held-out catalog).
     """
@@ -222,16 +284,23 @@ def build_heldout_ingredients(args, frozen, variant):
     # it, and the 2LPT-0 kappa is row-aligned to the 2LPT-0 catalog (would mis-index).
     mm = load_molly_matrix(molly_tsv)
     truth_floor = float(mm.nhi_edges[0])
-    qso_lookup = _build_qso_lookup(cfg)            # reads london-0 mockdir snr/zcat
+    qso_lookup = _build_qso_lookup(cfg)            # reads saclay-0 mockdir snr/zcat
     cat_cut, truth_cut, is_TP, good_mask, meta = load_and_cut_catalog(
         cfg, truth_nhi_floor=truth_floor, qso_lookup=qso_lookup,
         host_truth_floor=min(args.host_truth_floor, truth_floor))
 
-    # mm_resample carries london-0's OWN regenerated COUNTS — used ONLY by the MC band's
+    # Snap any exact-on-interior-molly-edge S2N_RED/NHI/NHI_TRUE value off the grid so the
+    # molly count regen agrees with the estimator's right-inclusive cell convention. MUST run
+    # BEFORE regenerate_molly_counts so mm_resample AND the build_truth_match_resample
+    # reconstruction (in run_tf_variant) consume the SAME snapped tables and the validate
+    # assertion passes legitimately. Saclay has one such row (NHI_TRUE=20.0); NO-OP elsewhere.
+    _snap_off_molly_edges(cat_cut, truth_cut, mm)
+
+    # mm_resample carries saclay-0's OWN regenerated COUNTS — used ONLY by the MC band's
     # shared-resample basis (build_truth_match_resample), whose unit-weight reconstruction
-    # MUST equal the counts derived from london-0's own cat_cut/truth_cut (the validate
-    # assertion). The per-TID sightline bootstrap is over LONDON-0 sightlines, so its count
-    # denominators are intrinsically london-0's — they CANNOT be the 2LPT-0 grafted counts
+    # MUST equal the counts derived from saclay-0's own cat_cut/truth_cut (the validate
+    # assertion). The per-TID sightline bootstrap is over SACLAY-0 sightlines, so its count
+    # denominators are intrinsically saclay-0's — they CANNOT be the 2LPT-0 grafted counts
     # (those have a different TID structure). The frozen-recipe C/ρ RATIO still enters the
     # POINT via C_interp/rho_interp below; the band recenters on that point (band_recenter).
     mm_resample = regenerate_molly_counts(
@@ -240,7 +309,7 @@ def build_heldout_ingredients(args, frozen, variant):
     if variant == "A":
         # FULLY FROZEN (the POINT C/ρ ratio): take the molly count denominators from 2LPT-0.
         # This sets the POINT's C/ρ interpolators to the frozen 2LPT-0 RATIO matrix. The band
-        # jitter uses mm_resample (london occupancy) and recenters on this frozen point.
+        # jitter uses mm_resample (saclay occupancy) and recenters on this frozen point.
         mc0 = frozen["molly_counts"]
         if not (np.allclose(mc0["nhi_edges"], mm.nhi_edges)
                 and np.allclose(mc0["snr_edges"], mm.snr_edges)):
@@ -250,9 +319,9 @@ def build_heldout_ingredients(args, frozen, variant):
         mm.cmp_nfound = mc0["cmp_nfound"].copy(); mm.cmp_nfid = mc0["cmp_nfid"].copy()
         mm._max_p_diff = 0.0; mm._max_c_diff = 0.0
     else:
-        # VARIANT B: regenerate the count denominators on the held-out london-0 catalog
+        # VARIANT B: regenerate the count denominators on the held-out saclay-0 catalog
         # (kernel + g still frozen). Localizes whether the COMPLETENESS COUNTS transfer.
-        # The POINT C/ρ ratio now reflects london-0's own counts == mm_resample's counts.
+        # The POINT C/ρ ratio now reflects saclay-0's own counts == mm_resample's counts.
         mm = mm_resample
 
     C_interp = make_C_interpolator(mm)
@@ -265,7 +334,7 @@ def build_heldout_ingredients(args, frozen, variant):
     # FREEZE the completeness g(N,z): stash the 2LPT-0 model so ensure_cnz_resolved
     # (called by v3x_build_forward via cfg) returns it unchanged — NOT rebuilt here.
     # The frozen g grid lives on the molly nhi-cell × fine-z grid; both are identical
-    # for 2LPT-0 and london-0 (same molly TSV, same cfg fine-z step) so it threads cleanly.
+    # for 2LPT-0 and saclay-0 (same molly TSV, same cfg fine-z step) so it threads cleanly.
     g0 = frozen["g_cnz"]
     if not np.allclose(np.asarray(g0.nhi_edges, float), np.asarray(mm.nhi_edges, float)):
         raise SystemExit("frozen g(N,z) nhi_edges != held-out molly nhi_edges.")
@@ -279,7 +348,7 @@ def build_heldout_ingredients(args, frozen, variant):
     estimator_fn = functools.partial(
         v3x_refit, mm=mm, qso_per_sl=(qzl, qzh, qsn), Xcalc=Xcalc,
         rng=np.random.default_rng(0))
-    print(f"  [variant {variant}] held-out london-0: n_op_sl={n_sl}, "
+    print(f"  [variant {variant}] held-out saclay-0: n_op_sl={n_sl}, "
           f"frozen g shape={cfg._cnz_resolved.g_grid.shape}, kappa NOT attached.")
     return dict(cfg=cfg, mm=mm, mm_resample=mm_resample,
                 cat_cut=cat_cut, truth_cut=truth_cut, is_TP=is_TP,
@@ -293,7 +362,7 @@ def build_heldout_ingredients(args, frozen, variant):
 # ---------------------------------------------------------------------------
 def run_tf_variant(args, ing, limits, seed):
     """Run the forward-empirical per-z band on the held-out ingredients and score R0
-    against london-0's OWN truth. Reuses the EXACT PZ (track_c_perz_band) band path so
+    against saclay-0's OWN truth. Reuses the EXACT PZ (track_c_perz_band) band path so
     the recipe is bit-identical — only the ingredients (catalog/truth/QSO) differ and
     g/kernel are frozen. Returns (res, cov)."""
     cfg = ing["cfg"]
@@ -387,12 +456,12 @@ def run_tf_variant(args, ing, limits, seed):
         return res, cov
 
     # The MC band's resample basis (tmr), per-draw response refit (refit_fn) and the
-    # C/ρ-derivation (joint_mc_errors) form ONE coherent system over london-0's OWN cell
-    # occupancy — so they ALL take mm_resample (london counts), NOT the grafted point mm.
+    # C/ρ-derivation (joint_mc_errors) form ONE coherent system over saclay-0's OWN cell
+    # occupancy — so they ALL take mm_resample (saclay counts), NOT the grafted point mm.
     # The frozen-recipe C/ρ RATIO already entered the POINT via run_baseline(ing) above
     # (ing["C_interp"] = grafted-2LPT-0 in variant A); band_recenter=True then recenters the
     # band on that frozen point. Using ing["mm"] (grafted) here would fail the
-    # build_truth_match_resample validate (a per-TID london bootstrap can't reproduce the
+    # build_truth_match_resample validate (a per-TID saclay bootstrap can't reproduce the
     # 2LPT-0 count denominators) and would mis-key the per-draw ρ matrix.
     cfg.n_mc = args.n_mc
     if args.fp_estimator == "loa0":
@@ -442,7 +511,7 @@ def run_tf_variant(args, ing, limits, seed):
         raise AssertionError(f"per-draw dN/dX(z) vs stored mismatch: {band_cerr:.2e}")
     cerr = max(cerr, band_cerr)
 
-    # london-0's OWN truth f(N,z) + integrals (the R0 denominator)
+    # saclay-0's OWN truth f(N,z) + integrals (the R0 denominator)
     tf = PZ.truth_fNz(cfg, ing["truth_cut"], logN_lo, logN_hi, dN_b, ing["X_tot"])
     f_truth = tf["f_truth"]
     tr = PZ.truth_perz_integrals(cfg, f_truth, logN_lo, N_b, dN_b, limits)
@@ -473,7 +542,9 @@ def fit_meanflux_rescale(variants, limits):
     R0≈1), then report the RESIDUAL per-z spread AFTER applying s. If a single scalar
     collapses the deviation to ~the band, that is the clean, expected cross-recipe story.
 
-    Returns {variant: {limit: {s, pre_spread, post_spread, pre_rms, post_rms}}}.
+    DIAGNOSTIC ONLY — this does NOT modify the recovered dN/dX. The headline per-z R0 and
+    integrated R0 in the verdict tables / JSON are ALREADY the PRE-rescale (non-circular)
+    values. Returns {variant: {limit: {s, pre_spread, post_spread, pre_rms, post_rms}}}.
     """
     out = {}
     for vk, V in variants.items():
@@ -506,23 +577,23 @@ def fit_meanflux_rescale(variants, limits):
 # ---------------------------------------------------------------------------
 def write_report(out_path, variants, args, wallclock, rescale):
     L = []
-    L.append("# Track-C T-F LEG 2 — frozen-recipe CROSS-RECIPE proof on held-out london-0")
+    L.append("# Track-C T-F LEG 3 — frozen-recipe CROSS-RECIPE proof on held-out saclay-0")
     L.append("")
     L.append(f"- Status: COMPLETE.  n_mc={args.n_mc}  seed={args.seed}  "
              f"wallclock={wallclock:.0f}s ({wallclock/60:.1f} min)")
-    L.append(f"- Held-out mock RECIPE: london CoLoRe v5.9.5 (DIFFERENT recipe from the "
-             f"2LPT-0/2lpt-1 lyacolore_2lpt v2.8.5 calibration — the STRONGEST transfer "
-             f"test).")
+    L.append(f"- Held-out mock RECIPE: Saclay v4.7.5 (a DIFFERENT recipe from the "
+             f"2LPT-0/2lpt-1 lyacolore_2lpt v2.8.5 calibration — a SECOND cross-recipe "
+             f"transfer test alongside london-0).")
     L.append(f"- Forward kernel (FROZEN, 2LPT-0): `{args.forward_model}`")
     L.append(f"- Completeness g(N,z) (FROZEN, 2LPT-0): built on 2LPT-0 truth-match, "
-             f"stashed on cfg._cnz_resolved (NOT rebuilt on london-0).")
+             f"stashed on cfg._cnz_resolved (NOT rebuilt on saclay-0).")
     L.append(f"- molly C/ρ ratio matrix (FROZEN, 2LPT-0): `{args.molly_tsv}`")
-    L.append(f"- Held-out catalog (london-0): `{args.heldout_cat}`")
+    L.append(f"- Held-out catalog (saclay-0): `{args.heldout_cat}`")
     L.append(f"- Held-out truth (R0 scoring only): `{args.heldout_truth}`  "
-             f"(london `dla_cat.fits` — cols NHI/Z_DLA/TARGETID/DLAID)")
+             f"(saclay `hcd_truth_cat.fits` — cols NHI/Z/TARGETID/DLAID/SNR)")
     L.append(f"- Held-out QSO/pathlength: `{args.heldout_mockdir}` "
-             f"(snr_cat.fits built from the catalog's processed h5 `snrs`=SNR_REDSIDE, "
-             f"100% of the z∈(2.0,4.25) pathlength population).")
+             f"(NATIVE snr_cat.fits + zcat.fits/seed_zcat.fits — nothing staged; "
+             f"saclay ships a real snr_cat unlike london-0).")
     L.append(f"- Inference (gpy_dla_detection/) byte-FROZEN; no estimator-logic edit; "
              f"posterior kappa NOT attached (forward path). STAMP code_commit="
              f"`{_git_commit()}`.")
@@ -533,13 +604,13 @@ def write_report(out_path, variants, args, wallclock, rescale):
         cov = V["cov"]; res = V["res"]; itr = V["int_truth"]; ir0 = V["int_R0"]
         zbins = res["zbins"]; zmid = 0.5 * (zbins[:-1] + zbins[1:])
         label = ("A (fully frozen: 2LPT-0 molly counts + g + kernel)" if vk == "A"
-                 else "B (kernel+g frozen; molly counts rebuilt on london-0)")
+                 else "B (kernel+g frozen; molly counts rebuilt on saclay-0)")
         L.append(f"### Variant {label}")
         L.append("")
         for lim in args._limits:
-            L.append(f"**NHI ≥ {lim:.1f}** — R0 = recovered / london-0-truth")
+            L.append(f"**NHI ≥ {lim:.1f}** — R0 = recovered / saclay-0-truth")
             L.append("")
-            L.append("| reduction | z bin | z≈ | MAP | london-0 truth | R0 | cover68? |")
+            L.append("| reduction | z bin | z≈ | MAP | saclay-0 truth | R0 | cover68? |")
             L.append("|---|---|---|---|---|---|---|")
             for kind, name in (("dndx", "dN/dX(z)"), ("omega", "Ω_HI(z)")):
                 for k in range(res["n_zc"]):
@@ -572,7 +643,7 @@ def write_report(out_path, variants, args, wallclock, rescale):
     L.append("")
     if "A" in variants and "B" in variants:
         L.append("Variant A freezes EVERYTHING from 2LPT-0 (real-data-applicable). "
-                 "Variant B rebuilds only the molly COUNT denominators on london-0. If A ≈ B, "
+                 "Variant B rebuilds only the molly COUNT denominators on saclay-0. If A ≈ B, "
                  "the completeness COUNTS transfer (the recipe is mock-agnostic). If A "
                  "deviates from 1 but B recovers, the 2LPT-0 completeness COUNTS mis-transfer "
                  "(g shape OK, count level off). If BOTH deviate together, it is the KERNEL "
@@ -581,7 +652,7 @@ def write_report(out_path, variants, args, wallclock, rescale):
     else:
         L.append("(only one variant run — pass --variant both for the decomposition.)")
     L.append("")
-    L.append(f"- Figure: `{os.path.join(args.out, 'fig_tf_london0.png')}`")
+    L.append(f"- Figure: `{os.path.join(args.out, 'fig_tf_saclay.png')}`")
     with open(out_path, "w") as fh:
         fh.write("\n".join(L) + "\n")
     print(f"[T-F] report -> {out_path}")
@@ -589,7 +660,7 @@ def write_report(out_path, variants, args, wallclock, rescale):
 
 
 def make_figure(out_path, variants, args):
-    """fig_tf_london0.png — 3-panel: dN/dX, Ω, CDDF; recovered band + london-0 truth.
+    """fig_tf_saclay.png — 3-panel: dN/dX, Ω, CDDF; recovered band + saclay-0 truth.
     One column per variant; the headline variant A on top, B below if present."""
     import matplotlib
     matplotlib.use("Agg")
@@ -614,7 +685,7 @@ def make_figure(out_path, variants, args):
             ax.annotate(f"R0={c['MAP_R0']:.2f}", (zmid[k], max(hi68, c["truth"])),
                         textcoords="offset points", xytext=(0, 8), fontsize=8, ha="center")
         ax.set_xlabel("z"); ax.set_ylabel(rf"$dN/dX\,(z)\ (\geq{hl:.1f})$")
-        ax.set_title(f"variant {vk}: dN/dX  (● MAP  ★ london-0 truth)")
+        ax.set_title(f"variant {vk}: dN/dX  (● MAP  ★ saclay-0 truth)")
         ax.grid(alpha=0.25); ax.margins(y=0.3)
         # panel 1: Ω(z)
         ax = axes[r, 1]
@@ -653,12 +724,12 @@ def make_figure(out_path, variants, args):
         ax.plot(mid[m], np.clip(map_fb[m], 1e-30, None), "-", color=C_MAP, lw=1.6,
                 label="HBI MAP")
         mt = (mid >= 20.0) & (mid <= 22.0) & np.isfinite(ft_fb) & (ft_fb > 0)
-        ax.plot(mid[mt], ft_fb[mt], "*", color=CT, ms=10, ls="none", label="london-0 truth")
+        ax.plot(mid[mt], ft_fb[mt], "*", color=CT, ms=10, ls="none", label="saclay-0 truth")
         ax.set_yscale("log"); ax.set_xlim(20.0, 22.0)
         ax.set_xlabel(r"$\log_{10} N_{\rm HI}$"); ax.set_ylabel(r"$f(N)$")
         ax.set_title(f"variant {vk}: CDDF"); ax.legend(fontsize=8); ax.grid(alpha=0.25, which="both")
-    fig.suptitle("Track-C T-F LEG 2 — FROZEN 2LPT-0 recipe applied to held-out london-0 "
-                 "(DIFFERENT recipe, no refit)\nR0 = recovered / london-0 truth; "
+    fig.suptitle("Track-C T-F LEG 3 — FROZEN 2LPT-0 recipe applied to held-out saclay-0 "
+                 "(DIFFERENT recipe, no refit)\nR0 = recovered / saclay-0 truth; "
                  "R0≈1 (up to a single mean-flux rescale) = cross-recipe generalization",
                  fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
@@ -680,11 +751,11 @@ def main(argv=None):
                    help="(unused for forward path; kept for _resolve_molly parity)")
     p.add_argument("--forward-model", default=_DEF_FORWARD)
     p.add_argument("--resp-family", default="empirical", choices=["skewnorm", "empirical"])
-    # held-out london-0
-    p.add_argument("--heldout-cat", default=_L0_CAT)
-    p.add_argument("--heldout-truth", default=_L0_TRUTH)
-    p.add_argument("--heldout-bal", default=_L0_BAL)
-    p.add_argument("--heldout-mockdir", default=_L0_MOCKDIR)
+    # held-out saclay-0
+    p.add_argument("--heldout-cat", default=_S0_CAT)
+    p.add_argument("--heldout-truth", default=_S0_TRUTH)
+    p.add_argument("--heldout-bal", default=_S0_BAL)
+    p.add_argument("--heldout-mockdir", default=_S0_MOCKDIR)
     # FP estimator for the held-out POINT (build_heldout_ingredients only). Default
     # purity_mixture = BYTE-IDENTICAL to the prior runs; loa0 = the directly-measured
     # forest-FP cross-check (Loa0FP.from_product, vol-scaled by cfg.n_sl_prod). The
@@ -695,7 +766,7 @@ def main(argv=None):
     # run knobs (match the headline perz recipe)
     p.add_argument("--variant", default="both", choices=["A", "B", "both"])
     p.add_argument("--out", default=_DEF_OUT)
-    p.add_argument("--report-out", default=".superpowers/sdd/track_c_TF_london0_report.md")
+    p.add_argument("--report-out", default=".superpowers/sdd/track_c_TF_saclay_report.md")
     p.add_argument("--mockdir", default=None)
     p.add_argument("--zbins", default="2.0,2.5,3.0,3.5")
     p.add_argument("--report-limits", default="20.0,20.3")
@@ -740,34 +811,32 @@ def main(argv=None):
     if not _exists(args.heldout_cat):
         missing.append(f"held-out catalog: {args.heldout_cat}")
     if not os.path.exists(args.heldout_truth):
-        missing.append(f"held-out london-0 TRUTH (R0 denominator): {args.heldout_truth}")
+        missing.append(f"held-out saclay-0 TRUTH (R0 denominator): {args.heldout_truth}")
     # the QSO/snr catalog (pathlength + truth-match SNR) lives in the mockdir
     md = args.heldout_mockdir
     has_zcat = any(os.path.exists(os.path.join(md, f))
                    for f in ("zcat.fits", "seed_zcat.fits"))
     has_snr = os.path.exists(os.path.join(md, "snr_cat.fits"))
     if not (has_zcat and has_snr):
-        missing.append(f"held-out london-0 QSO/snr catalog (pathlength): "
+        missing.append(f"held-out saclay-0 QSO/snr catalog (pathlength): "
                        f"{md}/{{zcat.fits|seed_zcat.fits, snr_cat.fits}}")
     if missing:
-        msg = ("\n[T-F] DATA BLOCKER — cannot score R0 without the held-out london-0 "
+        msg = ("\n[T-F] DATA BLOCKER — cannot score R0 without the held-out saclay-0 "
                "truth + QSO catalog. Missing:\n  - " + "\n  - ".join(missing) +
-               "\n\nThe london-0 dlacat is present. R0 = recovered/london-0-truth needs "
-               "the london mock `dla_cat.fits` (the R0 denominator) AND a `snr_cat.fits` "
-               "+ `zcat.fits` (the pathlength X_tot covers ALL sightlines). Build the "
-               "snr_cat from the catalog's processed h5:\n  python "
-               "examples/make_snr_cat_from_processed.py --processed-dir "
-               "<catalog>/processed --out-prefix <mockdir>/snr_cat\nthen symlink the "
-               "london dla_cat.fits/zcat.fits/bal_cat.fits into <mockdir>.\n")
+               "\n\nThe saclay-0 dlacat is present. R0 = recovered/saclay-0-truth needs "
+               "the saclay mock `hcd_truth_cat.fits` (the R0 denominator) AND the native "
+               "`snr_cat.fits` + `zcat.fits`/`seed_zcat.fits` (the pathlength X_tot covers "
+               "ALL sightlines). These ship in saclay's juraLy8-124 mockdir natively — "
+               "no staging needed; check the --heldout-mockdir path.\n")
         print(msg)
         with open(os.path.abspath(args.report_out), "w") as fh:
-            fh.write("# Track-C T-F LEG 2 — BLOCKED (held-out truth not staged)\n\n"
+            fh.write("# Track-C T-F LEG 3 — BLOCKED (held-out truth not staged)\n\n"
                      + msg + "\n")
         return dict(status="blocked", missing=missing)
 
     t0 = time.time()
     print("=" * 78)
-    print("TRACK-C T-F LEG 2 — FROZEN 2LPT-0 recipe on held-out london-0 (no refit)")
+    print("TRACK-C T-F LEG 3 — FROZEN 2LPT-0 recipe on held-out saclay-0 (no refit)")
     print(f"  forward kernel: {args.forward_model}")
     print(f"  held-out catalog: {args.heldout_cat}")
     print(f"  held-out truth:   {args.heldout_truth}")
@@ -799,7 +868,7 @@ def main(argv=None):
     wallclock = time.time() - t0
     rescale = fit_meanflux_rescale(variants, limits)
     if not args.point_only:   # the 3-panel figure needs the MC band (skipped in point-only)
-        fig_path = os.path.join(args.out, "fig_tf_london0.png")
+        fig_path = os.path.join(args.out, "fig_tf_saclay.png")
         make_figure(fig_path, variants, args)
     rep = write_report(os.path.abspath(args.report_out), variants, args, wallclock, rescale)
 
@@ -817,7 +886,7 @@ def main(argv=None):
             for kind in ("dndx", "omega")},
             meanflux_rescale={str(l): rescale.get(vk, {}).get(l) for l in limits})
             for vk, V in variants.items()})
-    with open(os.path.join(args.out, "track_c_tf_london0.json"), "w") as fh:
+    with open(os.path.join(args.out, "track_c_tf_saclay.json"), "w") as fh:
         json.dump(out_json, fh, indent=2, default=float)
     print("\n" + rep)
     print(f"\n[T-F] DONE in {wallclock:.0f}s")

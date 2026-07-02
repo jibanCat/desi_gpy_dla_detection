@@ -90,9 +90,13 @@ _DEF_OUT = "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_2l
 def _git_commit():
     try:
         import subprocess
-        return subprocess.check_output(
+        h = subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], cwd=_REPO,
             stderr=subprocess.DEVNULL).decode().strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"], cwd=_REPO,
+            stderr=subprocess.DEVNULL).decode().strip()
+        return h + ("-dirty" if dirty else "")
     except Exception:
         return "unknown"
 
@@ -154,6 +158,65 @@ def build_frozen_calibration(args):
                 c0_truth_floor=truth_floor)
 
 
+def _snap_off_molly_edges(cat_cut, truth_cut, mm, eps=1e-9):
+    """Make the molly-count regen agree with build_truth_match_resample's reconstruction
+    for values that land EXACTLY on an interior molly bin edge.
+
+    WHY: the molly count regen (regenerate_molly_counts -> completeness/purity_snr_nhi_bins)
+    bins per cell with STRICT bounds (`v > lo & v < hi`), so a value exactly on an interior
+    edge is dropped from BOTH adjacent cells. The estimator's own cell lookups
+    (build_truth_match_resample `_flat_cell`, and make_C_interpolator -> `_cell_index`) use
+    RIGHT-INCLUSIVE searchsorted (`searchsorted(side='right')-1`), which assigns an exact-edge
+    value to the UPPER cell. build_truth_match_resample asserts (validate=True) that the
+    unit-weight reconstruction reproduces regenerate_molly_counts EXACTLY — so any exact-edge
+    row makes it differ and the assertion (rightly) fires. The 2lpt mock truth NHI is quantized
+    onto round values (many land exactly on molly edges, e.g. ~93 at NHI=20.0), so this leg
+    needs the snap at scale; london-0/2lpt-0 have ~none, which is why those legs pass unchanged.
+
+    FIX (reduce-only, in the DRIVER; estimator + assertion untouched): nudge any
+    S2N_RED/NHI/NHI_TRUE value sitting exactly on an INTERIOR molly edge by +eps so BOTH
+    binning conventions agree, resolving the tie in favour of the estimator's OWN
+    right-inclusive convention (the cell make_C_interpolator already assigns it to). eps=1e-9
+    is far below NHI (~0.1 dex) / SNR precision and cannot move a value to the far side of a
+    report threshold VALUE (a value at 20.0 stays >=20.0 & <20.3; at 20.3 stays >=20.3). The
+    R0 effect is null: an exact-edge truth system is now counted INCLUSIVELY on BOTH the
+    recovered (cmp_nfound) and truth (cmp_nfid) side — matching the recovered side's
+    right-inclusive convention. NO-OP (returns 0) on london-0/2lpt-0. Modifies in place.
+    """
+    nhi_int = np.asarray(mm.nhi_edges, float)[1:-1]
+    nhi_int = nhi_int[np.isfinite(nhi_int)]
+    snr_int = np.asarray(mm.snr_edges, float)[1:-1]
+    snr_int = snr_int[np.isfinite(snr_int)]
+    n_nudged = 0
+    detail = []
+
+    def _nudge(tbl, col, edges):
+        nonlocal n_nudged
+        if tbl is None or col not in tbl.colnames or len(edges) == 0:
+            return
+        v = np.asarray(tbl[col], float).copy()
+        on = np.zeros(v.shape, bool)
+        for e in edges:
+            on |= (v == e)          # NaN never == edge; finite exact-edge hits only
+        k = int(np.count_nonzero(on))
+        if k:
+            v[on] = v[on] + eps
+            tbl[col] = v
+            n_nudged += k
+            detail.append(f"{col}:{k}")
+
+    _nudge(cat_cut, "NHI", nhi_int)        # purity-cell pred-NHI
+    _nudge(cat_cut, "NHI_TRUE", nhi_int)   # completeness-numerator true-NHI
+    _nudge(cat_cut, "S2N_RED", snr_int)    # SNR cell (both paths)
+    _nudge(truth_cut, "NHI", nhi_int)      # completeness-denominator fiducial true-NHI
+    _nudge(truth_cut, "S2N_RED", snr_int)  # fiducial SNR cell
+    if n_nudged:
+        print(f"  [edge-snap] nudged {n_nudged} exact-on-interior-edge value(s) off the "
+              f"molly grid by +{eps:g} ({', '.join(detail)}) so the molly regen matches the "
+              f"right-inclusive cell convention (build_truth_match_resample validate).")
+    return n_nudged
+
+
 # ---------------------------------------------------------------------------
 # build the 2lpt-1 (HELD-OUT) ingredients with the FROZEN recipe injected
 # ---------------------------------------------------------------------------
@@ -173,7 +236,8 @@ def build_heldout_ingredients(args, frozen, variant):
         mockdir=args.heldout_mockdir or os.path.dirname(args.heldout_truth),
         zbins=tuple(float(x) for x in args.zbins.split(",")),
         report_logN_limits=tuple(float(x) for x in args.report_limits.split(",")),
-        fp_estimator="purity_mixture", no_bal=True,
+        fp_estimator=args.fp_estimator, no_bal=True,
+        loa0_product_path=(args.loa0_product if args.fp_estimator == "loa0" else None),
         v3_family=args.family, v3_logN_fit_floor=args.fit_floor,
         v3_logN_fit_ceil=args.fit_ceil, v3_lambda_bspbody=args.lambda_bspbody,
         v3_mc_n_restart=2, lam_rf_min=args.lam_rf_min,
@@ -192,6 +256,21 @@ def build_heldout_ingredients(args, frozen, variant):
         cfg, truth_nhi_floor=truth_floor, qso_lookup=qso_lookup,
         host_truth_floor=min(args.host_truth_floor, truth_floor))
 
+    # Snap any exact-on-interior-molly-edge value off the grid so the molly count regen agrees
+    # with the estimator's right-inclusive cell convention. MUST run BEFORE regenerate_molly_counts
+    # so mm_resample AND the build_truth_match_resample reconstruction (run_tf_variant) consume
+    # the SAME snapped tables and the validate assertion passes. 2lpt truth NHI is quantized onto
+    # round values, so many rows land exactly on molly edges (NO-OP on london-0/2lpt-0).
+    _snap_off_molly_edges(cat_cut, truth_cut, mm)
+
+    # mm_resample carries 2lpt-1's OWN regenerated COUNTS — used ONLY by the MC band's
+    # shared-resample basis (build_truth_match_resample), whose unit-weight reconstruction MUST
+    # equal the counts from 2lpt-1's own cat_cut/truth_cut. The per-TID sightline bootstrap is
+    # over 2lpt-1 sightlines, so it CANNOT reproduce the 2LPT-0 grafted counts (variant A). The
+    # frozen-recipe C/ρ RATIO still enters the POINT via C_interp/rho_interp below.
+    mm_resample = regenerate_molly_counts(
+        load_molly_matrix(molly_tsv), cat_cut, is_TP, truth_cut, good_mask, cfg)
+
     if variant == "A":
         # FULLY FROZEN: take the molly count denominators from 2LPT-0 (do NOT rebuild).
         mc0 = frozen["molly_counts"]
@@ -205,7 +284,7 @@ def build_heldout_ingredients(args, frozen, variant):
     else:
         # VARIANT B: regenerate the count denominators on the held-out 2lpt-1 catalog
         # (kernel + g still frozen). Localizes whether the COMPLETENESS COUNTS transfer.
-        mm = regenerate_molly_counts(mm, cat_cut, is_TP, truth_cut, good_mask, cfg)
+        mm = mm_resample
 
     C_interp = make_C_interpolator(mm)
     rho_interp = make_rho_interpolator(mm)
@@ -233,7 +312,8 @@ def build_heldout_ingredients(args, frozen, variant):
         rng=np.random.default_rng(0))
     print(f"  [variant {variant}] held-out 2lpt-1: n_op_sl={n_sl}, "
           f"frozen g shape={cfg._cnz_resolved.g_grid.shape}, kappa NOT attached.")
-    return dict(cfg=cfg, mm=mm, cat_cut=cat_cut, truth_cut=truth_cut, is_TP=is_TP,
+    return dict(cfg=cfg, mm=mm, mm_resample=mm_resample,
+                cat_cut=cat_cut, truth_cut=truth_cut, is_TP=is_TP,
                 good_mask=good_mask, C_interp=C_interp, fp_model=fp_model,
                 X_tot=X_tot, n_sl=n_sl, logN_lo=logN_lo, logN_hi=logN_hi,
                 N_b=N_b, dN_b=dN_b, estimator_fn=estimator_fn, meta=meta)
@@ -293,15 +373,85 @@ def run_tf_variant(args, ing, limits, seed):
     if cerr >= 1e-7:
         raise AssertionError(f"MAP per-z dN/dX vs e0.dndx_z mismatch: {cerr:.2e}")
 
-    tmr = build_truth_match_resample(
-        ing["mm"], ing["cat_cut"], ing["is_TP"], ing["truth_cut"], ing["good_mask"], cfg)
-    refit_fn = make_v3x_refit_fn(cfg, e0["_v3x"], ing["mm"],
-                                 cat_cut=ing["cat_cut"], good_mask=ing["good_mask"], tmr=tmr)
+    # ---- POINT-ONLY short-circuit (loa0 FP cross-check) ------------------------------
+    # The integrated R0 (integrated_point) is already computed from run_baseline above,
+    # and so are the per-z MAP integrals (map_dndx/map_omega from the e0 MAP f_bk). The
+    # MC BAND below routes through make_v3x_refit_fn, which (correctly) refuses a
+    # non-purity-mixture FP (its band must come from loa0_full_posterior_mc, spec §4/§7).
+    # For --point-only we therefore score the per-z R0 from the MAP + the held-out truth
+    # (band fields = NaN, cover = None) and RETURN before the band. purity_mixture runs
+    # leave --point-only OFF (default) and never reach this branch — byte-identical full
+    # band. The frozen GP inference / estimator code is untouched either way.
+    if getattr(args, "point_only", False):
+        tf = PZ.truth_fNz(cfg, ing["truth_cut"], logN_lo, logN_hi, dN_b, ing["X_tot"])
+        f_truth = tf["f_truth"]
+        tr = PZ.truth_perz_integrals(cfg, f_truth, logN_lo, N_b, dN_b, limits)
+        truth_dndx = tr["dndx"]; truth_omega = tr["omega"]
+        _nan2 = [float("nan"), float("nan")]
+        cov = dict(dndx={}, omega={})
+        for l in limits:
+            cov["dndx"][str(l)] = []
+            cov["omega"][str(l)] = []
+            for k in range(n_zc):
+                pt = float(map_dndx[l][k]); tv = float(truth_dndx[l][k])
+                cov["dndx"][str(l)].append(dict(
+                    z_idx=k, MAP=pt, MAP_R0=(pt / tv if tv > 0 else float("nan")),
+                    truth=tv, band68=list(_nan2), band95=list(_nan2),
+                    cover68=None, cover95=None))
+                pt_o = float(map_omega[l][k]); tv_o = float(truth_omega[l][k])
+                cov["omega"][str(l)].append(dict(
+                    z_idx=k, MAP=pt_o, MAP_R0=(pt_o / tv_o if tv_o > 0 else float("nan")),
+                    truth=tv_o, band68=list(_nan2), band95=list(_nan2),
+                    cover68=None, cover95=None, slope_extrap_shoulder=False))
+        cov["_meta"] = dict(point_only=True, band_recenter=False,
+                            omega_slope_extrap=False, omega_slope_extrap_integrated=False)
+        res = dict(
+            cfg=cfg, H0=cfg.H0, K=K, zbins=zbins, n_zc=n_zc,
+            logN_lo=logN_lo, logN_hi=logN_hi, N_b=N_b, dN_b=dN_b,
+            mid=0.5 * (logN_lo + logN_hi),
+            map_fbk=map_fbk, map_dndx=map_dndx, map_omega=map_omega,
+            dndx_samp=None, omega_samp=None, fbk_samp=None, fb_samp=None,
+            f_truth=f_truth, truth_dndx=truth_dndx, truth_omega=truth_omega,
+            consistency_err=float(cerr), n_mc=0, point_only=True,
+            integrated_point=integrated_point,
+        )
+        return res, cov
+
+    # The MC band's resample basis (tmr), per-draw response refit (refit_fn) and the
+    # C/ρ-derivation (joint_mc_errors) form ONE coherent system over 2lpt-1's OWN cell
+    # occupancy — so they ALL take mm_resample (2lpt-1 counts), NOT the grafted point mm.
+    # The frozen-recipe C/ρ RATIO already entered the POINT via run_baseline(ing) above
+    # (ing["C_interp"] = grafted-2LPT-0 in variant A); band_recenter then recenters the band on
+    # that frozen point. Using ing["mm"] (grafted) here would fail the build_truth_match_resample
+    # validate (a per-TID 2lpt-1 bootstrap can't reproduce the 2LPT-0 count denominators).
     cfg.n_mc = args.n_mc
-    mc = joint_mc_errors(
-        ing["cat_cut"], ing["is_TP"], ing["good_mask"], ing["mm"], ing["fp_model"],
-        ing["X_tot"], logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"],
-        cfg, np.random.default_rng(seed + 4), refit_fn=refit_fn, tmr=tmr)
+    if args.fp_estimator == "loa0":
+        # loa0 band: make_v3x_refit_fn (the pm shared_boot+refit path in the else) hard-codes
+        # pm's (1-ρ) FP and refuses loa0. Use the truth-free `indep` band (as track_c_tf_loa.py
+        # does for real data): joint_mc_errors resamples the FROZEN loa-0 FP (Gehrels Γ) per
+        # draw + captures f_bk_coarse natively; the C/ρ Wilson jitter is drawn from the FROZEN
+        # 2LPT-0 counts (ing["mm"], variant A) and the sightline bootstrap is over the held-out
+        # op sightlines. Narrower than the pm shared_boot headline (no Stage-III response
+        # marginalization) — but this is the SAME band we run on real LOA, so validating loa0
+        # here certifies the real-data band. (refit_fn=None ⇒ never touches make_v3x_refit_fn.)
+        _sv_nuis = getattr(cfg, "mc_nuisance", "indep")
+        _sv_resp = getattr(cfg, "mc_response", "frozen")
+        cfg.mc_nuisance, cfg.mc_response = "indep", "frozen"
+        mc = joint_mc_errors(
+            ing["cat_cut"], ing["is_TP"], ing["good_mask"], ing["mm"], ing["fp_model"],
+            ing["X_tot"], logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"],
+            cfg, np.random.default_rng(seed + 4), refit_fn=None, tmr=None)
+        cfg.mc_nuisance, cfg.mc_response = _sv_nuis, _sv_resp
+    else:
+        mm_band = ing.get("mm_resample", ing["mm"])
+        tmr = build_truth_match_resample(
+            mm_band, ing["cat_cut"], ing["is_TP"], ing["truth_cut"], ing["good_mask"], cfg)
+        refit_fn = make_v3x_refit_fn(cfg, e0["_v3x"], mm_band,
+                                     cat_cut=ing["cat_cut"], good_mask=ing["good_mask"], tmr=tmr)
+        mc = joint_mc_errors(
+            ing["cat_cut"], ing["is_TP"], ing["good_mask"], mm_band, ing["fp_model"],
+            ing["X_tot"], logN_lo, logN_hi, N_b, dN_b, ing["truth_cut"],
+            cfg, np.random.default_rng(seed + 4), refit_fn=refit_fn, tmr=tmr)
     fbk_samp = np.asarray(mc["_samples"]["f_bk_coarse"], float)
     fb_samp = np.asarray(mc["_samples"]["f_b"], float)
     dndx_z_samp = {l: np.asarray(mc["_samples"]["dndx_z"][l], float) for l in limits}
@@ -509,6 +659,13 @@ def main(argv=None):
     p.add_argument("--heldout-truth", default=_C1_TRUTH)
     p.add_argument("--heldout-bal", default=_C1_BAL)
     p.add_argument("--heldout-mockdir", default=_C1_MOCKDIR)
+    # FP estimator for the held-out POINT (build_heldout_ingredients only). Default
+    # purity_mixture = BYTE-IDENTICAL to the prior runs; loa0 = the directly-measured
+    # forest-FP cross-check (Loa0FP.from_product, vol-scaled by cfg.n_sl_prod). The
+    # FROZEN 2LPT-0 calibration (build_frozen_calibration) stays purity_mixture either way.
+    p.add_argument("--fp-estimator", choices=["purity_mixture", "loa0"],
+                   default="purity_mixture")
+    p.add_argument("--loa0-product", default=AB.DEF_LOA0_PRODUCT)
     # run knobs (match the headline perz recipe)
     p.add_argument("--variant", default="both", choices=["A", "B", "both"])
     p.add_argument("--out", default=_DEF_OUT)
@@ -542,6 +699,11 @@ def main(argv=None):
     p.add_argument("--slope-edge", type=float, default=21.2)
     p.add_argument("--slope-fit-dex", type=float, default=0.6)
     p.add_argument("--sigma-slope", type=float, default=0.5)
+    # POINT-ONLY: emit ONLY the POINT R0 (integrated + per-z MAP/truth), NO MC band.
+    # For the loa0 FP cross-check, whose per-z band would need loa0_full_posterior_mc;
+    # purity_mixture runs leave this OFF (default) = byte-identical full-band behavior.
+    p.add_argument("--point-only", dest="point_only", action="store_true", default=False,
+                   help="emit only the POINT R0 (integrated + per-z MAP/truth, no MC band)")
     args = p.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
     limits = tuple(float(x) for x in args.report_limits.split(","))
@@ -608,8 +770,9 @@ def main(argv=None):
               f"Ω(≥{limits[-1]:.1f})={ir0['omega'][limits[-1]]['R0']:.3f}")
 
     wallclock = time.time() - t0
-    fig_path = os.path.join(args.out, "fig_tf_2lpt1.png")
-    make_figure(fig_path, variants, args)
+    if not args.point_only:   # the 3-panel figure needs the MC band (skipped in point-only)
+        fig_path = os.path.join(args.out, "fig_tf_2lpt1.png")
+        make_figure(fig_path, variants, args)
     rep = write_report(os.path.abspath(args.report_out), variants, args, wallclock)
 
     # JSON dump
@@ -617,6 +780,8 @@ def main(argv=None):
         n_mc=args.n_mc, seed=args.seed, limits=list(limits),
         forward_model=args.forward_model, molly_tsv=args.molly_tsv,
         heldout_cat=args.heldout_cat, heldout_truth=args.heldout_truth,
+        fp_estimator=args.fp_estimator, loa0_product=args.loa0_product,
+        point_only=bool(args.point_only),
         wallclock_s=float(wallclock), code_commit=_git_commit()),
         variants={vk: dict(coverage=V["cov"], integrated_R0={
             kind: {str(l): V["int_R0"][kind][l] for l in limits}
