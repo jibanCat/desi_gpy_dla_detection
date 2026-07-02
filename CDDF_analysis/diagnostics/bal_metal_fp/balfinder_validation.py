@@ -298,6 +298,19 @@ def main():
         row["omega_residual"] = row["omega_residual_bi"]
         res[lab] = row
     M["fp_bal_residual"] = res
+
+    # SNR-cut consistency: c MUST be measured on the DLA op-cut (SNR_REDSIDE>2 & P_DLA>0.99);
+    # a CIV-SNR conditioning or the all-SNR sample average would give the wrong (much lower) c.
+    snr_sens = {}
+    for slab, smask in [("dla_cut_snrR>2", (snrR > SNR_MIN)), ("no_snr_cut", np.ones(len(tid), bool)),
+                        ("snrR>3", snrR > 3), ("snrR>5", snrR > 5)]:
+        m = smask & (pdla > PDLA_MIN) & isfp & (balflag == 1) & (nhi >= 20.3) & inproc
+        w = 10.0 ** nhi[m]
+        cb = float(np.array([bi_of.get(t, 0) > 0 for t in tid[m]], dtype=bool) @ w / w.sum()) if w.sum() else float("nan")
+        snr_sens[slab] = {"omega_completeness_bi": round(cb, 3), "n": int(m.sum()),
+                          "omega_residual_bi": round(res["ge20.3"]["overcount_frac"] * (1 - cb), 4)}
+    M["snr_cut_sensitivity_ge20.3"] = snr_sens
+
     labs = ["≥20.3", "deep tail ≥21.6"]; keys = ["ge20.3", "deep_ge21.6"]
     over = [res[k]["overcount_frac"] * 100 for k in keys]
     resid = [res[k]["omega_residual_bi"] * 100 for k in keys]          # BI>0 (VAC-matched) headline
