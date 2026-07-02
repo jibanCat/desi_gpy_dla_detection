@@ -55,7 +55,7 @@
 #     sbatch slurm/greatlakes/production/crossmock_alpha_tf.sbatch
 # =====================================================================================
 
-#SBATCH -A yueyingn0
+#SBATCH -A cavestru0
 #SBATCH -p standard
 #SBATCH -N 1
 #SBATCH -n 4
