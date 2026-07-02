@@ -2,6 +2,15 @@
 """decompose_highn_fp.py — truth-anchored high-N false-positive decomposition on the
 2LPT-0 loa-124 mock, and the effective real-CDDF residual after BAL-finder completeness.
 
+    >>> SUPERSEDED ESTIMAND (plan review 2026-07-02) <<<
+    This script counts BAL FPs ONLY on HCD-FREE sightlines (`hcdfree & balf`). That OMITS
+    BAL-caused spurious detections on real-DLA-HOSTING sightlines (~60% of BAL FPs). The
+    correct estimand is ANY high-N detection in a BAL sightline that does NOT match a real
+    truth absorber within 3000 km/s. The over-count is therefore 56.1% (>=20.3) / 153% (deep),
+    NOT the 21.6% / 61.6% printed here, and the residual is ~3.2% / ~3.3% (BI>0), NOT ~1-2%.
+    Use balfinder_validation.py (fig6), which implements the corrected estimand. Keep this
+    script only for the by-source flag split (BAL vs metal vs Lyb), which is unaffected.
+
 REDUCE-ONLY (no inference). Uses the CANONICAL production GP catalog on loa-124 + the mock
 truth/BAL catalogs. Every high-N detection in an HCD-FREE sightline (no injected DLA per
 hcd_truth_cat) is a definitive false positive; the dlacat's postprocess flags (BAL_FLAG,

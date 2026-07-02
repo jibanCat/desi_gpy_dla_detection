@@ -251,13 +251,28 @@ def main():
     # =========================================================================
     dc = fitsio.read(a.dlacat)
     tid = np.array([int(x) for x in dc["TARGETID"]]); nhi = np.asarray(dc["NHI"], float)
+    zdla = np.asarray(dc["Z_DLA"], float)
     snrR = np.asarray(dc["SNR_REDSIDE"], float); pdla = np.asarray(dc["P_DLA"], float)
     balflag = np.asarray(dc["BAL_FLAG"], int)
     hcd = fitsio.read(f"{a.mock}/hcd_truth_cat.fits")
     hcdset = set(int(x) for x in hcd["TARGETID"])
     tr_nhi = np.asarray(hcd["NHI"], float); tr_snr = np.asarray(hcd["SNR"], float)
     op = (snrR > SNR_MIN) & (pdla > PDLA_MIN)
-    isfp = np.array([t not in hcdset for t in tid]); inproc = np.array([t in proc for t in tid])
+    inproc = np.array([t in proc for t in tid])
+    # ESTIMAND (fixed after plan review): a BAL FP is ANY high-N detection in a BAL sightline that
+    # does NOT match a real truth absorber within 3000 km/s -- NOT just HCD-free-sightline detections.
+    # ~60% of BAL FPs sit on real-DLA-HOSTING sightlines (a real DLA + a spurious BAL-trough det at
+    # another z); the earlier HCD-free-only cut dropped them and understated the over-count ~2.5x.
+    from collections import defaultdict
+    _tby = defaultdict(list)
+    for t, z in zip(hcd["TARGETID"], np.asarray(hcd["Z"], float)):
+        _tby[int(t)].append(float(z))
+    def _spurious(t, z, dv=3000.0):
+        for zt in _tby.get(int(t), ()):
+            if abs(z - zt) / (1 + zt) * C_KMS < dv:
+                return False
+        return True
+    isfp = np.array([_spurious(t, z) for t, z in zip(tid, zdla)])  # spurious (unmatched to truth)
     def boot_leak(w, recd, B=8000, seed=0):
         """95% CI on the Omega-leak = 1 - sum(w[recd])/sum(w) by resampling FP-BALs."""
         if len(w) == 0:
