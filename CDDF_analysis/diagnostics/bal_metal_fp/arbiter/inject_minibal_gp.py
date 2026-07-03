@@ -13,6 +13,16 @@ GP-DLA inference (DLAHolder.process_qso, y3 = the LOA production config) on each
 Env: source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
      export PYTHONPATH=/home/mfho/desi_gpy_dla_detection:$PYTHONPATH
 Aggregate-only (FP rates, not per-object real spectra).
+
+COMMITTED figures/inject_minibal.npz was produced with (NOT the CLI defaults):
+    python inject_minibal_gp.py --widths 1000,2000 --depths 0.5 --n 15
+  → none=6.7% / voigt20.5=40% / broad_W1000_D0.5=6.7% / broad_W2000_D0.5=6.7% (paired McNemar: 0 incremental FP).
+4-LENS REVIEW (2026-07-03) follow-up (recommended, not yet run): re-run at the PRODUCTION config
+(max_dlas=4, single_absorber_model=True→multi, filter_low_likelihood=True), n>=100, deeper/wider troughs,
+and a stronger positive control (the Voigt-20.5 control here fires only ~33-40%, capping statistical power).
+The Voigt insensitivity is width/EW-bounded: at W=5000 km/s / D=0.9 the broad trough DOES produce logN~21.2
+fits (EW rivals a DLA) — those DLA-mimicking broad troughs are what the BI>0 veto removes; the leaked
+narrow shallow (<=2000 km/s, D~0.5) mini-BALs give the negative-control rate.
 """
 import os, sys, argparse, time, warnings
 import numpy as np

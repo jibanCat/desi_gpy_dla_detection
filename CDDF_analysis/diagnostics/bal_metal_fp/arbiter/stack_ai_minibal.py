@@ -71,7 +71,10 @@ def main():
     clean = (snr > 2) & (p > 0.99) & (lam >= 1025) & (fl == 0) & (nhi >= a.nhi_min)
     ii = np.where(clean)[0]
     is_ai = np.array([int(tid[i]) in aiset for i in ii])
-    grp = {"AI>0 (mini-BAL)": ii[is_ai], "AI=0 (control DLA)": ii[~is_ai]}
+    is_bi = np.array([int(tid[i]) in biset for i in ii])  # strong BAL (BI>0); the clean DLAFLAG==0 set already drops these
+    # define groups on the BI=0 set explicitly: mini-BAL = AI>0 & BI=0, control = AI=0 & BI=0 (matches docstring;
+    # ~is_bi is a no-op given DLAFLAG==0 removes BI>0, kept for clarity / robustness to a future flag change)
+    grp = {"AI>0 (mini-BAL)": ii[is_ai & ~is_bi], "AI=0 (control DLA)": ii[~is_ai & ~is_bi]}
 
     rest_dla = np.arange(1180, 1265, 0.4)   # Lyα damped profile region (DLA frame)
     rest_civ = np.arange(1480, 1580, 0.4)   # CIV region (QSO frame)
