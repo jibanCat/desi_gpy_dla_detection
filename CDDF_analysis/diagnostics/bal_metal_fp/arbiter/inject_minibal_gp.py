@@ -1,0 +1,131 @@
+#!/usr/bin/env python
+"""inject_minibal_gp.py — does a BAL-like broad forest trough fool the GP-DLA search into a
+high-N false positive? Direct causation test for the AI-mini-BAL causal-vs-benign question.
+
+Injects three things into real CLEAN (non-BAL, non-DLA) LOA archive spectra and runs the UNMODIFIED
+GP-DLA inference (DLAHolder.process_qso, y3 = the LOA production config) on each:
+  (0) NOTHING            — negative control (should stay ~no absorber)
+  (1) a Voigt DLA logN=20.5 — positive control (should recover logN~20.5, P_DLA~1)
+  (2) a BROAD Gaussian trough (BAL-like: no damped wings) at a forest position, width W km/s, depth D
+      — THE TEST: if it gets flagged P_DLA>0.99 & logN>=20.3, broad forest absorption CAUSES DLA FPs
+      (→ AI-mini-BALs are causal, ~10%); if not, the AI excess is benign selection (~2%).
+
+Env: source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
+     export PYTHONPATH=/home/mfho/desi_gpy_dla_detection:$PYTHONPATH
+Aggregate-only (FP rates, not per-object real spectra).
+"""
+import os, sys, argparse, time, warnings
+import numpy as np
+warnings.filterwarnings("ignore")
+import h5py, fitsio
+
+DATA_ROOT = "/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection"
+MODEL = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5"
+ARCHIVE = "/scratch/cavestru_root/cavestru0/mfho/nersc/loa_archives/loa_full_z2_noR_v2.h5"
+OUR_VAC = "/scratch/cavestru_root/cavestru0/mfho/our_loa_bal_vac/our_loa_bal_vac_v1.fits"
+REAL_DLA = "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/loa_main_dark_v1/dlacat-loa-main-dark-v1.fits"
+LYA = 1215.67; C = 299792.458
+
+
+def broad_trough(wave, flux, z_qso, lam_rf, width_kms, depth):
+    """multiply flux by a Gaussian absorption trough (BAL-like, NO damped wings) at rest lam_rf."""
+    lam0 = lam_rf * (1 + z_qso)
+    sig = (width_kms / C) * lam0 / 2.355
+    return flux * (1.0 - depth * np.exp(-0.5 * ((wave - lam0) / sig) ** 2))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n", type=int, default=25, help="# clean spectra")
+    ap.add_argument("--widths", default="1000,1500,2500", help="BAL trough widths (km/s)")
+    ap.add_argument("--depths", default="0.4,0.6", help="BAL trough depths")
+    ap.add_argument("--inject-lamrf", type=float, default=1100.0, help="rest-λ to place the trough / DLA")
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "figures"))
+    a = ap.parse_args(); os.makedirs(a.out, exist_ok=True)
+    sys.path.insert(0, DATA_ROOT); sys.path.insert(0, "/home/mfho/desi_gpy_dla_detection")
+    from gpy_dla_detection.set_parameters import Parameters
+    from gpy_dla_detection.inject_absorber import inject_voigt
+    from run_bayes_select import DLAHolder
+
+    # y3 preset config (LOA production)
+    common = dict(loading_min_lambda=910.0, loading_max_lambda=1217.0, normalization_min_lambda=1425.0,
+                  normalization_max_lambda=1475.0, min_lambda=911.75, max_lambda=1215.75, dlambda=0.15,
+                  k=30, max_noise_variance=9.0, num_lines=3, max_z_cut=3000.0, min_z_cut=3000.0, num_forest_lines=3)
+    dr = lambda r: os.path.join(DATA_ROOT, r)
+    holder = DLAHolder(
+        learned_file=MODEL, catalog_name=dr("data/dr12q/processed/catalog.mat"),
+        los_catalog=dr("data/dla_catalogs/dr9q_concordance/processed/los_catalog"),
+        dla_catalog=dr("data/dla_catalogs/dr9q_concordance/processed/dla_catalog"),
+        dla_samples_file=dr("data/dr12q/processed/pw_samples_a3_172_220_50000.mat"),
+        sub_dla_samples_file=dr("data/dr12q/processed/subdla_samples_a03_191_200_100000.mat"),
+        params=Parameters(num_dla_samples=50000, **common),
+        params_subdla=Parameters(num_dla_samples=100000, **common),
+        min_z_separation=3000.0, prev_tau_0=0.00246, prev_beta=3.62,
+        max_dlas=1, broadening=True, plot_figures=False, max_workers=1, batch_size=100,
+        filter_low_likelihood=False, single_absorber_model=True)
+
+    # pick CLEAN spectra: z>2, not in our BAL VAC (AI=0 & BI=0), no high-N DLA detection
+    ours = fitsio.read(OUR_VAC); balset = {int(t) for t, a2, b2 in zip(ours["TARGETID"], ours["AI_CIV"], ours["BI_CIV"]) if a2 > 0 or b2 > 0}
+    dc = fitsio.read(REAL_DLA); dlahost = {int(t) for t, nh, pp in zip(dc["TARGETID"], dc["NHI"], dc["P_DLA"]) if nh >= 20.0 and pp > 0.5}
+    with h5py.File(ARCHIVE, "r") as H:
+        wave = H["wavelength"][:]; cat = H["catalog"][:]
+        ct = np.asarray(cat["TARGETID"], np.int64); cz = np.asarray(cat["Z"], float)
+        cand = [k for k in range(len(ct)) if cz[k] > 2.3 and cz[k] < 3.5 and int(ct[k]) not in balset and int(ct[k]) not in dlahost]
+        rng = np.random.default_rng(0); sel = rng.choice(cand, min(a.n, len(cand)), replace=False)
+        sel = np.sort(sel)
+        FL = H["flux"][sel]; IV = H["ivar"][sel]; MK = H["mask"][sel]; ZQ = cz[sel]; TT = ct[sel]
+
+    widths = [float(x) for x in a.widths.split(",")]; depths = [float(x) for x in a.depths.split(",")]
+
+    def run(wave, flux, ivar, mask, zq, tid):
+        nv = np.where(ivar > 0, 1.0 / np.maximum(ivar, 1e-8), 1e10)
+        pm = (mask != 0) | (ivar <= 0)
+        holder.initialize_results(1)
+        holder.process_qso(idx=0, target_id=str(int(tid)), wavelengths=wave.copy(), flux=flux.copy(),
+                           noise_variance=nv.copy(), pixel_mask=pm.copy(), z_qso=float(zq))
+        r = holder.results
+        return float(r["p_dlas"][0]), float(r["MAP_log_nhis"][0, 0])
+
+    import collections
+    res = collections.defaultdict(list)
+    t0 = time.time()
+    for i in range(len(sel)):
+        fl = FL[i]; iv = IV[i]; mk = MK[i]; zq = ZQ[i]; tid = TT[i]
+        # (0) negative control
+        p, n = run(wave, fl, iv, mk, zq, tid); res["none"].append((p, n))
+        # (1) positive control: Voigt DLA logN=20.5 at inject-lamrf
+        zdla = a.inject_lamrf * (1 + zq) / LYA - 1
+        flv = inject_voigt(wave, fl, 10 ** 20.5, zdla, num_lines=3)
+        p, n = run(wave, flv, iv, mk, zq, tid); res["voigt20.5"].append((p, n))
+        # (2) test: broad BAL-like troughs
+        for W in widths:
+            for D in depths:
+                flb = broad_trough(wave, fl, zq, a.inject_lamrf, W, D)
+                p, n = run(wave, flb, iv, mk, zq, tid); res[f"broad_W{int(W)}_D{D}"].append((p, n))
+        if (i + 1) % 5 == 0:
+            print(f"  {i+1}/{len(sel)} spectra ({(time.time()-t0)/(i+1):.1f}s each)", flush=True)
+
+    print("\n=== INJECTION-RECOVERY: high-N DLA FP rate (P_DLA>0.99 & logN>=20.3) ===")
+    summ = {}
+    for k, v in res.items():
+        arr = np.array(v); fp = np.mean((arr[:, 0] > 0.99) & (arr[:, 1] >= 20.3))
+        summ[k] = fp
+        print(f"  {k:18s}: FP rate = {100*fp:5.1f}%   median P_DLA={np.median(arr[:,0]):.3f}  median logN(det)={np.median(arr[arr[:,0]>0.5,1]) if (arr[:,0]>0.5).any() else float('nan'):.2f}  n={len(arr)}")
+    np.savez(f"{a.out}/inject_minibal.npz", **{k: np.array(v) for k, v in res.items()})
+    # figure
+    import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
+    ks = ["none", "voigt20.5"] + [k for k in res if k.startswith("broad")]
+    fig, ax = plt.subplots(figsize=(9, 4.4))
+    ax.bar(range(len(ks)), [100 * summ[k] for k in ks],
+           color=["grey", "C2"] + ["C3"] * (len(ks) - 2))
+    for i, k in enumerate(ks): ax.text(i, 100 * summ[k] + 1, f"{100*summ[k]:.0f}%", ha="center", fontsize=8)
+    ax.set_xticks(range(len(ks))); ax.set_xticklabels(ks, rotation=30, ha="right", fontsize=8)
+    ax.set_ylabel("high-N DLA FP rate [%]  (P_DLA>0.99 & logN≥20.3)")
+    ax.set_title("Injection: does a BAL-like broad forest trough fool the GP into a high-N DLA?\n"
+                 "none=neg control, voigt20.5=pos control, broad_*=BAL-like troughs (the test)")
+    fig.tight_layout(); fig.savefig(f"{a.out}/inject_minibal.png", dpi=130); plt.close(fig)
+    print(f"\nfig -> {a.out}/inject_minibal.png")
+
+
+if __name__ == "__main__":
+    main()
