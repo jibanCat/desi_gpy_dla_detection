@@ -30,7 +30,9 @@ warnings.filterwarnings("ignore")
 import h5py, fitsio
 
 DATA_ROOT = "/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection"
-MODEL = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5"
+MODEL_LEGACY = "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/desi_gpy_dla_detection/learnlogs/model_epoch_920.h5"
+# production LOA model (loa_main_dark_v1 BASELINE.env): 2lpt_loa124_nohcd_nobal_wide_m
+MODEL_PROD = "/scratch/cavestru_root/cavestru0/mfho/phase2_desi/2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5"
 ARCHIVE = "/scratch/cavestru_root/cavestru0/mfho/nersc/loa_archives/loa_full_z2_noR_v2.h5"
 OUR_VAC = "/scratch/cavestru_root/cavestru0/mfho/our_loa_bal_vac/our_loa_bal_vac_v1.fits"
 REAL_DLA = "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/loa_main_dark_v1/dlacat-loa-main-dark-v1.fits"
@@ -46,9 +48,12 @@ def broad_trough(wave, flux, z_qso, lam_rf, width_kms, depth):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=25, help="# clean spectra")
-    ap.add_argument("--widths", default="1000,1500,2500", help="BAL trough widths (km/s)")
-    ap.add_argument("--depths", default="0.4,0.6", help="BAL trough depths")
+    ap.add_argument("--n", type=int, default=100, help="# clean spectra")
+    ap.add_argument("--config", choices=["production", "legacy"], default="production",
+                    help="production = the loa_main_dark_v1 config (phase2 model, max_dlas=4, filter, tau_eb null)")
+    ap.add_argument("--widths", default="1000,2000,3000,5000", help="BAL trough widths (km/s)")
+    ap.add_argument("--depths", default="0.5,0.7,0.9", help="BAL trough depths")
+    ap.add_argument("--pos-nhi", default="20.5,21.0", help="positive-control Voigt DLA logN(s)")
     ap.add_argument("--inject-lamrf", type=float, default=1100.0, help="rest-λ to place the trough / DLA")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "figures"))
     a = ap.parse_args(); os.makedirs(a.out, exist_ok=True)
@@ -57,10 +62,14 @@ def main():
     from gpy_dla_detection.inject_absorber import inject_voigt
     from run_bayes_select import DLAHolder
 
-    # y3 preset config (LOA production)
-    common = dict(loading_min_lambda=910.0, loading_max_lambda=1217.0, normalization_min_lambda=1425.0,
-                  normalization_max_lambda=1475.0, min_lambda=911.75, max_lambda=1215.75, dlambda=0.15,
-                  k=30, max_noise_variance=9.0, num_lines=3, max_z_cut=3000.0, min_z_cut=3000.0, num_forest_lines=3)
+    prod = a.config == "production"
+    MODEL = MODEL_PROD if prod else MODEL_LEGACY
+    # config: production = loa_main_dark_v1 BASELINE.env (MAX_DLAS=4, SINGLE_ABSORBER_MODEL=1,
+    # FILTER_LOW_LIKELIHOOD=1, ENABLE_TAU_EB=1/null, MAX_LAMBDA=1250, LOADING_MAX_LAMBDA=1550)
+    common = dict(loading_min_lambda=910.0, loading_max_lambda=1550.0 if prod else 1217.0,
+                  normalization_min_lambda=1425.0, normalization_max_lambda=1475.0, min_lambda=911.75,
+                  max_lambda=1250.0 if prod else 1215.75, dlambda=0.15, k=30, max_noise_variance=9.0,
+                  num_lines=3, max_z_cut=3000.0, min_z_cut=3000.0, num_forest_lines=3)
     dr = lambda r: os.path.join(DATA_ROOT, r)
     holder = DLAHolder(
         learned_file=MODEL, catalog_name=dr("data/dr12q/processed/catalog.mat"),
@@ -71,8 +80,11 @@ def main():
         params=Parameters(num_dla_samples=50000, **common),
         params_subdla=Parameters(num_dla_samples=100000, **common),
         min_z_separation=3000.0, prev_tau_0=0.00246, prev_beta=3.62,
-        max_dlas=1, broadening=True, plot_figures=False, max_workers=1, batch_size=100,
-        filter_low_likelihood=False, single_absorber_model=True)
+        max_dlas=4 if prod else 1, broadening=True, plot_figures=False, max_workers=1, batch_size=100,
+        filter_low_likelihood=prod, single_absorber_model=True,
+        enable_tau_eb=prod, tau_eb_objective="null")
+    print(f"[config={a.config}] model={os.path.basename(MODEL)} max_dlas={4 if prod else 1} "
+          f"filter={prod} tau_eb={prod}", flush=True)
 
     # pick CLEAN spectra: z>2, not in our BAL VAC (AI=0 & BI=0), no high-N DLA detection
     ours = fitsio.read(OUR_VAC); balset = {int(t) for t, a2, b2 in zip(ours["TARGETID"], ours["AI_CIV"], ours["BI_CIV"]) if a2 > 0 or b2 > 0}
@@ -86,6 +98,7 @@ def main():
         FL = H["flux"][sel]; IV = H["ivar"][sel]; MK = H["mask"][sel]; ZQ = cz[sel]; TT = ct[sel]
 
     widths = [float(x) for x in a.widths.split(",")]; depths = [float(x) for x in a.depths.split(",")]
+    pos_nhis = [float(x) for x in a.pos_nhi.split(",")]
 
     def run(wave, flux, ivar, mask, zq, tid):
         nv = np.where(ivar > 0, 1.0 / np.maximum(ivar, 1e-8), 1e10)
@@ -103,11 +116,12 @@ def main():
         fl = FL[i]; iv = IV[i]; mk = MK[i]; zq = ZQ[i]; tid = TT[i]
         # (0) negative control
         p, n = run(wave, fl, iv, mk, zq, tid); res["none"].append((p, n))
-        # (1) positive control: Voigt DLA logN=20.5 at inject-lamrf
+        # (1) positive controls: Voigt DLA(s) at inject-lamrf
         zdla = a.inject_lamrf * (1 + zq) / LYA - 1
-        flv = inject_voigt(wave, fl, 10 ** 20.5, zdla, num_lines=3)
-        p, n = run(wave, flv, iv, mk, zq, tid); res["voigt20.5"].append((p, n))
-        # (2) test: broad BAL-like troughs
+        for NH in pos_nhis:
+            flv = inject_voigt(wave, fl, 10 ** NH, zdla, num_lines=3)
+            p, n = run(wave, flv, iv, mk, zq, tid); res[f"voigt{NH:g}"].append((p, n))
+        # (2) test: broad BAL-like troughs (narrow shallow = leaked mini-BAL; wide/deep = the BI-vetoed regime)
         for W in widths:
             for D in depths:
                 flb = broad_trough(wave, fl, zq, a.inject_lamrf, W, D)
@@ -115,26 +129,37 @@ def main():
         if (i + 1) % 5 == 0:
             print(f"  {i+1}/{len(sel)} spectra ({(time.time()-t0)/(i+1):.1f}s each)", flush=True)
 
-    print("\n=== INJECTION-RECOVERY: high-N DLA FP rate (P_DLA>0.99 & logN>=20.3) ===")
-    summ = {}
+    def cp(k, n, alpha=0.05):
+        from scipy.stats import beta
+        if n == 0: return (np.nan, np.nan)
+        lo = 0.0 if k == 0 else beta.ppf(alpha / 2, k, n - k + 1)
+        hi = 1.0 if k == n else beta.ppf(1 - alpha / 2, k + 1, n - k)
+        return lo, hi
+
+    print(f"\n=== INJECTION-RECOVERY [config={a.config}]: high-N DLA FP rate (P_DLA>0.99 & logN>=20.3) ===")
+    summ = {}; ci = {}
     for k, v in res.items():
-        arr = np.array(v); fp = np.mean((arr[:, 0] > 0.99) & (arr[:, 1] >= 20.3))
-        summ[k] = fp
-        print(f"  {k:18s}: FP rate = {100*fp:5.1f}%   median P_DLA={np.median(arr[:,0]):.3f}  median logN(det)={np.median(arr[arr[:,0]>0.5,1]) if (arr[:,0]>0.5).any() else float('nan'):.2f}  n={len(arr)}")
-    np.savez(f"{a.out}/inject_minibal.npz", **{k: np.array(v) for k, v in res.items()})
+        arr = np.array(v); nfp = int(np.sum((arr[:, 0] > 0.99) & (arr[:, 1] >= 20.3))); n = len(arr)
+        fp = nfp / n; summ[k] = fp; ci[k] = cp(nfp, n)
+        print(f"  {k:18s}: FP = {100*fp:5.1f}% [{100*ci[k][0]:.1f},{100*ci[k][1]:.1f}] ({nfp}/{n})  "
+              f"med P_DLA={np.median(arr[:,0]):.3f}  med logN(det)={np.median(arr[arr[:,0]>0.5,1]) if (arr[:,0]>0.5).any() else float('nan'):.2f}")
+    tag = a.config
+    np.savez(f"{a.out}/inject_minibal_{tag}.npz", **{k: np.array(v) for k, v in res.items()})
     # figure
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
-    ks = ["none", "voigt20.5"] + [k for k in res if k.startswith("broad")]
-    fig, ax = plt.subplots(figsize=(9, 4.4))
-    ax.bar(range(len(ks)), [100 * summ[k] for k in ks],
-           color=["grey", "C2"] + ["C3"] * (len(ks) - 2))
+    posks = sorted([k for k in res if k.startswith("voigt")])
+    ks = ["none"] + posks + [k for k in res if k.startswith("broad")]
+    yerr = np.array([[100 * (summ[k] - ci[k][0]) for k in ks], [100 * (ci[k][1] - summ[k]) for k in ks]])
+    fig, ax = plt.subplots(figsize=(11, 4.6))
+    cols = ["grey"] + ["C2"] * len(posks) + ["C3"] * (len(ks) - 1 - len(posks))
+    ax.bar(range(len(ks)), [100 * summ[k] for k in ks], color=cols, yerr=yerr, capsize=3)
     for i, k in enumerate(ks): ax.text(i, 100 * summ[k] + 1, f"{100*summ[k]:.0f}%", ha="center", fontsize=8)
-    ax.set_xticks(range(len(ks))); ax.set_xticklabels(ks, rotation=30, ha="right", fontsize=8)
+    ax.set_xticks(range(len(ks))); ax.set_xticklabels(ks, rotation=35, ha="right", fontsize=8)
     ax.set_ylabel("high-N DLA FP rate [%]  (P_DLA>0.99 & logN≥20.3)")
-    ax.set_title("Injection: does a BAL-like broad forest trough fool the GP into a high-N DLA?\n"
-                 "none=neg control, voigt20.5=pos control, broad_*=BAL-like troughs (the test)")
-    fig.tight_layout(); fig.savefig(f"{a.out}/inject_minibal.png", dpi=130); plt.close(fig)
-    print(f"\nfig -> {a.out}/inject_minibal.png")
+    ax.set_title(f"Injection [config={a.config}]: does a broad forest trough fool the GP into a high-N DLA?\n"
+                 "grey=neg control, green=Voigt-DLA pos controls, red=broad troughs (narrow shallow=leaked; wide/deep=BI-vetoed)")
+    fig.tight_layout(); fig.savefig(f"{a.out}/inject_minibal_{tag}.png", dpi=130); plt.close(fig)
+    print(f"\nfig -> {a.out}/inject_minibal_{tag}.png   (Clopper-Pearson 95% CIs)")
 
 
 if __name__ == "__main__":
