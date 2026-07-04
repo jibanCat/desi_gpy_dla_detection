@@ -20,9 +20,14 @@ Candidate vetoes (increasing completeness & cost; each keys on the QSO-frame CIV
                         re-run with a lowered BI onset floor. Physical finding robust; implementation open.
   AI>0(sig)           : any significant AI-CIV trough (>=450 km/s) — includes narrow non-DLA-mimicking
 
-Key finding (SNR>2, >=20.3): broad-trough is the frontier knee — 0% CIV-detectable residual at only
-+3% ΔX over production, vs AI>0's +17% for the same residual. Production BI>0 leaves a 31.8% broad-BAL
-leak (45.6% at >=21.6). Adopting broad-trough reduces Ω(>=20.3) ~29% / Ω(>=21.6) ~44% vs production.
+NOTE (2026-07-04): the numbers below are FULL-FOREST frontier illustrations. The headline ADOPTS the
+broad-trough veto but applies it LYA-ONLY (lam_rf>=1025) — see lya_only_rerun.py Part A for the lya-only
+leak/veto-cost and the headline re-derivation for the vetoed dN/dX & Ω. Under lya-only these full-forest
+percentages shrink substantially (the excluded Lyβ-overlap region is the more BAL-contaminated part).
+
+Key finding (SNR>2, >=20.3, FULL FOREST): broad-trough is the frontier knee — 0% CIV-detectable residual
+at only +3% ΔX over production, vs AI>0's +17% for the same residual. Production BI>0 leaves a 31.8%
+broad-BAL leak (45.6% at >=21.6). Adopting broad-trough reduces Ω(>=20.3) ~29% / Ω(>=21.6) ~44% (full forest).
 
 Env: source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
 Aggregate-only (real-LOA privacy). VAC = v2 (production BAL_FLAG source).

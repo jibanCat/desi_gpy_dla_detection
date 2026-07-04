@@ -114,7 +114,7 @@ def main():
     ax[0].set_xlabel("rest λ [Å], DLA frame"); ax[0].set_ylabel("normalised flux"); ax[0].legend(fontsize=8)
     for x, lbl in [(1548.2, "CIV"), (1550.8, "")]:
         ax[1].axvline(x, color="grey", ls=":")
-    ax[1].set_title("QSO-frame CIV (BAL trough?)\nAI>0 excess CIV absorption = BAL"); ax[1].set_xlabel("rest λ [Å], QSO frame"); ax[1].legend(fontsize=8)
+    ax[1].set_title("QSO-frame CIV (AI>0 = mini-BAL by VAC cut)\npanel shows the CIV emission-peak difference, not a clean trough"); ax[1].set_xlabel("rest λ [Å], QSO frame"); ax[1].legend(fontsize=8)
     ax[2].axvline(LYA, color="grey", ls=":"); ax[2].set_title("z-SCRAMBLED control (DLA frame)\nreal absorber → flat; QSO feature → survives")
     ax[2].set_xlabel("rest λ [Å], scrambled DLA frame"); ax[2].legend(fontsize=7)
     fig.suptitle(f"Stack of clean lya-only high-N (logN≥{a.nhi_min}) DLA detections: AI>0 mini-BAL vs AI=0 control", fontsize=11)

@@ -1,7 +1,16 @@
 #!/usr/bin/env python
-"""build_bal_fp_product.py — fold the real-LOA leaked-BAL FP into the catalog-HBI FP intensity
-(P0 blocker #3). Emits a COMBINED forest+BAL loa0-schema npz that `Loa0FP.from_product` ingests
-with NO edit to the frozen `cddf_catalog_hbi.py` — verified linear:
+"""build_bal_fp_product.py — fold the real-LOA leaked-BAL FP into the catalog-HBI FP intensity.
+
+>>> DE-SCOPED / CROSS-CHECK ONLY (2026-07-04) <<<  The headline now ADOPTS the >2000 km/s
+broad-trough veto (drops leak sightlines from BOTH numerator and pathlength), so this leaked-BAL
+FP fold-in is NO LONGER on the headline path — the veto removes the leak physically. Two caveats
+if used as an A/B cross-check (referees A/B, 2026-07-04): (a) the op-cut below is FULL-FOREST, not
+lya-only — add the lam_rf>=1025 cut for a headline-comparable number; (b) the committed product
+bakes a MOCK n_sl_prod default, so a real-LOA consumer MUST pass the real --n-sl-prod (the estimator
+recomputes vol_scale=n_sl_prod/n_sl_loa0 at consume time and mis-scales the BAL term silently otherwise).
+
+Original purpose (P0 blocker #3): emit a COMBINED forest+BAL loa0-schema npz that `Loa0FP.from_product`
+ingests with NO edit to the frozen `cddf_catalog_hbi.py` — verified linear:
     mu_fp_grid[b,k] = n_fp_fine[b,k] * vol_scale * (1 - band_eta_per_nbin[b])   (cddf_catalog_hbi.py:1153)
 so summing count grids sums intensities.
 

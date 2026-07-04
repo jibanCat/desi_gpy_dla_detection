@@ -91,6 +91,11 @@ def part_B_mock(lam_rf):
     print(f"  {'NHI>=':>7s}{'over-count%':>12s}{'n_fpbal':>9s}")
     for lim in (20.0, 20.3, 21.0, 21.6):
         base = op & isfp & (balf == 1) & (nhi >= lim)
+        # CAVEAT (referee B): the numerator is lya-only (op includes lr>=lam_rf) but this
+        # truth-Ω denominator is FULL-FOREST — only ~74% of truth Ω lies in the lya-only
+        # region, so this Part-B over-count is FP_Ω(lya)/truth_Ω(full) and UNDER-states the
+        # true lya-only over-count by ~x0.74 (multiply by ~1.34). Mock cross-check only, NOT
+        # the headline. Full fix: restrict truth to lam_rest>=lam_rf via a TARGETID->Z_QSO join.
         truthO = float(np.sum(10.0 ** tr_nhi[(tr_nhi >= lim) & (tr_snr > 2)]))
         over = 100 * (10.0 ** nhi[base]).sum() / truthO
         print(f"  {lim:>7.1f}{over:>12.1f}{int(base.sum()):>9d}")

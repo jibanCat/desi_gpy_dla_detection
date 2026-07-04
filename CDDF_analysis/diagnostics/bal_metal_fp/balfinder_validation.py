@@ -18,7 +18,8 @@ silent bug):
   fig3  purity (confusion) at the op-cut
   fig4  finder AI_CIV vs truth BI_CIV  -> the finder measures the right quantity
   fig5  example spectra: a recovered strong BAL vs a (low CIV-SNR) missed one
-  fig6  FP-BAL completeness -> Omega residual (the headline number)
+  fig6  FP-BAL completeness -> Omega residual (MOCK intermediate; SUPERSEDED by the
+        real-LOA lya-only arbiter — NOT the paper headline)
 
 Every number is aggregate/mock only (privacy-clean). RE-RUN, don't trust the prose.
 
@@ -247,7 +248,7 @@ def main():
     fig.tight_layout(); fig.savefig(f"{a.outdir}/fig5_example_spectra.png", dpi=130); plt.close(fig)
 
     # =========================================================================
-    # fig6 — FP-BAL completeness -> Omega residual (the headline)
+    # fig6 — FP-BAL completeness -> Omega residual (mock intermediate; superseded by the lya-only arbiter)
     # =========================================================================
     dc = fitsio.read(a.dlacat)
     tid = np.array([int(x) for x in dc["TARGETID"]]); nhi = np.asarray(dc["NHI"], float)
