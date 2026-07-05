@@ -18,17 +18,37 @@ truth than purity_mixture (which over-subtracts sub-DLA→DLA migration as FP)?
 """
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import sys
+import time
 
 import numpy as np
 
+# repo root = 4 dirnames up (subdla -> diagnostics -> CDDF_analysis -> <repo>).
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
 from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
 from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
+
+# committed, git-stamped MOCK deliverable (2LPT-0 recovery ratios — public-OK, no real-LOA
+# values). The real-LOA sub-DLA dN/dX/Omega/f(N) numbers are private (notes repo only).
+DEFAULT_OUT_JSON = os.path.join(_REPO, "CDDF_analysis", "hbi", "subdla_mock_validation.json")
+
+
+def _git_commit():
+    """Repo HEAD hash for provenance. Never crash; warn loudly instead of a silent 'unknown'."""
+    import subprocess
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO,
+                                       stderr=subprocess.DEVNULL).decode().strip()
+    except Exception as e:  # noqa: BLE001
+        print(f"  [WARN] _git_commit() failed ({type(e).__name__}: {e}); "
+              f"code_commit will be stamped 'unknown' (cwd={_REPO}).", file=sys.stderr)
+        return "unknown"
 
 
 # cumulative report limits: 19.5 floor + 0.1-dex steps through 20.3, then the DLA tier
@@ -128,8 +148,10 @@ def run_mode(mode: str) -> dict:
     )
 
 
-def main():
+def main(args):
+    t_start = time.time()
     res = {m: run_mode(m) for m in ("purity_mixture", "loa0")}
+    wall = time.time() - t_start
 
     def _fmt(x, w=10, p=4):
         return f"{x:>{w}.{p}f}" if np.isfinite(x) else f"{'nan':>{w}}"
@@ -192,8 +214,48 @@ def main():
         fh.write(f"R0_omega_203\t-\t1.0\t{res['purity_mixture']['r0_omega_203']:.6g}\t"
                  f"{res['loa0']['r0_omega_203']:.6g}\n")
     print(f"\n[saved] {out_tsv}")
+
+    # ---- committed, git-stamped JSON deliverable (mock recovery ratios; public-OK) ----
+    a = _Args()
+    inputs = dict(catalog_dir=a.catalog_dir, truth=a.truth, bal_cat=a.bal_cat,
+                  kernel=a.kernel, loa0_product=a.loa0_product,
+                  molly="<_resolve_molly fallback: AB.DEF_LYAONLY_MOLLY (nhi195 lya_only)>",
+                  report_limits=a.report_limits, fit_floor=a.fit_floor,
+                  lam_rf_min=a.lam_rf_min, family=a.family, host_truth_floor=a.host_truth_floor)
+    out_json = dict(
+        metadata=dict(
+            what="sub-DLA-tier catalog-HBI recovery validation on the 2LPT-0 mock "
+                 "(loa0 vs purity_mixture FP), band [19.5,20.3)",
+            mock="2LPT-0 (loa-124); values are MOCK recovery ratios, not real-LOA",
+            code_commit=_git_commit(),
+            wallclock_s=round(wall, 1),
+            rederive="python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --force",
+            inputs=inputs,
+            note="Reduce-only (cached kernel, no inference/SLURM/tilt). R0 = est/truth. "
+                 "The [19.5,19.7) edge is formally non-identifiable on a 19.5-floored "
+                 "catalog (Track A closed); report the [19.7,20.3) f(N) diff + the "
+                 "[19.5,20.3] integrated band with an edge-migration systematic.",
+        ),
+        per_bin={m: res[m]["per_bin"] for m in ("purity_mixture", "loa0")},
+        integrated={m: {k: res[m][k] for k in res[m] if k not in ("per_bin",)}
+                    for m in ("purity_mixture", "loa0")},
+    )
+    out_path = args.out
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    if os.path.exists(out_path) and not args.force:
+        print(f"[skip-json] {out_path} exists (pass --force to overwrite).")
+    else:
+        with open(out_path, "w") as fh:
+            json.dump(out_json, fh, indent=2, default=float)
+        print(f"[saved-json] {out_path}  code_commit={out_json['metadata']['code_commit']}  "
+              f"({wall:.0f}s)")
     return res
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--out", default=DEFAULT_OUT_JSON,
+                    help="stamped JSON deliverable path (default: committed mock artifact).")
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite --out if it already exists (default: refuse).")
+    main(ap.parse_args())
