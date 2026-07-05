@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "desi-gpy-dla-detection"
+version = "0.1.0"
+description = "Gaussian-Process Bayesian DLA / sub-DLA / LLS detection and CDDF population statistics for DESI quasar spectra"
+readme = "README.md"
+requires-python = ">=3.10"
+# Loose deps on purpose: `pip install -e .` into an already-provisioned env (see the
+# working set in CDDF_analysis/hbi/REPRODUCE_HEADLINE.md) leaves them untouched. The
+# libcerf / _voigt.so C extension is a SEPARATE documented build step, NOT part of pip.
+dependencies = [
+    "numpy",
+    "scipy",
+    "h5py",
+    "fitsio",
+    "astropy",
+    "matplotlib",
+]
+
+# Flat, in-place layout: declare the EXISTING import names verbatim so `pip install -e .`
+# makes them resolve from anywhere (no CWD, no sys.path.insert). No package is renamed or
+# moved; the byte-frozen gpy_dla_detection/ and CDDF_analysis/hbi/ are untouched.
+[tool.setuptools]
+py-modules = ["run_bayes_select", "constants", "dlasearch", "fitwarning"]
+
+[tool.setuptools.packages.find]
+# namespaces=true keeps CDDF_analysis (and CDDF_analysis.diagnostics.*) importable even
+# though they have no __init__.py, alongside the regular hbi/ and gpy_dla_detection/ pkgs.
+include = ["gpy_dla_detection*", "CDDF_analysis*"]
+exclude = ["*.figures"]   # figure output dirs are data, not importable packages
+namespaces = true
