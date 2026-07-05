@@ -3,8 +3,8 @@
 #SBATCH -C gpu
 #SBATCH -q regular
 #SBATCH --job-name=train_gp_v2
-#SBATCH --output=slurm_train/train_gp_v2_%j.log
-#SBATCH --error=slurm_train/train_gp_v2_%j.err
+#SBATCH --output=slurm/train/train_gp_v2_%j.log
+#SBATCH --error=slurm/train/train_gp_v2_%j.err
 #SBATCH --mail-user=mfho@umich.edu
 #SBATCH --mail-type=ALL
 #SBATCH -A desi
@@ -35,15 +35,15 @@
 #         preload_spectra/prepare_trainset.py (per-hpx → gp_interp_trainset.h5)
 #     See docs/training_v2_workflow.md.
 #   - Recommended: run the debug submit first
-#         sbatch slurm_train/debug_train_gp_v2_nersc.sh
+#         sbatch slurm/train/debug_train_gp_v2_nersc.sh
 #     to validate paths/env before queuing this multi-hour job.
 #
 # To submit:
-#   sbatch slurm_train/submit_train_gp_v2_loa_nersc.sh
+#   sbatch slurm/train/submit_train_gp_v2_loa_nersc.sh
 #
 # To override defaults at submit time:
 #   sbatch --export=ALL,NUM_EPOCHS=400,BATCH_SIZE=25000 \
-#       slurm_train/submit_train_gp_v2_loa_nersc.sh
+#       slurm/train/submit_train_gp_v2_loa_nersc.sh
 
 # NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
 # references DESI_ROOT before defining it, which trips `set -u`. Same

@@ -242,7 +242,7 @@ def main():
     p.add_argument("--exclude-bal", action="store_true",
                    help="Filter out TARGETIDs with BI_CIV>0 in bal_cat.fits")
     p.add_argument("--hcd-min-nhi", type=float, default=17.0)
-    # Rest-frame grid (matches legacy slurm_train SLURM defaults).
+    # Rest-frame grid (matches legacy slurm/train SLURM defaults).
     p.add_argument("--min-lambda", type=float, default=850.75)
     p.add_argument("--max-lambda", type=float, default=1420.75)
     p.add_argument("--dlambda", type=float, default=0.15)

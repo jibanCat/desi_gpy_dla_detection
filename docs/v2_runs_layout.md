@@ -25,9 +25,9 @@ ${OUTDIR_BASE}/v2_runs/<RUN_TAG>/
 
 | submit | default tag |
 |---|---|
-| `slurm_train/submit_e2e_train_loa_nersc.sh`        | `loa_${VARIANT}_${SLURM_JOB_ID}` |
-| `slurm_train/submit_e2e_train_loa_nersc_debug.sh`  | `loa_${VARIANT}_dbg_${SLURM_JOB_ID}` |
-| `slurm_train/preload_train_2lpt_nersc.sh`          | `2lpt_${TAG}_${SLURM_JOB_ID}` |
+| `slurm/train/submit_e2e_train_loa_nersc.sh`        | `loa_${VARIANT}_${SLURM_JOB_ID}` |
+| `slurm/train/submit_e2e_train_loa_nersc_debug.sh`  | `loa_${VARIANT}_dbg_${SLURM_JOB_ID}` |
+| `slurm/train/preload_train_2lpt_nersc.sh`          | `2lpt_${TAG}_${SLURM_JOB_ID}` |
 | `slurm/greatlakes/preload_train_2lpt.sh`           | `2lpt_${TAG}_${SLURM_JOB_ID}` |
 
 So a finished run might live at e.g.:
@@ -60,7 +60,7 @@ continue to 800, just resubmit the regular-queue script with the same
 
 ```bash
 sbatch --export=ALL,VARIANT=no_hcd_with_bal,RUN_TAG=loa_no_hcd_with_bal_dbg_52234567 \
-    slurm_train/submit_e2e_train_loa_nersc.sh
+    slurm/train/submit_e2e_train_loa_nersc.sh
 ```
 
 The trainer reads `checkpoint_epoch_0199.pt` from that dir and

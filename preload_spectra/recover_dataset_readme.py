@@ -91,7 +91,7 @@ def main():
 
     run_tag = args.trainset_h5.parent.name
     suggested_train = (f"sbatch --export=ALL,RUN_TAG={run_tag} "
-                       f"slurm_train/train_only_nersc.sh")
+                       f"slurm/train/train_only_nersc.sh")
 
     write_dataset_readme(
         args.trainset_h5,

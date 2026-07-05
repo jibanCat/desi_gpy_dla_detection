@@ -3,8 +3,8 @@
 #SBATCH -C gpu
 #SBATCH -q debug
 #SBATCH --job-name=e2e_loa_dbg
-#SBATCH --output=slurm_train/e2e_loa_dbg_%j.log
-#SBATCH --error=slurm_train/e2e_loa_dbg_%j.err
+#SBATCH --output=slurm/train/e2e_loa_dbg_%j.log
+#SBATCH --error=slurm/train/e2e_loa_dbg_%j.err
 #SBATCH -A desi
 #SBATCH --time=00:30:00
 #SBATCH --gpus=1
@@ -26,9 +26,9 @@
 #   submit (submit_e2e_train_loa_nersc.sh) when its turn comes up.
 #
 # Submit:
-#   sbatch --export=ALL,VARIANT=no_dla_no_bal slurm_train/submit_e2e_train_loa_nersc_debug.sh
-#   sbatch --export=ALL,VARIANT=no_hcd_with_bal slurm_train/submit_e2e_train_loa_nersc_debug.sh
-#   sbatch --export=ALL,VARIANT=no_hcd_no_bal slurm_train/submit_e2e_train_loa_nersc_debug.sh
+#   sbatch --export=ALL,VARIANT=no_dla_no_bal slurm/train/submit_e2e_train_loa_nersc_debug.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_with_bal slurm/train/submit_e2e_train_loa_nersc_debug.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_no_bal slurm/train/submit_e2e_train_loa_nersc_debug.sh
 #
 # All three variants of the regular submit are also valid here; the only
 # difference is queue + walltime + default NUM_EPOCHS.
@@ -176,7 +176,7 @@ assert all(math.isfinite(x) for x in h), 'non-finite loss'
 print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs)')
 " || { echo "[error] post-flight loss check failed" >&2; exit 9; }
 
-cp slurm_train/e2e_loa_dbg_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+cp slurm/train/e2e_loa_dbg_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
 
 echo
 echo "=== e2e_loa DEBUG $VARIANT COMPLETE ==="

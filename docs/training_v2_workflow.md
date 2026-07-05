@@ -89,7 +89,7 @@ gpy_dla_detection/training/
 └── trainer_v2.py     # train() + checkpointing/resume
 
 train_gp.py           # top-level CLI
-slurm_train/submit_train_gp_v2_loa_nersc.sh
+slurm/train/submit_train_gp_v2_loa_nersc.sh
 slurm/greatlakes/train_gp_v2_2lpt.sh
 ```
 
@@ -122,17 +122,17 @@ script does pre-flight import + path checks before training:
 ssh perlmutter
 cd ~/desi_gpy_dla_detection
 git fetch && git checkout claude/training-and-lsf-validation
-sbatch slurm_train/debug_train_gp_v2_nersc.sh
+sbatch slurm/train/debug_train_gp_v2_nersc.sh
 ```
 
 Once that succeeds (5 epochs on 5,000 spectra in ≤ 30 min), submit production:
 
 ```bash
-sbatch slurm_train/submit_train_gp_v2_loa_nersc.sh
+sbatch slurm/train/submit_train_gp_v2_loa_nersc.sh
 ```
 
 The script defaults match the production config in
-``slurm_train/submit_train_gp_loa_full.sh``:
+``slurm/train/submit_train_gp_loa_full.sh``:
 
 | flag | default | matches legacy |
 |---|---|---|

@@ -3,8 +3,8 @@
 #SBATCH -C gpu
 #SBATCH -q regular
 #SBATCH --job-name=e2e_train_loa
-#SBATCH --output=slurm_train/e2e_train_loa_%j.log
-#SBATCH --error=slurm_train/e2e_train_loa_%j.err
+#SBATCH --output=slurm/train/e2e_train_loa_%j.log
+#SBATCH --error=slurm/train/e2e_train_loa_%j.err
 #SBATCH -A desi
 #SBATCH --time=24:00:00
 #SBATCH --gpus=1
@@ -54,13 +54,13 @@
 #   logNHI ≥ 17.2 = DLAs + sub-DLAs + LLS  (the conventional "all HCD" cut)
 #
 # To submit:
-#   sbatch --export=ALL,VARIANT=no_dla_no_bal slurm_train/submit_e2e_train_loa_nersc.sh
-#   sbatch --export=ALL,VARIANT=no_hcd_with_bal slurm_train/submit_e2e_train_loa_nersc.sh
-#   sbatch --export=ALL,VARIANT=no_hcd_no_bal slurm_train/submit_e2e_train_loa_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_dla_no_bal slurm/train/submit_e2e_train_loa_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_with_bal slurm/train/submit_e2e_train_loa_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_no_bal slurm/train/submit_e2e_train_loa_nersc.sh
 #
 # All paths and thresholds can be overridden:
 #   sbatch --export=ALL,VARIANT=no_hcd_no_bal,HCD_MIN_NHI=19.0,HCD_CAT=/your/dla.fits \
-#       slurm_train/submit_e2e_train_loa_nersc.sh
+#       slurm/train/submit_e2e_train_loa_nersc.sh
 
 # NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
 # references DESI_ROOT before defining it.
@@ -258,7 +258,7 @@ print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs, mon
 
 # Copy the SLURM stdout into the run dir so everything for this run is
 # in one place (rsync to GreatLakes in one shot).
-cp slurm_train/e2e_train_loa_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+cp slurm/train/e2e_train_loa_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
 
 echo
 echo "===================================================="
