@@ -22,7 +22,7 @@ Run modes and recommended parameter ranges
 Column-density prior
 --------------------
 The prior on log₁₀(N_HI) is a mixture of:
-  - The Prochaska et al. (2014) CDDF (arxiv 1402.0548) — a monotonic cubic
+  - The Prochaska et al. (2014) CDDF (arxiv 1310.0052) — a monotonic cubic
     Hermite spline fit to Table 2 (Spline Model, Figure 7)
   - A uniform component over the requested NHI range
 
@@ -85,7 +85,7 @@ Usage (CLI)
 
 References
 ----------
-Prochaska et al. (2014) https://arxiv.org/abs/1402.0548
+Prochaska et al. (2014) https://arxiv.org/abs/1310.0052
 Ho, Bird & Garnett (2020) https://arxiv.org/abs/2003.11036
 """
 
@@ -114,7 +114,7 @@ def f_pw14(log_nhi: np.ndarray) -> np.ndarray:
     Prochaska+2014 CDDF value f(N_HI, X) at the given log10 N_HI.
 
     Uses a monotonic cubic Hermite spline (PchipInterpolator) fit to
-    Table 2 (Spline Model) of Prochaska et al. (2014), arxiv 1402.0548.
+    Table 2 (Spline Model) of Prochaska et al. (2014), arxiv 1310.0052.
 
     Parameters
     ----------
