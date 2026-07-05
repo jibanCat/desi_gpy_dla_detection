@@ -88,11 +88,12 @@ you must stage all of these and repoint the constants.
 | `DESI/gpdla_catalogs/loa_main_dark_v1/dlacat-loa-main-dark-v1.fits` | 134 M | **the real-LOA GP-DLA catalog** (headline input) |
 | `DESI/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits` | 969 M | v2 BAL VAC — **only** the broad-trough veto cross-check needs it; the base loa0/pm headline does **not** |
 
-> ⚠️ **Biggest reproducibility risk:** the scratch artifacts define the headline and are on
-> a purging filesystem with no persistent copy. Before a long review cycle, copy the frozen
-> calibration set (kernel, molly, loa0-FP product, staged mockdir) to `/nfs/turbo` (or a
-> tagged/Zenodo data release), checksum them, and repoint the `DEF_*`/`LOA0_LYAONLY`
-> constants. See [§5 Known gaps](#5-known-gaps--caveats).
+> ✅ **Persistent backup staged (2026-07-05):** the frozen-calibration set (kernel, molly,
+> 2LPT-0 calib dlacat, loa0-FP product, staged mockdir) is copied + sha256-checksummed to
+> **`/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/loa_headline_repro_bundle/`** (191 MB;
+> see its `README.md` + `MANIFEST.sha256`, which maps each file → the `DEF_*` constant it
+> feeds). If scratch purges, stage from there and repoint the `DEF_*`/`LOA0_LYAONLY` constants
+> to the bundle. The three large real/mock catalogs (§below) already live persistently on turbo.
 
 ---
 
@@ -150,7 +151,9 @@ except the FP model.
 Surfaced by the 2026-07-04 code/reproducibility panel; the numeric result is bit-reproducible
 here, these are portability/robustness items:
 
-1. **Stage the frozen-calibration set off purging scratch** (§2 warning) — the top item.
+1. **Frozen-calibration set is now backed up** to `/nfs/turbo/…/gpdla_catalogs/loa_headline_repro_bundle/`
+   (§2, sha256-manifested) — ✅. Remaining polish: repoint the `DEF_*` constants to the bundle (or add a
+   `--data-root` / manifest stage step) so a fresh checkout uses the persistent copy rather than scratch.
 2. **No env lockfile** — export `environment.yml`; the pins in §1 are the working set.
 3. **Provenance stamps:** the routines now stamp the real `code_commit`
    (`run_loa0_headline_full.py`'s `_REPO` off-by-one that produced `code_commit="unknown"` is
