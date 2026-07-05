@@ -3,6 +3,10 @@
 For the shortest runnable path from a frozen catalog to a dN/dX/Omega/f(N) band,
 see **[QUICKSTART.md](QUICKSTART.md)**.
 
+To **reproduce the real-LOA paper headline** (the `loa0` dN/dX & Ω, the data-staging
+manifest, the single-knob provenance gate, and the reproducibility caveats), see
+**[REPRODUCE_HEADLINE.md](REPRODUCE_HEADLINE.md)**.
+
 
 The **catalog-HBI** estimator turns a GP-DLA detection catalog into a
 selection-corrected DLA population measurement — the column-density distribution

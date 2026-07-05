@@ -1,0 +1,7 @@
+# Local FP-product artifacts live on SCRATCH, not in the repo. In particular the
+# stray loa0_bal_fp_product.npz that sits in this dir is a LOCAL scratch build and is
+# NOT the headline product — the headline loads loa0_fp_product_lyaonly1025.npz from
+# SCRATCH (see LOA0_LYAONLY in apply_broadtrough_veto_headline.py). Keep all *.npz
+# untracked here so no stray product is ever mistaken for a committed input.
+*.npz
+loa0_bal_fp_product.npz

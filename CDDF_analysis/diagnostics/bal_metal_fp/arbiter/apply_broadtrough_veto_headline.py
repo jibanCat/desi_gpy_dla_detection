@@ -24,7 +24,8 @@ THE VETO (task spec): a TARGETID is broad-trough-vetoed iff, in the v2 VAC,
 
 PRIVACY: writes only an augmented bal_cat.fits (a BAL TARGETID classification list)
 and the augmented-run JSON to SCRATCH. No real-LOA dN/dX/Omega values are written to
-the repo. This script is UNTRACKED. Aggregate-only prints go to stdout.
+the repo. This script is committed to the repo (721b2da); it writes ONLY aggregate
+prints to stdout and aggregate JSON to SCRATCH. Aggregate-only prints go to stdout.
 
 Env: conda gpdla; OMP/OPENBLAS/MKL_NUM_THREADS=1.
 """
@@ -55,6 +56,74 @@ SCRATCH_OUT = "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf
 # veto's sightline drop scales the FP background down symmetrically with the pathlength.
 LOA0_LYAONLY = ("/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/"
                 "outputs/loa0_fp_product_lyaonly1025.npz")
+
+
+def _git_commit():
+    """Return the repo HEAD hash for provenance. On failure (e.g. git missing or a
+    weird checkout) return "unknown" AND print a loud WARNING — never crash, but the
+    failure must be visible so an "unknown" stamp is never shipped silently."""
+    import subprocess
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO,
+                                       stderr=subprocess.DEVNULL).decode().strip()
+    except Exception as e:
+        print(f"  [WARN] _git_commit() failed ({type(e).__name__}: {e}); "
+              f"code_commit will be stamped 'unknown' (cwd={_REPO}).", file=sys.stderr)
+        return "unknown"
+
+
+def preflight_loa0_product(product_path, cfg, molly_tsv):
+    """Provenance guards for the loa-0 forest-FP headline (task fixes #6/#7). Hard-fail
+    (SystemExit) if the loa-0 FP product or the resolved molly matrix does not match the
+    lya-only (lam_rf_min=1025) headline config — this makes a silent wrong-product /
+    wrong-molly substitution (each shown by the panel to shift dN/dX) impossible to ship.
+
+    Checks, all against the product's OWN self-documenting fields:
+      * product exists;
+      * product.lya_only_lam_rf_min == 1025 == cfg.lam_rf_min  (NOT a full-forest product);
+      * product.snr_min == cfg.snr_min ; product.p_dla_min == cfg.p_dla_min ;
+      * the resolved 2LPT-0 calibration molly path is the lya_only-nhi195 matrix
+        (path contains both 'nhi195' and 'lya_only') — a full-forest molly dropped into
+        the resolved dir silently shifts dN/dX ~+1.7% (panel finding).
+    Returns the product's recorded molly_tsv (for logging/provenance)."""
+    if not os.path.exists(product_path):
+        raise SystemExit(f"loa0 FP product not found: {product_path}")
+    d = np.load(product_path, allow_pickle=True)
+    prod_lam = float(d["lya_only_lam_rf_min"]) if "lya_only_lam_rf_min" in d.files else None
+    prod_snr = float(d["snr_min"]) if "snr_min" in d.files else None
+    prod_pdla = float(d["p_dla_min"]) if "p_dla_min" in d.files else None
+    prod_molly = str(d["molly_tsv"]) if "molly_tsv" in d.files else "<absent>"
+    print(f"  [PREFLIGHT] loa0 product = {product_path}")
+    print(f"  [PREFLIGHT]   product self-doc: lya_only_lam_rf_min={prod_lam} "
+          f"snr_min={prod_snr} p_dla_min={prod_pdla} molly_tsv={prod_molly}")
+    print(f"  [PREFLIGHT]   cfg: lam_rf_min={cfg.lam_rf_min} snr_min={cfg.snr_min} "
+          f"p_dla_min={cfg.p_dla_min}")
+    print(f"  [PREFLIGHT]   resolved 2LPT-0 calibration molly = {molly_tsv}")
+    tol = 1e-9
+    if prod_lam is None or abs(prod_lam - 1025.0) > tol:
+        raise SystemExit(
+            f"loa0 product lya_only_lam_rf_min={prod_lam} != 1025.0 — this is NOT the "
+            f"lya-only headline product (a full-forest product over-estimates the "
+            f"sub-DLA/LLS FP). Product: {product_path}")
+    if abs(prod_lam - float(cfg.lam_rf_min)) > tol:
+        raise SystemExit(
+            f"loa0 product lya_only_lam_rf_min={prod_lam} != cfg.lam_rf_min="
+            f"{cfg.lam_rf_min} — product/analysis lam_rf_min mismatch.")
+    if prod_snr is None or abs(prod_snr - float(cfg.snr_min)) > tol:
+        raise SystemExit(
+            f"loa0 product snr_min={prod_snr} != cfg.snr_min={cfg.snr_min} — the FP "
+            f"background was measured against a different op selection.")
+    if prod_pdla is None or abs(prod_pdla - float(cfg.p_dla_min)) > tol:
+        raise SystemExit(
+            f"loa0 product p_dla_min={prod_pdla} != cfg.p_dla_min={cfg.p_dla_min} — the "
+            f"FP background was measured against a different op selection.")
+    mlow = str(molly_tsv).lower()
+    if not ("nhi195" in mlow and "lya_only" in mlow):
+        raise SystemExit(
+            f"resolved calibration molly is not the expected lya_only-nhi195 matrix "
+            f"(path must contain 'nhi195' and 'lya_only'): {molly_tsv} — a full-forest "
+            f"molly silently shifts dN/dX (~+1.7%).")
+    return prod_molly
 
 
 def default_args():
@@ -107,7 +176,7 @@ def build_augmented_bal(orig_bal_path, broad_tids, out_path):
     n_new = len(broad_tids - ob_tids)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     arr = np.array(sorted(union), dtype=np.int64)
-    fitsio.write(out_path, np.core.records.fromarrays([arr], names="TARGETID"),
+    fitsio.write(out_path, np.rec.fromarrays([arr], names="TARGETID"),
                  clobber=True)
     return len(ob_tids), len(broad_tids), n_new, len(union)
 
@@ -124,10 +193,22 @@ def measure(args, frozen, fp_estimator="purity_mixture"):
         cfg = ing["cfg"]
         cfg.fp_estimator = "loa0"
         cfg.loa0_product_path = LOA0_LYAONLY
+        # PRE-FLIGHT provenance guards (task #6/#7): the loa0 product must be the
+        # lya-only (1025) headline product AND the resolved molly the lya_only-nhi195
+        # matrix — hard-fail on any silent substitution.
+        preflight_loa0_product(LOA0_LYAONLY, cfg, args.molly_tsv)
         rho = make_rho_interpolator(ing["mm"])
         loa0_model, _ = make_fp_model(cfg, ing["cat_cut"], ing["op_mask"], rho)
         ing["fp_model"] = loa0_model
         assert getattr(cfg, "_loa0_fp", None) is not None, "loa0 FP not attached"
+        # n_sl_prod guard (task #5): the estimator silently falls back to the product's
+        # stored MOCK n_sl_prod if cfg.n_sl_prod is None. build_loa_ingredients sets
+        # cfg.n_sl_prod = int(n_sl) (the REAL-LOA op sightline count); assert the FP model
+        # actually picked that up so the FP volume-scale can never silently mis-scale.
+        assert loa0_model.n_sl_prod == ing["n_sl"], (
+            f"n_sl_prod mismatch {loa0_model.n_sl_prod} != {ing['n_sl']} — the loa0 FP "
+            f"volume-scale did not pick up the real-LOA op sightline count (silent "
+            f"fallback to the product's stored mock n_sl_prod).")
         print(f"  [FP=loa0] product={os.path.basename(LOA0_LYAONLY)} "
               f"n_sl_loa0={loa0_model.n_sl_loa0:.0f} n_sl_prod={loa0_model.n_sl_prod:.0f} "
               f"vol_scale={loa0_model.vol_scale:.3f}")
@@ -258,6 +339,7 @@ def main():
     # aggregate JSON to scratch (no repo write)
     import json
     rec = dict(
+        code_commit=_git_commit(),
         fp_estimator=fp, limits=list(limits), n_mc=args.n_mc,
         veto=dict(n_bi=n_orig, n_broad=n_broad, n_new=n_new, n_union=n_union),
         dX=dict(sum_base=float(Xb), sum_vet=float(Xv), frac_removed_pct=float(dX_frac),
