@@ -45,9 +45,18 @@ from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
 # committed, git-stamped MOCK deliverable (2LPT-0 recovery ratios — public-OK).
 DEFAULT_OUT_JSON = os.path.join(_REPO, "CDDF_analysis", "hbi", "lls_mock_validation.json")
 
-# full-forest nhi172 molly — PLUMBING-ONLY fallback (see module docstring).
-NHI172_MOLLY_FULLFOREST = ("/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/"
-                           "figures_molly_nhi172/molly_matrix.tsv")
+# nhi172 molly — VERIFIED lya_only floor-17.2 (molly_summary title "2lpt0_v1 floor17.2
+# lya_only (G0 LLS-coverage)", lam_rf_min=1025), matching the lya_only kernel + loa0 FP.
+NHI172_MOLLY = ("/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/"
+                "figures_molly_nhi172/molly_matrix.tsv")
+
+# floor-17.2 posterior-kappa kernel (op_base 494962, matches the LLS config) — enables the
+# v3x deconvolution cross-check. Built + broadened (sigma=0.12) by
+# phase3d_floor172_robustness.sbatch. NOTE its WALL-1 tilt-closure FAILED
+# (V3_KERNEL_SLOPE_DEPENDENCE): v3x here carries a slope-dependent Eddington bias, so it is
+# a CAVEATED cross-check to the kernel-free v1 primary, not the headline.
+FLOOR172_KERNEL = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phase3d_experiments/"
+                   "floor172_lyaonly1025_broaden012/posterior_kernel_2lpt0.npz")
 
 # cumulative report limits: 17.2 floor + 0.5-dex steps through 19.5, then the DLA tier.
 REPORT_LIMITS = (17.2, 17.5, 18.0, 18.5, 19.0, 19.5, 20.3)
@@ -74,7 +83,7 @@ class _Args:
         self.truth = AB.DEF_TRUTH
         self.bal_cat = AB.DEF_BAL
         self.molly_tsv = molly_tsv             # nhi172 template (floor 17.2 -> truth_floor=17.2)
-        self.kernel = AB.DEF_KERNEL            # existing broaden012 posterior-kappa kernel
+        self.kernel = FLOOR172_KERNEL          # floor-17.2 kernel (op_base 494962 -> v3x enabled)
         self.loa0_product = AB.DEF_LOA0_PRODUCT
         self.out = "/tmp/lls_loa0_validation"
         self.mockdir = None
@@ -234,9 +243,8 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--molly", default=NHI172_MOLLY_FULLFOREST,
-                    help="nhi172 molly TSV (floor 17.2). Use the lya_only variant for "
-                         "correct numbers; the full-forest default is plumbing-only.")
+    ap.add_argument("--molly", default=NHI172_MOLLY,
+                    help="nhi172 molly TSV (VERIFIED lya_only floor-17.2 by default).")
     ap.add_argument("--out", default=DEFAULT_OUT_JSON, help="stamped JSON deliverable path.")
     ap.add_argument("--force", action="store_true", help="overwrite --out if it exists.")
     main(ap.parse_args())
