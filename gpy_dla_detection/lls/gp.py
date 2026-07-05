@@ -23,6 +23,7 @@ from typing import Tuple
 import numpy as np
 
 from ..subdla_gp import SubDLAGP, SubDLAGPMAT
+from ..dla_gp import DLAGPMAT
 from ..voigt_lls import voigt_absorption as voigt_absorption_lls
 
 
@@ -81,7 +82,16 @@ class SubDLAGPLymanBreak(_LymanBreakMixin, SubDLAGP):
 
 class SubDLAGPMATLymanBreak(_LymanBreakMixin, SubDLAGPMAT):
     """SubDLAGPMAT (the .mat-sample production LLS model) with the Lyman-limit break folded in.
-    Drop-in replacement for SubDLAGPMAT in the LLS finder run."""
+    Drop-in replacement for SubDLAGPMAT in the (obsolete) 3-way LLS finder run."""
+
+
+class DLAGPMATLymanBreak(_LymanBreakMixin, DLAGPMAT):
+    """DLAGPMAT with the Lyman-limit break folded in — the SINGLE-ABSORBER LLS model.
+
+    In the single-absorber finder (null vs one absorber; the 3-way null/subDLA/DLA split is
+    retired) the absorber IS the DLA model. Point its samples at the LLS N-range (e.g. the
+    subdla_samples 17.2-20.3 grid, or a 17.2-floor DLA-samples file) and this model scores the
+    912 A break of each candidate. Drop-in replacement for DLAGPMAT."""
 
 
 # ---------------------------------------------------------------------------

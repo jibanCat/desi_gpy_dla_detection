@@ -23,6 +23,7 @@ from __future__ import annotations
 from .gp import (
     SubDLAGPLymanBreak,
     SubDLAGPMATLymanBreak,
+    DLAGPMATLymanBreak,
     _LymanBreakMixin,
     load_lls_gp,
     extend_window_to_drop,
@@ -33,6 +34,7 @@ from .gp import (
 __all__ = [
     "SubDLAGPLymanBreak",
     "SubDLAGPMATLymanBreak",
+    "DLAGPMATLymanBreak",
     "_LymanBreakMixin",
     "load_lls_gp",
     "extend_window_to_drop",

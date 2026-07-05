@@ -27,11 +27,13 @@ from run_bayes_select import (
     process_single_spectrum,
     log,
 )
-from .gp import SubDLAGPMATLymanBreak
+from .gp import SubDLAGPMATLymanBreak, DLAGPMATLymanBreak
 
 
 class LLSHolder(DLAHolder):
-    """DLAHolder whose sub-DLA/LLS channel is the break-aware GP (SubDLAGPMATLymanBreak)."""
+    """DLAHolder whose absorber model is break-aware. Under the production single-absorber
+    config the absorber IS the DLA model, so we swap dla_gp -> DLAGPMATLymanBreak; in the
+    (retired) 3-way mode the subdla_gp -> SubDLAGPMATLymanBreak swap also applies."""
 
     def process_qso(
         self,
@@ -84,7 +86,8 @@ class LLSHolder(DLAHolder):
             prev_tau_0=prev_tau_0_eff,
             prev_beta=self.prev_beta,
         )
-        dla_gp = DLAGPMAT(
+        # <<< THE SWAP (single-absorber): break-aware DLA model instead of line-only DLAGPMAT >>>
+        dla_gp = DLAGPMATLymanBreak(
             self.params,
             self.prior,
             self.dla_samples,
