@@ -1,16 +1,15 @@
 # Reproducing the real-LOA CDDF headline (code walkthrough)
 
-**Scope:** how to *re-derive* the real-LOA DLA CDDF headline — the integrated and
-per-$z$ $\mathrm{d}N/\mathrm{d}X$ and $\Omega_{\rm DLA}$ at $\log N_{\rm HI}\ge20.3$ (and
-$\ge20.0$) — from the committed code. This is a **code/operations** doc, not a science
-doc. It does **not** print real-LOA result values (those are DESI-collaboration-restricted
-and live only in the private notes repo — see [Verify](#4-verify-you-got-it-right)).
+**Scope:** re-derive the real-LOA DLA CDDF headline — integrated and per-z dN/dX and Ω_DLA
+at log N_HI ≥ 20.3 (and ≥ 20.0) — from committed code. A **code/ops** doc, not a science
+doc: it does **not** print real-LOA values (DESI-restricted; they live only in the private
+notes repo — see [Verify](#4-verify-you-got-it-right)).
 
-The headline uses the `loa0` false-positive estimator. It is a **config-only FP-model
-variant of the archival production run job 52266001** (which ran `purity_mixture`): the
-*only* difference is `cfg.fp_estimator`; the forward kernel, completeness, catalog, cut
-bundle and code are identical. The estimator (`cddf_catalog_hbi.py`) and inference
-(`gpy_dla_detection/`) are **byte-frozen** and are not touched by the reduction.
+The headline uses the `loa0` false-positive estimator — a **config-only FP variant of
+archival production job 52266001** (which ran `purity_mixture`): the *only* difference is
+`cfg.fp_estimator`; forward kernel, completeness, catalog, cut bundle and code are identical.
+Estimator (`cddf_catalog_hbi.py`) and inference (`gpy_dla_detection/`) are **byte-frozen** —
+untouched by the reduction.
 
 ---
 
@@ -75,7 +74,7 @@ you must stage all of these and repoint the constants.
 | file | size | role | stamped? |
 |---|---|---|---|
 | `cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz` | 72 K | forward-response kernel (the Track-C calibration) | ✗ |
-| `gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv` | 512 B | molly $C/\rho$ completeness/purity matrix (lya-only, nhi195) | ✗ |
+| `gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv` | 512 B | molly C/ρ completeness/purity matrix (lya-only, nhi195) | ✗ |
 | `gl_prod_2lpt0_v1_20260526/combined_catalog/dlacat-v2.8.5-mockcat.fits` | 118 M | 2LPT-0 calibration dlacat | ✓ (`BASELINE.env CODE_COMMIT`) |
 | `gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz` | 11 K | **loa0 forest-FP product** (the headline FP) | self-doc, no commit; producer `build_loa0_fp_product.py` is committed |
 | `cddf_o3_realdata/track_c/tf_loa/mockdir/{snr_cat,bal_cat}.fits` (+ `zcat` symlink) | 30 M | staged real-LOA pathlength / SNR / BAL | ✗ |
@@ -118,12 +117,11 @@ python CDDF_analysis/diagnostics/bal_metal_fp/arbiter/run_loa0_headline_full.py 
 ```
 
 **What the pipeline does internally** (all inside the byte-frozen estimator, no re-inference):
-`build_frozen_calibration` (2LPT-0 forward kernel + $z$-resolved completeness $g(N,z)$ +
-molly $C/\rho$) → `build_loa_ingredients` (loads the real dlacat, applies the cut bundle
-`SNR>2 & P_DLA>0.99 & DLAFLAG==0` + the lya-only window `lam_rf_min=1025`, builds the $\Delta X$
-pathlength) → set `cfg.fp_estimator="loa0"` + the loa0 FP product → `run_measurement`
-(MAP marked-Poisson fit + gamma-draw MC band). The `--fp purity_mixture` path is identical
-except the FP model.
+`build_frozen_calibration` (2LPT-0 forward kernel + z-resolved completeness g(N,z) + molly
+C/ρ) → `build_loa_ingredients` (loads the real dlacat, applies cut bundle
+`SNR>2 & P_DLA>0.99 & DLAFLAG==0` + lya-only window `lam_rf_min=1025`, builds the ΔX
+pathlength) → `cfg.fp_estimator="loa0"` + loa0 FP product → `run_measurement` (MAP
+marked-Poisson fit + gamma-draw MC band). `--fp purity_mixture` is identical except the FP model.
 
 ---
 
@@ -134,12 +132,10 @@ except the FP model.
   between runs, something is non-deterministic — investigate before trusting it.
 - **The single-knob provenance proof:** `run_loa0_headline_full.py --gate` (or
   `apply_broadtrough_veto_headline.py --fp purity_mixture`) must reproduce **archival job
-  52266001's** integrated values byte-identically. This proves your loa0 number differs from
-  the archival run *only* by the FP model. If it doesn't match, your config has drifted (check
-  `lam_rf_min`, `zbins`, `v2_z_fit_hi`, the cut bundle, the molly/kernel/product files).
-- **The actual expected numbers** (the headline $\mathrm{d}N/\mathrm{d}X$, $\Omega$, per-$z$,
-  band) are the committed, code-commit-stamped
-  **`scripts/loa0_headline.json`** in the private notes repo
+  52266001's** integrated values byte-identically. If it doesn't match, your config has drifted
+  (check `lam_rf_min`, `zbins`, `v2_z_fit_hi`, the cut bundle, the molly/kernel/product files).
+- **The actual expected numbers** (headline dN/dX, Ω, per-z, band) are the committed,
+  code-commit-stamped **`scripts/loa0_headline.json`** in the private notes repo
   (`desi_gpy_dla_notes/notes/2026-06-29_hbi_cddf_draft/`), cross-checked against the draft
   tables. Compare your run's JSON to that file. **Do not** put real-LOA result values in this
   (code) repo.
@@ -148,22 +144,19 @@ except the FP model.
 
 ## 5. Known gaps / caveats
 
-Surfaced by the 2026-07-04 code/reproducibility panel; the numeric result is bit-reproducible
-here, these are portability/robustness items:
+Surfaced by the 2026-07-04 code/reproducibility panel. The number is bit-reproducible here;
+these are portability items:
 
-1. **Frozen-calibration set is now backed up** to `/nfs/turbo/…/gpdla_catalogs/loa_headline_repro_bundle/`
-   (§2, sha256-manifested) — ✅. Remaining polish: repoint the `DEF_*` constants to the bundle (or add a
-   `--data-root` / manifest stage step) so a fresh checkout uses the persistent copy rather than scratch.
-2. **No env lockfile** — export `environment.yml`; the pins in §1 are the working set.
-3. **Provenance stamps:** the routines now stamp the real `code_commit`
-   (`run_loa0_headline_full.py`'s `_REPO` off-by-one that produced `code_commit="unknown"` is
-   fixed; `apply_broadtrough_veto_headline.py` now stamps too).
-4. **Pre-flight guards (added):** the routine now asserts `n_sl_prod` consistency and validates
-   the loa0-FP product / molly provenance (`lam_rf_min=1025`, grid), so a stale/full-forest
-   product or a substituted molly hard-fails instead of silently shifting the number.
-5. `loa0_bal_fp_product.npz` in the arbiter dir is a **stray untracked cache, NOT the headline
-   FP product** — the headline loads `loa0_fp_product_lyaonly1025.npz` (see §2). Ignore the
-   former.
+1. **Path constants still point at scratch.** Backup bundle exists (§2); remaining polish is to
+   repoint `DEF_*` to it (or add a `--data-root`/manifest stage step) so a fresh checkout uses
+   the persistent copy.
+2. **No env lockfile** — export `environment.yml`; the §1 pins are the working set.
+3. **Stray cache:** `loa0_bal_fp_product.npz` in the arbiter dir is NOT the headline FP product
+   (that loads `loa0_fp_product_lyaonly1025.npz`, §2). Ignore it.
+
+Already hardened (no longer gaps): `code_commit` stamping in both routines, and pre-flight
+guards that hard-fail on a stale/full-forest FP product or substituted molly (`n_sl_prod`
+consistency + `lam_rf_min=1025`/grid provenance).
 
 ---
 

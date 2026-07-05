@@ -22,10 +22,9 @@ THE VETO (task spec): a TARGETID is broad-trough-vetoed iff, in the v2 VAC,
   Applied IN ADDITION to the production BI_CIV>0 veto already baked into the staged
   bal_cat (the augmented set is the UNION).
 
-PRIVACY: writes only an augmented bal_cat.fits (a BAL TARGETID classification list)
-and the augmented-run JSON to SCRATCH. No real-LOA dN/dX/Omega values are written to
-the repo. This script is committed to the repo (721b2da); it writes ONLY aggregate
-prints to stdout and aggregate JSON to SCRATCH. Aggregate-only prints go to stdout.
+PRIVACY: writes ONLY an augmented bal_cat.fits (a BAL TARGETID list) + the aggregate
+run JSON to SCRATCH — never any real-LOA dN/dX/Omega value to the repo. This script is
+committed (721b2da); it emits aggregate-only prints to stdout.
 
 Env: conda gpdla; OMP/OPENBLAS/MKL_NUM_THREADS=1.
 """
@@ -59,9 +58,9 @@ LOA0_LYAONLY = ("/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/"
 
 
 def _git_commit():
-    """Return the repo HEAD hash for provenance. On failure (e.g. git missing or a
-    weird checkout) return "unknown" AND print a loud WARNING — never crash, but the
-    failure must be visible so an "unknown" stamp is never shipped silently."""
+    """Return the repo HEAD hash for provenance. On failure (git missing / detached
+    checkout) return "unknown" AND print a loud WARNING — never crash, but never ship
+    an "unknown" stamp silently."""
     import subprocess
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO,
@@ -74,18 +73,12 @@ def _git_commit():
 
 def preflight_loa0_product(product_path, cfg, molly_tsv):
     """Provenance guards for the loa-0 forest-FP headline (task fixes #6/#7). Hard-fail
-    (SystemExit) if the loa-0 FP product or the resolved molly matrix does not match the
-    lya-only (lam_rf_min=1025) headline config — this makes a silent wrong-product /
-    wrong-molly substitution (each shown by the panel to shift dN/dX) impossible to ship.
-
-    Checks, all against the product's OWN self-documenting fields:
-      * product exists;
-      * product.lya_only_lam_rf_min == 1025 == cfg.lam_rf_min  (NOT a full-forest product);
-      * product.snr_min == cfg.snr_min ; product.p_dla_min == cfg.p_dla_min ;
-      * the resolved 2LPT-0 calibration molly path is the lya_only-nhi195 matrix
-        (path contains both 'nhi195' and 'lya_only') — a full-forest molly dropped into
-        the resolved dir silently shifts dN/dX ~+1.7% (panel finding).
-    Returns the product's recorded molly_tsv (for logging/provenance)."""
+    (SystemExit) unless the product + resolved molly match the lya-only (lam_rf_min=1025)
+    headline config — a silent wrong-product/wrong-molly swap each shifts dN/dX (a
+    full-forest molly in the resolved dir is ~+1.7%), so it must be impossible to ship.
+    Guards below check the product's OWN self-doc fields (lam_rf_min/snr_min/p_dla_min vs
+    cfg) + that the molly path is the lya_only-nhi195 matrix. Returns the product's
+    recorded molly_tsv (for provenance)."""
     if not os.path.exists(product_path):
         raise SystemExit(f"loa0 FP product not found: {product_path}")
     d = np.load(product_path, allow_pickle=True)

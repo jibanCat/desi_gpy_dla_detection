@@ -27,7 +27,7 @@ percentages shrink substantially (the excluded Lyβ-overlap region is the more B
 
 Key finding (SNR>2, >=20.3, FULL FOREST): broad-trough is the frontier knee — 0% CIV-detectable residual
 at only +3% ΔX over production, vs AI>0's +17% for the same residual. Production BI>0 leaves a 31.8%
-broad-BAL leak (45.6% at >=21.6). Adopting broad-trough reduces Ω(>=20.3) ~29% / Ω(>=21.6) ~44% (full forest).
+broad-BAL leak (45.6% at >=21.6). Adopting broad-trough reduces Ω(>=20.3) ~29% / Ω(>=21.6) ~44%.
 
 Env: source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
 Aggregate-only (real-LOA privacy). VAC = v2 (production BAL_FLAG source).

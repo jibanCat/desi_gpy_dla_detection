@@ -26,15 +26,13 @@ import time
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# repo root = 4 dirnames up from the arbiter script dir:
-#   arbiter -> bal_metal_fp -> diagnostics -> CDDF_analysis -> <repo>.
-# (The previous code applied FIVE dirnames to _HERE, which is itself already the
-# arbiter dir, resolving to /home/mfho and stamping code_commit="unknown".)
+# repo root = 4 dirnames up (arbiter -> bal_metal_fp -> diagnostics -> CDDF_analysis -> <repo>).
+# (5 dirnames overshot to /home/mfho and stamped code_commit="unknown".)
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_HERE))))
 if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 
-# reuse the untracked veto helper (default_args + measure/loa0-override) and the driver
+# reuse the committed veto helper (default_args + measure/loa0-override) and the driver
 _spec = importlib.util.spec_from_file_location(
     "bt_helper", os.path.join(_HERE, "apply_broadtrough_veto_headline.py"))
 H = importlib.util.module_from_spec(_spec)
@@ -46,9 +44,8 @@ DEFAULT_OUT_JSON = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/trac
 
 
 def _git_commit():
-    """Return the repo HEAD hash for provenance. On failure return "unknown" AND print
-    a loud WARNING (task #2) — never crash (a detached checkout still runs), but the
-    failure must be visible so an "unknown" stamp is never shipped silently."""
+    """Return the repo HEAD hash for provenance. On failure return "unknown" AND print a
+    loud WARNING (task #2) — never crash, but never ship an "unknown" stamp silently."""
     import subprocess
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO,
