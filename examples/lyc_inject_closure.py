@@ -57,36 +57,16 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 from preload_spectra.preload_2lpt_simple import (
     _read_one_healpix_file, _spec_path, _healpix_for_radec, _build_targetid_filter)
+# Core LyC physics lives in the reusable CDDF_analysis.lyc module (sigma~nu^-BETA_LL, tau_LL,
+# the injection). The "recovery" below 912 A is set by that cross-section AND the intrinsic
+# quasar continuum (power-law + FUV break) — on the mock we divide by the exact TRUE_CONT.
+from CDDF_analysis.lyc import lyc_optical_depth, SIGMA_912, LYMAN_LIMIT, BETA_LL
 
-SIGMA_912 = 6.35e-18  # HI photoionization cross-section at 1 Ryd (cm^2), Verner et al. 1996
-# Bound-free cross-section index sigma(nu) ~ (nu/nu_912)^-BETA_LL below the limit:
-#   3.0 = the standard near-threshold hydrogenic value (PW09, Verner asymptotic);
-#   2.75 = the Worseck+2014 effective index over nu_912..~4 nu_912.
-# The "Lyman-limit recovery" of flux below 912 A is governed by (i) this cross-section
-# power law AND (ii) the INTRINSIC quasar continuum, which is itself a power law with an
-# FUV softening below ~1000 A (alpha_lambda - 0.72; Telfer+2002 / O'Meara+13 / Romano+19).
-# On the mock we divide by the exact TRUE_CONT so (ii) is handled; a real-data run must
-# model that power-law + break continuum (D1).
-BETA_LL = 3.0
-LYMAN_LIMIT = 911.76
 DEF_MOCKDIR = ("/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/"
                "v2.8.5/mock-0/loa-124")
 Z_QSO_BINS = [(3.0, 3.3), (3.3, 3.6), (3.6, 3.9)]
 REST_GRID = np.arange(840.0, 1220.0, 0.5)
 TRUE_CONT_WAVE = 3500.0 + 2.0 * np.arange(3251)   # observed grid of the TRUE_CONT HDU
-
-
-def lyc_optical_depth(wave_obs, z_abs, nhi, beta=BETA_LL):
-    """Sum bound-free LyC optical depth over a sightline's HCDs, on the observed grid.
-    tau(lambda) = sum_k N_k sigma912 (lambda/(912(1+z_k)))^beta  for lambda < 912(1+z_k).
-    (lambda/edge)^beta == (nu/nu_912)^-beta; beta=3 standard, 2.75 = Worseck+2014."""
-    tau = np.zeros_like(wave_obs)
-    for zk, nk in zip(np.atleast_1d(z_abs), np.atleast_1d(nhi)):
-        edge = LYMAN_LIMIT * (1.0 + zk)              # observed Lyman limit of this absorber
-        below = wave_obs < edge
-        N = 10.0 ** nk if nk < 30 else nk            # accept log or linear N
-        tau[below] += N * SIGMA_912 * (wave_obs[below] / edge) ** beta
-    return tau
 
 
 def load_hcd_by_tid(mockdir: Path, nhi_min=17.2):
