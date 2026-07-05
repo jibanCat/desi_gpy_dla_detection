@@ -23,6 +23,51 @@ The parameters are tunable in the `gpy_dla_detection.set_parameters.Parameters` 
 exactly reproduce the catalog in the work of Ho-Bird-Garnett (2020);
 however, you may feel free to modify these choices as you see fit.
 
+## Quickstart — run the finder, get the CDDF
+
+The whole point of this repo in four steps: from a DESI spectra release to the DLA
+column-density distribution f(N_HI), line density dN/dX, and Ω_DLA. (First get the data +
+learned model — next section — and build the C extension.)
+
+**1. Install** (once):
+
+```bash
+pip install -e .            # + build the fast Voigt C extension, see "Compilation" below
+```
+
+**2. Run the DLA finder** on a DESI healpix release → one HDF5 per healpix:
+
+```bash
+QSOCAT=/path/to/zcat.fits  OUTDIR=/path/to/output  python desi-DLAGP.py
+```
+
+Defaults cover the standard multi-DLA run; every knob (and the sub-DLA / LLS run modes) is
+in the "Run GP DLA finder" and "Run modes" sections below.
+
+**3. Combine** the per-healpix outputs into one catalog:
+
+```bash
+python combine_processed_h5.py --processed_dir /path/to/output --output_file combined.h5
+```
+
+**4. Get the CDDF** — f(N_HI), dN/dX, Ω_DLA (tables + plots):
+
+```bash
+python desi_cddf.py \
+    --processed_file combined.h5 \
+    --sample_file  data/dr12q/processed/dla_samples_a03.mat \
+    --catalog_file data/dr12q/processed/catalog.mat \
+    --output_prefix cddf_out
+```
+
+`cddf_out*` now holds the dN/dX, Ω_DLA, and f(N_HI) results. That's the plain
+"find DLAs → get the CDDF" path.
+
+> Reproducing the calibrated **DESI-LoA paper headline** (catalog-HBI dN/dX·Ω) is a
+> separate, more involved pipeline — see `CDDF_analysis/hbi/REPRODUCE_HEADLINE.md`.
+
+Full details (data downloads, run modes, all options) are in the sections below.
+
 ## Downloading the external DLA catalogues and the learned model
 
 First we download the raw catalog data (requires both `wget` and `gawk`):
