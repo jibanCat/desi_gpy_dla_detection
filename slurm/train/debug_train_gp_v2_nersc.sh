@@ -3,8 +3,8 @@
 #SBATCH -C gpu
 #SBATCH -q debug
 #SBATCH --job-name=train_gp_v2_dbg
-#SBATCH --output=slurm_train/train_gp_v2_dbg_%j.log
-#SBATCH --error=slurm_train/train_gp_v2_dbg_%j.err
+#SBATCH --output=slurm/train/train_gp_v2_dbg_%j.log
+#SBATCH --error=slurm/train/train_gp_v2_dbg_%j.err
 #SBATCH -A desi
 #SBATCH --time=00:30:00
 #SBATCH --gpus=1
@@ -24,11 +24,11 @@
 #     so production and debug runs don't clash.
 #
 # To submit:
-#   sbatch slurm_train/debug_train_gp_v2_nersc.sh
+#   sbatch slurm/train/debug_train_gp_v2_nersc.sh
 #
 # Override defaults:
 #   sbatch --export=ALL,PRELOADED_FILE=/path/to/your.h5,MAX_SPECTRA=2000 \
-#       slurm_train/debug_train_gp_v2_nersc.sh
+#       slurm/train/debug_train_gp_v2_nersc.sh
 
 # NB: drop `-u` because /global/cfs/cdirs/desi/software/desi_environment.sh
 # references DESI_ROOT before defining it, which trips `set -u`. Same
@@ -140,4 +140,4 @@ echo "wrote $H5_COUNT model H5 files; loss history is finite"
 
 echo
 echo "If this debug job succeeded, submit production with:"
-echo "  sbatch slurm_train/submit_train_gp_v2_loa_nersc.sh"
+echo "  sbatch slurm/train/submit_train_gp_v2_loa_nersc.sh"

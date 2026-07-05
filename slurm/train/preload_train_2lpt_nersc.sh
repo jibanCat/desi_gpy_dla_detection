@@ -3,8 +3,8 @@
 #SBATCH -C gpu
 #SBATCH -q debug
 #SBATCH --job-name=2lpt_train
-#SBATCH --output=slurm_train/2lpt_train_%j.log
-#SBATCH --error=slurm_train/2lpt_train_%j.err
+#SBATCH --output=slurm/train/2lpt_train_%j.log
+#SBATCH --error=slurm/train/2lpt_train_%j.err
 #SBATCH -A desi
 #SBATCH --time=00:30:00
 #SBATCH --gpus=1
@@ -22,8 +22,8 @@
 #                        in bal_cat.fits) anti-joined out.
 #
 # Submit:
-#   sbatch --export=ALL,VARIANT=loa0 slurm_train/preload_train_2lpt_nersc.sh
-#   sbatch --export=ALL,VARIANT=loa124_nohcd_nobal slurm_train/preload_train_2lpt_nersc.sh
+#   sbatch --export=ALL,VARIANT=loa0 slurm/train/preload_train_2lpt_nersc.sh
+#   sbatch --export=ALL,VARIANT=loa124_nohcd_nobal slurm/train/preload_train_2lpt_nersc.sh
 #
 # Walltime budget: 30 min on debug queue.
 #   Preload: ~5–15 min (depends on max_spectra).
@@ -150,7 +150,7 @@ assert all(math.isfinite(x) for x in h), 'non-finite loss'
 print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs)')
 " || { echo "[error] post-flight loss check failed" >&2; exit 8; }
 
-cp slurm_train/2lpt_train_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
+cp slurm/train/2lpt_train_${SLURM_JOB_ID}.log "$RUN_DIR/slurm.log" 2>/dev/null || true
 
 echo
 echo "=== 2LPT $VARIANT TRAINING COMPLETE ==="

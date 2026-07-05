@@ -11,7 +11,7 @@
 #SBATCH -e slurm/greatlakes/e2e_loa_smoke_%j.log
 
 # GreatLakes smoke-test of the e2e LOA training pipeline.
-# Same VARIANT logic as slurm_train/submit_e2e_train_loa_nersc.sh but:
+# Same VARIANT logic as slurm/train/submit_e2e_train_loa_nersc.sh but:
 #   - paths point at the GreatLakes /nfs/turbo mirror
 #   - small MAX_SPECTRA (5,000) and NUM_EPOCHS (5) so the whole job
 #     fits in ~45 min wall on spgpu (A40)

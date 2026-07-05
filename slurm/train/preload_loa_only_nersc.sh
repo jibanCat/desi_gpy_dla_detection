@@ -3,8 +3,8 @@
 #SBATCH -C cpu
 #SBATCH -q regular
 #SBATCH --job-name=loa_preload
-#SBATCH --output=slurm_train/loa_preload_%j.log
-#SBATCH --error=slurm_train/loa_preload_%j.err
+#SBATCH --output=slurm/train/loa_preload_%j.log
+#SBATCH --error=slurm/train/loa_preload_%j.err
 #SBATCH -A desi
 #SBATCH --time=06:00:00
 #SBATCH --ntasks=1
@@ -25,7 +25,7 @@
 #                                  train.slurm.log)
 #
 # After this job completes, train with:
-#   sbatch --export=ALL,RUN_TAG=<same tag> slurm_train/train_only_nersc.sh
+#   sbatch --export=ALL,RUN_TAG=<same tag> slurm/train/train_only_nersc.sh
 #
 # VARIANTs (same as the chained submit):
 #   no_dla_no_bal      DLAs (NHI ≥ 20.3) + BALs excluded; sub-DLAs/LLS kept
@@ -36,10 +36,10 @@
 #                       model-selected against the non-BAL GP.
 #
 # Submit:
-#   sbatch --export=ALL,VARIANT=no_dla_no_bal     slurm_train/preload_loa_only_nersc.sh
-#   sbatch --export=ALL,VARIANT=no_hcd_with_bal   slurm_train/preload_loa_only_nersc.sh
-#   sbatch --export=ALL,VARIANT=no_hcd_no_bal     slurm_train/preload_loa_only_nersc.sh
-#   sbatch --export=ALL,VARIANT=bal_only          slurm_train/preload_loa_only_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_dla_no_bal     slurm/train/preload_loa_only_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_with_bal   slurm/train/preload_loa_only_nersc.sh
+#   sbatch --export=ALL,VARIANT=no_hcd_no_bal     slurm/train/preload_loa_only_nersc.sh
+#   sbatch --export=ALL,VARIANT=bal_only          slurm/train/preload_loa_only_nersc.sh
 
 set -eo pipefail
 export PYTHONUNBUFFERED=1
@@ -130,7 +130,7 @@ python -u preload_spectra/preload_loa_real.py \
 [ -r "$TRAINSET_H5" ] || { echo "[error] trainset.h5 not produced" >&2; exit 7; }
 echo "preload wrote: $TRAINSET_H5 ($(du -h "$TRAINSET_H5" | cut -f1))"
 
-cp "slurm_train/loa_preload_${SLURM_JOB_ID}.log" "$RUN_DIR/preload.slurm.log" 2>/dev/null || true
+cp "slurm/train/loa_preload_${SLURM_JOB_ID}.log" "$RUN_DIR/preload.slurm.log" 2>/dev/null || true
 
 echo
 echo "===================================================="
@@ -138,5 +138,5 @@ echo "  PRELOAD COMPLETE  $RUN_TAG"
 echo "  RUN_DIR:   $RUN_DIR"
 echo
 echo "  NEXT STEP: train on this dataset"
-echo "  sbatch --export=ALL,RUN_TAG=$RUN_TAG slurm_train/train_only_nersc.sh"
+echo "  sbatch --export=ALL,RUN_TAG=$RUN_TAG slurm/train/train_only_nersc.sh"
 echo "===================================================="

@@ -26,9 +26,9 @@ Real LOA stays on NERSC (privacy + access). Mocks run on GreatLakes
 ssh perlmutter
 cd ~/desi_gpy_dla_detection && git pull
 
-sbatch --export=ALL,VARIANT=no_dla_no_bal     slurm_train/preload_loa_only_nersc.sh
-sbatch --export=ALL,VARIANT=no_hcd_with_bal   slurm_train/preload_loa_only_nersc.sh
-sbatch --export=ALL,VARIANT=no_hcd_no_bal     slurm_train/preload_loa_only_nersc.sh
+sbatch --export=ALL,VARIANT=no_dla_no_bal     slurm/train/preload_loa_only_nersc.sh
+sbatch --export=ALL,VARIANT=no_hcd_with_bal   slurm/train/preload_loa_only_nersc.sh
+sbatch --export=ALL,VARIANT=no_hcd_no_bal     slurm/train/preload_loa_only_nersc.sh
 ```
 
 `-q regular -C cpu` walltime 6 h, MAX_SPECTRA=300,000 default.
@@ -56,16 +56,16 @@ command for the train step at the very end:
   RUN_DIR:   /pscratch/sd/j/jibancat/desi_gpy_dla_detection/v2_runs/loa_no_dla_no_bal_52234567
 
   NEXT STEP: train on this dataset
-  sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_52234567 slurm_train/train_only_nersc.sh
+  sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_52234567 slurm/train/train_only_nersc.sh
 ```
 
 Just copy/paste. Then on each cluster:
 
 ### NERSC train:
 ```bash
-sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_<jobid>     slurm_train/train_only_nersc.sh
-sbatch --export=ALL,RUN_TAG=loa_no_hcd_with_bal_<jobid>   slurm_train/train_only_nersc.sh
-sbatch --export=ALL,RUN_TAG=loa_no_hcd_no_bal_<jobid>     slurm_train/train_only_nersc.sh
+sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_<jobid>     slurm/train/train_only_nersc.sh
+sbatch --export=ALL,RUN_TAG=loa_no_hcd_with_bal_<jobid>   slurm/train/train_only_nersc.sh
+sbatch --export=ALL,RUN_TAG=loa_no_hcd_no_bal_<jobid>     slurm/train/train_only_nersc.sh
 ```
 
 `-q debug -C gpu --gpus=1` 30-min walltime (200 epochs default).
@@ -115,7 +115,7 @@ If a `-q debug` run capped at 200 epochs and you want 800:
 
 ```bash
 sbatch --export=ALL,RUN_TAG=loa_no_hcd_with_bal_<jobid>,NUM_EPOCHS=800 \
-    slurm_train/submit_e2e_train_loa_nersc.sh   # the chained regular-queue submit
+    slurm/train/submit_e2e_train_loa_nersc.sh   # the chained regular-queue submit
 ```
 
 It'll skip preload (trainset.h5 already exists) and continue training from

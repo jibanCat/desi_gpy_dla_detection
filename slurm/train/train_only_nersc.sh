@@ -3,15 +3,15 @@
 #SBATCH -C gpu
 #SBATCH -q regular
 #SBATCH --job-name=train_v2
-#SBATCH --output=slurm_train/train_v2_%j.log
-#SBATCH --error=slurm_train/train_v2_%j.err
+#SBATCH --output=slurm/train/train_v2_%j.log
+#SBATCH --error=slurm/train/train_v2_%j.err
 #SBATCH -A desi
 #SBATCH --time=12:00:00
 #SBATCH --gpus=1
 
 # TRAIN-ONLY: assumes a preload job has already produced
 #   ${OUTDIR_BASE}/v2_runs/${RUN_TAG}/trainset.h5
-# (e.g. via slurm_train/preload_loa_only_nersc.sh or any other producer).
+# (e.g. via slurm/train/preload_loa_only_nersc.sh or any other producer).
 #
 # Defaults to `-q regular` with 12-hour walltime — NERSC GPU queue can
 # be long, so we'd rather sit through one wait and run to convergence
@@ -25,7 +25,7 @@
 # hard-capped at 30 min:
 #
 #   sbatch -q debug --time=00:30:00 --export=ALL,RUN_TAG=...,NUM_EPOCHS=5 \
-#       slurm_train/train_only_nersc.sh
+#       slurm/train/train_only_nersc.sh
 #
 # Outputs land in the SAME RUN_DIR (alongside trainset.h5):
 #   model_epoch_NNNN.h5
@@ -35,7 +35,7 @@
 #   train.slurm.log
 #
 # Submit (production):
-#   sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_<jobid> slurm_train/train_only_nersc.sh
+#   sbatch --export=ALL,RUN_TAG=loa_no_dla_no_bal_<jobid> slurm/train/train_only_nersc.sh
 #
 # Tunables overridable via --export=ALL,KEY=val,...
 #   NUM_EPOCHS=1500 (production default — historical Y3 used model_epoch_920;
@@ -126,7 +126,7 @@ assert all(math.isfinite(x) for x in h), 'non-finite loss'
 print(f'[postflight] loss start={h[0]:.4e} end={h[-1]:.4e} ({len(h)} epochs)')
 " || { echo "[error] post-flight loss check failed" >&2; exit 9; }
 
-cp "slurm_train/train_v2_${SLURM_JOB_ID}.log" "$RUN_DIR/train.slurm.log" 2>/dev/null || true
+cp "slurm/train/train_v2_${SLURM_JOB_ID}.log" "$RUN_DIR/train.slurm.log" 2>/dev/null || true
 
 echo
 echo "===================================================="

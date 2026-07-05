@@ -25,7 +25,7 @@ Usage example (NERSC LOA training)::
         --output-dir learnlogs_v2/
 
 Defaults match the production NERSC config in
-``slurm_train/submit_train_gp_loa_full.sh``.
+``slurm/train/submit_train_gp_loa_full.sh``.
 """
 
 from __future__ import annotations
