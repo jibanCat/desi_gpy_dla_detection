@@ -10,15 +10,17 @@ excess ~0 after SNR-matching" does NOT hold up. The balfinder AI-detection compl
 SNR_CIV~2 (parent BI=0 AI rate: 0% below SNR_CIV~1 -> ~24% by SNR_CIV~2 -> flat), and the high-N dets sit
 at median SNR_CIV~5.3 (deep in the saturated regime), so the "brighter -> more AI detected" mechanism is
 EXHAUSTED. Matching on SNR_CIV (the balfinder's own SNR) AND on RED_SNR (red-side continuum) BOTH leave a
-+6.5pp residual at >=20.3, rising to ~+9pp in the deep tail. So the excess is NOT an SNR-selection artifact.
+positive residual at >=20.3 that rises into the deep tail (values in the private notes,
+notes/2026-07-02_ai_minibal_causal/). So the excess is NOT an SNR-selection artifact.
 
-Interpretation: the ~6.5pp (>=20.3) / ~9pp (deep-tail) excess is a REAL over-representation of AI>0
+Interpretation: the residual excess (>=20.3, rising in the deep tail; values private) is a REAL over-representation of AI>0
 mini-BAL sightlines among high-N DLA detections. Its benign-ness (real DLAs preferentially toward mini-BAL
 QSOs = astrophysical over-density, NOT false positives) rests on the width/EW PHYSICS (narrow shallow
 troughs cannot mimic a >=20.3 damped profile -- inject_minibal_gp.py) + the STACK (AI>0 dets carry real
 damped cores -- stack_ai_minibal.py). As a CONSERVATIVE FP upper bound (if none of the excess were
-astrophysical), the residual is the upper end of the BAL band: ~6% (>=20.3), ~9% (deep tail, E1-limited).
-=> This is the upper end of the reported benign-direction band ~2-6% at >=20.3.
+astrophysical), the residual is the upper end of the BAL band (>=20.3, larger in the deep tail, E1-limited).
+=> This is the upper end of the reported benign-direction band at >=20.3 (percentages in the private notes,
+notes/2026-07-02_ai_minibal_causal/).
 
 Method (catalog-only, no GP):
   * Parent = z>2 QSOs, BI_CIV==0 (the op-cut removes BI>0 via DLAFLAG). AI-host = AI_CIV>0.
@@ -26,7 +28,7 @@ Method (catalog-only, no GP):
     RED_SNR from the archive = red-side continuum, a cross-check).
   * Clean high-N dets = headline op-cut (SNR_REDSIDE>2 & P_DLA>0.99 & lam_rest>=1025 & DLAFLAG==0), per NHI.
   * SNR-matched EXPECTED AI-host frac = mean over the bin's dets of parent_AI_rate(SNR_i). Residual =
-    observed - expected (binomial CIs). Reported for BOTH SNR axes (they agree ~ +6.5pp).
+    observed - expected (binomial CIs). Reported for BOTH SNR axes (they agree closely; value private).
 
 Aggregate/derived numbers only (no per-object real spectra). conda gpdla; HDF5_USE_FILE_LOCKING=FALSE.
 """
@@ -144,7 +146,8 @@ def main():
         print(f"\n{tag}: obs {100*obs:.1f}% [{100*cl:.1f},{100*ch:.1f}]  SNR_CIV-matched {100*eciv:.1f}% "
               f"(resid {100*(obs-eciv):+.2f}pp) | RED_SNR-matched {100*ered:.1f}% (resid {100*(obs-ered):+.2f}pp)  n={n}")
     print("\n=> residual is REAL and robust to the SNR axis; it is the conservative FP UPPER bound "
-          "(band upper end ~6% at >=20.3, ~9% deep tail). Benign-ness rests on the width/EW physics + the stack.")
+          "(band upper end at >=20.3, larger in the deep tail; value in the private notes). "
+          "Benign-ness rests on the width/EW physics + the stack.")
 
     # --- figure ---
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -164,7 +167,7 @@ def main():
                    label="obs - SNR_CIV-matched")
     ax[1].plot(mids, 100 * (obsv - eredv), "^:", color="C1", label="obs - RED_SNR-matched")
     ax[1].set_xlabel("log N_HI"); ax[1].set_ylabel("residual [pp]")
-    ax[1].set_title("SNR-matched residual is REAL (~+6.5pp >=20.3, ~+9pp deep tail):\n= conservative FP upper bound (band upper end)")
+    ax[1].set_title("SNR-matched residual is REAL (positive at >=20.3, larger in deep tail):\n= conservative FP upper bound (band upper end)")
     ax[1].legend(fontsize=8)
     fig.suptitle("SNR-matched decomposition of the AI-mini-BAL high-N excess (real LOA, lya-only)", fontsize=11)
     fig.tight_layout(); fig.savefig(f"{a.outdir}/snr_matched_decomp.png", dpi=130); plt.close(fig)

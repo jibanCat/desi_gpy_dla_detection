@@ -5,7 +5,8 @@
 Motivation (PI, 2026-07-02): the headline restricts DLA detections to the Lyα-only forest
 (`run_phase3d_postkernel.py:75` lam_rf_min=1025.0; `build_loa0_fp_product.py:214` "the Lyβ region
 inflates the FP"). But the arbiter (veto_snr_sweep.py, decompose_highn_fp.py) used the FULL forest
-(no lam_rf cut), so its over-count (56%/153%) and leak (31.8%) OVER-STATE the headline BAL bias.
+(no lam_rf cut), so its over-count (56%/153%, mock 2LPT-0) and leak (real-LOA leak value in the private
+notes, notes/2026-07-02_real_loa_bal_arbiter_design.md) OVER-STATE the headline BAL bias.
 
 lam_rest = LYA_REST * (1+Z_DLA)/(1+Z_QSO); lya-only = lam_rest >= lam_rf_min (default 1025) — exactly
 the headline catalog cut (cddf_catalog_hbi.py load_and_cut_catalog on cfg.lam_rf_min).

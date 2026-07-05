@@ -8,7 +8,8 @@ GP-DLA inference (DLAHolder.process_qso, y3 = the LOA production config) on each
   (1) a Voigt DLA logN=20.5 — positive control (should recover logN~20.5, P_DLA~1)
   (2) a BROAD Gaussian trough (BAL-like: no damped wings) at a forest position, width W km/s, depth D
       — THE TEST: if it gets flagged P_DLA>0.99 & logN>=20.3, broad forest absorption CAUSES DLA FPs
-      (→ AI-mini-BALs are causal, ~10%); if not, the AI excess is benign selection (~2%).
+      (→ AI-mini-BALs are causal → the larger Ω-bias); if not, the AI excess is benign selection
+      (the smaller bias; both magnitudes in the private notes, notes/2026-07-02_ai_minibal_causal/).
 
 Env: source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
      export PYTHONPATH=/home/mfho/desi_gpy_dla_detection:$PYTHONPATH
@@ -16,10 +17,13 @@ Aggregate-only (FP rates, not per-object real spectra).
 
 COMMITTED figures/inject_minibal.npz was produced with (NOT the CLI defaults):
     python inject_minibal_gp.py --widths 1000,2000 --depths 0.5 --n 15
-  → none=6.7% / voigt20.5=40% / broad_W1000_D0.5=6.7% / broad_W2000_D0.5=6.7% (paired McNemar: 0 incremental FP).
+  → the broad troughs (W1000/W2000, D0.5) fire at the nothing-injected control rate, with the voigt20.5
+    positive control higher, and paired McNemar showing 0 incremental FP. Per-condition FP rates in the
+    private notes: notes/2026-07-02_ai_minibal_causal/.
 4-LENS REVIEW (2026-07-03) follow-up (recommended, not yet run): re-run at the PRODUCTION config
 (max_dlas=4, single_absorber_model=True→multi, filter_low_likelihood=True), n>=100, deeper/wider troughs,
-and a stronger positive control (the Voigt-20.5 control here fires only ~33-40%, capping statistical power).
+and a stronger positive control (the Voigt-20.5 control here fires only weakly — rate in the private notes —
+capping statistical power).
 The Voigt insensitivity is width/EW-bounded: at W=5000 km/s / D=0.9 the broad trough DOES produce logN~21.2
 fits (EW rivals a DLA) — those DLA-mimicking broad troughs are what the BI>0 veto removes; the leaked
 narrow shallow (<=2000 km/s, D~0.5) mini-BALs give the negative-control rate.
