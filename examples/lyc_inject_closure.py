@@ -23,6 +23,24 @@ Run (smoke): python examples/lyc_inject_closure.py --limit-healpix 40 --out /tmp
 Requires the gpdla env (desispec + healpy + fitsio).
 """
 from __future__ import annotations
+# ---------------------------------------------------------------------------
+# Physics cross-check (Prochaska + Fumagalli series, web-verified 2026-07-05):
+# the injection below is VERIFIED correct (sigma ~ nu^-3, per-absorber tau, mean-of-exp).
+# The inj/base mock closure is weighting- and Lyman-series-invariant. The ABSOLUTE
+# tau_eff -> lambda_mfp fit (D3, real data) MUST additionally adopt, per Fumagalli+2013 /
+# PWO09 / Worseck14:
+#   1. EQUAL-WEIGHT arithmetic mean <F/C> (NOT inverse-var, NOT median) + a QSO S/N floor.
+#   2. proximity cut dv<=3000 km/s of z_QSO; fit window rest 830-905 A (red edge avoids the
+#      proximity zone -> else MFP biased high).
+#   3. fix the Lyman-series tau_eff^Ly(z) from f(N), fit only the LL term (on the mock the
+#      series lives in the baseline -> inj/base removes it empirically).
+#   4. continuum = Telfer broken power law (real data); TRUE_CONT (mock).
+#   5. inversion exponent consistent with sigma: nu^-3 => tau_eff ~ (1+z912)^3 int (1+z')^-5.5,
+#      redshift exponent -4.5 (Worseck's -4.25 is for nu^-2.75); lambda_mfp := where tau_eff=1.
+#   6. KEY: logN>=17.5 is only ~40% of the LyC opacity (Fumagalli+2013) -> an HCD-only (>=17.2)
+#      injection captures ~40-45% of the real MFP; the diffuse sub-LLS dominates.
+# See notes/2026-07-05_lls_drop_walkthrough.md Step 6.
+# ---------------------------------------------------------------------------
 
 import argparse
 import os
@@ -40,7 +58,16 @@ if str(_REPO) not in sys.path:
 from preload_spectra.preload_2lpt_simple import (
     _read_one_healpix_file, _spec_path, _healpix_for_radec, _build_targetid_filter)
 
-SIGMA_912 = 6.3e-18   # HI photoionization cross-section at 1 Ryd (cm^2)
+SIGMA_912 = 6.35e-18  # HI photoionization cross-section at 1 Ryd (cm^2), Verner et al. 1996
+# Bound-free cross-section index sigma(nu) ~ (nu/nu_912)^-BETA_LL below the limit:
+#   3.0 = the standard near-threshold hydrogenic value (PW09, Verner asymptotic);
+#   2.75 = the Worseck+2014 effective index over nu_912..~4 nu_912.
+# The "Lyman-limit recovery" of flux below 912 A is governed by (i) this cross-section
+# power law AND (ii) the INTRINSIC quasar continuum, which is itself a power law with an
+# FUV softening below ~1000 A (alpha_lambda - 0.72; Telfer+2002 / O'Meara+13 / Romano+19).
+# On the mock we divide by the exact TRUE_CONT so (ii) is handled; a real-data run must
+# model that power-law + break continuum (D1).
+BETA_LL = 3.0
 LYMAN_LIMIT = 911.76
 DEF_MOCKDIR = ("/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/"
                "v2.8.5/mock-0/loa-124")
@@ -49,15 +76,16 @@ REST_GRID = np.arange(840.0, 1220.0, 0.5)
 TRUE_CONT_WAVE = 3500.0 + 2.0 * np.arange(3251)   # observed grid of the TRUE_CONT HDU
 
 
-def lyc_optical_depth(wave_obs, z_abs, nhi):
+def lyc_optical_depth(wave_obs, z_abs, nhi, beta=BETA_LL):
     """Sum bound-free LyC optical depth over a sightline's HCDs, on the observed grid.
-    tau(lambda) = sum_k N_k sigma912 (lambda/(912(1+z_k)))^3  for lambda < 912(1+z_k)."""
+    tau(lambda) = sum_k N_k sigma912 (lambda/(912(1+z_k)))^beta  for lambda < 912(1+z_k).
+    (lambda/edge)^beta == (nu/nu_912)^-beta; beta=3 standard, 2.75 = Worseck+2014."""
     tau = np.zeros_like(wave_obs)
     for zk, nk in zip(np.atleast_1d(z_abs), np.atleast_1d(nhi)):
         edge = LYMAN_LIMIT * (1.0 + zk)              # observed Lyman limit of this absorber
         below = wave_obs < edge
         N = 10.0 ** nk if nk < 30 else nk            # accept log or linear N
-        tau[below] += N * SIGMA_912 * (wave_obs[below] / edge) ** 3
+        tau[below] += N * SIGMA_912 * (wave_obs[below] / edge) ** beta
     return tau
 
 
