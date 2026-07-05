@@ -8,9 +8,14 @@ NO quickquasars re-run — and write a mirror spectra-16 tree the GP finder read
 the break-aware finder (SubDLAGPMATLymanBreak) can be re-inferred on the mirror (M3) and its LLS
 purity compared to the line-only control (M4).
 
-Caveat: flux is scaled by exp(-tau_LL) and ivar is kept (the noise is not re-generated from the
+Caveat 1: flux is scaled by exp(-tau_LL) and ivar is kept (the noise is not re-generated from the
 sky model) -> the break region's S/N is approximate; fine for the detectability test, flag for a
 rigorous run.
+Caveat 2 (sigma_912 convention): the injector (CDDF_analysis.lyc, sigma_912=6.35e-18 Verner+1996)
+and the model the finder fits (voigt_lls.tau_LLS_break, sigma_912=1/10^17.2=6.31e-18, the LLS
+threshold definition) differ by a flat 0.64% in tau -> ~0.0028 dex in recovered logN. Negligible
+vs the ~0.06 dex prior-edge bias; for a production-grade mirror, align the two to 1/10^17.2 so the
+injected break equals the fitted break exactly.
 
 Run (subset): python -m gpy_dla_detection.lls.mirror --limit-healpix 2 --out /scratch/.../mirror
 """
