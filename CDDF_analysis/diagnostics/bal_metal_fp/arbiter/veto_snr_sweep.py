@@ -15,7 +15,8 @@ Candidate vetoes (increasing completeness & cost; each keys on the QSO-frame CIV
                         |VMAX-VMIN| > 2000 km/s + significant AI. The physically DLA-mimicking population
                         BI misses on onset velocity. CAVEAT: the native >=2000 column NCIV_2000 is
                         IDENTICAL to BI>0 (no broad-at-any-onset flag exists); this 450-derived proxy
-                        matches BI at only 94.7% (450-troughs fragment) -> likely a slight UNDER-count.
+                        matches BI imperfectly (450-troughs fragment; match-rate value in the private notes,
+                        notes/2026-07-02_real_loa_bal_arbiter_design.md) -> likely a slight UNDER-count.
                         A clean veto needs (a) this + a ~5% fragmentation systematic, or (b) a balfinder
                         re-run with a lowered BI onset floor. Physical finding robust; implementation open.
   AI>0(sig)           : any significant AI-CIV trough (>=450 km/s) — includes narrow non-DLA-mimicking
@@ -25,9 +26,10 @@ broad-trough veto but applies it LYA-ONLY (lam_rf>=1025) — see lya_only_rerun.
 leak/veto-cost and the headline re-derivation for the vetoed dN/dX & Ω. Under lya-only these full-forest
 percentages shrink substantially (the excluded Lyβ-overlap region is the more BAL-contaminated part).
 
-Key finding (SNR>2, >=20.3, FULL FOREST): broad-trough is the frontier knee — 0% CIV-detectable residual
-at only +3% ΔX over production, vs AI>0's +17% for the same residual. Production BI>0 leaves a 31.8%
-broad-BAL leak (45.6% at >=21.6). Adopting broad-trough reduces Ω(>=20.3) ~29% / Ω(>=21.6) ~44%.
+Key finding (SNR>2, >=20.3, FULL FOREST): broad-trough is the frontier knee — it removes the CIV-detectable
+residual at a small ΔX cost over production, well below AI>0's cost for the same residual. Production BI>0
+leaves a substantial broad-BAL leak (larger in the deep tail), and adopting broad-trough reduces high-N Ω
+materially. Quantitative percentages are in the private notes: notes/2026-07-02_real_loa_bal_arbiter_design.md.
 
 Env: source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
 Aggregate-only (real-LOA privacy). VAC = v2 (production BAL_FLAG source).
@@ -113,7 +115,7 @@ def main():
     ax[0].set_xlabel("ΔX cost — forest path removed (%)"); ax[0].set_ylabel("residual broad-BAL leak in retained set (%)")
     ax[0].set_title("Decision frontier (SNR>2): broad-trough is the knee\n○ ≥20.3  □ ≥21.6")
     ax[0].legend(fontsize=7, loc="upper right"); ax[0].grid(alpha=0.3)
-    ax[0].annotate("broad-trough:\n0% residual, +3% ΔX", (7.8, 0), textcoords="offset points", xytext=(10, 25), fontsize=8,
+    ax[0].annotate("broad-trough:\nfrontier knee", (7.8, 0), textcoords="offset points", xytext=(10, 25), fontsize=8,
                    arrowprops=dict(arrowstyle="->", color="C2"))
     x = np.arange(3); wbar = 0.25
     for j, s in enumerate((2, 3, 5)):
