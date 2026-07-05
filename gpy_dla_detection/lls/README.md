@@ -94,11 +94,22 @@ the break-aware Voigt. Verified on 2LPT-0: a log N=17.32 LLS shows mirror/orig =
 Train a **mock-matched** extended GP on **HCD-free 2LPT-0** sightlines (clean forest → clean
 null model; forest statistics match the mirror-mock test data, no mock-vs-real transfer gap),
 with the preload grid floor pushed to ~800 Å, using the same PCA-init + GPU `train_gp.py`
-recipe. Full steps, commands, and diagnostic figures live in the training doc:
+recipe. Two stages (reuse the proven mock path — no new code):
 
-> `notes/2026-07-05_lls_gp_relearn_hcdfree_2lpt0.md`  *(private notes repo)*
+```bash
+# 1) preload (CPU, ~4h): HCD-free 2LPT-0 loa-124, grid floor extended to 800 A
+sbatch --export=ALL,VARIANT=loa124_nohcd_nobal,MIN_LAMBDA=800.0,Z_MIN=2.0,Z_MAX=4.0,\
+RUN_TAG=2lpt_loa124_nohcd800 slurm/greatlakes/preload_2lpt_only.sh
 
-*(exact preload + sbatch commands filled in once the mock-training path is finalized.)*
+# 2) train (GPU, ~4h): same PCA-init + autograd recipe, k=30, 800 epochs
+sbatch --export=ALL,RUN_TAG=2lpt_loa124_nohcd800,Z_MIN=2.0,Z_MAX=4.0,NUM_EPOCHS=800,NUM_PCA=30 \
+    slurm/greatlakes/train_only_gpu.sh
+# -> .../v2_runs/2lpt_loa124_nohcd800/model_epoch_0799.h5  (point load_lls_gp(learned_file=...) here)
+```
+
+**Ceiling:** the LyC region is only constrained by z_qso≳3 quasars — ~43–50% of LLS breaks is
+the practical counting ceiling (real-LOA limit too), the rest need the drop channel. Full steps
++ diagnostic figures: `notes/2026-07-05_lls_gp_relearn_hcdfree_2lpt0.md` *(private notes repo)*.
 
 ---
 
