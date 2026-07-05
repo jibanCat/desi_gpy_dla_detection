@@ -38,17 +38,30 @@ pip install -e .            # + build the fast Voigt C extension, see "Compilati
 **2. Run the DLA finder** on a DESI healpix release → one HDF5 per healpix:
 
 ```bash
-QSOCAT=/path/to/zcat.fits  OUTDIR=/path/to/output  python desi-DLAGP.py
+python desi-DLAGP.py \
+    --qsocat  /path/to/zcat.fits \
+    --release iron \
+    --outdir  /path/to/output
 ```
 
-Defaults cover the standard multi-DLA run; every knob (and the sub-DLA / LLS run modes) is
-in the "Run GP DLA finder" and "Run modes" sections below.
+`--qsocat`, `--release` (the DESI redux, e.g. `iron`), and `--outdir` are required. For a
+mock catalog add `--mocks --mockdir /path/to/mock`. Every other knob defaults to the
+standard multi-DLA run — the full list (and the sub-DLA / LLS run modes) is in the
+"Run GP DLA finder" and "Run modes" sections below.
 
 **3. Combine** the per-healpix outputs into one catalog:
 
 ```bash
-python combine_processed_h5.py --processed_dir /path/to/output --output_file combined.h5
+python combine_processed_h5.py \
+    --processed_dir /path/to/output \
+    --load_catalog  /path/to/zcat.fits \
+    --catalog       /path/to/zcat.fits \
+    --output_file   combined.h5
 ```
+
+`--load_catalog` is the FITS whose `TARGETID`s are kept (the quasar catalog itself works);
+`--catalog` supplies the healpix list. For **mock** runs pass `--mock` instead (healpix are
+read straight from the output folder, no `--catalog` needed).
 
 **4. Get the CDDF** — f(N_HI), dN/dX, Ω_DLA (tables + plots):
 
