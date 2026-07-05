@@ -32,6 +32,19 @@ First we download the raw catalog data (requires both `wget` and `gawk`):
     ./download_catalogs.sh
     ./download_gp_files.sh
 
+## Install the Python package
+
+Install in editable mode so the modules import from **any** working directory (no more
+running only from the repo root):
+
+```bash
+pip install -e .
+```
+
+This makes `import gpy_dla_detection ...`, `from CDDF_analysis.hbi import ...`,
+`import run_bayes_select`, etc. resolve everywhere. The fast Voigt C extension
+(`_voigt.so`) is a separate build — see the next section.
+
 ## Compilation and Installation Guide for C Helper Functions
 
 > Warning: If you don't compile the C voigt function, you automatically fall back to the slower Python version.
