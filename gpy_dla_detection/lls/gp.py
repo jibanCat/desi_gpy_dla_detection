@@ -22,8 +22,8 @@ from __future__ import annotations
 from typing import Tuple
 import numpy as np
 
-from .subdla_gp import SubDLAGP, SubDLAGPMAT
-from .voigt_lls import voigt_absorption as voigt_absorption_lls
+from ..subdla_gp import SubDLAGP, SubDLAGPMAT
+from ..voigt_lls import voigt_absorption as voigt_absorption_lls
 
 
 class _LymanBreakMixin:
@@ -82,3 +82,51 @@ class SubDLAGPLymanBreak(_LymanBreakMixin, SubDLAGP):
 class SubDLAGPMATLymanBreak(_LymanBreakMixin, SubDLAGPMAT):
     """SubDLAGPMAT (the .mat-sample production LLS model) with the Lyman-limit break folded in.
     Drop-in replacement for SubDLAGPMAT in the LLS finder run."""
+
+
+# ---------------------------------------------------------------------------
+# LLS-only model loading + blueward window extension (bring the drop in-window)
+# ---------------------------------------------------------------------------
+# The production DESI model's rest grid already reaches ~851 A (Lyman-continuum region);
+# the standard inference just clips it to min_lambda=911.75. Extending the LLS window to
+# 850.9 (Tier 1) is therefore CONFIG-ONLY (no retrain) and brings ~43% of LLS breaks into
+# the modelled range. A retrain down to ~800 A (Tier 2) would raise that to ~66%.
+# This model is loaded ONLY here (LLS), never for DLA/sub-DLA.
+LLS_MODEL_DEFAULT = (
+    "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/"
+    "desi_gpy_dla_detection/learnlogs/model_epoch_920.h5"
+)
+LLS_REST_MIN_DEFAULT = 850.9  # model_epoch_920 grid floor; extend window here (Tier 1)
+
+
+def extend_window_to_drop(params, rest_min: float = LLS_REST_MIN_DEFAULT):
+    """Extend the GP inference window blueward so an LLS's 912 A break — which lands at
+    quasar-rest 912*(1+z_abs)/(1+z_qso) < 912 — falls inside the modelled range.
+
+    CONFIG-ONLY: mutates params.min_lambda and params.loading_min_lambda in place. The loaded
+    model grid must already cover rest_min (model_epoch_920 covers 850.9). Returns params."""
+    params.min_lambda = float(rest_min)
+    params.loading_min_lambda = min(float(params.loading_min_lambda), float(rest_min))
+    return params
+
+
+def load_lls_gp(
+    params,
+    prior,
+    dla_samples,
+    learned_file: str = LLS_MODEL_DEFAULT,
+    rest_min: float = LLS_REST_MIN_DEFAULT,
+    **kw,
+):
+    """Construct the break-aware LLS GP (SubDLAGPMATLymanBreak) with (a) the inference window
+    extended blueward into the Lyman-continuum region and (b) the LLS-only model loaded.
+
+    Use this for the LLS finder run; DLA/sub-DLA keep their own model + window untouched."""
+    extend_window_to_drop(params, rest_min=rest_min)
+    return SubDLAGPMATLymanBreak(
+        params=params,
+        prior=prior,
+        dla_samples=dla_samples,
+        learned_file=learned_file,
+        **kw,
+    )

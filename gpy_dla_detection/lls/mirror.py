@@ -12,7 +12,7 @@ Caveat: flux is scaled by exp(-tau_LL) and ivar is kept (the noise is not re-gen
 sky model) -> the break region's S/N is approximate; fine for the detectability test, flag for a
 rigorous run.
 
-Run (subset): python examples/lyc_make_mirror_mock.py --limit-healpix 2 --out /scratch/.../mirror
+Run (subset): python -m gpy_dla_detection.lls.mirror --limit-healpix 2 --out /scratch/.../mirror
 """
 from __future__ import annotations
 import argparse, os, shutil, sys
@@ -21,7 +21,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.table import Table
 
-_REPO = Path(__file__).resolve().parent.parent
+_REPO = Path(__file__).resolve().parents[2]  # gpy_dla_detection/lls/ -> repo root
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 from preload_spectra.preload_2lpt_simple import _spec_path
