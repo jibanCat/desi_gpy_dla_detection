@@ -16,7 +16,8 @@ cd /home/mfho/desi_gpy_dla_detection
 source "$(conda info --base)/etc/profile.d/conda.sh"; conda activate gpdla
 export LD_LIBRARY_PATH="$HOME/.local/usr/local/lib64:$LD_LIBRARY_PATH"   # C Voigt (libcerf)
 export N_LLS="${N_LLS:-8}" N_CLEAN="${N_CLEAN:-8}" PYTHONUNBUFFERED=1
-export OUT_DIR=/nfs/turbo/lsa-cavestru/mfho/DESI/lls_relearn/tier1_out
+export OUT_DIR="${OUT_DIR:-/nfs/turbo/lsa-cavestru/mfho/DESI/lls_relearn/tier1_out}"
+[ -n "${LEARNED_FILE:-}" ] && echo "LEARNED_FILE override: $LEARNED_FILE"
 mkdir -p "$OUT_DIR"
 echo "=== Tier-1 validation start: N_LLS=$N_LLS N_CLEAN=$N_CLEAN ==="
 python -u /nfs/turbo/lsa-cavestru/mfho/DESI/lls_relearn/tier1_validate.py
