@@ -30,6 +30,7 @@ from CDDF_analysis.hbi.cddf_catalog_hbi import (
     v3x_grad_f_wrt_theta,
     v3x_neg_log_posterior,
     v3x_param_bounds,
+    v3x_param_names,
     v3x_default_theta0,
     v3x_reduce,
 )
@@ -37,6 +38,47 @@ from CDDF_analysis.cddf_mock import path_length_int
 
 SIGMA_912 = 6.35e-18   # cm^2 (Verner+1996) — SAME as CDDF_analysis.lyc + the mirror injection
 LN10 = np.log(10.0)
+
+
+# ---------------------------------------------------------------------------
+# Spline-family knot span (pspline/bspbody). BELOW the lowest knot v3x_f_of_N is
+# SPURIOUS: for pspline the cubic B-spline design matrix is all-zero there, so
+# log_f = (B@c) + zterm = zterm ≈ 0 → f = 10**zterm ~ O(1) — sixteen orders of
+# magnitude above the real f(N)~1e-18. Any consumer that INTEGRATES f over N (the
+# drop) MUST clamp its integral floor to the knot floor; the sub-LLS opacity BELOW
+# the knot floor (real IGM, N<17.2) must be supplied by a SEPARATE analytic sub-LLS
+# term, not by the spline. (bspbody clips x internally so it flattens rather than
+# blows up, but we clamp it the same way for a clean, family-agnostic integral.)
+# ---------------------------------------------------------------------------
+def _v3x_knot_span(family, cfg):
+    """(lo, hi) log10 N of the parametric basis for pspline/bspbody; None for the
+    analytic families (plaw/plawcut/bplcut), which are valid at all N."""
+    from CDDF_analysis.hbi.cddf_catalog_hbi import (
+        _V3X_FAMILIES, _v3x_spline_knots, _v3x_bspbody_knots)
+    kind = _V3X_FAMILIES[family][1]
+    if kind == "pspline":
+        k = _v3x_spline_knots(cfg)
+    elif kind == "bspbody":
+        k = _v3x_bspbody_knots(cfg)
+    else:
+        return None
+    return float(k[0]), float(k[-1])
+
+
+def _clamp_drop_grid(logN_grid, logN_lo, hi_default, family, cfg, n=160):
+    """Build/clamp the drop-integral log10 N grid so it never dips BELOW the spline
+    knot floor (see _v3x_knot_span). Returns a monotone grid on [max(logN_lo,knot_lo),
+    hi]. If a grid is passed we drop its spurious sub-knot rows."""
+    span = _v3x_knot_span(family, cfg)
+    if logN_grid is None:
+        lo_eff = float(logN_lo)
+        if span is not None and lo_eff < span[0]:
+            lo_eff = span[0]
+        return np.linspace(lo_eff, hi_default, n)
+    g = np.asarray(logN_grid, float)
+    if span is not None:
+        g = g[g >= span[0] - 1e-9]
+    return g
 
 
 # ---------------------------------------------------------------------------
@@ -66,11 +108,11 @@ def drop_tau_model(
     """
     om = float(getattr(cfg, "Omega_m", 0.279))
     z912_arr = np.atleast_1d(np.asarray(z912_arr, float))
-    if logN_grid is None:
-        # cover the drop kernel (peaks ~17.2) up through the DLA tail. logN_lo=17.2 matches the
-        # HCD-only mock's injected support; lower (+ a sub-LLS prior) for the real IGM's diffuse sub-LLS.
-        logN_grid = np.linspace(float(logN_lo), 22.5, 160)
-    logN_grid = np.asarray(logN_grid, float)
+    # cover the drop kernel (peaks ~17.2) up through the DLA tail. logN_lo=17.2 matches the
+    # HCD-only mock's injected support; lower (+ a sub-LLS prior) for the real IGM's diffuse
+    # sub-LLS. CLAMP the floor to the spline knot floor (pspline/bspbody f is spurious below
+    # the lowest knot — see _clamp_drop_grid) so logN_lo<knot_lo cannot inject f~O(1).
+    logN_grid = _clamp_drop_grid(logN_grid, logN_lo, 22.5, family, cfg, n=160)
     N = 10.0 ** logN_grid                                   # (nN,)
     tau = np.zeros_like(z912_arr)
     for i, z912 in enumerate(z912_arr):
@@ -112,15 +154,19 @@ def drop_neg_loglike(theta, family, cfg, drop: DropData):
 
 
 def drop_tau_and_grad(theta, family, cfg, z912_arr, z_qso, sigma912=SIGMA_912, beta=3.0,
-                      logN_grid=None, n_zprime=60):
+                      logN_grid=None, n_zprime=80, logN_lo=15.0):
     """Return (tau_model (nz912,), dtau/dtheta (n_theta, nz912)) — the ANALYTIC theta-gradient of the
-    drop model, reusing v3x_grad_f_wrt_theta so the drop rides on the same f-gradient as the counts."""
+    drop model, reusing v3x_grad_f_wrt_theta so the drop rides on the same f-gradient as the counts.
+
+    NOTE (hygiene fix): n_zprime defaults to 80 to MATCH drop_tau_model (was 60 → the analytic
+    grad integrated on a coarser z' grid than the value it differentiates), and the log10 N grid
+    floor is clamped to the spline knot floor via _clamp_drop_grid (was a hard-coded 15.0, which
+    for pspline evaluates f BELOW the lowest knot → f~O(1) spurious). Pass logN_lo to control the
+    floor (clamped up to the knot floor for spline families)."""
     om = float(getattr(cfg, "Omega_m", 0.279))
     z912_arr = np.atleast_1d(np.asarray(z912_arr, float))
     theta = np.asarray(theta, float)
-    if logN_grid is None:
-        logN_grid = np.linspace(15.0, 22.5, 120)
-    logN_grid = np.asarray(logN_grid, float)
+    logN_grid = _clamp_drop_grid(logN_grid, logN_lo, 22.5, family, cfg, n=120)
     N = 10.0 ** logN_grid
     dlogN = np.diff(logN_grid)
     nth = theta.size
@@ -168,36 +214,128 @@ def joint_neg_logP(theta, fwd, family, cfg, drop: DropData | None, count_weight_
 # Driver: multistart L-BFGS-B (mirrors v3x_fit_map, joint objective, numerical gradient)
 # ---------------------------------------------------------------------------
 class SubLLSPrior:
-    """Marginalized sub-LLS shape prior (review F1 fix). Anchors log10 f(N;theta) at a few N<17.2
-    points to literature/truth values (Rudie+2013 on real data; mock truth for validation), so the
-    single drop integral no longer has to fix BOTH the sub-LLS and the LLS band — it pins the LLS."""
-    def __init__(self, logN_anchors, log10f_target, sigma_dex):
+    """Marginalized sub-LLS / LLS SHAPE prior (review F1 fix). Anchors log10 f(N;theta) at a few
+    N points (in or just below the LLS band) to literature/truth values (Rudie+2013 on real data;
+    mock truth for validation), so the single drop integral no longer has to fix BOTH the sub-LLS
+    and the LLS band — the anchors pin the LLS shape, the drop pins the normalization.
+
+    ``z_eval`` is the redshift the anchor targets are quoted at (default cfg.v3_z_pivot=2.5 so the
+    amplitude convention matches v3x_f_of_N; the old hard-coded 3.0 remains available)."""
+    def __init__(self, logN_anchors, log10f_target, sigma_dex, z_eval=None):
         self.logN = np.asarray(logN_anchors, float)
         self.log10f = np.asarray(log10f_target, float)
         self.sigma = np.asarray(sigma_dex, float)
+        self.z_eval = z_eval
 
     def neg_loglike(self, theta, family, cfg):
-        f = np.array([max(v3x_f_of_N(np.array([x]), 3.0, theta, family, cfg)[0], 1e-300)
+        z = self.z_eval if self.z_eval is not None else float(getattr(cfg, "v3_z_pivot", 2.5))
+        f = np.array([max(v3x_f_of_N(np.array([x]), z, theta, family, cfg)[0], 1e-300)
                       for x in self.logN])
         r = (np.log10(f) - self.log10f) / self.sigma
         return 0.5 * float(np.sum(r * r))
 
 
+class SubFloorRidge:
+    """Localized ridge that CONDITIONS the pspline/bspbody SUB-FLOOR coeffs (review F1a; the fix
+    for the cond(H)~1e6-1e7 degeneracy that makes ell(X)[17.2,19.5) blow up / collapse).
+
+    At fit_floor=19.5 the counting normalizer M_full is zeroed below the floor, so the spline
+    coeffs whose knot CENTER < fit_floor are unconstrained by the counts. Because the cubic
+    B-spline basis overlaps ~4 knots, those coeffs LEAK into the low body edge [19.45,20.0) and the
+    weakly curvature-penalized MAP drives them to the parameter BOUND (f→1e-10 or →1e-30) as free
+    DOF to over-fit that edge — an ill-posed, near-flat direction (the 4e6 cond degeneracy).
+
+    This adds a 0th-order ridge pulling every sub-floor coeff to a reference LLS power law anchored
+    on the FIRST in-body coeff (c_body0):
+        c_ref_k = c_body0 + slope_lls * (center_k - center_body0)   (slope_lls<0 → f rises to low N)
+        penalty = 0.5 * lam * Σ_{k in sub-floor} (c_k - c_ref_k)^2 .
+    The reference TRACKS the fitted body level, so the ridge removes only the flat degeneracy
+    DIRECTION (makes H positive-definite there); the DROP + SubLLSPrior still set the actual LLS
+    level. slope_lls≈-1.5 is the Rudie+2013 / PW14 LLS log-slope (FLATTER than the DLA ~-2)."""
+    def __init__(self, family, cfg, lam=10.0, slope_lls=-1.5):
+        from CDDF_analysis.hbi.cddf_catalog_hbi import (
+            _V3X_FAMILIES, _v3x_spline_knots, _v3x_bspbody_knots)
+        kind = _V3X_FAMILIES[family][1]
+        if kind not in ("pspline", "bspbody"):
+            raise ValueError(f"SubFloorRidge only applies to pspline/bspbody (got {family!r})")
+        knots = _v3x_spline_knots(cfg) if kind == "pspline" else _v3x_bspbody_knots(cfg)
+        n_basis = len(v3x_param_names(family, cfg)) - 1
+        self.centers = np.linspace(knots[0], knots[-1], n_basis)
+        floor = float(getattr(cfg, "v3_logN_fit_floor", 19.5))
+        self.sub = np.where(self.centers < floor - 1e-9)[0]
+        body = np.where(self.centers >= floor - 1e-9)[0]
+        self.ib = int(body[0]) if body.size else 0
+        self.lam = float(lam)
+        self.slope = float(slope_lls)
+
+    def neg_loglike(self, theta, family=None, cfg=None):
+        if self.sub.size == 0 or self.lam <= 0:
+            return 0.0
+        c = np.asarray(theta, float)[:-1]
+        c_ref = c[self.ib] + self.slope * (self.centers - self.centers[self.ib])
+        r = c[self.sub] - c_ref[self.sub]
+        return 0.5 * self.lam * float(np.sum(r * r))
+
+
 def fit_joint(fwd, family, cfg, drop: DropData | None, sub_lls: "SubLLSPrior | None" = None,
+              sub_floor_ridge: "SubFloorRidge | None" = None, lam_spline: float | None = None,
               alpha_fp: bool = False, alpha_fp_sigma: float = 0.5, n_restart: int = 8, seed: int = 0):
     """Maximize the joint posterior over theta. drop=None reproduces the frozen counting-only fit.
 
+    STABILIZING THE LLS BAND (pspline/bspbody). At fit_floor=19.5 the counting normalizer M_full is
+    zeroed below the floor, and the cubic-B-spline sub-floor coeffs (knot center < floor) reach up
+    into the low body edge [19.45,20.0). Left free they run to the parameter BOUND (f→1e-10 or 1e-30)
+    to over-fit that edge — cond(H)~6e6, ell(X)[17.2,19.5) blows up (~1e9) or collapses (~0.02). Two
+    levers, TESTED on the 2LPT-0 mock (loa0 forward, synthetic drop from the mock LLS truth):
+      * ``lam_spline`` (the CURVATURE penalty, cfg.v3_lambda_spline): raising it from 1 → ~30-100
+        removes the sub-floor SPIKE degeneracy (it is a 2nd-difference roughness penalty, so it kills
+        the oscillation directly). THIS IS THE PRIMARY LEVER. Passed here it OVERRIDES cfg for the fit
+        (restored after). None → use cfg.v3_lambda_spline unchanged.
+      * ``sub_lls`` (SubLLSPrior): TIGHT anchors (sigma_dex≈0.1) on log10 f at 2-3 LLS points set the
+        LLS LEVEL from the drop/literature. Loose anchors (sigma≳0.2) at moderate curvature still blow
+        up (counting's body-edge leak wins) — pair strong curvature with tight anchors.
+      RECIPE (verified): lam_spline≈30 + sig≈0.10 → R0≈0.94, cond~3e5; robust lam_spline≈60-100 +
+      sig≈0.10 → R0≈0.75-0.84, cond~1e5, multistart spread <2%. All STABLE (no bound-sticking).
+
+    ``sub_floor_ridge`` (SubFloorRidge): an optional 0th-order ridge on the sub-floor coeffs. On the
+    mock it was INEFFECTIVE and could AMPLIFY the leak (its reference is tied to the body-edge coeff,
+    which is itself corrupted) — DEFAULT OFF (cfg.v3_sub_floor_ridge_lam default 0); prefer lam_spline.
+
     alpha_fp=True (review F2): append a free log(alpha_F) to theta and scale the FP intensity
     (lam_fp, mu_fp) by alpha_F, with a log-normal prior N(0, alpha_fp_sigma^2). This lets the drop
-    correct a biased loa0 FP (needed when fit_floor<=17.2, where the counting otherwise over-recovers
-    the LLS). theta_map is returned as the FAMILY part only (alpha_fp reported separately)."""
+    correct a biased loa0 FP (needed when fit_floor<=17.2). theta_map is the FAMILY part only.
+
+    Numerical hygiene: all non-analytic gradient blocks (drop, sub_lls, sub_floor_ridge, alpha_fp)
+    use CENTRAL differences with a per-parameter step h_k = 1e-4·max(|θ_k|,1) (was forward diff at a
+    fixed h=1e-4 → an O(h) bias that mis-steered L-BFGS-B in the weakly-constrained sub-floor)."""
     from scipy.optimize import minimize
+    _saved_lam = getattr(cfg, "v3_lambda_spline", 1.0)
+    if lam_spline is not None:
+        cfg.v3_lambda_spline = float(lam_spline)   # PRIMARY LLS-band regularizer (restored below)
+    try:
+        return _fit_joint_impl(fwd, family, cfg, drop, sub_lls, sub_floor_ridge,
+                               alpha_fp, alpha_fp_sigma, n_restart, seed, minimize)
+    finally:
+        cfg.v3_lambda_spline = _saved_lam
+
+
+def _fit_joint_impl(fwd, family, cfg, drop, sub_lls, sub_floor_ridge,
+                    alpha_fp, alpha_fp_sigma, n_restart, seed, minimize):
     bounds = list(v3x_param_bounds(family, cfg))
     theta0 = np.asarray(v3x_default_theta0(family, cfg), float)
     n_p = theta0.size
     if alpha_fp:
         theta0 = np.append(theta0, 0.0)          # log alpha_F = 0 -> alpha_F = 1
         bounds = bounds + [(-2.0, 2.0)]          # alpha_F in [0.14, 7.4]
+    # OPTIONAL sub-floor ridge (default OFF — cfg.v3_sub_floor_ridge_lam default 0; the curvature
+    # penalty lam_spline is the effective lever). A caller may still pass an explicit SubFloorRidge.
+    if sub_floor_ridge is None:
+        from CDDF_analysis.hbi.cddf_catalog_hbi import _V3X_FAMILIES
+        ridge_lam = float(getattr(cfg, "v3_sub_floor_ridge_lam", 0.0))
+        if ridge_lam > 0 and _V3X_FAMILIES[family][1] in ("pspline", "bspbody"):
+            sub_floor_ridge = SubFloorRidge(
+                family, cfg, lam=ridge_lam,
+                slope_lls=float(getattr(cfg, "v3_sub_floor_ridge_slope", -1.5)))
     rng = np.random.default_rng(seed)
     lo = np.array([b[0] if b[0] is not None else theta0[k] - 3 for k, b in enumerate(bounds)])
     hi = np.array([b[1] if b[1] is not None else theta0[k] + 3 for k, b in enumerate(bounds)])
@@ -209,31 +347,37 @@ def fit_joint(fwd, family, cfg, drop: DropData | None, sub_lls: "SubLLSPrior | N
                                      aF * fwd["mu_fp"], fwd["fine"], family, cfg,
                                      obj_weights=obj_w, with_grad=True)
 
-    def _drop_nd(th_p):
-        tau = drop_tau_model(th_p, family, cfg, drop.z912, drop.z_qso,
-                             sigma912=drop.sigma912, beta=drop.beta, logN_lo=drop.logN_lo)
-        r = (tau - drop.tau_hat) / drop.sigma
-        return 0.5 * float(np.sum(r * r))
+    def _extra(th_p):
+        """The non-counting neg-log terms that share theta (drop + LLS shape prior + ridge).
+        One function → ONE central-difference sweep for all of them (cheaper + consistent)."""
+        e = 0.0
+        if drop is not None:
+            tau = drop_tau_model(th_p, family, cfg, drop.z912, drop.z_qso,
+                                 sigma912=drop.sigma912, beta=drop.beta, logN_lo=drop.logN_lo)
+            r = (tau - drop.tau_hat) / drop.sigma
+            e += 0.5 * float(np.sum(r * r))
+        if sub_lls is not None:
+            e += sub_lls.neg_loglike(th_p, family, cfg)
+        if sub_floor_ridge is not None:
+            e += sub_floor_ridge.neg_loglike(th_p, family, cfg)
+        return e
 
     def obj(th):
         th_p = th[:n_p]; laF = float(th[n_p]) if alpha_fp else 0.0
         nc, gc = _count(th_p, np.exp(laF))
         val = float(nc); grad = np.zeros(th.size); grad[:n_p] = np.asarray(gc, float)
-        h = 1e-4
-        if alpha_fp:                                     # FD grad for log alpha_F + log-normal prior
-            nc2, _ = _count(th_p, np.exp(laF + h))
-            grad[n_p] = (float(nc2) - float(nc)) / h
+        if alpha_fp:                            # CENTRAL FD for log alpha_F + log-normal prior
+            h = 1e-4 * max(abs(laF), 1.0)
+            ncp, _ = _count(th_p, np.exp(laF + h)); ncm, _ = _count(th_p, np.exp(laF - h))
+            grad[n_p] = (float(ncp) - float(ncm)) / (2 * h)
             val += 0.5 * (laF / alpha_fp_sigma) ** 2; grad[n_p] += laF / alpha_fp_sigma ** 2
-        if drop is not None:
-            nd0 = _drop_nd(th_p); val += nd0
-            for k in range(n_p):
-                tp = th_p.copy(); tp[k] += h
-                grad[k] += (_drop_nd(tp) - nd0) / h
-        if sub_lls is not None:
-            ns0 = sub_lls.neg_loglike(th_p, family, cfg); val += ns0
-            for k in range(n_p):
-                tp = th_p.copy(); tp[k] += h
-                grad[k] += (sub_lls.neg_loglike(tp, family, cfg) - ns0) / h
+        if drop is not None or sub_lls is not None or sub_floor_ridge is not None:
+            val += _extra(th_p)
+            for k in range(n_p):               # CENTRAL FD, per-parameter step
+                hk = 1e-4 * max(abs(th_p[k]), 1.0)
+                tp = th_p.copy(); tp[k] += hk
+                tm = th_p.copy(); tm[k] -= hk
+                grad[k] += (_extra(tp) - _extra(tm)) / (2 * hk)
         return val, grad
 
     best = None
@@ -245,9 +389,134 @@ def fit_joint(fwd, family, cfg, drop: DropData | None, sub_lls: "SubLLSPrior | N
         if best is None or res.fun < best.fun:
             best = res
     return {"theta_map": best.x[:n_p], "alpha_fp": float(np.exp(best.x[n_p])) if alpha_fp else 1.0,
-            "neg_logP": float(best.fun), "success": bool(best.success), "family": family}
+            "neg_logP": float(best.fun), "success": bool(best.success), "family": family,
+            "sub_floor_ridge": bool(sub_floor_ridge is not None)}
 
 
 def reduce_theta(theta, fwd, family, cfg):
     """Turn a fitted theta into dN/dX, Omega, l(X) bands via the FROZEN reducer."""
     return v3x_reduce(cfg, theta, fwd["fine"], family, fwd.get("M_meta"))
+
+
+# ---------------------------------------------------------------------------
+# Shape-marginalized ell(X)[17.2,19.5) POSTERIOR BAND (Task #31, the deliverable)
+# ---------------------------------------------------------------------------
+def _joint_grad(theta, fwd, family, cfg, drop, sub_lls, sub_floor_ridge, obj_w):
+    """Analytic (counting+prior) + central-FD (drop+anchor+ridge) gradient of the joint
+    neg-log-posterior over the FAMILY theta — the SAME objective fit_joint minimizes (no
+    alpha_fp). Used to build the joint Laplace Hessian for the within-shape band width."""
+    nc, gc = v3x_neg_log_posterior(theta, fwd["A_full"], fwd["M_full"], fwd["lam_fp"],
+                                   fwd["mu_fp"], fwd["fine"], family, cfg,
+                                   obj_weights=obj_w, with_grad=True)
+    grad = np.asarray(gc, float).copy()
+
+    def _extra(t):
+        e = 0.0
+        if drop is not None:
+            tau = drop_tau_model(t, family, cfg, drop.z912, drop.z_qso,
+                                 sigma912=drop.sigma912, beta=drop.beta, logN_lo=drop.logN_lo)
+            r = (tau - drop.tau_hat) / drop.sigma
+            e += 0.5 * float(np.sum(r * r))
+        if sub_lls is not None:
+            e += sub_lls.neg_loglike(t, family, cfg)
+        if sub_floor_ridge is not None:
+            e += sub_floor_ridge.neg_loglike(t, family, cfg)
+        return e
+
+    for k in range(theta.size):
+        hk = 1e-4 * max(abs(theta[k]), 1.0)
+        tp = theta.copy(); tp[k] += hk
+        tm = theta.copy(); tm[k] -= hk
+        grad[k] += (_extra(tp) - _extra(tm)) / (2 * hk)
+    return grad
+
+
+def joint_laplace(theta_map, fwd, family, cfg, drop, sub_lls=None, sub_floor_ridge=None,
+                  n_draw=500, rng=None):
+    """Laplace posterior N(theta_map, H^-1) of the FULL JOINT objective (counting + curvature
+    prior + drop + LLS anchors). Unlike the frozen v3x_laplace (counting-only Hessian, singular
+    in the unconstrained sub-floor directions), THIS Hessian is regularized by the curvature+drop+
+    anchor terms → invertible → a finite within-shape band. Central-difference Hessian of
+    _joint_grad; bound-clipped draws."""
+    if rng is None:
+        rng = np.random.default_rng(0)
+    th = np.asarray(theta_map, float); n = th.size
+    bnds = v3x_param_bounds(family, cfg)
+    obj_w = (fwd.get("cat_op") or {}).get("op_weights")
+    H = np.zeros((n, n))
+    for k in range(n):
+        st = 1e-4 * max(abs(th[k]), 1.0)
+        tp = th.copy(); tp[k] += st
+        tm = th.copy(); tm[k] -= st
+        H[:, k] = (_joint_grad(tp, fwd, family, cfg, drop, sub_lls, sub_floor_ridge, obj_w)
+                   - _joint_grad(tm, fwd, family, cfg, drop, sub_lls, sub_floor_ridge, obj_w)) / (2 * st)
+    H = 0.5 * (H + H.T)
+    try:
+        cov = np.linalg.inv(H)
+        if not np.all(np.isfinite(cov)) or np.any(np.diag(cov) < 0):
+            cov = np.linalg.pinv(H)
+    except np.linalg.LinAlgError:
+        cov = np.linalg.pinv(H)
+    try:
+        L = np.linalg.cholesky(cov + 1e-12 * np.eye(n))
+        draws = th[None, :] + rng.normal(0, 1, (n_draw, n)) @ L.T
+    except np.linalg.LinAlgError:
+        sig = np.sqrt(np.clip(np.diag(cov), 0, None))
+        draws = th[None, :] + rng.normal(0, 1, (n_draw, n)) * sig[None, :]
+    for j, (blo, bhi) in enumerate(bnds):
+        draws[:, j] = np.clip(draws[:, j], blo, bhi)
+    return dict(hess=H, cov=cov, cond=float(np.linalg.cond(H)), draws=draws)
+
+
+def lls_shape_marginalized_band(fwd, cfg, drop, shape_priors, family="pspline",
+                                lam_spline=60.0, n_lap=400, band_key="ell_lls_extrap",
+                                q=(16, 50, 84), rng=None):
+    """The deliverable: ell(X)[17.2,19.5) as a SHAPE-MARGINALIZED posterior band (NOT a point).
+
+    ``shape_priors`` is a list of shape hypotheses, each a SubLLSPrior encoding a DIFFERENT LLS
+    shape/level (e.g. single-PL slope, Rudie+2013-broken, PW14-spline — via the anchor targets/
+    slope). For EACH:
+        1. MAP-fit the joint counting+drop objective under that prior (fit_joint, lam_spline the
+           curvature regularizer that makes the sub-floor well-posed — see fit_joint);
+        2. draw n_lap samples from the JOINT Laplace posterior (joint_laplace — the within-shape
+           statistical width the MAP drops; its Hessian is regularized by curvature+drop+anchor so
+           it is finite, unlike the counting-only v3x_laplace);
+        3. reduce each draw to ell(X)[17.2,19.5).
+    Pool the samples across ALL shapes (equal prior weight) → percentiles = the band. The
+    BETWEEN-shape spread (the genuine LLS shape systematic) then dominates the reported width, with
+    the within-shape Laplace draws adding the drop+counting statistical error.
+
+    Laplace vs emcee: the ridge+curvature+drop make the posterior near-Gaussian in theta (cond
+    ~1e5), so joint_laplace is the right, cheap primary tool; a short emcee on -joint_neg_logP is a
+    good NON-GAUSSIANITY cross-check on ONE shape (the drop's 1-exp saturation is a mild nonlinearity)
+    but is not needed for the headline."""
+    if rng is None:
+        rng = np.random.default_rng(0)
+    # physical ceiling on ell(X)[17.2,19.5): the sub-floor blow-up drives ell to ~1e6-1e9 (coeffs
+    # at the parameter bound). A real LLS ell(X) is O(1). Guard each shape: if the MAP ell exceeds
+    # this ceiling, ESCALATE the curvature penalty lam_spline (the stabilizing lever) until the fit
+    # is well-posed — a shape prior that fights the drop must not be allowed to blow up the band.
+    ell_ceiling = float(getattr(cfg, "v3_lls_ell_ceiling", 50.0))
+    per_shape = []
+    all_ell = []
+    for i, sp in enumerate(shape_priors):
+        lam_i = float(lam_spline)
+        for _ in range(5):
+            res = fit_joint(fwd, family, cfg, drop, sub_lls=sp, lam_spline=lam_i, seed=i)
+            map_ell = float(v3x_reduce(cfg, res["theta_map"], fwd["fine"], family,
+                                       fwd.get("M_meta"))[band_key])
+            if np.isfinite(map_ell) and map_ell <= ell_ceiling:
+                break
+            lam_i *= 2.0                      # escalate curvature and refit
+        lap = joint_laplace(res["theta_map"], fwd, family, cfg, drop, sub_lls=sp,
+                            n_draw=n_lap, rng=rng)
+        ells = np.array([v3x_reduce(cfg, th, fwd["fine"], family, fwd.get("M_meta"))[band_key]
+                         for th in lap["draws"]])
+        ells = ells[np.isfinite(ells) & (ells <= ell_ceiling)]   # drop any bound-blown draw
+        per_shape.append(dict(shape=i, lam_spline=lam_i, map_ell=map_ell, cond=lap["cond"],
+                              q=np.percentile(ells, q).tolist() if ells.size else [np.nan] * len(q)))
+        all_ell.append(ells)
+    pooled = np.concatenate(all_ell)
+    return dict(band=np.percentile(pooled, q).tolist(), q=list(q),
+                map_spread=float(np.ptp([p["map_ell"] for p in per_shape])),
+                per_shape=per_shape, n_shapes=len(shape_priors))
