@@ -99,8 +99,13 @@ class DLAGPMATLymanBreak(_LymanBreakMixin, DLAGPMAT):
 # ---------------------------------------------------------------------------
 # The production DESI model's rest grid already reaches ~851 A (Lyman-continuum region);
 # the standard inference just clips it to min_lambda=911.75. Extending the LLS window to
-# 850.9 (Tier 1) is therefore CONFIG-ONLY (no retrain) and brings ~43% of LLS breaks into
-# the modelled range. A retrain down to ~800 A (Tier 2) would raise that to ~66%.
+# 850.9 (Tier 1) is therefore CONFIG-ONLY (no retrain) and brings ~41% of LLS breaks into the
+# rest-frame model grid — BUT only ~10% are actually OBSERVABLE (edge_obs=912(1+z_abs) > DESI blue
+# cutoff ~3600A; the mock is z_qso~2.26-dominated). And even for observable breaks the break-aware
+# finder gains only ~+0.05 recall: the Lya line already saturates P->1 for those systems (2026-07-05
+# CS+Bayesian referees). The break's survey value is the aggregate lambda_mfp (drop channel) + N_HI
+# refinement, NOT per-sightline counting. (A retrain down to ~800 A (Tier 2) raises the rest-frame
+# in-window fraction to ~66%, but the observable fraction is still capped by the blue cutoff.)
 # This model is loaded ONLY here (LLS), never for DLA/sub-DLA.
 LLS_MODEL_DEFAULT = (
     "/nfs/turbo/lsa-cavestru/mfho/DESI/pscratch/"

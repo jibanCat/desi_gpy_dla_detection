@@ -46,15 +46,23 @@ on the default window sees no break and gains nothing. The break has to be broug
 The production DESI model `model_epoch_920.h5` already has a rest grid **[850.90, 1420.60] Å** —
 it *already* models the Lyman-continuum region; inference merely clips it at 911.75. So:
 
-| tier | window floor | LLS breaks in-window | cost | frozen code |
+| tier | window floor | LLS breaks in-window (rest-frame grid) | cost | frozen code |
 |---|---|---|---|---|
-| **Tier 1** | 850.9 Å (config-only) | ~43% | none — existing model | untouched |
+| **Tier 1** | 850.9 Å (config-only) | ~41% | none — existing model | untouched |
 | **Tier 2** | ~800 Å (relearn) | ~66% | preload regen + GPU train | untouched |
 
 Tier 1 is `load_lls_gp()` below — pure config, no retrain. Inspection of `model_epoch_920`'s
 [851,912) band (407 px): mean declines smoothly 1.47→0.48, ω=1.18 (below the forest's 2.29) —
-well-behaved, usable. Tier 1's 43% are the **strongest** breaks (highest `z_abs`, nearest the
-quasar, best observed-frame S/N), so it is a fair go/no-go for whether the break rescues counting.
+well-behaved, usable.
+
+> **Observability caveat (2026-07-05 referee finding).** The "~41% in-window" is a *rest-frame
+> model-grid* count. Only **~10%** of foreground LLS have an *observable* break — the break sits at
+> `912(1+z_abs)`, which for the z_qso≈2.26-dominated mock falls below the DESI blue cutoff (~3600 Å)
+> for ~90% of sightlines. And even where the break IS observable and is a huge per-sightline feature
+> (log-BF ≈ +80), the break-aware finder gains only **~+0.05 detection recall**: the Lyα line already
+> saturates P→1 for those systems. **The break's survey value is the aggregate λ_mfp (drop channel)
+> and N_HI refinement — NOT per-sightline counting** (which the line already does). See the
+> walkthrough `notes/2026-07-05_lls_break_aware_walkthrough.md` §9–10.
 
 ---
 
