@@ -184,43 +184,56 @@ class SubLLSPrior:
 
 
 def fit_joint(fwd, family, cfg, drop: DropData | None, sub_lls: "SubLLSPrior | None" = None,
-              n_restart: int = 8, seed: int = 0):
-    """Maximize the joint posterior over theta. drop=None reproduces the frozen counting-only fit
-    (a sanity check that the consumer reduces to the frozen estimator)."""
+              alpha_fp: bool = False, alpha_fp_sigma: float = 0.5, n_restart: int = 8, seed: int = 0):
+    """Maximize the joint posterior over theta. drop=None reproduces the frozen counting-only fit.
+
+    alpha_fp=True (review F2): append a free log(alpha_F) to theta and scale the FP intensity
+    (lam_fp, mu_fp) by alpha_F, with a log-normal prior N(0, alpha_fp_sigma^2). This lets the drop
+    correct a biased loa0 FP (needed when fit_floor<=17.2, where the counting otherwise over-recovers
+    the LLS). theta_map is returned as the FAMILY part only (alpha_fp reported separately)."""
     from scipy.optimize import minimize
-    bounds = v3x_param_bounds(family, cfg)
+    bounds = list(v3x_param_bounds(family, cfg))
     theta0 = np.asarray(v3x_default_theta0(family, cfg), float)
+    n_p = theta0.size
+    if alpha_fp:
+        theta0 = np.append(theta0, 0.0)          # log alpha_F = 0 -> alpha_F = 1
+        bounds = bounds + [(-2.0, 2.0)]          # alpha_F in [0.14, 7.4]
     rng = np.random.default_rng(seed)
     lo = np.array([b[0] if b[0] is not None else theta0[k] - 3 for k, b in enumerate(bounds)])
     hi = np.array([b[1] if b[1] is not None else theta0[k] + 3 for k, b in enumerate(bounds)])
-
     cat_op = fwd.get("cat_op") if isinstance(fwd, dict) else None
     obj_w = cat_op.get("op_weights") if isinstance(cat_op, dict) else None
 
-    def _drop_nd(th):
-        tau = drop_tau_model(th, family, cfg, drop.z912, drop.z_qso,
+    def _count(th_p, aF):
+        return v3x_neg_log_posterior(th_p, fwd["A_full"], fwd["M_full"], aF * fwd["lam_fp"],
+                                     aF * fwd["mu_fp"], fwd["fine"], family, cfg,
+                                     obj_weights=obj_w, with_grad=True)
+
+    def _drop_nd(th_p):
+        tau = drop_tau_model(th_p, family, cfg, drop.z912, drop.z_qso,
                              sigma912=drop.sigma912, beta=drop.beta, logN_lo=drop.logN_lo)
         r = (tau - drop.tau_hat) / drop.sigma
         return 0.5 * float(np.sum(r * r))
 
     def obj(th):
-        nc, gc = v3x_neg_log_posterior(
-            th, fwd["A_full"], fwd["M_full"], fwd["lam_fp"], fwd["mu_fp"], fwd["fine"],
-            family, cfg, obj_weights=obj_w, with_grad=True)
-        val = float(nc); grad = np.asarray(gc, float).copy()
+        th_p = th[:n_p]; laF = float(th[n_p]) if alpha_fp else 0.0
+        nc, gc = _count(th_p, np.exp(laF))
+        val = float(nc); grad = np.zeros(th.size); grad[:n_p] = np.asarray(gc, float)
         h = 1e-4
+        if alpha_fp:                                     # FD grad for log alpha_F + log-normal prior
+            nc2, _ = _count(th_p, np.exp(laF + h))
+            grad[n_p] = (float(nc2) - float(nc)) / h
+            val += 0.5 * (laF / alpha_fp_sigma) ** 2; grad[n_p] += laF / alpha_fp_sigma ** 2
         if drop is not None:
-            nd0 = _drop_nd(th)                       # analytic counting grad + FD drop grad (drop is cheap)
-            val += nd0
-            for k in range(th.size):
-                thp = th.copy(); thp[k] += h
-                grad[k] += (_drop_nd(thp) - nd0) / h
+            nd0 = _drop_nd(th_p); val += nd0
+            for k in range(n_p):
+                tp = th_p.copy(); tp[k] += h
+                grad[k] += (_drop_nd(tp) - nd0) / h
         if sub_lls is not None:
-            ns0 = sub_lls.neg_loglike(th, family, cfg)
-            val += ns0
-            for k in range(th.size):
-                thp = th.copy(); thp[k] += h
-                grad[k] += (sub_lls.neg_loglike(thp, family, cfg) - ns0) / h
+            ns0 = sub_lls.neg_loglike(th_p, family, cfg); val += ns0
+            for k in range(n_p):
+                tp = th_p.copy(); tp[k] += h
+                grad[k] += (sub_lls.neg_loglike(tp, family, cfg) - ns0) / h
         return val, grad
 
     best = None
@@ -231,8 +244,8 @@ def fit_joint(fwd, family, cfg, drop: DropData | None, sub_lls: "SubLLSPrior | N
                        options={"maxiter": 400, "ftol": 1e-9})
         if best is None or res.fun < best.fun:
             best = res
-    return {"theta_map": best.x, "neg_logP": float(best.fun), "success": bool(best.success),
-            "family": family}
+    return {"theta_map": best.x[:n_p], "alpha_fp": float(np.exp(best.x[n_p])) if alpha_fp else 1.0,
+            "neg_logP": float(best.fun), "success": bool(best.success), "family": family}
 
 
 def reduce_theta(theta, fwd, family, cfg):
