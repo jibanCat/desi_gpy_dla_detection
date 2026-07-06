@@ -6,8 +6,9 @@
 #SBATCH -c 8
 # 300k spectra × 3801 px × float32 = 4.6 GB per array, ×3 main arrays plus
 # de-forest/centering intermediates → loader peaks ~32-40 GB. 32G OOMs every
-# time. 64G has comfortable headroom.
-#SBATCH --mem=64G
+# time. 64G was NOT enough for the full 299772-spectra k=30 trainset (job
+# 52953650 hit MaxRSS 67G → OOM-killed before the training loop) — bumped to 120G.
+#SBATCH --mem=120G
 #SBATCH -t 4:00:00
 #SBATCH -J train_v2
 #SBATCH -o slurm/greatlakes/train_v2_%j.log
