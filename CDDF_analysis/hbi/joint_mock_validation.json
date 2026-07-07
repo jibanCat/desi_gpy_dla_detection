@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "what": "LLS-tier JOINT drop+count estimator validation on the 2LPT-0 mock: prior-free lambda_mfp/tau_eff,LL headline + shape-marginalized ell(X)[17.2,19.5) band",
+    "mock": "2LPT-0 (loa-124); MOCK recovery values (public-OK), NOT real-LOA",
+    "code_commit": "93498365ee5d8ec448e0b0cf812d0137a0f15b3e",
+    "wallclock_s": 547.4,
+    "rederive": "python CDDF_analysis/diagnostics/lls/joint_drop_count_validation.py --force",
+    "estimator": "CDDF_analysis/hbi/joint_drop_count.py (fit_joint / joint_laplace / lls_shape_marginalized_band); drop is a PHYSICAL direct-sum over HCD truth (exercises the _clamp_drop_grid top-knot fix).",
+    "note": "HEADLINE = lambda_mfp/tau_eff,LL (prior-free, R0_lambda~1). ell(X)[17.2,19.5) is a DERIVED, shape/prior-limited band (counts+drop under-determine it \u2014 review F1); R0(q50) is NOT expected ~1 and 'truth_in_band' is necessary-not-sufficient. Omega_HI(LLS) is off-headline (too slope-sensitive). FP is CARRIED (loa0) \u2014 the band holds lam_fp/mu_fp fixed, so it has no FP width (add the loa0<->purity bracket externally)."
+  },
+  "result": {
+    "wall_s": 547.4,
+    "true_ell": 0.2628520020177958,
+    "n_sl_drop": 107938,
+    "sanity": {
+      "dla_dndx_est": 0.07295562862844962,
+      "dla_dndx_truth": 0.0543430065817012,
+      "r0_dla_dndx_203": 1.3425026184144881
+    },
+    "headline": {
+      "lambda_mfp_truth_Mpc": 225.51212118200777,
+      "lambda_mfp_est_Mpc": 223.27132599114108,
+      "r0_lambda_mfp": 0.9900635266116885,
+      "kappa912_truth": 0.01113410208590161,
+      "kappa912_est": 0.011221329007176878,
+      "drop_chi2_per_dof": 22.910048296023202,
+      "beta": 3.0,
+      "sigma912": 6.35e-18
+    },
+    "derived": {
+      "canonical_map_ell": 0.05007642428890595,
+      "r0_canonical": 0.19051186182525495,
+      "band_q16_q50_q84": [
+        0.04375570196179446,
+        0.050269827785090995,
+        0.056797772454197024
+      ],
+      "q": [
+        16,
+        50,
+        84
+      ],
+      "r0_band_q50": 0.1912476503857391,
+      "truth_in_band": false,
+      "map_spread": 0.012625356781013237,
+      "per_shape": [
+        {
+          "shape": 0,
+          "lam_spline": 60.0,
+          "map_ell": 0.056233218158962706,
+          "cond": 1165.740151760581,
+          "q": [
+            0.05297647931110083,
+            0.05627867311323145,
+            0.05985602194525357
+          ]
+        },
+        {
+          "shape": 1,
+          "lam_spline": 60.0,
+          "map_ell": 0.05007642428890595,
+          "cond": 1493.099381746041,
+          "q": [
+            0.047255139194900354,
+            0.05026461629468425,
+            0.0538875356474727
+          ]
+        },
+        {
+          "shape": 2,
+          "lam_spline": 60.0,
+          "map_ell": 0.04360786137794947,
+          "cond": 2059.8868064352814,
+          "q": [
+            0.04104094536973627,
+            0.043959819510245385,
+            0.047100503302640574
+          ]
+        }
+      ],
+      "shape_slopes": [
+        -1.9,
+        -1.5,
+        -1.1
+      ],
+      "lam_spline": 60.0,
+      "n_lap": 400
+    },
+    "tau_hat": [
+      1.0739181960096928,
+      0.9294290865947398,
+      0.7710600352809669,
+      0.6037639942931512,
+      0.42425067680848083,
+      0.27117257065218753,
+      0.15522687591024023,
+      0.0730695296733087
+    ],
+    "tau_est": [
+      0.9202188963962611,
+      0.8440842605811223,
+      0.7599924033674668,
+      0.6674613419382893,
+      0.5659933637140434,
+      0.45507487448416306,
+      0.3341762412963982,
+      0.20275163333159354
+    ],
+    "z912": [
+      2.6,
+      2.7071428571428573,
+      2.8142857142857145,
+      2.9214285714285717,
+      3.0285714285714285,
+      3.1357142857142857,
+      3.242857142857143,
+      3.35
+    ],
+    "z_qso": 3.5
+  }
+}
