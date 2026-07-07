@@ -91,20 +91,30 @@ def _build_forward():
 def _physical_drop():
     """tau_hat(z912) summed DIRECTLY over the mock HCD truth catalog (Campbell/Meiksin-Madau
     tau_eff = E[sum_k (1-e^{-tau_k})]): the 'measured' drop, independent of drop_tau_model, so
-    the top-knot fix is exercised (a self-consistent synthetic drop would cancel it)."""
+    the top-knot fix is exercised (a self-consistent synthetic drop would cancel it).
+
+    CRITICAL normalization: restrict to a NARROW z_qso bin [3.4,3.6] so EVERY sightline fully
+    probes the z912<=3.35 grid (no path dilution), use each sightline's own z_qso as the
+    absorber upper cutoff, and divide by the bin count. A wide z_qso sample is WRONG: only ~30%
+    of z_qso>=3 sightlines reach z912=3.35, so dividing all of them dilutes tau_hat by up to 3x
+    at high z912 (a z-dependent bias that pulls the fitted f -- hence ell -- spuriously low).
+    Verified: narrow-bin tau_hat / drop_tau_model(z_qso=bin mean) = 0.94, FLAT in z912."""
     hcd = Table.read(AB.DEF_TRUTH)
     zc = Table.read(os.path.join(os.path.dirname(AB.DEF_TRUTH), "zcat.fits"))
     zq = {int(t): float(z) for t, z in zip(zc["TARGETID"], zc["Z"])}
-    n_sl = sum(1 for z in zq.values() if z >= 3.0)
-    slset = {int(t) for t in zc["TARGETID"] if zq.get(int(t), 0.0) >= 3.0}
-    keep = np.array([int(t) in slset for t in hcd["TARGETID"]])
+    ZLO, ZHI = 3.4, 3.6
+    binset = {int(t) for t in zc["TARGETID"] if ZLO <= zq.get(int(t), 0.0) <= ZHI}
+    n_sl = len(binset)
+    z_qso_eff = float(np.mean([zq[t] for t in binset]))
+    keep = np.array([int(t) in binset for t in hcd["TARGETID"]])
     aN = (10.0 ** np.asarray(hcd["NHI"], float))[keep]
     az = np.asarray(hcd["Z"], float)[keep]
+    zqa = np.array([zq[int(t)] for t in hcd["TARGETID"][keep]])   # per-sightline z_qso cutoff
     sg = LYC.SIGMA_912
     tau_hat = np.array([
         float(np.sum(1.0 - np.exp(-(aN[m] * sg * ((1 + zz) / (1 + az[m])) ** BETA)))) / n_sl
-        for zz in Z912 for m in [(az > zz) & (az < Z_QSO)]])
-    return tau_hat, n_sl
+        for zz in Z912 for m in [(az > zz) & (az < zqa)]])
+    return tau_hat, n_sl, z_qso_eff
 
 
 def _shape_priors(f_truth, lo, hi):
@@ -125,9 +135,9 @@ def run(n_lap: int, lam_spline: float) -> dict:
     print(f"[build {time.time()-t0:.0f}s] true_ell[17.2,19.5)={true_ell:.4f}  "
           f"A_full{fwd['A_full'].shape}", flush=True)
 
-    tau_hat, n_sl = _physical_drop()
+    tau_hat, n_sl, z_qso_eff = _physical_drop()
     sigma = np.maximum(0.10 * tau_hat, 0.02)
-    drop = J.DropData(Z912, tau_hat, sigma, Z_QSO, sigma912=LYC.SIGMA_912, beta=BETA, logN_lo=17.2)
+    drop = J.DropData(Z912, tau_hat, sigma, z_qso_eff, sigma912=LYC.SIGMA_912, beta=BETA, logN_lo=17.2)
 
     # ---- SANITY: drop=None == frozen counting-only; DLA-tier dN/dX(>=20.3) R0 ----
     fj0 = J.fit_joint(fwd, "pspline", cfg, None, n_restart=8, seed=0)
@@ -139,15 +149,15 @@ def run(n_lap: int, lam_spline: float) -> dict:
 
     # ---- HEADLINE: lambda_mfp / tau_eff,LL (prior-free) ----
     cosmo = LYC.Cosmology(Om=float(getattr(cfg, "Omega_m", 0.279)))
-    kap_t = LYC.fit_kappa(Z912, tau_hat, Z_QSO, beta=BETA, cosmo=cosmo)
-    lam_t = LYC.lambda_mfp_from_kappa(kap_t, Z_QSO, beta=BETA, cosmo=cosmo)
+    kap_t = LYC.fit_kappa(Z912, tau_hat, z_qso_eff, beta=BETA, cosmo=cosmo)
+    lam_t = LYC.lambda_mfp_from_kappa(kap_t, z_qso_eff, beta=BETA, cosmo=cosmo)
     # joint MAP under a canonical (middle) shape prior, then read the drop it implies
     shapes = _shape_priors(f_truth, lo, hi)
     fj = J.fit_joint(fwd, "pspline", cfg, drop, sub_lls=shapes[1], lam_spline=lam_spline, seed=1)
-    tau_est = J.drop_tau_model(fj["theta_map"], "pspline", cfg, Z912, Z_QSO,
+    tau_est = J.drop_tau_model(fj["theta_map"], "pspline", cfg, Z912, z_qso_eff,
                                sigma912=LYC.SIGMA_912, beta=BETA, logN_lo=17.2)
-    kap_e = LYC.fit_kappa(Z912, tau_est, Z_QSO, beta=BETA, cosmo=cosmo)
-    lam_e = LYC.lambda_mfp_from_kappa(kap_e, Z_QSO, beta=BETA, cosmo=cosmo)
+    kap_e = LYC.fit_kappa(Z912, tau_est, z_qso_eff, beta=BETA, cosmo=cosmo)
+    lam_e = LYC.lambda_mfp_from_kappa(kap_e, z_qso_eff, beta=BETA, cosmo=cosmo)
     chi2 = float(np.sum(((tau_est - tau_hat) / sigma) ** 2)) / Z912.size
     map_ell = float(v3x_reduce(cfg, fj["theta_map"], fine, "pspline", fwd.get("M_meta"))["ell_lls_extrap"])
     print(f"[headline] lambda_mfp truth={lam_t:.1f} est={lam_e:.1f} Mpc  R0={lam_e/lam_t:.3f}  "
@@ -176,7 +186,8 @@ def run(n_lap: int, lam_spline: float) -> dict:
                      truth_in_band=bool(b[0] <= true_ell <= b[2]),
                      map_spread=band["map_spread"], per_shape=band["per_shape"],
                      shape_slopes=list(SHAPE_SLOPES), lam_spline=lam_spline, n_lap=n_lap),
-        tau_hat=tau_hat.tolist(), tau_est=tau_est.tolist(), z912=Z912.tolist(), z_qso=Z_QSO,
+        tau_hat=tau_hat.tolist(), tau_est=tau_est.tolist(), z912=Z912.tolist(), z_qso=z_qso_eff,
+        drop_note="physical direct-sum over HCD truth in z_qso bin [3.4,3.6] (no path dilution)",
     )
 
 
