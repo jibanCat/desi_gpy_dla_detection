@@ -306,8 +306,12 @@ def fit_joint(fwd, family, cfg, drop: DropData | None, sub_lls: "SubLLSPrior | N
       * ``sub_lls`` (SubLLSPrior): TIGHT anchors (sigma_dex≈0.1) on log10 f at 2-3 LLS points set the
         LLS LEVEL from the drop/literature. Loose anchors (sigma≳0.2) at moderate curvature still blow
         up (counting's body-edge leak wins) — pair strong curvature with tight anchors.
-      RECIPE (verified): lam_spline≈30 + sig≈0.10 → R0≈0.94, cond~3e5; robust lam_spline≈60-100 +
-      sig≈0.10 → R0≈0.75-0.84, cond~1e5, multistart spread <2%. All STABLE (no bound-sticking).
+      RECIPE (verified): lam_spline≈60 + sig≈0.10 → stable fit, cond H~1e3, multistart spread <1%
+      (no bound-sticking); lam_spline is NOT the ell headline lever (R0 flat ~0.80-0.82 over lam 20-100).
+      NB the ell R0 values in the OLD version of this note (~0.94 / ~0.75-0.84) were produced with a
+      MIS-NORMALIZED physical drop (see joint_drop_count_validation.py + the 2026-07-07 review): with the
+      corrected narrow-z_q-bin drop the mock ell(X)[17.2,19.5) R0≈0.82 (band excludes truth; 0.82-1.05
+      across drop constructions) — a biased-low bracket, NOT a measurement. lambda_mfp R0=0.98 (robust).
 
     ``sub_floor_ridge`` (SubFloorRidge): an optional 0th-order ridge on the sub-floor coeffs. On the
     mock it was INEFFECTIVE and could AMPLIFY the leak (its reference is tied to the body-edge coeff,
