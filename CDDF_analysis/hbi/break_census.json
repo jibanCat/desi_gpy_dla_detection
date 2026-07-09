@@ -1,0 +1,157 @@
+{
+  "metadata": {
+    "what": "Break-countability census + TRUE ell(z)[tau>=2] on the 2LPT-0 mock HCD truth catalog: how many LLS a 912 A break counter can count (blocking), and the true incidence recovered by Nelson-Aalen (self-consistency vs the direct count).",
+    "mock": "2LPT-0 (loa-124) HCD truth catalog; MOCK values (public-OK), NOT real-LOA",
+    "code_commit": "a90712779d064ae4a3b354c4eeaaa2bb15ad1375",
+    "wallclock_s": 6.3,
+    "rederive": "python CDDF_analysis/diagnostics/lls/break_census.py --force",
+    "estimator": "CDDF_analysis/lyc/survival.py (build_break_census / ell_nelson_aalen / ell_direct_incidence): model-free Nelson-Aalen exposure incidence.",
+    "truth_catalog": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+    "note": "Ground truth for Build B validation. ell(z) is per unit z (dN/dz) and per unit absorption distance dX (path_length_int, Omega_m=0.279). (a) direct-all-absorbers == (b) Nelson-Aalen-on-blocked-census is the check that blocking does not bias the incidence."
+  },
+  "result": {
+    "wall_s": 6.3,
+    "constants": {
+      "blue_cutoff_z": 2.948407475651487,
+      "wave_obs_min": 3600.0,
+      "lyman_limit": 911.76,
+      "logN_tau2": 17.498256270372007,
+      "sigma_912": 6.35e-18,
+      "proximity_dv_kms": 3000.0,
+      "omega_m": 0.279,
+      "z_qso_min": 3.3
+    },
+    "qso_counts": {
+      "n_qso_total": 1213217,
+      "n_qso_zq_ge_3p3": 40364,
+      "frac_zq_ge_3p3": 0.033270222886754804
+    },
+    "observable": {
+      "n_tau2_on_sample": 90208,
+      "n_break_observable": 35062,
+      "frac_observable": 0.3886794962752749
+    },
+    "countable": {
+      "n_first_breaks": 22704,
+      "obs_absorbers_per_countable_break": 1.5443093727977448
+    },
+    "true_ell": {
+      "z_edges": [
+        2.95,
+        3.05,
+        3.15,
+        3.25,
+        3.35,
+        3.45,
+        3.55
+      ],
+      "z_mid": [
+        3.0,
+        3.0999999999999996,
+        3.2,
+        3.3,
+        3.4000000000000004,
+        3.5
+      ],
+      "ell_direct_dz": [
+        1.568972351601437,
+        1.6566742641968752,
+        1.739669011991993,
+        1.7838559219711616,
+        1.8963972268829936,
+        1.9440771139460435
+      ],
+      "ell_direct_err_dz": [
+        0.01983554297178542,
+        0.020334959779034063,
+        0.019944320326974935,
+        0.023146189293478222,
+        0.029688542151509675,
+        0.04055089158057774
+      ],
+      "ell_na_dz": [
+        1.5703265223437215,
+        1.642828634444765,
+        1.7038912555263093,
+        1.7787737027256392,
+        1.8788781660242906,
+        1.9178146694786553
+      ],
+      "ell_na_err_dz": [
+        0.02920322139577105,
+        0.02697058148113478,
+        0.023238227659858952,
+        0.02639549184355014,
+        0.03283304394320618,
+        0.04467733790249101
+      ],
+      "ell_direct_dX": [
+        0.42265216545229295,
+        0.44019024705068877,
+        0.4561305851258501,
+        0.4617143204705779,
+        0.4847242293035144,
+        0.4908872419618169
+      ],
+      "ell_na_dX": [
+        0.4230169540325598,
+        0.43651136381282524,
+        0.44674987599170496,
+        0.4603988928194277,
+        0.480246310251284,
+        0.48425586975991697
+      ],
+      "n_det_direct": [
+        6333,
+        6687,
+        7022,
+        6052,
+        4158,
+        2641
+      ],
+      "n_det_na": [
+        3009,
+        3705,
+        4541,
+        4420,
+        3118,
+        2080
+      ],
+      "exposure_direct_dz": [
+        4036.3999999974244,
+        4036.3999999974244,
+        4036.3999999974244,
+        3392.650676245499,
+        2192.5786122532363,
+        1358.4852067104264
+      ],
+      "exposure_na_dz": [
+        1916.161993818362,
+        2255.2565266505703,
+        2665.0761809311275,
+        2484.857963228922,
+        1659.5008960041796,
+        1084.567780767593
+      ],
+      "ratio_bin_a_over_b": [
+        0.9991376502128594,
+        1.008427920880981,
+        1.0209976759664938,
+        1.0028571477292108,
+        1.0093242133393745,
+        1.013693942843042
+      ],
+      "pooled_ell_direct_dz": 1.7264025411064672,
+      "pooled_ell_na_dz": 1.7299851707936058,
+      "ratio_pooled_a_over_b": 0.9979290980364328
+    },
+    "drop_overlap": {
+      "window": [
+        2.6,
+        3.35
+      ],
+      "n_in_window": 15728,
+      "frac_in_window": 0.6927413671599718
+    }
+  }
+}
