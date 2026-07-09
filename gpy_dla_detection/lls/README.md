@@ -55,6 +55,16 @@ Tier 1 is `load_lls_gp()` below — pure config, no retrain. Inspection of `mode
 [851,912) band (407 px): mean declines smoothly 1.47→0.48, ω=1.18 (below the forest's 2.29) —
 well-behaved, usable.
 
+> ⚠️ **STALE — computed on the pre-fix (legacy-noise) mirror mock (2026-07-09).** The `log-BF ≈ +80`
+> and `~+0.05 detection recall` figures below, and the `mirror/orig = 0.320` measurement further
+> down, were all measured on a mirror whose below-break noise was artificially quiet (the legacy
+> `flux *= T` attenuated the noise realization along with the signal; measured pull σ = 0.235 where
+> it should be 1.0). They **must be re-derived** on a mirror built with the corrected default path,
+> as must SLURM `52949574` / `52950580`. The *direction* of the fix (a noisier break) can only
+> **reduce** the recall gain, so the qualitative conclusion — the Lyα line already saturates, the
+> break adds little to *counting* — is safe and in fact reinforced. The `~10% observable` figure is
+> geometric (blue cutoff) and is **not** affected by the noise model. See `mirror.py` docstring.
+
 > **Observability caveat (2026-07-05 referee finding).** The "~41% in-window" is a *rest-frame
 > model-grid* count. Only **~10%** of foreground LLS have an *observable* break — the break sits at
 > `912(1+z_abs)`, which for the z_qso≈2.26-dominated mock falls below the DESI blue cutoff (~3600 Å)

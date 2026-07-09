@@ -56,10 +56,24 @@ Z912 = np.linspace(2.6, 3.35, 8)
 SHAPE_SLOPES = (-1.9, -1.5, -1.1)     # single-PL LLS shape hypotheses pooled for the band
 
 
-def _git_commit():
+def _git_commit(routine: str | None = None):
+    """HEAD, suffixed `-dirty` iff the ROUTINE that produced the artifact is untracked or modified.
+
+    The question a stamp must answer is "can a third party re-derive this from the named commit?"
+    Answering it means checking the generating routine specifically -- not `git status`, which is
+    dirtied by the artifact's own untracked output file. A stamped JSON whose routine was never
+    committed (and was later deleted) is exactly how this project lost the provenance of a headline
+    once already. A `-dirty` stamp means: NOT third-party re-derivable; commit the routine, re-run.
+    """
+    routine = routine or os.path.relpath(os.path.abspath(__file__), _REPO)
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO,
-                                       stderr=subprocess.DEVNULL).decode().strip()
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO,
+                                      stderr=subprocess.DEVNULL).decode().strip()
+        tracked = subprocess.call(["git", "ls-files", "--error-unmatch", routine], cwd=_REPO,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+        modified = subprocess.call(["git", "diff", "--quiet", "HEAD", "--", routine],
+                                   cwd=_REPO) != 0
+        return sha if (tracked and not modified) else f"{sha}-dirty"
     except Exception as e:  # noqa: BLE001
         print(f"  [WARN] _git_commit() failed ({type(e).__name__}: {e})", file=sys.stderr)
         return "unknown"

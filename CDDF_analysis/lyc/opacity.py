@@ -12,9 +12,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
-SIGMA_912 = 6.35e-18   # cm^2, HI photoionization cross-section at 1 Ryd (Verner et al. 1996)
+SIGMA_912 = 6.35e-18   # cm^2, HI photoionization cross-section at 1 Ryd. This is the Verner+1996
+                       # analytic-fit value at threshold (6.339e-18); the commonly quoted 6.30e-18
+                       # is the hydrogenic number. Do NOT "correct" it to 6.3e-18 (0.003 dex on the
+                       # tau=2 column either way).
 LYMAN_LIMIT = 911.76   # Angstrom
-BETA_LL = 3.0          # cross-section index sigma ~ nu^-BETA (3 = Verner/PWO09; 2.75 = Worseck14)
+
+# sigma(nu) ~ nu^-BETA_LL.  BETA_LL = 3.0 is the CLASSICAL KRAMERS HIGH-FREQUENCY ASYMPTOTE, and is
+# what PWO09 / our injection / the (frozen) finder `voigt_lls.tau_LLS_break` all use.
+# It is NOT the near-threshold value: the exact hydrogenic bound-free cross-section
+# (Karzas & Latter 1961; Osterbrock & Ferland 2006 eq. 2.4) has
+#       -d ln sigma / d ln nu  ->  8/3 = 2.667   as nu -> nu_912,
+# rising to 3 only around nu/nu_912 ~ 5. Over the OBSERVABLE break wing (nu/nu_912 in [1, 1.14-1.39]
+# for z_abs = 3.5-4.5) the effective index is 2.68-2.71, and Worseck+2014 adopt 2.75.
+# Consequence: beta=3 understates tau by 4-9% at the deepest observable point (beta=2.75 is within
+# ~1%). Kept as the default ONLY because it is self-consistent with the beta=3 HCD injection that
+# the stamped mock closures validate against -- changing it silently would invalidate them.
+# CIRCULARITY WARNING: the frozen finder `gpy_dla_detection/voigt_lls.py::tau_LLS_break` hard-wires
+# (lambda_rest/912)^3. A mirror mock injected at beta=3 therefore has EXACTLY the finder's own break
+# shape, so a purity/completeness calibration on it is blind to the ~2.6% wing mismatch real breaks
+# carry. De-circularize by injecting at beta != 3 (see `gpy_dla_detection/lls/mirror.py --beta`).
+BETA_LL = 3.0
+BETA_LL_EFFECTIVE = 2.70   # effective index over the observable wing (exact cross-section)
 C_KMS = 299792.458
 
 

@@ -17,10 +17,17 @@ from .opacity import (
     effective_opacity, tau_eff_kernel_basis, lambda_mfp_from_kappa, fit_kappa,
     break_matched_filter_snr,
 )
+from .survival import (
+    blue_cutoff_z, proximity_z_max, build_break_census,
+    ell_nelson_aalen, ell_direct_incidence, ell_per_dz_to_dX,
+)
 
 __all__ = [
     "SIGMA_912", "LYMAN_LIMIT", "BETA_LL", "Cosmology", "DEFAULT_COSMO",
     "sigma_ll", "tau_ll", "lyc_optical_depth", "lyc_transmission",
     "effective_opacity", "tau_eff_kernel_basis", "lambda_mfp_from_kappa", "fit_kappa",
     "break_matched_filter_snr",
+    # survival / incidence estimator (Nelson-Aalen g(z))
+    "blue_cutoff_z", "proximity_z_max", "build_break_census",
+    "ell_nelson_aalen", "ell_direct_incidence", "ell_per_dz_to_dX",
 ]

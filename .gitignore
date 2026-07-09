@@ -116,3 +116,8 @@ examples/prototype_dla_clustering.png
 # Regenerate with tools/loa_hpx_spec_counts.py (see loa_cddf_nersc.env / matterhorn_nersc_v1.env).
 # Covers *_qso_counts.txt (matterhorn) and *_spec_counts.txt (loa).
 slurm/nersc/production/*_counts.txt
+
+# LLS recovery PNGs live in the private notes repo (jibanCat/desi_gpy_dla_notes), not here.
+# Narrow rule: do NOT re-ignore CDDF_analysis/hbi/figures/ (tracked headline deliverables, see above).
+# The stamped JSON (the numbers) stays in-repo; regenerate PNGs via lls_recovery_figures.py --force
+CDDF_analysis/hbi/figures/lls_recovery/
