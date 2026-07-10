@@ -121,3 +121,9 @@ slurm/nersc/production/*_counts.txt
 # Narrow rule: do NOT re-ignore CDDF_analysis/hbi/figures/ (tracked headline deliverables, see above).
 # The stamped JSON (the numbers) stays in-repo; regenerate PNGs via lls_recovery_figures.py --force
 CDDF_analysis/hbi/figures/lls_recovery/
+
+# Executed unblinding notebooks contain real-LOA values (private). Only outputs-stripped
+# sources belong in git; executed copies and probes never do.
+notebooks/*probe*.ipynb
+notebooks/*.exec.ipynb
+notebooks/*.executed.ipynb
