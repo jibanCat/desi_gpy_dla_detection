@@ -2,14 +2,14 @@
   "metadata": {
     "what": "LLS-tier JOINT drop+count estimator validation on the 2LPT-0 mock: prior-free lambda_mfp/tau_eff,LL headline + shape-marginalized ell(X)[17.2,19.5) band",
     "mock": "2LPT-0 (loa-124); MOCK recovery values (public-OK), NOT real-LOA",
-    "code_commit": "88b13ab5f481a025372554e6136fa84d4396a9f4",
-    "wallclock_s": 407.3,
+    "code_commit": "8816e1e8ba7d18698aeacca94c18e9767beeade3",
+    "wallclock_s": 417.7,
     "rederive": "python CDDF_analysis/diagnostics/lls/joint_drop_count_validation.py --force",
     "estimator": "CDDF_analysis/hbi/joint_drop_count.py (fit_joint / joint_laplace / lls_shape_marginalized_band); drop is a PHYSICAL direct-sum over HCD truth (exercises the _clamp_drop_grid top-knot fix).",
     "note": "HEADLINE = lambda_mfp/tau_eff,LL (prior-free, R0_lambda~1). ell(X)[17.2,19.5) is a DERIVED, shape/prior-limited band (counts+drop under-determine it \u2014 review F1); R0(q50) is NOT expected ~1 and 'truth_in_band' is necessary-not-sufficient. Omega_HI(LLS) is off-headline (too slope-sensitive). FP is CARRIED (loa0) \u2014 the band holds lam_fp/mu_fp fixed, so it has no FP width (add the loa0<->purity bracket externally)."
   },
   "result": {
-    "wall_s": 407.2,
+    "wall_s": 417.6,
     "true_ell": 0.2628520020177958,
     "n_sl_drop": 16539,
     "sanity": {

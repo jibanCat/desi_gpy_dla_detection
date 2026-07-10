@@ -11,11 +11,14 @@ Everything else (cat_cut, frozen C/ρ, pathlength, loa-0 FP product, family bspb
 σ_add already baked into the kernel build, lam_rf_min=1025, report band [19.5,20.3))
 is held verbatim against subdla_loa0_validation.py so the comparison is apples-to-apples.
 
-The floor-19.5 reference numbers (from the prior run) are hardcoded for the
-side-by-side table.
+The floor-19.5 reference numbers are loaded from the committed, git-stamped
+artifact subdla_mock_validation.json (posterior kernel) for the side-by-side
+table -- not hard-coded. They are a posterior-kernel baseline, not the sub-DLA
+headline (which uses the forward kernel).
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -42,12 +45,22 @@ OUT_DIR = "/tmp/subdla_loa0_validation_floor190"
 # cumulative report limits: 19.5 floor + 0.1-dex steps through 20.3, then the DLA tier
 REPORT_LIMITS = (19.5, 19.6, 19.7, 19.8, 19.9, 20.0, 20.1, 20.2, 20.3, 20.6)
 
-# floor-19.5 reference (from the prior validation run) — for the side-by-side table
-F195_PER_BIN_R0 = [0.454, 0.717, 0.893, 0.932, 0.901, 0.903, 0.923, 1.028]
-F195_DNDX_195_203 = 0.883
-F195_OMEGA_195_203 = 0.899
-F195_DNDX_203 = 1.159
-F195_OMEGA_203 = 1.114
+# floor-19.5 reference for the side-by-side table. LOADED from the committed,
+# git-stamped artifact rather than hard-coded, so it cannot silently drift.
+# These are POSTERIOR-kernel recovery ratios (this whole floor-190 diagnostic runs
+# the posterior path, for an apples-to-apples floor comparison). They are NOT the
+# sub-DLA headline: the headline uses the FORWARD kernel, band R0 ~ 0.849 (dN/dX) /
+# 0.822 (Omega) -- see subdla_mock_validation_forward.json. Do not quote the numbers
+# below (0.883 / 0.899) as a headline.
+_F195_REF = os.path.join(_REPO, "CDDF_analysis", "hbi", "subdla_mock_validation.json")
+with open(_F195_REF) as _fh:
+    _F195_DOC = json.load(_fh)
+_F195 = _F195_DOC["integrated"]["loa0"]
+F195_PER_BIN_R0 = [b["r0"] for b in _F195_DOC["per_bin"]["loa0"]]
+F195_DNDX_195_203 = _F195["r0_dndx_195_203"]
+F195_OMEGA_195_203 = _F195["r0_omega_195_203"]
+F195_DNDX_203 = _F195["r0_dndx_203"]
+F195_OMEGA_203 = _F195["r0_omega_203"]
 
 
 class _Args:
