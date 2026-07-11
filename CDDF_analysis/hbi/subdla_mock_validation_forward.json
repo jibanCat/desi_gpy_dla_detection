@@ -1,0 +1,230 @@
+{
+  "metadata": {
+    "what": "sub-DLA-tier catalog-HBI recovery validation on the 2LPT-0 mock, FORWARD-RESPONSE kernel (Track-C 'right object'), band [19.5,20.3)",
+    "mock": "2LPT-0 (loa-124); values are MOCK recovery ratios, not real-LOA. No real-LOA (loa main-dark) data was read.",
+    "resp_kind": "forward",
+    "code_commit": "20fb1e7156e7a493331565970ed02c6d0930cab8",
+    "deps": [
+      "CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py",
+      "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+      "CDDF_analysis/hbi/track_c_perz_band.py",
+      "CDDF_analysis/hbi/ab_loa0_fp_baseline.py",
+      "CDDF_analysis/hbi/cddf_tilt_closure.py",
+      "CDDF_analysis/hbi/cddf_catalog_hbi.py",
+      "CDDF_analysis/unblind/provenance.py"
+    ],
+    "wallclock_s": 63.3,
+    "rederive": "python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --resp-kind forward --force",
+    "inputs": {
+      "catalog_dir": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/",
+      "truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+      "bal_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits",
+      "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+      "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz",
+      "resp_family": "empirical",
+      "molly": "<_resolve_molly fallback: AB.DEF_LYAONLY_MOLLY (nhi195 lya_only)>",
+      "report_limits": "19.5,19.6,19.7,19.8,19.9,20,20.1,20.2,20.3,20.6",
+      "fit_floor": 19.5,
+      "lam_rf_min": 1025.0,
+      "family": "bspbody",
+      "host_truth_floor": 19.0
+    },
+    "note": "Forward-response kernel (resp_kind='forward'; FROZEN 2LPT-0 forward_response_2lpt0.npz + z-resolved g(N,z)) via the track_c_tf_2lpt1 self-recovery machinery self-pointed at 2LPT-0 (build_frozen_calibration + build_heldout_ingredients variant A + _set_forward_cfg). baseline_recovery POINT R0 = est/truth (no MC band). Reproduces bit-for-bit two independent forward derivations (subdla_mock_headline.json + crossmock_transfer_loa0.json, both currently UNTRACKED; this validation artifact stands on its own committed routine, not on those cross-checks) at loa0 band R0 ~ 0.849/0.822. The Adopted as the sub-DLA headline for single-kernel COHERENCE with the DLA tier (which is already forward). The forward-vs-posterior discriminator is validated at the DLA tier (>=20.3), where truth completeness ~ 1 so R0 SHOULD be 1: posterior R0=1.16 (over-recovers, SBC-fails) vs forward R0=1.04. That anchor does NOT exist below 20.3 (true completeness ~ 0.2-1.0, and on-mock R0 is a tautology), so the sub-DLA switch is a CONSISTENCY choice, not an independently-validated one -- the forward is shown stable across recipes below 20.3 but not shown to BEAT the posterior there. CARRIED SYSTEMATIC: the forward<->posterior kernel-object gap on this band is 3.8% (dN/dX) / 8.5% (Omega) (kappa 0.883/0.899 vs forward 0.849/0.822), UNRESOLVED at the sub-DLA tier -- do NOT quote the 0.849/0.822 point without it. NB the lower forward R0 means a LARGER 1/R0 up-correction, i.e. it raises Omega_HI(sub-DLA). Fail-closed forward-kernel guard (unblind.provenance.assert_forward_kernel) fires before this artifact is stamped."
+  },
+  "per_bin": {
+    "purity_mixture": [
+      {
+        "blo": 19.5,
+        "bhi": 19.6,
+        "f_est": 3.1252334651620627e-22,
+        "f_tru": 1.6022007410440687e-21,
+        "dndx_est": 0.002558922551655329,
+        "dndx_tru": 0.013118724262489431,
+        "r0": 0.1950587953869947
+      },
+      {
+        "blo": 19.6,
+        "bhi": 19.7,
+        "f_est": 2.6002573038503e-22,
+        "f_tru": 1.2843029538643417e-21,
+        "dndx_est": 0.0026803468688895806,
+        "dndx_tru": 0.013238602949018425,
+        "r0": 0.20246448052045513
+      },
+      {
+        "blo": 19.7,
+        "bhi": 19.8,
+        "f_est": 2.4154408662727676e-22,
+        "f_tru": 1.0038380320293452e-21,
+        "dndx_est": 0.003134520289749227,
+        "dndx_tru": 0.01302681726948387,
+        "r0": 0.24062057714527366
+      },
+      {
+        "blo": 19.8,
+        "bhi": 19.9,
+        "f_est": 2.6487096483539014e-22,
+        "f_tru": 7.849025908608788e-22,
+        "dndx_est": 0.004327220532497257,
+        "dndx_tru": 0.012823023502384585,
+        "r0": 0.3374571162325766
+      },
+      {
+        "blo": 19.9,
+        "bhi": 20.0,
+        "f_est": 3.1806675730950683e-22,
+        "f_tru": 6.052072145750836e-22,
+        "dndx_est": 0.006541735145137652,
+        "dndx_tru": 0.012447403617927075,
+        "r0": 0.5255501746336942
+      },
+      {
+        "blo": 20.0,
+        "bhi": 20.1,
+        "f_est": 3.577940045350409e-22,
+        "f_tru": 4.467037511610634e-22,
+        "dndx_est": 0.009264195996172939,
+        "dndx_tru": 0.011566295271938977,
+        "r0": 0.800964853339758
+      },
+      {
+        "blo": 20.1,
+        "bhi": 20.2,
+        "f_est": 3.2844210097690306e-22,
+        "f_tru": 3.457579300866086e-22,
+        "dndx_est": 0.010706154273304186,
+        "dndx_tru": 0.011270594511834129,
+        "r0": 0.9499192134064196
+      },
+      {
+        "blo": 20.2,
+        "bhi": 20.3,
+        "f_est": 2.506436832794969e-22,
+        "f_tru": 2.5497560079396686e-22,
+        "dndx_est": 0.010285642836953319,
+        "dndx_tru": 0.010463411355872245,
+        "r0": 0.983010462565905
+      }
+    ],
+    "loa0": [
+      {
+        "blo": 19.5,
+        "bhi": 19.6,
+        "f_est": 1.7118631398528448e-21,
+        "f_tru": 1.6022007410440687e-21,
+        "dndx_est": 0.014016633453941935,
+        "dndx_tru": 0.013118724262489431,
+        "r0": 1.0684448558782433
+      },
+      {
+        "blo": 19.6,
+        "bhi": 19.7,
+        "f_est": 1.0516311002126453e-21,
+        "f_tru": 1.2843029538643417e-21,
+        "dndx_est": 0.0108402200140273,
+        "dndx_tru": 0.013238602949018425,
+        "r0": 0.8188341364850017
+      },
+      {
+        "blo": 19.7,
+        "bhi": 19.8,
+        "f_est": 6.425870343863496e-22,
+        "f_tru": 1.0038380320293452e-21,
+        "dndx_est": 0.008338859068497436,
+        "dndx_tru": 0.01302681726948387,
+        "r0": 0.6401301941980665
+      },
+      {
+        "blo": 19.8,
+        "bhi": 19.9,
+        "f_est": 4.636814235572577e-22,
+        "f_tru": 7.849025908608788e-22,
+        "dndx_est": 0.007575204695620286,
+        "dndx_tru": 0.012823023502384585,
+        "r0": 0.5907502777493616
+      },
+      {
+        "blo": 19.9,
+        "bhi": 20.0,
+        "f_est": 3.9525142970142653e-22,
+        "f_tru": 6.052072145750836e-22,
+        "dndx_est": 0.008129205927445229,
+        "dndx_tru": 0.012447403617927075,
+        "r0": 0.653084464597688
+      },
+      {
+        "blo": 20.0,
+        "bhi": 20.1,
+        "f_est": 3.5805429567226346e-22,
+        "f_tru": 4.467037511610634e-22,
+        "dndx_est": 0.009270935595162113,
+        "dndx_tru": 0.011566295271938977,
+        "r0": 0.8015475463136721
+      },
+      {
+        "blo": 20.1,
+        "bhi": 20.2,
+        "f_est": 3.121084891399274e-22,
+        "f_tru": 3.457579300866086e-22,
+        "dndx_est": 0.010173731153226695,
+        "dndx_tru": 0.011270594511834129,
+        "r0": 0.9026791925256714
+      },
+      {
+        "blo": 20.2,
+        "bhi": 20.3,
+        "f_est": 2.52922217858677e-22,
+        "f_tru": 2.5497560079396686e-22,
+        "dndx_est": 0.010379146860539503,
+        "dndx_tru": 0.010463411355872245,
+        "r0": 0.9919467473401539
+      }
+    ]
+  },
+  "integrated": {
+    "purity_mixture": {
+      "mode": "purity_mixture",
+      "n_sl": 374177,
+      "dndx_est_195_203": 0.04949873849435947,
+      "dndx_tru_195_203": 0.09272816200828467,
+      "r0_dndx_195_203": 0.533804805598725,
+      "omega_est_195_203": 7.783620724991977e-05,
+      "omega_tru_195_203": 0.0001177385189115506,
+      "r0_omega_195_203": 0.6610938201829524,
+      "dndx_est_195_200": 0.019242745387929028,
+      "dndx_tru_195_200": 0.06118608160439788,
+      "r0_dndx_195_200": 0.31449546830509756,
+      "omega_est_195_200": 1.7559143938110453e-05,
+      "omega_tru_195_200": 5.2375445036816006e-05,
+      "r0_omega_195_200": 0.33525526944482653,
+      "dndx_est_203": 0.05356352165974708,
+      "dndx_tru_203": 0.0543430065817012,
+      "r0_dndx_203": 0.9856562054441685,
+      "r0_omega_203": 0.8787570602345325,
+      "r0_dndx_200": 0.9759495822626683,
+      "r0_omega_200": 0.8828466236920395
+    },
+    "loa0": {
+      "mode": "loa0",
+      "n_sl": 374177,
+      "dndx_est_195_203": 0.07872393676846046,
+      "dndx_tru_195_203": 0.09272816200828467,
+      "r0_dndx_195_203": 0.8489754898994653,
+      "omega_est_195_203": 9.678670012835153e-05,
+      "omega_tru_195_203": 0.0001177385189115506,
+      "r0_omega_195_203": 0.8220478822318222,
+      "dndx_est_195_200": 0.04890012315953214,
+      "dndx_tru_195_200": 0.06118608160439788,
+      "r0_dndx_195_200": 0.799203378894218,
+      "omega_est_195_200": 3.7305240798546314e-05,
+      "omega_tru_195_200": 5.2375445036816006e-05,
+      "r0_omega_195_200": 0.7122658484777271,
+      "dndx_est_203": 0.05641560846013772,
+      "dndx_tru_203": 0.0543430065817012,
+      "r0_dndx_203": 1.038139256710438,
+      "r0_omega_203": 0.9593013377342406,
+      "r0_dndx_200": 1.0041256881248488,
+      "r0_omega_200": 0.954660567561268
+    }
+  }
+}

@@ -18,7 +18,10 @@
       "family": "bspbody",
       "host_truth_floor": 19.0
     },
-    "note": "Reduce-only (cached kernel, no inference/SLURM/tilt). R0 = est/truth. The [19.5,19.7) edge is formally non-identifiable on a 19.5-floored catalog (Track A closed); report the [19.7,20.3) f(N) diff + the [19.5,20.3] integrated band with an edge-migration systematic."
+    "note": "Reduce-only (cached kernel, no inference/SLURM/tilt). R0 = est/truth. The [19.5,19.7) edge is formally non-identifiable on a 19.5-floored catalog (Track A closed); report the [19.7,20.3) f(N) diff + the [19.5,20.3] integrated band with an edge-migration systematic.",
+    "retired": true,
+    "superseded_by": "CDDF_analysis/hbi/subdla_mock_validation_forward.json",
+    "retired_note": "POSTERIOR-kernel recovery. Retired as the sub-DLA HEADLINE for single-kernel coherence with the (forward) DLA tier -- NOT demonstrated wrong below 20.3 (the forward-vs-posterior discriminator is anchored only at the DLA tier where truth completeness~1). KEPT because subdla_loa0_validation_floor190.py loads this as the floor-19.5 posterior baseline. Forward headline: subdla_mock_validation_forward.json (band R0 0.849 dN/dX / 0.822 Omega). The kappa<->forward kernel-object gap (3.8% dN/dX, 8.5% Omega) is a CARRIED systematic -- do not quote 0.883/0.899 as a headline, nor the forward point bare."
   },
   "per_bin": {
     "purity_mixture": [
