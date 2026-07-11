@@ -33,10 +33,17 @@ if _REPO not in sys.path:
 
 from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
 from CDDF_analysis.hbi.cddf_tilt_closure import baseline_recovery
+# forward-response kernel path (Track-C): reuse the frozen-2LPT-0 self-recovery driver
+from CDDF_analysis.hbi import track_c_perz_band as PZ
+from CDDF_analysis.hbi import track_c_tf_2lpt1 as TF1
+from CDDF_analysis.unblind.provenance import assert_forward_kernel
 
 # committed, git-stamped MOCK deliverable (2LPT-0 recovery ratios — public-OK, no real-LOA
 # values). The real-LOA sub-DLA dN/dX/Omega/f(N) numbers are private (notes repo only).
 DEFAULT_OUT_JSON = os.path.join(_REPO, "CDDF_analysis", "hbi", "subdla_mock_validation.json")
+# the FORWARD-response cross-check deliverable (separate file — never overwrites the kappa one)
+DEFAULT_OUT_JSON_FORWARD = os.path.join(
+    _REPO, "CDDF_analysis", "hbi", "subdla_mock_validation_forward.json")
 
 
 def _git_commit():
@@ -49,6 +56,22 @@ def _git_commit():
         print(f"  [WARN] _git_commit() failed ({type(e).__name__}: {e}); "
               f"code_commit will be stamped 'unknown' (cwd={_REPO}).", file=sys.stderr)
         return "unknown"
+
+
+def _stamped_commit():
+    """HEAD sha with '-dirty' appended iff THIS routine file is modified/untracked
+    (feedback_headline_provenance_routine: stamp -dirty on the ROUTINE, not the whole tree)."""
+    base = _git_commit()
+    if base == "unknown":
+        return base
+    import subprocess
+    rel = os.path.relpath(os.path.abspath(__file__), _REPO)
+    try:
+        out = subprocess.check_output(["git", "status", "--porcelain", "--", rel],
+                                      cwd=_REPO, stderr=subprocess.DEVNULL).decode().strip()
+        return base + ("-dirty" if out else "")
+    except Exception:  # noqa: BLE001
+        return base
 
 
 # cumulative report limits: 19.5 floor + 0.1-dex steps through 20.3, then the DLA tier
@@ -78,20 +101,101 @@ class _Args:
         self.host_truth_floor = 19.0
 
 
-def run_mode(mode: str) -> dict:
-    args = _Args()
-    os.makedirs(args.out, exist_ok=True)
-    print("=" * 78)
-    print(f"[sub-DLA validation] fp_estimator = {mode}")
-    print("=" * 78)
-    ing = AB.build_ingredients(args, mode, loa0_product=args.loa0_product)
-    cfg = ing["cfg"]
-    cfg._wall1_estimator = "v3"
+# forward-response kernel (FROZEN 2LPT-0 Track-C stage-0 model). Same file the committed
+# forward artifacts (subdla_mock_headline.json / crossmock_transfer_loa0.json) use.
+_DEF_FORWARD_MODEL = TF1._DEF_FORWARD
+
+
+class _FwdArgs:
+    """Args for the FORWARD-response kernel path, mirroring track_c_tf_2lpt1's argparse
+    defaults but with the held-out catalog/truth/mockdir SELF-POINTED at 2LPT-0 (mock-0)
+    — i.e. the on-mock self-recovery FLOOR under the forward kernel, the exact leg that
+    produced crossmock_transfer_loa0.json's self-2lpt0 numbers.  Fields cover the union
+    read by build_frozen_calibration + build_heldout_ingredients + PZ._set_forward_cfg."""
+    def __init__(self, fp_estimator: str):
+        # frozen 2LPT-0 calibration inputs (build_frozen_calibration)
+        self.molly_tsv = None            # -> AB._resolve_molly fallback (lya_only-195)
+        self.kernel = AB.DEF_KERNEL      # unused on the forward path (kept for parity)
+        self.forward_model = _DEF_FORWARD_MODEL
+        self.resp_family = "empirical"
+        # held-out = 2LPT-0 ITSELF (self-recovery), mock-0 paths
+        self.heldout_cat = AB.DEF_CAT
+        self.heldout_truth = AB.DEF_TRUTH
+        self.heldout_bal = AB.DEF_BAL
+        self.heldout_mockdir = os.path.dirname(AB.DEF_TRUTH)
+        # FP estimator for the held-out POINT
+        self.fp_estimator = fp_estimator
+        self.loa0_product = AB.DEF_LOA0_PRODUCT
+        # shared HBIConfig knobs (identical to the posterior _Args + the TF driver)
+        self.out = "/tmp/subdla_loa0_validation_forward"
+        self.mockdir = None
+        self.zbins = "2.0,2.5,3.0,3.5"
+        self.report_limits = ",".join(f"{x:g}" for x in REPORT_LIMITS)
+        self.family = "bspbody"
+        self.fit_floor = 19.5
+        self.fit_ceil = 99.0
+        self.lambda_bspbody = 30.0
+        self.lam_rf_min = 1025.0
+        self.edge_slope_lam = 40.0
+        self.gl_nodes = 1
+        self.host_truth_floor = 19.0
+        self.cz_min_count = 30.0
+        # band-finalize knobs (read by _set_forward_cfg; INERT for the POINT R0 that
+        # baseline_recovery computes — no MC band here — but must exist on the namespace)
+        self.band_recenter = True
+        self.omega_slope_extrap = True
+        self.omega_slope_extrap_integrated = True
+        self.slope_edge = 21.2
+        self.slope_fit_dex = 0.6
+        self.sigma_slope = 0.5
+
+
+def _build_base(mode: str, resp_kind: str, frozen=None):
+    """Build (base, ing) for FP `mode` on the chosen response-kernel path.
+
+    resp_kind='kappa'  (DEFAULT, byte-identical to the committed diagnostic): the GP-
+        POSTERIOR kernel via ab_loa0_fp_baseline.build_ingredients.  This is a labelled
+        DIAGNOSTIC path and does NOT call the forward-kernel guard.
+    resp_kind='forward': the FROZEN 2LPT-0 forward-response kernel via the
+        track_c_tf_2lpt1 self-recovery machinery (build_frozen_calibration +
+        build_heldout_ingredients self-pointed at 2LPT-0 + _set_forward_cfg).  The
+        forward-kernel guard fires here — a "forward" artifact can never be stamped on
+        the posterior kernel.
+    """
+    if resp_kind == "forward":
+        fa = _FwdArgs(mode)
+        os.makedirs(fa.out, exist_ok=True)
+        if frozen is None:
+            frozen = TF1.build_frozen_calibration(fa)
+        ing = TF1.build_heldout_ingredients(fa, frozen, "A")   # variant A = fully frozen
+        cfg = ing["cfg"]
+        cfg.report_logN_limits = tuple(REPORT_LIMITS)
+        cfg._wall1_estimator = "v3"
+        cfg.n_mc = 0
+        PZ._set_forward_cfg(cfg, fa)      # sets resp_kind='forward' + kernel_forward_model
+        # FAIL-CLOSED: refuse to proceed to a stamped "forward" artifact on the posterior
+        # kernel. Fires iff _set_forward_cfg did not actually engage the forward path.
+        assert_forward_kernel(cfg, context=f"subdla forward validation (fp={mode})",
+                              require_kernel_model=True)
+    else:
+        fa = _Args()
+        os.makedirs(fa.out, exist_ok=True)
+        ing = AB.build_ingredients(fa, mode, loa0_product=fa.loa0_product)
+        cfg = ing["cfg"]
+        cfg._wall1_estimator = "v3"       # posterior (kappa) diagnostic path — no guard
     base = baseline_recovery(
         cfg, ing["cat_cut"], ing["is_TP"], ing["good_mask"], ing["truth_cut"],
         ing["C_interp"], ing["fp_model"], ing["X_tot"],
         ing["logN_lo"], ing["logN_hi"], ing["N_b"], ing["dN_b"],
         estimator_fn=ing["estimator_fn"])
+    return base, ing
+
+
+def run_mode(mode: str, resp_kind: str = "kappa", frozen=None) -> dict:
+    print("=" * 78)
+    print(f"[sub-DLA validation] fp_estimator = {mode}   kernel = {resp_kind}")
+    print("=" * 78)
+    base, ing = _build_base(mode, resp_kind, frozen=frozen)
 
     logN_lo = np.asarray(ing["logN_lo"], float)
     logN_hi = np.asarray(ing["logN_hi"], float)
@@ -149,8 +253,14 @@ def run_mode(mode: str) -> dict:
 
 
 def main(args):
+    resp_kind = getattr(args, "resp_kind", "kappa")
     t_start = time.time()
-    res = {m: run_mode(m) for m in ("purity_mixture", "loa0")}
+    frozen = None
+    if resp_kind == "forward":
+        # build the FROZEN 2LPT-0 calibration ONCE (mode-independent) and reuse for both FPs
+        frozen = TF1.build_frozen_calibration(_FwdArgs("purity_mixture"))
+    res = {m: run_mode(m, resp_kind=resp_kind, frozen=frozen)
+           for m in ("purity_mixture", "loa0")}
     wall = time.time() - t_start
 
     def _fmt(x, w=10, p=4):
@@ -196,7 +306,9 @@ def main(args):
               f"R0_omega(>=20.0)={r['r0_omega_200']:.4f}  n_sl={r['n_sl']}")
 
     # persist a tsv
-    out_tsv = "/tmp/subdla_loa0_validation/subdla_validation.tsv"
+    _tsv_dir = "/tmp/subdla_loa0_validation" + ("_forward" if resp_kind == "forward" else "")
+    os.makedirs(_tsv_dir, exist_ok=True)
+    out_tsv = os.path.join(_tsv_dir, "subdla_validation.tsv")
     with open(out_tsv, "w") as fh:
         fh.write("metric\tbin\ttruth\tpurity_mixture\tloa0\n")
         for bp, bl in zip(pm, lo):
@@ -216,25 +328,83 @@ def main(args):
     print(f"\n[saved] {out_tsv}")
 
     # ---- committed, git-stamped JSON deliverable (mock recovery ratios; public-OK) ----
-    a = _Args()
-    inputs = dict(catalog_dir=a.catalog_dir, truth=a.truth, bal_cat=a.bal_cat,
-                  kernel=a.kernel, loa0_product=a.loa0_product,
-                  molly="<_resolve_molly fallback: AB.DEF_LYAONLY_MOLLY (nhi195 lya_only)>",
-                  report_limits=a.report_limits, fit_floor=a.fit_floor,
-                  lam_rf_min=a.lam_rf_min, family=a.family, host_truth_floor=a.host_truth_floor)
+    if resp_kind == "forward":
+        fa = _FwdArgs("loa0")
+        inputs = dict(catalog_dir=fa.heldout_cat, truth=fa.heldout_truth,
+                      bal_cat=fa.heldout_bal, forward_model=fa.forward_model,
+                      loa0_product=fa.loa0_product, resp_family=fa.resp_family,
+                      molly="<_resolve_molly fallback: AB.DEF_LYAONLY_MOLLY (nhi195 lya_only)>",
+                      report_limits=fa.report_limits, fit_floor=fa.fit_floor,
+                      lam_rf_min=fa.lam_rf_min, family=fa.family,
+                      host_truth_floor=fa.host_truth_floor)
+        what = ("sub-DLA-tier catalog-HBI recovery validation on the 2LPT-0 mock, "
+                "FORWARD-RESPONSE kernel (Track-C 'right object'), band [19.5,20.3)")
+        note = ("Forward-response kernel (resp_kind='forward'; FROZEN 2LPT-0 "
+                "forward_response_2lpt0.npz + z-resolved g(N,z)) via the track_c_tf_2lpt1 "
+                "self-recovery machinery self-pointed at 2LPT-0 (build_frozen_calibration + "
+                "build_heldout_ingredients variant A + _set_forward_cfg). baseline_recovery "
+                "POINT R0 = est/truth (no MC band). Reproduces bit-for-bit two independent "
+                "forward derivations (subdla_mock_headline.json + crossmock_transfer_loa0.json, "
+                "both currently UNTRACKED; this validation artifact stands on its own committed "
+                "routine, not on those cross-checks) at loa0 band R0 ~ 0.849/0.822. The "
+                "Adopted as the sub-DLA headline for single-kernel COHERENCE with the DLA "
+                "tier (which is already forward). The forward-vs-posterior discriminator is "
+                "validated at the DLA tier (>=20.3), where truth completeness ~ 1 so R0 SHOULD "
+                "be 1: posterior R0=1.16 (over-recovers, SBC-fails) vs forward R0=1.04. That "
+                "anchor does NOT exist below 20.3 (true completeness ~ 0.2-1.0, and on-mock R0 "
+                "is a tautology), so the sub-DLA switch is a CONSISTENCY choice, not an "
+                "independently-validated one -- the forward is shown stable across recipes "
+                "below 20.3 but not shown to BEAT the posterior there. CARRIED SYSTEMATIC: the "
+                "forward<->posterior kernel-object gap on this band is 3.8% (dN/dX) / 8.5% "
+                "(Omega) (kappa 0.883/0.899 vs forward 0.849/0.822), UNRESOLVED at the sub-DLA "
+                "tier -- do NOT quote the 0.849/0.822 point without it. NB the lower forward R0 "
+                "means a LARGER 1/R0 up-correction, i.e. it raises Omega_HI(sub-DLA). "
+                "Fail-closed forward-kernel guard (unblind.provenance.assert_forward_kernel) "
+                "fires before this artifact is stamped.")
+        rederive = ("python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py "
+                    "--resp-kind forward --force")
+        deps = ["CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py",
+                "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+                "CDDF_analysis/hbi/track_c_perz_band.py",
+                "CDDF_analysis/hbi/ab_loa0_fp_baseline.py",
+                "CDDF_analysis/hbi/cddf_tilt_closure.py",
+                "CDDF_analysis/hbi/cddf_catalog_hbi.py",
+                "CDDF_analysis/unblind/provenance.py"]
+    else:
+        a = _Args()
+        inputs = dict(catalog_dir=a.catalog_dir, truth=a.truth, bal_cat=a.bal_cat,
+                      kernel=a.kernel, loa0_product=a.loa0_product,
+                      molly="<_resolve_molly fallback: AB.DEF_LYAONLY_MOLLY (nhi195 lya_only)>",
+                      report_limits=a.report_limits, fit_floor=a.fit_floor,
+                      lam_rf_min=a.lam_rf_min, family=a.family,
+                      host_truth_floor=a.host_truth_floor)
+        what = ("sub-DLA-tier catalog-HBI recovery validation on the 2LPT-0 mock "
+                "(loa0 vs purity_mixture FP), band [19.5,20.3)")
+        note = ("Reduce-only (cached POSTERIOR/kappa kernel, no inference/SLURM/tilt). "
+                "R0 = est/truth. DIAGNOSTIC path (posterior kernel; superseded as the sub-DLA "
+                "headline by the forward artifact subdla_mock_validation_forward.json for "
+                "single-kernel coherence -- the kappa<->forward gap is a carried systematic, "
+                "and kappa is demonstrably wrong only at the DLA tier, not below 20.3). "
+                "The [19.5,19.7) edge is formally non-identifiable on a 19.5-floored "
+                "catalog (Track A closed); report the [19.7,20.3) f(N) diff + the "
+                "[19.5,20.3] integrated band with an edge-migration systematic.")
+        rederive = "python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --force"
+        deps = ["CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py",
+                "CDDF_analysis/hbi/ab_loa0_fp_baseline.py",
+                "CDDF_analysis/hbi/cddf_tilt_closure.py",
+                "CDDF_analysis/hbi/cddf_catalog_hbi.py"]
     out_json = dict(
         metadata=dict(
-            what="sub-DLA-tier catalog-HBI recovery validation on the 2LPT-0 mock "
-                 "(loa0 vs purity_mixture FP), band [19.5,20.3)",
-            mock="2LPT-0 (loa-124); values are MOCK recovery ratios, not real-LOA",
-            code_commit=_git_commit(),
+            what=what,
+            mock="2LPT-0 (loa-124); values are MOCK recovery ratios, not real-LOA. "
+                 "No real-LOA (loa main-dark) data was read.",
+            resp_kind=resp_kind,
+            code_commit=_stamped_commit(),
+            deps=deps,
             wallclock_s=round(wall, 1),
-            rederive="python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --force",
+            rederive=rederive,
             inputs=inputs,
-            note="Reduce-only (cached kernel, no inference/SLURM/tilt). R0 = est/truth. "
-                 "The [19.5,19.7) edge is formally non-identifiable on a 19.5-floored "
-                 "catalog (Track A closed); report the [19.7,20.3) f(N) diff + the "
-                 "[19.5,20.3] integrated band with an edge-migration systematic.",
+            note=note,
         ),
         per_bin={m: res[m]["per_bin"] for m in ("purity_mixture", "loa0")},
         integrated={m: {k: res[m][k] for k in res[m] if k not in ("per_bin",)}
@@ -254,8 +424,21 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default=DEFAULT_OUT_JSON,
-                    help="stamped JSON deliverable path (default: committed mock artifact).")
+    ap.add_argument("--resp-kind", dest="resp_kind", default="kappa",
+                    choices=["kappa", "forward"],
+                    help="response-kernel OBJECT. 'kappa' (DEFAULT, byte-identical to the "
+                         "committed subdla_mock_validation.json): the GP-POSTERIOR kernel — a "
+                         "labelled DIAGNOSTIC (superseded as headline; over-recovers high-N, "
+                         "demonstrably wrong at the DLA tier, a consistency call below 20.3). "
+                         "'forward': the Track-C forward-response kernel (the right object / "
+                         "headline) via the frozen-2LPT-0 self-recovery path.")
+    ap.add_argument("--out", default=None,
+                    help="stamped JSON deliverable path. Default depends on --resp-kind: "
+                         "subdla_mock_validation.json (kappa) / "
+                         "subdla_mock_validation_forward.json (forward).")
     ap.add_argument("--force", action="store_true",
                     help="overwrite --out if it already exists (default: refuse).")
-    main(ap.parse_args())
+    _a = ap.parse_args()
+    if _a.out is None:
+        _a.out = DEFAULT_OUT_JSON_FORWARD if _a.resp_kind == "forward" else DEFAULT_OUT_JSON
+    main(_a)
