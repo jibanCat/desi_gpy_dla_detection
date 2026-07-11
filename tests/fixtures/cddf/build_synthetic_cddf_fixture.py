@@ -37,6 +37,10 @@ def build_synthetic_cddf(
     fill_loglike=-60.0,
     convention="mean",
     seed=0,
+    sub_dla=False,
+    p_sub=None,
+    nan_dla_rows=(),
+    n_extra_zero_cols=0,
 ):
     """Build a synthetic single-absorber CDDF fixture; return a dict of file paths + truth.
 
@@ -44,6 +48,22 @@ def build_synthetic_cddf(
     DLA probability ``p_dla``, and the injected ``(peak_z, peak_logN)`` of each active
     spectrum's delta-like sample. Inactive spectra (``p_dla<=0``) get a diffuse low
     likelihood and are filtered out by the estimator's probability threshold.
+
+    Characterization knobs (Queue-1 blockers):
+
+    ``sub_dla``
+        False (default): 2-column layout ``[Null, DLA(1)]`` (single-absorber run).
+        True: 3-column layout ``[Null, SubDLA, DLA(1)]``; ``p_sub`` (length-N, default
+        zeros) fills the sub-DLA column and ``Null = 1 - p_sub - p_dla``.
+    ``nan_dla_rows``
+        Row indices whose DLA model_posteriors columns (``1+sub_dla:``) are set to NaN,
+        mimicking the production FILTER short-circuit rows (null column stays finite;
+        ``log_likelihoods_dla`` also NaN'd for realism). calc_cddf's ``condition``
+        (calc_cddf.py:522-524) drops such rows from counts AND path length.
+    ``n_extra_zero_cols``
+        Appends this many all-zero higher-order absorber columns, so a 2-column
+        single-absorber fixture can mimic the production MAX_DLAS=4 layout
+        ``[Null, 1abs, 2abs, 3abs, 4abs]`` without touching the sample axis.
     """
     out_dir = str(out_dir)
     N, S = int(n_spec), int(n_samples)
@@ -78,10 +98,25 @@ def build_synthetic_cddf(
     else:
         raise ValueError(f"convention must be 'mean' or 'sum', got {convention!r}")
 
-    # model posteriors [Null, DLA(1)] for the single-absorber (sub_dla=False) layout
-    mp = np.zeros((N, 2), dtype=float)
-    mp[:, 1] = np.asarray(p_dla, dtype=float)
-    mp[:, 0] = 1.0 - np.asarray(p_dla, dtype=float)
+    # model posteriors: [Null, DLA(1)] (sub_dla=False) or [Null, SubDLA, DLA(1)]
+    p_dla_arr = np.asarray(p_dla, dtype=float)
+    if sub_dla:
+        p_sub_arr = (np.zeros(N) if p_sub is None else np.asarray(p_sub, dtype=float))
+        assert p_sub_arr.shape == (N,)
+        mp = np.zeros((N, 3), dtype=float)
+        mp[:, 2] = p_dla_arr
+        mp[:, 1] = p_sub_arr
+        mp[:, 0] = 1.0 - p_dla_arr - p_sub_arr
+    else:
+        assert p_sub is None, "p_sub requires sub_dla=True"
+        mp = np.zeros((N, 2), dtype=float)
+        mp[:, 1] = p_dla_arr
+        mp[:, 0] = 1.0 - p_dla_arr
+    if n_extra_zero_cols:
+        mp = np.hstack([mp, np.zeros((N, int(n_extra_zero_cols)))])
+    for i in nan_dla_rows:
+        mp[i, (2 if sub_dla else 1):] = np.nan
+        lld[i, :] = np.nan
 
     target_ids = (1000 + np.arange(N)).astype(np.int64)
 
@@ -125,4 +160,7 @@ def build_synthetic_cddf(
         "z_min": z_min,
         "z_max": z_max,
         "log_nhi_samples": log_nhi_samples,
+        "sub_dla": bool(sub_dla),
+        "nan_dla_rows": tuple(int(i) for i in nan_dla_rows),
+        "model_posteriors": mp,
     }
