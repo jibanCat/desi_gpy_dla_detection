@@ -1,21 +1,25 @@
 # -*- coding: utf-8 -*-
 """calccddf_vs_hbi.py  — LITERAL calc_cddf (Bird-2017 recipe) vs catalog-HBI, MOCK-ONLY.
 
-████ WIP — UNVALIDATED. QUOTE NOTHING FROM THIS SCRIPT. ████
-Two known blockers (Queue-1 gate preconditions, 2026-07-10 plan note):
-  (1) NaN semantics: ``calc_cddf.py:522-524`` DROPS NaN-`model_posteriors`
-      spectra from counts AND dX, while the finder writes NaN for
-      never-evaluated models and ``bayesian_model_selection.py:279`` nansums
-      (NaN-as-zero). ~74-84%% of prod rows differ between the conventions.
-      The NaN origin must be traced in the writer before any number is real.
-  (2) sub_dla column offset: this harness constructs
-      ``NanSafeDLACatalogue(..., sub_dla=True)`` but the 2LPT-0 prod ran
-      SINGLE_ABSORBER_MODEL=1 (layout [null,1abs,2abs,3abs,4abs]); verified
-      numerically that stored p_dlas == cols[1:].sum() (2e-13), so
-      sub_dla=True EXCLUDES the 1-absorber column on these files.
-
-Committed as flagged WIP per the PI-approved Phase -1 (2026-07-10); the
-resolution of (1)+(2) is Queue-1 work.
+STATUS 2026-07-11 (Queue 1): both former blockers RESOLVED with evidence; do
+not quote numbers until the 2LPT-0 closure artifact is stamped.
+  (1) NaN semantics — SETTLED as NaN-as-zero + keep rows in dX (the writer's
+      own convention: ``bayesian_model_selection.py:246-253`` normalizes over
+      non-NaN entries so stored rows nansum to exactly 1; ``:279`` nansums
+      p_dlas). NaN = "model k never evaluated: a lower-order model already won
+      the sequential early-stop" (``dla_gp.py:1020-1071``, 3 stop conditions +
+      a FILTER edge case). calc_cddf's row-drop (``calc_cddf.py:522-524``) is
+      REJECTED for the comparison: at SNR>2 it deletes 50.2%% of p>0.9
+      detections (essentially all 1-absorber systems) — behavior pinned as-is
+      in ``tests/test_cddf_characterization_q1.py``. This class's
+      nan_to_num+renormalize is numerically identical to the writer convention
+      on real rows (guards below enforce that per file, fail-closed).
+  (2) sub_dla offset — SETTLED: these prod files are SINGLE_ABSORBER_MODEL=1
+      (layout [null,1abs,2abs,3abs,4abs]); constructor now sub_dla=False.
+      The old sub_dla=True misassignment is pinned in the same test module.
+Remaining caveat before quoting: FILTER=1 truncates the per-spectrum sample
+softmax to region-A samples (~4-7%% of the grid) — the N-resolved shape needs
+the mock truth-closure run (this script's purpose) to validate.
 
 Runs the *literal* fixed-Lambda
 posterior CDDF (``CDDF_analysis.calc_cddf.DLACatalogue``) on the per-spectrum
@@ -107,7 +111,30 @@ class NanSafeDLACatalogue(DLACatalogue):
     """
 
     def renormalise_occams_razor(self, occams_razor=1):
-        mp = np.nan_to_num(self.filehandle["model_posteriors"][()], nan=0.0)
+        mp_raw = self.filehandle["model_posteriors"][()]
+        # fail-closed writer-convention guards (Queue-1 NaN trace, 2026-07-11):
+        # (G1) non-NaN columns of every row sum to exactly 1 (bayesian_model_
+        #      selection.py:246-253 normalizes over non-NaN entries);
+        # (G2) NaN pattern is monotone in model order (sequential early-stop);
+        # (G3) stored p_dlas == nansum over absorber columns.
+        row_sum = np.nansum(mp_raw, axis=1)
+        if not np.allclose(row_sum, 1.0, rtol=0, atol=1e-6):
+            bad = int(np.sum(np.abs(row_sum - 1.0) > 1e-6))
+            raise ValueError(
+                f"writer convention violated: {bad} rows with nansum(mp)!=1 in "
+                f"{self.filehandle.filename} — NaN-as-zero is not safe here.")
+        nan_pat = np.isnan(mp_raw[:, 1:])
+        if np.any(nan_pat[:, :-1] & ~nan_pat[:, 1:]):
+            raise ValueError(
+                f"non-monotone NaN pattern in {self.filehandle.filename} — "
+                "not the sequential early-stop; investigate before proceeding.")
+        if "p_dlas" in self.filehandle:
+            stored = self.filehandle["p_dlas"][()]
+            if not np.allclose(np.nansum(mp_raw[:, 1:], axis=1), stored, atol=1e-6):
+                raise ValueError(
+                    f"stored p_dlas disagrees with nansum(mp[:,1:]) in "
+                    f"{self.filehandle.filename} — column layout mismatch?")
+        mp = np.nan_to_num(mp_raw, nan=0.0)
         mp[:, 1:] = mp[:, 1:] / occams_razor
         norm = mp.sum(axis=1, keepdims=True)
         self.model_posteriors = mp / norm
@@ -141,7 +168,10 @@ def estimate_one_file(proc_file, grid, catalog_file, second):
         processed_file=proc_file,
         sample_file=grid,
         catalog_file=catalog_file,
-        sub_dla=True,
+        # single-absorber prod layout [null,1abs,2abs,3abs,4abs] — there is NO
+        # sub-DLA column; sub_dla=True would misassign 1abs into p_no_dla
+        # (pinned in tests/test_cddf_characterization_q1.py).
+        sub_dla=False,
         second=second,
         snr=SNR_MIN,
         high_nhi_cut=True,
