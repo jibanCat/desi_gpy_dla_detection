@@ -275,6 +275,7 @@ def main():
     tru_N = np.zeros(len(N_CENT))
     dX_tot = 0.0
     n_sl = 0
+    n_skip = 0
     t0 = time.time()
     for i, pf in enumerate(files):
         with h5py.File(pf, "r") as f:
@@ -283,7 +284,15 @@ def main():
         try:
             mc, dX = estimate_one_file(pf, cfg["grid"], cat_path, second)
         except Exception as e:
+            n_skip += 1
             print(f"  [skip {os.path.basename(pf)}] {type(e).__name__}: {e}", flush=True)
+            # fail-closed: a systematic per-file failure must kill the run, not
+            # silently degrade it to a tiny subsample (2026-07-11 lesson: the
+            # broken calc_cddf multi-slot path skipped 1148/1150 files).
+            if n_skip > max(5, 0.01 * len(files)):
+                raise RuntimeError(
+                    f"{n_skip} files skipped by {i+1} — systematic failure, aborting "
+                    f"(last: {type(e).__name__}: {e})")
             continue
         tc = truth_one_file(pf, truth_by_tid)
         est_N += mc
@@ -293,14 +302,14 @@ def main():
         if (i + 1) % 25 == 0 or i == len(files) - 1:
             print(f"  {i+1}/{len(files)} dX={dX_tot:.2f} est(>=20.3)={est_N[N_CENT>=20.3-1e-9].sum():.1f} "
                   f"tru(>=20.3)={tru_N[N_CENT>=20.3-1e-9].sum():.1f} ({time.time()-t0:.0f}s)", flush=True)
-            _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, i + 1, time.time() - t0)
+            _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, i + 1, time.time() - t0, n_skip)
 
-    out = _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, len(files), time.time() - t0)
+    out = _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, len(files), time.time() - t0, n_skip)
     print(json.dumps(out["cumulative"], indent=1), flush=True)
     print(f"[{args.mock}] wrote {args.out}  ({time.time()-t0:.0f}s)", flush=True)
 
 
-def _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, n_done, wall):
+def _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, n_done, wall, n_skip=0):
     est_dndx, est_om = cumulative_dndx_omega(est_N, dX_tot)
     tru_dndx, tru_om = cumulative_dndx_omega(tru_N, dX_tot)
     r0_dndx = {k: (est_dndx[k] / tru_dndx[k] if tru_dndx[k] else float("nan")) for k in est_dndx}
@@ -309,7 +318,7 @@ def _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, n_done, wall):
     fN_est = (est_N / dX_tot / dN_lin).tolist() if dX_tot > 0 else []
     fN_tru = (tru_N / dX_tot / dN_lin).tolist() if dX_tot > 0 else []
     out = dict(
-        mock=args.mock, n_files=n_done, n_files_total=len(files), n_sightlines=n_sl,
+        mock=args.mock, n_files=n_done, n_files_total=len(files), n_sightlines=n_sl, n_files_skipped=n_skip,
         second=args.second, z_range=[ZMIN, ZMAX], snr_min=SNR_MIN, dX_total=dX_tot,
         grid=os.path.basename(cfg["grid"]), truth=cfg["truth"], checkpoint=(n_done < len(files)),
         N_centers=N_CENT.tolist(), fN_calccddf=fN_est, fN_truth=fN_tru,
