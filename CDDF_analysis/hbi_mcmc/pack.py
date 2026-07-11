@@ -23,7 +23,12 @@ Interpretation notes pinned here (both sides of the contract):
     model must supply a documented default).
   * Polynomial coefficient convention: LOWEST order first
     (``coef[..., 0]`` = constant term = the "leading term" that psi_k_delta
-    perturbs), covariate u = N_true - mean(ntrue_edges[[0, -1]]).
+    perturbs), covariate u = N_true - resp_N_ref, where ``resp_N_ref`` is the
+    reference the coefficients were FIT at (carried in the pack; REQUIRED by
+    the fold — no midpoint fallback; 2026-07-11 finding F1/F1b). The surfaces
+    are MOMENTS with the committed ForwardResponseModel semantics: mean bias,
+    sd = clip(poly, resp_sig_floor), moment skewness ramped to ZERO above
+    resp_skew_ramp[0] over resp_skew_ramp[1] dex (znz_kernel.py:1362).
 
 Validation is fail-closed: every schema rule (shapes, edges, axis order via
 shape cross-checks, dtypes, finiteness, normalization) raises
@@ -362,6 +367,10 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
         _check_finite("resp_fitcov_diag", pack.resp_fitcov_diag)
         if np.any(np.asarray(pack.resp_fitcov_diag) < 0):
             _fail("resp_fitcov_diag: variances must be non-negative")
+    if pack.resp_N_ref is not None:
+        nr = float(np.asarray(pack.resp_N_ref))
+        if not np.isfinite(nr):
+            _fail(f"resp_N_ref: must be a finite scalar, got {nr}")
     # every POPULATED stratum / coarse-z bin must map into a response cell
     # (structurally empty sub-op-mask strata are excluded from the likelihood).
     s_lo = se[:-1][populated] if len(populated) else se[:-1]
@@ -454,6 +463,15 @@ def load_pack(npz_path, *, allow_nonstandard_grid: bool = False) -> ModelAPack:
         fp_E_alloc=data["fp_E_alloc"], t_sigma=data["t_sigma"],
         truth_counts=data["truth_counts"],
         resp_fitcov_diag=data.get("resp_fitcov_diag"),
+        # F1b fix (2026-07-11): the optional keys were silently DROPPED here
+        # (resp_N_ref in particular — the response covariate reference the
+        # fold REQUIRES). Carry every present optional key into the dataclass
+        # so load/save round-trips are faithful.
+        resp_N_ref=(float(data["resp_N_ref"]) if "resp_N_ref" in data else None),
+        truth_counts_bks=data.get("truth_counts_bks"),
+        dX_coarse_committed=data.get("dX_coarse_committed"),
+        molly_snr_edges=data.get("molly_snr_edges"),
+        nhat_masked_bins=data.get("nhat_masked_bins"),
         provenance=provenance,
     )
     validate_pack(pack, allow_nonstandard_grid=allow_nonstandard_grid)
@@ -527,9 +545,17 @@ def synthetic_pack(
         counts drawn Binomial(n_tot, C_true). The generator sets
         psi_c_true = eta_true - eta_hat(molly draws) so the exact forward
         expression evaluated at the truth parameters reproduces C_true.
-      * Response: skew-normal coefficient surfaces (lowest-order-first) —
-        "skewed" = +0.03..dex location bias, sigma ~ 0.15, alpha ~ 1.2 x
-        ``skew_strength``; "diagonal" = zero bias, sigma ~ 0.02, zero skew.
+      * Response: MOMENT coefficient surfaces (lowest-order-first) under the
+        FIXED committed conventions (2026-07-11 F1-F4: covariate u relative to
+        the emitted ``resp_N_ref``; sd = clip(poly, floor); moment skewness
+        clamped to the attainable ceiling and ramped to ZERO above
+        resp_skew_ramp[0]) — "skewed" = mean bias ~ +0.12 dex, sd ~ 0.12 dex,
+        moment skewness ~ 0.2 x ``skew_strength`` (replicating the pre-fix
+        generator's EFFECTIVE kernel moments so the rung statistics keep
+        their calibrated regimes; well inside the ~0.995 ceiling), ramp
+        center parked above the grid top so the skew stays fully active;
+        "diagonal" = zero bias, sd ~ 0.021 (just above the 0.02 floor -> no
+        clip kink), zero skew.
       * FP: lam_fp_true(c, s) falling in N-hat, scaled so the expected FP data
         counts are ``fp_frac`` of the expected signal counts; loa-0 counts
         ~ Poisson(ell_eff * lam); per-coarse-z transfer t_true applied in the
@@ -601,7 +627,13 @@ def synthetic_pack(
     g_grid = np.ones((M, Kf))
     g_occupancy = np.broadcast_to(n_tot[:1, :].T, (M, Kf)).copy()
 
-    # --- response surfaces (lowest-order-first coefficients)
+    # --- response MOMENT surfaces (lowest-order-first coefficients), FIXED
+    # committed conventions (F1-F4): covariate u = N - resp_N_ref; the sd
+    # polynomial IS the width in dex (clip(poly, floor), NOT floor+softplus);
+    # the skew polynomial is the MOMENT skewness (attainable ceiling ~0.995),
+    # multiplied by (1 - clip((N - ramp_c)/ramp_w, 0, 1)) — i.e. ramped to
+    # ZERO going UP. The generator parks the ramp center ABOVE the grid top
+    # so the synthetic skew stays fully active over the whole grid.
     SR = min(2, S)
     resp_snr_edges = np.array(
         [snr_edges[0], snr_edges[len(snr_edges) // 2], np.inf]) if SR == 2 else \
@@ -609,31 +641,45 @@ def synthetic_pack(
     resp_z_edges = zc_edges.copy()
     ZR = KK
     D = 2
+    resp_N_ref = 0.5 * (ntrue_edges[0] + ntrue_edges[-1])   # emitted explicitly
     si = np.arange(SR)[:, None, None]
     zi = np.arange(ZR)[None, :, None]
     if response_mode == "skewed":
+        # MOMENT surfaces chosen to REPLICATE the pre-fix generator's
+        # EFFECTIVE kernel (xi = N+0.03, omega ~ 0.147, alpha = 1.2 direct),
+        # whose moments are mean-bias ~ 0.120, sd ~ 0.116, moment-skewness
+        # ~ 0.200 — so the calibrated R4-R8 rung regimes (identifiability on
+        # the small grid, the R6 bias contrast, the R5 width ordering) are
+        # preserved. Verified 2026-07-11: emitting (0.03, 0.15, 0.8) instead
+        # gave omega 0.238 / alpha 4.2, smeared the small-grid window and
+        # broke R5/R6 while the fold<->generator agreement stayed 7e-15.
         resp_mu_coef = np.concatenate([
-            0.03 + 0.01 * zi - 0.005 * si + 0 * zi,
+            0.12 + 0.01 * zi - 0.005 * si + 0 * zi,  # mean bias E[x-hat - N]
             0.02 + 0 * zi + 0 * si], axis=2).astype(float)
         resp_sig_coef = np.concatenate([
-            -2.0 + 0.1 * si + 0 * zi,
-            0.05 + 0 * zi + 0 * si], axis=2).astype(float)
+            0.12 + 0.01 * si + 0 * zi,      # sd in dex (clip semantics)
+            0.005 + 0 * zi + 0 * si], axis=2).astype(float)
         resp_skew_coef = np.concatenate([
-            1.2 * skew_strength + 0 * zi + 0 * si,
+            0.2 * skew_strength + 0 * zi + 0 * si,   # moment skewness
             0 * zi + 0 * si], axis=2).astype(float)
         resp_sig_floor = 0.02
     elif response_mode == "diagonal":
         zeros = 0.0 * (si + zi)
         resp_mu_coef = np.concatenate([zeros, zeros], axis=2).astype(float)
-        resp_sig_coef = np.concatenate([-6.0 + zeros, zeros], axis=2).astype(float)
+        # sd just ABOVE the floor: near-diagonal, and no cell sits exactly on
+        # the clip boundary (zero-gradient kink) at the truth point.
+        resp_sig_coef = np.concatenate([0.021 + zeros, zeros], axis=2).astype(float)
         resp_skew_coef = np.concatenate([zeros, zeros], axis=2).astype(float)
         resp_sig_floor = 0.02
     else:
         raise ValueError(f"unknown response_mode {response_mode!r}")
-    resp_skew_ramp = np.array([ntrue_edges[0] - 0.5, 0.2])
+    resp_skew_ramp = np.array([ntrue_edges[-1] + 0.5, 0.5])
     resp_fitcov_diag = np.stack([
         np.full((SR, ZR), 0.02 ** 2),   # var of the order-0 mu-coef perturbation
-        np.full((SR, ZR), 0.10 ** 2),   # var of the order-0 sig-coef perturbation
+        # var of the order-0 sd-coef perturbation — now in DEX of width
+        # directly (clip semantics); 0.02 dex sd keeps the perturbed width
+        # well clear of the floor (0.15 - few sd >> 0.02: no clipped cells).
+        np.full((SR, ZR), 0.02 ** 2),
     ], axis=0)
 
     # --- transfer factors + prior widths
@@ -660,6 +706,7 @@ def synthetic_pack(
         fp_w_sightline_ratio=fp_w, fp_E_alloc=E_alloc, t_sigma=t_sigma,
         truth_counts=np.zeros((B, Kf), dtype=np.int64),
         resp_fitcov_diag=resp_fitcov_diag,
+        resp_N_ref=float(resp_N_ref),
     )
 
     psi_k_zero = np.zeros((2, SR, ZR))

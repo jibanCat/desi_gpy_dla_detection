@@ -21,15 +21,31 @@ Two implementations of the SAME expression:
 
 Response kernel K (fail-closed forward object; NO kappa anywhere):
 per response cell (s_resp, z_resp) the pack carries polynomial coefficient
-surfaces (LOWEST order first, covariate u = N_true - mean(ntrue range ends)):
+surfaces (LOWEST order first, covariate u = N_true - resp_N_ref, the SAME
+reference the coefficients were FIT at — carried in the pack; REQUIRED, no
+midpoint fallback). The surfaces are MOMENTS, exactly the committed
+``ForwardResponseModel`` semantics (znz_kernel.py; conventions pinned by the
+2026-07-11 legacy characterization, findings F1-F4 in
+tests/test_modelA_vs_legacy.py):
 
-    xi(b)    = N_b + poly(resp_mu_coef, u_b)                     (location, dex)
-    sigma(b) = resp_sig_floor + softplus(poly(resp_sig_coef, u_b))   (> 0)
-    alpha(b) = poly(resp_skew_coef, u_b)
-               * logistic((N_b - ramp_center) / ramp_width)      (skew)
+    mean(b)  = N_b + poly(resp_mu_coef, u_b)          (up-bias E[x-hat - N])
+    sd(b)    = clip(poly(resp_sig_coef, u_b), resp_sig_floor)     (width, dex)
+    skew(b)  = clip(poly(resp_skew_coef, u_b), +-0.995*SKEW_MAX)
+               * (1 - clip((N_b - ramp_center)/ramp_width, 0, 1))
+               (moment skewness; ramped to ZERO above the prior-ceiling
+                collapse, full skew below it — znz_kernel.py:1362 semantics)
+
+and the skew-normal (xi, omega, alpha) are the MOMENT-MATCHED parameters
+(the closed-form inverse of the skew-normal moment relations, replicating
+``_moment_to_skewnormal_vec``), NOT the moments themselves.
 
 ``psi_k_delta`` (2, SR, ZR) adds to the LEADING (order-0) terms of the mu and
 sig coefficient surfaces per response cell (the fit-cov-diag perturbations).
+NOTE (clip boundary): d mu / d psi_sig is ZERO wherever the sd polynomial
+sits at/below resp_sig_floor across a cell (the prior then owns that
+direction). On the real 2LPT-0 pack the point surface has min sd ~ 0.11 dex
+>> floor 1e-3, so the clip is inactive at the point; it can engage ~1
+prior-sd below the point in the narrowest cells (documented, benign for NUTS).
 
 K[c<-b] is the ANALYTIC mass of the skew-normal density of N-hat in observed
 bin c:  K = F(hi_c) - F(lo_c) with the exact skew-normal CDF
@@ -65,13 +81,18 @@ import jax.numpy as jnp
 from CDDF_analysis.hbi_mcmc.pack import ModelAPack
 
 __all__ = ["ModelAConsts", "build_consts", "fold_mu", "fold_mu_reference",
-           "owens_t_jnp", "skewnorm_cdf_jnp", "eta_hat_sigma_hat"]
+           "owens_t_jnp", "skewnorm_cdf_jnp", "moment_to_skewnormal_jnp",
+           "eta_hat_sigma_hat"]
 
 _SQRT2 = float(np.sqrt(2.0))
 # fixed Gauss-Legendre rule for Owen's T (module-level constants; static in jit)
 _GL_X, _GL_W = np.polynomial.legendre.leggauss(64)
 _GL_X = jnp.asarray(_GL_X)
 _GL_W = jnp.asarray(_GL_W)
+
+# attainable skew-normal moment-skewness ceiling (== znz_kernel._SN_SKEW_MAX)
+_SN_SKEW_MAX = 0.5 * (4.0 - np.pi) * (np.sqrt(2.0 / np.pi) ** 3) / \
+    (1.0 - 2.0 / np.pi) ** 1.5
 
 
 # --- shared small pieces (jnp path only) ---------------------------------------
@@ -96,6 +117,40 @@ def skewnorm_cdf_jnp(x, xi, omega, alpha):
     """Exact skew-normal CDF Phi(z) - 2 T(z, alpha), z = (x - xi)/omega (jnp)."""
     z = (x - xi) / omega
     return 0.5 * (1.0 + jax.scipy.special.erf(z / _SQRT2)) - 2.0 * owens_t_jnp(z, alpha)
+
+
+def moment_to_skewnormal_jnp(mean, sd, skew):
+    """(mean, sd, moment-skewness) -> skew-normal (xi, omega, alpha), jnp.
+
+    Replicates znz_kernel._moment_to_skewnormal_vec (the committed legacy map;
+    fix F4 of the 2026-07-11 characterization): closed-form inverse of the
+    skew-normal moment relations, |skew| clamped to the attainable ceiling,
+    exact Gaussian branch at |skew| < 1e-9.
+
+    Gradient-safe: the fractional power is evaluated on a symm-masked operand
+    so the |skew|^(2/3) cusp at 0 never produces NaN cotangents through the
+    ``where`` (no sampled parameter currently flows through skew — psi_k_delta
+    perturbs only the mu/sig order-0 coefficients — but keep it safe anyway).
+    """
+    mean = jnp.asarray(mean)
+    sd = jnp.clip(jnp.asarray(sd), 1e-9, None)
+    s = jnp.clip(jnp.asarray(skew), -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX)
+    b = np.sqrt(2.0 / np.pi)
+    c = 0.5 * (4.0 - np.pi)
+    sym = jnp.abs(s) < 1e-9
+    s_safe = jnp.where(sym, 1.0, jnp.abs(s))          # cusp-safe operand
+    r = (s_safe / c) ** (2.0 / 3.0)
+    g = r / (1.0 + r)                                 # g = (b*delta)^2 in (0,1)
+    bdelta = jnp.sqrt(g)
+    delta = jnp.clip(jnp.sign(s) * bdelta / b, -0.999, 0.999)
+    delta = jnp.where(sym, 0.0, delta)
+    alpha = delta / jnp.sqrt(jnp.clip(1.0 - delta * delta, 1e-12, None))
+    omega = sd / jnp.sqrt(jnp.clip(1.0 - (b * delta) ** 2, 1e-12, None))
+    xi = mean - omega * b * delta
+    alpha = jnp.where(sym, 0.0, alpha)
+    omega = jnp.where(sym, sd, omega)
+    xi = jnp.where(sym, mean, xi)
+    return xi, omega, alpha
 
 
 def eta_hat_sigma_hat(molly_n_det, molly_n_tot):
@@ -160,11 +215,23 @@ _DEFAULT_FITCOV_DIAG = (0.02 ** 2, 0.10 ** 2)  # documented fallback (mu0, sig0 
 
 
 def build_consts(pack: ModelAPack) -> ModelAConsts:
-    """Precompute the static fold inputs (index maps, powers, Jeffreys eta-hat)."""
+    """Precompute the static fold inputs (index maps, powers, Jeffreys eta-hat).
+
+    FAIL-CLOSED on the response covariate reference (fix F1/F1b): the pack
+    MUST carry ``resp_N_ref`` — the reference N the coefficient polynomials
+    were fit at. There is no silent midpoint fallback (evaluating the polys at
+    a shifted covariate was the 2026-07-11 F1 kernel defect).
+    """
     ntrue = np.asarray(pack.ntrue_edges, float)
     Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
     dN = np.diff(ntrue)
-    n_ref = 0.5 * (ntrue[0] + ntrue[-1])
+    if pack.resp_N_ref is None:
+        raise ValueError(
+            "build_consts: pack.resp_N_ref is None — the response covariate "
+            "reference (the N_ref the resp_*_coef polynomials were FIT at) is "
+            "REQUIRED. Re-extract the pack (extract_pack emits it) or emit it "
+            "from the generator; there is NO midpoint fallback (finding F1).")
+    n_ref = float(pack.resp_N_ref)
     D = pack.resp_mu_coef.shape[-1]
     u = Nc - n_ref
     u_pow = u[:, None] ** np.arange(D)[None, :]
@@ -177,8 +244,27 @@ def build_consts(pack: ModelAPack) -> ModelAConsts:
 
     kz_to_K = np.asarray(pack.kz_to_K, dtype=np.int64)
     s_to_sresp = (np.digitize(snr[:-1] + 1e-9, rse) - 1).astype(np.int64)
+    # F5 guard: strata BELOW the response SNR range digitize to -1, and a
+    # negative index in a gather silently WRAPS to the highest response cell.
+    # Such strata are legal only when structurally empty (dX == 0; the op-mask
+    # SNR<=2 strata) — assert that, then clamp them to cell 0 (the legacy
+    # ForwardResponseModel._i_snr clip convention). Their K columns are dead
+    # weight multiplied by dX == 0 in the fold.
+    oob = (s_to_sresp < 0) | (s_to_sresp >= pack.resp_mu_coef.shape[0])
+    if np.any(oob):
+        dx_oob = np.asarray(pack.dX, float)[:, oob]
+        if np.any(dx_oob > 0):
+            raise ValueError(
+                "build_consts: SNR strata outside the response-cell range "
+                f"carry exposure (strata {np.where(oob)[0].tolist()} with "
+                "dX > 0) — the response model does not cover them (F5).")
+        s_to_sresp = np.clip(s_to_sresp, 0, pack.resp_mu_coef.shape[0] - 1)
     zc_centers = 0.5 * (zc[:-1] + zc[1:])
     K_to_zresp = (np.digitize(zc_centers, rze) - 1).astype(np.int64)
+    if np.any(K_to_zresp < 0) or np.any(K_to_zresp >= pack.resp_mu_coef.shape[1]):
+        raise ValueError(
+            "build_consts: some coarse-z bin does not map into a response "
+            "cell — negative-index gathers are refused (F5 guard).")
     me = np.asarray(pack.molly_nhi_edges, float)
     b_to_cell = np.clip(np.digitize(Nc, me) - 1, 0, len(me) - 2).astype(np.int64)
 
@@ -228,6 +314,12 @@ def build_K(psi_k_delta, consts: ModelAConsts):
     """Response kernel K[s, K, c, b]: skew-normal bin masses, fully vectorized.
 
     psi_k_delta (2, SR, ZR) perturbs the order-0 (leading) mu/sig coef terms.
+
+    Committed ``ForwardResponseModel`` semantics (fixes F2-F4, 2026-07-11):
+    the coefficient surfaces are MOMENTS — mean = N + mu-poly,
+    sd = clip(sig-poly, floor), moment-skewness = clamp(skew-poly) ramped to
+    ZERO over [ramp_center, ramp_center + ramp_width] going UP — and (xi,
+    omega, alpha) come from the moment-match, not direct substitution.
     """
     mu_coef = consts.resp_mu_coef.at[..., 0].add(psi_k_delta[0])
     sig_coef = consts.resp_sig_coef.at[..., 0].add(psi_k_delta[1])
@@ -235,16 +327,20 @@ def build_K(psi_k_delta, consts: ModelAConsts):
     mu_sk = mu_coef[consts.s_to_sresp][:, consts.K_to_zresp]
     sig_sk = sig_coef[consts.s_to_sresp][:, consts.K_to_zresp]
     skw_sk = consts.resp_skew_coef[consts.s_to_sresp][:, consts.K_to_zresp]
-    # polynomial surfaces over b: (S, KK, B)
-    xi = consts.Nc_b[None, None, :] + jnp.einsum("skd,bd->skb", mu_sk, consts.u_pow)
-    sig = consts.resp_sig_floor + jax.nn.softplus(
-        jnp.einsum("skd,bd->skb", sig_sk, consts.u_pow))
-    ramp = jax.nn.sigmoid(
-        (consts.Nc_b - consts.resp_skew_ramp[0]) / consts.resp_skew_ramp[1])
-    alpha = jnp.einsum("skd,bd->skb", skw_sk, consts.u_pow) * ramp[None, None, :]
+    # polynomial MOMENT surfaces over b: (S, KK, B)
+    mean = consts.Nc_b[None, None, :] + jnp.einsum("skd,bd->skb", mu_sk,
+                                                   consts.u_pow)
+    sd = jnp.clip(jnp.einsum("skd,bd->skb", sig_sk, consts.u_pow),
+                  consts.resp_sig_floor, None)                       # F2
+    ramp = jnp.clip((consts.Nc_b - consts.resp_skew_ramp[0])
+                    / consts.resp_skew_ramp[1], 0.0, 1.0)            # F3
+    skew = jnp.clip(jnp.einsum("skd,bd->skb", skw_sk, consts.u_pow),
+                    -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX) \
+        * (1.0 - ramp)[None, None, :]
+    xi, omega, alpha = moment_to_skewnormal_jnp(mean, sd, skew)      # F4
     # CDF at every observed-bin edge: (S, KK, C+1, B)
     F = skewnorm_cdf_jnp(consts.nhat_edges[None, None, :, None],
-                         xi[:, :, None, :], sig[:, :, None, :],
+                         xi[:, :, None, :], omega[:, :, None, :],
                          alpha[:, :, None, :])
     K = jnp.clip(F[:, :, 1:, :] - F[:, :, :-1, :], 0.0, 1.0)
     return K  # (S, KK, C, B)
@@ -313,7 +409,11 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
 
     centers_b = np.array([0.5 * (ntrue[i] + ntrue[i + 1]) for i in range(B_n)])
     dN = np.array([ntrue[i + 1] - ntrue[i] for i in range(B_n)])
-    n_ref = 0.5 * (ntrue[0] + ntrue[-1])
+    if pack.resp_N_ref is None:
+        raise ValueError(
+            "fold_mu_reference: pack.resp_N_ref is None — the response "
+            "covariate reference is REQUIRED (no midpoint fallback; F1).")
+    n_ref = float(pack.resp_N_ref)
 
     # index maps (independent digitize logic)
     zf_centers = np.array([0.5 * (zf[i] + zf[i + 1]) for i in range(K_n)])
@@ -321,6 +421,15 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
     kz2K = np.minimum(kz2K, len(zc) - 2)
     rse = np.asarray(pack.resp_snr_edges, float)
     s2sr = np.searchsorted(rse, snr[:-1] + 1e-9, side="right") - 1
+    # F5 guard (own logic): sub-range strata are legal only with dX == 0;
+    # clamp them to cell 0 instead of letting a -1 index wrap.
+    oob = (s2sr < 0) | (s2sr >= np.asarray(pack.resp_mu_coef).shape[0])
+    if np.any(oob):
+        if np.any(np.asarray(pack.dX, float)[:, oob] > 0):
+            raise ValueError(
+                "fold_mu_reference: SNR strata outside the response range "
+                "carry exposure (F5).")
+        s2sr = np.clip(s2sr, 0, np.asarray(pack.resp_mu_coef).shape[0] - 1)
     rze = np.asarray(pack.resp_z_edges, float)
     zc_centers = np.array([0.5 * (zc[i] + zc[i + 1]) for i in range(len(zc) - 1)])
     K2zr = np.searchsorted(rze, zc_centers, side="right") - 1
@@ -344,12 +453,29 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
     def _poly(coefs, u):
         return sum(coefs[d] * u ** d for d in range(len(coefs)))
 
-    def _softplus(x):
-        return np.logaddexp(0.0, x)
-
     def _sn_cdf(x, xi, om, al):
         z = (x - xi) / om
         return ndtr(z) - 2.0 * owens_t(z, al)
+
+    # scalar moment -> skew-normal (xi, omega, alpha) map: own implementation
+    # of the committed closed-form inverse (mirrors the SCALAR
+    # znz_kernel._moment_to_skewnormal; independent of the jnp vec path).
+    skew_max = 0.5 * (4.0 - np.pi) * (np.sqrt(2.0 / np.pi) ** 3) / \
+        (1.0 - 2.0 / np.pi) ** 1.5
+
+    def _m2sn(mean, sd, skew):
+        bb = np.sqrt(2.0 / np.pi)
+        s_ = float(np.clip(skew, -0.995 * skew_max, 0.995 * skew_max))
+        sd = float(max(sd, 1e-9))
+        if abs(s_) < 1e-9:
+            return float(mean), sd, 0.0
+        cc = 0.5 * (4.0 - np.pi)
+        r = (abs(s_) / cc) ** (2.0 / 3.0)
+        gg = r / (1.0 + r)
+        delta = float(np.clip(np.sign(s_) * np.sqrt(gg) / bb, -0.999, 0.999))
+        al = delta / np.sqrt(max(1.0 - delta * delta, 1e-12))
+        om = sd / np.sqrt(max(1.0 - (bb * delta) ** 2, 1e-12))
+        return float(mean) - om * bb * delta, float(om), float(al)
 
     f = np.exp(theta_pop)                                   # (B, Kf)
     mu = np.zeros((C_n, K_n, S_n))
@@ -367,9 +493,14 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
                 acc = 0.0
                 for b in range(B_n):
                     u = centers_b[b] - n_ref
-                    xi = centers_b[b] + _poly(mu_coefs, u)
-                    om = sig_floor + _softplus(_poly(sig_coefs, u))
-                    al = _poly(skw_coefs, u) * expit((centers_b[b] - ramp_c) / ramp_w)
+                    # committed ForwardResponseModel MOMENT semantics (F2-F4):
+                    mean = centers_b[b] + _poly(mu_coefs, u)
+                    sd = max(_poly(sig_coefs, u), sig_floor)
+                    ramp = min(max((centers_b[b] - ramp_c) / ramp_w, 0.0), 1.0)
+                    skw = float(np.clip(_poly(skw_coefs, u),
+                                        -0.995 * skew_max, 0.995 * skew_max))
+                    skw = skw * (1.0 - ramp)
+                    xi, om, al = _m2sn(mean, sd, skw)
                     mass = _sn_cdf(nhat[c + 1], xi, om, al) - _sn_cdf(nhat[c], xi, om, al)
                     mass = min(max(mass, 0.0), 1.0)
                     acc += (mass * C_cells[s, b2cell[b]] * g[b2cell[b], k]
