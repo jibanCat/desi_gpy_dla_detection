@@ -19,5 +19,5 @@ cd /home/mfho/hbi_mcmc_wt
 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.run_rung9 \
   --pack /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_2lpt0.npz \
   --out  /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/rung9_2lpt0.json \
-  --warmup 1000 --samples 1000 --chains 4 --seed 0 \
+  --warmup 1500 --samples 1000 --chains 4 --seed 0 --target-accept 0.95 \
   --allow-low-farr "on-mock self-calibration: ratio 1.67 structural (calibration set == the mock under fit); finite-calibration variance sampled via psi_C"

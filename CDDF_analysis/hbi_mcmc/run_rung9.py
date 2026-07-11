@@ -45,6 +45,7 @@ def main():
     ap.add_argument("--samples", type=int, default=1000)
     ap.add_argument("--chains", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--target-accept", type=float, default=0.9)
     ap.add_argument("--smoke", action="store_true",
                     help="tiny sampler settings (100/100/2) for a wiring check")
     ap.add_argument("--allow-low-farr", metavar="REASON", default=None,
@@ -65,6 +66,7 @@ def main():
 
     cfg = ModelAConfig(num_warmup=a.warmup, num_samples=a.samples,
                        num_chains=a.chains, seed=a.seed,
+                       target_accept=a.target_accept,
                        enforce_farr_gate=(a.allow_low_farr is None))
     t0 = time.time()
     mcmc, red = run_model_a(pack, cfg)
