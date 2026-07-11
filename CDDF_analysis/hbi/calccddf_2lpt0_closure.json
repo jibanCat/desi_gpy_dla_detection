@@ -5,7 +5,8 @@
   "rederive": "conda run -n gpdla python CDDF_analysis/hbi/calccddf_vs_hbi.py --mock 2lpt0 --second 0 --out <out>",
   "env": "gpdla (python 3.11.15, numpy 2.4.4, scipy 1.14.1, h5py 3.16.0)",
   "date": "2026-07-11",
-  "note": "Queue-1 mock closure artifact. DETECTED-SPACE estimand (estimand ledger R1): R0 != 1 expected; the N-dependence is the (C,K,FP) fingerprint. slot-0 only \u2014 the multi-DLA increment path of calc_cddf has been broken since 2020-03-31 (b00e6e4): _get_prob_dla_this_bin indexes the spectra axis with sample indices; fix-or-retire is a Queue-1 gate condition. NaN-as-zero + sub_dla=False per the 2026-07-11 NaN-origin trace."
+  "note": "Queue-1 mock closure artifact. DETECTED-SPACE estimand (estimand ledger R1): R0 != 1 expected; the N-dependence is the (C,K,FP) fingerprint. slot-0 only \u2014 the multi-DLA increment path of calc_cddf has been broken since 2020-03-31 (b00e6e4): _get_prob_dla_this_bin indexes the spectra axis with sample indices; fix-or-retire is a Queue-1 gate condition. NaN-as-zero + sub_dla=False per the 2026-07-11 NaN-origin trace.",
+  "review": "Independent gate review 2026-07-11: PASS. (1) stride-40 rerun reproduces structurally, 0 skips; (2) reductions recomputed bit-exact from counts+dX by fresh code (24/24 values, rel err 0.0); (3) windows symmetric EXCEPT z_dla_minimum=0.1: the estimator (counts+dX) drops narrow windows the truth loop keeps \u2014 5.5% of sightlines but 0.30% of truth counts => R0 understated by ~0.2-0.3% (non-blocking, documented here); (4) high-N rise consistent with sigma~0.25-0.3 dex Eddington smearing tracking the local slope (not a weight bug); (5) guards/overrides verified on data."
  },
  "mock": "2lpt0",
  "n_files": 1150,
