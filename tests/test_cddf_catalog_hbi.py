@@ -2348,10 +2348,11 @@ def test_loa0_lam_fp_fallback_warns_without_n_cat():
     assert np.all(np.isfinite(lam_d)) and np.all(lam_d >= 0)
 
 
-def test_loa0_resample_additive_gehrels_empty_cell_positive_fix3():
-    """FIX 3: resample is ADDITIVE — per cell draw λ_FP~Gamma(n+½, 1/ℓ_eff) and store
-    an effective count n_eff=λ·ℓ_eff (=> E[n_eff]=n+½). The POINT (no draw) is exact,
-    and an empty (n=0) cell now draws a POSITIVE λ_FP (Gehrels band), NOT a hard 0."""
+def test_loa0_resample_additive_one_half_count_whole_grid_fix3c():
+    """FIX 3c: resample is ADDITIVE — per cell draw λ_FP~Gamma(shape, 1/ℓ_eff), but the
+    single Jeffreys +½ is attached ONLY to the lowest-N row (split over z), NOT per cell.
+    So the WHOLE-GRID mu_fp_scalar mean tracks the point + ONE ½·vol offset — NOT the
+    Σ(n+½)=+N_cells/2 per-cell inflation that was the grid-dependent FIX-3 defect."""
     fp = _toy_loa0fp()
     # point grid is deterministic and uses the RAW counts (byte-stable)
     g0 = fp.mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
@@ -2360,29 +2361,35 @@ def test_loa0_resample_additive_gehrels_empty_cell_positive_fix3():
     eta_b = (1.0 - fp.band_eta_per_nbin)[:, None]
     np.testing.assert_allclose(g0, fp.n_fp_fine * fp.vol_scale * eta_b, rtol=1e-12)
     rng = np.random.default_rng(1)
-    draws = np.array([fp.resample(rng).mu_fp_scalar() for _ in range(400)])
+    draws = np.array([fp.resample(rng).mu_fp_scalar() for _ in range(3000)])
     assert np.all(draws >= 0)
-    # the resample mean tracks the point + the +½ Gehrels offset per cell (additive)
-    n_cells = fp.n_fp_fine.size
-    gehrels_mean = float(np.sum((fp.n_fp_fine + 0.5) * fp.vol_scale * eta_b))
-    assert draws.mean() == pytest.approx(gehrels_mean, rel=0.25)
-    # the CRITICAL fix: an empty (n=0) fine cell draws a POSITIVE effective count in
-    # essentially every draw (Gamma(½,·) is strictly positive), NOT a hard 0.
-    empty = fp.n_fp_fine == 0
-    if empty.any():
-        n_pos = 0
-        for _ in range(50):
-            fc = fp.resample(rng)._gamma_draw["fine_count"]
-            if np.all(fc[empty] > 0):
-                n_pos += 1
-        # Gamma(0.5, ·) is positive with probability 1 → all 50 draws positive
-        assert n_pos == 50, "empty FP cell drew a non-positive Gehrels count"
+    # whole-grid mean = point + ONE ½·vol at the lowest-N row (eta of row 0 applied).
+    point_scalar = float(fp.mu_fp_scalar())
+    one_half = 0.5 * fp.vol_scale * float(eta_b[0, 0])
+    assert draws.mean() == pytest.approx(point_scalar + one_half, rel=0.10)
+    # and DECISIVELY not the per-cell +½ inflation (Σ(n+½) = point + N_cells·½·vol).
+    per_cell_defect = float(np.sum((fp.n_fp_fine + 0.5) * fp.vol_scale * eta_b))
+    assert draws.mean() < 0.5 * (per_cell_defect - point_scalar) + point_scalar
+    # empty NON-anchor cells (force one at row 2) draw EXACTLY 0 — no manufactured FP;
+    # the lowest-N anchor row (row 0) draws a positive rate (carries the ½).
+    fp.n_fp_fine[2, 0] = 0.0
+    fc = fp.resample(rng)._gamma_draw["fine_count"]
+    assert fc[2, 0] == 0.0, "empty non-anchor cell manufactured FP (FIX 3c violated)"
+    pos = np.array([np.all(fp.resample(rng)._gamma_draw["fine_count"][0, :] > 0)
+                    for _ in range(50)])
+    assert pos.all(), "lowest-N anchor row must draw a positive FP ceiling every time"
 
 
-def test_loa0_resample_empty_dla_cell_draws_ceiling_band_fix3():
-    """FIX 3 (DLA-tier ceiling): construct a Loa0FP with the DLA-tier fine cells
-    EMPTY (n_FP=0, the real loa-0 case). The point μ_FP there is exactly 0, but the
-    resample must produce a POSITIVE FP-ceiling band (Gehrels upper limit)."""
+def test_loa0_resample_empty_dla_tier_draws_zero_no_omega_manufacture_fix3c():
+    """FIX 3c (Ω-safety; SUPERSEDES the FIX-3/3b 'DLA-tier ceiling'): with the DLA-tier
+    fine cells EMPTY (n_FP=0, the real loa-0 case) the resample must draw EXACTLY 0
+    there in EVERY draw — NOT a positive 'ceiling'. A positive FP at logN>=20.3 is
+    Ω-weighted ~100x a typical DLA, so a phantom half-count there manufactured a
+    one-sided Ω(>=20.3) bias (measured -6.6% for the top-anchor FIX-3b; -102% for the
+    per-cell FIX-3) and drove the top-bin f_b negative. The single Jeffreys 1/2-count
+    now sits at the LOWEST-N row, where the forest FP physically lives (loa-0 counts
+    fall steeply; 0 above 20.3) and Ω-weight is negligible; that anchor row draws a
+    positive perturbation above its point, the empty high-N tier stays 0."""
     fp = _toy_loa0fp()
     # zero the DLA-tier fine bins (logN_lo >= 20.3) to mimic the real product
     dla = fp.logN_lo >= 20.3
@@ -2391,13 +2398,16 @@ def test_loa0_resample_empty_dla_cell_draws_ceiling_band_fix3():
     g0 = fp.mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
     assert np.all(g0[dla, :] == 0.0)
     rng = np.random.default_rng(3)
-    ever_positive = False
-    for _ in range(50):
+    low_ever_positive = False
+    for _ in range(100):
         g = fp.resample(rng).mu_fp_grid(np.array([0]), np.array([0]), *fp.n_fp_fine.shape)
-        if np.any(g[dla, :] > 0.0):
-            ever_positive = True
-            break
-    assert ever_positive, "empty DLA-tier cell never drew a positive FP ceiling (FIX 3)"
+        # EMPTY DLA tier: EXACTLY 0 in every draw (no phantom, no Ω manufacture).
+        assert np.all(g[dla, :] == 0.0), (
+            "empty DLA-tier cell drew a phantom FP (Ω-manufacture; FIX 3c violated)")
+        # the lowest-N anchor row carries the 1/2 ceiling -> draws a positive rate.
+        if np.any(g[0, :] > 0.0):
+            low_ever_positive = True
+    assert low_ever_positive, "the lowest-N anchor row never drew a positive FP ceiling"
 
 
 def test_forward_fp_terms_default_byte_identical():
