@@ -1,0 +1,300 @@
+# -*- coding: utf-8 -*-
+"""calccddf_vs_hbi.py  — LITERAL calc_cddf (Bird-2017 recipe) vs catalog-HBI, MOCK-ONLY.
+
+████ WIP — UNVALIDATED. QUOTE NOTHING FROM THIS SCRIPT. ████
+Two known blockers (Queue-1 gate preconditions, 2026-07-10 plan note):
+  (1) NaN semantics: ``calc_cddf.py:522-524`` DROPS NaN-`model_posteriors`
+      spectra from counts AND dX, while the finder writes NaN for
+      never-evaluated models and ``bayesian_model_selection.py:279`` nansums
+      (NaN-as-zero). ~74-84%% of prod rows differ between the conventions.
+      The NaN origin must be traced in the writer before any number is real.
+  (2) sub_dla column offset: this harness constructs
+      ``NanSafeDLACatalogue(..., sub_dla=True)`` but the 2LPT-0 prod ran
+      SINGLE_ABSORBER_MODEL=1 (layout [null,1abs,2abs,3abs,4abs]); verified
+      numerically that stored p_dlas == cols[1:].sum() (2e-13), so
+      sub_dla=True EXCLUDES the 1-absorber column on these files.
+
+Committed as flagged WIP per the PI-approved Phase -1 (2026-07-10); the
+resolution of (1)+(2) is Queue-1 work.
+
+Runs the *literal* fixed-Lambda
+posterior CDDF (``CDDF_analysis.calc_cddf.DLACatalogue``) on the per-spectrum
+processed HDF5 files of a mock, aggregating N-resolved expected DLA counts and
+absorption path dX across all healpix files (the full combined file would be TBs
+and calc_cddf bulk-loads the sample axis, so we run per-file and SUM — the
+posterior-weighted expected count `probs+poissons` and dX are both additive).
+
+NO GP re-inference.  NO alpha.  NO hard P_DLA cut (posterior-weighted).  The DLA
+sample grid is the SAME pw_samples_a3_172_225 grid the inference used (support
+[17.2,22.5]), so the DLA(1..k) posterior reaches the sub-DLA band natively.
+
+Truth is windowed IDENTICALLY to the estimator (Lyβ blue edge = lymanbeta(z_qso),
+clamped to the stored [min_z_dla,max_z_dla] search window, z in [ZMIN,ZMAX],
+sightline SNR_REDSIDE>2), so R0=est/truth is on one footing.
+
+MOCK values only — public-OK.  Never reads real-LOA (loa main-dark).
+"""
+import os
+import sys
+import glob
+import json
+import time
+import argparse
+import tempfile
+
+import numpy as np
+import h5py
+from astropy.table import Table
+from scipy.special import logsumexp
+
+# repo root on path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from CDDF_analysis.calc_cddf import DLACatalogue, rho_crit  # noqa: E402
+from CDDF_analysis.cddf_forward.window import WindowSpec  # noqa: E402
+from CDDF_analysis.calc_cddf import lyb_wavelength, lya_wavelength  # noqa: E402
+
+GRID_DIR = "/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection/data/dr12q/processed"
+
+MOCKS = {
+    "2lpt0": dict(
+        proc="/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/outputs/figures/processed",
+        grid=os.path.join(GRID_DIR, "pw_samples_a3_172_225_100000.mat"),
+        truth="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+        zcol="Z",
+    ),
+    "saclay0": dict(
+        proc="/scratch/cavestru_root/cavestru0/mfho/gl_prod_saclay0_v1_20260630/outputs/figures/processed",
+        grid=os.path.join(GRID_DIR, "pw_samples_a3_172_225_50000.mat"),
+        truth="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/hcd_truth_cat.fits",
+        zcol="Z",
+    ),
+    "london0": dict(
+        proc="/scratch/cavestru_root/cavestru0/mfho/gl_prod_london0_v1_preclustering_20260522/outputs/figures/processed",
+        grid=os.path.join(GRID_DIR, "pw_samples_a3_172_225_100000.mat"),
+        truth="/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir/dla_cat.fits",
+        zcol="Z_DLA",
+    ),
+}
+
+ZMIN, ZMAX = 2.0, 3.5          # matches HBI forward-path self baseline zbins [2.0..3.5]
+SNR_MIN = 2.0                  # HBI SNR_REDSIDE > 2.0 (strict)
+N_EDGES = np.round(np.arange(17.2, 22.40001, 0.1), 3)   # centers 17.25..22.35 (== HBI perz_fN)
+N_CENT = 0.5 * (N_EDGES[:-1] + N_EDGES[1:])
+HIGH_NHI_CUT = 22.5
+
+# Omega conversion constant (calc_cddf.omega_dla_cddf), hubble=0.7
+_PROTON = 1.67262178e-24
+_H100 = 3.2407789e-18 * 0.7
+_LIGHT = 2.99e10
+OMEGA_CONV = _PROTON / _LIGHT * _H100 / rho_crit(0.7)
+
+LIMITS = [19.5, 20.0, 20.3]
+
+
+class NanSafeDLACatalogue(DLACatalogue):
+    """LITERAL calc_cddf with faithful NaN handling + a memory-light DLA(1) load.
+
+    The DESI processed files store NaN in a DLA posterior column / sample
+    likelihood to mean 'negligible or invalid' (~0), NOT missing data (`p_dlas`
+    is stored clean).  calc_cddf's DLA(1) path lacks the NaN mask its multi-DLA
+    path (`_do_norm_log_norm_like_k`) already applies, and its `condition`
+    NaN-filter would drop ~83% of sightlines (incl. most detections) from BOTH
+    the counts AND the dX denominator.  We override the two setup methods so:
+      * NaN model-posteriors -> 0, re-normalized; ALL real sightlines kept for dX;
+      * the DLA(1) softmax cache is built from a PARTIAL load of only the
+        detection rows (p_dla>p_thresh_spec), with NaN samples -> -inf.
+    All estimator math (`_split_distributions`, `path_length`) is calc_cddf's own.
+    """
+
+    def renormalise_occams_razor(self, occams_razor=1):
+        mp = np.nan_to_num(self.filehandle["model_posteriors"][()], nan=0.0)
+        mp[:, 1:] = mp[:, 1:] / occams_razor
+        norm = mp.sum(axis=1, keepdims=True)
+        self.model_posteriors = mp / norm
+        self.condition = self.condition * (self.real_index != -1) * (norm.ravel() > 0)
+        self.p_dla = self.model_posteriors[:, 1 + self.sub_dla:].sum(axis=1)
+        self.p_no_dla = self.model_posteriors[:, : 1 + self.sub_dla].sum(axis=1)
+
+    def get_first_dla_attrs(self):
+        self.log_norm_like_cache = {}
+        dla_ind = self.filter_dla_spectra(second=False)[0]
+        if len(dla_ind) == 0:
+            return
+        S = self.filehandle["sample_log_likelihoods_dla"]
+        # ONE contiguous full-slice read (fast); h5py fancy row-indexing on a
+        # chunked dataset is ~10x slower.  Then NaN-mask + softmax per detection.
+        arr = (S[:, :, 0] if S.ndim > 2 else S[:]).astype(float)   # (N, Ssamples)
+        for spec in np.unique(dla_ind):
+            ll = arr[int(spec)].copy()
+            ll[~np.isfinite(ll)] = -np.inf
+            self.log_norm_like_cache[int(spec)] = ll - logsumexp(ll)
+        del arr
+
+
+def _lyb(z):
+    return (1.0 + z) * (lyb_wavelength / lya_wavelength) - 1.0
+
+
+def estimate_one_file(proc_file, grid, catalog_file, second):
+    """Return (mean_counts_N[nbin], dX) from LITERAL calc_cddf for one processed file."""
+    cat = NanSafeDLACatalogue(
+        processed_file=proc_file,
+        sample_file=grid,
+        catalog_file=catalog_file,
+        sub_dla=True,
+        second=second,
+        snr=SNR_MIN,
+        high_nhi_cut=True,
+        high_nhi_cut_value=HIGH_NHI_CUT,
+        window=WindowSpec(z_min_lyb=True),   # Lyα-only: blue edge = lymanbeta(z_qso); no prox/tail re-cut
+    )
+    probs, poissons = cat._split_distributions(
+        N_EDGES, lred=ZMIN, ured=ZMAX, lnhi_min=17.19, lnhi_max=HIGH_NHI_CUT, nhi=True
+    )
+    mean_counts = np.array(poissons, dtype=float)
+    for b, plist in enumerate(probs):
+        if plist:
+            mean_counts[b] += float(np.sum(np.concatenate([np.atleast_1d(p) for p in plist])))
+    dX = float(cat.path_length(ZMIN, ZMAX))
+    cat.filehandle.close()
+    return mean_counts, dX
+
+
+def truth_one_file(proc_file, truth_by_tid):
+    """Convention-matched truth N-histogram for one processed file's sightlines."""
+    with h5py.File(proc_file, "r") as f:
+        tids = np.asarray(f["target_ids"][:]).astype(np.int64).ravel()
+        zq = np.asarray(f["z_qsos"][:]).astype(float).ravel()
+        zlo = np.asarray(f["min_z_dlas"][:]).astype(float).ravel()
+        zhi = np.asarray(f["max_z_dlas"][:]).astype(float).ravel()
+        snr = np.asarray(f["snrs"][:]).astype(float).ravel()
+    counts = np.zeros(len(N_CENT), dtype=float)
+    for tid, zqso, mn, mx, s in zip(tids, zq, zlo, zhi, snr):
+        if not (s > SNR_MIN):
+            continue
+        lower = max(mn, _lyb(zqso), ZMIN)
+        lower = min(lower, mx)
+        upper = min(mx, ZMAX)
+        if not (upper > lower):
+            continue
+        rows = truth_by_tid.get(int(tid))
+        if rows is None:
+            continue
+        za, na = rows
+        m = (za > lower) & (za < upper) & (na >= N_EDGES[0]) & (na < N_EDGES[-1])
+        if m.any():
+            counts += np.histogram(na[m], bins=N_EDGES)[0]
+    return counts
+
+
+def load_truth_by_tid(path, zcol):
+    t = Table.read(path)
+    tid = np.asarray(t["TARGETID"]).astype(np.int64)
+    z = np.asarray(t[zcol]).astype(float)
+    n = np.asarray(t["NHI"]).astype(float)
+    order = np.argsort(tid, kind="stable")
+    tid, z, n = tid[order], z[order], n[order]
+    uniq, start = np.unique(tid, return_index=True)
+    end = np.append(start[1:], len(tid))
+    out = {}
+    for u, a, b in zip(uniq, start, end):
+        out[int(u)] = (z[a:b], n[a:b])
+    return out
+
+
+def cumulative_dndx_omega(counts_N, dX):
+    dndx, omega = {}, {}
+    for lim in LIMITS:
+        sel = N_CENT >= (lim - 1e-9)
+        c = counts_N[sel]
+        dndx[str(lim)] = float(c.sum() / dX) if dX > 0 else float("nan")
+        omega[str(lim)] = float(OMEGA_CONV * np.sum(10.0 ** N_CENT[sel] * c) / dX) if dX > 0 else float("nan")
+    # sub-DLA band [19.5,20.3)
+    selb = (N_CENT >= 19.5 - 1e-9) & (N_CENT < 20.3 - 1e-9)
+    cb = counts_N[selb]
+    dndx["band_195_203"] = float(cb.sum() / dX) if dX > 0 else float("nan")
+    omega["band_195_203"] = float(OMEGA_CONV * np.sum(10.0 ** N_CENT[selb] * cb) / dX) if dX > 0 else float("nan")
+    return dndx, omega
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--mock", required=True, choices=list(MOCKS))
+    ap.add_argument("--nfiles", type=int, default=-1, help="subset of processed files (-1=all)")
+    ap.add_argument("--stride", type=int, default=1, help="take every Nth file (representative subset)")
+    ap.add_argument("--second", type=int, default=0, help="0=DLA1 only; 2=include DLA(2),DLA(3)")
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+
+    cfg = MOCKS[args.mock]
+    assert "main_dark" not in cfg["proc"] and "main_dark" not in cfg["truth"], "REAL-LOA guard"
+    files = sorted(glob.glob(os.path.join(cfg["proc"], "processed-*.h5")))
+    files = files[:: args.stride]
+    if args.nfiles > 0:
+        files = files[: args.nfiles]
+    print(f"[{args.mock}] {len(files)} processed files; second={args.second}; z[{ZMIN},{ZMAX}]; grid={os.path.basename(cfg['grid'])}", flush=True)
+
+    truth_by_tid = load_truth_by_tid(cfg["truth"], cfg["zcol"])
+    print(f"[{args.mock}] truth: {len(truth_by_tid)} sightlines w/ injected absorbers", flush=True)
+
+    second = False if args.second == 0 else args.second
+    tmpdir = tempfile.mkdtemp(prefix="calccddf_")
+    cat_path = os.path.join(tmpdir, "cat.fits")
+
+    est_N = np.zeros(len(N_CENT))
+    tru_N = np.zeros(len(N_CENT))
+    dX_tot = 0.0
+    n_sl = 0
+    t0 = time.time()
+    for i, pf in enumerate(files):
+        with h5py.File(pf, "r") as f:
+            tids = np.asarray(f["target_ids"][:]).astype(np.int64).ravel()
+        Table({"TARGETID": tids}).write(cat_path, overwrite=True)
+        try:
+            mc, dX = estimate_one_file(pf, cfg["grid"], cat_path, second)
+        except Exception as e:
+            print(f"  [skip {os.path.basename(pf)}] {type(e).__name__}: {e}", flush=True)
+            continue
+        tc = truth_one_file(pf, truth_by_tid)
+        est_N += mc
+        tru_N += tc
+        dX_tot += dX
+        n_sl += len(tids)
+        if (i + 1) % 25 == 0 or i == len(files) - 1:
+            print(f"  {i+1}/{len(files)} dX={dX_tot:.2f} est(>=20.3)={est_N[N_CENT>=20.3-1e-9].sum():.1f} "
+                  f"tru(>=20.3)={tru_N[N_CENT>=20.3-1e-9].sum():.1f} ({time.time()-t0:.0f}s)", flush=True)
+            _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, i + 1, time.time() - t0)
+
+    out = _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, len(files), time.time() - t0)
+    print(json.dumps(out["cumulative"], indent=1), flush=True)
+    print(f"[{args.mock}] wrote {args.out}  ({time.time()-t0:.0f}s)", flush=True)
+
+
+def _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, n_done, wall):
+    est_dndx, est_om = cumulative_dndx_omega(est_N, dX_tot)
+    tru_dndx, tru_om = cumulative_dndx_omega(tru_N, dX_tot)
+    r0_dndx = {k: (est_dndx[k] / tru_dndx[k] if tru_dndx[k] else float("nan")) for k in est_dndx}
+    r0_om = {k: (est_om[k] / tru_om[k] if tru_om[k] else float("nan")) for k in est_om}
+    dN_lin = 10.0 ** N_EDGES[1:] - 10.0 ** N_EDGES[:-1]
+    fN_est = (est_N / dX_tot / dN_lin).tolist() if dX_tot > 0 else []
+    fN_tru = (tru_N / dX_tot / dN_lin).tolist() if dX_tot > 0 else []
+    out = dict(
+        mock=args.mock, n_files=n_done, n_files_total=len(files), n_sightlines=n_sl,
+        second=args.second, z_range=[ZMIN, ZMAX], snr_min=SNR_MIN, dX_total=dX_tot,
+        grid=os.path.basename(cfg["grid"]), truth=cfg["truth"], checkpoint=(n_done < len(files)),
+        N_centers=N_CENT.tolist(), fN_calccddf=fN_est, fN_truth=fN_tru,
+        counts_calccddf_N=est_N.tolist(), counts_truth_N=tru_N.tolist(),
+        cumulative=dict(
+            calccddf=dict(dndx=est_dndx, omega=est_om),
+            truth=dict(dndx=tru_dndx, omega=tru_om),
+            R0_calccddf=dict(dndx=r0_dndx, omega=r0_om),
+        ),
+        wallclock_s=wall,
+    )
+    with open(args.out, "w") as f:
+        json.dump(out, f, indent=1)
+    return out
+
+
+if __name__ == "__main__":
+    main()
