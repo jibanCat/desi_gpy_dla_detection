@@ -982,12 +982,25 @@ class Loa0FP(FPModel):
         per-object share Σ_i λ_FP_per_obj,i ≈ μ_FP (over the cells the catalog
         populates, before z-window clipping) — the two are the SAME background
         partitioned per-detection (data term) vs population-integral (rate term).
-      * resample (WALL-2 variance): ADDITIVE Gehrels (FIX 3) — per cell draw the RATE
-            λ_FP ~ Gamma(n_FP + ½, ℓ_eff),  ℓ_eff = N_sl_loa0·(N_sl_loa0/N_prod)
-        (production-extrapolation, NOT in-sample). The Gamma(½, ℓ_eff) on an empty
-        (n_FP=0) DLA cell draws a POSITIVE λ_FP (a real upper-limit band / FP
-        ceiling), NOT a hard 0 — the prior MULTIPLICATIVE ratio form forced n=0 cells
-        to exactly 0 in 100% of draws.
+      * resample (WALL-2 variance): ADDITIVE Poisson-rate draw (FIX 3c) — per cell
+        draw the RATE  λ_FP,cell ~ Gamma(shape_cell, scale = 1/ℓ_eff)  with
+            shape_cell = n_FP,cell + (½/n_zbins  iff cell is in the LOWEST logN row),
+        ℓ_eff = N_sl_loa0·(N_sl_loa0/N_prod) (production-extrapolation, NOT in-sample).
+        The SINGLE Jeffreys ½-count prior for the WHOLE loa-0 FP inference is attached
+        ONCE, at the LOWEST-logN edge (split evenly across the z-cells), NOT per grid
+        cell and NOT at the top edge. Because Gamma shapes ADD under convolution, the
+        WHOLE-grid total is the correct TOTAL Poisson posterior
+            μ_FP(all) ~ (N_prod/N_sl_loa0)·ℓ_eff·Gamma(Σ n_FP + ½, 1/ℓ_eff),
+        grid-invariant; every higher report floor (all lie ABOVE the anchor) gets
+        Gamma(Σ_{≥f} n_FP) — the ½ is negligible there (Σn≫1) and the populated
+        Poisson variance survives. An empty tier above a floor (e.g. the DLA tier)
+        draws Gamma(0)=0 exactly → its FP band is 0, NOT a phantom ½·vol at 10^22.4.
+        WHY LOWEST, NOT TOP: the top-anchor (FIX 3b) put ½·vol≈83 phantom FP in the
+        [22.3,22.4] bin — 0.16% of dN/dX (harmless) but Ω-weighted ~100× a typical DLA,
+        manufacturing a one-sided DOWNWARD Ω(≥20.3) bias (measured −6.6% on 2LPT-0) and
+        driving the top-bin f_b negative. The forest FP physically lives at LOW N (the
+        loa-0 counts fall steeply: 2318 total, 0 above 20.3), so anchoring the prior
+        half-count there is both physical and Ω-harmless.
 
     Mutually exclusive with the purity-mixture (never summed).
 
@@ -1177,37 +1190,77 @@ class Loa0FP(FPModel):
             grid = grid[keep, :]
         return float(np.sum(grid))
 
-    # ---- WALL-2 variance: ADDITIVE Gehrels Gamma(n_FP+½, ℓ_eff) per cell -----
+    # ---- WALL-2 variance: ONE Jeffreys ½-count anchored at the LOWEST-N edge -----
     def resample(self, rng) -> "Loa0FP":
-        """Return a perturbed Loa0FP carrying an ADDITIVE Gehrels rate draw (FIX 3).
+        """Return a perturbed Loa0FP carrying an ADDITIVE Poisson-rate draw (FIX 3c).
 
-        Per cell draw the RATE  λ_FP ~ Gamma(n_FP + ½, scale = 1/ℓ_eff)  with
-        ℓ_eff = N_sl_loa0·(N_sl_loa0/N_prod) (the production-extrapolation exposure),
-        then express it as an effective perturbed loa-0 COUNT
+        WHY NOT per-cell Gamma(n+½) (the FIX-3 defect first replaced): the ``+½`` is a
+        Jeffreys/Gehrels PRIOR half-count for ONE Poisson inference, not a COUNT. Adding
+        it to EVERY fine cell and then summing over a tier gives Σ_cells Gamma(n_i+½) →
+        mean (Σn_i + N_cells/2)/ℓ_eff, whose spurious ``+N_cells/2`` grows LINEARLY with
+        grid fineness (~+49% FP above the 19.5 floor; ~5.2k FP in the EMPTY DLA tier).
 
-            n_eff = λ_FP · ℓ_eff             (rate · exposure = count)
+        WHY NOT anchor at the TOP-logN edge (FIX 3b, also replaced): pinning the single
+        ½ to the highest-N row makes it appear in every above-floor aggregate (nice for
+        dN/dX) BUT it places ½·vol≈83 phantom FP at N≈10^22.35. That is 0.16% of dN/dX —
+        harmless — but Ω weights by N, so at ~100× a typical DLA it manufactures a
+        one-sided DOWNWARD Ω(≥20.3) bias (measured −6.6% on 2LPT-0, band mean 1.086 vs
+        point 1.162) and drives the top-bin f_b NEGATIVE (num=S−μ_FP≈0−27.7). The
+        governing criterion: the band must not manufacture Ω mass where the FP is known
+        negligible. The loa-0 FP falls steeply (2318 counts, 0 above logN 20.3), so any
+        FP mass at 10^22.4 is unphysical.
 
-        which the μ_FP accessors use IN PLACE OF the raw count when a draw is present
-        (they multiply by vol_scale = N_prod/N_sl_loa0 exactly as for the point).
-        Because the ``+½`` Gehrels prior makes the draw STRICTLY positive even when
-        n_FP=0, an empty (e.g. DLA-tier) cell now draws a POSITIVE λ_FP — a real
-        upper-limit / FP-ceiling band — instead of the hard 0 the prior MULTIPLICATIVE
-        ratio (0·ratio≡0) forced in 100% of draws.
+        CONSTRUCTION (grid-invariant; Ω-safe). Per cell draw the RATE
+            λ_FP,cell ~ Gamma(shape_cell, scale = 1/ℓ_eff),
+            shape_cell = n_FP,cell + Δ_cell,
+            Δ_cell = ½/n_zbins  iff the cell is in the LOWEST logN row, else 0,
+        ℓ_eff = N_sl_loa0·(N_sl_loa0/N_prod), and return the effective perturbed loa-0
+        COUNT  n_eff = λ_FP·ℓ_eff  (the μ_FP accessors ×vol_scale = N_prod/N_sl_loa0).
 
-        E[n_eff] = (n_FP+½)/ℓ_eff · ℓ_eff = n_FP + ½, so after the accessor's
-        ×vol_scale: E[μ_FP,cell] = (n_FP+½)·vol_scale — the point count n_FP·vol_scale
-        plus a +½·vol_scale Gehrels upper-limit offset per cell (negligible for the
-        populated sub-DLA cells with n_FP≫1; material exactly where it should be — the
-        empty rare-bin tail), with the production-extrapolation variance
-        Var(μ_FP,cell) = (n_FP+½)·vol_scale². The POINT estimate (no draw, _gamma_draw
-        is None) is byte-stable: it uses the raw n_FP."""
-        def _neff(n_counts):
+        The single Jeffreys ½ for the whole FP inference sits at the LOWEST-N edge — where
+        the forest FP physically lives and Ω-weight is minimal. Because Gamma shapes ADD
+        (Σ_i Gamma(a_i,θ)=Gamma(Σa_i,θ)):
+          * WHOLE-grid total = vol_scale·ℓ_eff·Gamma(Σn + ½, 1/ℓ_eff) — the correct total
+            posterior, grid-invariant (merging cells regroups additive shapes; the ½
+            stays pinned to the lowest edge, so E/Var of any tier don't drift with
+            resolution).
+          * Every REPORT floor lies ABOVE the anchor, so the aggregate above f is
+            Gamma(Σ_{≥f} n_FP) — NO extra ½. For populated tiers (LLS/sub-DLA, Σn≫1) the
+            ½ is negligible and the genuine Poisson variance survives (Var=Σn·vol²). For
+            an EMPTY tier above a floor (the DLA tier: 0 loa-0 counts) the FP band is
+            Gamma(0)=0 EXACTLY — no phantom, no Ω manufacture, no negative f_b. That is
+            correct: the loa-0 measured 0 FP there and the steeply-falling shape forbids
+            high-N FP, so the honest DLA-tier FP band is 0 (its band variance then comes
+            entirely from completeness+bootstrap).
+
+        This RELAXES the earlier "Gamma(Σn+½) above ANY floor" goal (which forced the ½
+        into the top row) to "Gamma(Σn+½) for the whole grid; Gamma(Σn) above any higher
+        floor" — deliberately, because the governing criterion (no Ω mass where FP is
+        negligible) overrides giving every empty high-N tier a ½·vol upper limit. Non-
+        anchor empty cells draw Gamma(0)=0 → no manufactured FP.
+
+        The molly (SNR, NHI) grid (used by mu_fp_cell/lam_fp_per_obj, the per-object
+        forward data term — NOT the fine-grid μ_FP bands) gets the SAME treatment with
+        the anchor at the LOWEST NHI column split across SNR rows. The POINT estimate (no
+        draw, _gamma_draw is None) is byte-stable: it uses the raw n_FP unchanged."""
+        def _neff(n_counts, floor_axis):
+            # floor_axis: the axis the report FLOORS act on (fine grid: 0 = logN;
+            # molly grid: 1 = NHI). Anchor the single ½-count at that axis's LOWEST index
+            # (lowest N/NHI — where forest FP lives and Ω-weight is minimal), split evenly
+            # across the orthogonal axis (Σ Δ = ½). Gamma(0)=0 for empty non-anchor cells
+            # (no manufactured FP), so draw only strictly-positive shapes.
             n = np.asarray(n_counts, float)
-            shape = n + 0.5                       # Gehrels +½ → strictly positive
-            lam = rng.gamma(shape=shape, scale=1.0 / self.ell_eff)   # rate draw
-            return lam * self.ell_eff             # effective perturbed loa-0 count, E=n+½
-        gd = dict(molly_count=_neff(self.n_fp_molly),
-                  fine_count=_neff(self.n_fp_fine))
+            shape = n.copy()
+            if floor_axis == 0:
+                shape[0, :] = shape[0, :] + 0.5 / shape.shape[1]
+            else:
+                shape[:, 0] = shape[:, 0] + 0.5 / shape.shape[0]
+            lam = np.zeros_like(shape)
+            pos = shape > 0.0
+            lam[pos] = rng.gamma(shape=shape[pos], scale=1.0 / self.ell_eff)
+            return lam * self.ell_eff             # effective perturbed loa-0 count
+        gd = dict(molly_count=_neff(self.n_fp_molly, floor_axis=1),
+                  fine_count=_neff(self.n_fp_fine, floor_axis=0))
         return Loa0FP(
             self.n_fp_molly, self.b_fp_molly, self.snr_edges, self.nhi_edges,
             self.n_fp_fine, self.logN_lo, self.logN_hi, self.band_eta_per_nbin,
