@@ -93,6 +93,8 @@ _LIGHT = 2.99e10
 OMEGA_CONV = _PROTON / _LIGHT * _H100 / rho_crit(0.7)
 
 LIMITS = [19.5, 20.0, 20.3]
+Z_SPLITS = [(2.0, 2.5), (2.5, 3.0), (3.0, 3.5)]   # C4 stress splits
+SNR_HI = 4.0                                       # C4 high-SNR stratum
 
 
 class NanSafeDLACatalogue(DLACatalogue):
@@ -162,8 +164,13 @@ def _lyb(z):
     return (1.0 + z) * (lyb_wavelength / lya_wavelength) - 1.0
 
 
-def estimate_one_file(proc_file, grid, catalog_file, second):
-    """Return (mean_counts_N[nbin], dX) from LITERAL calc_cddf for one processed file."""
+def estimate_one_file(proc_file, grid, catalog_file, second, splits=False):
+    """Return {tag: (mean_counts_N[nbin], dX)} from LITERAL calc_cddf for one file.
+
+    tag 'full' always present; with splits=True also per z-bin (Z_SPLITS) from the
+    SAME catalogue build, and an SNR>SNR_HI full-range stratum from a second build
+    (strata by construction; [2,4] follows by differencing full - snr_gt4).
+    """
     cat = NanSafeDLACatalogue(
         processed_file=proc_file,
         sample_file=grid,
@@ -178,19 +185,37 @@ def estimate_one_file(proc_file, grid, catalog_file, second):
         high_nhi_cut_value=HIGH_NHI_CUT,
         window=WindowSpec(z_min_lyb=True),   # Lyα-only: blue edge = lymanbeta(z_qso); no prox/tail re-cut
     )
+    mean_counts, dX = _counts_dx(cat, ZMIN, ZMAX)
+    out = {"full": (mean_counts, dX)}
+    if splits:
+        for lo, hi in Z_SPLITS:
+            out[f"z_{lo}_{hi}"] = _counts_dx(cat, lo, hi)
+    cat.filehandle.close()
+    if splits:
+        cat4 = NanSafeDLACatalogue(
+            processed_file=proc_file, sample_file=grid, catalog_file=catalog_file,
+            sub_dla=False, second=second, snr=SNR_HI,
+            high_nhi_cut=True, high_nhi_cut_value=HIGH_NHI_CUT,
+            window=WindowSpec(z_min_lyb=True),
+        )
+        out[f"snr_gt{SNR_HI:g}"] = _counts_dx(cat4, ZMIN, ZMAX)
+        cat4.filehandle.close()
+    return out
+
+
+def _counts_dx(cat, zlo, zhi):
+    """(mean N-counts, dX) over one z window from an already-built catalogue."""
     probs, poissons = cat._split_distributions(
-        N_EDGES, lred=ZMIN, ured=ZMAX, lnhi_min=17.19, lnhi_max=HIGH_NHI_CUT, nhi=True
+        N_EDGES, lred=zlo, ured=zhi, lnhi_min=17.19, lnhi_max=HIGH_NHI_CUT, nhi=True
     )
     mean_counts = np.array(poissons, dtype=float)
     for b, plist in enumerate(probs):
         if plist:
             mean_counts[b] += float(np.sum(np.concatenate([np.atleast_1d(p) for p in plist])))
-    dX = float(cat.path_length(ZMIN, ZMAX))
-    cat.filehandle.close()
-    return mean_counts, dX
+    return mean_counts, float(cat.path_length(zlo, zhi))
 
 
-def truth_one_file(proc_file, truth_by_tid):
+def truth_one_file(proc_file, truth_by_tid, splits=False):
     """Convention-matched truth N-histogram for one processed file's sightlines."""
     with h5py.File(proc_file, "r") as f:
         tids = np.asarray(f["target_ids"][:]).astype(np.int64).ravel()
@@ -198,7 +223,9 @@ def truth_one_file(proc_file, truth_by_tid):
         zlo = np.asarray(f["min_z_dlas"][:]).astype(float).ravel()
         zhi = np.asarray(f["max_z_dlas"][:]).astype(float).ravel()
         snr = np.asarray(f["snrs"][:]).astype(float).ravel()
-    counts = np.zeros(len(N_CENT), dtype=float)
+    tags = ["full"] + ([f"z_{lo}_{hi}" for lo, hi in Z_SPLITS] + [f"snr_gt{SNR_HI:g}"]
+                       if splits else [])
+    counts = {t: np.zeros(len(N_CENT), dtype=float) for t in tags}
     for tid, zqso, mn, mx, s in zip(tids, zq, zlo, zhi, snr):
         if not (s > SNR_MIN):
             continue
@@ -211,9 +238,18 @@ def truth_one_file(proc_file, truth_by_tid):
         if rows is None:
             continue
         za, na = rows
-        m = (za > lower) & (za < upper) & (na >= N_EDGES[0]) & (na < N_EDGES[-1])
+        nok = (na >= N_EDGES[0]) & (na < N_EDGES[-1])
+        m = (za > lower) & (za < upper) & nok
         if m.any():
-            counts += np.histogram(na[m], bins=N_EDGES)[0]
+            h = np.histogram(na[m], bins=N_EDGES)[0]
+            counts["full"] += h
+            if splits and s > SNR_HI:
+                counts[f"snr_gt{SNR_HI:g}"] += h
+        if splits:
+            for lo_z, hi_z in Z_SPLITS:
+                mz = (za > max(lower, lo_z)) & (za < min(upper, hi_z)) & nok
+                if mz.any():
+                    counts[f"z_{lo_z}_{hi_z}"] += np.histogram(na[mz], bins=N_EDGES)[0]
     return counts
 
 
@@ -252,9 +288,21 @@ def main():
     ap.add_argument("--mock", required=True, choices=list(MOCKS))
     ap.add_argument("--nfiles", type=int, default=-1, help="subset of processed files (-1=all)")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth file (representative subset)")
-    ap.add_argument("--second", type=int, default=0, help="0=DLA1 only; 2=include DLA(2),DLA(3)")
+    ap.add_argument("--second", type=int, default=0,
+                    help="RETIRED: only 0 (DLA1) is accepted — see the guard below")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--splits", action="store_true",
+                    help="C4 stress splits: also accumulate per-z-bin (2.0/2.5/3.0/3.5) "
+                         "and SNR>4 stratum histograms (roughly 2x runtime)")
     args = ap.parse_args()
+
+    if args.second != 0:
+        raise SystemExit(
+            "--second != 0 is RETIRED (PI decision C3, 2026-07-11): calc_cddf's "
+            "multi-DLA increment path has been broken since 2020 (b00e6e4 — spectra "
+            "axis indexed by sample indices; -1e30 accumulator), so slot-0 IS the "
+            "literal estimator this code has always computed. Fixing the path is "
+            "separate, referee-reviewed debt. See notes 2026-07-11_q1_gate.md (C3).")
 
     cfg = MOCKS[args.mock]
     assert "main_dark" not in cfg["proc"] and "main_dark" not in cfg["truth"], "REAL-LOA guard"
@@ -271,9 +319,11 @@ def main():
     tmpdir = tempfile.mkdtemp(prefix="calccddf_")
     cat_path = os.path.join(tmpdir, "cat.fits")
 
-    est_N = np.zeros(len(N_CENT))
-    tru_N = np.zeros(len(N_CENT))
-    dX_tot = 0.0
+    tags = ["full"] + ([f"z_{lo}_{hi}" for lo, hi in Z_SPLITS] + [f"snr_gt{SNR_HI:g}"]
+                       if args.splits else [])
+    est_T = {t: np.zeros(len(N_CENT)) for t in tags}
+    tru_T = {t: np.zeros(len(N_CENT)) for t in tags}
+    dX_T = {t: 0.0 for t in tags}
     n_sl = 0
     n_skip = 0
     t0 = time.time()
@@ -282,7 +332,8 @@ def main():
             tids = np.asarray(f["target_ids"][:]).astype(np.int64).ravel()
         Table({"TARGETID": tids}).write(cat_path, overwrite=True)
         try:
-            mc, dX = estimate_one_file(pf, cfg["grid"], cat_path, second)
+            est_blocks = estimate_one_file(pf, cfg["grid"], cat_path, second,
+                                           splits=args.splits)
         except Exception as e:
             n_skip += 1
             print(f"  [skip {os.path.basename(pf)}] {type(e).__name__}: {e}", flush=True)
@@ -294,22 +345,25 @@ def main():
                     f"{n_skip} files skipped by {i+1} — systematic failure, aborting "
                     f"(last: {type(e).__name__}: {e})")
             continue
-        tc = truth_one_file(pf, truth_by_tid)
-        est_N += mc
-        tru_N += tc
-        dX_tot += dX
+        tru_blocks = truth_one_file(pf, truth_by_tid, splits=args.splits)
+        for t in tags:
+            mc_t, dx_t = est_blocks[t]
+            est_T[t] += mc_t
+            dX_T[t] += dx_t
+            tru_T[t] += tru_blocks[t]
         n_sl += len(tids)
         if (i + 1) % 25 == 0 or i == len(files) - 1:
-            print(f"  {i+1}/{len(files)} dX={dX_tot:.2f} est(>=20.3)={est_N[N_CENT>=20.3-1e-9].sum():.1f} "
-                  f"tru(>=20.3)={tru_N[N_CENT>=20.3-1e-9].sum():.1f} ({time.time()-t0:.0f}s)", flush=True)
-            _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, i + 1, time.time() - t0, n_skip)
+            print(f"  {i+1}/{len(files)} dX={dX_T['full']:.2f} est(>=20.3)={est_T['full'][N_CENT>=20.3-1e-9].sum():.1f} "
+                  f"tru(>=20.3)={tru_T['full'][N_CENT>=20.3-1e-9].sum():.1f} ({time.time()-t0:.0f}s)", flush=True)
+            _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, i + 1, time.time() - t0, n_skip)
 
-    out = _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, len(files), time.time() - t0, n_skip)
+    out = _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, len(files), time.time() - t0, n_skip)
     print(json.dumps(out["cumulative"], indent=1), flush=True)
     print(f"[{args.mock}] wrote {args.out}  ({time.time()-t0:.0f}s)", flush=True)
 
 
-def _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, n_done, wall, n_skip=0):
+def _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, n_done, wall, n_skip=0):
+    est_N, tru_N, dX_tot = est_T["full"], tru_T["full"], dX_T["full"]
     est_dndx, est_om = cumulative_dndx_omega(est_N, dX_tot)
     tru_dndx, tru_om = cumulative_dndx_omega(tru_N, dX_tot)
     r0_dndx = {k: (est_dndx[k] / tru_dndx[k] if tru_dndx[k] else float("nan")) for k in est_dndx}
@@ -330,6 +384,19 @@ def _write_out(args, cfg, files, est_N, tru_N, dX_tot, n_sl, n_done, wall, n_ski
         ),
         wallclock_s=wall,
     )
+    if len(est_T) > 1:
+        out["splits"] = {}
+        for t in est_T:
+            if t == "full":
+                continue
+            e, tr, dx = est_T[t], tru_T[t], dX_T[t]
+            ed, eo = cumulative_dndx_omega(e, dx)
+            td, to = cumulative_dndx_omega(tr, dx)
+            out["splits"][t] = dict(
+                dX=dx, counts_est=e.tolist(), counts_truth=tr.tolist(),
+                R0_dndx={k: (ed[k] / td[k] if td[k] else float("nan")) for k in ed},
+                R0_omega={k: (eo[k] / to[k] if to[k] else float("nan")) for k in eo},
+            )
     with open(args.out, "w") as f:
         json.dump(out, f, indent=1)
     return out
