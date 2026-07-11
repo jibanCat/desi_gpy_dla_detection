@@ -1,0 +1,351 @@
+"""model_a.py — Model A: the binned-count NUTS posterior (NumPyro), Q3 spec sec. 2.
+
+Sampled sites (spec section 2 "Posterior"):
+
+  theta_pop (B, Kf) : log f on the fine (N, z) grid, 2-D Gaussian-random-walk
+      smoothness prior with SAMPLED scales sigma_N, sigma_z ~ HalfNormal.
+      Implemented NON-CENTERED (funnel-avoiding constructive factorization):
+          theta[:, 0] = level + slope * (b - b_mid)
+                        + sigma_N * double-cumsum(eps_N),   eps_N ~ N(0, 1)
+          theta[:, k] = theta[:, 0] + sigma_z * cumsum_k(eps_z),
+                                                            eps_z ~ N(0, 1)
+      so Delta^2_N theta[:, 0] ~ N(0, sigma_N^2) exactly and
+      Delta_z theta ~ N(0, sigma_z^2) exactly (the spec's two penalties,
+      factored along the anchor column + z-increments; chosen over the
+      improper penalty form for NUTS geometry).
+  psi_c (S, M)       : completeness logit offsets ~ N(0, sigma_hat) around the
+      Jeffreys-consistent molly surface eta_hat (partial pooling toward the
+      molly surface; NEVER independent per-cell conjugate count priors).
+  psi_k_delta (2, SR, ZR) : response-coef leading-term perturbations
+      ~ N(0, sqrt(resp_fitcov_diag)) per response cell (fail-closed forward
+      kernel only — the pack carries no kappa objects by schema).
+  t (KK,)            : per-coarse-z log transfer factors ~ N(0, t_sigma[K]).
+  FP block (fp_mode="joint"):
+      fp_lam_total       ~ Gamma(1/2, eps_rate)  — the SINGLE-JeFFREYS-TOTAL
+          prior in log-space (NUTS samples log total; the Gamma(1/2, eps)
+          base is the proper eps-regularized Jeffreys lambda^{-1/2}, and the
+          prior on the TOTAL is grid-independent BY CONSTRUCTION: refining or
+          coarsening the (c, s) cells never changes it — the FIX-3c rule, no
+          per-cell prior mass, no phantom FP in empty cells).
+      fp_shape_v (C*S,)  ~ N(0, fp_shape_sd); pi = softmax(v);
+          lam_fp = total * pi. Cells with zero loa-0 counts get their share
+          driven to ~0 by the multinomial part of the likelihood — the DLA
+          tier inherits FP only through the smooth shape, expected ~ 0.
+      loa-0 likelihood: fp_counts[c, s] ~ Poisson(ell_eff * lam_fp[c, s]).
+  Likelihood: counts[c,k,s] ~ Poisson(mu) with mu from forward.fold_mu,
+      evaluated inside the jitted model on every draw (differentiable).
+
+Farr N_eff gate (spec section 2): evaluated at build time on the calibration
+inputs; hard-fails when sum(molly_n_tot) < 4 * sum(counts) unless the config
+explicitly disables it (rung-5 stress runs do, and say so).
+
+Reductions: f(N, z) posterior -> CDDF, dN/dX(z), Omega(z) (arbitrary-constant
+units, documented) at thresholds 20.0 AND 20.3, with [19.5, 19.7) masked in
+differential reporting; plus the integrated total used by rungs 4/5.
+
+Synthetic-data scope (Q3): everything here runs on packs from
+``pack.synthetic_pack``; the real data pack is integrated later by the lead.
+Deviation from spec section 2, recorded: the g(N,z) structural-amplitude term
+(one N(1, sigma_g) per N-row) is NOT sampled here — the Q3 component contract
+enumerates the sampled sites without it and no synthetic rung exercises it;
+g enters the fold as the fixed pack surface.
+"""
+from __future__ import annotations
+
+import dataclasses
+import time
+from functools import partial
+from typing import Optional
+
+import numpy as np
+import jax
+import jax.numpy as jnp
+import numpyro
+import numpyro.distributions as dist
+from numpyro.infer import MCMC, NUTS
+from numpyro.infer.initialization import init_to_value
+
+from CDDF_analysis.hbi_mcmc.diagnostics import summarize_mcmc
+from CDDF_analysis.hbi_mcmc.forward import ModelAConsts, build_consts, fold_mu
+from CDDF_analysis.hbi_mcmc.pack import ModelAPack
+
+__all__ = ["ModelAConfig", "model_a", "run_model_a", "reduce_f_posterior",
+           "summarize", "POLICY"]
+
+# spec section 5 convergence policy
+POLICY = {"r_hat_max": 1.01, "ess_bulk_min": 400.0, "ess_tail_min": 400.0,
+          "n_divergent": 0}
+
+# differential-reporting mask (spec: [19.5, 19.7) masked)
+_MASK_LO, _MASK_HI = 19.5, 19.7
+_THRESHOLDS = (20.0, 20.3)
+
+
+@dataclasses.dataclass
+class ModelAConfig:
+    """Run configuration for Model A (defaults = spec section 5; tests shrink)."""
+
+    num_warmup: int = 1000
+    num_samples: int = 1000
+    num_chains: int = 4
+    chain_method: str = "vectorized"  # numpyro 'sequential' recompiles per chain here
+    target_accept: float = 0.9
+    max_tree_depth: int = 10
+    # block-dense mass over the population anchor block (level/slope/eps_N are
+    # densely coupled — they trade off against every N-bin; diagonal mass
+    # leaves a stiff ridge that inflates NUTS tree depth ~2x and divergences ~3x,
+    # measured on the small synthetic pack).
+    dense_mass_anchor_block: bool = True
+    data_informed_init: bool = True  # init_to_value at a crude count-scale point
+    seed: int = 0
+    # priors
+    sigma_N_scale: float = 0.5    # HalfNormal scale of the Delta^2_N RW sd
+    sigma_z_scale: float = 0.5    # HalfNormal scale of the Delta_z RW sd
+    level_scale: float = 4.0      # weak N(0, .) on the anchor level
+    slope_scale: float = 2.0      # weak N(0, .) on the anchor N-slope
+    # FP block
+    fp_mode: str = "joint"        # "joint" | "off"
+    fp_eps_rate: float = 1e-6     # proper-Jeffreys regularizer (posterior-negligible)
+    fp_shape_sd: float = 3.0      # logistic-normal shape prior sd
+    # gates
+    enforce_farr_gate: bool = True
+    farr_min_ratio: float = 4.0
+
+
+# --- the NumPyro model --------------------------------------------------------------
+
+def model_a(consts: ModelAConsts, counts=None, fp_counts=None, *,
+            fp_mode="joint", fp_eps_rate=1e-6, fp_shape_sd=3.0,
+            sigma_N_scale=0.5, sigma_z_scale=0.5,
+            level_scale=4.0, slope_scale=2.0):
+    """Model A generative program (see module docstring for the site map)."""
+    B, Kf = consts.n_b, consts.n_k
+    C, S = consts.n_c, consts.n_s
+
+    # -- population: non-centered 2-D RW on theta_pop = log f
+    sigma_N = numpyro.sample("sigma_N", dist.HalfNormal(sigma_N_scale))
+    sigma_z = numpyro.sample("sigma_z", dist.HalfNormal(sigma_z_scale))
+    level = numpyro.sample("theta_level", dist.Normal(0.0, level_scale))
+    slope = numpyro.sample("theta_slope", dist.Normal(0.0, slope_scale))
+    eps_N = numpyro.sample(
+        "eps_N", dist.Normal(0.0, 1.0).expand([max(B - 2, 0)]).to_event(1))
+    eps_z = numpyro.sample(
+        "eps_z", dist.Normal(0.0, 1.0).expand([B, max(Kf - 1, 0)]).to_event(2))
+    b_idx = jnp.arange(B) - 0.5 * (B - 1)
+    curv = jnp.cumsum(jnp.cumsum(jnp.concatenate([jnp.zeros(2), eps_N])))[:B]
+    theta_col0 = level + slope * b_idx + sigma_N * curv
+    theta = theta_col0[:, None] + jnp.concatenate(
+        [jnp.zeros((B, 1)), sigma_z * jnp.cumsum(eps_z, axis=1)], axis=1)
+    theta = numpyro.deterministic("theta_pop", theta)
+    numpyro.deterministic("f", jnp.exp(theta))
+
+    # -- calibration nuisances
+    psi_c = numpyro.sample(
+        "psi_c", dist.Normal(0.0, consts.sigma_hat).to_event(2))
+    psi_k_delta = numpyro.sample(
+        "psi_k_delta", dist.Normal(0.0, consts.fitcov_sd).to_event(3))
+    t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma).to_event(1))
+
+    # -- FP block: single-Jeffreys TOTAL (log-space) + logistic-normal shape
+    if fp_mode == "joint":
+        lam_total = numpyro.sample(
+            "fp_lam_total", dist.Gamma(0.5, fp_eps_rate))
+        # zero-sum shape logits: softmax is invariant to a constant shift, so a
+        # plain Normal leaves a soft ridge that wrecks NUTS mixing; ZeroSumNormal
+        # removes that direction exactly (the shape prior stays logistic-normal).
+        v = numpyro.sample(
+            "fp_shape_v", dist.ZeroSumNormal(fp_shape_sd, event_shape=(C * S,)))
+        pi = jax.nn.softmax(v)
+        lam_fp = numpyro.deterministic(
+            "lam_fp", (lam_total * pi).reshape(C, S))
+        numpyro.sample(
+            "fp_counts",
+            dist.Poisson(consts.fp_ell_eff * lam_fp).to_event(2),
+            obs=fp_counts)
+    elif fp_mode == "off":
+        lam_fp = jnp.zeros((C, S))
+    else:
+        raise ValueError(f"unknown fp_mode {fp_mode!r}")
+
+    # -- forward fold + likelihood (inside the jitted model, per draw)
+    mu = fold_mu(theta, psi_c, psi_k_delta, t, lam_fp, consts)
+    # zero-dX strata are structurally unobserved (validator guarantees zero
+    # counts + zero fp_E_alloc there): mask them out of the likelihood so
+    # Poisson(rate=0) can never produce -inf/NaN gradients.
+    # Per-element masking: the mask must act on BATCH dims (masking an
+    # event-collapsed scalar log-prob elementwise silently rescales the
+    # likelihood by the cell count — found the hard way). Observed batch
+    # log-probs are summed into the joint by numpyro.
+    obs_mask = jnp.broadcast_to(jnp.asarray(consts.dX > 0)[None, :, :], mu.shape)
+    with numpyro.handlers.mask(mask=obs_mask):
+        numpyro.sample("counts", dist.Poisson(jnp.clip(mu, 1e-300, None)),
+                       obs=counts)
+
+
+# --- reductions -----------------------------------------------------------------------
+
+def reduce_f_posterior(f_draws, pack: ModelAPack):
+    """f(N, z) posterior draws -> CDDF / dN/dX / Omega reductions (numpy).
+
+    Parameters
+    ----------
+    f_draws : (n_draws, B, Kf)
+    pack    : the data pack (for grids).
+
+    Returns
+    -------
+    dict:
+      f                 : the raw draws (n_draws, B, Kf)
+      cddf_masked       : draws with the [19.5, 19.7) bins set to nan
+                          (differential-reporting mask)
+      dndx_20p0/20p3    : (n_draws, Kf)  sum_{b >= thr} f dN
+      dndx_20p0/20p3_coarse : (n_draws, KK) pathlength-weighted coarse means
+      omega_20p0/20p3   : (n_draws, Kf)  sum_{b >= thr} 10^(N_b - 21) f dN
+                          (ARBITRARY-CONSTANT units: the physical
+                          H0 m_H mu / (c rho_crit) factor is applied at
+                          reporting time, outside this synthetic scope)
+      integrated_total  : (n_draws,) sum_{b,k} f dN (rung 4/5 scalar)
+      n_mask_bins       : how many N-bins the differential mask removed
+    """
+    f_draws = np.asarray(f_draws)
+    ntrue = np.asarray(pack.ntrue_edges, float)
+    Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
+    dN = np.diff(ntrue)
+    kz = np.asarray(pack.kz_to_K)
+    KK = pack.n_kk
+    dX_k = np.asarray(pack.dX, float).sum(axis=1)  # (Kf,) summed over strata
+
+    mask = (Nc >= _MASK_LO - 1e-9) & (Nc < _MASK_HI - 1e-9)
+    cddf_masked = f_draws.copy()
+    cddf_masked[:, mask, :] = np.nan
+
+    out = {
+        "f": f_draws,
+        "cddf_masked": cddf_masked,
+        "n_mask_bins": int(mask.sum()),
+        "integrated_total": (f_draws * dN[None, :, None]).sum(axis=(1, 2)),
+    }
+    for thr in _THRESHOLDS:
+        sel = Nc >= thr - 1e-9
+        tag = f"{thr:.1f}".replace(".", "p")
+        dndx = (f_draws[:, sel, :] * dN[None, sel, None]).sum(axis=1)  # (n, Kf)
+        omega = (f_draws[:, sel, :] * (10.0 ** (Nc[sel] - 21.0))[None, :, None]
+                 * dN[None, sel, None]).sum(axis=1)
+        coarse = np.stack(
+            [(dndx[:, kz == q] * dX_k[kz == q][None, :]).sum(axis=1)
+             / dX_k[kz == q].sum() for q in range(KK)], axis=1)
+        out[f"dndx_{tag}"] = dndx
+        out[f"dndx_{tag}_coarse"] = coarse
+        out[f"omega_{tag}"] = omega
+    return out
+
+
+# --- diagnostics wrapper ---------------------------------------------------------------
+
+def summarize(mcmc, runtime=None, policy=None):
+    """summarize_mcmc + the spec section 5 policy flags (which gates FIRED)."""
+    policy = dict(POLICY if policy is None else policy)
+    s = summarize_mcmc(mcmc, runtime=runtime)
+    flags = {
+        "flag_r_hat": bool(s["r_hat_max"] > policy["r_hat_max"]),
+        "flag_ess_bulk": bool(s["ess_bulk_min"] < policy["ess_bulk_min"]),
+        "flag_ess_tail": bool(s["ess_tail_min"] < policy["ess_tail_min"]),
+        "flag_divergent": bool(s["n_divergent"] > policy["n_divergent"]),
+    }
+    s.update(flags)
+    s["flags_fired"] = sorted(k for k, v in flags.items() if v)
+    s["policy_pass"] = not s["flags_fired"]
+    return s
+
+
+# --- runner ------------------------------------------------------------------------------
+
+def _data_informed_init(pack: ModelAPack, consts: ModelAConsts, cfg: ModelAConfig):
+    """Crude but safe init point (an INIT only, never a prior): flat log f at the
+    count-implied level, all nuisances at their prior centers, FP total at the
+    loa-0 point estimate. Keeps every chain out of the exp-cliff corners that
+    random unconstrained inits occasionally land in."""
+    B, Kf, C, S = consts.n_b, consts.n_k, consts.n_c, consts.n_s
+    dN_tot = float(np.diff(np.asarray(pack.ntrue_edges)).sum())
+    level = float(np.log(
+        max(float(np.asarray(pack.counts).sum()), 1.0)
+        / (0.7 * float(np.asarray(pack.dX).sum()) * dN_tot)))
+    vals = {
+        "sigma_N": jnp.asarray(0.1), "sigma_z": jnp.asarray(0.1),
+        "theta_level": jnp.asarray(level), "theta_slope": jnp.asarray(0.0),
+        "eps_N": jnp.zeros(max(B - 2, 0)),
+        "eps_z": jnp.zeros((B, max(Kf - 1, 0))),
+        "psi_c": jnp.zeros((S, consts.n_molly)),
+        "psi_k_delta": jnp.zeros((2, consts.n_sr, consts.n_zr)),
+        "t": jnp.zeros(consts.n_kk),
+    }
+    if cfg.fp_mode == "joint":
+        vals["fp_lam_total"] = jnp.asarray(
+            max(float(np.asarray(pack.fp_counts).sum()) / consts.fp_ell_eff, 1.0))
+        vals["fp_shape_v"] = jnp.zeros(C * S)
+    return vals
+
+
+def run_model_a(pack: ModelAPack, cfg: Optional[ModelAConfig] = None):
+    """Build consts, run the Farr gate, sample Model A, reduce the posterior.
+
+    Returns
+    -------
+    (mcmc, reductions) : the finished numpyro MCMC object and the reductions
+    dict from ``reduce_f_posterior`` extended with the ``summarize`` block
+    (key "diagnostics"), the Farr ratio, and the sampled-site posteriors for
+    t / fp_lam_total (means and sds).
+    """
+    cfg = cfg or ModelAConfig()
+    consts = build_consts(pack)
+
+    # Farr N_eff gate on the calibration inputs (build time, spec section 2)
+    n_cal = float(np.asarray(pack.molly_n_tot).sum())
+    n_obs = float(np.asarray(pack.counts).sum())
+    farr_ratio = n_cal / max(n_obs, 1.0)
+    if cfg.enforce_farr_gate and farr_ratio < cfg.farr_min_ratio:
+        raise RuntimeError(
+            f"Farr N_eff gate FAILED: calibration counts {n_cal:.0f} < "
+            f"{cfg.farr_min_ratio} x observed counts {n_obs:.0f} "
+            f"(ratio {farr_ratio:.2f}). Enlarge the calibration set or "
+            f"explicitly disable the gate for a stress run.")
+
+    model = partial(
+        model_a, fp_mode=cfg.fp_mode, fp_eps_rate=cfg.fp_eps_rate,
+        fp_shape_sd=cfg.fp_shape_sd, sigma_N_scale=cfg.sigma_N_scale,
+        sigma_z_scale=cfg.sigma_z_scale, level_scale=cfg.level_scale,
+        slope_scale=cfg.slope_scale)
+    nuts_kw = {}
+    if cfg.dense_mass_anchor_block:
+        nuts_kw["dense_mass"] = [("theta_level", "theta_slope", "eps_N")]
+    if cfg.data_informed_init:
+        nuts_kw["init_strategy"] = init_to_value(
+            values=_data_informed_init(pack, consts, cfg))
+    kernel = NUTS(model, target_accept_prob=cfg.target_accept,
+                  max_tree_depth=cfg.max_tree_depth, **nuts_kw)
+    mcmc = MCMC(kernel, num_warmup=cfg.num_warmup, num_samples=cfg.num_samples,
+                num_chains=cfg.num_chains, chain_method=cfg.chain_method,
+                progress_bar=False)
+    t0 = time.time()
+    mcmc.run(
+        jax.random.PRNGKey(cfg.seed),
+        consts,
+        jnp.asarray(pack.counts),
+        jnp.asarray(pack.fp_counts) if cfg.fp_mode == "joint" else None,
+        extra_fields=("diverging",),
+    )
+    samples = mcmc.get_samples()
+    f_draws = np.asarray(samples["f"])  # forces the async device work; time AFTER
+    runtime = time.time() - t0
+
+    red = reduce_f_posterior(f_draws, pack)
+    red["farr_ratio"] = farr_ratio
+    red["diagnostics"] = summarize(mcmc, runtime=runtime)
+    t_draws = np.asarray(samples["t"])
+    red["t_mean"] = t_draws.mean(axis=0)
+    red["t_sd"] = t_draws.std(axis=0, ddof=1)
+    if cfg.fp_mode == "joint":
+        lam_tot = np.asarray(samples["fp_lam_total"])
+        red["fp_lam_total_mean"] = float(lam_tot.mean())
+        red["fp_lam_total_sd"] = float(lam_tot.std(ddof=1))
+    return mcmc, red

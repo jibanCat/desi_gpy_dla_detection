@@ -1,0 +1,379 @@
+"""forward.py — the differentiable Model A forward fold (pure jnp) + numpy oracle.
+
+The expected-count fold (spec section 2, per calibration context):
+
+    mu[c,k,s] = dX[k,s] * sum_b K[c<-b](psi_k_delta; s, kz_to_K[k])
+                          * C[b->cell,s](psi_c) * g[b,k]
+                          * exp(theta_pop[b,k]) * dN_b
+              + w * exp(t[kz_to_K[k]]) * lam_fp[c,s] * E[k,s]
+
+Two implementations of the SAME expression:
+
+* ``fold_mu``            — pure jnp, fully vectorized (NO python loops over data
+                           cells), differentiable, called inside the jitted
+                           NumPyro model on every draw.
+* ``fold_mu_reference``  — plain numpy, written INDEPENDENTLY (explicit loops
+                           over data cells, scipy special functions, its own
+                           digitize/eta-hat/polynomial code; no helpers shared
+                           with the jnp path). The in-module oracle: tests
+                           require agreement at rtol 1e-10 at random parameter
+                           points.
+
+Response kernel K (fail-closed forward object; NO kappa anywhere):
+per response cell (s_resp, z_resp) the pack carries polynomial coefficient
+surfaces (LOWEST order first, covariate u = N_true - mean(ntrue range ends)):
+
+    xi(b)    = N_b + poly(resp_mu_coef, u_b)                     (location, dex)
+    sigma(b) = resp_sig_floor + softplus(poly(resp_sig_coef, u_b))   (> 0)
+    alpha(b) = poly(resp_skew_coef, u_b)
+               * logistic((N_b - ramp_center) / ramp_width)      (skew)
+
+``psi_k_delta`` (2, SR, ZR) adds to the LEADING (order-0) terms of the mu and
+sig coefficient surfaces per response cell (the fit-cov-diag perturbations).
+
+K[c<-b] is the ANALYTIC mass of the skew-normal density of N-hat in observed
+bin c:  K = F(hi_c) - F(lo_c) with the exact skew-normal CDF
+
+    F(x) = Phi(z) - 2 * OwensT(z, alpha),   z = (x - xi) / sigma .
+
+Owen's T has no elementary closed form; the jnp path evaluates it with a
+FIXED 64-node Gauss-Legendre rule on its defining integral
+
+    T(h, a) = (1/2pi) * int_0^a exp(-h^2 (1+t^2)/2) / (1+t^2) dt ,
+
+which is exact to well below 1e-12 absolute for the |alpha| <= ~6 range used
+here (the integrand is analytic; the rule converges geometrically). This is
+NOT the Azzalini approximation — accuracy is asserted in the tests against
+scipy (exact owens_t) at zero skew and |skew| <= 1.4 to << 1e-4 on bin masses.
+The numpy oracle uses ``scipy.special.owens_t`` (exact) — an independent path.
+
+Completeness: C_cell = logistic(eta_hat + psi_c) on the molly (s, m) cells,
+with the Jeffreys-consistent point surface
+
+    eta_hat = log((n_det + 1/2) / (n_tot - n_det + 1/2)) ,
+
+gathered to true-N bins via b -> molly-cell digitization.
+"""
+from __future__ import annotations
+
+import dataclasses
+
+import numpy as np
+import jax
+import jax.numpy as jnp
+
+from CDDF_analysis.hbi_mcmc.pack import ModelAPack
+
+__all__ = ["ModelAConsts", "build_consts", "fold_mu", "fold_mu_reference",
+           "owens_t_jnp", "skewnorm_cdf_jnp", "eta_hat_sigma_hat"]
+
+_SQRT2 = float(np.sqrt(2.0))
+# fixed Gauss-Legendre rule for Owen's T (module-level constants; static in jit)
+_GL_X, _GL_W = np.polynomial.legendre.leggauss(64)
+_GL_X = jnp.asarray(_GL_X)
+_GL_W = jnp.asarray(_GL_W)
+
+
+# --- shared small pieces (jnp path only) ---------------------------------------
+
+def owens_t_jnp(h, a):
+    """Owen's T(h, a) by 64-node Gauss-Legendre on the defining integral (jnp).
+
+    Broadcasts over h and a. Odd in a, even in h (both inherited from the
+    integral form directly). Accurate to < 1e-12 abs for |a| <= ~6.
+    """
+    h = jnp.asarray(h)
+    a = jnp.asarray(a)
+    h, a = jnp.broadcast_arrays(h, a)
+    t = 0.5 * (_GL_X + 1.0)                      # (Q,) nodes on [0, 1]
+    ta = a[..., None] * t                        # (..., Q) nodes on [0, a]
+    one_pt2 = 1.0 + ta * ta
+    integ = jnp.exp(-0.5 * (h[..., None] ** 2) * one_pt2) / one_pt2
+    return (a / (4.0 * jnp.pi)) * jnp.sum(_GL_W * integ, axis=-1)
+
+
+def skewnorm_cdf_jnp(x, xi, omega, alpha):
+    """Exact skew-normal CDF Phi(z) - 2 T(z, alpha), z = (x - xi)/omega (jnp)."""
+    z = (x - xi) / omega
+    return 0.5 * (1.0 + jax.scipy.special.erf(z / _SQRT2)) - 2.0 * owens_t_jnp(z, alpha)
+
+
+def eta_hat_sigma_hat(molly_n_det, molly_n_tot):
+    """Jeffreys-consistent completeness point surface + width (numpy).
+
+    eta_hat  = log((n_det + 1/2)/(n_tot - n_det + 1/2))
+    sig_hat  = sqrt(1/(n_det + 1/2) + 1/(n_tot - n_det + 1/2))
+    """
+    d = np.asarray(molly_n_det, float)
+    t = np.asarray(molly_n_tot, float)
+    eta = np.log((d + 0.5) / (t - d + 0.5))
+    sig = np.sqrt(1.0 / (d + 0.5) + 1.0 / (t - d + 0.5))
+    return eta, sig
+
+
+# --- static constants for the fold ------------------------------------------------
+
+@dataclasses.dataclass(frozen=True)
+class ModelAConsts:
+    """Static (non-sampled) inputs of the fold, precomputed once from a pack."""
+
+    # grids
+    nhat_edges: jnp.ndarray      # (C+1,)
+    dN_b: jnp.ndarray            # (B,)
+    Nc_b: jnp.ndarray            # (B,) true-N bin centers
+    u_pow: jnp.ndarray           # (B, D) covariate powers u^0..u^{D-1}
+    kz_to_K: np.ndarray          # (Kf,) static int indices
+    s_to_sresp: np.ndarray       # (S,)  static int indices
+    K_to_zresp: np.ndarray       # (KK,) static int indices
+    b_to_cell: np.ndarray        # (B,)  static int indices into molly cells
+    # data-plane constants
+    dX: jnp.ndarray              # (Kf, S)
+    g_bk: jnp.ndarray            # (B, Kf)
+    # completeness
+    eta_hat: jnp.ndarray         # (S, M)
+    sigma_hat: jnp.ndarray       # (S, M)
+    # response
+    resp_mu_coef: jnp.ndarray    # (SR, ZR, D)
+    resp_sig_coef: jnp.ndarray   # (SR, ZR, D)
+    resp_skew_coef: jnp.ndarray  # (SR, ZR, D)
+    resp_sig_floor: float
+    resp_skew_ramp: jnp.ndarray  # (2,)
+    fitcov_sd: jnp.ndarray       # (2, SR, ZR) prior SDs for psi_k_delta
+    # FP
+    fp_w: float
+    fp_ell_eff: float
+    fp_E: jnp.ndarray            # (Kf, S)
+    t_sigma: jnp.ndarray         # (KK,)
+    # dims
+    n_c: int
+    n_b: int
+    n_k: int
+    n_kk: int
+    n_s: int
+    n_molly: int
+    n_sr: int
+    n_zr: int
+    n_deg: int
+
+
+_DEFAULT_FITCOV_DIAG = (0.02 ** 2, 0.10 ** 2)  # documented fallback (mu0, sig0 vars)
+
+
+def build_consts(pack: ModelAPack) -> ModelAConsts:
+    """Precompute the static fold inputs (index maps, powers, Jeffreys eta-hat)."""
+    ntrue = np.asarray(pack.ntrue_edges, float)
+    Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
+    dN = np.diff(ntrue)
+    n_ref = 0.5 * (ntrue[0] + ntrue[-1])
+    D = pack.resp_mu_coef.shape[-1]
+    u = Nc - n_ref
+    u_pow = u[:, None] ** np.arange(D)[None, :]
+
+    zf = np.asarray(pack.zf_edges, float)
+    zc = np.asarray(pack.zc_edges, float)
+    snr = np.asarray(pack.snr_edges, float)
+    rse = np.asarray(pack.resp_snr_edges, float)
+    rze = np.asarray(pack.resp_z_edges, float)
+
+    kz_to_K = np.asarray(pack.kz_to_K, dtype=np.int64)
+    s_to_sresp = (np.digitize(snr[:-1] + 1e-9, rse) - 1).astype(np.int64)
+    zc_centers = 0.5 * (zc[:-1] + zc[1:])
+    K_to_zresp = (np.digitize(zc_centers, rze) - 1).astype(np.int64)
+    me = np.asarray(pack.molly_nhi_edges, float)
+    b_to_cell = np.clip(np.digitize(Nc, me) - 1, 0, len(me) - 2).astype(np.int64)
+
+    eta_hat, sigma_hat = eta_hat_sigma_hat(pack.molly_n_det, pack.molly_n_tot)
+
+    if pack.resp_fitcov_diag is not None:
+        fitcov_sd = np.sqrt(np.asarray(pack.resp_fitcov_diag, float))
+    else:  # documented default when the (extension) key is absent
+        SR, ZR = pack.resp_mu_coef.shape[:2]
+        fitcov_sd = np.sqrt(np.stack([
+            np.full((SR, ZR), _DEFAULT_FITCOV_DIAG[0]),
+            np.full((SR, ZR), _DEFAULT_FITCOV_DIAG[1])]))
+
+    return ModelAConsts(
+        nhat_edges=jnp.asarray(pack.nhat_edges, float),
+        dN_b=jnp.asarray(dN),
+        Nc_b=jnp.asarray(Nc),
+        u_pow=jnp.asarray(u_pow),
+        kz_to_K=kz_to_K,
+        s_to_sresp=s_to_sresp,
+        K_to_zresp=K_to_zresp,
+        b_to_cell=b_to_cell,
+        dX=jnp.asarray(pack.dX, float),
+        g_bk=jnp.asarray(np.asarray(pack.g_grid, float)[b_to_cell, :]),
+        eta_hat=jnp.asarray(eta_hat),
+        sigma_hat=jnp.asarray(sigma_hat),
+        resp_mu_coef=jnp.asarray(pack.resp_mu_coef, float),
+        resp_sig_coef=jnp.asarray(pack.resp_sig_coef, float),
+        resp_skew_coef=jnp.asarray(pack.resp_skew_coef, float),
+        resp_sig_floor=float(pack.resp_sig_floor),
+        resp_skew_ramp=jnp.asarray(pack.resp_skew_ramp, float),
+        fitcov_sd=jnp.asarray(fitcov_sd),
+        fp_w=float(pack.fp_w_sightline_ratio),
+        fp_ell_eff=float(pack.fp_ell_eff),
+        fp_E=jnp.asarray(pack.fp_E_alloc, float),
+        t_sigma=jnp.asarray(pack.t_sigma, float),
+        n_c=pack.n_c, n_b=pack.n_b, n_k=pack.n_k, n_kk=pack.n_kk,
+        n_s=pack.n_s, n_molly=pack.n_molly,
+        n_sr=pack.resp_mu_coef.shape[0], n_zr=pack.resp_mu_coef.shape[1],
+        n_deg=D,
+    )
+
+
+# --- the jnp fold ------------------------------------------------------------------
+
+def build_K(psi_k_delta, consts: ModelAConsts):
+    """Response kernel K[s, K, c, b]: skew-normal bin masses, fully vectorized.
+
+    psi_k_delta (2, SR, ZR) perturbs the order-0 (leading) mu/sig coef terms.
+    """
+    mu_coef = consts.resp_mu_coef.at[..., 0].add(psi_k_delta[0])
+    sig_coef = consts.resp_sig_coef.at[..., 0].add(psi_k_delta[1])
+    # gather response cells to (S, KK, D)
+    mu_sk = mu_coef[consts.s_to_sresp][:, consts.K_to_zresp]
+    sig_sk = sig_coef[consts.s_to_sresp][:, consts.K_to_zresp]
+    skw_sk = consts.resp_skew_coef[consts.s_to_sresp][:, consts.K_to_zresp]
+    # polynomial surfaces over b: (S, KK, B)
+    xi = consts.Nc_b[None, None, :] + jnp.einsum("skd,bd->skb", mu_sk, consts.u_pow)
+    sig = consts.resp_sig_floor + jax.nn.softplus(
+        jnp.einsum("skd,bd->skb", sig_sk, consts.u_pow))
+    ramp = jax.nn.sigmoid(
+        (consts.Nc_b - consts.resp_skew_ramp[0]) / consts.resp_skew_ramp[1])
+    alpha = jnp.einsum("skd,bd->skb", skw_sk, consts.u_pow) * ramp[None, None, :]
+    # CDF at every observed-bin edge: (S, KK, C+1, B)
+    F = skewnorm_cdf_jnp(consts.nhat_edges[None, None, :, None],
+                         xi[:, :, None, :], sig[:, :, None, :],
+                         alpha[:, :, None, :])
+    K = jnp.clip(F[:, :, 1:, :] - F[:, :, :-1, :], 0.0, 1.0)
+    return K  # (S, KK, C, B)
+
+
+def fold_mu(theta_pop, psi_c, psi_k_delta, log_t, lam_fp, consts: ModelAConsts):
+    """The Model A forward fold, pure jnp, no python loops over data cells.
+
+    Parameters
+    ----------
+    theta_pop   : (B, Kf)  log f on the fine grid
+    psi_c       : (S, M)   completeness logit offsets (eta = eta_hat + psi_c)
+    psi_k_delta : (2, SR, ZR) order-0 mu/sig response-coef perturbations
+    log_t       : (KK,)    per-coarse-z log transfer factors
+    lam_fp      : (C, S)   FP intensity (sampled; pass zeros for fp-off)
+    consts      : ModelAConsts
+
+    Returns
+    -------
+    mu : (C, Kf, S) expected counts.
+
+    Note: lam_fp is an explicit argument (it is a sampled site per spec
+    section 2 — the fold signature in the Q3 task listing omitted it only
+    because it groups with the FP block).
+    """
+    K = build_K(psi_k_delta, consts)                       # (S, KK, C, B)
+    K_full = K[:, consts.kz_to_K]                          # (S, Kf, C, B) static gather
+    C_cells = jax.nn.sigmoid(consts.eta_hat + psi_c)       # (S, M)
+    C_bs = C_cells[:, consts.b_to_cell]                    # (S, B) static gather
+    f = jnp.exp(theta_pop)                                 # (B, Kf)
+    contrib = C_bs.T[:, None, :] * consts.g_bk[:, :, None] * f[:, :, None] \
+        * consts.dN_b[:, None, None]                       # (B, Kf, S)
+    mu_sig = jnp.einsum("skcb,bks->cks", K_full, contrib) * consts.dX[None, :, :]
+    exp_t_k = jnp.exp(log_t)[consts.kz_to_K]               # (Kf,)
+    mu_fp = consts.fp_w * exp_t_k[None, :, None] * lam_fp[:, None, :] \
+        * consts.fp_E[None, :, :]                          # (C, Kf, S)
+    return mu_sig + mu_fp
+
+
+# --- the INDEPENDENT numpy oracle ---------------------------------------------------
+# Written as a separate code path on purpose: explicit loops over data cells,
+# scipy special functions, its own digitize/eta-hat/poly evaluation. Do NOT
+# refactor to share helpers with the jnp fold above — the whole point is that
+# the two implementations can only agree if the expression itself is right.
+
+def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
+                      pack: ModelAPack):
+    """Plain-numpy oracle of the SAME fold expression, computed cell by cell."""
+    from scipy.special import ndtr, owens_t, expit
+
+    theta_pop = np.asarray(theta_pop, float)
+    psi_c = np.asarray(psi_c, float)
+    psi_k_delta = np.asarray(psi_k_delta, float)
+    log_t = np.asarray(log_t, float)
+    lam_fp = np.asarray(lam_fp, float)
+
+    nhat = np.asarray(pack.nhat_edges, float)
+    ntrue = np.asarray(pack.ntrue_edges, float)
+    zf = np.asarray(pack.zf_edges, float)
+    zc = np.asarray(pack.zc_edges, float)
+    snr = np.asarray(pack.snr_edges, float)
+    C_n = len(nhat) - 1
+    B_n = len(ntrue) - 1
+    K_n = len(zf) - 1
+    S_n = len(snr) - 1
+
+    centers_b = np.array([0.5 * (ntrue[i] + ntrue[i + 1]) for i in range(B_n)])
+    dN = np.array([ntrue[i + 1] - ntrue[i] for i in range(B_n)])
+    n_ref = 0.5 * (ntrue[0] + ntrue[-1])
+
+    # index maps (independent digitize logic)
+    zf_centers = np.array([0.5 * (zf[i] + zf[i + 1]) for i in range(K_n)])
+    kz2K = np.searchsorted(zc, zf_centers, side="right") - 1
+    kz2K = np.minimum(kz2K, len(zc) - 2)
+    rse = np.asarray(pack.resp_snr_edges, float)
+    s2sr = np.searchsorted(rse, snr[:-1] + 1e-9, side="right") - 1
+    rze = np.asarray(pack.resp_z_edges, float)
+    zc_centers = np.array([0.5 * (zc[i] + zc[i + 1]) for i in range(len(zc) - 1)])
+    K2zr = np.searchsorted(rze, zc_centers, side="right") - 1
+    me = np.asarray(pack.molly_nhi_edges, float)
+    b2cell = np.searchsorted(me, centers_b, side="right") - 1
+    b2cell = np.clip(b2cell, 0, len(me) - 2)
+
+    # completeness surface (own Jeffreys-logit code)
+    nd = np.asarray(pack.molly_n_det, float)
+    nt = np.asarray(pack.molly_n_tot, float)
+    eta_hat_ref = np.log(nd + 0.5) - np.log(nt - nd + 0.5)
+    C_cells = expit(eta_hat_ref + psi_c)                    # (S, M)
+
+    g = np.asarray(pack.g_grid, float)                      # (M, Kf)
+    dX = np.asarray(pack.dX, float)
+    E = np.asarray(pack.fp_E_alloc, float)
+    w = float(pack.fp_w_sightline_ratio)
+    sig_floor = float(pack.resp_sig_floor)
+    ramp_c, ramp_w = [float(v) for v in np.asarray(pack.resp_skew_ramp, float)]
+
+    def _poly(coefs, u):
+        return sum(coefs[d] * u ** d for d in range(len(coefs)))
+
+    def _softplus(x):
+        return np.logaddexp(0.0, x)
+
+    def _sn_cdf(x, xi, om, al):
+        z = (x - xi) / om
+        return ndtr(z) - 2.0 * owens_t(z, al)
+
+    f = np.exp(theta_pop)                                   # (B, Kf)
+    mu = np.zeros((C_n, K_n, S_n))
+    for s in range(S_n):
+        sr = int(s2sr[s])
+        for k in range(K_n):
+            Kc = int(kz2K[k])
+            zr = int(K2zr[Kc])
+            mu_coefs = np.asarray(pack.resp_mu_coef, float)[sr, zr].copy()
+            sig_coefs = np.asarray(pack.resp_sig_coef, float)[sr, zr].copy()
+            skw_coefs = np.asarray(pack.resp_skew_coef, float)[sr, zr]
+            mu_coefs[0] = mu_coefs[0] + psi_k_delta[0, sr, zr]
+            sig_coefs[0] = sig_coefs[0] + psi_k_delta[1, sr, zr]
+            for c in range(C_n):
+                acc = 0.0
+                for b in range(B_n):
+                    u = centers_b[b] - n_ref
+                    xi = centers_b[b] + _poly(mu_coefs, u)
+                    om = sig_floor + _softplus(_poly(sig_coefs, u))
+                    al = _poly(skw_coefs, u) * expit((centers_b[b] - ramp_c) / ramp_w)
+                    mass = _sn_cdf(nhat[c + 1], xi, om, al) - _sn_cdf(nhat[c], xi, om, al)
+                    mass = min(max(mass, 0.0), 1.0)
+                    acc += (mass * C_cells[s, b2cell[b]] * g[b2cell[b], k]
+                            * f[b, k] * dN[b])
+                mu[c, k, s] = dX[k, s] * acc \
+                    + w * np.exp(log_t[Kc]) * lam_fp[c, s] * E[k, s]
+    return mu
