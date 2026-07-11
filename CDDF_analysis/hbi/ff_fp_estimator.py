@@ -79,8 +79,7 @@ DEF_MOLLY_TSV = ("/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_2026052
 # --build-molly-counts from the 2LPT-0 production catalog + truth (15 s).
 DEF_SCRATCH = os.environ.get(
     "FF_FP_CACHE_DIR",
-    "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/"
-    "000bee07-19b0-4a65-a031-f4078712a3e1/scratchpad")
+    "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/ff_fp_cache")
 DEF_MOLLY_COUNTS = os.path.join(DEF_SCRATCH, "molly_counts_2lpt0_lyaonly195.npz")
 
 N_EDGES = np.round(np.arange(17.2, 22.40001, 0.1), 3)        # 52 bins
@@ -546,6 +545,17 @@ def tier_closures(st, band, w, fp_point, fp_draws, n_truth):
 # ---------------------------------------------------------------------------
 # driver
 # ---------------------------------------------------------------------------
+def _git_state():
+    """'clean' iff the ROUTINE file itself is committed & unmodified, else 'dirty'."""
+    try:
+        out = subprocess.check_output(
+            ["git", "status", "--porcelain", "--", __file__],
+            cwd=os.path.dirname(os.path.abspath(__file__)), text=True).strip()
+        return "clean" if not out else "dirty (routine modified/untracked)"
+    except Exception:
+        return "unknown"
+
+
 def _git_commit():
     try:
         return subprocess.check_output(
@@ -685,7 +695,7 @@ def run_estimator(mock, calib_mock="2lpt0", ndraw=10_000, seed=0,
         provenance=dict(
             routine="CDDF_analysis/hbi/ff_fp_estimator.py",
             code_commit=_git_commit(),
-            code_state="UNCOMMITTED (Queue-2 implementation, pre-review)",
+            code_state=_git_state(),
             date=time.strftime("%Y-%m-%d"),
             rederive=(f"conda run -n gpdla python -m CDDF_analysis.hbi."
                       f"ff_fp_estimator --mock {mock} --calib-mock {calib_mock} "
