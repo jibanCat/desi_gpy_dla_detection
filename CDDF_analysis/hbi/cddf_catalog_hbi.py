@@ -434,8 +434,8 @@ class HBIConfig:
     # --- Track-C BAND-FINALIZE (gated, DEFAULT-OFF; BAND-ONLY, POINT byte-identical) ---
     band_recenter: bool = False        # FIX 1 — recenter-on-point (bootstrap bias correction;
     #                                    Jensen). The diagnosis (track_c_band_offset_diagnosis.md)
-    #                                    proved the per-draw positivity-constrained b-spline MAP
-    #                                    θ̂(ψ) is CONVEX in the resampled counts ψ, so
+    #                                    found the per-draw positivity-constrained b-spline MAP
+    #                                    θ̂(ψ) is a non-linear (non-convex) functional of ψ, so empirically
     #                                    E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the plug-in point (Jensen) — the
     #                                    whole MC band sits ~2.7σ BELOW the headline MAP even though
     #                                    the point R0≈0.99 is the near-unbiased estimate. The
@@ -1730,8 +1730,8 @@ def recenter_band_on_point(samples, point):
     so that any quantile q of the corrected band equals ``point + (q − band_median)``.
 
     Justification (track_c_band_offset_diagnosis.md). The per-draw positivity-
-    constrained b-spline MAP θ̂(ψ) is a CONVEX functional of the resampled counts ψ,
-    so by Jensen E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the point — the whole MC band sits below the
+    constrained b-spline MAP θ̂(ψ) is a NON-LINEAR (non-convex) functional of the resampled counts ψ,
+    so empirically E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the point — the whole MC band sits below the
     headline MAP even though the point (R0≈0.99) is the trustworthy near-unbiased
     estimate. The sampling distribution is empirically SYMMETRIC (mean≈median in every
     config of the decomposition), so recentering on the point is the correct first-order
@@ -2183,8 +2183,8 @@ def write_outputs(cfg: HBIConfig, point_est: dict, mc: dict, mm: MollyMatrix,
     # per-z bands already recenter their RAW samples; here the band is reported from the
     # already-reduced joint_mc_errors quantiles, so we apply the SAME additive
     # median->point shift per bin to the stored quantiles (algebraically identical to
-    # recentering the raw samples then re-reducing; width preserved). The convex-bspline
-    # MAP Jensen offset (track_c_band_offset_diagnosis.md) makes the un-recentered f(N)
+    # recentering the raw samples then re-reducing; width preserved). The non-linear-bspline
+    # MAP Jensen-type offset (track_c_band_offset_diagnosis.md) makes the un-recentered f(N)
     # band sit ~17.5% above the plug-in MAP line; recentering puts the MAP back inside
     # its own 68% band. Symmetric at first order (exact for the CLT/integrated case);
     # the sparse high-N tail bins are mildly right-skewed, so there it relocates the

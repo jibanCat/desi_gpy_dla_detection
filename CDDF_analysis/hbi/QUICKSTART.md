@@ -35,7 +35,7 @@ sbatch slurm/greatlakes/production/remp_kernel.sbatch
 export OUT=/scratch/.../r_emp
 export CAT=/scratch/.../combined_catalog/
 python CDDF_analysis/hbi/run_remp_kernel.py \
-    --stage build 2 3 \
+    --stage all \
     --out "${OUT}" \
     --catalog-dir "${CAT}" \
     --truth /nfs/turbo/.../hcd_truth_cat.fits \
@@ -57,7 +57,7 @@ python CDDF_analysis/hbi/run_remp_kernel.py \
 ```
 
 Key flags:
-- `--stage build 2 3` — build R_emp kernel, run bspbody MAP fit, run WALL-1 tilt closure
+- `--stage all` — build R_emp kernel, run bspbody MAP fit, run WALL-1 tilt closure (runs the three stages sequentially in one invocation; pass `--stage build`, `--stage 2`, or `--stage 3` to run just one — the SLURM wrapper loops over them)
 - `--fit-floor 19.5` — detection-row floor for the bspbody fit
 - `--lambda-bspbody 30.0` — 2nd-diff curvature penalty (swept minimal-DOF rung)
 - `--dalpha 0.5` — WALL-1 tilt magnitude (runs +/- dalpha)

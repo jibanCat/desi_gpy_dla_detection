@@ -36,6 +36,15 @@ private/*
 !private/*.template
 !private/.gitkeep
 
+# Real-LOA results-store partition: defense-in-depth so a stray `git add` of a
+# results-store leaf cannot land real data in this PUBLIC repo. The store lives
+# on scratch ($CDDF_STORE/real_loa/...), never here, so this should match nothing
+# in practice -- but if it ever would, ignoring it keeps it out of history.
+# NOTE: provenance.json is deliberately NOT blanket-ignored -- MOCK provenance is
+# committable. Real-LOA provenance.json (privacy.class == "real-LOA") is blocked
+# at commit time by tools/provenance/precommit_privacy_guard.py, not here.
+real_loa/
+
 # Generated outputs / large artifacts
 figures/
 out/
@@ -116,3 +125,11 @@ examples/prototype_dla_clustering.png
 # Regenerate with tools/loa_hpx_spec_counts.py (see loa_cddf_nersc.env / matterhorn_nersc_v1.env).
 # Covers *_qso_counts.txt (matterhorn) and *_spec_counts.txt (loa).
 slurm/nersc/production/*_counts.txt
+
+# HBI tutorial mock fixtures (small, 2LPT-0 mock only) must be tracked despite *.npz above
+!CDDF_analysis/hbi/tutorial_data/*.npz
+
+# HBI tutorial: private-mode render scratch (may contain real-LOA) -- never commit
+notebooks/_nb5_reduction_out/
+notebooks/_t*.ipynb
+notebooks/_tpriv.ipynb
