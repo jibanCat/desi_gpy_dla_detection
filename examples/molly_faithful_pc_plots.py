@@ -129,6 +129,25 @@ def parse_args():
     p.add_argument("--snr-bins", default=None,
                    help="Comma-separated S2N_RED bin edges for the matrix. "
                         "'inf' allowed. Default: 0,1,2,3,4,5,6,7,inf (molly).")
+    p.add_argument("--zdla-bins", default=None,
+                   help="Comma-separated z_DLA bin edges for the z-resolved "
+                        "purity/completeness curves (molly_pc_z_matrix.tsv + "
+                        "fig_pc_vs_zdla.png). Must be given together with "
+                        "--zqso-bins; if both are omitted the z-reduction is "
+                        "skipped and the output set is unchanged. "
+                        "Suggested: 2.0,2.5,3.0,3.5 (matches the HBI z grid).")
+    p.add_argument("--zqso-bins", default=None,
+                   help="Comma-separated z_QSO bin edges; one curve is drawn "
+                        "per z_QSO bin. Suggested: 2.0,2.5,3.0,4.25. "
+                        "NOTE: z_DLA < z_QSO always and the blue cutoff raises "
+                        "the lower z_DLA edge with z_QSO, so the (z_DLA,z_QSO) "
+                        "grid is intrinsically triangular — empty cells are "
+                        "geometry, not finder failures.")
+    p.add_argument("--z-nhi-floors", default=None,
+                   help="Comma-separated log-NHI floors for the z-resolved "
+                        "curves; one figure per floor, all floors in one TSV. "
+                        "Applied to BOTH the predicted and truth thresholds. "
+                        "Default: just --nhi-min. Suggested: 20.3,20.0.")
     p.add_argument("--bf-band-min", type=float, default=None,
                    help="Optional extra cut: keep only detections with "
                         "BF_BAND >= this (the local-posterior boundary-purity "
@@ -549,6 +568,119 @@ def completeness_snr_nhi_bins(cat, tp, min_snr, max_snr, min_true_nhi, max_true_
 
 
 # -----------------------------------------------------------------------------
+# z-resolved P/C  (spec: notes repo `2026-07-22_zresolved_pc_design.md`)
+#
+# NOTE ON THE z AXIS -- the two reductions below deliberately bin on DIFFERENT
+# quantities, and this is not an oversight:
+#
+#   purity        bins on PREDICTED  Z_DLA. Its denominator is every detection,
+#                 and a false positive has no truth counterpart to bin on.
+#   completeness  bins on TRUTH      Z_DLA, on BOTH sides -- numerator via the
+#                 matched `Z_TRUE`, denominator via `mock_cat["Z_DLA"]` -- so
+#                 that numerator and denominator live on the same variable.
+#                 This mirrors how `completeness_snr_nhi_bins` uses NHI_TRUE
+#                 against mock_cat["NHI"].
+#
+# For true positives the two agree to within the matcher tolerance
+# `dz_rel = 0.01(1+z)`. The asymmetry is recorded in the TSV header and the
+# figure caption rather than hidden.
+#
+# Bins are half-open [lo, hi) on both axes, so summing every cell reproduces the
+# z-marginal headline exactly (see tests/test_zresolved_pc.py).
+# -----------------------------------------------------------------------------
+def purity_z_bins(cat, tp, min_snr, min_pred_nhi, min_goodness,
+                  zdla_lo, zdla_hi, zqso_lo, zqso_hi,
+                  good_mask=None, nhi_key="NHI", goodness_key="P_DLA"):
+    """Purity in one (z_DLA x z_QSO) cell. Bins on PREDICTED Z_DLA."""
+    s2n = np.asarray(cat["S2N_RED"], dtype=float)
+    nhi = np.asarray(cat[nhi_key], dtype=float)
+    g = np.asarray(cat[goodness_key], dtype=float)
+    z_d = np.asarray(cat["Z_DLA"], dtype=float)
+    z_q = np.asarray(cat["Z_QSO"], dtype=float)
+    m = (s2n > min_snr) & (nhi > min_pred_nhi) & (g > min_goodness)
+    m &= (z_d >= zdla_lo) & (z_d < zdla_hi)
+    m &= (z_q >= zqso_lo) & (z_q < zqso_hi)
+    if good_mask is not None:
+        m &= good_mask
+    ntot = int(m.sum())
+    ntp = int(np.asarray(tp)[m].sum())
+    return ntp, ntot, (ntp / ntot if ntot else np.nan)
+
+
+def completeness_z_bins(cat, tp, min_snr, min_true_nhi, min_pred_nhi,
+                        min_goodness, mock_cat,
+                        zdla_lo, zdla_hi, zqso_lo, zqso_hi,
+                        good_mask=None, nhi_key="NHI", goodness_key="P_DLA"):
+    """Completeness in one (z_DLA x z_QSO) cell. Bins on TRUTH Z_DLA both sides.
+
+    Non-TP rows carry NaN `Z_TRUE`, which fails the half-open comparison and so
+    drops out of the numerator automatically.
+    """
+    s2n = np.asarray(cat["S2N_RED"], dtype=float)
+    nhi = np.asarray(cat[nhi_key], dtype=float)
+    nhi_true = np.asarray(cat["NHI_TRUE"], dtype=float)
+    g = np.asarray(cat[goodness_key], dtype=float)
+    z_tr = np.asarray(cat["Z_TRUE"], dtype=float)
+    z_q = np.asarray(cat["Z_QSO"], dtype=float)
+    m = (s2n > min_snr) & (nhi > min_pred_nhi) & (g > min_goodness)
+    # The numerator MUST be gated on TRUTH NHI, matching the denominator --
+    # exactly as completeness_snr_nhi_bins gates its bin on NHI_TRUE. Gating on
+    # predicted NHI alone lets systems whose truth NHI sits below the floor but
+    # whose FIT scattered above it enter the numerator while the denominator
+    # excludes them: Eddington bias across the threshold, which drove per-cell
+    # completeness to 1.14 on 2LPT-0 before this line existed.
+    with np.errstate(invalid="ignore"):
+        m &= (nhi_true > min_true_nhi)
+    with np.errstate(invalid="ignore"):          # NaN Z_TRUE on non-TP rows
+        m &= (z_tr >= zdla_lo) & (z_tr < zdla_hi)
+    m &= (z_q >= zqso_lo) & (z_q < zqso_hi)
+    if good_mask is not None:
+        m &= good_mask
+    n_found = int(np.asarray(tp)[m].sum())
+
+    s2n_m = np.asarray(mock_cat["S2N_RED"], dtype=float)
+    nhi_m = np.asarray(mock_cat["NHI"], dtype=float)
+    z_d_m = np.asarray(mock_cat["Z_DLA"], dtype=float)
+    z_q_m = np.asarray(mock_cat["Z_QSO"], dtype=float)
+    mm = (s2n_m > min_snr) & (nhi_m > min_true_nhi)
+    mm &= (z_d_m >= zdla_lo) & (z_d_m < zdla_hi)
+    mm &= (z_q_m >= zqso_lo) & (z_q_m < zqso_hi)
+    n_fid = int(mm.sum())
+    return n_found, n_fid, (n_found / n_fid if n_fid else np.nan)
+
+
+def wilson_interval(k, n, z=1.0):
+    """Wilson score interval for a binomial proportion; default z=1 => 68.3%.
+
+    Preferred over the normal approximation because it stays inside [0,1] and
+    keeps non-zero width at p=0 and p=1 -- where the normal interval collapses
+    and would render on the figure as if the value were measured exactly.
+    Returns (nan, nan) for n == 0.
+    """
+    if n == 0:
+        return (np.nan, np.nan)
+    # k > n is reachable for completeness: a TP survives `cat_cut` (cut on the
+    # min/max of predicted AND truth z) while its truth row was dropped from
+    # `truth_cut` (cut on truth z alone), so a cell can hold more matched
+    # systems than truth systems. The POINT estimate is returned unclamped by
+    # completeness_z_bins so the anomaly stays visible in the TSV; here we clamp
+    # only so the interval arithmetic stays real-valued.
+    p = min(max(k / n, 0.0), 1.0)
+    denom = 1.0 + z * z / n
+    centre = (p + z * z / (2.0 * n)) / denom
+    half = (z / denom) * np.sqrt(p * (1.0 - p) / n + z * z / (4.0 * n * n))
+    lo, hi = centre - half, centre + half
+    # At the extremes the bounds are analytically exact -- at p=1 the upper
+    # bound is (1 + z^2/n)/(1 + z^2/n) = 1 -- but the fp evaluation lands a ulp
+    # short. Snap to the exact values rather than carrying the rounding.
+    if k == 0:
+        lo = 0.0
+    if k == n:
+        hi = 1.0
+    return (max(0.0, lo), min(1.0, hi))
+
+
+# -----------------------------------------------------------------------------
 # Plots
 # -----------------------------------------------------------------------------
 def setup_mpl():
@@ -661,6 +793,106 @@ def plot_matrix(data: np.ndarray, snr_bin_plot: np.ndarray,
     plt.close(fig)
 
 
+def plot_pc_vs_zdla(rows, zdla_edges, zqso_edges, out_png, title):
+    """Purity and completeness vs z_DLA, one coloured+labelled line per z_QSO bin.
+
+    `rows` is the list of per-cell dicts built by `_zresolved_pc`. Cells with no
+    data carry NaN and are simply absent from the line -- which is what makes the
+    triangular (z_DLA < z_QSO) structure render correctly with no extra logic:
+    each curve spans only the z_DLA range its forest window admits.
+    """
+    setup_mpl()
+    import matplotlib.pyplot as plt
+    centres = 0.5 * (np.asarray(zdla_edges[:-1]) + np.asarray(zdla_edges[1:]))
+    n_q = len(zqso_edges) - 1
+    colours = plt.cm.viridis(np.linspace(0.05, 0.85, n_q))
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), sharex=True, sharey=True)
+    for j in range(n_q):
+        q_lo, q_hi = zqso_edges[j], zqso_edges[j + 1]
+        sel = [r for r in rows if r["zqso_lo"] == q_lo]
+        sel.sort(key=lambda r: r["zdla_lo"])
+        label = rf"$z_{{\rm QSO}} \in [{q_lo:g}, {q_hi:g})$"
+        for ax, key, lo_key, hi_key in (
+                (axes[0], "purity", "pur_lo", "pur_hi"),
+                (axes[1], "completeness", "comp_lo", "comp_hi")):
+            y = np.array([r[key] for r in sel], dtype=float)
+            ylo = np.array([r[lo_key] for r in sel], dtype=float)
+            yhi = np.array([r[hi_key] for r in sel], dtype=float)
+            # Defensive: a point estimate can still sit a hair outside its
+            # clamped interval (see wilson_interval). Never let that raise.
+            yerr = np.clip(np.vstack([y - ylo, yhi - y]), 0.0, None)
+            ax.errorbar(centres, y, yerr=yerr, color=colours[j], label=label,
+                        marker="o", ms=5, lw=1.6, capsize=3, elinewidth=1.0)
+
+    for ax, name in zip(axes, ("Purity", "Completeness")):
+        ax.set_xlabel(r"$z_{\rm DLA}$")
+        ax.set_ylabel(name)
+        ax.set_title(name)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(0, 1.05)
+    axes[0].legend(loc="lower left", fontsize=8, framealpha=0.9)
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=120)
+    plt.close(fig)
+
+
+def _zresolved_pc(cat_cut, tp, truth_cut, good_mask, args,
+                  zdla_edges, zqso_edges, nhi_floors):
+    """Build the per-cell z-resolved P/C rows for every (floor, z_DLA, z_QSO)."""
+    rows = []
+    for floor in nhi_floors:
+        for i in range(len(zdla_edges) - 1):
+            for j in range(len(zqso_edges) - 1):
+                d_lo, d_hi = zdla_edges[i], zdla_edges[i + 1]
+                q_lo, q_hi = zqso_edges[j], zqso_edges[j + 1]
+                ntp, ndet, pur = purity_z_bins(
+                    cat_cut, tp, args.snr_min, floor, args.gp_conf,
+                    d_lo, d_hi, q_lo, q_hi, good_mask)
+                nf, nt, comp = completeness_z_bins(
+                    cat_cut, tp, args.snr_min, floor, floor, args.gp_conf,
+                    truth_cut, d_lo, d_hi, q_lo, q_hi, good_mask)
+                p_lo, p_hi = wilson_interval(ntp, ndet)
+                c_lo, c_hi = wilson_interval(nf, nt)
+                rows.append(dict(
+                    nhi_floor=floor, zdla_lo=d_lo, zdla_hi=d_hi,
+                    zqso_lo=q_lo, zqso_hi=q_hi,
+                    n_tp=ntp, n_det=ndet, purity=pur, pur_lo=p_lo, pur_hi=p_hi,
+                    n_found=nf, n_true=nt, completeness=comp,
+                    comp_lo=c_lo, comp_hi=c_hi))
+    return rows
+
+
+def _write_zresolved_tsv(rows, path, args, lam_rf_min, title):
+    cols = ["nhi_floor", "zdla_lo", "zdla_hi", "zqso_lo", "zqso_hi",
+            "n_tp", "n_det", "purity", "pur_lo", "pur_hi",
+            "n_found", "n_true", "completeness", "comp_lo", "comp_hi"]
+    with open(path, "w") as f:
+        f.write(f"# z-resolved purity/completeness — {title}\n")
+        f.write(f"# lam_rf window [{lam_rf_min}, {args.lam_rf_max}]; "
+                f"snr_min {args.snr_min}; p_dla>{args.gp_conf}; "
+                f"dz_rel {args.dz_rel}\n")
+        f.write("# PURITY bins on PREDICTED Z_DLA (a false positive has no truth "
+                "counterpart to bin on).\n")
+        f.write("# COMPLETENESS bins on TRUTH Z_DLA on BOTH sides (matched Z_TRUE "
+                "/ truth Z_DLA), so numerator\n")
+        f.write("#   and denominator share one variable. For true positives the "
+                "two agree to within dz_rel.\n")
+        f.write("# Bins are half-open [lo, hi). Empty cells carry NaN; n_det / "
+                "n_true stay so an empty\n")
+        f.write("#   cell is distinguishable from a genuine zero. Many cells are "
+                "empty by geometry:\n")
+        f.write("#   z_DLA < z_QSO always, and the blue cutoff raises the lower "
+                "z_DLA edge with z_QSO.\n")
+        f.write("# Intervals are 68.3% Wilson score.\n")
+        f.write("\t".join(cols) + "\n")
+        for r in rows:
+            f.write("\t".join(
+                (f"{r[c]:d}" if isinstance(r[c], int) else f"{r[c]:.6g}")
+                for c in cols) + "\n")
+
+
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
@@ -759,6 +991,53 @@ def _run_one_window(cat, truth, bal_tids, args, title, out_dir, lam_rf_min):
                 truth_cut, good_mask,
                 nhi_key="NHI", goodness_key="P_DLA",
             )
+    # ---- z-resolved P/C (opt-in; absent flags leave the output set unchanged) --
+    if (args.zdla_bins is None) != (args.zqso_bins is None):
+        raise SystemExit("--zdla-bins and --zqso-bins must be given together "
+                         "(or both omitted to skip the z-resolved reduction).")
+    if args.zdla_bins is not None:
+        zdla_edges = _parse_edges(args.zdla_bins, None, "zdla-bins")
+        zqso_edges = _parse_edges(args.zqso_bins, None, "zqso-bins")
+        if not np.isfinite(zdla_edges).all() or not np.isfinite(zqso_edges).all():
+            raise SystemExit("--zdla-bins/--zqso-bins: 'inf' is not meaningful "
+                             "for a redshift axis; give finite edges.")
+        if args.z_nhi_floors is None:
+            floors = [float(args.nhi_min)]
+        else:
+            floors = sorted(
+                {float(x) for x in args.z_nhi_floors.split(",") if x.strip()},
+                reverse=True)
+            if not floors:
+                raise SystemExit("--z-nhi-floors: no usable values parsed.")
+        zrows = _zresolved_pc(cat_cut, tp, truth_cut, good_mask, args,
+                              zdla_edges, zqso_edges, floors)
+        _write_zresolved_tsv(zrows, str(out_dir / "molly_pc_z_matrix.tsv"),
+                             args, lam_rf_min, title)
+        for floor in floors:
+            sub = [r for r in zrows if r["nhi_floor"] == floor]
+            tag = f"{floor:.1f}".replace(".", "")
+            plot_pc_vs_zdla(
+                sub, zdla_edges, zqso_edges,
+                out_png=str(out_dir / f"fig_pc_vs_zdla_nhi{tag}.png"),
+                title=rf"{title} — $\log N_{{\rm HI}} \geq {floor}$")
+        over = [r for r in zrows
+                if np.isfinite(r["completeness"]) and r["completeness"] > 1.0]
+        if over:
+            print(f"  [WARN] completeness > 1 in {len(over)} cell(s). The "
+                  f"numerator is gated on NHI_TRUE, so this is NOT the "
+                  f"N_HI-scatter leak; the residual cause is that cat_cut uses "
+                  f"min/max(predicted, truth) z for the lam_rf window while "
+                  f"truth_cut uses truth z alone, so a TP can outlive its own "
+                  f"truth row at the window edge.")
+            for r in over:
+                print(f"         floor {r['nhi_floor']} "
+                      f"z_DLA [{r['zdla_lo']},{r['zdla_hi']}) "
+                      f"z_QSO [{r['zqso_lo']},{r['zqso_hi']}): "
+                      f"{r['n_found']}/{r['n_true']} = "
+                      f"{r['completeness']:.4f}")
+        print(f"[zres] wrote molly_pc_z_matrix.tsv ({len(zrows)} cells) "
+              f"+ {len(floors)} figure(s)")
+
     plot_matrix(pur_mat, snr_bin_plot, nhi_bin_plot,
                 title=f"{title} — Molly purity matrix",
                 out_png=str(out_dir / "molly_purity_matrix.png"), kind="purity")
