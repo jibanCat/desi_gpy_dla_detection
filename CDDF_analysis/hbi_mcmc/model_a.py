@@ -348,7 +348,16 @@ def run_model_a(pack: ModelAPack, cfg: Optional[ModelAConfig] = None):
         consts,
         jnp.asarray(pack.counts),
         jnp.asarray(pack.fp_counts) if cfg.fp_mode == "joint" else None,
-        extra_fields=("diverging",),
+        # EXTENDED 2026-07-28 (evidence harness): "num_steps" and "energy"
+        # are retained because tree-depth saturation and E-BFMI are
+        # required paper-facing evidence and NEITHER can be reconstructed
+        # after the run -- the 2026-07-13 rung-9 artifact is permanently
+        # missing both, which is why evidence.py must mark that
+        # artifact's convergence block INCOMPLETE and refuse to stamp it.
+        # Storing them costs O(n_draws) floats per chain and changes no
+        # trajectory, no accepted draw and no reported number;
+        # diagnostics.summarize_mcmc reads "diverging" by name.
+        extra_fields=("diverging", "num_steps", "energy"),
     )
     samples = mcmc.get_samples()
     f_draws = np.asarray(samples["f"])  # forces the async device work; time AFTER
