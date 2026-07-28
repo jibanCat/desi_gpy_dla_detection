@@ -203,11 +203,32 @@ _PATHISH_EXT = (".fits", ".h5", ".hdf5", ".npz", ".npy", ".tsv", ".csv", ".env",
 _SEP = re.compile(r"[-_./\\\s]+")
 
 
+# A path separator has NO whitespace around it: "a/b" is a path, "a / b" is prose.
+# Kept deliberately narrow -- see _is_pathish.
+_PATH_SEP_RE = re.compile(r"\S[/\\]\S")
+
+
 def _is_pathish(text: str) -> bool:
+    """Does this string contain an actual FILESYSTEM PATH (not merely a slash)?
+
+    This used to return True for ANY string containing '/'.  That escalated prose to
+    a hard 'path_token' tell, and the failure was not hypothetical: the crossmock
+    artifact's own MOCK DISCLAIMER -- "2lpt0 / 2lpt1 / london0 / saclay0 are ALL MOCK
+    (public-OK) ..." -- uses slashes as a prose separator, so the disclaimer that
+    exists to assert the file is mock was itself read as a real-data path.  That hard
+    tell then satisfied the value-co-occurrence rule, and the scanner concluded a
+    genuinely clean mock artifact "carries real-DESI RESULT VALUES".
+
+    A prose mention is still RECORDED (as a soft 'prose_token' hit) -- nothing is
+    silenced here, it is only correctly classified.  Erring the other way is not
+    safe-by-default: a scanner that cries wolf on its own disclaimers gets muted,
+    and then it catches nothing.
+    """
     t = str(text).strip().lower()
-    if "/" in t or "\\" in t:
+    if _PATH_SEP_RE.search(t):
         return True
-    return any(e in t for e in _PATHISH_EXT)
+    # A bare filename with a known data extension and no spaces, e.g. "dlacat.fits".
+    return (" " not in t) and any(e in t for e in _PATHISH_EXT)
 
 
 def _canon(text: str) -> str:

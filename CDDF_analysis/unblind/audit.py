@@ -199,6 +199,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--worktree", action="append", default=None,
                     help="repeatable; defaults to both Paper-1 worktrees")
+    ap.add_argument("--allow-missing-worktree", action="store_true",
+                    help="audit only the worktrees that exist instead of erroring. "
+                         "Deliberately narrows the union -- the result is NOT a "
+                         "statement about Paper 1 as a whole.")
     ap.add_argument("--strict-sha", action="store_true",
                     help="an abbreviated (<40 char) stamp becomes a FAILURE")
     ap.add_argument("--include-fixtures", action="store_true",
@@ -210,8 +214,31 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     worktrees = args.worktree or list(DEFAULT_WORKTREES)
-    worktrees = [w for w in worktrees if os.path.isdir(os.path.join(w, ".git"))
-                 or os.path.exists(os.path.join(w, ".git"))]
+    # FAIL LOUD on a worktree we were asked to audit but cannot see.
+    #
+    # This used to silently filter missing worktrees out.  Paper 1 spans TWO
+    # worktrees with no ancestry relation, and the feed-forward arm lives ONLY in
+    # the second one -- so on any checkout without /home/mfho/hbi_mcmc_wt the audit
+    # dropped the ENTIRE feed-forward arm, then summarize([]) gave 0 == 0 and the
+    # command exited 0, certifying "all committed artifacts are RE_DERIVABLE" over
+    # an empty set.  An audit that passes by finding nothing is worse than no audit.
+    missing = [w for w in worktrees
+               if not os.path.exists(os.path.join(w, ".git"))]
+    if missing and not args.allow_missing_worktree:
+        print("ERROR: requested worktree(s) not present:\n  "
+              + "\n  ".join(missing)
+              + "\n\nPaper 1 spans two worktrees with no ancestry relation and the\n"
+                "feed-forward arm lives only in the second; auditing without it\n"
+                "would silently certify a partial union as complete.  Pass\n"
+                "--allow-missing-worktree to audit the subset deliberately.",
+              file=sys.stderr)
+        return 2
+    worktrees = [w for w in worktrees
+                 if os.path.exists(os.path.join(w, ".git"))]
+    if not worktrees:
+        print("ERROR: no auditable worktree; refusing to report a vacuous PASS.",
+              file=sys.stderr)
+        return 2
     rows = audit(worktrees, require_full_sha=args.strict_sha,
                  include_fixtures=args.include_fixtures, check_privacy=args.privacy,
                  head=args.head)
@@ -225,6 +252,18 @@ def main(argv=None) -> int:
               f"RE_DERIVABLE.  by status: {summary['by_status']}")
         if args.privacy:
             print(f"privacy-flagged: {summary['privacy_flagged']}")
+    # An empty audit is a FAILURE, never a pass: 0 == 0 is true and meaningless.
+    if summary["total"] == 0:
+        print("ERROR: audited zero artifacts; refusing a vacuous PASS.",
+              file=sys.stderr)
+        return 2
+    # Privacy hits MUST affect the exit code.  They previously did not, so a real
+    # -DESI leak in a committed artifact could not turn the gate red -- which is the
+    # single thing this gate most needs to be able to do.
+    if args.privacy and summary["privacy_flagged"]:
+        print(f"ERROR: {summary['privacy_flagged']} artifact(s) carry privacy hits.",
+              file=sys.stderr)
+        return 1
     return 0 if summary["re_derivable"] == summary["total"] else 1
 
 
