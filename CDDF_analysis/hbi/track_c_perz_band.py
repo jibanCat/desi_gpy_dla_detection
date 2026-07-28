@@ -54,10 +54,11 @@ from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
 from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients, run_baseline
 from CDDF_analysis.hbi.cddf_catalog_hbi import (
     joint_mc_errors, make_v3x_refit_fn, v3x_reduce, build_truth_match_resample,
-    omega_hi_prefactor, recenter_band_on_point,
+    omega_hi_prefactor, recenter_band_on_point, resolve_band_recenter,
     omega_integrated_slope_extrap_samples,
     _bin_index_logN, _zbin_index,
 )
+from CDDF_analysis.unblind.estimand import stamp_band_estimand
 
 _DEF_FORWARD = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
                 "track_c/stage0/forward_response_2lpt0.npz")
@@ -140,7 +141,9 @@ def _band(samp, point=None, recenter=False):
     shifted so their median sits at the point (FIX 1; spread preserved)."""
     s = np.asarray(samp, float)
     if recenter and point is not None and np.isfinite(point):
-        s = recenter_band_on_point(s, point)
+        # DIAGNOSTIC ONLY (PI, 2026-07-28). Reaching here means the caller already
+        # cleared resolve_band_recenter (band_recenter AND allow_diagnostic_recenter).
+        s = recenter_band_on_point(s, point, diagnostic_only=True)
     s = s[np.isfinite(s)]
     if s.size == 0:
         return dict(q025=np.nan, q16=np.nan, q50=np.nan, q84=np.nan, q975=np.nan,
@@ -170,6 +173,9 @@ def _set_forward_cfg(cfg, args):
     cfg.mc_nuisance = "shared_boot"
     cfg.mc_response = "marginalize"
     cfg.band_recenter = bool(args.band_recenter)
+    # DIAGNOSTIC opt-in for the retired recenter (PI, 2026-07-28). Absent => False, so
+    # cfg.band_recenter=True alone raises in resolve_band_recenter.
+    cfg.allow_diagnostic_recenter = bool(getattr(args, "allow_diagnostic_recenter", False))
     cfg.omega_slope_extrap = bool(args.omega_slope_extrap)
     cfg.omega_slope_extrap_edge = float(args.slope_edge)
     cfg.omega_slope_extrap_fit_dex = float(args.slope_fit_dex)
@@ -278,7 +284,9 @@ def run_perz(args, limits, seed):
 # -----------------------------------------------------------------------------
 def assemble_coverage(res, args, limits, seed):
     cfg = res["cfg"]; n_zc = res["n_zc"]
-    recenter = bool(getattr(cfg, "band_recenter", False))
+    # PI 2026-07-28: single choke point -- raises if band_recenter=True without the
+    # explicit allow_diagnostic_recenter opt-in.
+    recenter = resolve_band_recenter(cfg, where="track_c_perz_band.run_perz")
     slope_extrap = bool(getattr(cfg, "omega_slope_extrap", False))
     omega_se_int = (slope_extrap
                     and bool(getattr(cfg, "omega_slope_extrap_integrated", False)))
@@ -348,7 +356,7 @@ def make_figure(out_path, res, cov, limits, args):
     zmid = 0.5 * (zbins[:-1] + zbins[1:])
     mid = res["mid"]
     f_truth = res["f_truth"]; map_fbk = res["map_fbk"]; fbk_samp = res["fbk_samp"]
-    recenter = bool(getattr(res["cfg"], "band_recenter", False))
+    recenter = resolve_band_recenter(res["cfg"], where="track_c_perz_band.make_figure")
     C_MAP = "#1f77b4"; C_BAND68 = "#1f77b4"; C_BAND95 = "#aec7e8"; C_TRUTH = "k"
     C_DLA = {20.0: "#2ca02c", 20.3: "#d62728"}
 
@@ -599,7 +607,14 @@ def main(argv=None):
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
     # Track-C BAND-FINALIZE knobs (default ON — the central recipe at HEAD)
-    p.add_argument("--band-recenter", dest="band_recenter", action="store_true", default=True)
+    # RETIRED for paper-facing output (PI, 2026-07-28): default OFF, and enabling it
+    # ALSO requires --allow-diagnostic-recenter (stamps paper_facing=False).
+    p.add_argument("--band-recenter", dest="band_recenter", action="store_true",
+                   default=False,
+                   help="DIAGNOSTIC ONLY (retired); requires --allow-diagnostic-recenter.")
+    p.add_argument("--allow-diagnostic-recenter", dest="allow_diagnostic_recenter",
+                   action="store_true", default=False,
+                   help="explicit diagnostic opt-in required alongside --band-recenter.")
     p.add_argument("--no-band-recenter", dest="band_recenter", action="store_false")
     p.add_argument("--omega-slope-extrap", dest="omega_slope_extrap",
                    action="store_true", default=True)
@@ -651,6 +666,10 @@ def main(argv=None):
             stages="I=laplace, II=shared_boot, III=marginalize(forward refit)",
             kernel=args.kernel, molly=args.molly_tsv, truth=args.truth),
         coverage=dict(dndx=cov["dndx"], omega=cov["omega"]))
+    # ESTIMAND SELF-DECLARATION (PI, 2026-07-28): plug-in MAP point + MC/bootstrap band.
+    stamp_band_estimand(out_json["metadata"],
+                        band_recenter=bool(cov["_meta"]["band_recenter"]),
+                        posterior_sampled=False)
     with open(json_path, "w") as fh:
         json.dump(out_json, fh, indent=2)
     print(f"[perz] json -> {json_path}")

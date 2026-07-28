@@ -542,7 +542,14 @@ def main(argv=None):
     p.add_argument("--gl-nodes", type=int, default=1)
     p.add_argument("--host-truth-floor", type=float, default=19.0)
     # band-finalize knobs (the MAP point is byte-identical regardless; carried for cfg parity)
-    p.add_argument("--band-recenter", dest="band_recenter", action="store_true", default=True)
+    # RETIRED for paper-facing output (PI, 2026-07-28): default OFF, and enabling it
+    # ALSO requires --allow-diagnostic-recenter (stamps paper_facing=False).
+    p.add_argument("--band-recenter", dest="band_recenter", action="store_true",
+                   default=False,
+                   help="DIAGNOSTIC ONLY (retired); requires --allow-diagnostic-recenter.")
+    p.add_argument("--allow-diagnostic-recenter", dest="allow_diagnostic_recenter",
+                   action="store_true", default=False,
+                   help="explicit diagnostic opt-in required alongside --band-recenter.")
     p.add_argument("--no-band-recenter", dest="band_recenter", action="store_false")
     p.add_argument("--omega-slope-extrap", dest="omega_slope_extrap",
                    action="store_true", default=True)

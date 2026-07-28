@@ -50,6 +50,18 @@ from CDDF_analysis.cddf_mock import (
     omega_hi_prefactor,
 )
 
+# --- estimand vocabulary (stdlib-only module; no circular import) ------------
+# Every band-writing path must stamp metadata['estimand'] from this vocabulary so the
+# artifact self-declares whether its band is a faithful posterior CI or a diagnostic.
+from CDDF_analysis.unblind.estimand import (  # noqa: E402
+    RecenteredBandRetired,
+    stamp_band_estimand,
+    DIAGNOSTIC_RECENTERED,
+    PLUGIN_MAP_MC,
+    POSTERIOR_MEDIAN_CI,
+    MARGINAL_COMBINED,
+)
+
 # --- reuse from examples/ (no __init__.py; add repo root to path) ------------
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO not in sys.path:
@@ -432,22 +444,36 @@ class HBIConfig:
     #                                    Stage-III resample reproduces the frozen forward kernel).
     forward_min_count: int = 60        # forward-fit per-sub-bin minimum (effective) count.
     # --- Track-C BAND-FINALIZE (gated, DEFAULT-OFF; BAND-ONLY, POINT byte-identical) ---
-    band_recenter: bool = False        # FIX 1 — recenter-on-point (bootstrap bias correction;
-    #                                    Jensen). The diagnosis (track_c_band_offset_diagnosis.md)
-    #                                    proved the per-draw positivity-constrained b-spline MAP
-    #                                    θ̂(ψ) is CONVEX in the resampled counts ψ, so
-    #                                    E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the plug-in point (Jensen) — the
-    #                                    whole MC band sits ~2.7σ BELOW the headline MAP even though
-    #                                    the point R0≈0.99 is the near-unbiased estimate. The
-    #                                    sampling distribution is SYMMETRIC (mean≈median in every
-    #                                    config), so the correct first-order bias correction is to
-    #                                    SHIFT the bootstrap band so its median sits at the point and
-    #                                    keep the spread unchanged:
-    #                                        corrected_quantile = point + (quantile − band_median).
-    #                                    This is the percentile-interval pivot / BCa first-order
-    #                                    recentering, justified BECAUSE the distribution is symmetric
-    #                                    (no skew to preserve). DEFAULT False ⇒ raw quantiles =
-    #                                    BYTE-IDENTICAL band. Applies to dN/dX(z), Ω(z), f(N,z).
+    band_recenter: bool = False        # RETIRED for paper-facing use (PI, 2026-07-28) —
+    #                                    DIAGNOSTIC ONLY, and only together with
+    #                                    allow_diagnostic_recenter=True (see
+    #                                    resolve_band_recenter, the single choke point).
+    #                                    It rigidly slides the MC cloud so q50==point by
+    #                                    construction. The OLD justification here (convex
+    #                                    b-spline MAP ⇒ Jensen ⇒ "band sits ~2.7σ BELOW the
+    #                                    MAP", a small first-order correction) is FALSE on
+    #                                    both counts, measured on committed MOCK artifacts:
+    #                                      • DLA tier (td_band vs td_band_finalize, 2LPT-0,
+    #                                        n_mc=120, seed 0): raw MC median is BELOW the
+    #                                        point by −7.82%/−2.76% (dN/dX ≥20.0/≥20.3) and
+    #                                        −3.32%/−1.74% (Ω) ⇒ −10.99σ/−2.90σ/−2.22σ/−1.03σ
+    #                                        in 68% band half-widths.
+    #                                      • sub-DLA tier (subdla_mock_headline.json, 2LPT-0,
+    #                                        n_mc=2000, seed 0): raw MC median is ABOVE the
+    #                                        point by +70.00% (dN/dX [19.5,20.3)) and +55.20%
+    #                                        (Ω) ⇒ +16.67σ and +19.02σ.
+    #                                    The SIGN FLIPS between tiers (so no one-sided
+    #                                    convexity argument holds) and the size is 1–19 band
+    #                                    half-widths (so it is not an O(σ²) bias). Point and
+    #                                    band are DIFFERENT ESTIMANDS; recentering hides that.
+    #                                    DEFAULT False ⇒ raw quantiles = BYTE-IDENTICAL band.
+    allow_diagnostic_recenter: bool = False   # explicit diagnostic opt-in. band_recenter=True
+    #                                    WITHOUT this raises RecenteredBandRetired, so a
+    #                                    headline driver cannot silently re-enable the
+    #                                    retired band by flipping one flag. Any artifact
+    #                                    built with both ON must stamp
+    #                                    metadata['estimand']='DIAGNOSTIC_RECENTERED' and
+    #                                    metadata['paper_facing']=False.
     omega_slope_extrap: bool = False   # FIX 2 — deep-tail Ω slope-extrapolation uncertainty (PI
     #                                    directive; ADDITIVE band nuisance, POINT UNCHANGED). The
     #                                    deep tail [edge+] is data-starved (truth-match ends ~21.2)
@@ -1719,28 +1745,65 @@ def draw_shared_boot_with_mult(rng, tmr: TruthMatchResample, method: str = "diri
 # gated default-OFF on HBIConfig (band_recenter / omega_slope_extrap) so the default
 # band is byte-identical.
 # -----------------------------------------------------------------------------
-def recenter_band_on_point(samples, point):
-    """FIX 1 — first-order bootstrap bias correction (recenter-on-point; Jensen).
+def recenter_band_on_point(samples, point, *, diagnostic_only=False):
+    """RETIRED for paper-facing use (PI, 2026-07-28) — DIAGNOSTIC ONLY.
 
-    Shift a 1-D array of MC band samples so that its MEDIAN sits exactly at the
-    plug-in ``point`` (the headline MAP), keeping the SPREAD unchanged:
+    Rigidly SHIFT a 1-D array of MC band samples so that its MEDIAN sits exactly at
+    the plug-in ``point``, keeping the SPREAD unchanged:
 
         corrected_samples = samples + (point − median(samples))
 
-    so that any quantile q of the corrected band equals ``point + (q − band_median)``.
+    so that any quantile q of the corrected band equals ``point + (q − band_median)``
+    and ``q50 == point`` BY CONSTRUCTION.
 
-    Justification (track_c_band_offset_diagnosis.md). The per-draw positivity-
-    constrained b-spline MAP θ̂(ψ) is a CONVEX functional of the resampled counts ψ,
-    so by Jensen E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = the point — the whole MC band sits below the
-    headline MAP even though the point (R0≈0.99) is the trustworthy near-unbiased
-    estimate. The sampling distribution is empirically SYMMETRIC (mean≈median in every
-    config of the decomposition), so recentering on the point is the correct first-order
-    bias correction (the percentile-interval pivot / BCa at first order), justified
-    BECAUSE there is no skew to preserve. It changes only the LOCATION of the band, not
-    its width; the POINT is untouched.
+    WHAT THIS ACTUALLY DOES (the previous docstring was wrong on BOTH the sign and the
+    magnitude; corrected 2026-07-28 against committed mock artifacts).
+    The old text asserted a Jensen argument, ``E_ψ[θ̂(ψ)] < θ̂(E[ψ]) = point`` — i.e.
+    that the raw MC cloud sits BELOW the point — and implied a small, first-order
+    (O(σ²)-ish) correction. Measured on committed MOCK artifacts:
+
+      * DLA tier, track_c_td_band 2LPT-0 self-recovery, n_mc=120, seed 0 (the paired
+        ``td_band/td_band.json`` vs ``td_band_finalize/td_band.json`` runs differ ONLY
+        in band_recenter): the raw MC median sits BELOW the point by
+        −7.82% (dN/dX ≥ 20.0), −2.76% (dN/dX ≥ 20.3), −3.32% (Ω ≥ 20.0),
+        −1.74% (Ω ≥ 20.3) — i.e. −10.99σ, −2.90σ, −2.22σ, −1.03σ in units of the
+        68% band HALF-WIDTH.
+      * sub-DLA tier, run_subdla_headline_full 2LPT-0 mock, n_mc=2000, seed 0
+        (``CDDF_analysis/hbi/subdla_mock_headline.json``, which records ``raw_median``
+        and ``jensen_shift`` directly): the raw MC median sits ABOVE the point by
+        +70.00% (dN/dX over [19.5,20.3)) and +55.20% (Ω over [19.5,20.3)) —
+        i.e. +16.67σ and +19.02σ in units of the 68% band half-width.
+
+    So (a) the SIGN IS NOT UNIVERSAL: the displacement is negative in the DLA tier and
+    POSITIVE in the sub-DLA tier, which falsifies the one-sided convexity/Jensen
+    justification; and (b) the MAGNITUDE IS NOT O(σ²) — it is 1 to 19 band half-widths,
+    up to 70% of the point. A displacement of that size means the plug-in point and the
+    MC cloud are DIFFERENT ESTIMANDS, not one estimand plus a small bias. Sliding the
+    cloud onto the point HIDES that gap rather than correcting it (it previously masked
+    an Ω band that had gone negative — see Loa0FP.resample, 2026-07-10).
+
+    Retained ONLY as a diagnostic overlay. Callers must pass ``diagnostic_only=True``
+    to opt in explicitly, and any artifact built with it must stamp
+    ``metadata['estimand'] = 'DIAGNOSTIC_RECENTERED'`` and
+    ``metadata['paper_facing'] = False`` (see
+    :mod:`CDDF_analysis.unblind.estimand`).
 
     NaNs are preserved (the shift is finite); the median is over finite entries.
+
+    Raises
+    ------
+    RecenteredBandRetired
+        if ``diagnostic_only`` is not True.
     """
+    if not diagnostic_only:
+        raise RecenteredBandRetired(
+            "recenter_band_on_point is RETIRED for paper-facing use (PI, 2026-07-28): "
+            "it slides an MC cloud onto a plug-in MAP so q50==point by construction, "
+            "which is not a credible interval of the posterior whose median is the "
+            "point. Measured displacement on committed mocks is 1-19 band half-widths "
+            "and its SIGN FLIPS between the DLA and sub-DLA tiers. Pass "
+            "diagnostic_only=True if and only if the output is stamped "
+            "metadata['estimand']='DIAGNOSTIC_RECENTERED', paper_facing=False.")
     s = np.asarray(samples, dtype=float)
     finite = s[np.isfinite(s)]
     if finite.size == 0 or not np.isfinite(point):
@@ -1749,8 +1812,33 @@ def recenter_band_on_point(samples, point):
     return s + shift
 
 
-def recenter_differential_band_quantiles(mc_stats, point):
-    """FIX 1 for an ALREADY-REDUCED per-bin DIFFERENTIAL f(N) band.
+def resolve_band_recenter(cfg, where=""):
+    """THE single choke point for band recentering (PI retirement, 2026-07-28).
+
+    Returns True only when BOTH ``cfg.band_recenter`` and the explicit diagnostic
+    opt-in ``cfg.allow_diagnostic_recenter`` are set. ``band_recenter=True`` WITHOUT
+    the opt-in raises, so a driver cannot silently re-enable recentering on a
+    paper-facing output by flipping one flag.
+    """
+    want = bool(getattr(cfg, "band_recenter", False))
+    if not want:
+        return False
+    if not bool(getattr(cfg, "allow_diagnostic_recenter", False)):
+        raise RecenteredBandRetired(
+            f"{where or 'cfg'}: band_recenter=True but allow_diagnostic_recenter is "
+            "False. Band recentering is DIAGNOSTIC-ONLY (PI, 2026-07-28); a "
+            "paper-facing/headline driver must leave band_recenter=False. Set BOTH "
+            "flags (and stamp estimand='DIAGNOSTIC_RECENTERED', paper_facing=False) "
+            "only for an explicitly diagnostic artifact.")
+    return True
+
+
+def recenter_differential_band_quantiles(mc_stats, point, *, diagnostic_only=False):
+    """RETIRED for paper-facing use (PI, 2026-07-28) — DIAGNOSTIC ONLY.
+    Per-bin form of :func:`recenter_band_on_point` for an ALREADY-REDUCED
+    per-bin DIFFERENTIAL f(N) band. Requires ``diagnostic_only=True``; see
+    :func:`recenter_band_on_point` for the measured sign/magnitude that falsifies the
+    original Jensen justification.
 
     The integrated dN/dX/Ω and per-z dN/dX(z)/Ω(z) bands route their RAW per-draw
     samples through ``recenter_band_on_point`` (additive median→point shift). The
@@ -1785,6 +1873,11 @@ def recenter_differential_band_quantiles(mc_stats, point):
         through unchanged. Bins where the point or q50 is non-finite are left
         unshifted (shift treated as 0 there).
     """
+    if not diagnostic_only:
+        raise RecenteredBandRetired(
+            "recenter_differential_band_quantiles is RETIRED for paper-facing use "
+            "(PI, 2026-07-28). Pass diagnostic_only=True if and only if the output is "
+            "stamped metadata['estimand']='DIAGNOSTIC_RECENTERED', paper_facing=False.")
     point = np.asarray(point, dtype=float)
     q50 = np.asarray(mc_stats["q50"], dtype=float)
     shift = point - q50
@@ -2186,20 +2279,17 @@ def write_outputs(cfg: HBIConfig, point_est: dict, mc: dict, mm: MollyMatrix,
 
     # f_of_N.csv (z-marginalized, fine grid >= 20.0)
     f_b = point_est["f_b"]
-    # FIX 1 (recenter-on-point) for the DIFFERENTIAL f(N) band. GATED on
-    # cfg.band_recenter (default OFF -> byte-identical). The integrated dN/dX/Ω and
-    # per-z bands already recenter their RAW samples; here the band is reported from the
-    # already-reduced joint_mc_errors quantiles, so we apply the SAME additive
-    # median->point shift per bin to the stored quantiles (algebraically identical to
-    # recentering the raw samples then re-reducing; width preserved). The convex-bspline
-    # MAP Jensen offset (track_c_band_offset_diagnosis.md) makes the un-recentered f(N)
-    # band sit ~17.5% above the plug-in MAP line; recentering puts the MAP back inside
-    # its own 68% band. Symmetric at first order (exact for the CLT/integrated case);
-    # the sparse high-N tail bins are mildly right-skewed, so there it relocates the
-    # median onto the point and preserves the skew shape (first-order correction).
+    # RETIRED recenter-on-point for the DIFFERENTIAL f(N) band (PI, 2026-07-28).
+    # Routed through resolve_band_recenter, the single choke point: it is False unless
+    # BOTH cfg.band_recenter and cfg.allow_diagnostic_recenter are set, and raises if
+    # only the first is. Note the un-recentered f(N) band sits ~17.5% ABOVE the plug-in
+    # MAP line here -- the OPPOSITE sign to the "Jensen ⇒ band below the MAP" story the
+    # old comment/docstring told, which is exactly why the operation is retired rather
+    # than trusted: point and band are different estimands, not point + small bias.
     fb_stats = mc["f_b"]
-    if getattr(cfg, "band_recenter", False):
-        fb_stats = recenter_differential_band_quantiles(fb_stats, f_b)
+    if resolve_band_recenter(cfg, where="write_outputs/f_of_N"):
+        fb_stats = recenter_differential_band_quantiles(fb_stats, f_b,
+                                                        diagnostic_only=True)
     f_lo = fb_stats["q16"]
     f_hi = fb_stats["q84"]
     f_med = fb_stats["q50"]

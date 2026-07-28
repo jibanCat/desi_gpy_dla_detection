@@ -616,7 +616,9 @@ def make_figure(out_path, variants, args):
         # 0/1 (dN/dX, Ω) and the headline. Per-bin additive median->point shift
         # (width-preserving); without it the convex-bspline-MAP Jensen offset puts the
         # band ~17.5% above the plotted MAP line.
-        if getattr(args, "band_recenter", False):
+        # DIAGNOSTIC-ONLY recenter (PI, 2026-07-28): needs BOTH flags.
+        if (getattr(args, "band_recenter", False)
+                and getattr(args, "allow_diagnostic_recenter", False)):
             _med = np.nanmedian(fb_samp, axis=0)
             _sh = np.where(np.isfinite(_med) & np.isfinite(map_fb), map_fb - _med, 0.0)
             fb_samp = fb_samp + _sh[None, :]
@@ -686,7 +688,14 @@ def main(argv=None):
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--cz-min-count", type=float, default=30.0)
     # band-finalize knobs (default ON — central recipe at HEAD)
-    p.add_argument("--band-recenter", dest="band_recenter", action="store_true", default=True)
+    # RETIRED for paper-facing output (PI, 2026-07-28): default OFF, and enabling it
+    # ALSO requires --allow-diagnostic-recenter (stamps paper_facing=False).
+    p.add_argument("--band-recenter", dest="band_recenter", action="store_true",
+                   default=False,
+                   help="DIAGNOSTIC ONLY (retired); requires --allow-diagnostic-recenter.")
+    p.add_argument("--allow-diagnostic-recenter", dest="allow_diagnostic_recenter",
+                   action="store_true", default=False,
+                   help="explicit diagnostic opt-in required alongside --band-recenter.")
     p.add_argument("--no-band-recenter", dest="band_recenter", action="store_false")
     p.add_argument("--omega-slope-extrap", dest="omega_slope_extrap",
                    action="store_true", default=True)

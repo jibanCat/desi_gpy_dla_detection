@@ -142,7 +142,11 @@ class _FwdArgs:
         self.cz_min_count = 30.0
         # band-finalize knobs (read by _set_forward_cfg; INERT for the POINT R0 that
         # baseline_recovery computes — no MC band here — but must exist on the namespace)
-        self.band_recenter = True
+        # RETIRED for paper-facing output (PI, 2026-07-28). INERT for the POINT R0 this
+        # validator computes (no MC band), but must be False so the namespace cannot be
+        # reused by a band path that would then silently recenter.
+        self.band_recenter = False
+        self.allow_diagnostic_recenter = False
         self.omega_slope_extrap = True
         self.omega_slope_extrap_integrated = True
         self.slope_edge = 21.2

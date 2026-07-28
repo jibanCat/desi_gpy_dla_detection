@@ -41,7 +41,9 @@ class _A:
     lam_rf_min = 1025.0; edge_slope_lam = 40.0; gl_nodes = 1; host_truth_floor = 19.0
     # forward band cfg knobs (point uses them via _set_forward_cfg)
     forward_model = _DEF_FORWARD; resp_family = "empirical"
-    band_recenter = True; omega_slope_extrap = True; omega_slope_extrap_integrated = True
+    # RETIRED for paper-facing output (PI, 2026-07-28); inert for this point-only A/B.
+    band_recenter = False; allow_diagnostic_recenter = False
+    omega_slope_extrap = True; omega_slope_extrap_integrated = True
     slope_edge = 21.2; slope_fit_dex = 0.6; sigma_slope = 0.5
     cz_resolved = False; cz_min_count = 30.0
 

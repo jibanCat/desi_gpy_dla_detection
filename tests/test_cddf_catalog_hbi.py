@@ -3346,13 +3346,15 @@ def test_stage3_forward_band_composes_laplace_shared_boot_smoke(tmp_path):
 # slope-extrapolation). BAND-ONLY; the POINT is never touched. Gated default-OFF.
 # =============================================================================
 def test_band_recenter_median_equals_point_spread_preserved():
-    """FIX 1: recenter_band_on_point shifts the band so its median sits EXACTLY at the
-    point, and preserves the spread (std + any quantile half-width are unchanged). This
-    is the percentile-interval pivot used to correct the convex-MAP Jensen offset."""
+    """RETIRED-BUT-REPRODUCIBLE (PI, 2026-07-28): with the explicit diagnostic_only
+    opt-in, recenter_band_on_point still shifts the band so its median sits EXACTLY at
+    the point and preserves the spread. This pins the DIAGNOSTIC behaviour only -- the
+    operation is no longer admissible on a paper-facing band (see
+    tests/test_band_estimand_retirement.py)."""
     rng = np.random.default_rng(0)
     s = rng.normal(10.0, 2.0, 8000)
     pt = 12.345
-    sc = H.recenter_band_on_point(s, pt)
+    sc = H.recenter_band_on_point(s, pt, diagnostic_only=True)
     # median sits exactly at the point
     assert np.isclose(np.median(sc), pt, atol=1e-9)
     # spread preserved exactly (a rigid shift)
@@ -3365,17 +3367,18 @@ def test_band_recenter_median_equals_point_spread_preserved():
 
 
 def test_band_recenter_preserves_nan_and_handles_empty():
-    """FIX 1 edge cases: NaN entries are preserved (the shift is finite); an all-NaN /
-    empty sample or a non-finite point returns the input unchanged (no crash)."""
+    """Diagnostic-path edge cases: NaN entries are preserved (the shift is finite); an
+    all-NaN / empty sample or a non-finite point returns the input unchanged."""
     s = np.array([1.0, 2.0, np.nan, 4.0])
-    sc = H.recenter_band_on_point(s, 5.0)
+    sc = H.recenter_band_on_point(s, 5.0, diagnostic_only=True)
     assert np.isnan(sc[2])
     assert np.isfinite(sc[[0, 1, 3]]).all()
     # all-NaN -> unchanged
     allnan = np.full(5, np.nan)
-    assert np.isnan(H.recenter_band_on_point(allnan, 3.0)).all()
+    assert np.isnan(H.recenter_band_on_point(allnan, 3.0, diagnostic_only=True)).all()
     # non-finite point -> unchanged
-    np.testing.assert_array_equal(H.recenter_band_on_point(s, np.nan), s)
+    np.testing.assert_array_equal(
+        H.recenter_band_on_point(s, np.nan, diagnostic_only=True), s)
 
 
 def _slope_extrap_fixture():
@@ -3491,6 +3494,7 @@ def test_band_finalize_config_defaults_off():
     cfg = H.HBIConfig(catalog_dir="x", truth_path="y", bal_cat_path="z",
                       molly_tsv="m", out_dir="o")
     assert cfg.band_recenter is False
+    assert cfg.allow_diagnostic_recenter is False   # PI 2026-07-28 retirement opt-in
     assert cfg.omega_slope_extrap is False
     assert cfg.omega_slope_extrap_integrated is False    # FIX 2b gated default-off
 
@@ -3506,7 +3510,7 @@ def test_driver_band_helper_recenter_off_byte_identical():
     b_off = _band(s, point=99.0, recenter=False)
     for k in b_raw:
         assert b_off[k] == b_raw[k]              # byte-identical default
-    b_on = _band(s, point=7.0, recenter=True)
+    b_on = _band(s, point=7.0, recenter=True)   # diagnostic path
     assert b_on["q50"] == 7.0                    # median == point exactly
     assert np.isclose(b_on["q84"] - b_on["q16"], b_raw["q84"] - b_raw["q16"], atol=1e-12)
 
@@ -3551,8 +3555,9 @@ def test_differential_fN_band_recenter_brackets_point_and_off_byte_identical():
     # --- band_recenter=False: byte-identical to the raw stored quantiles ---
     # the OFF path in write_outputs uses fb_stats unchanged; emulate the gate:
     cfg_off = _make_cfg(band_recenter=False)
-    used_off = (H.recenter_differential_band_quantiles(fb_stats, point)
-                if getattr(cfg_off, "band_recenter", False) else fb_stats)
+    used_off = (H.recenter_differential_band_quantiles(fb_stats, point,
+                                                       diagnostic_only=True)
+                if H.resolve_band_recenter(cfg_off) else fb_stats)
     assert used_off is fb_stats                                   # same object, no copy
     for k in ("q025", "q16", "q50", "q84", "q975"):
         assert np.array_equal(used_off[k], fb_stats[k])           # BYTE-IDENTICAL default
@@ -3564,9 +3569,10 @@ def test_differential_fN_band_recenter_brackets_point_and_off_byte_identical():
         f"{n_bins} bins have q16 > point")
 
     # --- band_recenter=True: the recentered band brackets the per-bin MAP point ---
-    cfg_on = _make_cfg(band_recenter=True)
-    used_on = (H.recenter_differential_band_quantiles(fb_stats, point)
-               if getattr(cfg_on, "band_recenter", False) else fb_stats)
+    cfg_on = _make_cfg(band_recenter=True, allow_diagnostic_recenter=True)
+    used_on = (H.recenter_differential_band_quantiles(fb_stats, point,
+                                                      diagnostic_only=True)
+               if H.resolve_band_recenter(cfg_on) else fb_stats)
     # q50 lands exactly on the point per bin
     assert np.allclose(used_on["q50"], point, rtol=1e-12, atol=0.0)
     # MAP point inside its own 68% band for every well-sampled bin
@@ -3581,7 +3587,8 @@ def test_differential_fN_band_recenter_brackets_point_and_off_byte_identical():
     # re-reducing (the property the helper relies on): compare to a direct per-bin
     # recenter_band_on_point of the raw samples.
     for b in range(n_bins):
-        rc = H.recenter_band_on_point(samples[:, b], float(point[b]))
+        rc = H.recenter_band_on_point(samples[:, b], float(point[b]),
+                                      diagnostic_only=True)
         assert np.isclose(used_on["q16"][b], np.percentile(rc, 16), rtol=1e-12)
         assert np.isclose(used_on["q84"][b], np.percentile(rc, 84), rtol=1e-12)
 
@@ -3594,7 +3601,7 @@ def test_differential_fN_band_recenter_preserves_nonfinite_point_bins():
         q50=np.array([2.0, 3.0, 4.0]), q84=np.array([2.5, 3.5, 4.5]),
         q975=np.array([3.0, 4.0, 5.0]))
     point = np.array([10.0, np.nan, 4.0])     # middle bin has no point
-    out = H.recenter_differential_band_quantiles(fb_stats, point)
+    out = H.recenter_differential_band_quantiles(fb_stats, point, diagnostic_only=True)
     # bin 0 shifted by +8 (10-2); bin 1 unshifted (nan point); bin 2 unshifted (10... 4-4=0)
     assert np.isclose(out["q50"][0], 10.0)
     assert np.array_equal(out["q16"], np.array([1.5 + 8.0, 2.5, 3.5]))

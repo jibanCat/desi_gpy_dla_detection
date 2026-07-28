@@ -1,0 +1,368 @@
+"""estimand.py -- the ESTIMAND vocabulary + a classifier for stamped artifacts.
+
+WHY THIS EXISTS
+---------------
+The PI decision (2026-07-28) is that paper-facing uncertainty bands must be CREDIBLE
+INTERVALS of a faithful joint posterior, with the reported POINT being the MEDIAN of
+that SAME posterior.  Historically this repo emitted several *different* objects under
+the single word "band", and nothing on the artifact said which one it was:
+
+  * quantiles of a joint posterior whose median is the point           (admissible)
+  * quantiles of an MC/bootstrap ensemble whose CENTRE IS NOT the point (not admissible
+    as a credible interval: the point is a plug-in MAP, the cloud is elsewhere)
+  * the same MC cloud RIGIDLY SLID onto the plug-in point so that q50 == point by
+    construction                                                        (retired)
+  * per-bin / per-limit marginal intervals combined as if independent
+    (quadrature, np.hypot) without their covariance                     (retired)
+
+Every band-writing path must now stamp ``metadata['estimand']`` with one of the strings
+below, plus ``metadata['paper_facing']``.  Legacy artifacts that predate the stamp are
+still classifiable -- see :func:`classify_estimand`, which infers the class from the
+band structure itself (a recentered band is detectable: ``q50 == MAP`` to machine
+precision, and/or a recorded non-zero ``jensen_shift``).
+
+VOCABULARY
+----------
+POSTERIOR_MEDIAN_CI
+    The band is a set of quantiles of a joint posterior, and the reported point IS the
+    median of that same posterior.  The ONLY class admissible as a paper-facing
+    uncertainty.  Requires sampler diagnostics on the artifact
+    (``metadata['sampler']`` with r_hat / ESS / divergences).
+PLUGIN_MAP_MC
+    Point is a plug-in optimum (MAP / in-data integral); band is an MC or bootstrap
+    ensemble around a DIFFERENT centre.  Honest but NOT a credible interval: the point
+    and the band are different estimands.  Diagnostic only.
+DIAGNOSTIC_RECENTERED
+    A PLUGIN_MAP_MC cloud additively slid so its median sits on the point.  RETIRED for
+    paper-facing use (PI, 2026-07-28).  Diagnostic only.
+MARGINAL_COMBINED
+    Per-bin / per-channel marginal intervals combined without their covariance
+    (quadrature / np.hypot / independent-sigma sums).  Diagnostic only.
+POINT_ONLY
+    No band on the artifact.
+UNKNOWN
+    Could not be classified -- treat as NOT paper-facing.
+
+This module is stdlib-only (json + os) so it can be imported from anywhere, including
+``cddf_catalog_hbi`` (no numpy/scipy import cost, no circular import).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+# --- the vocabulary ---------------------------------------------------------
+POSTERIOR_MEDIAN_CI = "POSTERIOR_MEDIAN_CI"
+PLUGIN_MAP_MC = "PLUGIN_MAP_MC"
+DIAGNOSTIC_RECENTERED = "DIAGNOSTIC_RECENTERED"
+MARGINAL_COMBINED = "MARGINAL_COMBINED"
+POINT_ONLY = "POINT_ONLY"
+UNKNOWN = "UNKNOWN"
+
+ESTIMAND_VOCABULARY = frozenset(
+    {POSTERIOR_MEDIAN_CI, PLUGIN_MAP_MC, DIAGNOSTIC_RECENTERED,
+     MARGINAL_COMBINED, POINT_ONLY, UNKNOWN}
+)
+
+#: the ONLY estimand class a paper-facing band may carry (PI, 2026-07-28).
+PAPER_FACING_ESTIMANDS = frozenset({POSTERIOR_MEDIAN_CI})
+
+#: stamped on any artifact whose band class was demoted by the 2026-07-28 retirement.
+RETIRED_REASON_RECENTERED = (
+    "RETIRED 2026-07-28 (PI): band is an MC/bootstrap cloud rigidly recentered on a "
+    "plug-in MAP point (recenter_band_on_point). q50==point by construction, so the "
+    "band is NOT a credible interval of the posterior whose median is the point. "
+    "Diagnostic use only; artifact retained, never deleted."
+)
+RETIRED_REASON_PLUGIN_MC = (
+    "RETIRED 2026-07-28 (PI): point is a plug-in optimum and the band is an MC ensemble "
+    "around a DIFFERENT centre -- point and band are different estimands. "
+    "Diagnostic use only; artifact retained, never deleted."
+)
+RETIRED_REASON_MARGINAL = (
+    "RETIRED 2026-07-28 (PI): interval combines per-bin/per-channel marginals as if "
+    "independent (quadrature) without their covariance. "
+    "Diagnostic use only; artifact retained, never deleted."
+)
+
+_RETIRED_REASON_BY_CLASS = {
+    DIAGNOSTIC_RECENTERED: RETIRED_REASON_RECENTERED,
+    PLUGIN_MAP_MC: RETIRED_REASON_PLUGIN_MC,
+    MARGINAL_COMBINED: RETIRED_REASON_MARGINAL,
+}
+
+
+class RecenteredBandRetired(RuntimeError):
+    """Raised when recentering is requested on a path that is not explicitly
+    declared diagnostic-only.  See :mod:`CDDF_analysis.unblind.estimand`."""
+
+
+def is_paper_facing(estimand: str) -> bool:
+    """True only for the estimand classes admissible as a paper-facing band."""
+    return estimand in PAPER_FACING_ESTIMANDS
+
+
+# ---------------------------------------------------------------------------
+# stamping
+# ---------------------------------------------------------------------------
+def band_estimand(*, band_recenter: bool, posterior_sampled: bool = False,
+                  marginal_combined: bool = False, has_band: bool = True) -> str:
+    """Resolve the estimand class from the three facts that determine it.
+
+    ``posterior_sampled`` means the band quantiles and the reported point come from
+    the SAME joint posterior draws (point == posterior median).  It is NOT enough that
+    an MC ensemble exists: the plug-in-MAP + bootstrap-cloud path is PLUGIN_MAP_MC.
+    """
+    if not has_band:
+        return POINT_ONLY
+    if band_recenter:
+        return DIAGNOSTIC_RECENTERED
+    if marginal_combined:
+        return MARGINAL_COMBINED
+    if posterior_sampled:
+        return POSTERIOR_MEDIAN_CI
+    return PLUGIN_MAP_MC
+
+
+def stamp_band_estimand(metadata: dict, *, band_recenter: bool,
+                        posterior_sampled: bool = False,
+                        marginal_combined: bool = False,
+                        has_band: bool = True) -> dict:
+    """Stamp ``metadata`` in place with ``estimand`` + ``paper_facing`` (+
+    ``retired_reason`` when the class is not paper-facing).  Returns ``metadata``.
+
+    Every band-writing path must call this before the artifact is serialized, so that
+    the artifact SELF-DECLARES which estimand it is.
+    """
+    est = band_estimand(band_recenter=band_recenter,
+                        posterior_sampled=posterior_sampled,
+                        marginal_combined=marginal_combined,
+                        has_band=has_band)
+    metadata["estimand"] = est
+    metadata["band_paper_facing"] = bool(is_paper_facing(est))
+    # ``paper_facing`` is a CONJUNCTION of every admissibility gate on the artifact
+    # (the resp_kind/kernel gate in CDDF_analysis.unblind.resp_kind already writes it),
+    # so ANDing is the only safe update: a gate may veto, never re-authorize.
+    prior = metadata.get("paper_facing", True)
+    metadata["paper_facing"] = bool(prior) and bool(is_paper_facing(est))
+    metadata["band_recenter"] = bool(band_recenter)
+    if est in _RETIRED_REASON_BY_CLASS:
+        metadata.setdefault("retired_reason", _RETIRED_REASON_BY_CLASS[est])
+    return metadata
+
+
+def assert_paper_facing(metadata: dict, where: str = "") -> None:
+    """Fail loudly if ``metadata`` claims paper_facing=True while carrying an estimand
+    class that the PI decision retired.  Cheap guard for headline writers."""
+    est = metadata.get("estimand", UNKNOWN)
+    claimed = bool(metadata.get("paper_facing", False))
+    if claimed and not is_paper_facing(est):
+        raise RecenteredBandRetired(
+            f"{where or 'artifact'}: metadata['paper_facing']=True but "
+            f"metadata['estimand']={est!r}, which is NOT a faithful joint-posterior "
+            f"credible interval. Admissible: {sorted(PAPER_FACING_ESTIMANDS)}.")
+
+
+# ---------------------------------------------------------------------------
+# classification of EXISTING artifacts (legacy, unstamped)
+# ---------------------------------------------------------------------------
+_BAND_KEYS = ("q16", "q84", "q025", "q975", "band68", "band95",
+              "lo68", "hi68", "lo95", "hi95", "f68_lo", "f68_hi")
+_POINT_KEYS = ("MAP", "point", "f", "MAP_R0")
+
+
+def _walk(node, path=""):
+    """Yield (path, dict) for every dict in a nested JSON structure."""
+    if isinstance(node, dict):
+        yield path, node
+        for k, v in node.items():
+            yield from _walk(v, f"{path}/{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _walk(v, f"{path}[{i}]")
+
+
+def _band_records(art):
+    """Every dict that looks like a band record: has >=1 band key and >=1 point key."""
+    out = []
+    for path, node in _walk(art):
+        if any(k in node for k in _BAND_KEYS) and any(k in node for k in _POINT_KEYS):
+            out.append((path, node))
+    return out
+
+
+def _looks_recentered(rec):
+    """A recentered band is detectable WITHOUT the stamp:
+    q50 == MAP exactly (the rigid shift makes it exact), or a recorded non-zero
+    ``jensen_shift`` / ``raw_median`` that differs from the point."""
+    if "jensen_shift" in rec:
+        try:
+            if abs(float(rec["jensen_shift"])) > 0.0:
+                return True, "non-zero jensen_shift recorded"
+        except (TypeError, ValueError):
+            pass
+    pt = rec.get("MAP", rec.get("point"))
+    q50 = rec.get("q50")
+    if pt is not None and q50 is not None:
+        try:
+            pt, q50 = float(pt), float(q50)
+        except (TypeError, ValueError):
+            return False, ""
+        if pt == q50:
+            return True, "q50 == MAP exactly (rigid recenter signature)"
+    return False, ""
+
+
+def classify_estimand(artifact, name: str = "") -> dict:
+    """Classify a loaded artifact dict (or a path to a JSON file).
+
+    Returns ``dict(name, estimand, paper_facing, stamped, evidence, n_band_records)``.
+    The STAMP wins when present and self-consistent; otherwise the class is INFERRED
+    from the band structure.  When the stamp and the structure disagree, the structural
+    evidence wins and it is reported in ``evidence`` (a stamp cannot launder a band).
+    """
+    if isinstance(artifact, str):
+        name = name or artifact
+        with open(artifact) as fh:
+            artifact = json.load(fh)
+    meta = artifact.get("metadata", {}) if isinstance(artifact, dict) else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    evidence = []
+    stamped = meta.get("estimand")
+    if stamped is not None:
+        evidence.append(f"stamped estimand={stamped!r}")
+
+    recs = _band_records(artifact)
+    if not recs:
+        est = POINT_ONLY
+        evidence.append("no band record found (point-only artifact)")
+        if stamped in ESTIMAND_VOCABULARY and stamped != POINT_ONLY:
+            est = stamped
+        return dict(name=name, estimand=est, paper_facing=is_paper_facing(est),
+                    stamped=stamped, evidence=evidence, n_band_records=0)
+
+    n_rec = 0
+    for path, rec in recs:
+        hit, why = _looks_recentered(rec)
+        if hit:
+            n_rec += 1
+            if len(evidence) < 8:
+                evidence.append(f"{path or '/'}: {why}")
+    # Recorded band_recenter flags ANYWHERE in the artifact (top-level metadata, or the
+    # per-variant ``coverage/_meta`` blocks the cross-mock drivers write).
+    flags = [(p, n["band_recenter"]) for p, n in _walk(artifact)
+             if isinstance(n, dict) and "band_recenter" in n]
+    for p, v in flags:
+        if v is True:
+            n_rec = max(n_rec, 1)
+            if len(evidence) < 10:
+                evidence.append(f"{p or '/metadata'}: band_recenter is True")
+
+    # PROVENANCE RULE for legacy track_c_tf_* artifacts. That writer emits per-limit
+    # bands as {MAP,q16,q84,q025,q975,std} -- NO q50 -- so the "q50 == MAP" structural
+    # signature is unavailable, and it stamped no band_recenter key. But until
+    # 2026-07-28 its CLI default WAS band_recenter=True, and its per-z Omega and
+    # per-(logN,z) f(N|z) bands called recenter_band_on_point UNCONDITIONALLY (ignoring
+    # the flag entirely). So every artifact of this shape without an explicit
+    # band_recenter=False stamp carries at least one recentered band.
+    if (not n_rec and not flags and isinstance(artifact, dict)
+            and {"measurement", "zbins"} <= set(artifact)):
+        n_rec = 1
+        evidence.append(
+            "legacy track_c_tf_loa shape with no band_recenter flag anywhere: that "
+            "writer's CLI defaulted to band_recenter=True and its per-z Omega / "
+            "f(N|z) bands recentered UNCONDITIONALLY before 2026-07-28")
+
+    if n_rec:
+        est = DIAGNOSTIC_RECENTERED
+    elif stamped in ESTIMAND_VOCABULARY:
+        est = stamped
+    else:
+        # unstamped, not recentered: the historical default on every band writer in
+        # this repo is a plug-in MAP point with a bootstrap/MC cloud around it.
+        est = PLUGIN_MAP_MC
+        evidence.append("unstamped, not recentered -> historical plug-in MAP + MC cloud")
+
+    return dict(name=name, estimand=est, paper_facing=is_paper_facing(est),
+                stamped=stamped, evidence=evidence, n_band_records=len(recs))
+
+
+def _sniff_indent(raw: str, default: int = 2) -> int:
+    """Best-effort original indent width, so re-stamping an artifact does not reformat
+    the whole file into a giant meaningless diff."""
+    for line in raw.split("\n", 40)[1:40]:
+        stripped = line.lstrip(" ")
+        n = len(line) - len(stripped)
+        if n and stripped:
+            return n
+    return default
+
+
+def mark_retired(path: str, *, dry_run: bool = True,
+                 skip_point_only: bool = True) -> dict:
+    """Classify the artifact at ``path`` and, unless ``dry_run``, stamp its metadata
+    with ``estimand`` / ``paper_facing`` / ``retired_reason`` IN PLACE.
+
+    The artifact is NEVER deleted and no science value is touched -- only the
+    ``metadata`` block is written, at the file's original indent width.
+
+    ``skip_point_only`` (default) leaves band-free artifacts untouched on disk: they
+    carry no uncertainty band, so there is nothing to reclassify and rewriting them
+    would only churn committed files.
+    """
+    with open(path) as fh:
+        raw = fh.read()
+    art = json.loads(raw)
+    res = classify_estimand(art, name=path)
+    res["written"] = False
+    if not isinstance(art, dict):
+        return res
+    if skip_point_only and res["estimand"] == POINT_ONLY:
+        return res
+    meta = art.setdefault("metadata", {})
+    meta["estimand"] = res["estimand"]
+    meta["paper_facing"] = bool(res["paper_facing"])
+    if res["estimand"] in _RETIRED_REASON_BY_CLASS:
+        meta["retired_reason"] = _RETIRED_REASON_BY_CLASS[res["estimand"]]
+        meta.setdefault("retired_on", "2026-07-28")
+    if not dry_run:
+        with open(path, "w") as fh:
+            json.dump(art, fh, indent=_sniff_indent(raw))
+        res["written"] = True
+    return res
+
+
+def _main(argv=None):
+    import argparse
+    p = argparse.ArgumentParser(
+        description="Classify (and optionally retire-stamp) band artifacts.")
+    p.add_argument("paths", nargs="+", help="JSON artifact paths")
+    p.add_argument("--mark-retired", action="store_true",
+                   help="write metadata estimand/paper_facing/retired_reason in place")
+    p.add_argument("--include-point-only", action="store_true",
+                   help="also rewrite band-free (POINT_ONLY) artifacts")
+    a = p.parse_args(argv)
+    rows = []
+    for path in a.paths:
+        if not os.path.exists(path):
+            print(f"{path}: MISSING")
+            continue
+        try:
+            r = mark_retired(path, dry_run=not a.mark_retired,
+                             skip_point_only=not a.include_point_only)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            print(f"{path}: UNREADABLE ({e})")
+            continue
+        rows.append(r)
+        flag = "written" if r.get("written") else "dry-run"
+        print(f"{os.path.basename(path):48s} {r['estimand']:22s} "
+              f"paper_facing={str(r['paper_facing']):5s} [{flag}]")
+        for e in r["evidence"][:3]:
+            print(f"      - {e}")
+    return rows
+
+
+if __name__ == "__main__":  # pragma: no cover
+    _main()

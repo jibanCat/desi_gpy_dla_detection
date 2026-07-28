@@ -42,9 +42,10 @@ from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
 from CDDF_analysis.hbi.ab_loa0_fp_baseline import build_ingredients, run_baseline
 from CDDF_analysis.hbi.cddf_catalog_hbi import (
     joint_mc_errors, make_v3x_refit_fn, build_truth_match_resample,
-    omega_hi_prefactor, recenter_band_on_point,
+    omega_hi_prefactor, recenter_band_on_point, resolve_band_recenter,
     omega_deep_tail_slope_extrap_samples,
     omega_integrated_slope_extrap_samples)
+from CDDF_analysis.unblind.estimand import stamp_band_estimand as _stamp_band_estimand
 
 _DEF_FORWARD = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
                 "track_c/stage0/forward_response_2lpt0.npz")
@@ -57,7 +58,9 @@ def _band(samp, point=None, recenter=False):
     reproduces the raw-quantile band byte-identically."""
     s = np.asarray(samp, float)
     if recenter and point is not None and np.isfinite(point):
-        s = recenter_band_on_point(s, point)
+        # DIAGNOSTIC ONLY (PI, 2026-07-28). Reaching here means the caller already
+        # cleared resolve_band_recenter (band_recenter AND allow_diagnostic_recenter).
+        s = recenter_band_on_point(s, point, diagnostic_only=True)
     s = s[np.isfinite(s)]
     if s.size == 0:
         return dict(q025=np.nan, q16=np.nan, q50=np.nan, q84=np.nan, q975=np.nan,
@@ -82,7 +85,9 @@ def _set_forward_band_cfg(cfg, args, carry):
     cfg.mc_nuisance = "shared_boot"
     cfg.mc_response = "marginalize" if carry else "frozen"
     # Track-C BAND-FINALIZE (gated; BAND-ONLY, POINT byte-identical)
-    cfg.band_recenter = bool(args.band_recenter)           # FIX 1
+    cfg.band_recenter = bool(args.band_recenter)           # RETIRED: diagnostic-only
+    cfg.allow_diagnostic_recenter = bool(
+        getattr(args, "allow_diagnostic_recenter", False))   # PI 2026-07-28 opt-in
     cfg.omega_slope_extrap = bool(args.omega_slope_extrap)  # FIX 2
     cfg.omega_slope_extrap_edge = float(args.slope_edge)
     cfg.omega_slope_extrap_fit_dex = float(args.slope_fit_dex)
@@ -227,7 +232,8 @@ def main(argv=None):
     print(f"{'q':>6} {'lim':>5} | {'MAP R0':>8} | {'68% band':>21} | "
           f"{'95% band':>21} | cover68 cover95")
     print("-" * 92)
-    recenter = bool(getattr(res_carry["cfg"], "band_recenter", False))
+    # PI 2026-07-28 choke point: raises on band_recenter=True without the opt-in.
+    recenter = resolve_band_recenter(res_carry["cfg"], where="track_c_td_band")
     slope_extrap = bool(getattr(res_carry["cfg"], "omega_slope_extrap", False))
     omega_se_integrated = bool(
         getattr(res_carry["cfg"], "omega_slope_extrap_integrated", False)) and slope_extrap
@@ -244,6 +250,9 @@ def main(argv=None):
         omega_slope_extrap_sigma=float(getattr(res_carry["cfg"],
                                               "omega_slope_extrap_sigma", 0.5)),
         stages="I=laplace, II=shared_boot, III=marginalize(forward refit)"))
+    # ESTIMAND SELF-DECLARATION (PI, 2026-07-28): plug-in MAP point + MC band.
+    _stamp_band_estimand(summary["metadata"], band_recenter=recenter,
+                         posterior_sampled=False)
     for kind, samp_key, pt_key, tr_key, r0_key in (
             ("dndx", "dndx_samples", "point_dndx", "truth_dndx", "R0_dndx"),
             ("omega", "omega_samples", "point_omega", "truth_omega", "R0_omega")):

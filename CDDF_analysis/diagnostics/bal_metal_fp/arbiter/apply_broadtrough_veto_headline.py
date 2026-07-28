@@ -137,7 +137,9 @@ def default_args():
         family="bspbody", fit_floor=19.5, fit_ceil=99.0, lambda_bspbody=30.0,
         lam_rf_min=1025.0, edge_slope_lam=40.0, gl_nodes=1, host_truth_floor=19.0,
         n_mc=12, workers=4, seed=0, cz_min_count=30.0,
-        band_recenter=True, omega_slope_extrap=True,
+        # RETIRED for paper-facing output (PI, 2026-07-28) -- headline driver.
+        band_recenter=False, allow_diagnostic_recenter=False,
+        omega_slope_extrap=True,
         omega_slope_extrap_integrated=True, slope_edge=21.2, slope_fit_dex=0.6,
         sigma_slope=0.5,
     )

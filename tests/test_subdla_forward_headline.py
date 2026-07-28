@@ -144,6 +144,26 @@ def _blob_exists(commit, relpath):
     return _git(["cat-file", "-e", f"{commit}:{relpath}"]).returncode == 0
 
 
+def _fn_source(ref, relpath, funcname):
+    """Source of one top-level function in a blob at ``ref``; None if absent.
+
+    Lets a dep-drift check ask the precise question -- "did the ONE symbol this
+    artifact actually depends on change?" -- instead of the blunt "did any byte of
+    the file change?"."""
+    import ast
+    out = _git(["show", f"{ref}:{relpath}"])
+    if out.returncode != 0:
+        return None
+    try:
+        tree = ast.parse(out.stdout)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == funcname:
+            return ast.get_source_segment(out.stdout, node)
+    return None
+
+
 def _base_commit(code_commit):
     cc = str(code_commit).strip()
     return cc[:-len("-dirty")] if cc.endswith("-dirty") else cc
@@ -529,28 +549,73 @@ def test_frozen_files_unchanged_by_forward_switch():
         assert _git(["rev-parse", f"{V010}:{f}"]).stdout == _git(["rev-parse", f"HEAD:{f}"]).stdout, (
             f"{f} changed vs v0.1.0 -- it is hard-frozen.")
     cch = "CDDF_analysis/hbi/cddf_catalog_hbi.py"
-    # B16 RE-BASELINE (this commit): cddf_catalog_hbi.py is no longer byte-identical to
-    # 8816e1e -- the B16 z-leaky-truth fix landed in truth_reductions(). That is a
-    # SANCTIONED, ENUMERATED exception, not a licence for the file to drift: the diff
-    # 8816e1e..HEAD must consist of NOTHING BUT the B16 hunk. Any other changed line
-    # (especially anything touching the estimator/forward path) turns this RED again.
+    # cddf_catalog_hbi.py is no longer byte-identical to 8816e1e. There are now exactly
+    # TWO sanctioned, ENUMERATED exceptions -- and the file is still forbidden to drift
+    # anywhere else, so anything touching the estimator/forward path turns this RED:
+    #
+    #   (1) B16 RE-BASELINE -- the z-leaky-truth fix in truth_reductions().
+    #   (2) BAND-ESTIMAND RETIREMENT (PI, 2026-07-28) -- recenter_band_on_point and
+    #       recenter_differential_band_quantiles gated behind an explicit diagnostic_only
+    #       opt-in, the resolve_band_recenter choke point, the
+    #       HBIConfig.allow_diagnostic_recenter flag, the corrected docstrings (the old
+    #       ones asserted the WRONG SIGN and an O(sigma^2) magnitude), and the
+    #       write_outputs call site routed through the choke point.
+    #
+    # The check is HUNK-based: every hunk must belong to one of the two sets, identified
+    # by the enclosing symbol in the hunk header. A hunk in ANY other region (the
+    # reducer, the forward dispatch, joint_mc_errors, ...) is unclassifiable -> RED.
     diff = _git(["diff", "-U0", f"{FP_FIX}", "HEAD", "--", cch]).stdout
-    changed = [l for l in diff.splitlines()
-               if (l.startswith("+") or l.startswith("-"))
-               and not l.startswith("+++") and not l.startswith("---")]
+    hunks, cur = [], None
+    for line in diff.splitlines():
+        if line.startswith("@@"):
+            cur = {"header": line, "lines": []}
+            hunks.append(cur)
+        elif (cur is not None and (line.startswith("+") or line.startswith("-"))
+              and not line.startswith("+++") and not line.startswith("---")):
+            cur["lines"].append(line)
+    assert hunks, f"no diff hunks parsed for {cch} vs {FP_FIX}"
+
+    B16_MARKERS = ("t_zidx >= 0", "B16", "truth_reductions",
+                   "n = int((t_nidx == b).sum())")
+    # the SIX regions the band retirement is allowed to touch, and nothing else
+    BAND_REGIONS = (
+        "from CDDF_analysis.cddf_mock import",          # the estimand-vocabulary import
+        "class HBIConfig:",                             # band_recenter / allow_diagnostic_*
+        "def draw_shared_boot_with_mult",               # the BAND-FINALIZE banner comment
+        "def recenter_band_on_point",                   # gate + corrected docstring
+        "def recenter_differential_band_quantiles",     # gate
+        "def write_outputs",                            # routed through the choke point
+    )
+    b16_hunks, band_hunks = [], []
+    for h in hunks:
+        blob = h["header"] + "\n" + "\n".join(h["lines"])
+        if any(m in blob for m in B16_MARKERS):
+            b16_hunks.append(h)
+        elif any(r in h["header"] for r in BAND_REGIONS):
+            band_hunks.append(h)
+        else:
+            raise AssertionError(
+                f"{cch} vs {FP_FIX}: UNSANCTIONED hunk {h['header']!r}. Only the B16 truth "
+                "fix and the 2026-07-28 band-estimand retirement are enumerated exceptions; "
+                "the estimator/forward path must stay unchanged.")
+    assert b16_hunks, "the B16 truth fix vanished from cddf_catalog_hbi.py"
+    assert band_hunks, "the band-estimand retirement vanished from cddf_catalog_hbi.py"
+
+    # --- exception (1): the B16 hunks, line-exact as before -------------------
+    b16_changed = [l for h in b16_hunks for l in h["lines"]]
     # The ONLY sanctioned removals: the leaky per-bin count, and the two docstring lines
-    # it made false. EXACT set -- one extra removed line anywhere in the file turns this RED.
+    # it made false. EXACT set -- one extra removed line in a B16 hunk turns this RED.
     SANCTIONED_REMOVALS = {
         "        n = int((t_nidx == b).sum())",
         "    correction — it IS truth). Truth restricted to SNR>snr_min sightlines (matches",
         "    the ΔX denominator). Returns dict {f_truth, dndx_total, omega} per limit.\"\"\"",
     }
-    removed = {l[1:] for l in changed if l.startswith("-")}
+    removed = {l[1:] for l in b16_changed if l.startswith("-")}
     assert removed == SANCTIONED_REMOVALS, (
-        f"{cch} diff vs {FP_FIX} removes lines other than the sanctioned B16 set. "
+        f"{cch} B16 hunks remove lines other than the sanctioned set. "
         f"unexpected removals: {sorted(removed - SANCTIONED_REMOVALS)}; "
         f"missing: {sorted(SANCTIONED_REMOVALS - removed)}")
-    added = [l[1:] for l in changed if l.startswith("+")]
+    added = [l[1:] for l in b16_changed if l.startswith("+")]
     assert any("t_zidx >= 0" in a for a in added), (
         "the B16 fix line (z mask on the truth f(N) numerator) is missing from the diff.")
     for a in added:
@@ -559,8 +624,23 @@ def test_frozen_files_unchanged_by_forward_switch():
               or "accumulated over (B16)" in a
               or a.strip().startswith("correction — it IS truth)"))
         assert ok, (
-            f"{cch} gained a non-B16 line since {FP_FIX}: {a!r}. The forward switch must stay "
-            "config-only; only the enumerated B16 truth fix is sanctioned.")
+            f"{cch} gained a non-B16 line in a B16 hunk since {FP_FIX}: {a!r}. The forward "
+            "switch must stay config-only.")
+
+    # --- exception (2): the band retirement, pinned to its declared behaviour --
+    band_added = [l[1:] for h in band_hunks for l in h["lines"] if l.startswith("+")]
+    band_blob = "\n".join(band_added)
+    for token in ("diagnostic_only", "RecenteredBandRetired", "resolve_band_recenter",
+                  "allow_diagnostic_recenter", "estimand"):
+        assert token in band_blob, (
+            f"the band-estimand retirement lost {token!r} from {cch}; the recentering gate "
+            "must stay in place (PI, 2026-07-28).")
+    # the ONE live estimator call site it touches: write_outputs goes through the choke point
+    wo = [l[1:] for h in band_hunks if "def write_outputs" in h["header"]
+          for l in h["lines"] if l.startswith("+")]
+    assert any("resolve_band_recenter" in a for a in wo), (
+        f"{cch} write_outputs no longer routes the f(N) band recenter through "
+        "resolve_band_recenter -- the gate can be bypassed.")
 
 
 # ===========================================================================
@@ -671,6 +751,17 @@ def test_forward_all_deps_unchanged_between_stamp_and_head():
         bh = _git(["rev-parse", f"HEAD:{dep}"]).stdout.strip()
         if bs and bh and bs != bh:
             drifted.append(dep)
+    # NON-COMPUTING dep: CDDF_analysis/unblind/provenance.py is a GUARD, not an
+    # estimator -- the routine imports exactly one symbol from it, the fail-closed
+    # assert_forward_kernel, which either raises or returns "forward" and contributes
+    # nothing to any number. A blanket allowlist would be too weak (the module could
+    # change the guard itself), so the drift is excused ONLY when that function's
+    # source is BYTE-IDENTICAL at the stamp and at HEAD.
+    _GUARD = "CDDF_analysis/unblind/provenance.py"
+    _guard_src = _fn_source(base, _GUARD, "assert_forward_kernel")
+    if (_GUARD in drifted and _guard_src is not None
+            and _guard_src == _fn_source("HEAD", _GUARD, "assert_forward_kernel")):
+        drifted.remove(_GUARD)
     unexplained = [d for d in drifted if d not in b16_files]
     assert not unexplained, (
         f"stamped deps changed between stamp {base[:12]} and HEAD: {unexplained} -> HEAD "

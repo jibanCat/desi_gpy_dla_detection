@@ -90,7 +90,9 @@ from CDDF_analysis.hbi.cddf_catalog_hbi import (
     make_C_interpolator, build_pathlength, make_fp_model, make_rho_interpolator,
     _build_qso_lookup, v3x_refit, build_cnz_resolved, regenerate_molly_counts,
     v3x_reduce, joint_mc_errors, omega_hi_prefactor, recenter_band_on_point,
+    resolve_band_recenter,
 )
+from CDDF_analysis.unblind.estimand import stamp_band_estimand
 import functools
 
 # ---------------------------------------------------------------------------
@@ -396,11 +398,15 @@ def run_measurement(args, ing, limits, seed, frozen=None):
                       and np.isfinite(fbk_samp).any())
     n_draw = fb_samp.shape[0]
 
-    # per-z Ω band (recentered-C1 frozen-kernel transport — reviewed): transport the
-    # per-z dN/dX multiplicative fluctuation onto the genuine MAP Ω(z), recentered on
-    # the MAP by the established recenter_band_on_point primitive.  Faithful because the
-    # N-shape within a z-bin is FROZEN by the kernel + g, so Ω(z) and dN/dX(z) share one
-    # per-z normalization fluctuation.
+    # per-z Ω band (frozen-kernel transport): transport the per-z dN/dX multiplicative
+    # fluctuation onto the genuine MAP Ω(z). The N-shape within a z-bin is FROZEN by the
+    # kernel + g, so Ω(z) and dN/dX(z) share one per-z normalization fluctuation.
+    #
+    # 2026-07-28 (PI): the recenter_band_on_point call here used to run UNCONDITIONALLY —
+    # it ignored cfg.band_recenter entirely, so --no-band-recenter did NOT turn it off
+    # and every per-z Ω band ever written by this driver was recentered. It is now routed
+    # through the single choke point resolve_band_recenter (diagnostic-only).
+    _recenter = resolve_band_recenter(cfg, where="track_c_tf_loa.run_measurement")
     omega_z_samp = {}
     for l in limits:
         oz = np.full((n_draw, n_zc), np.nan)
@@ -408,11 +414,13 @@ def run_measurement(args, ing, limits, seed, frozen=None):
             mz = map_dndx_z[l][k]
             if np.isfinite(mz) and mz > 0:
                 raw = map_omega_z[l][k] * (dndx_z_samp[l][:, k] / mz)
-                oz[:, k] = recenter_band_on_point(raw, map_omega_z[l][k])
+                oz[:, k] = (recenter_band_on_point(raw, map_omega_z[l][k],
+                                                   diagnostic_only=True)
+                            if _recenter else raw)
         omega_z_samp[l] = oz
 
     def _band(samp_arr, point):
-        b = PZ._band(np.asarray(samp_arr, float), point=point, recenter=cfg.band_recenter)
+        b = PZ._band(np.asarray(samp_arr, float), point=point, recenter=_recenter)
         return dict(MAP=float(point), q16=b["q16"], q84=b["q84"],
                     q025=b["q025"], q975=b["q975"], std=b["std"])
 
@@ -440,14 +448,16 @@ def run_measurement(args, ing, limits, seed, frozen=None):
     fNz_hi95 = np.full((n_zc, len(mid)), np.nan)
     band_method = "direct_perN_z" if have_fbk_draws else "frozen_shape_lower_bound"
     if have_fbk_draws:
-        # DIRECT per-(logN, z) percentiles from the real draws, recentered on the MAP bin.
+        # DIRECT per-(logN, z) percentiles from the real draws. The recenter is
+        # DIAGNOSTIC-ONLY (PI, 2026-07-28) and was previously UNCONDITIONAL here.
         for k in range(n_zc):
             for b in range(len(mid)):
                 pt = map_fbk[b, k]
                 if not (np.isfinite(pt) and pt > 0):
                     continue
                 raw = fbk_samp[:, b, k]                  # (n_draw,) real per-(N,z) draws
-                raw = recenter_band_on_point(raw, pt)
+                if _recenter:
+                    raw = recenter_band_on_point(raw, pt, diagnostic_only=True)
                 raw = raw[np.isfinite(raw)]
                 if raw.size == 0:
                     continue
@@ -467,7 +477,8 @@ def run_measurement(args, ing, limits, seed, frozen=None):
                 if not (np.isfinite(pt) and pt > 0):
                     continue
                 raw = pt * ratio                        # (n_draw,) transported f(N|z) band
-                raw = recenter_band_on_point(raw, pt)
+                if _recenter:                           # DIAGNOSTIC-ONLY (PI 2026-07-28)
+                    raw = recenter_band_on_point(raw, pt, diagnostic_only=True)
                 raw = raw[np.isfinite(raw)]
                 if raw.size == 0:
                     continue
@@ -694,11 +705,13 @@ def make_figure(out_path, res, args, lit):
     # panel 2: CDDF f(N) z-marginal + literature (Ho21 z3-4, N12)
     ax = axes[2]
     map_fb = res["map_fb"]; fb_samp = res["fb_samp"]
-    # recenter-on-point (Track-C #34) for the DIFFERENTIAL f(N) band — panels 0/1
-    # (dN/dX(z), Ω(z)) already recenter via recenter_band_on_point; panel 2 must match.
-    # Per-bin additive median->point shift (width-preserving); without it the convex-
-    # bspline-MAP Jensen offset puts the band ~17.5% above the plotted MAP line.
-    if getattr(args, "band_recenter", False):
+    # DIAGNOSTIC-ONLY recenter for the DIFFERENTIAL f(N) band (PI, 2026-07-28). This is an
+    # INLINE copy of recenter_band_on_point applied per bin; it is gated on BOTH flags so
+    # it cannot be re-enabled from the headline CLI by one switch. Note the un-recentered
+    # band sits ~17.5% ABOVE the MAP line here -- the opposite sign to the retired
+    # "Jensen ⇒ band below the MAP" story; see recenter_band_on_point's docstring.
+    if (getattr(args, "band_recenter", False)
+            and getattr(args, "allow_diagnostic_recenter", False)):
         _med = np.nanmedian(fb_samp, axis=0)
         _sh = np.where(np.isfinite(_med) & np.isfinite(map_fb), map_fb - _med, 0.0)
         fb_samp = fb_samp + _sh[None, :]
@@ -941,9 +954,18 @@ def main(argv=None):
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--cz-min-count", type=float, default=30.0)
-    # band-finalize knobs (default ON — central recipe at HEAD)
-    p.add_argument("--band-recenter", dest="band_recenter", action="store_true", default=True)
+    # band-finalize knobs. --band-recenter is RETIRED for paper-facing output
+    # (PI, 2026-07-28): default is now OFF and turning it on ALSO requires the explicit
+    # --allow-diagnostic-recenter opt-in, which stamps the artifact
+    # estimand=DIAGNOSTIC_RECENTERED / paper_facing=False.
+    p.add_argument("--band-recenter", dest="band_recenter", action="store_true", default=False,
+                   help="DIAGNOSTIC ONLY (retired for paper-facing output); requires "
+                        "--allow-diagnostic-recenter.")
     p.add_argument("--no-band-recenter", dest="band_recenter", action="store_false")
+    p.add_argument("--allow-diagnostic-recenter", dest="allow_diagnostic_recenter",
+                   action="store_true", default=False,
+                   help="explicit diagnostic opt-in required alongside --band-recenter; "
+                        "the resulting artifact is stamped paper_facing=False.")
     p.add_argument("--omega-slope-extrap", dest="omega_slope_extrap",
                    action="store_true", default=True)
     p.add_argument("--no-omega-slope-extrap", dest="omega_slope_extrap",
@@ -1029,7 +1051,15 @@ def main(argv=None):
                     integrated=res["omega"][l]["integrated"]),
             ) for l in limits},
         zbins=list(map(float, res["zbins"])))
-    # per-z DIFFERENTIAL f(N|z) curves (MAP + recentered 68/95 band) — the NEW deliverable.
+    # ESTIMAND SELF-DECLARATION (PI, 2026-07-28). The point is a plug-in MAP and the band
+    # is an MC/bootstrap ensemble, so the honest class is PLUGIN_MAP_MC — NOT a posterior
+    # credible interval, hence paper_facing=False until the joint-posterior route lands.
+    # With the retired recenter switched on it downgrades to DIAGNOSTIC_RECENTERED.
+    stamp_band_estimand(
+        out_json["metadata"],
+        band_recenter=bool(getattr(args, "band_recenter", False)),
+        posterior_sampled=False)
+    # per-z DIFFERENTIAL f(N|z) curves (MAP + 68/95 band) — the NEW deliverable.
     # logN_centers = res['mid']; per coarse z bin: MAP f(N|z) + band, with the support flag.
     out_json["perz_fN"] = assemble_perz_fN(res, limits)
     with open(os.path.join(args.out, "track_c_tf_loa.json"), "w") as fh:
