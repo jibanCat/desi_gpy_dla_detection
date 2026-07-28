@@ -31,7 +31,7 @@
         "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
       ],
       "fixture": "tests/test_b16_truth_zmask.py",
-      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
+      "rule": "CONTAMINATION TEST: is the number built from tr['f_truth']? -- NOT 'is it called Omega?'. Contaminated here: every omega_tru_*, every r0_omega_*, and every per-bin f_tru (which IS f_truth). CLEAN here: every dN/dX (dndx_est/dndx_tru/r0_dndx), which goes through dndx_total and was always z-masked. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
       "measured_leak_factor": {
         "omega_cum_19.5": 1.059321381914033,
         "omega_cum_20.0": 1.0595311425486416,
@@ -41,8 +41,10 @@
       },
       "note": "Truth reductions are kernel- and FP-mode-INDEPENDENT, so the leak factors measured on the forward configuration apply verbatim to this (already RETIRED) posterior-kernel artifact: same truth_cut, same X_tot, same grid.",
       "affected_keys": [
-        "*/omega_tru_*",
-        "*/r0_omega_*"
+        "integrated.*/omega_tru_* (CONTAMINATED)",
+        "integrated.*/r0_omega_* (CONTAMINATED)",
+        "per_bin.*[*].f_tru (CONTAMINATED -- it IS f_truth)",
+        "integrated.*/dndx_* and per_bin.*[*].dndx_* (CLEAN)"
       ],
       "rederived_post_b16": {
         "_how": "python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --force (kappa path; re-run 2026-07-28 on the post-fix tree)",

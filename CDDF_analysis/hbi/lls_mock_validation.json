@@ -26,12 +26,14 @@
         "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
       ],
       "fixture": "tests/test_b16_truth_zmask.py",
-      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
+      "rule": "CONTAMINATION TEST: is the number built from tr['f_truth']? -- NOT 'is it called Omega?'. Contaminated here: every omega_tru_*, every r0_omega_*, and every per-bin f_tru (which IS f_truth). CLEAN here: every dN/dX (dndx_est/dndx_tru/r0_dndx), which goes through dndx_total and was always z-masked. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
       "measured_leak_factor": null,
       "note": "INVALIDATED-PENDING: the LLS tier uses a DIFFERENT molly floor (17.2) and a different fine grid, so its leak factor was NOT measured here and MUST NOT be borrowed from the sub-DLA numbers. Re-derive with the metadata.rederive command before quoting any Omega from this file.",
       "affected_keys": [
-        "*/omega_tru_*",
-        "*/r0_omega_*"
+        "results.*/omega_tru_* (CONTAMINATED)",
+        "results.*/r0_omega_* (CONTAMINATED)",
+        "any per-bin f_tru row (CONTAMINATED -- it IS f_truth)",
+        "results.*/dndx_* and r0_dndx_* (CLEAN)"
       ]
     }
   },
