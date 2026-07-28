@@ -19,6 +19,62 @@ in a self-consistent synthetic drop, is genuinely exercised). Then:
   * SANITY: drop=None reproduces the frozen counting-only fit; DLA-tier dN/dX(>=20.3) R0 ~ 1.1.
 
 MOCK values only (public-OK). Real-LOA lambda_mfp/ell are private + PI-unblinding-gated.
+
+.. warning::
+
+   **B16 (z-leaky truth) CONTAMINATES ``true_ell`` -- and therefore every ell(X) R0 this
+   routine stamps.** Corrected 2026-07-28; the committed JSON is NOT re-derived (fixing it
+   means fixing B16 at source, which this routine does not own).
+
+   ``true_ell`` (:148) integrates ``tr["f_truth"]`` (:146), which comes from
+   ``cddf_catalog_hbi.py::truth_reductions`` (:101). That function computes the z-bin index
+   ``t_zidx`` at cddf_catalog_hbi.py:2138 and applies it to ``dndx_total`` (:2153-2154) but
+   **NOT** to ``f_truth`` (:2140-2142) -- so ``f_truth`` counts absorbers at ALL redshifts
+   over an ``X_sum`` pathlength that spans only ``cfg.zbins``. This is the same defect as
+   B16 in ``cddf_tilt_closure.py::tilted_truth_reductions:144-146``, at a SECOND, independent
+   site. Only the truth DENOMINATOR moves; no estimate changes.
+
+   *Line numbers above are as committed at 4d3e16d, the state the committed JSONs were
+   produced against. A source fix at both sites is in flight in a separate workstream; when
+   it lands and the JSONs are re-derived, the numbers below become the stamped values rather
+   than the correction. ``tests/test_b16_ell_contamination.py`` is written to stay green
+   across that transition and reports which regime the artifacts are in.*
+
+   Measured on 2LPT-0 (2026-07-28, re-derived; committed path reproduced bit-for-bit):
+
+   =========================  ==============  ==============  =========
+   quantity                   committed       corrected       leak
+   =========================  ==============  ==============  =========
+   ``true_ell`` [17.2,19.5)   0.2628520       0.2487742       x1.056588
+   ``r0_band_q50``            0.8176435       **0.8639**      x1.056588
+   ``r0_canonical``           0.8125795       **0.8586**      x1.056588
+   =========================  ==============  ==============  =========
+
+   Those corrected R0s are DENOMINATOR-ONLY. A fix at source would also move the numerator
+   a little, because ``_shape_priors`` anchors on the same leaky ``f_truth``: re-running the
+   canonical MAP with a z-masked anchor gives ``map_ell`` 0.2135882 -> 0.2133441, so
+   ``r0_canonical`` lands at **0.857582** rather than 0.858562 (-0.11%). Read the corrected
+   ell(X) R0s as accurate to ~0.1%, not exact.
+
+   Independent confirmation: the corrected ``true_ell`` = 0.24877424826307448 equals
+   ``CDDF_analysis/hbi/lls_mock_validation.json::results.loa0.v1.dndx_tru_172_195`` =
+   0.24877424826307443 (1 ULP) -- a value produced by a DIFFERENT function
+   (``cddf_tilt_closure.py::tilted_truth_reductions``'s z-masked ``dndx_total``) in a
+   DIFFERENT routine (``lls_loa0_validation.py:107``). Guarded by
+   ``tests/test_b16_ell_contamination.py``.
+
+   ``truth_in_band`` stays False either way (band [0.1972, 0.2149, 0.2320]).
+
+   The lambda_mfp HEADLINE survives, but NOT for the reason the blast-radius audit gives.
+   Its truth leg IS clean: ``lam_t`` is fitted to ``_physical_drop()`` (:105-131), a direct
+   sum over the HCD truth catalogue that never touches ``f_truth`` (re-derived
+   ``lambda_mfp_truth_Mpc`` = 119.827181, bit-for-bit). Its ESTIMATE leg is NOT independent
+   of ``f_truth``: ``_shape_priors`` (:134-139) anchors the sub-LLS prior on
+   ``log10 f_truth`` at the 19.2 bin, which the leak shifts by +0.025988 dex (+0.26 sigma of
+   the 0.10 dex prior width). Measured propagation: ``r0_lambda_mfp`` 0.983515 -> **0.984735**
+   (+0.124%), i.e. numerically negligible against any LLS error budget. So: verdict CLEAN,
+   stated reason ("a break-counting/survival estimator that never calls this function")
+   FALSE -- this routine calls it at :101.
 """
 from __future__ import annotations
 
@@ -132,6 +188,17 @@ def _physical_drop():
 
 
 def _shape_priors(f_truth, lo, hi):
+    """Sub-LLS shape priors anchored on the TRUTH f(N) at logN=19.2.
+
+    B16 NOTE (2026-07-28): `f_truth` here is the z-leaky array (see module docstring), so
+    this anchor -- and hence the lambda_mfp ESTIMATE leg, which fits kappa to the drop
+    implied by the MAP under shapes[1] -- is not strictly independent of the leak. Measured
+    on 2LPT-0: log10 f(19.15 bin) = -20.442616 leaky vs -20.468604 z-masked, a +0.025988 dex
+    (+0.26 sigma of the 0.10 dex prior width at 19.2) shift. This is why the blast-radius
+    audit's stated reason for lambda_mfp being clean ("a break-counting/survival estimator
+    that never calls this function") is false: the VERDICT holds, the REASON does not. The
+    lambda_mfp TRUTH leg is genuinely clean -- it is fitted to `_physical_drop()`.
+    """
     mid = 0.5 * (lo + hi)
     f192 = np.log10(max(f_truth[np.argmin(np.abs(mid - 19.2))], 1e-300))
     anch = [17.5, 18.5, 19.2]
@@ -143,6 +210,11 @@ def run(n_lap: int, lam_spline: float) -> dict:
     t0 = time.time()
     cfg, fwd, tr, ing, lo, hi, Nb, dNb = _build_forward()
     fine = fwd["fine"]
+    # B16 (see module docstring): tr["f_truth"] is z-LEAKY -- truth_reductions
+    # (cddf_catalog_hbi.py:2140-2142) omits the `t_zidx >= 0` mask it applies to dndx_total
+    # at :2153-2154. Every `true_ell` below, and therefore every ell(X) R0 stamped by this
+    # routine, is a truth denominator inflated by x1.056588 on 2LPT-0. NOT fixed here:
+    # the fix belongs at source, and this routine must keep reproducing its stamped JSON.
     f_truth = np.asarray(tr["f_truth"], float)
     sel = (lo >= 17.2 - 1e-9) & (hi <= 19.5 + 1e-9)
     true_ell = float(np.nansum(f_truth[sel] * dNb[sel]))

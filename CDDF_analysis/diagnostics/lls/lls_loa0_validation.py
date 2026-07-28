@@ -23,6 +23,24 @@ recipe (notes ``2026-07-05_lls_method_survey.md``):
 
 VERDICT target: does loa0 recover the true LLS dN/dX[17.2,19.5) (R0≈1) where the band is a
 small residual of a large FP subtraction, and does v3x agree with the kernel-free v1?
+
+.. note::
+
+   **B16 split for this routine's outputs** (audited 2026-07-28). ``_extract`` reads two
+   different truth objects out of ``baseline_recovery``, and only one of them is clean:
+
+     * ``dndx_tru_*``, ``r0_dndx_*``, ``per_bin[].dndx_tru`` -- from ``t0["dndx_total"]``
+       (:107,:119), which ``cddf_tilt_closure.py::tilted_truth_reductions:168-169`` masks
+       with ``zidx >= 0``. **CLEAN.**
+     * ``omega_tru_*``, ``r0_omega_*`` -- from ``t0["omega"]`` (:109), built from the
+       z-leaky ``f_truth`` at ``cddf_tilt_closure.py:144-146``. **LEAKY**, truth inflated
+       x1.05739 on [17.2,19.5): ``omega_tru_172_195`` 2.158191e-05 -> 2.041060e-05, so
+       ``r0_omega_172_195`` (loa0/v1) 2.9659 -> 3.1361 -- it moves AWAY from 1.
+
+   This routine's ``dndx_tru_172_195`` = 0.24877424826307443 is the reference value that
+   proves the LLS ell(X) truth in ``CDDF_analysis/hbi/joint_mock_validation.json`` is
+   contaminated: the same integral built from the leaky ``f_truth`` gives 0.2628520.
+   See ``tests/test_b16_ell_contamination.py``.
 """
 from __future__ import annotations
 

@@ -23,6 +23,31 @@ Each panel is a UNIT TEST of one reporting decision, plotted against the injecte
 
 MOCK values only (public-OK). Real-LOA is PI-unblinding-gated.
 
+.. warning::
+
+   **B16 (z-leaky truth) contaminates BOTH ell(X) truths this routine plots and stamps.**
+   Documented 2026-07-28; see `joint_drop_count_validation.py`'s module docstring for the
+   full trace. `true_172`/`true_175` (:202-203) integrate `tr["f_truth"]` (:194), which
+   `cddf_catalog_hbi.py::truth_reductions` builds WITHOUT the `t_zidx >= 0` mask it applies
+   to `dndx_total` (:2140-2142 vs :2153-2154). Measured on 2LPT-0:
+
+     * `truth.ell_172_195` 0.2628520 -> 0.2487742 ; `P2_ell.r0_172` 0.8176435 -> **0.8639**
+     * `truth.ell_175_195` 0.2118017 -> 0.2003832 ; `P2_ell.r0_175` 0.4802301 -> **0.5076**
+
+   Both corrected truths equal, to 1 ULP, the z-masked `dndx_tru_{172,175}_195` in the
+   committed `CDDF_analysis/hbi/lls_mock_validation.json` -- an independent leg computed by
+   a different function in a different routine. Guarded by
+   `tests/test_b16_ell_contamination.py`.
+
+   `ell_frac_below_17p5_truth` (:449) is a RATIO of two leaky truths, so the leak nearly
+   cancels: 0.194217 -> 0.194515. The "0.194 truth vs 0.522 model" structural-limit
+   statement is unaffected. The P1 lambda_mfp truth leg is clean (direct sum over the HCD
+   truth catalogue); its estimate leg inherits a +0.026 dex shape-prior anchor shift worth
+   +0.12% on `r0_lambda_mfp`.
+
+   `CDDF_analysis/hbi/lls_recovery_figures.json` on disk is UNTRACKED and carries the
+   pre-correction values.
+
 Re-derive:
     python CDDF_analysis/diagnostics/lls/lls_recovery_figures.py --force
     python CDDF_analysis/diagnostics/lls/lls_recovery_figures.py --force --quick   # small n_lap

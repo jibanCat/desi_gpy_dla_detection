@@ -62,6 +62,8 @@ from CDDF_analysis.hbi import track_c_tf_loa as TF          # noqa: E402
 from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB      # noqa: E402
 from CDDF_analysis.hbi.cddf_catalog_hbi import (             # noqa: E402
     make_fp_model, make_rho_interpolator)
+from CDDF_analysis.unblind import resp_kind as RK            # noqa: E402
+from CDDF_analysis.unblind import estimand as _EST           # noqa: E402
 
 # The committed, git-stamped MOCK deliverables this routine's config is gated against.
 # KAPPA twin = the RETIRED posterior-kernel artifact (kept for config-drift detection only;
@@ -99,6 +101,7 @@ _PROVENANCE_DEPS = [
     "CDDF_analysis/hbi/track_c_tf_loa.py",              # the measurement engine
     "CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py",  # the gate twin
     "CDDF_analysis/hbi/ab_loa0_fp_baseline.py",         # shared ingredient builder
+    "CDDF_analysis/unblind/resp_kind.py",               # the fail-closed kernel gate
 ]
 
 
@@ -200,7 +203,13 @@ def build_args(a, dataset):
         family="bspbody", fit_floor=19.5, fit_ceil=99.0, lambda_bspbody=30.0,
         lam_rf_min=1025.0, edge_slope_lam=40.0, gl_nodes=1, host_truth_floor=19.0,
         n_mc=a.n_mc, workers=a.workers, seed=a.seed, cz_min_count=30.0,
-        band_recenter=True, omega_slope_extrap=True,
+        # RETIRED for paper-facing output (PI, 2026-07-28): the sub-DLA headline band
+        # must NOT be an MC cloud slid onto the plug-in MAP. Measured displacement on
+        # this very path (subdla_mock_headline.json, 2LPT-0, n_mc=2000, seed 0):
+        # raw MC median is +70.00% (dN/dX) / +55.20% (Omega) ABOVE the MAP, i.e.
+        # +16.67 / +19.02 68%-band half-widths. The POINT is untouched by this flag.
+        band_recenter=False, allow_diagnostic_recenter=False,
+        omega_slope_extrap=True,
         omega_slope_extrap_integrated=True, slope_edge=21.2, slope_fit_dex=0.6,
         sigma_slope=0.5,
     )
@@ -214,6 +223,12 @@ def build_args(a, dataset):
 def run_headline(args, fp_estimator, loa0_product):
     """Config-only FP override on the frozen sub-DLA ingredients.  Returns the
     track_c_tf_loa run_measurement `res` dict (the SAME object the DLA headline dumps)."""
+    # FAIL-CLOSED, BEFORE any compute: this is a paper-facing measurement, so refuse the
+    # GP-posterior kernel here rather than after an hours-long run (the stamp guard in
+    # assemble_out_json is the backstop, not the first line of defence).
+    RK.resolve_resp_kind(getattr(args, "resp_kind", None),
+                         context=f"sub-DLA headline run (fp={fp_estimator})",
+                         paper_facing=True)
     frozen = TF.build_frozen_calibration(args)
     args.molly_tsv = frozen["molly_tsv"]
 
@@ -268,8 +283,15 @@ def _window_band(args, ing, res, mc):
     """Authoritative sub-DLA WINDOW [19.5,20.3) band (dN/dX + Omega) from the estimator's own
     joint_mc_errors samples (loa0 FP RESAMPLED per draw).  The window = cumulative(19.5) -
     cumulative(20.3); its band is the per-draw difference of the SAME draws (correlated),
-    recentered on the MAP window point via FIX 1 (recenter_band_on_point / PZ._band with
-    cfg.band_recenter), exactly the recipe run_measurement uses for the per-limit bands.
+    exactly the recipe run_measurement uses for the per-limit bands.
+
+    ESTIMAND (PI, 2026-07-28): the POINT is a plug-in MAP and the BAND is the MC/bootstrap
+    ensemble around a DIFFERENT centre -> class PLUGIN_MAP_MC, NOT a posterior credible
+    interval.  ``raw_median`` and ``jensen_shift`` below record the gap explicitly: on
+    2LPT-0 (n_mc=2000, seed 0) the raw MC median sits +70.00% (dN/dX) and +55.20% (Omega)
+    ABOVE the MAP, i.e. +16.67 and +19.02 68%-band half-widths.  Recentering the cloud onto
+    the point (cfg.band_recenter) is RETIRED to diagnostic-only; it is now routed through
+    resolve_band_recenter and defaults OFF.
 
     A cross-check asserts that re-forming each per-limit CUMULATIVE band from the captured
     draws reproduces run_measurement's stored per-limit band to < 1e-9 — proving the window
@@ -278,6 +300,9 @@ def _window_band(args, ing, res, mc):
     if mc is None or "_samples" not in mc:
         return None
     cfg = ing["cfg"]
+    # PI 2026-07-28 choke point: raises if band_recenter=True without the explicit
+    # allow_diagnostic_recenter opt-in; False on every headline invocation.
+    _recenter = TF.resolve_band_recenter(cfg, where="run_subdla_headline_full._window_band")
     limits = args._limits
     lo, hi = limits[0], limits[-1]          # 19.5, 20.3
     samp = mc["_samples"]
@@ -294,9 +319,13 @@ def _window_band(args, ing, res, mc):
     out = {"window": [float(lo), float(hi)],
            "note": ("integrated [19.5,20.3) = cumulative(19.5) - cumulative(20.3); band = the "
                     "per-draw difference of the SAME joint_mc_errors draws (loa0 forest FP "
-                    "RESAMPLED per draw via Loa0FP.resample Gehrels Gamma), recentered on the "
-                    "MAP window point (FIX 1).  R0 vs committed estimator-independent 2LPT-0 "
-                    "truth.  MOCK values — public.")}
+                    "RESAMPLED per draw via Loa0FP.resample Gehrels Gamma).  R0 vs committed "
+                    "estimator-independent 2LPT-0 truth.  MOCK values — public."),
+           "estimand": _EST.band_estimand(band_recenter=_recenter, posterior_sampled=False),
+           "raw_median_note": ("raw_median = the UN-recentered MC ensemble median; "
+                               "jensen_shift = MAP - raw_median. A large |jensen_shift| "
+                               "relative to (q84-q16)/2 means the point and the band are "
+                               "DIFFERENT ESTIMANDS.")}
     for kind in ("dndx", "omega"):
         key = "dndx_total" if kind == "dndx" else "omega"
         raw_lo = np.asarray(samp[key][lo], float)
@@ -306,7 +335,7 @@ def _window_band(args, ing, res, mc):
         # cross-check: reproduce each per-limit cumulative band exactly (identical draws).
         for L, mp in ((lo, map_lo), (hi, map_hi)):
             chk = TF.PZ._band(np.asarray(samp[key][L], float), point=mp,
-                           recenter=cfg.band_recenter)
+                           recenter=_recenter)
             ref = res[kind][L]["integrated"]
             for q in ("q16", "q84", "q025", "q975", "std"):
                 d = abs(float(chk[q]) - float(ref[q]))
@@ -314,7 +343,7 @@ def _window_band(args, ing, res, mc):
                                   f"|Δ|={d:.2e} (reproduced band != run_measurement band).")
         map_win = map_lo - map_hi
         raw_win = raw_lo - raw_hi
-        b = TF.PZ._band(raw_win, point=map_win, recenter=cfg.band_recenter)
+        b = TF.PZ._band(raw_win, point=map_win, recenter=_recenter)
         finite = raw_win[np.isfinite(raw_win)]
         raw_med = float(np.median(finite)) if finite.size else float("nan")
         rec = dict(MAP=map_win, q16=b["q16"], q50=b["q50"], q84=b["q84"],
@@ -367,6 +396,17 @@ def assemble_out_json(res, args, limits, wall, fp_estimator, loa0_product, datas
     mid = np.asarray(res["mid"], float)
     logN_nonident = [bool(m < NONIDENT_EDGE - 1e-9) for m in mid]
 
+    # FAIL-CLOSED KERNEL STAMP (2026-07-28): this routine emits a PAPER-FACING headline,
+    # so the kernel is resolved with NO DEFAULT and 'kappa' is refused outright -- the
+    # artifact can never be written on the GP-posterior kernel, and it SELF-DECLARES
+    # metadata['resp_kind'] / ['paper_facing'] / ['kernel_note'].  Previously this line
+    # was `resp_kind=getattr(args, "resp_kind", "forward")`, i.e. a stamp that would
+    # happily record whatever it was handed (including 'kappa') with nothing refusing it.
+    _kernel_md = RK.kernel_metadata(
+        getattr(args, "resp_kind", None),
+        context=f"sub-DLA {dataset} headline stamp (fp={fp_estimator})",
+        paper_facing=True)
+
     out = dict(
         metadata=dict(
             what="sub-DLA-band catalog-HBI headline measurement (dN/dX, Omega, CDDF f(N|z)) "
@@ -384,7 +424,7 @@ def assemble_out_json(res, args, limits, wall, fp_estimator, loa0_product, datas
                         f"--seed {args.seed} --force"),
             n_mc=int(args.n_mc), seed=int(args.seed),
             limits=list(limits), report_limits=SUBDLA_REPORT_LIMITS,
-            resp_kind=getattr(args, "resp_kind", "forward"),
+            **_kernel_md,                                  # resp_kind/paper_facing/kernel_note
             loa_kernel=res.get("_kernel_built_path"),       # null on the forward path
             forward_model=args.forward_model, molly_tsv=args.molly_tsv,
             loa_cat=(args.loa_cat if dataset == "mock" else "<REAL-LOA — path withheld>"),
@@ -435,6 +475,14 @@ def assemble_out_json(res, args, limits, wall, fp_estimator, loa0_product, datas
     # the authoritative sub-DLA WINDOW [19.5,20.3) band (dN/dX + Omega), FP-resampled, the
     # actual sub-DLA deliverable (run_measurement emits only per-limit CUMULATIVE bands).
     out["window_band_195_203"] = res.get("window_band_195_203")
+    # ESTIMAND SELF-DECLARATION (PI, 2026-07-28). The point is a plug-in MAP and the band is
+    # an MC/bootstrap ensemble around a DIFFERENT centre -> PLUGIN_MAP_MC, so the artifact is
+    # NOT paper-facing as an uncertainty until the faithful joint-posterior route lands.
+    # ``paper_facing`` is ANDed with the resp_kind/kernel gate above: a gate may only veto.
+    _EST.stamp_band_estimand(
+        out["metadata"],
+        band_recenter=bool(getattr(args, "band_recenter", False)),
+        posterior_sampled=False)
     return out
 
 
@@ -449,17 +497,26 @@ def _load_validation_twin():
     return mod
 
 
-def validate_against_committed(modes, tol=1e-6, resp_kind="kappa", committed_json=None):
+def validate_against_committed(modes, tol=1e-6, *, resp_kind, committed_json=None):
     """Reproduce a committed sub-DLA mock artifact's integrated R0 for the given FP
     modes by re-running the committed baseline-recovery twin (subdla_loa0_validation.
     run_mode with the requested kernel). Asserts |Delta| <= tol per checked number.
 
-    resp_kind='kappa'   → vs subdla_mock_validation.json (the RETIRED posterior-kernel
-                          artifact; a config-drift tripwire only — proves the config-only
-                          override changed nothing but the FP model. NOT the headline).
+    ``resp_kind`` is a REQUIRED KEYWORD with NO DEFAULT (2026-07-28).  It previously
+    defaulted to 'kappa', which meant the validator's own default silently targeted the
+    RETIRED posterior artifact -- a caller writing `validate_against_committed(modes)`
+    got a PASS against a superseded number and had no way to notice.  There is no
+    defensible default here: the two kernels answer different questions.
+
     resp_kind='forward' → vs subdla_mock_validation_forward.json (the HEADLINE anchor,
                           0.849/0.822; this is the gate that matters scientifically).
+    resp_kind='kappa'   → vs subdla_mock_validation.json (the RETIRED posterior-kernel
+                          artifact; a config-drift tripwire ONLY — proves the config-only
+                          override changed nothing but the FP model. NOT the headline,
+                          and never admissible as a paper-facing gate).
     Returns a table."""
+    resp_kind = RK.resolve_resp_kind(
+        resp_kind, context="sub-DLA committed-artifact gate", paper_facing=False)
     if committed_json is None:
         committed_json = (COMMITTED_FORWARD_JSON if resp_kind == "forward"
                           else COMMITTED_MOCK_JSON)
