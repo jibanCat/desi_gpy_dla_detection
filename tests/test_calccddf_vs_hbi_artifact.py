@@ -159,6 +159,27 @@ def test_aggregate_stamps_provenance(agg):
         assert len(rec["stamped_code_commit_resolved"]) == 40
 
 
+def test_aggregate_passes_the_repos_own_provenance_guard(agg):
+    """RE_DERIVABLE is the only PASS status. Full-SHA required."""
+    from CDDF_analysis.unblind import provenance as P
+    md = agg["metadata"]
+    res = P.classify(md, routine_path=md["routine"], repo=REPO, require_full_sha=True)
+    assert res.status == P.RE_DERIVABLE, (res.status, res.messages)
+    assert res.routine_drift is False
+    assert res.contains_routine is True
+
+
+def test_aggregate_records_input_provenance_verdicts(agg):
+    """The six FF closures stamp under 'provenance/', which the default loader
+    misses -> the aggregate must classify them explicitly and say so."""
+    for rec in agg["metadata"]["input_files"]:
+        pc = rec["provenance_classification"]
+        assert pc["default_loader_would_find_it"] is False
+        assert "provenance" in pc["loader_defect"]
+        assert pc["status"] in {"RE_DERIVABLE", "NOT_ANCESTOR", "COMMIT_NOT_FOUND",
+                                "ORPHANED", "NO_ROUTINE", "UNCLASSIFIED"}
+
+
 def test_aggregate_declares_the_ff_estimand(agg):
     est = agg["metadata"]["estimand"]
     ff = est["ff"].lower()

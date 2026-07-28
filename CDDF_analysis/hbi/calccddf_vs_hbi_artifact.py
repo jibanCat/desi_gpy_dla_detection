@@ -264,6 +264,49 @@ def hbi_forward_block(d):
     )
 
 
+def _classify_input(doc):
+    """Run the repo's OWN provenance guard over one closure artifact.
+
+    KNOWN DEFECT recorded here rather than papered over: the six FF closure
+    artifacts stamp under a TOP-LEVEL ``provenance/`` key, while
+    ``CDDF_analysis/unblind/provenance.py::_load_metadata`` reads ``metadata/``
+    or the bare top level -- so the guard returns NOT_STAMPED on them even though
+    they carry a perfectly good stamp.  We therefore classify the ``provenance``
+    block EXPLICITLY (``classify`` takes a metadata dict) and record BOTH the
+    real verdict and the fact that the default loader would have missed it.
+    """
+    prov = doc.get("provenance", {})
+    out = dict(stamp_key_used="provenance (top level)",
+               default_loader_would_find_it=False,
+               loader_defect=("unblind/provenance.py::_load_metadata reads 'metadata/' or "
+                              "the bare top level; these artifacts stamp under "
+                              "'provenance/', so the guard reports NOT_STAMPED unless the "
+                              "block is passed explicitly, as here."))
+    try:
+        from CDDF_analysis.unblind import provenance as _P
+        res = _P.classify(prov, routine_path=prov.get("routine"), repo=REPO)
+        out.update(status=res.status,
+                   stamp_kind=res.stamp_kind,
+                   commit_exists=res.commit_exists,
+                   contains_routine=res.contains_routine,
+                   is_ancestor=res.is_ancestor,
+                   routine_drift=res.routine_drift)
+        if res.routine_drift:
+            out["routine_drift_note"] = (
+                "calccddf_vs_hbi.py has changed since this closure was stamped. Both "
+                "known changes are PURELY ADDITIVE opt-ins that leave the default code "
+                "path untouched: (a) --splits (the C4 per-z / SNR>4 strata, added after "
+                "2d013e2), and (b) --ci-seam (the additive Poisson-binomial accumulator, "
+                "2026-07-28). Neither alters the 'full'-tag counts these numbers come "
+                "from. This is an ASSERTION TO CHECK, not a proof: run "
+                "`git diff <stamped_code_commit> HEAD -- "
+                "CDDF_analysis/hbi/calccddf_vs_hbi.py` before quoting.")
+    except Exception as exc:
+        out.update(status="UNCLASSIFIED",
+                   error="{}: {}".format(type(exc).__name__, exc))
+    return out
+
+
 def _sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -324,6 +367,7 @@ def build(inputs, hbi=True):
             stamped_code_commit_exists=exists,
             stamped_date=prov.get("date"), stamped_routine=prov.get("routine"),
             stamped_rederive=prov.get("rederive"),
+            provenance_classification=_classify_input(d),
             n_files=d["n_files"], n_files_total=d["n_files_total"],
             n_files_skipped=d["n_files_skipped"], n_sightlines=d["n_sightlines"],
         ))
