@@ -169,6 +169,34 @@ def test_lambda_mfp_headline_is_not_the_contaminated_quantity(joint):
     assert abs(0.984735 - joint["headline"]["r0_lambda_mfp"]) < 0.005
 
 
+def test_b16_stamp_does_not_declare_the_ell_rows_clean(joint, lls):
+    """Guard against RE-INTRODUCING the corrected error via a ``metadata.b16`` stamp.
+
+    A stamp may not call this artifact clean while its ``true_ell`` is still leaky.
+    ``r0_band_q50`` and ``r0_canonical`` are ell(X) recoveries whose denominator is an
+    ``f_truth`` integral; "it has no Omega leaf" does NOT make them clean — that is the
+    units-based reasoning this whole test module exists to refute. Either the artifact is
+    re-derived (leak -> 1.0) or the stamp must not say CLEAN.
+    """
+    meta = _load(JOINT_JSON).get("metadata", {})
+    b16 = meta.get("b16")
+    if not b16:
+        pytest.skip("no metadata.b16 stamp on joint_mock_validation.json yet")
+    leak = joint["true_ell"] / lls["loa0"]["v1"]["dndx_tru_172_195"]
+    still_leaky = leak > 1.0001
+    blob = json.dumps(b16).upper()
+    claims_clean = "CLEAN" in str(b16.get("status", "")).upper() or "AUDITED CLEAN" in blob
+    assert not (still_leaky and claims_clean), (
+        f"metadata.b16 declares status={b16.get('status')!r} while true_ell is STILL LEAKY "
+        f"(leak={leak!r}). r0_band_q50={joint['derived']['r0_band_q50']!r} and "
+        f"r0_canonical={joint['derived']['r0_canonical']!r} are ell(X) recoveries built from "
+        f"tr['f_truth'] (joint_drop_count_validation.py:146-148), NOT from dndx_total. "
+        f"Correct values against the z-masked truth: {CORRECTED_R0_BAND_Q50} and "
+        f"{CORRECTED_R0_CANONICAL}. Either re-derive the artifact or mark the ell rows "
+        f"INVALIDATED_PENDING_REDERIVE — do not stamp them CLEAN. "
+        f"See CRITICAL_FINDINGS_B16_BLAST_RADIUS.md correction [C1]/[C5].")
+
+
 def test_docstring_row_counts_are_recorded():
     """Pin the measured z-leak on the [17.2,19.5) truth rows so the magnitude is not lost."""
     n_all, n_win = EXPECT_LEAK_ROWS
