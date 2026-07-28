@@ -10,6 +10,51 @@ Poisson-binomial CIs. Figures/tables via `make_plots.py`, `make_tables.py`,
 `rawff_2lpt0.py`. Direct-catalog stats: `cddf_mock.py`; calibration/IO:
 `cddf_calibration.py`, `cddf_io.py`.
 
+### `calc_cddf.py` retirement status — SETTLED 2026-07-28: **PARTIAL, not full**
+
+The module is **NOT retired**. Its **single-absorber path is LIVE** and is the
+paper's feed-forward (FF) estimator. **Only the multi-DLA increment path is
+retired.**
+
+* **What production exercises.** Every packaged `BASELINE.env` runs
+  `SINGLE_ABSORBER_MODEL=1`, so the FF drivers construct
+  `DLACatalogue(..., sub_dla=False, second=0)`. With `second` falsy,
+  `_split_distributions` never enters its `if self.second_dla:` increment loop
+  and `_get_prob_dla_this_bin` returns at `if second == False` before the
+  defective block. The whole production FF surface —
+  `loa_literal_calccddf.py` (FF-A) and `hbi/calccddf_vs_hbi.py` (FF-B) — is
+  provably disjoint from the defect.
+* **The defect** (commit `b00e6e4`, 2020-03-31), in the `second != 0` branch of
+  `_get_prob_dla_this_bin` only, two independent bugs:
+  1. `model_posteriors[index, ...]` addresses the **spectrum** axis with
+     **sample-grid** indices (`index` comes from
+     `_split_distributions_single`); it must be `spec`;
+  2. the accumulator is initialized to the **scalar `-1e30`** (the `np.empty`
+     on the preceding line is discarded).
+  Any `second != 0` number from this module is therefore meaningless. Nothing
+  depends on it and it has never been repaired.
+* **Guard.** That branch now raises `RuntimeError` unless the module-level
+  opt-out `CDDF_analysis.calc_cddf.ALLOW_BROKEN_MULTI_DLA` is set True. Only a
+  characterization test that deliberately pins the broken loop's *shape* may set
+  it (`tests/test_cddf_diagonal_deposit.py::test_deposit_honors_second_dla_sum`).
+* **Consequence for the FF numbers.** Slot-0 counting means ~7–8% of injected
+  DLAs — the 2nd/3rd absorber in a sightline — are not separately counted, so FF
+  `R0` is ~7% conservative (LOW) at the DLA tier. Fixing the increment path is
+  separate, referee-reviewed debt (PI decision C3, 2026-07-11).
+
+Full statement: the `MODULE STATUS` block at the top of `calc_cddf.py`.
+
+### FF arm aggregation
+
+`hbi/calccddf_vs_hbi.py` runs the literal (NaN-safe) `calc_cddf` closure per mock;
+`hbi/calccddf_vs_hbi_artifact.py` is **the aggregation entry point** and writes
+the stamped `hbi/calccddf_vs_hbi.json`. That artifact carries dN/dX and f(N)
+only (**no Omega** — B16-contaminated), stamps 2LPT-0 as the **on-mock
+calibration / recovery floor** rather than a held-out leg, declares the FF
+**estimand** (a posterior-weighted plug-in CDDF that a naive mock correction
+alpha is later applied to), and carries a **sampling** interval on that plug-in —
+explicitly *not* a posterior credible interval.
+
 ## Pathway B — selection-corrected catalog-HBI / Track-C  ->  `hbi/`
 
 Reduce-only estimator over a frozen catalog (no re-inference). See `hbi/README.md` and

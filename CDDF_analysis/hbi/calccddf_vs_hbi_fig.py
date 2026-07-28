@@ -160,7 +160,7 @@ def plot_mock(mock, jpath, ax_top, ax_bot, agg=None):
     ax_bot.set_xlim(10 ** 18.8, 10 ** 22.4)
     ax_bot.set_ylabel("est / truth")
     ax_bot.set_xlabel(r"$N_{\rm HI}$  [cm$^{-2}$]")
-    ax_bot.legend(fontsize=7.5, loc="lower right")
+    ax_bot.legend(fontsize=7.0, loc="upper right")
 
     cum = d["cumulative"]
     hc = HBI_CUM.get(mock)
@@ -171,8 +171,11 @@ def plot_mock(mock, jpath, ax_top, ax_bot, agg=None):
         h = f"  (HBI {hc['dndx'][hk]:.3f})" if hc else "  (HBI n/a: no stamped leg)"
         lines.append(f"  {lab}: {cum['R0_calccddf']['dndx'][ffk]:.3f}{h}")
     lines.append("FF = plug-in point; HBI = posterior-model point. NOT the same estimand.")
-    ax_bot.text(0.02, 0.97, "\n".join(lines), transform=ax_bot.transAxes, fontsize=6.2,
-                va="top", family="monospace", bbox=dict(fc="white", ec="grey", alpha=0.8))
+    # bottom-left: the FF/truth curve lives near ratio ~1, so keep the annotation
+    # out of the panel's mid-band or it hides the very line it describes.
+    ax_bot.text(0.02, 0.03, "\n".join(lines), transform=ax_bot.transAxes, fontsize=6.2,
+                va="bottom", family="monospace",
+                bbox=dict(fc="white", ec="grey", alpha=0.85))
 
 
 DEFAULT_CAPTION = (

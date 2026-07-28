@@ -304,11 +304,24 @@ def build(inputs, hbi=True):
                              "path is RETIRED/broken (b00e6e4)".format(jp, d["second"]))
 
         prov = d.get("provenance", {})
+        # Two of the three closures stamp an ABBREVIATED sha (project rule wants
+        # 40 chars). Resolve it here so the aggregate is unambiguous, and record
+        # whether the object is even reachable in this object store.
+        stamped = str(prov.get("code_commit", ""))
+        resolved, exists = None, False
+        if stamped:
+            try:
+                resolved = _git("rev-parse", stamped + "^{commit}")
+                exists = len(resolved) == 40
+            except Exception:
+                resolved, exists = None, False
         rel = os.path.relpath(os.path.abspath(jp), REPO)
         input_files.append(dict(
             mock=m, path=rel, sha256=_sha256(jp), git_tracked=_tracked(jp),
             stamped_code_commit=prov.get("code_commit"),
-            stamped_code_commit_is_40char=len(str(prov.get("code_commit", ""))) == 40,
+            stamped_code_commit_is_40char=len(stamped) == 40,
+            stamped_code_commit_resolved=resolved,
+            stamped_code_commit_exists=exists,
             stamped_date=prov.get("date"), stamped_routine=prov.get("routine"),
             stamped_rederive=prov.get("rederive"),
             n_files=d["n_files"], n_files_total=d["n_files_total"],

@@ -153,6 +153,10 @@ def test_aggregate_stamps_provenance(agg):
         assert len(rec["sha256"]) == 64
         assert rec["git_tracked"] is True
         assert rec["n_files_skipped"] == 0
+        # inputs may stamp an abbreviated sha; the aggregate must resolve it to a
+        # real, reachable 40-char commit
+        assert rec["stamped_code_commit_exists"] is True, rec["mock"]
+        assert len(rec["stamped_code_commit_resolved"]) == 40
 
 
 def test_aggregate_declares_the_ff_estimand(agg):
