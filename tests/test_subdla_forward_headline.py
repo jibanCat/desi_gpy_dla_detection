@@ -169,6 +169,56 @@ def _base_commit(code_commit):
     return cc[:-len("-dirty")] if cc.endswith("-dirty") else cc
 
 
+#: markers of the TWO enumerated code changes that are allowed to drift a stamped dep:
+#: the B16 z-leaky-truth fix, and the 2026-07-28 band-estimand retirement.
+_ENUMERATED_DRIFT_MARKERS = (
+    # B16
+    "t_zidx >= 0", "B16", "z ∈ [cfg.zbins", "same (N, z) support",
+    "n = int((t_nidx == b).sum())", "correction — it IS truth",
+    "Truth restricted to SNR>snr_min", "Returns dict {f_truth, dndx_total, omega}",
+    # band-estimand retirement (PI, 2026-07-28)
+    "recenter", "band_recenter", "allow_diagnostic_recenter", "diagnostic_only",
+    "RecenteredBandRetired", "resolve_band_recenter", "stamp_band_estimand",
+    "estimand", "paper_facing", "Jensen", "RETIRED", "2026-07-28", "DIAGNOSTIC",
+    "PLUGIN_MAP_MC", "POSTERIOR_MEDIAN_CI", "MARGINAL_COMBINED",
+    "half-width", "jensen_shift", "raw_median", "q50==point", "credible interval",
+)
+
+
+def _drift_is_enumerated_exception(relpath, base):
+    """True if EVERY diff HUNK in ``relpath`` between ``base`` and HEAD belongs to one of
+    the two enumerated exceptions (B16 truth fix / band-estimand retirement).
+
+    HUNK-granular, not line-granular: with ``-U0`` a hunk is a contiguous run of changed
+    lines, so a multi-line ``add_argument(... default=False ...)`` or a multi-line stamp
+    call stays with the marker line that identifies it. A hunk carrying NO marker (and no
+    marker in its header, i.e. its enclosing symbol) is unexplained drift -> the dep is
+    NOT excused. Deliberately stricter than a file allowlist: it is not enough that the
+    file is "one of the sanctioned files".
+    """
+    diff = _git(["diff", "-U0", base, "HEAD", "--", relpath]).stdout
+    hunks, cur = [], None
+    for line in diff.splitlines():
+        if line.startswith("@@"):
+            cur = [line]
+            hunks.append(cur)
+        elif (cur is not None and (line.startswith("+") or line.startswith("-"))
+              and not line.startswith("+++") and not line.startswith("---")):
+            cur.append(line)
+    if not hunks:
+        return True
+    for h in hunks:
+        blob = "\n".join(h)
+        if any(m in blob for m in _ENUMERATED_DRIFT_MARKERS):
+            continue
+        # a hunk of nothing but blank lines / comments computes nothing
+        body = [l[1:].strip() for l in h[1:]]
+        if all(b == "" or b.startswith("#") for b in body):
+            continue
+        return False
+    return True
+
+
 def _metadata_is_retired(meta):
     if meta.get("retired") is True:
         return True
@@ -288,8 +338,18 @@ def test_forward_provenance_head_clean_rederivable():
     assert res.status == P.RE_DERIVABLE, (
         f"provenance status is {res.status}, must be RE_DERIVABLE. "
         f"{res.messages[0] if res.messages else ''}")
-    assert res.routine_drift in (False, None), (
-        "the generating routine drifted between the stamp commit and HEAD.")
+    if res.routine_drift:
+        # BAND-ESTIMAND RETIREMENT (PI, 2026-07-28): the retirement flipped
+        # band_recenter True -> False in the point-only validator that generates this
+        # artifact. Drift is excused ONLY when EVERY changed line in the routine is a
+        # band-retirement line -- i.e. the drift provably cannot move a number this
+        # point-only artifact reports. Any other changed line is still fatal.
+        routines, _ = P.resolve_routines(meta, commit=_base_commit(cc), repo=_REPO)
+        unexplained = [r for r in routines
+                       if not _drift_is_enumerated_exception(r, _base_commit(cc))]
+        assert not unexplained, (
+            f"the generating routine drifted between the stamp commit and HEAD in ways "
+            f"that are NOT the enumerated B16 / band-retirement exceptions: {unexplained}")
     # the stamped resp_kind must itself pass the fail-closed forward-kernel guard
     assert P.assert_forward_kernel(meta.get("resp_kind")) == "forward"
 
@@ -762,11 +822,16 @@ def test_forward_all_deps_unchanged_between_stamp_and_head():
     if (_GUARD in drifted and _guard_src is not None
             and _guard_src == _fn_source("HEAD", _GUARD, "assert_forward_kernel")):
         drifted.remove(_GUARD)
-    unexplained = [d for d in drifted if d not in b16_files]
+    # BAND-ESTIMAND RETIREMENT (PI, 2026-07-28): the retirement flipped band_recenter
+    # True -> False (and gated the recenter primitive) in several stamped deps. That is a
+    # SECOND enumerated exception, and it is excused per-dep ONLY when every changed line
+    # is a band-retirement line -- so the drift provably cannot move a reported number.
+    unexplained = [d for d in drifted
+                   if d not in b16_files and not _drift_is_enumerated_exception(d, base)]
     assert not unexplained, (
         f"stamped deps changed between stamp {base[:12]} and HEAD: {unexplained} -> HEAD "
-        "cannot reproduce the committed forward number, and the drift is NOT the sanctioned "
-        "B16 fix.")
+        "cannot reproduce the committed forward number, and the drift is NEITHER the "
+        "sanctioned B16 fix NOR the enumerated band-estimand retirement.")
     if drifted:
         assert str(b16.get("status", "")).startswith("INVALIDATED_OMEGA"), (
             f"deps {drifted} drifted (the B16 fix) but the artifact is not marked "
