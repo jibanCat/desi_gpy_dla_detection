@@ -64,6 +64,12 @@ def main():
     if a.smoke:
         a.warmup, a.samples, a.chains = 100, 100, 2
 
+    # Capture HEAD at PROCESS START, not at write time. A multi-hour run whose
+    # repo advances mid-flight would otherwise stamp a commit it never used --
+    # this mis-stamped the 2026-07-11 broken-kernel ablation with a commit that
+    # contains the very kernel fix that run predates.
+    code_commit = _git()
+
     cfg = ModelAConfig(num_warmup=a.warmup, num_samples=a.samples,
                        num_chains=a.chains, seed=a.seed,
                        target_accept=a.target_accept,
@@ -83,7 +89,7 @@ def main():
         diagnostics=red.get("diagnostics"),
         provenance=dict(
             routine="CDDF_analysis/hbi_mcmc/run_rung9.py",
-            code_commit=_git(),
+            code_commit=code_commit,
             pack_provenance_commit=prov.get("code_commit"),
             farr_gate_override=a.allow_low_farr,
             date=time.strftime("%Y-%m-%d"),
@@ -104,8 +110,8 @@ def main():
         json.dump(out, fh, indent=1, default=_default)
     d = red.get("diagnostics") or {}
     print(f"[rung9] wrote {a.out}  wall={wall:.0f}s  "
-          f"rhat_max={d.get('rhat_max')}  ess_bulk_min={d.get('ess_bulk_min')}  "
-          f"divergences={d.get('n_divergent')}")
+          f"r_hat_max={d.get('r_hat_max')}  ess_bulk_min={d.get('ess_bulk_min')}  "
+          f"divergences={d.get('n_divergent')}  policy_pass={d.get('policy_pass')}")
 
 
 if __name__ == "__main__":
