@@ -176,7 +176,10 @@ class ModelAConsts:
     nhat_edges: jnp.ndarray      # (C+1,)
     dN_b: jnp.ndarray            # (B,)
     Nc_b: jnp.ndarray            # (B,) true-N bin centers
-    u_pow: jnp.ndarray           # (B, D) covariate powers u^0..u^{D-1}
+    u_pow: jnp.ndarray           # (B, D) covariate powers u^0..u^{D-1} (UNCLAMPED)
+    # (SR, ZR, B, D) covariate powers with the covariate CLIPPED into each
+    # response cell's CALIBRATED range (finding D2). This is what build_K uses.
+    u_pow_resp: jnp.ndarray
     kz_to_K: np.ndarray          # (Kf,) static int indices
     s_to_sresp: np.ndarray       # (S,)  static int indices
     K_to_zresp: np.ndarray       # (KK,) static int indices
@@ -209,19 +212,70 @@ class ModelAConsts:
     n_sr: int
     n_zr: int
     n_deg: int
+    resp_clamp: str = "both"     # "both" | "hi" | "off" (stamped; see build_consts)
 
 
 _DEFAULT_FITCOV_DIAG = (0.02 ** 2, 0.10 ** 2)  # documented fallback (mu0, sig0 vars)
 
 
-def build_consts(pack: ModelAPack) -> ModelAConsts:
+_CLAMP_MODES = ("both", "hi", "off")
+
+
+def build_consts(pack: ModelAPack, *, resp_clamp: str = "both",
+                 allow_unclamped_response: bool = False) -> ModelAConsts:
     """Precompute the static fold inputs (index maps, powers, Jeffreys eta-hat).
 
     FAIL-CLOSED on the response covariate reference (fix F1/F1b): the pack
     MUST carry ``resp_N_ref`` — the reference N the coefficient polynomials
     were fit at. There is no silent midpoint fallback (evaluating the polys at
     a shifted covariate was the 2026-07-11 F1 kernel defect).
+
+    FAIL-CLOSED on the response covariate RANGE (finding D2, 2026-07-28): the
+    pack MUST carry ``resp_N_fit_range`` (SR, ZR, 2) — the min/max true-N
+    anchor each cell's MOMENT polynomials were actually fit at. The committed
+    ``ForwardResponseModel._eval_surface`` evaluates a degree-2 polynomial at
+    ANY N with no range guard; on the frozen 2LPT-0 response the anchors span
+    ~19.35–21.22 while the fold reaches N = 22.35, and the quadratic's positive
+    curvature turns the mean up-bias from the MEASURED +0.001 dex at the top
+    anchor into +0.30 dex (cell 0,0) / +0.78 dex (cell 0,2) — which is the
+    entire 1.5–3.5x high-N excess of the rung-9 forward-model failure, and
+    drives 97% of the top true-N bin's kernel mass off the top of the observed
+    grid. ``resp_clamp`` selects how the covariate is guarded:
+
+      "both" (default) : clip into [N_lo, N_hi] — the defensible general rule,
+                         no extrapolation on either side.
+      "hi"             : clip only ABOVE N_hi — the side where the extrapolation
+                         is EMPIRICALLY refuted (measured bias ~0 at the top
+                         anchor). Retained for the systematic bracket.
+      "off"            : the pre-fix behaviour. DIAGNOSTIC ONLY; reproduces the
+                         defect.
+
+    ``allow_unclamped_response=True`` admits a pack with no range (legacy packs
+    extracted before 2026-07-28) and forces ``resp_clamp="off"``; it exists so
+    the self-test can reproduce the pre-fix numbers, not so production can skip
+    the guard.
     """
+    if resp_clamp not in _CLAMP_MODES:
+        raise ValueError(f"resp_clamp must be one of {_CLAMP_MODES}, "
+                         f"got {resp_clamp!r}")
+    if pack.resp_N_ref is None:      # F1 guard first (more specific message)
+        raise ValueError(
+            "build_consts: pack.resp_N_ref is None — the response covariate "
+            "reference (the N_ref the resp_*_coef polynomials were FIT at) is "
+            "REQUIRED. Re-extract the pack (extract_pack emits it) or emit it "
+            "from the generator; there is NO midpoint fallback (finding F1).")
+    if pack.resp_N_fit_range is None:
+        if not allow_unclamped_response:
+            raise ValueError(
+                "build_consts: pack.resp_N_fit_range is None — the CALIBRATED "
+                "covariate range of the response moment polynomials is "
+                "REQUIRED (finding D2, 2026-07-28). Without it the degree-2 "
+                "moment surfaces are extrapolated ~1.2 dex past their top "
+                "anchor and manufacture a 1.5-3.5x high-N excess. Re-extract "
+                "the pack (emit emp_N_anchors min/max per response cell as "
+                "resp_N_fit_range), or pass allow_unclamped_response=True to "
+                "REPRODUCE the pre-fix behaviour in a diagnostic.")
+        resp_clamp = "off"
     ntrue = np.asarray(pack.ntrue_edges, float)
     Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
     dN = np.diff(ntrue)
@@ -235,6 +289,21 @@ def build_consts(pack: ModelAPack) -> ModelAConsts:
     D = pack.resp_mu_coef.shape[-1]
     u = Nc - n_ref
     u_pow = u[:, None] ** np.arange(D)[None, :]
+
+    # per-response-cell CLAMPED covariate powers (finding D2)
+    SR_, ZR_ = pack.resp_mu_coef.shape[:2]
+    if pack.resp_N_fit_range is not None:
+        rr = np.asarray(pack.resp_N_fit_range, float)          # (SR, ZR, 2)
+    else:                                                       # resp_clamp=="off"
+        rr = np.broadcast_to(np.array([-np.inf, np.inf]), (SR_, ZR_, 2))
+    if resp_clamp == "both":
+        Nc_cl = np.clip(Nc[None, None, :], rr[..., 0][..., None],
+                        rr[..., 1][..., None])
+    elif resp_clamp == "hi":
+        Nc_cl = np.minimum(Nc[None, None, :], rr[..., 1][..., None])
+    else:                                                       # "off"
+        Nc_cl = np.broadcast_to(Nc[None, None, :], (SR_, ZR_, len(Nc)))
+    u_pow_resp = (Nc_cl - n_ref)[..., None] ** np.arange(D)[None, None, None, :]
 
     zf = np.asarray(pack.zf_edges, float)
     zc = np.asarray(pack.zc_edges, float)
@@ -283,6 +352,7 @@ def build_consts(pack: ModelAPack) -> ModelAConsts:
         dN_b=jnp.asarray(dN),
         Nc_b=jnp.asarray(Nc),
         u_pow=jnp.asarray(u_pow),
+        u_pow_resp=jnp.asarray(u_pow_resp),
         kz_to_K=kz_to_K,
         s_to_sresp=s_to_sresp,
         K_to_zresp=K_to_zresp,
@@ -304,7 +374,7 @@ def build_consts(pack: ModelAPack) -> ModelAConsts:
         n_c=pack.n_c, n_b=pack.n_b, n_k=pack.n_k, n_kk=pack.n_kk,
         n_s=pack.n_s, n_molly=pack.n_molly,
         n_sr=pack.resp_mu_coef.shape[0], n_zr=pack.resp_mu_coef.shape[1],
-        n_deg=D,
+        n_deg=D, resp_clamp=resp_clamp,
     )
 
 
@@ -327,14 +397,18 @@ def build_K(psi_k_delta, consts: ModelAConsts):
     mu_sk = mu_coef[consts.s_to_sresp][:, consts.K_to_zresp]
     sig_sk = sig_coef[consts.s_to_sresp][:, consts.K_to_zresp]
     skw_sk = consts.resp_skew_coef[consts.s_to_sresp][:, consts.K_to_zresp]
-    # polynomial MOMENT surfaces over b: (S, KK, B)
-    mean = consts.Nc_b[None, None, :] + jnp.einsum("skd,bd->skb", mu_sk,
-                                                   consts.u_pow)
-    sd = jnp.clip(jnp.einsum("skd,bd->skb", sig_sk, consts.u_pow),
+    # covariate powers CLAMPED to each response cell's calibrated range (D2),
+    # gathered onto the same (S, KK) plane as the coefficients: (S, KK, B, D)
+    u_sk = consts.u_pow_resp[consts.s_to_sresp][:, consts.K_to_zresp]
+    # polynomial MOMENT surfaces over b: (S, KK, B).  NOTE the RAMP and the bin
+    # centre stay on the UNCLAMPED Nc_b — the clamp guards the fitted
+    # polynomials' covariate, not the physical N of the bin.
+    mean = consts.Nc_b[None, None, :] + jnp.einsum("skd,skbd->skb", mu_sk, u_sk)
+    sd = jnp.clip(jnp.einsum("skd,skbd->skb", sig_sk, u_sk),
                   consts.resp_sig_floor, None)                       # F2
     ramp = jnp.clip((consts.Nc_b - consts.resp_skew_ramp[0])
                     / consts.resp_skew_ramp[1], 0.0, 1.0)            # F3
-    skew = jnp.clip(jnp.einsum("skd,bd->skb", skw_sk, consts.u_pow),
+    skew = jnp.clip(jnp.einsum("skd,skbd->skb", skw_sk, u_sk),
                     -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX) \
         * (1.0 - ramp)[None, None, :]
     xi, omega, alpha = moment_to_skewnormal_jnp(mean, sd, skew)      # F4
@@ -387,7 +461,8 @@ def fold_mu(theta_pop, psi_c, psi_k_delta, log_t, lam_fp, consts: ModelAConsts):
 # the two implementations can only agree if the expression itself is right.
 
 def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
-                      pack: ModelAPack):
+                      pack: ModelAPack, resp_clamp="both",
+                      allow_unclamped_response=False):
     """Plain-numpy oracle of the SAME fold expression, computed cell by cell."""
     from scipy.special import ndtr, owens_t, expit
 
@@ -414,6 +489,27 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
             "fold_mu_reference: pack.resp_N_ref is None — the response "
             "covariate reference is REQUIRED (no midpoint fallback; F1).")
     n_ref = float(pack.resp_N_ref)
+    # D2 covariate-range guard (own logic, independent of build_consts).
+    # NOTE the F1 (resp_N_ref) guard above fires FIRST by design.
+    if resp_clamp not in _CLAMP_MODES:
+        raise ValueError(f"resp_clamp must be one of {_CLAMP_MODES}")
+    if pack.resp_N_fit_range is None:
+        if not allow_unclamped_response:
+            raise ValueError(
+                "fold_mu_reference: pack.resp_N_fit_range is None — the "
+                "calibrated covariate range is REQUIRED (finding D2).")
+        resp_clamp = "off"
+        fit_rng = None
+    else:
+        fit_rng = np.asarray(pack.resp_N_fit_range, float)
+
+    def _clamp_N(N, sr, zr):
+        if resp_clamp == "off" or fit_rng is None:
+            return float(N)
+        lo, hi = float(fit_rng[sr, zr, 0]), float(fit_rng[sr, zr, 1])
+        if resp_clamp == "hi":
+            return float(min(N, hi))
+        return float(min(max(N, lo), hi))
 
     # index maps (independent digitize logic)
     zf_centers = np.array([0.5 * (zf[i] + zf[i + 1]) for i in range(K_n)])
@@ -492,7 +588,9 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
             for c in range(C_n):
                 acc = 0.0
                 for b in range(B_n):
-                    u = centers_b[b] - n_ref
+                    # D2: the fitted polynomials are evaluated at the CLAMPED
+                    # covariate; the bin's physical N (and the skew ramp) are not.
+                    u = _clamp_N(centers_b[b], sr, zr) - n_ref
                     # committed ForwardResponseModel MOMENT semantics (F2-F4):
                     mean = centers_b[b] + _poly(mu_coefs, u)
                     sd = max(_poly(sig_coefs, u), sig_floor)

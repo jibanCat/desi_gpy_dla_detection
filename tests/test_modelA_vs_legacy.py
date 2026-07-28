@@ -112,7 +112,13 @@ def frm():
 
 @pytest.fixture(scope="session")
 def consts(pack):
-    return F.build_consts(pack)
+    # resp_clamp="off": this whole module CHARACTERIZES the fold against the
+    # committed legacy ForwardResponseModel, whose _eval_surface has no
+    # covariate-range guard. Comparing like-for-like therefore REQUIRES the
+    # unclamped fold. The clamp (finding D2, 2026-07-28) is a deliberate
+    # DIVERGENCE from the legacy object and is tested in
+    # tests/test_modelA_forward_selftest.py, not here.
+    return F.build_consts(pack, resp_clamp="off", allow_unclamped_response=True)
 
 
 @pytest.fixture(scope="session")
@@ -177,7 +183,9 @@ def test_T0_fold_matches_inmodule_oracle(pack, consts, f_battery):
     SR, ZR = np.asarray(pack.resp_mu_coef).shape[:2]
     KK = len(np.asarray(pack.zc_edges)) - 1
     mu_ref = F.fold_mu_reference(theta, np.zeros((S, M)), np.zeros((2, SR, ZR)),
-                                 np.zeros(KK), np.zeros((mu.shape[0], S)), pack)
+                                 np.zeros(KK), np.zeros((mu.shape[0], S)), pack,
+                                 resp_clamp="off",
+                                 allow_unclamped_response=True)
     assert _relmax(mu, mu_ref) < 1e-10
 
 

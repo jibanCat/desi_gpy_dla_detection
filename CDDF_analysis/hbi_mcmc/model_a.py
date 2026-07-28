@@ -110,6 +110,9 @@ class ModelAConfig:
     # gates
     enforce_farr_gate: bool = True
     farr_min_ratio: float = 4.0
+    # response covariate-range guard (finding D2): "both" | "hi" | "off".
+    # "off" reproduces the pre-2026-07-28 forward model and is DIAGNOSTIC ONLY.
+    resp_clamp: str = "both"
 
 
 # --- the NumPyro model --------------------------------------------------------------
@@ -219,11 +222,19 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
     cddf_masked = f_draws.copy()
     cddf_masked[:, mask, :] = np.nan
 
+    # BASIS PAD (schema v1.1): true-N bins BELOW the observed grid floor are
+    # UNREPORTED support — they exist so the fold can carry the up-scatter of
+    # sub-floor systems into the lowest observed bins (finding D1). They are
+    # excluded from every reported reduction. No-op on unpadded packs.
+    reported = Nc >= float(np.asarray(pack.nhat_edges, float)[0]) - 1e-9
+
     out = {
         "f": f_draws,
         "cddf_masked": cddf_masked,
         "n_mask_bins": int(mask.sum()),
-        "integrated_total": (f_draws * dN[None, :, None]).sum(axis=(1, 2)),
+        "n_pad_bins": int((~reported).sum()),
+        "integrated_total": (f_draws[:, reported, :]
+                             * dN[None, reported, None]).sum(axis=(1, 2)),
     }
     for thr in _THRESHOLDS:
         sel = Nc >= thr - 1e-9
@@ -266,7 +277,11 @@ def _data_informed_init(pack: ModelAPack, consts: ModelAConsts, cfg: ModelAConfi
     loa-0 point estimate. Keeps every chain out of the exp-cliff corners that
     random unconstrained inits occasionally land in."""
     B, Kf, C, S = consts.n_b, consts.n_k, consts.n_c, consts.n_s
-    dN_tot = float(np.diff(np.asarray(pack.ntrue_edges)).sum())
+    # the REPORTED support only (padded sub-floor bins would deflate the level)
+    _ne = np.asarray(pack.ntrue_edges, float)
+    _rep = 0.5 * (_ne[:-1] + _ne[1:]) >= float(
+        np.asarray(pack.nhat_edges, float)[0]) - 1e-9
+    dN_tot = float(np.diff(_ne)[_rep].sum())
     level = float(np.log(
         max(float(np.asarray(pack.counts).sum()), 1.0)
         / (0.7 * float(np.asarray(pack.dX).sum()) * dN_tot)))
@@ -297,7 +312,8 @@ def run_model_a(pack: ModelAPack, cfg: Optional[ModelAConfig] = None):
     t / fp_lam_total (means and sds).
     """
     cfg = cfg or ModelAConfig()
-    consts = build_consts(pack)
+    consts = build_consts(pack, resp_clamp=cfg.resp_clamp,
+                          allow_unclamped_response=(cfg.resp_clamp == "off"))
 
     # Farr N_eff gate on the calibration inputs (build time, spec section 2)
     n_cal = float(np.asarray(pack.molly_n_tot).sum())

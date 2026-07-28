@@ -60,6 +60,8 @@ __all__ = [
     "save_pack",
     "synthetic_pack",
     "small_test_grid",
+    "upgrade_pack_v11",
+    "resp_fit_range_from_forward_npz",
     "REAL_NHAT_EDGES",
     "REAL_ZF_EDGES",
     "REAL_ZC_EDGES",
@@ -96,7 +98,8 @@ _REQUIRED_KEYS = (
 # below where consumed. resp_N_ref is REQUIRED to evaluate the response coef
 # polynomials on real packs (synthetic packs embed their own reference).
 _OPTIONAL_KEYS = ("resp_fitcov_diag", "resp_N_ref", "truth_counts_bks",
-                  "dX_coarse_committed", "molly_snr_edges", "nhat_masked_bins")
+                  "dX_coarse_committed", "molly_snr_edges", "nhat_masked_bins",
+                  "resp_N_fit_range")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -140,6 +143,10 @@ class ModelAPack:
     resp_fitcov_diag: Optional[np.ndarray] = None  # (2, SR, ZR) variances
     # schema-v1.1 extractor extensions (validated where consumed; pass-through)
     resp_N_ref: Optional[float] = None            # reference N for resp coef polys
+    # (SR, ZR, 2) = [N_lo, N_hi] of the CALIBRATED covariate range per response
+    # cell: the min/max true-N anchor the moment polynomials were actually FIT
+    # at.  REQUIRED by the fold (2026-07-28 finding D2) -- see forward.py.
+    resp_N_fit_range: Optional[np.ndarray] = None
     truth_counts_bks: Optional[np.ndarray] = None  # (B, Kf, S)
     dX_coarse_committed: Optional[np.ndarray] = None
     molly_snr_edges: Optional[np.ndarray] = None
@@ -229,10 +236,30 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
     # -- grids
     _check_edges_uniform("nhat_edges", pack.nhat_edges, _N_STEP)
     _check_edges_uniform("zf_edges", pack.zf_edges, _Z_STEP)
-    if not np.array_equal(np.asarray(pack.ntrue_edges, float),
-                          np.asarray(pack.nhat_edges, float)):
-        _fail("ntrue_edges: v1 schema requires ntrue_edges == nhat_edges "
-              "(basis-pad decision deferred to the module config)")
+    # --- schema v1.1 BASIS PAD (2026-07-28, finding D1) ---------------------
+    # v1 required ntrue_edges == nhat_edges and deferred the basis-pad decision.
+    # That deferral IS the rung-9 forward-model failure: the observed n-hat bins
+    # just above the reporting floor are fed overwhelmingly by TRUE systems
+    # BELOW it (the forward response has a ~+0.27 dex up-bias and ~0.28 dex
+    # width at 19.5), so a true-N basis truncated at the reporting floor cannot
+    # reproduce the counts -- the same one-sided-support class as B16.  The
+    # committed estimator already carries the fix (cddf_catalog_hbi.py
+    # `basis_pad_floor`, 2026-06-17).  ntrue_edges may now EXTEND BELOW
+    # nhat_edges on the SAME uniform step, sharing the top edge; nhat_edges must
+    # be an exact tail-subset of ntrue_edges.  Padding only ever goes DOWN --
+    # the reporting window never grows.
+    _ne = np.asarray(pack.ntrue_edges, float)
+    _ce = np.asarray(pack.nhat_edges, float)
+    if not np.array_equal(_ne, _ce):
+        _check_edges_uniform("ntrue_edges", _ne, _N_STEP)
+        if len(_ne) < len(_ce):
+            _fail("ntrue_edges: the true-N basis may only EXTEND the observed "
+                  f"grid downward, never shrink it (got {len(_ne)-1} true bins "
+                  f"vs {len(_ce)-1} observed bins)")
+        if not np.allclose(_ne[len(_ne) - len(_ce):], _ce, atol=1e-8):
+            _fail("ntrue_edges: nhat_edges must be an exact TAIL subset of "
+                  "ntrue_edges (same step, same top edge) — the basis pad "
+                  f"extends DOWN only. got ntrue tail {_ne[len(_ne)-len(_ce):]}")
     if not allow_nonstandard_grid:
         for name, got, want in (("nhat_edges", pack.nhat_edges, REAL_NHAT_EDGES),
                                 ("zf_edges", pack.zf_edges, REAL_ZF_EDGES),
@@ -302,9 +329,19 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
     _check_edges_uniform("molly_nhi_edges", pack.molly_nhi_edges, None)
     ne = np.asarray(pack.ntrue_edges, float)
     me = np.asarray(pack.molly_nhi_edges, float)
-    if me[0] > ne[0] + 1e-8 or me[-1] < ne[-1] - 1e-8:
-        _fail(f"molly_nhi_edges: must cover the true-N range [{ne[0]}, {ne[-1]}], "
-              f"got [{me[0]}, {me[-1]}]")
+    # The molly must cover the REPORTED support [nhat_edges[0], ntrue_edges[-1]].
+    # Below the reporting floor (the schema-v1.1 basis pad, finding D1) the
+    # completeness is the CONSTANT EXTRAPOLATION of the molly's lowest cell —
+    # the committed estimator's own convention (cddf_catalog_hbi.py:6117,
+    # 2026-06-17 basis_pad_floor block), and automatic here because
+    # forward.build_consts maps b -> molly cell with
+    # clip(digitize(Nc, molly_nhi_edges) - 1, 0, M-2), so any sub-floor true-N
+    # bin reads cell 0. This is an APPROXIMATION (completeness genuinely falls
+    # below 19.5) and is the leading known systematic on the pad.
+    ce_lo = float(np.asarray(pack.nhat_edges, float)[0])
+    if me[0] > ce_lo + 1e-8 or me[-1] < ne[-1] - 1e-8:
+        _fail(f"molly_nhi_edges: must cover the reported N range "
+              f"[{ce_lo}, {ne[-1]}], got [{me[0]}, {me[-1]}]")
     _check_shape("molly_n_det", pack.molly_n_det, (S, M))
     _check_shape("molly_n_tot", pack.molly_n_tot, (S, M))
     _check_finite("molly_n_det", pack.molly_n_det)
@@ -371,6 +408,14 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
         nr = float(np.asarray(pack.resp_N_ref))
         if not np.isfinite(nr):
             _fail(f"resp_N_ref: must be a finite scalar, got {nr}")
+    if pack.resp_N_fit_range is not None:
+        _check_shape("resp_N_fit_range", pack.resp_N_fit_range, (SR, ZR, 2))
+        _check_finite("resp_N_fit_range", pack.resp_N_fit_range)
+        rr = np.asarray(pack.resp_N_fit_range, float)
+        if np.any(rr[..., 1] <= rr[..., 0]):
+            _fail("resp_N_fit_range: every cell needs N_hi > N_lo (the "
+                  "calibrated covariate range the moment polynomials were fit "
+                  "over)")
     # every POPULATED stratum / coarse-z bin must map into a response cell
     # (structurally empty sub-op-mask strata are excluded from the likelihood).
     s_lo = se[:-1][populated] if len(populated) else se[:-1]
@@ -468,6 +513,7 @@ def load_pack(npz_path, *, allow_nonstandard_grid: bool = False) -> ModelAPack:
         # fold REQUIRES). Carry every present optional key into the dataclass
         # so load/save round-trips are faithful.
         resp_N_ref=(float(data["resp_N_ref"]) if "resp_N_ref" in data else None),
+        resp_N_fit_range=data.get("resp_N_fit_range"),
         truth_counts_bks=data.get("truth_counts_bks"),
         dX_coarse_committed=data.get("dX_coarse_committed"),
         molly_snr_edges=data.get("molly_snr_edges"),
@@ -496,6 +542,69 @@ def save_pack(pack: ModelAPack, npz_path, *, allow_nonstandard_grid: bool = Fals
     prov_path = npz_path.parent / (npz_path.name[:-4] + ".provenance.json")
     prov_path.write_text(json.dumps(prov, indent=2, default=str))
     return npz_path
+
+
+# --- schema v1.1 migration ----------------------------------------------------
+def resp_fit_range_from_forward_npz(forward_npz) -> np.ndarray:
+    """(SR, ZR, 2) calibrated covariate range from a ForwardResponseModel NPZ.
+
+    The committed ``save_forward_response`` NPZ carries ``emp_N_anchors``
+    (SR, ZR, n_anchor) — the true-N sub-bin anchors the per-cell MOMENT
+    polynomials were weighted-least-squares fitted at
+    (``znz_kernel.fit_forward_response._fit_poly``). Their per-cell min/max IS
+    the range outside which those polynomials are extrapolation (finding D2).
+    """
+    with np.load(forward_npz, allow_pickle=True) as d:
+        if "emp_N_anchors" not in d.files:
+            _fail(f"{forward_npz}: no emp_N_anchors — cannot recover the "
+                  "calibrated covariate range (re-fit with build_empirical=True)")
+        a = np.asarray(d["emp_N_anchors"], float)
+    if a.ndim != 3:
+        _fail(f"emp_N_anchors: expected (SR, ZR, n_anchor), got {a.shape}")
+    return np.stack([a.min(axis=-1), a.max(axis=-1)], axis=-1)
+
+
+def upgrade_pack_v11(npz_in, npz_out, *, forward_npz=None,
+                     resp_N_fit_range=None) -> str:
+    """Copy a schema-v1 pack to v1.1, ADDING ``resp_N_fit_range``.
+
+    Pure NPZ->NPZ (no survey IO, no heavy imports): every existing key is
+    carried through byte-for-byte and NOTHING is deleted or overwritten. The
+    provenance sidecar is copied with an ``upgrade`` note appended.
+    """
+    npz_in, npz_out = pathlib.Path(npz_in), pathlib.Path(npz_out)
+    if resp_N_fit_range is None:
+        if forward_npz is None:
+            raise ValueError("upgrade_pack_v11: pass forward_npz or "
+                             "resp_N_fit_range")
+        resp_N_fit_range = resp_fit_range_from_forward_npz(forward_npz)
+    rr = np.asarray(resp_N_fit_range, float)
+    with np.load(npz_in, allow_pickle=False) as z:
+        data = {k: z[k] for k in z.files}
+    if "resp_N_fit_range" in data:
+        raise ValueError(f"{npz_in.name} already carries resp_N_fit_range")
+    SR, ZR = np.asarray(data["resp_mu_coef"]).shape[:2]
+    if rr.shape != (SR, ZR, 2):
+        raise ValueError(f"resp_N_fit_range shape {rr.shape} != {(SR, ZR, 2)}")
+    data["resp_N_fit_range"] = rr
+    np.savez(npz_out, **data)
+    prov_in = npz_in.parent / (npz_in.name[:-4] + ".provenance.json")
+    if prov_in.exists():
+        prov = json.loads(prov_in.read_text())
+        prov["schema"] = "modelA_pack_schema v1.1 (+resp_N_fit_range)"
+        prov.setdefault("upgrades", []).append({
+            "from": str(npz_in), "key": "resp_N_fit_range",
+            "source": str(forward_npz) if forward_npz else "explicit",
+            "routine": "CDDF_analysis/hbi_mcmc/pack.py:upgrade_pack_v11",
+            "reason": ("finding D2 (2026-07-28): the response MOMENT "
+                       "polynomials were extrapolated ~1.2 dex past their top "
+                       "empirical anchor, manufacturing the rung-9 high-N "
+                       "excess. The fold now clamps the covariate to this "
+                       "range."),
+        })
+        (npz_out.parent / (npz_out.name[:-4] + ".provenance.json")).write_text(
+            json.dumps(prov, indent=1, default=str))
+    return str(npz_out)
 
 
 # --- synthetic generator ----------------------------------------------------------
@@ -681,6 +790,12 @@ def synthetic_pack(
         # well clear of the floor (0.15 - few sd >> 0.02: no clipped cells).
         np.full((SR, ZR), 0.02 ** 2),
     ], axis=0)
+    # calibrated covariate range: the synthetic moment surfaces are exact
+    # polynomials with no measured anchors, so the "fit range" is the whole
+    # true-N grid and the fold's response clamp is INERT here by construction
+    # (the clamp only bites where a real fit is extrapolated -- finding D2).
+    resp_N_fit_range = np.broadcast_to(
+        np.array([ntrue_edges[0], ntrue_edges[-1]]), (SR, ZR, 2)).copy()
 
     # --- transfer factors + prior widths
     t_true = np.zeros(KK) if t_true is None else np.asarray(t_true, float)
@@ -707,6 +822,7 @@ def synthetic_pack(
         truth_counts=np.zeros((B, Kf), dtype=np.int64),
         resp_fitcov_diag=resp_fitcov_diag,
         resp_N_ref=float(resp_N_ref),
+        resp_N_fit_range=resp_N_fit_range,
     )
 
     psi_k_zero = np.zeros((2, SR, ZR))
