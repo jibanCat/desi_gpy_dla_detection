@@ -49,6 +49,7 @@ import dataclasses
 import json
 import os
 import subprocess
+import sys
 import time
 
 import numpy as np
@@ -321,6 +322,15 @@ def main(argv=None):
                     help="response covariate-range guard (finding D2); default "
                          "= 'both' when the pack carries resp_N_fit_range, "
                          "'off' otherwise (pre-fix reproduction)")
+    ap.add_argument("--require-closure", action="store_true",
+                    help="EXIT NONZERO unless the truth-fold closes within the "
+                         "tolerances below. Without this the command is a REPORT "
+                         "and always exits 0 -- so `selftest ... || exit 1` in a "
+                         "batch script is NOT a gate. Any script that spends "
+                         "sampler time must pass this.")
+    ap.add_argument("--max-abs-z-total", type=float, default=5.0)
+    ap.add_argument("--max-abs-z-bin", type=float, default=5.0)
+    ap.add_argument("--max-chi2-dof", type=float, default=3.0)
     a = ap.parse_args(argv)
 
     from CDDF_analysis.hbi_mcmc.pack import load_pack
@@ -356,11 +366,55 @@ def main(argv=None):
         out["extended_floor"] = a.truth_floor
 
     print(f"\n[selftest] {time.time() - t0:.1f}s")
+
+    # --- the actual gate -------------------------------------------------
+    # main() is a REPORT by default: it prints the ratio table and returns.  That
+    # made `forward_selftest --pack $PACK || exit 1` in rung9v3_2lpt0.sbatch a
+    # no-op -- it exited 0 on the very pack this module's own commit message
+    # declares broken (total mu/obs 0.7312, chi2/dof 2216), so the "fail-closed
+    # pre-flight" would have let ~36 h of sampler time run on a forward model
+    # known not to close.  --require-closure makes it a gate for real.
+    verdict = _closure_verdict(tab, a.max_abs_z_total, a.max_abs_z_bin,
+                               a.max_chi2_dof)
+    out["closure_verdict"] = verdict
     if a.out:
         with open(a.out, "w") as fh:
             json.dump(out, fh, indent=1)
         print(f"[selftest] wrote {a.out}")
+    if a.require_closure and not verdict["closes"]:
+        print("\n[selftest] FORWARD MODEL DOES NOT CLOSE -- refusing.\n  "
+              + "\n  ".join(verdict["reasons"]), file=sys.stderr)
+        raise SystemExit(3)
     return out
+
+
+def _closure_verdict(tab, max_abs_z_total, max_abs_z_bin, max_chi2_dof):
+    """PASS/FAIL on the truth-fold, from the same table the report prints.
+
+    Deliberately reads 'by_z' as well as 'by_nhat': ratio_tables already computes
+    the z-marginal and the production gate discarded it, so a pack carrying the
+    full ~+22% z-marginal swing would otherwise sail through a check that only
+    looked at the total and the N-marginal.
+    """
+    tot = tab.get("total", {})
+    reasons = []
+    zt = abs(float(tot.get("z", 0.0)))
+    if zt > max_abs_z_total:
+        reasons.append(f"|z_total| {zt:.2f} > {max_abs_z_total}")
+    c2 = float(tot.get("chi2_dof", 0.0))
+    if c2 > max_chi2_dof:
+        reasons.append(f"chi2/dof {c2:.2f} > {max_chi2_dof}")
+    for key in ("by_nhat", "by_z"):
+        rows = tab.get(key) or {}
+        zs = [abs(float(r.get("z", 0.0)))
+              for r in (rows.values() if isinstance(rows, dict) else rows)
+              if isinstance(r, dict) and r.get("z") is not None]
+        if zs and max(zs) > max_abs_z_bin:
+            reasons.append(f"max|z| in {key} = {max(zs):.2f} > {max_abs_z_bin}")
+    return dict(closes=not reasons, reasons=reasons,
+                tolerances=dict(max_abs_z_total=max_abs_z_total,
+                                max_abs_z_bin=max_abs_z_bin,
+                                max_chi2_dof=max_chi2_dof))
 
 
 if __name__ == "__main__":

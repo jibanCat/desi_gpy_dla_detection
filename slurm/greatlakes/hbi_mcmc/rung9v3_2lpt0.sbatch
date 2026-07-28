@@ -46,14 +46,30 @@ export MKL_NUM_THREADS=1
 export HDF5_USE_FILE_LOCKING=FALSE
 
 PACKDIR=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs
-PACK=$PACKDIR/modelA_pack_2lpt0_v11.npz     # <- replace with the PADDED pack
+# DELIBERATELY NAMES A PACK THAT DOES NOT EXIST YET.  Finding D1 is unfixed and no
+# padded pack has been extracted, so there is nothing this script could correctly be
+# pointed at today.  It previously named modelA_pack_2lpt0_v11.npz -- the UNPADDED
+# pack whose forward model this branch's own commit declares broken.
+PACK=$PACKDIR/modelA_pack_2lpt0_v12_padded.npz   # <- the PADDED pack, not yet built
 OUT=$PACKDIR/rung9_2lpt0_v3.json
 
 cd /home/mfho/hbi_mcmc_wt
 
-# fail-closed pre-flight: the forward model must close BEFORE the sampler runs
+if [ ! -f "$PACK" ]; then
+  echo "REFUSING: $PACK does not exist. Finding D1 (truncated true-N basis) is" >&2
+  echo "unfixed; a basis-padded pack must be re-extracted first. Do not point" >&2
+  echo "this at the v11 pack -- its forward model does not close." >&2
+  exit 2
+fi
+
+# fail-closed pre-flight: the forward model must close BEFORE the sampler runs.
+#
+# --require-closure is LOAD-BEARING.  Without it forward_selftest is a REPORT that
+# always exits 0, so the `|| exit 1` below was decorative: run against the v11 pack
+# (total mu/obs 0.7312, chi2/dof 2216) it exited 0 and would have handed ~36 h of
+# sampler time to a forward model known not to close.
 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.forward_selftest \
-  --pack "$PACK" --out "${OUT%.json}_selftest.json" || exit 1
+  --pack "$PACK" --out "${OUT%.json}_selftest.json" --require-closure || exit 1
 
 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.run_rung9 \
   --pack "$PACK" \
