@@ -119,6 +119,14 @@ def main():
     out_json = dict(
         metadata=dict(
             fp_estimator="loa0",
+            # Machine-readable provenance: unblind.provenance.classify() resolves the
+            # generating routine from metadata['routine'] (or a '*.py' token in
+            # metadata['rederive']). Without one of these the artifact classifies
+            # NO_ROUTINE -- a FAIL -- no matter how good code_commit is.
+            routine="CDDF_analysis/diagnostics/bal_metal_fp/arbiter/run_loa0_headline_full.py",
+            rederive=("python CDDF_analysis/diagnostics/bal_metal_fp/arbiter/"
+                      f"run_loa0_headline_full.py --n-mc {args.n_mc} "
+                      f"--out {out_path} --force"),
             source_job_id="52266001",
             provenance=("config-only FP-model override of job 52266001 (purity_mixture); "
                         "frozen ingredients identical, only cfg.fp_estimator=loa0 + "
