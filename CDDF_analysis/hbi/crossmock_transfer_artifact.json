@@ -1,0 +1,1331 @@
+{
+  "title": "Catalog-HBI CROSS-MOCK TRANSFER legs -- frozen 2LPT-0 recipe, no refit, sub-DLA report limits (19.5, 20.0, 20.3). ALL MOCK, public-OK.",
+  "metadata": {
+    "code_commit": "4d3e16dcc0828f8dbf0443a63229984dead1ed6a",
+    "code_commit_sha40": "4d3e16dcc0828f8dbf0443a63229984dead1ed6a",
+    "code_commit_dirty": false,
+    "code_commit_dirty_paths": [],
+    "routine": "CDDF_analysis/hbi/build_crossmock_transfer_artifact.py",
+    "deps": [
+      "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+      "CDDF_analysis/hbi/track_c_tf_london0.py",
+      "CDDF_analysis/hbi/track_c_tf_saclay.py"
+    ],
+    "rederive": "export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 HDF5_USE_FILE_LOCKING=FALSE; /home/mfho/.conda/envs/gpdla/bin/python CDDF_analysis/hbi/build_crossmock_transfer_artifact.py --legs-root <scratch>/crossmock_legs --fp-estimator both --out CDDF_analysis/hbi/crossmock_transfer_artifact.json  # runs all 8 legs (4 mocks x 2 FP estimators) via the committed track_c_tf_{2lpt1,london0,saclay}.py drivers; ~10 min on a login node. MUST be run from a CLEAN tree (no modified tracked files) or the stamp is suffixed -dirty and the provenance guard will refuse it.",
+    "generated": "2026-07-28T15:29:09",
+    "wallclock_s": 135.51274490356445,
+    "python": "/home/mfho/.conda/envs/gpdla/bin/python",
+    "estimand": {
+      "quantity": "R0 = recovered / truth, INTEGRATED (z-marginalised)",
+      "point": "PLUG-IN MAP of the catalog-HBI v3 estimator with the MEASURED FORWARD-RESPONSE kernel (resp_kind='forward'). NOT a posterior median.",
+      "interval": "NONE. --point-only: no MC band was drawn. Do not attach an uncertainty to these numbers and do not table them beside a posterior-median number without labelling both.",
+      "status": "DIAGNOSTIC-grade under the PI's 2026-07 band decision (paper-facing bands must be credible intervals from faithful joint posterior sampling, point = median of the SAME posterior). A plug-in MAP is explicitly a diagnostic.",
+      "cumulative_vs_band": "cumulative_R0[lim] is R0 for the CUMULATIVE quantity >= lim; subdla_band_19p5_20p3 is the DIFFERENTIAL [19.5, 20.3) band formed by differencing two cumulatives. DIFFERENT ESTIMANDS.",
+      "calibration": "FROZEN 2LPT-0: forward_response_2lpt0.npz + g(N,z) + the lya_only-nhi195 molly C/rho matrix. NO refit on any held-out mock. Only the held-out-side FP model changes between the two fp_estimator families."
+    },
+    "quotability": {
+      "dndx": "QUOTABLE. truth_reductions' dN/dX carries its own z-mask (t_zidx >= 0), so it is not B16-contaminated.",
+      "omega": "NOT QUOTABLE at this commit. Omega is built from f_truth, which at the stamped commit counts truth rows with NO z-mask against a z-MASKED Delta-X (B16). RE-DERIVE after the B16 fix lands; never rescale by a scalar.",
+      "f_of_N": "not emitted by this artifact (point-only, integrated reductions)."
+    },
+    "mock": "2lpt0 / 2lpt1 / london0 / saclay0 are ALL MOCK (public-OK). The loa-0 FP product is the HCD-free TWIN MOCK, not real LoA. No real-DESI (loa main-dark) data was read by any leg. Provenance test: mock TARGETID is O(1e3-1e8), real DESI is O(1e16).",
+    "inputs": [
+      {
+        "role": "forward_response_kernel (FROZEN 2LPT-0)",
+        "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "exists": true,
+        "is_dir": false,
+        "bytes": 67134,
+        "mtime": "2026-06-20T19:20:25"
+      },
+      {
+        "role": "molly C/rho matrix, lya_only nhi195 (FROZEN 2LPT-0)",
+        "path": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "exists": true,
+        "is_dir": false,
+        "bytes": 1647,
+        "mtime": "2026-06-15T00:53:16"
+      },
+      {
+        "role": "loa-0 twin-mock FP product (loa0 estimator only)",
+        "path": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz",
+        "exists": true,
+        "is_dir": false,
+        "bytes": 10630,
+        "mtime": "2026-06-16T20:10:35"
+      },
+      {
+        "role": "2LPT-0 calibration catalog",
+        "path": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/",
+        "exists": true,
+        "is_dir": true,
+        "bytes": 4096,
+        "mtime": "2026-05-28T14:26:00"
+      },
+      {
+        "role": "2LPT-0 mock-0 truth",
+        "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+        "exists": true,
+        "is_dir": false,
+        "bytes": 29517120,
+        "mtime": "2026-04-23T15:34:43"
+      },
+      {
+        "role": "2LPT-1 packaged catalog (DIRECTORY)",
+        "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1",
+        "exists": true,
+        "is_dir": true,
+        "bytes": 130,
+        "mtime": "2026-06-19T13:52:19"
+      },
+      {
+        "role": "2LPT-1 mock-1 truth",
+        "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/hcd_truth_cat.fits",
+        "exists": true,
+        "is_dir": false,
+        "bytes": 29468160,
+        "mtime": "2026-06-30T13:24:16"
+      },
+      {
+        "role": "2LPT-1 mock-1 QSO/snr catalogs (pathlength)",
+        "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/snr_cat.fits",
+        "exists": true,
+        "is_dir": false,
+        "bytes": 29160000,
+        "mtime": "2026-06-30T13:24:16"
+      },
+      {
+        "role": "London-0 packaged catalog",
+        "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/london0_jura124_v1",
+        "exists": true,
+        "is_dir": true,
+        "bytes": 157,
+        "mtime": "2026-06-09T15:59:53"
+      },
+      {
+        "role": "London-0 staged mockdir (truth dla_cat.fits + zcat + staged snr_cat)",
+        "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir",
+        "exists": true,
+        "is_dir": true,
+        "bytes": 4096,
+        "mtime": "2026-06-21T11:37:19"
+      },
+      {
+        "role": "Saclay-0 packaged catalog",
+        "path": "/gpfs/accounts/cavestru_root/cavestru0/mfho/gl_prod_saclay0_v1_20260630/combined_catalog",
+        "exists": true,
+        "is_dir": true,
+        "bytes": 4096,
+        "mtime": "2026-06-30T11:54:49"
+      },
+      {
+        "role": "Saclay-0 native mockdir (truth hcd_truth_cat.fits + native snr_cat)",
+        "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124",
+        "exists": true,
+        "is_dir": true,
+        "bytes": 360,
+        "mtime": "2026-04-23T13:04:34"
+      }
+    ],
+    "per_leg_provenance": {
+      "purity_mixture/2lpt0_self": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+          "--variant",
+          "A",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "purity_mixture",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/2lpt0_self",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/2lpt0_self_report.md",
+          "--heldout-cat",
+          "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/",
+          "--heldout-truth",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+          "--heldout-bal",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits",
+          "--heldout-mockdir",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/2lpt0_self/track_c_tf_2lpt1.json",
+        "how": "reused",
+        "variants_run": [
+          "A"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 57.77158164978027,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "purity_mixture",
+        "heldout_cat": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/",
+        "heldout_truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+        "heldout_mockdir": null,
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "purity_mixture/2lpt1": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+          "--variant",
+          "both",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "purity_mixture",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/2lpt1",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/2lpt1_report.md",
+          "--heldout-cat",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1",
+          "--heldout-truth",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/hcd_truth_cat.fits",
+          "--heldout-bal",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/bal_cat.fits",
+          "--heldout-mockdir",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/2lpt1/track_c_tf_2lpt1.json",
+        "how": "reused",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 108.70655083656311,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "purity_mixture",
+        "heldout_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1",
+        "heldout_truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/hcd_truth_cat.fits",
+        "heldout_mockdir": null,
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "purity_mixture/london0": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_london0.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_london0.py",
+          "--variant",
+          "both",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "purity_mixture",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/london0",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/london0_report.md"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/london0/track_c_tf_london0.json",
+        "how": "reused",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 184.58491683006287,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "purity_mixture",
+        "heldout_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/london0_jura124_v1",
+        "heldout_truth": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir/dla_cat.fits",
+        "heldout_mockdir": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir",
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "purity_mixture/saclay": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_saclay.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_saclay.py",
+          "--variant",
+          "both",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "purity_mixture",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/saclay",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/saclay_report.md"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/purity_mixture/saclay/track_c_tf_saclay.json",
+        "how": "ran",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 125.32580280303955,
+        "aggregator_wallclock_s": 135.50885558128357,
+        "point_only": true,
+        "fp_estimator": "purity_mixture",
+        "heldout_cat": "/gpfs/accounts/cavestru_root/cavestru0/mfho/gl_prod_saclay0_v1_20260630/combined_catalog",
+        "heldout_truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/hcd_truth_cat.fits",
+        "heldout_mockdir": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124",
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "loa0/2lpt0_self": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+          "--variant",
+          "A",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "loa0",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/2lpt0_self",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/2lpt0_self_report.md",
+          "--loa0-product",
+          "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz",
+          "--heldout-cat",
+          "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/",
+          "--heldout-truth",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+          "--heldout-bal",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/bal_cat.fits",
+          "--heldout-mockdir",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/2lpt0_self/track_c_tf_2lpt1.json",
+        "how": "reused",
+        "variants_run": [
+          "A"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 171.34787607192993,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "loa0",
+        "heldout_cat": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/combined_catalog/",
+        "heldout_truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
+        "heldout_mockdir": null,
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "loa0/2lpt1": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_2lpt1.py",
+          "--variant",
+          "both",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "loa0",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/2lpt1",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/2lpt1_report.md",
+          "--loa0-product",
+          "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz",
+          "--heldout-cat",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1",
+          "--heldout-truth",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/hcd_truth_cat.fits",
+          "--heldout-bal",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/bal_cat.fits",
+          "--heldout-mockdir",
+          "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/2lpt1/track_c_tf_2lpt1.json",
+        "how": "reused",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 173.59481716156006,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "loa0",
+        "heldout_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/2lpt1_loa124_v1",
+        "heldout_truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-1/loa-124/hcd_truth_cat.fits",
+        "heldout_mockdir": null,
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "loa0/london0": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_london0.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_london0.py",
+          "--variant",
+          "both",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "loa0",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/london0",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/london0_report.md",
+          "--loa0-product",
+          "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/london0/track_c_tf_london0.json",
+        "how": "reused",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 151.0372576713562,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "loa0",
+        "heldout_cat": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/london0_jura124_v1",
+        "heldout_truth": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir/dla_cat.fits",
+        "heldout_mockdir": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir",
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      },
+      "loa0/saclay": {
+        "driver": "CDDF_analysis/hbi/track_c_tf_saclay.py",
+        "argv": [
+          "/home/mfho/.conda/envs/gpdla/bin/python",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/clean_wt/CDDF_analysis/hbi/track_c_tf_saclay.py",
+          "--variant",
+          "both",
+          "--point-only",
+          "--report-limits",
+          "19.5,20.0,20.3",
+          "--fit-floor",
+          "19.5",
+          "--zbins",
+          "2.0,2.5,3.0,3.5",
+          "--fp-estimator",
+          "loa0",
+          "--out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/saclay",
+          "--report-out",
+          "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/saclay_report.md",
+          "--loa0-product",
+          "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+        ],
+        "per_leg_json": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/a1fc97f5-4cd8-4cea-a4fc-243740c8565d/scratchpad/crossmock_legs/loa0/saclay/track_c_tf_saclay.json",
+        "how": "reused",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "variant_reported": "A",
+        "driver_stamp_code_commit": "4d3e16d",
+        "driver_wallclock_s": 145.12381172180176,
+        "aggregator_wallclock_s": 0.0,
+        "point_only": true,
+        "fp_estimator": "loa0",
+        "heldout_cat": "/gpfs/accounts/cavestru_root/cavestru0/mfho/gl_prod_saclay0_v1_20260630/combined_catalog",
+        "heldout_truth": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/hcd_truth_cat.fits",
+        "heldout_mockdir": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124",
+        "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+        "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+        "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+      }
+    },
+    "supersedes": {
+      "files": [
+        "CDDF_analysis/hbi/crossmock_transfer.json",
+        "CDDF_analysis/hbi/crossmock_transfer_loa0.json"
+      ],
+      "why": "both were UNTRACKED, every per-leg stamp read '<sha>-dirty', and their own provenance_note recorded that the FINAL AGGREGATION WAS MANUAL with no committed aggregator ('build_artifact_loa0.py was never written'). This artifact replaces them: committed routine, 40-char stamp captured at process start, git-tracked output."
+    },
+    "provenance_note": "Legs re-run from a CLEAN checkout of the stamped commit via the committed drivers; the aggregation step is now itself a committed routine (metadata.routine). Numbers WILL differ from the retired untracked JSONs wherever the committed code has moved since d496f42 -- that difference is the point of re-deriving, not an error."
+  },
+  "config": {
+    "report_limits": [
+      19.5,
+      20.0,
+      20.3
+    ],
+    "fit_floor": 19.5,
+    "zbins": [
+      2.0,
+      2.5,
+      3.0,
+      3.5
+    ],
+    "point_only": true,
+    "n_mc": 0,
+    "fp_estimators": [
+      "purity_mixture",
+      "loa0"
+    ],
+    "variant_policy": "floor leg: A only (the point is variant-independent under --point-only); transfer legs: both A and B, with the A-vs-B agreement recorded per leg.",
+    "forward_model": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+    "molly_tsv": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+    "loa0_product": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/loa0_fp_product_lyaonly1025.npz"
+  },
+  "mock_roles": {
+    "2lpt0_self": {
+      "mock": "2lpt0",
+      "role": "calibration_floor",
+      "note": "ON-MOCK CALIBRATION / RECOVERY FLOOR -- held-out == the calibration mock itself, scored through the SAME forward-path driver. NOT a transfer. Subtract it to isolate the cross-recipe part of every other leg.",
+      "recipe": "LyaCoLoRe-2LPT v2.8.5 mock-0 / loa-124 (the calibration mock)"
+    },
+    "2lpt1": {
+      "mock": "2lpt1",
+      "role": "same_recipe_new_realization",
+      "note": "SAME RECIPE as the calibration mock, DIFFERENT REALIZATION (mock-1). A realization check, NOT a recipe transfer. It also has NO spectra-16 and NO processed GP .h5 anywhere on GreatLakes -- see metadata.mock_roles -- so it runs off the PACKAGED catalog only and cannot be re-processed or re-flagged.",
+      "recipe": "LyaCoLoRe-2LPT v2.8.5 mock-1 / loa-124"
+    },
+    "london0": {
+      "mock": "london0",
+      "role": "genuine_transfer",
+      "note": "GENUINE TRANSFER -- LyaCoLoRe on a CoLoRe lognormal density field.",
+      "recipe": "LyaCoLoRe london v9 / jura-124 (london0_jura124_v1)"
+    },
+    "saclay": {
+      "mock": "saclay0",
+      "role": "genuine_transfer",
+      "note": "GENUINE TRANSFER -- Saclay Gaussian density field + FGPA, deeper Lyman series (quickquasars --metals LYB..LY8 vs LYB..LY5 for 2LPT).",
+      "recipe": "Saclay v4.7.5 mock-0 / juraLy8-124 (saclay0_juraLy8124_v1)"
+    }
+  },
+  "results": {
+    "purity_mixture": {
+      "2lpt0_self": {
+        "mock": "2lpt0",
+        "recipe": "LyaCoLoRe-2LPT v2.8.5 mock-0 / loa-124 (the calibration mock)",
+        "role": "calibration_floor",
+        "role_note": "ON-MOCK CALIBRATION / RECOVERY FLOOR -- held-out == the calibration mock itself, scored through the SAME forward-path driver. NOT a transfer. Subtract it to isolate the cross-recipe part of every other leg.",
+        "variant_reported": "A",
+        "variants_run": [
+          "A"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.10306226015410655,
+              "20.0": 0.08381951476617752,
+              "20.3": 0.05356352165974708
+            },
+            "cumulative_truth": {
+              "19.5": 0.14707116858998587,
+              "20.0": 0.08588508698558799,
+              "20.3": 0.0543430065817012
+            },
+            "cumulative_R0": {
+              "19.5": 0.7007645423790023,
+              "20.0": 0.9759495822626683,
+              "20.3": 0.9856562054441685
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.533804805598725,
+              "num_map": 0.04949873849435947,
+              "den_truth": 0.09272816200828467,
+              "map_lo195": 0.10306226015410655,
+              "map_hi203": 0.05356352165974708,
+              "truth_lo195": 0.14707116858998587,
+              "truth_hi203": 0.0543430065817012
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0006303936455023157,
+              "20.0": 0.0006128345015642052,
+              "20.3": 0.0005525574382523959
+            },
+            "cumulative_truth": {
+              "19.5": 0.0007465328276650111,
+              "20.0": 0.0006941573826281951,
+              "20.3": 0.0006287943087534605
+            },
+            "cumulative_R0": {
+              "19.5": 0.8444285664892286,
+              "20.0": 0.8828466236920395,
+              "20.3": 0.8787570602345325
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.6610938201829524,
+              "num_map": 7.783620724991977e-05,
+              "den_truth": 0.0001177385189115506,
+              "map_lo195": 0.0006303936455023157,
+              "map_hi203": 0.0005525574382523959,
+              "truth_lo195": 0.0007465328276650111,
+              "truth_hi203": 0.0006287943087534605
+            }
+          }
+        }
+      },
+      "2lpt1": {
+        "mock": "2lpt1",
+        "recipe": "LyaCoLoRe-2LPT v2.8.5 mock-1 / loa-124",
+        "role": "same_recipe_new_realization",
+        "role_note": "SAME RECIPE as the calibration mock, DIFFERENT REALIZATION (mock-1). A realization check, NOT a recipe transfer. It also has NO spectra-16 and NO processed GP .h5 anywhere on GreatLakes -- see metadata.mock_roles -- so it runs off the PACKAGED catalog only and cannot be re-processed or re-flagged.",
+        "variant_reported": "A",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.10365020037969565,
+              "20.0": 0.0845442957448364,
+              "20.3": 0.05402212575475291
+            },
+            "cumulative_truth": {
+              "19.5": 0.1463438285009245,
+              "20.0": 0.08619096327265575,
+              "20.3": 0.0547803668706857
+            },
+            "cumulative_R0": {
+              "19.5": 0.7082649226922532,
+              "20.0": 0.980895125599069,
+              "20.3": 0.9861585243172487
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.5420074093021521,
+              "num_map": 0.04962807462494274,
+              "den_truth": 0.0915634616302388,
+              "map_lo195": 0.10365020037969565,
+              "map_hi203": 0.05402212575475291,
+              "truth_lo195": 0.1463438285009245,
+              "truth_hi203": 0.0547803668706857
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0006412584728887015,
+              "20.0": 0.0006238533654131355,
+              "20.3": 0.0005629889276642736
+            },
+            "cumulative_truth": {
+              "19.5": 0.0007609651644259304,
+              "20.0": 0.000709276155324068,
+              "20.3": 0.0006443044979113496
+            },
+            "cumulative_R0": {
+              "19.5": 0.8426909704499611,
+              "20.0": 0.8795634263611994,
+              "20.3": 0.8737932600025644
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.6709163213519395,
+              "num_map": 7.826954522442795e-05,
+              "den_truth": 0.00011666066651458082,
+              "map_lo195": 0.0006412584728887015,
+              "map_hi203": 0.0005629889276642736,
+              "truth_lo195": 0.0007609651644259304,
+              "truth_hi203": 0.0006443044979113496
+            }
+          }
+        },
+        "variantB_max_abs_reldiff": 0.0,
+        "vs_calibration_floor": {
+          "dndx": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": 0.007500380313250843,
+                "alpha_corrected": 0.01070313901412323
+              },
+              "20.0": {
+                "delta_vs_floor": 0.004945543336400737,
+                "alpha_corrected": 0.005067416827962523
+              },
+              "20.3": {
+                "delta_vs_floor": 0.0005023188730801653,
+                "alpha_corrected": 0.0005096288851078601
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": 0.00820260370342707,
+              "alpha_corrected": 0.015366297975206278
+            }
+          },
+          "omega": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.001737596039267486,
+                "alpha_corrected": -0.0020577182111349845
+              },
+              "20.0": {
+                "delta_vs_floor": -0.0032831973308400375,
+                "alpha_corrected": -0.003718876238218871
+              },
+              "20.3": {
+                "delta_vs_floor": -0.004963800231968074,
+                "alpha_corrected": -0.005648660427995056
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": 0.009822501168987086,
+              "alpha_corrected": 0.014857953393466516
+            }
+          }
+        }
+      },
+      "london0": {
+        "mock": "london0",
+        "recipe": "LyaCoLoRe london v9 / jura-124 (london0_jura124_v1)",
+        "role": "genuine_transfer",
+        "role_note": "GENUINE TRANSFER -- LyaCoLoRe on a CoLoRe lognormal density field.",
+        "variant_reported": "A",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.1073943528346559,
+              "20.0": 0.09227637650032747,
+              "20.3": 0.05868044049379773
+            },
+            "cumulative_truth": {
+              "19.5": 0.15662684382371936,
+              "20.0": 0.0932049435920358,
+              "20.3": 0.059815367677618636
+            },
+            "cumulative_R0": {
+              "19.5": 0.6856701585299534,
+              "20.0": 0.9900373622264853,
+              "20.3": 0.9810261605355715
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.503183241079216,
+              "num_map": 0.048713912340858166,
+              "den_truth": 0.09681147614610072,
+              "map_lo195": 0.1073943528346559,
+              "map_hi203": 0.05868044049379773,
+              "truth_lo195": 0.15662684382371936,
+              "truth_hi203": 0.059815367677618636
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0006942297587503371,
+              "20.0": 0.0006792778750091909,
+              "20.3": 0.0006124068002797378
+            },
+            "cumulative_truth": {
+              "19.5": 0.0008262282116800937,
+              "20.0": 0.0007718707809868513,
+              "20.3": 0.0007027110029389212
+            },
+            "cumulative_R0": {
+              "19.5": 0.8402397169889123,
+              "20.0": 0.8800409236125267,
+              "20.3": 0.871491691062887
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.6624417707014203,
+              "num_map": 8.182295847059928e-05,
+              "den_truth": 0.00012351720874117253,
+              "map_lo195": 0.0006942297587503371,
+              "map_hi203": 0.0006124068002797378,
+              "truth_lo195": 0.0008262282116800937,
+              "truth_hi203": 0.0007027110029389212
+            }
+          }
+        },
+        "variantB_max_abs_reldiff": 0.0,
+        "vs_calibration_floor": {
+          "dndx": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.015094383849048931,
+                "alpha_corrected": -0.021539879568971187
+              },
+              "20.0": {
+                "delta_vs_floor": 0.014087779963817049,
+                "alpha_corrected": 0.014434946456102216
+              },
+              "20.3": {
+                "delta_vs_floor": -0.004630044908597086,
+                "alpha_corrected": -0.004697423790388067
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": -0.030621564519509037,
+              "alpha_corrected": -0.057364722457234785
+            }
+          },
+          "omega": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.004188849500316283,
+                "alpha_corrected": -0.004960572944294972
+              },
+              "20.0": {
+                "delta_vs_floor": -0.002805700079512752,
+                "alpha_corrected": -0.0031780153021137014
+              },
+              "20.3": {
+                "delta_vs_floor": -0.007265369171645442,
+                "alpha_corrected": -0.008267779003341857
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": 0.001347950518467922,
+              "alpha_corrected": 0.002038970078550806
+            }
+          }
+        }
+      },
+      "saclay": {
+        "mock": "saclay0",
+        "recipe": "Saclay v4.7.5 mock-0 / juraLy8-124 (saclay0_juraLy8124_v1)",
+        "role": "genuine_transfer",
+        "role_note": "GENUINE TRANSFER -- Saclay Gaussian density field + FGPA, deeper Lyman series (quickquasars --metals LYB..LY8 vs LYB..LY5 for 2LPT).",
+        "variant_reported": "A",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.10479386524510931,
+              "20.0": 0.08829062313174067,
+              "20.3": 0.05628377688782419
+            },
+            "cumulative_truth": {
+              "19.5": 0.15265281905990652,
+              "20.0": 0.08949116337129641,
+              "20.3": 0.056788379734651666
+            },
+            "cumulative_R0": {
+              "19.5": 0.686484965626376,
+              "20.0": 0.986584818049859,
+              "20.3": 0.9911143292133835
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.5060279776184479,
+              "num_map": 0.04851008835728512,
+              "den_truth": 0.09586443932525485,
+              "map_lo195": 0.10479386524510931,
+              "map_hi203": 0.05628377688782419,
+              "truth_lo195": 0.15265281905990652,
+              "truth_hi203": 0.056788379734651666
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0006474702716801488,
+              "20.0": 0.0006317837889299292,
+              "20.3": 0.000567857991370079
+            },
+            "cumulative_truth": {
+              "19.5": 0.0007746410138477877,
+              "20.0": 0.0007212071106281365,
+              "20.3": 0.0006544223163587313
+            },
+            "cumulative_R0": {
+              "19.5": 0.8358326761760807,
+              "20.0": 0.8760088185759513,
+              "20.3": 0.86772406315496
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.6622287711719469,
+              "num_map": 7.961228031006982e-05,
+              "den_truth": 0.00012021869748905637,
+              "map_lo195": 0.0006474702716801488,
+              "map_hi203": 0.000567857991370079,
+              "truth_lo195": 0.0007746410138477877,
+              "truth_hi203": 0.0006544223163587313
+            }
+          }
+        },
+        "variantB_max_abs_reldiff": 0.0,
+        "vs_calibration_floor": {
+          "dndx": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.014279576752626366,
+                "alpha_corrected": -0.020377139380010734
+              },
+              "20.0": {
+                "delta_vs_floor": 0.010635235787190722,
+                "alpha_corrected": 0.010897320907227392
+              },
+              "20.3": {
+                "delta_vs_floor": 0.005458123769214951,
+                "alpha_corrected": 0.005537553296035336
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": -0.02777682798027714,
+              "alpha_corrected": -0.052035552488370995
+            }
+          },
+          "omega": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.008595890313147891,
+                "alpha_corrected": -0.010179535196074507
+              },
+              "20.0": {
+                "delta_vs_floor": -0.006837805116088225,
+                "alpha_corrected": -0.007745178984196244
+              },
+              "20.3": {
+                "delta_vs_floor": -0.011032997079572504,
+                "alpha_corrected": -0.012555230084442148
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": 0.0011349509889945208,
+              "alpha_corrected": 0.0017167774895860966
+            }
+          }
+        }
+      }
+    },
+    "loa0": {
+      "2lpt0_self": {
+        "mock": "2lpt0",
+        "recipe": "LyaCoLoRe-2LPT v2.8.5 mock-0 / loa-124 (the calibration mock)",
+        "role": "calibration_floor",
+        "role_note": "ON-MOCK CALIBRATION / RECOVERY FLOOR -- held-out == the calibration mock itself, scored through the SAME forward-path driver. NOT a transfer. Subtract it to isolate the cross-recipe part of every other leg.",
+        "variant_reported": "A",
+        "variants_run": [
+          "A"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.13513954522859817,
+              "20.0": 0.08623942206906603,
+              "20.3": 0.05641560846013772
+            },
+            "cumulative_truth": {
+              "19.5": 0.14707116858998587,
+              "20.0": 0.08588508698558799,
+              "20.3": 0.0543430065817012
+            },
+            "cumulative_R0": {
+              "19.5": 0.9188717715662448,
+              "20.0": 1.0041256881248488,
+              "20.3": 1.038139256710438
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.8489754898994653,
+              "num_map": 0.07872393676846046,
+              "den_truth": 0.09272816200828467,
+              "map_lo195": 0.13513954522859817,
+              "map_hi203": 0.05641560846013772,
+              "truth_lo195": 0.14707116858998587,
+              "truth_hi203": 0.0543430065817012
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0006999899216752234,
+              "20.0": 0.0006626846808766771,
+              "20.3": 0.0006032032215468718
+            },
+            "cumulative_truth": {
+              "19.5": 0.0007465328276650111,
+              "20.0": 0.0006941573826281951,
+              "20.3": 0.0006287943087534605
+            },
+            "cumulative_R0": {
+              "19.5": 0.9376545755725657,
+              "20.0": 0.954660567561268,
+              "20.3": 0.9593013377342406
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.8220478822318222,
+              "num_map": 9.678670012835153e-05,
+              "den_truth": 0.0001177385189115506,
+              "map_lo195": 0.0006999899216752234,
+              "map_hi203": 0.0006032032215468718,
+              "truth_lo195": 0.0007465328276650111,
+              "truth_hi203": 0.0006287943087534605
+            }
+          }
+        }
+      },
+      "2lpt1": {
+        "mock": "2lpt1",
+        "recipe": "LyaCoLoRe-2LPT v2.8.5 mock-1 / loa-124",
+        "role": "same_recipe_new_realization",
+        "role_note": "SAME RECIPE as the calibration mock, DIFFERENT REALIZATION (mock-1). A realization check, NOT a recipe transfer. It also has NO spectra-16 and NO processed GP .h5 anywhere on GreatLakes -- see metadata.mock_roles -- so it runs off the PACKAGED catalog only and cannot be re-processed or re-flagged.",
+        "variant_reported": "A",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.13602381180341103,
+              "20.0": 0.08682205201824456,
+              "20.3": 0.05687907212759726
+            },
+            "cumulative_truth": {
+              "19.5": 0.1463438285009245,
+              "20.0": 0.08619096327265575,
+              "20.3": 0.0547803668706857
+            },
+            "cumulative_R0": {
+              "19.5": 0.9294810255872985,
+              "20.0": 1.0073219827418847,
+              "20.3": 1.0383112669154946
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.8643703314256986,
+              "num_map": 0.07914473967581376,
+              "den_truth": 0.0915634616302388,
+              "map_lo195": 0.13602381180341103,
+              "map_hi203": 0.05687907212759726,
+              "truth_lo195": 0.1463438285009245,
+              "truth_hi203": 0.0547803668706857
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0007082777543601723,
+              "20.0": 0.0006708300053749444,
+              "20.3": 0.0006110551336105282
+            },
+            "cumulative_truth": {
+              "19.5": 0.0007609651644259304,
+              "20.0": 0.000709276155324068,
+              "20.3": 0.0006443044979113496
+            },
+            "cumulative_R0": {
+              "19.5": 0.9307623889649334,
+              "20.0": 0.9457952312924469,
+              "20.3": 0.9483949523732859
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.8333796098918457,
+              "num_map": 9.722262074964407e-05,
+              "den_truth": 0.00011666066651458082,
+              "map_lo195": 0.0007082777543601723,
+              "map_hi203": 0.0006110551336105282,
+              "truth_lo195": 0.0007609651644259304,
+              "truth_hi203": 0.0006443044979113496
+            }
+          }
+        },
+        "variantB_max_abs_reldiff": 0.0,
+        "vs_calibration_floor": {
+          "dndx": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": 0.010609254021053727,
+                "alpha_corrected": 0.011545957063160195
+              },
+              "20.0": {
+                "delta_vs_floor": 0.0031962946170358553,
+                "alpha_corrected": 0.003183161883852259
+              },
+              "20.3": {
+                "delta_vs_floor": 0.00017201020505663855,
+                "alpha_corrected": 0.00016569087812134953
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": 0.015394841526233383,
+              "alpha_corrected": 0.018133434603696763
+            }
+          },
+          "omega": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.006892186607632356,
+                "alpha_corrected": -0.00735045376750143
+              },
+              "20.0": {
+                "delta_vs_floor": -0.008865336268821133,
+                "alpha_corrected": -0.009286375252167467
+              },
+              "20.3": {
+                "delta_vs_floor": -0.010906385360954785,
+                "alpha_corrected": -0.011369092204869036
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": 0.011331727660023438,
+              "alpha_corrected": 0.013784753789838122
+            }
+          }
+        }
+      },
+      "london0": {
+        "mock": "london0",
+        "recipe": "LyaCoLoRe london v9 / jura-124 (london0_jura124_v1)",
+        "role": "genuine_transfer",
+        "role_note": "GENUINE TRANSFER -- LyaCoLoRe on a CoLoRe lognormal density field.",
+        "variant_reported": "A",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.1382922661677025,
+              "20.0": 0.0949768321723568,
+              "20.3": 0.06189220309421944
+            },
+            "cumulative_truth": {
+              "19.5": 0.15662684382371936,
+              "20.0": 0.0932049435920358,
+              "20.3": 0.059815367677618636
+            },
+            "cumulative_R0": {
+              "19.5": 0.8829410258904783,
+              "20.0": 1.0190106716664804,
+              "20.3": 1.0347207665393638
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.7891632904985946,
+              "num_map": 0.07640006307348304,
+              "den_truth": 0.09681147614610072,
+              "map_lo195": 0.1382922661677025,
+              "map_hi203": 0.06189220309421944,
+              "truth_lo195": 0.15662684382371936,
+              "truth_hi203": 0.059815367677618636
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0007659244796116463,
+              "20.0": 0.0007308818361076228,
+              "20.3": 0.0006650384469710809
+            },
+            "cumulative_truth": {
+              "19.5": 0.0008262282116800937,
+              "20.0": 0.0007718707809868513,
+              "20.3": 0.0007027110029389212
+            },
+            "cumulative_R0": {
+              "19.5": 0.9270132256246457,
+              "20.0": 0.946896623257557,
+              "20.3": 0.9463896882071238
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.8167771411671855,
+              "num_map": 0.00010088603264056539,
+              "den_truth": 0.00012351720874117253,
+              "map_lo195": 0.0007659244796116463,
+              "map_hi203": 0.0006650384469710809,
+              "truth_lo195": 0.0008262282116800937,
+              "truth_hi203": 0.0007027110029389212
+            }
+          }
+        },
+        "variantB_max_abs_reldiff": 0.0,
+        "vs_calibration_floor": {
+          "dndx": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.035930745675766484,
+                "alpha_corrected": -0.039103111867852314
+              },
+              "20.0": {
+                "delta_vs_floor": 0.014884983541631591,
+                "alpha_corrected": 0.014823825062606044
+              },
+              "20.3": {
+                "delta_vs_floor": -0.0034184901710740956,
+                "alpha_corrected": -0.003292901360754108
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": -0.05981219940087068,
+              "alpha_corrected": -0.07045220988411993
+            }
+          },
+          "omega": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.010641349947919987,
+                "alpha_corrected": -0.011348902063877842
+              },
+              "20.0": {
+                "delta_vs_floor": -0.007763944303711079,
+                "alpha_corrected": -0.00813267518060845
+              },
+              "20.3": {
+                "delta_vs_floor": -0.012911649527116875,
+                "alpha_corrected": -0.013459430336678846
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": -0.005270741064636764,
+              "alpha_corrected": -0.006411720264185794
+            }
+          }
+        }
+      },
+      "saclay": {
+        "mock": "saclay0",
+        "recipe": "Saclay v4.7.5 mock-0 / juraLy8-124 (saclay0_juraLy8124_v1)",
+        "role": "genuine_transfer",
+        "role_note": "GENUINE TRANSFER -- Saclay Gaussian density field + FGPA, deeper Lyman series (quickquasars --metals LYB..LY8 vs LYB..LY5 for 2LPT).",
+        "variant_reported": "A",
+        "variants_run": [
+          "A",
+          "B"
+        ],
+        "reductions": {
+          "dndx": {
+            "cumulative_map": {
+              "19.5": 0.13582766188309264,
+              "20.0": 0.0909694675860755,
+              "20.3": 0.0593548592286961
+            },
+            "cumulative_truth": {
+              "19.5": 0.15265281905990652,
+              "20.0": 0.08949116337129641,
+              "20.3": 0.056788379734651666
+            },
+            "cumulative_R0": {
+              "19.5": 0.8897815495289931,
+              "20.0": 1.0165189965029917,
+              "20.3": 1.0451937439672785
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.7977181444199016,
+              "num_map": 0.07647280265439654,
+              "den_truth": 0.09586443932525485,
+              "map_lo195": 0.13582766188309264,
+              "map_hi203": 0.0593548592286961,
+              "truth_lo195": 0.15265281905990652,
+              "truth_hi203": 0.056788379734651666
+            }
+          },
+          "omega": {
+            "cumulative_map": {
+              "19.5": 0.0007148248456042421,
+              "20.0": 0.000679596687855955,
+              "20.3": 0.0006164467971690384
+            },
+            "cumulative_truth": {
+              "19.5": 0.0007746410138477877,
+              "20.0": 0.0007212071106281365,
+              "20.3": 0.0006544223163587313
+            },
+            "cumulative_R0": {
+              "19.5": 0.9227820794739134,
+              "20.0": 0.942304475151471,
+              "20.3": 0.9419709288017678
+            },
+            "subdla_band_19p5_20p3": {
+              "R0": 0.8183256888485179,
+              "num_map": 9.837804843520364e-05,
+              "den_truth": 0.00012021869748905637,
+              "map_lo195": 0.0007148248456042421,
+              "map_hi203": 0.0006164467971690384,
+              "truth_lo195": 0.0007746410138477877,
+              "truth_hi203": 0.0006544223163587313
+            }
+          }
+        },
+        "variantB_max_abs_reldiff": 0.0,
+        "vs_calibration_floor": {
+          "dndx": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.029090222037251645,
+                "alpha_corrected": -0.03165863065710084
+              },
+              "20.0": {
+                "delta_vs_floor": 0.012393308378142898,
+                "alpha_corrected": 0.012342387536451449
+              },
+              "20.3": {
+                "delta_vs_floor": 0.007054487256840547,
+                "alpha_corrected": 0.006795318846908982
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": -0.05125734547956362,
+              "alpha_corrected": -0.06037553037677623
+            }
+          },
+          "omega": {
+            "cumulative": {
+              "19.5": {
+                "delta_vs_floor": -0.014872496098652266,
+                "alpha_corrected": -0.0158613806044412
+              },
+              "20.0": {
+                "delta_vs_floor": -0.01235609240979707,
+                "alpha_corrected": -0.012942916916911518
+              },
+              "20.3": {
+                "delta_vs_floor": -0.01733040893247284,
+                "alpha_corrected": -0.01806565700555085
+              }
+            },
+            "subdla_band_19p5_20p3": {
+              "delta_vs_floor": -0.003722193383304373,
+              "alpha_corrected": -0.004527952037536753
+            }
+          }
+        }
+      }
+    }
+  }
+}
