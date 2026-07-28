@@ -494,7 +494,56 @@
       ],
       "why": "both were UNTRACKED, every per-leg stamp read '<sha>-dirty', and their own provenance_note recorded that the FINAL AGGREGATION WAS MANUAL with no committed aggregator ('build_artifact_loa0.py was never written'). This artifact replaces them: committed routine, 40-char stamp captured at process start, git-tracked output."
     },
-    "provenance_note": "Legs re-run from a CLEAN checkout of the stamped commit via the committed drivers; the aggregation step is now itself a committed routine (metadata.routine). Numbers WILL differ from the retired untracked JSONs wherever the committed code has moved since d496f42 -- that difference is the point of re-deriving, not an error."
+    "provenance_note": "Legs re-run from a CLEAN checkout of the stamped commit via the committed drivers; the aggregation step is now itself a committed routine (metadata.routine). Numbers WILL differ from the retired untracked JSONs wherever the committed code has moved since d496f42 -- that difference is the point of re-deriving, not an error.",
+    "b16": {
+      "status": "INVALIDATED_OMEGA",
+      "fixed_in_commit": [
+        "146a11744dc37b149df70addc0bf19b998008c22  (site 1: cddf_tilt_closure.py + fixture)",
+        "5d25f27c4ea1d4f2420216e50b38842e0d5dd909  (site 2: cddf_catalog_hbi.py::truth_reductions)"
+      ],
+      "defect": "B16 -- z-leaky truth reduction: the truth f(N) numerator counted absorbers with Z_DLA outside [cfg.zbins[0], cfg.zbins[-1]) while the pathlength denominator X_sum was accumulated only inside that range.",
+      "sites_fixed": [
+        "CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions",
+        "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
+      ],
+      "fixture": "tests/test_b16_truth_zmask.py",
+      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale. This SUPERSEDES metadata['quotability']['omega'], which was written hours before the fix landed and says 'RE-DERIVE after the B16 fix lands' -- it has now landed.",
+      "why_this_artifact_is_pre_fix": "This artifact is stamped 4d3e16dcc0828f8dbf0443a63229984dead1ed6a, an ANCESTOR of 5d25f27, so its eight legs ran the PRE-FIX truth_reductions. That is not an error to be patched in place: the stamp names the code that produced the bytes and the bytes must keep matching it. Re-derive to move past it.",
+      "affected_keys": [
+        "results/*/*/reductions/omega/cumulative_truth      (INVALIDATED, biased HIGH)",
+        "results/*/*/reductions/omega/cumulative_R0         (INVALIDATED)",
+        "results/*/*/reductions/omega/subdla_band_19p5_20p3 (INVALIDATED)",
+        "results/*/*/reductions/omega/cumulative_map        (UNAFFECTED -- estimator side)",
+        "results/*/*/vs_calibration_floor/omega/*           (INVALIDATED)",
+        "results/*/*/reductions/dndx/*                      (CLEAN)",
+        "results/*/*/vs_calibration_floor/dndx/*            (CLEAN)"
+      ],
+      "dndx_clean_evidence": "truth_reductions' dndx_total always carried its own '& (t_zidx >= 0)' mask. Two independent confirmations: (a) every dN/dX cumulative R0 and every differential [19.5, 20.3) band R0 in this artifact reproduces the retired untracked crossmock_transfer{,_loa0}.json to 4 dp on all 8 legs; (b) the 5d25f27 re-run reports dN/dX R0 0.8489754898994653 and truth 0.09272816200828467 identical before and after the fix -- the same two numbers this artifact carries at results/loa0/2lpt0_self.",
+      "rederived_post_b16": {
+        "_scope": "ONLY the 2lpt0_self (calibration-floor) leg has a measured post-fix Omega, taken from the 5d25f27 re-run of subdla_loa0_validation.py on the SAME 2LPT-0 forward configuration. The 2lpt1 / london0 / saclay legs were NOT re-derived: their leak factors were never measured and MUST NOT be borrowed from the 2LPT-0 ones (per-fine-bin leak spans [1.000, 1.182], median 1.058).",
+        "_how": "re-run this artifact's own routine on the post-fix tree: /home/mfho/.conda/envs/gpdla/bin/python CDDF_analysis/hbi/build_crossmock_transfer_artifact.py --legs-root <scratch> --fp-estimator both --out CDDF_analysis/hbi/crossmock_transfer_artifact.json (~21 min wall, 8 legs, from a CLEAN checkout). That regenerates a clean Omega for all four legs and retires this block.",
+        "2lpt0_self": {
+          "loa0": {
+            "omega_band_19.5_20.3_R0_PRE": 0.8220478822318222,
+            "omega_band_19.5_20.3_R0_POST": 0.8678175313974108,
+            "dndx_band_19.5_20.3_R0_UNCHANGED": 0.8489754898994653,
+            "dndx_band_19.5_20.3_truth_UNCHANGED": 0.09272816200828467
+          },
+          "purity_mixture": {
+            "omega_band_19.5_20.3_R0_PRE": 0.6610938201829524,
+            "omega_band_19.5_20.3_R0_POST": 0.6979019342470179,
+            "dndx_band_19.5_20.3_R0_UNCHANGED": 0.533804805598725
+          }
+        }
+      },
+      "measured_leak_factor_2LPT0_ONLY": {
+        "_warning": "2LPT-0 forward configuration ONLY. Do NOT apply to the 2lpt1 / london0 / saclay legs: each has its own truth catalog, z support and X_tot.",
+        "omega_cum_19.5": 1.059321381914033,
+        "omega_cum_20.0": 1.0595311425486416,
+        "omega_cum_20.3": 1.0600064600852679,
+        "omega_band_19.5_20.3": 1.0556775951314734
+      }
+    }
   },
   "config": {
     "report_limits": [
