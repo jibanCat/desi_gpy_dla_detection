@@ -2124,8 +2124,9 @@ def joint_mc_errors(cat_cut: Table, is_TP: np.ndarray, good_mask: np.ndarray,
 # -----------------------------------------------------------------------------
 def truth_reductions(cfg, truth_cut, logN_lo, logN_hi, N_b, dN_b, X_tot):
     """Truth-side f(N), dN/dX(z), Ω over the SAME window/sightlines (no completeness
-    correction — it IS truth). Truth restricted to SNR>snr_min sightlines (matches
-    the ΔX denominator). Returns dict {f_truth, dndx_total, omega} per limit."""
+    correction — it IS truth). Truth restricted to SNR>snr_min sightlines AND to
+    z ∈ [cfg.zbins[0], cfg.zbins[-1]) — the same (N, z) support the ΔX denominator is
+    accumulated over (B16). Returns dict {f_truth, dndx_total, omega} per limit."""
     zbins = np.asarray(cfg.zbins, dtype=float)
     n_zbins = len(zbins) - 1
     X_sum = float(np.nansum(X_tot))
@@ -2136,9 +2137,16 @@ def truth_reductions(cfg, truth_cut, logN_lo, logN_hi, N_b, dN_b, X_tot):
     t_nhi, t_z = t_nhi[keep], t_z[keep]
     t_nidx = _bin_index_logN(t_nhi, logN_lo, logN_hi)
     t_zidx = _zbin_index(t_z, zbins)
+    # [B16 FIX] numerator and denominator on the SAME (N, z) support.  X_sum sums ΔX
+    # over cfg.zbins ONLY, so a truth row with Z_DLA outside [zbins[0], zbins[-1])
+    # contributes a COUNT with ZERO matching pathlength.  Before this fix the per-bin
+    # count was `(t_nidx == b).sum()` with no z mask, inflating f_truth and every Ω
+    # derived from it.  dndx_total below was already correct (it carries `t_zidx >= 0`).
+    # The leak is NOT a scalar (it depends on the z grid / N window / cut bundle):
+    # RE-DERIVE downstream Ω, never rescale.  Fixture: tests/test_b16_truth_zmask.py.
     f_truth = np.zeros(len(logN_lo))
     for b in range(len(logN_lo)):
-        n = int((t_nidx == b).sum())
+        n = int(((t_nidx == b) & (t_zidx >= 0)).sum())
         f_truth[b] = n / (X_sum * dN_b[b]) if X_sum > 0 else np.nan
     K = omega_hi_prefactor(cfg.H0)
     dndx_total = {}
