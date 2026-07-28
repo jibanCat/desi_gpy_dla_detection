@@ -146,6 +146,8 @@ def test_aggregate_stamps_provenance(agg):
     assert len(md["code_commit"]) == 40, md["code_commit"]
     assert md["routine"] == "CDDF_analysis/hbi/calccddf_vs_hbi_artifact.py"
     assert "calccddf_vs_hbi_artifact.py" in md["rederive"]
+    assert md["code_commit_deps_dirty_at_start"] is False, (
+        "artifact was produced from a dirty dependency tree")
     assert md["input_files"], "no input file list"
     for rec in md["input_files"]:
         assert len(rec["sha256"]) == 64

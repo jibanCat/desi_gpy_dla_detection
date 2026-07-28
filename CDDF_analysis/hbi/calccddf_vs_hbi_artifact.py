@@ -63,17 +63,34 @@ def _git(*args):
     return subprocess.check_output(["git", "-C", HERE] + list(args)).decode().strip()
 
 
+DEP_PATHS = [
+    "CDDF_analysis/hbi/calccddf_vs_hbi_artifact.py",   # this routine
+    "CDDF_analysis/hbi/calccddf_vs_hbi.py",            # the producer of the inputs
+    "CDDF_analysis/calc_cddf.py",                      # the estimator + CI primitive
+    "CDDF_analysis/cddf_forward/window.py",            # the search-window spec
+]
+
+
 def _capture_code_commit():
+    """(40-char HEAD, repo-dirty, deps-dirty).
+
+    ``repo_dirty`` covers the WHOLE worktree, which other concurrent agents may
+    have dirty for unrelated reasons.  ``deps_dirty`` is the one that matters for
+    re-derivability: it is scoped to the files this artifact's numbers actually
+    depend on.
+    """
     try:
         sha = _git("rev-parse", "HEAD")
         assert len(sha) == 40, sha
-        dirty = subprocess.call(["git", "-C", HERE, "diff", "--quiet", "HEAD"]) != 0
-        return sha, dirty
+        repo_dirty = subprocess.call(["git", "-C", HERE, "diff", "--quiet", "HEAD"]) != 0
+        deps_dirty = subprocess.call(
+            ["git", "-C", HERE, "diff", "--quiet", "HEAD", "--"] + DEP_PATHS) != 0
+        return sha, repo_dirty, deps_dirty
     except Exception as exc:  # pragma: no cover - only outside a git tree
-        return "unknown ({}: {})".format(type(exc).__name__, exc), True
+        return "unknown ({}: {})".format(type(exc).__name__, exc), True, True
 
 
-CODE_COMMIT_AT_START, DIRTY_AT_START = _capture_code_commit()
+CODE_COMMIT_AT_START, DIRTY_AT_START, DEPS_DIRTY_AT_START = _capture_code_commit()
 
 # --------------------------------------------------------------------------- #
 # HBI reference.  The forward-response ("right object") kernel artifact lives on
@@ -387,7 +404,13 @@ def build(inputs, hbi=True):
             routine="CDDF_analysis/hbi/calccddf_vs_hbi_artifact.py",
             code_commit=CODE_COMMIT_AT_START,
             code_commit_captured="process start (module import), before any file was read",
-            code_commit_dirty_at_start=DIRTY_AT_START,
+            code_commit_repo_dirty_at_start=DIRTY_AT_START,
+            code_commit_deps_dirty_at_start=DEPS_DIRTY_AT_START,
+            code_commit_deps=DEP_PATHS,
+            code_commit_dirty_note=("repo_dirty covers the WHOLE worktree (other concurrent "
+                                    "workflows may have unrelated files dirty); deps_dirty is "
+                                    "scoped to code_commit_deps and is the flag that governs "
+                                    "re-derivability of THESE numbers."),
             producing_run="CDDF_analysis/hbi/calccddf_vs_hbi.py --mock {2lpt0,london0,saclay0} "
                           "--second 0 (full scale, 2026-07-11)",
             rederive=(
@@ -541,7 +564,8 @@ def main(argv=None):
         json.dump(out, f, indent=1)
     print("wrote", args.out)
     print("code_commit (process start):", CODE_COMMIT_AT_START,
-          "(dirty)" if DIRTY_AT_START else "")
+          "| deps_dirty=" + str(DEPS_DIRTY_AT_START),
+          "| repo_dirty=" + str(DIRTY_AT_START))
 
     for m, d in out["mocks"].items():
         print("\n=== {}  [{}]  nfiles={} nSL={} dX={:.0f} ==="
