@@ -153,6 +153,15 @@ def closure_report(result, pack):
         [(f_draws[:, :, kz == K] * dX_k[kz == K][None, None, :]).sum(axis=2)
          / dX_k[kz == K].sum() for K in range(KK)], axis=2)      # (n, B, KK)
     mask_b = (Nc >= _MASK_LO - 1e-9) & (Nc < _MASK_HI - 1e-9)
+    # UNREPORTED BASIS PAD (schema v1.1, finding D1): true-N bins below the
+    # reporting floor are inferred against the constant-extrapolation
+    # completeness convention -- a stated systematic, not a measurement. They
+    # must not appear in the per-cell CDDF closure table, which is a headline
+    # diagnostic. reduce_f_posterior publishes the reported support; consume it
+    # rather than re-deriving it. No-op on unpadded packs.
+    _rep = red.get("reported_mask")
+    if _rep is not None:
+        mask_b = mask_b | (~np.asarray(_rep, bool))
     f_truth_c = np.asarray(tab["f_truth_coarse"])
     q = np.quantile(f_coarse, [0.025, 0.16, 0.84, 0.975], axis=0)  # (4, B, KK)
     mean_c = f_coarse.mean(axis=0)

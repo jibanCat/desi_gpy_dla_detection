@@ -43,6 +43,17 @@ Reductions: f(N, z) posterior -> CDDF, dN/dX(z), Omega(z) (arbitrary-constant
 units, documented) at thresholds 20.0 AND 20.3, with [19.5, 19.7) masked in
 differential reporting; plus the integrated total used by rungs 4/5.
 
+BOTH TIERS, ONE POSTERIOR (2026-07-28).  ``TIERS`` adds the sub-DLA window
+[19.5, 20.3) alongside the DLA thresholds, reduced from the SAME f(N, z) draws.
+The two tiers share the completeness surface, the FP model, the response kernel
+and the pathlength, so they are one coupled inference and any tier ratio is
+formed PER DRAW.  ``posterior_summary`` is the paper-facing block:
+estimand = POSTERIOR_MEDIAN_CI, point = posterior median, band = credible
+interval of the same draws.  ``plugin_map_diagnostic`` computes the mode and is
+labelled estimand = PLUGIN_MAP with NO band -- a diagnostic of the mode-median
+gap, never a reported point.  Nothing here recenters a band on a point and
+nothing combines independently-marginalized intervals.
+
 Synthetic-data scope (Q3): everything here runs on packs from
 ``pack.synthetic_pack``; the real data pack is integrated later by the lead.
 Deviation from spec section 2, recorded: the g(N,z) structural-amplitude term
@@ -70,15 +81,56 @@ from CDDF_analysis.hbi_mcmc.forward import ModelAConsts, build_consts, fold_mu
 from CDDF_analysis.hbi_mcmc.pack import ModelAPack
 
 __all__ = ["ModelAConfig", "model_a", "run_model_a", "reduce_f_posterior",
-           "summarize", "POLICY"]
+           "summarize", "POLICY", "TIERS", "posterior_summary",
+           "plugin_map_diagnostic", "ESTIMAND_POSTERIOR", "ESTIMAND_PLUGIN_MAP"]
 
 # spec section 5 convergence policy
 POLICY = {"r_hat_max": 1.01, "ess_bulk_min": 400.0, "ess_tail_min": 400.0,
           "n_divergent": 0}
 
+# MCMC.run extra_fields. RECONSTRUCTED 2026-07-28: a concurrent edit replaced
+# the literal ("diverging",) at the mcmc.run call with this name and the
+# definition was lost in the collision, leaving the module un-importable
+# (NameError). Restored to the committed value EXACTLY, so behaviour is
+# unchanged; extend the tuple here (never at the call site) if a downstream
+# diagnostic needs more fields. "diverging" is REQUIRED -- diagnostics.
+# summarize_mcmc reads it for the divergence count that the convergence
+# policy gates on.
+#
+# EXTENDED 2026-07-28 (evidence harness): "num_steps" and "energy" are added
+# because tree-depth saturation and E-BFMI are required paper-facing evidence
+# and NEITHER can be reconstructed after the run -- the 2026-07-13 rung-9
+# artifact is permanently missing both, which is why evidence.py has to mark
+# that artifact's convergence block INCOMPLETE and refuse to stamp it.
+# Retaining the two fields stores O(n_draws) extra floats per chain and does
+# not touch the trajectory, the accepted draws, or any reported number;
+# diagnostics.summarize_mcmc reads "diverging" by name and ignores the rest.
+EXTRA_FIELDS = ("diverging", "num_steps", "energy")
+
 # differential-reporting mask (spec: [19.5, 19.7) masked)
 _MASK_LO, _MASK_HI = 19.5, 19.7
 _THRESHOLDS = (20.0, 20.3)
+
+# --- the COUPLED tier definition (2026-07-28) ---------------------------------
+# The DLA and sub-DLA tiers are ONE inference, not two.  They share the
+# completeness surface (molly), the FP model (loa-0 lam_fp), the response
+# kernel and the truth reductions, so they must be read off the SAME posterior
+# draws of f(N, z) -- never from two separately-run estimators whose nuisances
+# were marginalized independently (that is the MARGINAL_COMBINED failure the
+# band-estimand audit retired).  Each tier is a half-open true-N window in dex.
+TIERS = {
+    "subdla_195_203": (19.5, 20.3),   # sub-DLA tier
+    "dla_20p0": (20.0, np.inf),       # DLA tier, >= 20.0
+    "dla_20p3": (20.3, np.inf),       # DLA tier, >= 20.3 (the headline)
+    "all_195_up": (19.5, np.inf),     # both tiers together (coupling check)
+}
+
+# metadata['estimand'] vocabulary values this module can legitimately produce.
+# POSTERIOR_MEDIAN_CI: point = posterior median, band = credible interval, from
+# the SAME joint posterior draws.  PLUGIN_MAP: a labelled DIAGNOSTIC optimum
+# with no band of its own.  Anything else is not producible here.
+ESTIMAND_POSTERIOR = "POSTERIOR_MEDIAN_CI"
+ESTIMAND_PLUGIN_MAP = "PLUGIN_MAP"
 
 
 @dataclasses.dataclass
@@ -209,6 +261,15 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
                           reporting time, outside this synthetic scope)
       integrated_total  : (n_draws,) sum_{b,k} f dN (rung 4/5 scalar)
       n_mask_bins       : how many N-bins the differential mask removed
+      reported_mask     : (B,) bool, the UNPADDED (reported) true-N support
+      dndx_<tier>       : (n_draws, Kf) for every window in ``TIERS``
+      dndx_<tier>_coarse: (n_draws, KK) pathlength-weighted coarse-z means
+      dndx_<tier>_allz  : (n_draws,) pathlength-weighted all-z mean
+      omega_<tier>[_coarse|_allz] : same shapes, the 10^(N-21)-weighted integral
+
+    Every tier reduction is computed from the SAME ``f_draws``, so the tiers
+    are correlated draw-by-draw and any tier ratio / difference may be formed
+    per draw (never by combining independently-marginalized intervals).
     """
     f_draws = np.asarray(f_draws)
     ntrue = np.asarray(pack.ntrue_edges, float)
@@ -219,8 +280,6 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
     dX_k = np.asarray(pack.dX, float).sum(axis=1)  # (Kf,) summed over strata
 
     mask = (Nc >= _MASK_LO - 1e-9) & (Nc < _MASK_HI - 1e-9)
-    cddf_masked = f_draws.copy()
-    cddf_masked[:, mask, :] = np.nan
 
     # BASIS PAD (schema v1.1): true-N bins BELOW the observed grid floor are
     # UNREPORTED support — they exist so the fold can carry the up-scatter of
@@ -228,27 +287,156 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
     # excluded from every reported reduction. No-op on unpadded packs.
     reported = Nc >= float(np.asarray(pack.nhat_edges, float)[0]) - 1e-9
 
+    # the differential CDDF must not report the pad either: those bins are
+    # inferred against a completeness convention (the constant-extrapolation of
+    # the molly's lowest cell) that is a stated systematic, not a measurement.
+    cddf_masked = f_draws.copy()
+    cddf_masked[:, mask | (~reported), :] = np.nan
+
+    def _coarse(per_k):
+        return np.stack(
+            [(per_k[:, kz == q] * dX_k[kz == q][None, :]).sum(axis=1)
+             / dX_k[kz == q].sum() for q in range(KK)], axis=1)
+
+    def _allz(per_k):
+        return (per_k * dX_k[None, :]).sum(axis=1) / dX_k.sum()
+
     out = {
         "f": f_draws,
         "cddf_masked": cddf_masked,
         "n_mask_bins": int(mask.sum()),
         "n_pad_bins": int((~reported).sum()),
+        "reported_mask": reported,
         "integrated_total": (f_draws[:, reported, :]
                              * dN[None, reported, None]).sum(axis=(1, 2)),
     }
+    # legacy threshold keys (analyze_rung9 and the rung ladder consume these)
     for thr in _THRESHOLDS:
-        sel = Nc >= thr - 1e-9
+        sel = (Nc >= thr - 1e-9) & reported
         tag = f"{thr:.1f}".replace(".", "p")
         dndx = (f_draws[:, sel, :] * dN[None, sel, None]).sum(axis=1)  # (n, Kf)
         omega = (f_draws[:, sel, :] * (10.0 ** (Nc[sel] - 21.0))[None, :, None]
                  * dN[None, sel, None]).sum(axis=1)
-        coarse = np.stack(
-            [(dndx[:, kz == q] * dX_k[kz == q][None, :]).sum(axis=1)
-             / dX_k[kz == q].sum() for q in range(KK)], axis=1)
         out[f"dndx_{tag}"] = dndx
-        out[f"dndx_{tag}_coarse"] = coarse
+        out[f"dndx_{tag}_coarse"] = _coarse(dndx)
         out[f"omega_{tag}"] = omega
+    # the coupled DLA + sub-DLA tier windows, all off the same draws
+    for tier, (lo, hi) in TIERS.items():
+        sel = (Nc >= lo - 1e-9) & (Nc < hi - 1e-9) & reported
+        if not sel.any():
+            continue
+        dndx = (f_draws[:, sel, :] * dN[None, sel, None]).sum(axis=1)
+        omega = (f_draws[:, sel, :] * (10.0 ** (Nc[sel] - 21.0))[None, :, None]
+                 * dN[None, sel, None]).sum(axis=1)
+        out[f"dndx_{tier}"] = dndx
+        out[f"dndx_{tier}_coarse"] = _coarse(dndx)
+        out[f"dndx_{tier}_allz"] = _allz(dndx)
+        out[f"omega_{tier}"] = omega
+        out[f"omega_{tier}_coarse"] = _coarse(omega)
+        out[f"omega_{tier}_allz"] = _allz(omega)
+        out[f"n_bins_{tier}"] = int(sel.sum())
     return out
+
+
+# --- the paper-facing posterior summary ------------------------------------------------
+
+_QUANTILES = (2.5, 16.0, 50.0, 84.0, 97.5)
+
+
+def _q(draws):
+    """point + band from ONE set of draws. point IS q50 -- by construction, not
+    by a recentering step. There is no plug-in value anywhere in this dict."""
+    d = np.asarray(draws, float)
+    qs = np.percentile(d, _QUANTILES)
+    return {
+        "point_q50": float(qs[2]),      # THE point estimate
+        "q025": float(qs[0]), "q16": float(qs[1]),
+        "q84": float(qs[3]), "q975": float(qs[4]),
+        "mean": float(d.mean()), "sd": float(d.std(ddof=1)),
+        "n_draws": int(d.size),
+    }
+
+
+def posterior_summary(red, pack=None):
+    """Reductions -> the paper-facing {point, band} block for BOTH tiers.
+
+    estimand = POSTERIOR_MEDIAN_CI: for every quantity the point is the
+    posterior MEDIAN of the same draws whose 16/84 and 2.5/97.5 percentiles
+    form the bands.  Point and band are therefore the SAME estimand by
+    construction; no shift, no recentering, no independent combination of
+    marginals is applied anywhere in this function.  (The retired
+    ``recenter_band_on_point`` machinery in CDDF_analysis/hbi/ slid an MC cloud
+    onto a plug-in optimum; nothing of that kind exists here.)
+    """
+    out = {"estimand": ESTIMAND_POSTERIOR, "tiers": {}}
+    for tier in TIERS:
+        if f"dndx_{tier}_allz" not in red:
+            continue
+        blk = {
+            "window_logN": [float(TIERS[tier][0]), float(TIERS[tier][1])],
+            "n_bins": int(red[f"n_bins_{tier}"]),
+            "dndx_allz": _q(red[f"dndx_{tier}_allz"]),
+            "omega_allz": _q(red[f"omega_{tier}_allz"]),
+            "dndx_coarse_z": [_q(red[f"dndx_{tier}_coarse"][:, q])
+                              for q in range(red[f"dndx_{tier}_coarse"].shape[1])],
+            "omega_coarse_z": [_q(red[f"omega_{tier}_coarse"][:, q])
+                               for q in range(red[f"omega_{tier}_coarse"].shape[1])],
+        }
+        out["tiers"][tier] = blk
+    # the tier RATIO, formed PER DRAW (the whole point of one coupled posterior)
+    if "dndx_subdla_195_203_allz" in red and "dndx_dla_20p3_allz" in red:
+        r = (np.asarray(red["dndx_subdla_195_203_allz"], float)
+             / np.maximum(np.asarray(red["dndx_dla_20p3_allz"], float), 1e-300))
+        out["subdla_over_dla_dndx_perdraw"] = _q(r)
+    if pack is not None:
+        out["zc_edges"] = np.asarray(pack.zc_edges, float).tolist()
+    return out
+
+
+# --- plug-in MAP: DIAGNOSTIC ONLY ------------------------------------------------------
+
+def plugin_map_diagnostic(pack, cfg=None, *, num_steps=2000, lr=0.05, seed=0):
+    """MAP (AutoDelta + SVI) of the SAME model. DIAGNOSTIC ONLY.
+
+    Returned under estimand=PLUGIN_MAP with NO band.  It exists to answer "how
+    far is the mode from the posterior median?" -- the plug-in-vs-MC estimand
+    gap that the band-estimand audit measured at 1.0-19.0 band half-widths in
+    the legacy HBI arm.  It is NEVER the reported point and its value must
+    never be paired with a credible interval computed from anything else.
+    """
+    from numpyro.infer import SVI, Trace_ELBO
+    from numpyro.infer.autoguide import AutoDelta
+    from numpyro.handlers import seed as _seed, substitute as _sub, trace as _trace
+
+    cfg = cfg or ModelAConfig()
+    consts = build_consts(pack, resp_clamp=cfg.resp_clamp,
+                          allow_unclamped_response=(cfg.resp_clamp == "off"))
+    model = partial(
+        model_a, fp_mode=cfg.fp_mode, fp_eps_rate=cfg.fp_eps_rate,
+        fp_shape_sd=cfg.fp_shape_sd, sigma_N_scale=cfg.sigma_N_scale,
+        sigma_z_scale=cfg.sigma_z_scale, level_scale=cfg.level_scale,
+        slope_scale=cfg.slope_scale)
+    args = (consts, jnp.asarray(pack.counts),
+            jnp.asarray(pack.fp_counts) if cfg.fp_mode == "joint" else None)
+    guide = AutoDelta(model, init_loc_fn=init_to_value(
+        values=_data_informed_init(pack, consts, cfg)))
+    svi = SVI(model, guide, numpyro.optim.Adam(lr), Trace_ELBO())
+    res = svi.run(jax.random.PRNGKey(seed), num_steps, *args, progress_bar=False)
+    vals = guide.median(res.params)
+    tr = _trace(_sub(_seed(model, jax.random.PRNGKey(seed)), vals)).get_trace(*args)
+    f_map = np.asarray(tr["f"]["value"])[None, ...]      # (1, B, Kf)
+    red = reduce_f_posterior(f_map, pack)
+    point = {"estimand": ESTIMAND_PLUGIN_MAP, "band": None, "tiers": {}}
+    for tier in TIERS:
+        if f"dndx_{tier}_allz" not in red:
+            continue
+        point["tiers"][tier] = {
+            "dndx_allz": float(red[f"dndx_{tier}_allz"][0]),
+            "omega_allz": float(red[f"omega_{tier}_allz"][0]),
+        }
+    point["svi_final_loss"] = float(np.asarray(res.losses)[-1])
+    point["svi_num_steps"] = int(num_steps)
+    return point
 
 
 # --- diagnostics wrapper ---------------------------------------------------------------
@@ -348,16 +536,7 @@ def run_model_a(pack: ModelAPack, cfg: Optional[ModelAConfig] = None):
         consts,
         jnp.asarray(pack.counts),
         jnp.asarray(pack.fp_counts) if cfg.fp_mode == "joint" else None,
-        # EXTENDED 2026-07-28 (evidence harness): "num_steps" and "energy"
-        # are retained because tree-depth saturation and E-BFMI are
-        # required paper-facing evidence and NEITHER can be reconstructed
-        # after the run -- the 2026-07-13 rung-9 artifact is permanently
-        # missing both, which is why evidence.py must mark that
-        # artifact's convergence block INCOMPLETE and refuse to stamp it.
-        # Storing them costs O(n_draws) floats per chain and changes no
-        # trajectory, no accepted draw and no reported number;
-        # diagnostics.summarize_mcmc reads "diverging" by name.
-        extra_fields=("diverging", "num_steps", "energy"),
+        extra_fields=EXTRA_FIELDS,
     )
     samples = mcmc.get_samples()
     f_draws = np.asarray(samples["f"])  # forces the async device work; time AFTER
