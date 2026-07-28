@@ -538,18 +538,27 @@ def test_frozen_files_unchanged_by_forward_switch():
     changed = [l for l in diff.splitlines()
                if (l.startswith("+") or l.startswith("-"))
                and not l.startswith("+++") and not l.startswith("---")]
-    # the ONE removed line: the leaky per-bin count
-    removed = [l for l in changed if l.startswith("-")]
-    assert removed == ["-        n = int((t_nidx == b).sum())"], (
-        f"{cch} diff vs {FP_FIX} removes lines other than the single B16 leaky-count line: "
-        f"{removed}")
+    # The ONLY sanctioned removals: the leaky per-bin count, and the two docstring lines
+    # it made false. EXACT set -- one extra removed line anywhere in the file turns this RED.
+    SANCTIONED_REMOVALS = {
+        "        n = int((t_nidx == b).sum())",
+        "    correction — it IS truth). Truth restricted to SNR>snr_min sightlines (matches",
+        "    the ΔX denominator). Returns dict {f_truth, dndx_total, omega} per limit.\"\"\"",
+    }
+    removed = {l[1:] for l in changed if l.startswith("-")}
+    assert removed == SANCTIONED_REMOVALS, (
+        f"{cch} diff vs {FP_FIX} removes lines other than the sanctioned B16 set. "
+        f"unexpected removals: {sorted(removed - SANCTIONED_REMOVALS)}; "
+        f"missing: {sorted(SANCTIONED_REMOVALS - removed)}")
     added = [l[1:] for l in changed if l.startswith("+")]
     assert any("t_zidx >= 0" in a for a in added), (
         "the B16 fix line (z mask on the truth f(N) numerator) is missing from the diff.")
     for a in added:
-        assert a.strip().startswith("#") or "t_zidx >= 0" in a or "B16" in a or a.strip() == "" \
-            or a.strip().startswith('"""') or "z ∈ [cfg.zbins" in a or "same (N, z) support" in a \
-            or "accumulated over (B16)" in a, (
+        ok = (a.strip() == "" or a.strip().startswith("#") or "t_zidx >= 0" in a
+              or "B16" in a or "z ∈ [cfg.zbins" in a or "same (N, z) support" in a
+              or "accumulated over (B16)" in a
+              or a.strip().startswith("correction — it IS truth)"))
+        assert ok, (
             f"{cch} gained a non-B16 line since {FP_FIX}: {a!r}. The forward switch must stay "
             "config-only; only the enumerated B16 truth fix is sanctioned.")
 
