@@ -273,10 +273,11 @@ def _sha256(path):
 
 
 def _tracked(path):
-    rel = os.path.relpath(os.path.abspath(path), REPO)
-    return subprocess.call(["git", "-C", HERE, "ls-files", "--error-unmatch", rel],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL) == 0
+    # NOTE: pass the ABSOLUTE path. ``git -C HERE`` runs in CDDF_analysis/hbi, so
+    # a REPO-relative pathspec would not resolve there.
+    return subprocess.call(
+        ["git", "-C", HERE, "ls-files", "--error-unmatch", os.path.abspath(path)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
 
 
 # --------------------------------------------------------------------------- #
