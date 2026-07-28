@@ -21,7 +21,44 @@
     "note": "Reduce-only (cached kernel, no inference/SLURM/tilt). R0 = est/truth. The [19.5,19.7) edge is formally non-identifiable on a 19.5-floored catalog (Track A closed); report the [19.7,20.3) f(N) diff + the [19.5,20.3] integrated band with an edge-migration systematic.",
     "retired": true,
     "superseded_by": "CDDF_analysis/hbi/subdla_mock_validation_forward.json",
-    "retired_note": "POSTERIOR-kernel recovery. Retired as the sub-DLA HEADLINE for single-kernel coherence with the (forward) DLA tier -- NOT demonstrated wrong below 20.3 (the forward-vs-posterior discriminator is anchored only at the DLA tier where truth completeness~1). KEPT because subdla_loa0_validation_floor190.py loads this as the floor-19.5 posterior baseline. Forward headline: subdla_mock_validation_forward.json (band R0 0.849 dN/dX / 0.822 Omega). The kappa<->forward kernel-object gap (3.8% dN/dX, 8.5% Omega) is a CARRIED systematic -- do not quote 0.883/0.899 as a headline, nor the forward point bare."
+    "retired_note": "POSTERIOR-kernel recovery. Retired as the sub-DLA HEADLINE for single-kernel coherence with the (forward) DLA tier -- NOT demonstrated wrong below 20.3 (the forward-vs-posterior discriminator is anchored only at the DLA tier where truth completeness~1). KEPT because subdla_loa0_validation_floor190.py loads this as the floor-19.5 posterior baseline. Forward headline: subdla_mock_validation_forward.json (band R0 0.849 dN/dX / 0.822 Omega). The kappa<->forward kernel-object gap (3.8% dN/dX, 8.5% Omega) is a CARRIED systematic -- do not quote 0.883/0.899 as a headline, nor the forward point bare.",
+    "b16": {
+      "status": "INVALIDATED_OMEGA",
+      "fixed_in_commit": "the commit that adds tests/test_b16_truth_zmask.py (find: git log --diff-filter=A -- tests/test_b16_truth_zmask.py)",
+      "defect": "B16 -- z-leaky truth reduction: the truth f(N) numerator counted absorbers with Z_DLA outside [cfg.zbins[0], cfg.zbins[-1]) while the pathlength denominator X_sum was accumulated only inside that range.",
+      "sites_fixed": [
+        "CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions",
+        "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
+      ],
+      "fixture": "tests/test_b16_truth_zmask.py",
+      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
+      "measured_leak_factor": {
+        "omega_cum_19.5": 1.059321381914033,
+        "omega_cum_20.0": 1.0595311425486416,
+        "omega_cum_20.3": 1.0600064600852679,
+        "omega_band_19.5_20.3": 1.0556775951314734,
+        "omega_band_19.5_20.0": 1.0565491459970704
+      },
+      "note": "Truth reductions are kernel- and FP-mode-INDEPENDENT, so the leak factors measured on the forward configuration apply verbatim to this (already RETIRED) posterior-kernel artifact: same truth_cut, same X_tot, same grid.",
+      "affected_keys": [
+        "*/omega_tru_*",
+        "*/r0_omega_*"
+      ],
+      "rederived_post_b16": {
+        "_how": "python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --force (kappa path; re-run 2026-07-28 on the post-fix tree)",
+        "loa0": {
+          "omega_tru_195_203": 0.00011152886018850057,
+          "r0_omega_195_203": 0.9486232641520831,
+          "r0_omega_195_200": 0.8701354234108556,
+          "dndx_tru_195_203_UNCHANGED": 0.09272816200828467,
+          "r0_dndx_195_203_UNCHANGED": 0.8827290810869011
+        },
+        "purity_mixture": {
+          "r0_omega_195_203": 0.6551600518757067,
+          "r0_dndx_195_203_UNCHANGED": 0.4506168124275738
+        }
+      }
+    }
   },
   "per_bin": {
     "purity_mixture": [

@@ -6,7 +6,19 @@
     "wallclock_s": 417.7,
     "rederive": "python CDDF_analysis/diagnostics/lls/joint_drop_count_validation.py --force",
     "estimator": "CDDF_analysis/hbi/joint_drop_count.py (fit_joint / joint_laplace / lls_shape_marginalized_band); drop is a PHYSICAL direct-sum over HCD truth (exercises the _clamp_drop_grid top-knot fix).",
-    "note": "HEADLINE = lambda_mfp/tau_eff,LL (prior-free, R0_lambda~1). ell(X)[17.2,19.5) is a DERIVED, shape/prior-limited band (counts+drop under-determine it \u2014 review F1); R0(q50) is NOT expected ~1 and 'truth_in_band' is necessary-not-sufficient. Omega_HI(LLS) is off-headline (too slope-sensitive). FP is CARRIED (loa0) \u2014 the band holds lam_fp/mu_fp fixed, so it has no FP width (add the loa0<->purity bracket externally)."
+    "note": "HEADLINE = lambda_mfp/tau_eff,LL (prior-free, R0_lambda~1). ell(X)[17.2,19.5) is a DERIVED, shape/prior-limited band (counts+drop under-determine it \u2014 review F1); R0(q50) is NOT expected ~1 and 'truth_in_band' is necessary-not-sufficient. Omega_HI(LLS) is off-headline (too slope-sensitive). FP is CARRIED (loa0) \u2014 the band holds lam_fp/mu_fp fixed, so it has no FP width (add the loa0<->purity bracket externally).",
+    "b16": {
+      "status": "CLEAN_DNDX_ONLY",
+      "fixed_in_commit": "the commit that adds tests/test_b16_truth_zmask.py (find: git log --diff-filter=A -- tests/test_b16_truth_zmask.py)",
+      "audit": "AUDITED CLEAN: no Omega leaf (only r0_dla_dndx_203 / r0_lambda_mfp / r0_canonical / r0_band_q50). dN/dX and lambda_mfp paths were never leaky.",
+      "defect": "B16 -- z-leaky truth reduction: the truth f(N) numerator counted absorbers with Z_DLA outside [cfg.zbins[0], cfg.zbins[-1]) while the pathlength denominator X_sum was accumulated only inside that range.",
+      "sites_fixed": [
+        "CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions",
+        "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
+      ],
+      "fixture": "tests/test_b16_truth_zmask.py",
+      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale."
+    }
   },
   "result": {
     "wall_s": 417.6,

@@ -29,7 +29,47 @@
       "family": "bspbody",
       "host_truth_floor": 19.0
     },
-    "note": "Forward-response kernel (resp_kind='forward'; FROZEN 2LPT-0 forward_response_2lpt0.npz + z-resolved g(N,z)) via the track_c_tf_2lpt1 self-recovery machinery self-pointed at 2LPT-0 (build_frozen_calibration + build_heldout_ingredients variant A + _set_forward_cfg). baseline_recovery POINT R0 = est/truth (no MC band). Reproduces bit-for-bit two independent forward derivations (subdla_mock_headline.json + crossmock_transfer_loa0.json, both currently UNTRACKED; this validation artifact stands on its own committed routine, not on those cross-checks) at loa0 band R0 ~ 0.849/0.822. The Adopted as the sub-DLA headline for single-kernel COHERENCE with the DLA tier (which is already forward). The forward-vs-posterior discriminator is validated at the DLA tier (>=20.3), where truth completeness ~ 1 so R0 SHOULD be 1: posterior R0=1.16 (over-recovers, SBC-fails) vs forward R0=1.04. That anchor does NOT exist below 20.3 (true completeness ~ 0.2-1.0, and on-mock R0 is a tautology), so the sub-DLA switch is a CONSISTENCY choice, not an independently-validated one -- the forward is shown stable across recipes below 20.3 but not shown to BEAT the posterior there. CARRIED SYSTEMATIC: the forward<->posterior kernel-object gap on this band is 3.8% (dN/dX) / 8.5% (Omega) (kappa 0.883/0.899 vs forward 0.849/0.822), UNRESOLVED at the sub-DLA tier -- do NOT quote the 0.849/0.822 point without it. NB the lower forward R0 means a LARGER 1/R0 up-correction, i.e. it raises Omega_HI(sub-DLA). Fail-closed forward-kernel guard (unblind.provenance.assert_forward_kernel) fires before this artifact is stamped."
+    "note": "Forward-response kernel (resp_kind='forward'; FROZEN 2LPT-0 forward_response_2lpt0.npz + z-resolved g(N,z)) via the track_c_tf_2lpt1 self-recovery machinery self-pointed at 2LPT-0 (build_frozen_calibration + build_heldout_ingredients variant A + _set_forward_cfg). baseline_recovery POINT R0 = est/truth (no MC band). Reproduces bit-for-bit two independent forward derivations (subdla_mock_headline.json + crossmock_transfer_loa0.json, both currently UNTRACKED; this validation artifact stands on its own committed routine, not on those cross-checks) at loa0 band R0 ~ 0.849/0.822. The Adopted as the sub-DLA headline for single-kernel COHERENCE with the DLA tier (which is already forward). The forward-vs-posterior discriminator is validated at the DLA tier (>=20.3), where truth completeness ~ 1 so R0 SHOULD be 1: posterior R0=1.16 (over-recovers, SBC-fails) vs forward R0=1.04. That anchor does NOT exist below 20.3 (true completeness ~ 0.2-1.0, and on-mock R0 is a tautology), so the sub-DLA switch is a CONSISTENCY choice, not an independently-validated one -- the forward is shown stable across recipes below 20.3 but not shown to BEAT the posterior there. CARRIED SYSTEMATIC: the forward<->posterior kernel-object gap on this band is 3.8% (dN/dX) / 8.5% (Omega) (kappa 0.883/0.899 vs forward 0.849/0.822), UNRESOLVED at the sub-DLA tier -- do NOT quote the 0.849/0.822 point without it. NB the lower forward R0 means a LARGER 1/R0 up-correction, i.e. it raises Omega_HI(sub-DLA). Fail-closed forward-kernel guard (unblind.provenance.assert_forward_kernel) fires before this artifact is stamped.",
+    "b16": {
+      "status": "INVALIDATED_OMEGA",
+      "fixed_in_commit": "the commit that adds tests/test_b16_truth_zmask.py (find: git log --diff-filter=A -- tests/test_b16_truth_zmask.py)",
+      "defect": "B16 -- z-leaky truth reduction: the truth f(N) numerator counted absorbers with Z_DLA outside [cfg.zbins[0], cfg.zbins[-1]) while the pathlength denominator X_sum was accumulated only inside that range.",
+      "sites_fixed": [
+        "CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions",
+        "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
+      ],
+      "fixture": "tests/test_b16_truth_zmask.py",
+      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
+      "measured_leak_factor": {
+        "omega_cum_19.5": 1.059321381914033,
+        "omega_cum_20.0": 1.0595311425486416,
+        "omega_cum_20.3": 1.0600064600852679,
+        "omega_cum_20.6": 1.0606191923015407,
+        "omega_band_19.5_20.3": 1.0556775951314734,
+        "omega_band_19.5_20.0": 1.0565491459970704
+      },
+      "note": "Re-derived on the SAME 2LPT-0 forward-kernel configuration this artifact was stamped from (69 s, reduce-only). leak = omega_truth_PRE / omega_truth_POST; R0_omega_POST = R0_omega_PRE * leak (because R0 = est/truth and only the truth moved). Per-fine-bin leak spans [1.000, 1.182] (median 1.058) -- NOT a scalar.",
+      "affected_keys": [
+        "*/omega_tru_*",
+        "*/omega_est_* (UNAFFECTED)",
+        "*/r0_omega_*"
+      ],
+      "rederived_post_b16": {
+        "_how": "python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --resp-kind forward --force  (re-run 2026-07-28 on the post-fix tree, 2LPT-0/loa-124; 316 s for all 4 kernel x FP legs)",
+        "loa0": {
+          "omega_tru_195_203": 0.00011152886018850057,
+          "r0_omega_195_203": 0.8678175313974108,
+          "r0_omega_195_200": 0.7525438739320213,
+          "r0_omega_203_cumulative": 1.0168656151667343,
+          "dndx_tru_195_203_UNCHANGED": 0.09272816200828467,
+          "r0_dndx_195_203_UNCHANGED": 0.8489754898994653
+        },
+        "purity_mixture": {
+          "r0_omega_195_203": 0.6979019342470179,
+          "r0_dndx_195_203_UNCHANGED": 0.533804805598725
+        }
+      }
+    }
   },
   "per_bin": {
     "purity_mixture": [

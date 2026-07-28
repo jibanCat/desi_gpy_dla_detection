@@ -7,7 +7,19 @@
     "rederive": "python CDDF_analysis/diagnostics/lls/break_census.py --force",
     "estimator": "CDDF_analysis/lyc/survival.py (build_break_census / ell_nelson_aalen / ell_direct_incidence): model-free Nelson-Aalen exposure incidence.",
     "truth_catalog": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
-    "note": "Ground truth for Build B validation. ell(z) is per unit z (dN/dz) and per unit absorption distance dX (path_length_int, Omega_m=0.279). (a) direct-all-absorbers == (b) Nelson-Aalen-on-blocked-census is the check that blocking does not bias the incidence."
+    "note": "Ground truth for Build B validation. ell(z) is per unit z (dN/dz) and per unit absorption distance dX (path_length_int, Omega_m=0.279). (a) direct-all-absorbers == (b) Nelson-Aalen-on-blocked-census is the check that blocking does not bias the incidence.",
+    "b16": {
+      "status": "CLEAN_DNDX_ONLY",
+      "fixed_in_commit": "the commit that adds tests/test_b16_truth_zmask.py (find: git log --diff-filter=A -- tests/test_b16_truth_zmask.py)",
+      "audit": "AUDITED CLEAN: the only 'omega' leaf is the cosmological constant omega_m; the census reports counts and dN/dX, not Omega_HI from f_truth.",
+      "defect": "B16 -- z-leaky truth reduction: the truth f(N) numerator counted absorbers with Z_DLA outside [cfg.zbins[0], cfg.zbins[-1]) while the pathlength denominator X_sum was accumulated only inside that range.",
+      "sites_fixed": [
+        "CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions",
+        "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
+      ],
+      "fixture": "tests/test_b16_truth_zmask.py",
+      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale."
+    }
   },
   "result": {
     "wall_s": 6.3,

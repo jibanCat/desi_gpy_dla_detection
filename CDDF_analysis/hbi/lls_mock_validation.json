@@ -16,7 +16,24 @@
       19.5,
       20.3
     ],
-    "note": "Reduce-only (cached posterior-kappa kernel, no inference/SLURM/tilt). LLS dN/dX is a small residual of a large FP subtraction -> the loa0-vs-purity_mixture spread is the headline systematic; v3x-vs-v1 agreement certifies kernel/shape independence. If molly_is_lya_only is false, carry the lya_only-vs-full-forest C/\u03c1 systematic."
+    "note": "Reduce-only (cached posterior-kappa kernel, no inference/SLURM/tilt). LLS dN/dX is a small residual of a large FP subtraction -> the loa0-vs-purity_mixture spread is the headline systematic; v3x-vs-v1 agreement certifies kernel/shape independence. If molly_is_lya_only is false, carry the lya_only-vs-full-forest C/\u03c1 systematic.",
+    "b16": {
+      "status": "INVALIDATED_OMEGA_PENDING_REDERIVE",
+      "fixed_in_commit": "the commit that adds tests/test_b16_truth_zmask.py (find: git log --diff-filter=A -- tests/test_b16_truth_zmask.py)",
+      "defect": "B16 -- z-leaky truth reduction: the truth f(N) numerator counted absorbers with Z_DLA outside [cfg.zbins[0], cfg.zbins[-1]) while the pathlength denominator X_sum was accumulated only inside that range.",
+      "sites_fixed": [
+        "CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions",
+        "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
+      ],
+      "fixture": "tests/test_b16_truth_zmask.py",
+      "rule": "every dN/dX number in this artifact is CLEAN; every Omega derived from f_truth is BIASED HIGH. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
+      "measured_leak_factor": null,
+      "note": "INVALIDATED-PENDING: the LLS tier uses a DIFFERENT molly floor (17.2) and a different fine grid, so its leak factor was NOT measured here and MUST NOT be borrowed from the sub-DLA numbers. Re-derive with the metadata.rederive command before quoting any Omega from this file.",
+      "affected_keys": [
+        "*/omega_tru_*",
+        "*/r0_omega_*"
+      ]
+    }
   },
   "results": {
     "purity_mixture": {
