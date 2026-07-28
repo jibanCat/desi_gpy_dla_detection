@@ -246,8 +246,8 @@ def leg_argv(leg, fp, legs_root, python):
         python, os.path.join(_REPO, leg["driver"]),
         "--variant", leg["variant"],
         "--point-only",
-        "--report-limits", ",".join(f"{l:g}" for l in REPORT_LIMITS),
-        "--fit-floor", f"{FIT_FLOOR:g}",
+        "--report-limits", ",".join(str(float(l)) for l in REPORT_LIMITS),
+        "--fit-floor", str(float(FIT_FLOOR)),
         "--zbins", ZBINS,
         "--fp-estimator", fp,
         "--out", out_dir,
@@ -292,8 +292,11 @@ def run_leg(leg, fp, legs_root, python, reuse=False):
 # ---------------------------------------------------------------------------
 def _cum(d, vk, kind, key):
     """cumulative {limit: value} for kind in (dndx, omega), key in (map, truth, R0)."""
+    # keys are str(float(limit)) -> "19.5" / "20.0" / "20.3", matching BOTH the driver's
+    # own JSON keys and the retired untracked files this artifact supersedes, so a
+    # consumer can be repointed without a key rewrite.
     ir = d["variants"][vk]["integrated_R0"][kind]
-    return {f"{l:g}": float(ir[str(l)][key]) for l in REPORT_LIMITS}
+    return {str(float(l)): float(ir[str(float(l))][key]) for l in REPORT_LIMITS}
 
 
 def subdla_band(cum_map, cum_truth):
