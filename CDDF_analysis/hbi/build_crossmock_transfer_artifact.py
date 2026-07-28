@@ -90,6 +90,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -259,12 +260,75 @@ def leg_argv(leg, fp, legs_root, python):
     return argv, out_dir
 
 
-def run_leg(leg, fp, legs_root, python, reuse=False):
+class LegStampError(RuntimeError):
+    """A per-leg JSON carries a stamp that cannot back a quotable aggregate."""
+
+
+def validate_leg_stamp(d, label, out_json, agg_sha, allow_mismatch=False,
+                       repo=_REPO):
+    """FAIL CLOSED on a per-leg stamp that cannot support the aggregate's own stamp.
+
+    The aggregate stamps ONE 40-char ``code_commit`` and thereby asserts that every
+    leg folded into it was produced by that code.  Nothing enforced that: ``--reuse``
+    read whatever JSON sat on disk and recorded its ``code_commit`` as metadata
+    without ever looking at it, so a leg stamped ``deadbeefdeadbeef-dirty`` carrying
+    a nonsense R0 was ingested and the artifact still stamped clean.  7 of the 8
+    committed legs came through that path, which makes the aggregate's provenance
+    claim unfalsifiable rather than true.
+
+    Three checks, each fatal:
+      1. the leg carries a ``code_commit`` at all (an unstamped leg is NOT_STAMPED);
+      2. it is not ``-dirty`` (a dirty leg is unquotable by the project's own rule,
+         and ``git`` cannot recover what the working tree held at that moment);
+      3. it resolves to a real commit in this repo, and -- unless ``allow_mismatch``
+         -- it is the SAME commit the aggregator captured at process start.
+         Abbreviated stamps are accepted here only if they are a prefix of the
+         aggregator sha; they are still recorded verbatim so the strict-sha audit
+         can flag them.
+    """
+    stamp = (d.get("metadata") or {}).get("code_commit")
+    if not stamp or stamp == "unknown":
+        raise LegStampError(
+            f"{label}: per-leg JSON {out_json} carries no usable code_commit "
+            f"(got {stamp!r}). An unstamped leg cannot back a stamped aggregate.")
+    if stamp.endswith("-dirty"):
+        raise LegStampError(
+            f"{label}: per-leg JSON {out_json} is stamped {stamp!r}. A dirty leg is "
+            "unquotable under the project's headline-provenance rule -- re-run it "
+            "from a clean checkout rather than folding it in.")
+    if not re.fullmatch(r"[0-9a-f]{7,40}", stamp):
+        raise LegStampError(
+            f"{label}: code_commit {stamp!r} is not a hex object name (a tag or "
+            "branch name is movable and cannot pin the code).")
+    try:
+        resolved = _git("rev-parse", "--verify", f"{stamp}^{{commit}}", repo=repo)
+    except subprocess.CalledProcessError:
+        raise LegStampError(
+            f"{label}: code_commit {stamp!r} does not resolve to a commit in "
+            f"{repo} (COMMIT_NOT_FOUND).")
+    if not allow_mismatch and resolved != agg_sha:
+        raise LegStampError(
+            f"{label}: leg was produced at {resolved[:12]} but the aggregate stamps "
+            f"{agg_sha[:12]}. Folding legs from different code into one stamped "
+            "artifact misattributes them. Re-run the leg, or pass "
+            "--allow-stamp-mismatch to write a knowingly-heterogeneous diagnostic.")
+    return dict(stamp=stamp, resolved_sha40=resolved,
+                abbreviated=len(stamp) < 40,
+                matches_aggregate=(resolved == agg_sha))
+
+
+def run_leg(leg, fp, legs_root, python, reuse=False, agg_sha=None,
+            allow_stamp_mismatch=False):
     argv, out_dir = leg_argv(leg, fp, legs_root, python)
     out_json = os.path.join(out_dir, leg["out_basename"])
+    label = f"{fp}/{leg['key']}"
     if reuse and os.path.exists(out_json):
         with open(out_json) as fh:
-            return json.load(fh), argv, out_json, 0.0, "reused"
+            d = json.load(fh)
+        if agg_sha is not None:
+            validate_leg_stamp(d, label, out_json, agg_sha,
+                               allow_mismatch=allow_stamp_mismatch)
+        return d, argv, out_json, 0.0, "reused"
     os.makedirs(out_dir, exist_ok=True)
     env = dict(os.environ)
     env.update(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
@@ -284,6 +348,13 @@ def run_leg(leg, fp, legs_root, python, reuse=False):
     with open(out_json) as fh:
         d = json.load(fh)
     print(f"[agg] {fp}/{leg['key']} ok in {dt:.0f}s", flush=True)
+    # A freshly-run leg gets the SAME fail-closed stamp check as a reused one: the
+    # driver can still emit "unknown" (its own _git() swallows failures) or a -dirty
+    # stamp if the tree moved under us mid-run, and either would silently launder an
+    # unquotable leg into a cleanly-stamped aggregate.
+    if agg_sha is not None:
+        validate_leg_stamp(d, label, out_json, agg_sha,
+                           allow_mismatch=allow_stamp_mismatch)
     return d, argv, out_json, dt, "ran"
 
 
@@ -362,8 +433,13 @@ def build(args):
     for fp in fps:
         raw = {}
         for leg in LEGS:
-            d, argv, out_json, dt, how = run_leg(leg, fp, args.legs_root,
-                                                 args.python, reuse=args.reuse)
+            d, argv, out_json, dt, how = run_leg(
+                leg, fp, args.legs_root, args.python, reuse=args.reuse,
+                agg_sha=stamp["sha"],
+                allow_stamp_mismatch=args.allow_stamp_mismatch)
+            leg_stamp = validate_leg_stamp(
+                d, f"{fp}/{leg['key']}", out_json, stamp["sha"],
+                allow_mismatch=args.allow_stamp_mismatch)
             vks = sorted(d["variants"].keys())
             vk = "A" if "A" in vks else vks[0]
             raw[leg["key"]] = (leg, d, vk, vks)
@@ -375,6 +451,7 @@ def build(args):
                 variants_run=vks,
                 variant_reported=vk,
                 driver_stamp_code_commit=d["metadata"].get("code_commit"),
+                driver_stamp_validated=leg_stamp,
                 driver_wallclock_s=d["metadata"].get("wallclock_s"),
                 aggregator_wallclock_s=dt,
                 point_only=d["metadata"].get("point_only"),
@@ -553,6 +630,11 @@ def main(argv=None):
                    help="interpreter used to run the per-leg drivers (needs fitsio)")
     p.add_argument("--reuse", action="store_true",
                    help="ingest an existing per-leg JSON instead of re-running it")
+    p.add_argument("--allow-stamp-mismatch", action="store_true",
+                   help="fold in legs produced at a DIFFERENT commit than the "
+                        "aggregate stamps. Still refuses unstamped, -dirty and "
+                        "unresolvable legs. The result is a heterogeneous "
+                        "diagnostic, not a quotable artifact.")
     p.add_argument("--allow-dirty", action="store_true",
                    help="write the artifact even if the tree is dirty (it will be "
                         "stamped '-dirty' and the provenance guard will REFUSE it)")
