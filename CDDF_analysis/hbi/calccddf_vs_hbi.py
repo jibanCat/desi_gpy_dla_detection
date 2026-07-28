@@ -164,7 +164,7 @@ def _lyb(z):
     return (1.0 + z) * (lyb_wavelength / lya_wavelength) - 1.0
 
 
-def estimate_one_file(proc_file, grid, catalog_file, second, splits=False):
+def estimate_one_file(proc_file, grid, catalog_file, second, splits=False, seam=None):
     """Return {tag: (mean_counts_N[nbin], dX)} from LITERAL calc_cddf for one file.
 
     tag 'full' always present; with splits=True also per z-bin (Z_SPLITS) from the
@@ -185,7 +185,7 @@ def estimate_one_file(proc_file, grid, catalog_file, second, splits=False):
         high_nhi_cut_value=HIGH_NHI_CUT,
         window=WindowSpec(z_min_lyb=True),   # Lyα-only: blue edge = lymanbeta(z_qso); no prox/tail re-cut
     )
-    mean_counts, dX = _counts_dx(cat, ZMIN, ZMAX)
+    mean_counts, dX = _counts_dx(cat, ZMIN, ZMAX, seam=seam)
     out = {"full": (mean_counts, dX)}
     if splits:
         for lo, hi in Z_SPLITS:
@@ -203,8 +203,24 @@ def estimate_one_file(proc_file, grid, catalog_file, second, splits=False):
     return out
 
 
-def _counts_dx(cat, zlo, zhi):
-    """(mean N-counts, dX) over one z window from an already-built catalogue."""
+def _counts_dx(cat, zlo, zhi, seam=None):
+    """(mean N-counts, dX) over one z window from an already-built catalogue.
+
+    ``seam`` (optional): a per-bin accumulator ``dict(probs=[[...], ...],
+    poissons=array)``.  When supplied, the ADDITIVE Poisson-binomial ingredients
+    are also accumulated into it, so a downstream reduction can call
+    ``DLACatalogue._count_ci_from_probs_poissons`` ONCE on the totals and get the
+    EXACT Poisson-binomial interval instead of its (conservative) Poisson limit.
+    The ingredients are additive over sightlines, so accumulating across files
+    equals running on one merged file.
+
+    NOTE (2026-07-11 provenance): the full-scale three-mock closure ran WITHOUT
+    this accumulator, so ``calccddf_{2lpt0,london0,saclay0}_closure.json`` carry
+    mean counts only.  ``calccddf_vs_hbi_artifact.py`` therefore reports the
+    Poisson-limit interval, which is an UPPER BOUND on the true width
+    (Var[PB] = sum p(1-p) <= sum p = Var[Poisson]).  Re-running with --ci-seam
+    tightens it; it never changes the point.
+    """
     probs, poissons = cat._split_distributions(
         N_EDGES, lred=zlo, ured=zhi, lnhi_min=17.19, lnhi_max=HIGH_NHI_CUT, nhi=True
     )
@@ -212,6 +228,10 @@ def _counts_dx(cat, zlo, zhi):
     for b, plist in enumerate(probs):
         if plist:
             mean_counts[b] += float(np.sum(np.concatenate([np.atleast_1d(p) for p in plist])))
+    if seam is not None:
+        seam["poissons"] = seam["poissons"] + np.asarray(poissons, dtype=float)
+        for b, plist in enumerate(probs):
+            seam["probs"][b].extend(plist)
     return mean_counts, float(cat.path_length(zlo, zhi))
 
 
@@ -294,6 +314,11 @@ def main():
     ap.add_argument("--splits", action="store_true",
                     help="C4 stress splits: also accumulate per-z-bin (2.0/2.5/3.0/3.5) "
                          "and SNR>4 stratum histograms (roughly 2x runtime)")
+    ap.add_argument("--ci-seam", action="store_true",
+                    help="also accumulate the ADDITIVE Poisson-binomial (probs, poissons) "
+                         "seam for the 'full' tag and emit the EXACT 68/95 count intervals "
+                         "in the output JSON. Without it the downstream aggregate falls "
+                         "back to the conservative Poisson limit. Costs memory, not time.")
     args = ap.parse_args()
 
     if args.second != 0:
@@ -324,6 +349,8 @@ def main():
     est_T = {t: np.zeros(len(N_CENT)) for t in tags}
     tru_T = {t: np.zeros(len(N_CENT)) for t in tags}
     dX_T = {t: 0.0 for t in tags}
+    seam = (dict(probs=[[] for _ in N_CENT], poissons=np.zeros(len(N_CENT)))
+            if args.ci_seam else None)
     n_sl = 0
     n_skip = 0
     t0 = time.time()
@@ -333,7 +360,7 @@ def main():
         Table({"TARGETID": tids}).write(cat_path, overwrite=True)
         try:
             est_blocks = estimate_one_file(pf, cfg["grid"], cat_path, second,
-                                           splits=args.splits)
+                                           splits=args.splits, seam=seam)
         except Exception as e:
             n_skip += 1
             print(f"  [skip {os.path.basename(pf)}] {type(e).__name__}: {e}", flush=True)
@@ -357,12 +384,13 @@ def main():
                   f"tru(>=20.3)={tru_T['full'][N_CENT>=20.3-1e-9].sum():.1f} ({time.time()-t0:.0f}s)", flush=True)
             _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, i + 1, time.time() - t0, n_skip)
 
-    out = _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, len(files), time.time() - t0, n_skip)
+    out = _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, len(files), time.time() - t0,
+                     n_skip, seam=seam)
     print(json.dumps(out["cumulative"], indent=1), flush=True)
     print(f"[{args.mock}] wrote {args.out}  ({time.time()-t0:.0f}s)", flush=True)
 
 
-def _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, n_done, wall, n_skip=0):
+def _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, n_done, wall, n_skip=0, seam=None):
     est_N, tru_N, dX_tot = est_T["full"], tru_T["full"], dX_T["full"]
     est_dndx, est_om = cumulative_dndx_omega(est_N, dX_tot)
     tru_dndx, tru_om = cumulative_dndx_omega(tru_N, dX_tot)
@@ -397,6 +425,21 @@ def _write_out(args, cfg, files, est_T, tru_T, dX_T, n_sl, n_done, wall, n_skip=
                 R0_dndx={k: (ed[k] / td[k] if td[k] else float("nan")) for k in ed},
                 R0_omega={k: (eo[k] / to[k] if to[k] else float("nan")) for k in eo},
             )
+    if seam is not None:
+        # EXACT Poisson-binomial + Poisson CI-combine, called ONCE on the totals
+        # (calc_cddf's own primitive; the same one FF-A uses). Only the counts
+        # and intervals are stored — the raw probs lists are not serialized.
+        ml, l68, l95 = DLACatalogue._count_ci_from_probs_poissons(
+            DLACatalogue.__new__(DLACatalogue), seam["probs"], seam["poissons"])
+        out["ci_seam"] = dict(
+            kind="exact Poisson-binomial (probs) + Poisson (small-p) combine on the totals",
+            estimand_note=("SAMPLING interval on a PLUG-IN estimator; NOT a posterior "
+                           "credible interval."),
+            n_large_p={str(N_CENT[b]): len(seam["probs"][b]) for b in range(len(N_CENT))},
+            counts_maxlike=[float(x) for x in ml],
+            counts_68=[[float(a), float(b)] for a, b in l68],
+            counts_95=[[float(a), float(b)] for a, b in l95],
+        )
     with open(args.out, "w") as f:
         json.dump(out, f, indent=1)
     return out

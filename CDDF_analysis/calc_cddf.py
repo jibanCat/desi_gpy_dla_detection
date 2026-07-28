@@ -88,6 +88,48 @@ get_poisson_binomial_pdf : exact Poisson-binomial PDF via FFT
 pdf_confidence           : MAP + 68/95% credible intervals from a PDF array
 interval                 : confidence interval extraction from a CDF array
 
+MODULE STATUS (settled 2026-07-28) — PARTIAL RETIREMENT, NOT FULL RETIREMENT
+-----------------------------------------------------------------------------
+The open question "is ``calc_cddf`` retired entirely, or only its multi-DLA
+path?" is hereby settled **in writing**: only the **multi-DLA increment path is
+retired**.  The single-absorber path is LIVE and is the paper's feed-forward
+(FF) estimator.
+
+WHAT PRODUCTION ACTUALLY EXERCISES
+  Every packaged BASELINE.env in this project runs ``SINGLE_ABSORBER_MODEL=1``.
+  The processed files therefore carry ``model_posteriors`` with the layout
+  ``[null, 1abs, 2abs, 3abs, 4abs]`` and the FF drivers construct
+  ``DLACatalogue(..., sub_dla=False, second=0/False)``.  With ``second`` falsy:
+    * ``_split_distributions`` (:~1827) takes ONLY the
+      ``_split_distributions_single(..., second=False)`` branch and returns;
+      the ``if self.second_dla:`` increment loop is never entered;
+    * ``_get_prob_dla_this_bin`` (:~1799) returns at ``if second == False``
+      BEFORE reaching the defective block.
+  So the whole production FF surface — ``CDDF_analysis/loa_literal_calccddf.py``
+  (FF-A) and ``CDDF_analysis/hbi/calccddf_vs_hbi.py`` (FF-B) — runs code that is
+  provably disjoint from the defect.
+
+THE DEFECT (introduced 2020-03-31, commit b00e6e4)
+  ``_get_prob_dla_this_bin(..., second=k)`` has TWO independent bugs, both in the
+  ``second`` branch only:
+    (1) SPECTRA AXIS INDEXED BY SAMPLE INDICES.  ``self.model_posteriors[index,
+        i + 1 + self.sub_dla]`` uses ``index`` — an array of *sample-grid*
+        indices produced by ``_split_distributions_single`` — to address the
+        *spectrum* axis of ``model_posteriors``.  It must be ``spec``.
+    (2) ``-1e30`` ACCUMULATOR.  ``log_norm_posteriors_k = np.empty(...)`` is
+        immediately overwritten by the SCALAR ``-1e30``, so the accumulator
+        starts at ``-1e30`` instead of ``0`` and the returned "probability" is
+        dominated by that offset.
+  Consequence: any ``second != 0`` result from this module is numerically
+  meaningless.  It has never been repaired and no product depends on it.
+
+GUARD
+  ``_get_prob_dla_this_bin`` now RAISES ``RuntimeError`` when the multi-DLA
+  branch is entered, unless the module-level opt-out
+  ``ALLOW_BROKEN_MULTI_DLA`` is explicitly set True (characterization tests
+  that PIN the broken behaviour do this; nothing else may).  Fixing the path is
+  separate, referee-reviewed debt — see PI decision C3, 2026-07-11.
+
 References
 ----------
 Ho, Bird & Garnett (2020) https://arxiv.org/abs/2003.11036
@@ -114,6 +156,15 @@ from astropy.io import fits
 from astropy.table import Table
 
 from .set_parameters import *
+
+# --------------------------------------------------------------------------- #
+# Multi-DLA increment path: RETIRED (see the MODULE STATUS block above).
+# ``_get_prob_dla_this_bin(second=k>=1)`` has been numerically broken since
+# b00e6e4 (2020-03-31).  Production runs SINGLE_ABSORBER_MODEL=1 (second=0), so
+# nothing real depends on it.  Set this True ONLY inside a characterization test
+# that deliberately pins the broken behaviour.
+# --------------------------------------------------------------------------- #
+ALLOW_BROKEN_MULTI_DLA = False
 
 # WindowSpec (the shared search-window spec) is annotation-only here, imported under
 # TYPE_CHECKING with a string forward-reference annotation. A runtime
@@ -1813,6 +1864,31 @@ class DLACatalogue(object):
         if second == False:
             return log_norm_posteriors
         else:
+            # ---- RETIRED PATH GUARD (2026-07-28) --------------------------- #
+            # Two independent defects, both introduced by b00e6e4 (2020-03-31):
+            #   (1) ``self.model_posteriors[index, ...]`` indexes the SPECTRUM
+            #       axis with SAMPLE-grid indices (``index`` comes from
+            #       ``_split_distributions_single``); it must be ``spec``.
+            #   (2) ``log_norm_posteriors_k`` is initialized to the SCALAR
+            #       ``-1e30`` (the ``np.empty`` on the line below is discarded),
+            #       so the accumulator carries a huge negative offset.
+            # Production runs SINGLE_ABSORBER_MODEL=1 -> ``second`` is always
+            # falsy and this branch is unreachable.  Fail closed rather than
+            # silently return a meaningless number.
+            if not ALLOW_BROKEN_MULTI_DLA:
+                raise RuntimeError(
+                    "calc_cddf multi-DLA increment path is RETIRED and has been "
+                    "numerically broken since b00e6e4 (2020-03-31): the spectra "
+                    "axis of model_posteriors is indexed by sample indices, and "
+                    "the accumulator is initialized to the scalar -1e30. "
+                    f"_get_prob_dla_this_bin was called with second={second!r}. "
+                    "Production runs SINGLE_ABSORBER_MODEL=1 (second=0/False), "
+                    "which does NOT enter this branch. If you are a "
+                    "characterization test that deliberately pins the broken "
+                    "behaviour, set CDDF_analysis.calc_cddf."
+                    "ALLOW_BROKEN_MULTI_DLA = True. See the MODULE STATUS block "
+                    "at the top of this file and PI decision C3 (2026-07-11)."
+                )
             log_norm_posteriors_k = np.empty(log_norm_posteriors.shape)
             log_norm_posteriors_k = -1e30
 

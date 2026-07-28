@@ -308,12 +308,19 @@ class TestMultiDLADeposit:
         assert 0.5 < fm < 1.5  # single-DLA recovery cannot recover both
         assert fm / nt < 0.9   # close-pair incompleteness exposed
 
-    def test_deposit_honors_second_dla_sum(self, tmp_path):
+    def test_deposit_honors_second_dla_sum(self, tmp_path, monkeypatch):
         # With a MAX_DLAS=2 (second_dla=1) catalogue, the deposit must SUM the
         # per-DLA contributions second=0..second_dla, mirroring
         # _split_distributions — so F equals the estimator's count over the SAME
         # _split_distributions path (column_density_function_counts). Pre-fix the
         # deposit hardcodes second=False and skips the second-DLA pass entirely.
+        #
+        # This is a CHARACTERIZATION test: it pins the SHAPE of the second-DLA
+        # loop, not its numerical value.  calc_cddf's multi-DLA increment path is
+        # RETIRED and numerically broken (b00e6e4, 2020-03-31) and now raises by
+        # default, so this test must explicitly opt in.  Nothing outside a
+        # characterization test may set this flag.
+        monkeypatch.setattr(calc_cddf, "ALLOW_BROKEN_MULTI_DLA", True)
         synth = build_synthetic_multidla_cddf(tmp_path)
         z_min, z_max = synth["z_min"], synth["z_max"]
         lnhi_edges = np.array([20.3, 22.5])
