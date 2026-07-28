@@ -117,8 +117,9 @@ def tilted_truth_reductions(cfg: HBIConfig, truth_cut: Table,
                             dalpha: float, pivot: float = LOGN_PIVOT) -> dict:
     """Truth-side f(N), dN/dX(z), Ω with every TRUE absorber reweighted by
     w(logN)=10^(Δα·(logN−pivot)). Truth restricted to the SNR>snr_min sightline
-    set (matches the ΔX denominator, gotcha 4). This is the WALL-1 'n_true^tilt'
-    that the tilted estimate must reproduce.
+    set AND to z ∈ [cfg.zbins[0], cfg.zbins[-1]) — the same (N, z) support the ΔX
+    denominator is accumulated over (B16 fix; gotcha 4). This is the WALL-1
+    'n_true^tilt' that the tilted estimate must reproduce.
 
     Returns f_truth (z-marg), dndx_z (per limit), dndx_total (per limit), omega.
     """
@@ -139,14 +140,26 @@ def tilted_truth_reductions(cfg: HBIConfig, truth_cut: Table,
     zidx = _zbin_index(t_z, zbins)
 
     # z-marginalized weighted f(N)
+    #
+    # [B16 FIX] The numerator and the denominator MUST live on the SAME (N, z) support.
+    # The denominator is X_sum = Σ_k ΔX_k with ΔX built by total_DeltaX_in_zbins over
+    # cfg.zbins ONLY — i.e. pathlength is accumulated exclusively inside
+    # [zbins[0], zbins[-1]).  Before this fix the numerator used `valid = (nidx >= 0)`,
+    # so every TRUE absorber whose Z_DLA fell OUTSIDE that redshift range (z < zbins[0]
+    # or z >= zbins[-1]) was still counted, against ZERO matching pathlength.  That
+    # inflates f_truth in every N bin and therefore inflates every Ω built from it
+    # (Ω = K·Σ N_b·f_truth·ΔN_b).  dN/dX was NEVER affected: dndx_z reads Wbk (already
+    # z-masked) and dndx_total already carried `& (zidx >= 0)`.
+    # The leak is NOT a scalar — it depends on the z grid, the N window and the cut
+    # bundle — so every downstream Ω must be RE-DERIVED, never rescaled.
+    # See tests/test_b16_truth_zmask.py for the hand-computed fixture.
     f_truth = np.zeros(n_nbins)
     Wbk = np.zeros((n_nbins, n_zbins))
-    valid = (nidx >= 0)
+    valid = (nidx >= 0) & (zidx >= 0)
     np.add.at(f_truth, nidx[valid], w[valid])
     f_truth = np.where(X_sum > 0, f_truth / (X_sum * dN_b), np.nan)
 
-    valid2 = (nidx >= 0) & (zidx >= 0)
-    np.add.at(Wbk, (nidx[valid2], zidx[valid2]), w[valid2])
+    np.add.at(Wbk, (nidx[valid], zidx[valid]), w[valid])
 
     K = omega_hi_prefactor(cfg.H0)
     limits = cfg.report_logN_limits

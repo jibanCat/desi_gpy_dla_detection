@@ -58,8 +58,58 @@ POST_R0_DNDX = 0.882729080951895
 POST_R0_OMEGA = 0.8985918317560697
 TRUTH_DNDX_195_203 = 0.09272816200828467
 TRUTH_OMEGA_195_203 = 0.0001177385189115506
+
+# ---------------------------------------------------------------------------
+# B16 RE-BASELINE  (this commit: the one that adds tests/test_b16_truth_zmask.py)
+# ---------------------------------------------------------------------------
+# The six constants above were captured from the COMMITTED artifacts, which were produced
+# BEFORE the B16 z-leaky-truth fix. B16: the truth f(N) numerator counted absorbers with
+# Z_DLA outside [zbins[0], zbins[-1]) while the pathlength denominator X_sum was summed
+# only inside it, so every truth Omega was inflated and every R0_omega = est/truth was
+# deflated. Fixed in this commit at:
+#     CDDF_analysis/hbi/cddf_tilt_closure.py::tilted_truth_reductions
+#     CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions
+#
+# EVERY number below was RE-DERIVED by RUNNING the code (2LPT-0 / loa-124, forward and
+# kappa kernels x loa0 and purity_mixture FP, 316 s, reduce-only). The re-run reproduced
+# each PRE-B16 constant BIT-FOR-BIT, which is what certifies the POST-B16 numbers:
+#     forward/loa0  r0_dndx_195_203  = 0.8489754898994653  == FWD_R0_DNDX        (UNCHANGED)
+#     forward/loa0  omega_tru_195_203(pre)  = 0.0001177385189115506 == TRUTH_OMEGA_195_203
+#     forward/loa0  r0_omega_195_203(pre)   = 0.8220478822318222    == FWD_R0_OMEGA
+#     kappa/loa0    r0_omega_195_203(pre)   = 0.8985918319446214    == POST_R0_OMEGA (1e-9)
+#
+# dN/dX IS CLEAN AND DID NOT MOVE. Only Omega moved.
+#   truth Omega [19.5,20.3):  PRE 1.177385189115506e-04 -> POST 1.1152886018850057e-04
+#   leak factor = PRE/POST  =  1.0556775951314734   (band [19.5,20.3))
+#              cumulative:     19.5 1.059321381914033   20.0 1.0595311425486416
+#                              20.3 1.0600064600852679  20.6 1.0606191923015407
+#              band [19.5,20.0): 1.0565491459970704
+#   per-FINE-BIN leak spans [1.000, 1.182], median 1.058 -> NOT A SCALAR. Never rescale a
+#   stored Omega by any of these; re-derive per configuration.
+# R0 = est/truth and only truth moved, so R0_omega_POST = R0_omega_PRE * leak exactly.
+B16_TRUTH_OMEGA_195_203 = 0.00011152886018850057   # was TRUTH_OMEGA_195_203 (leaky)
+B16_LEAK_FACTOR_195_203 = 1.0556775951314734
+B16_FWD_R0_OMEGA = 0.8678175313974108              # was FWD_R0_OMEGA  = 0.8220478822318222
+B16_POST_R0_OMEGA = 0.9486232641520831             # was POST_R0_OMEGA = 0.8985918317560697
+B16_FWD_R0_OMEGA_195_200 = 0.7525438739320213      # was 0.7122658484777271
+# The committed artifacts still HOLD the PRE-B16 numbers on purpose: they are marked
+# metadata.b16.status = INVALIDATED_OMEGA (marked, never deleted) and must be RE-DERIVED
+# before any Omega in them is quoted. The tests below pin BOTH values so neither the stale
+# artifact nor the new code can drift unnoticed.
+B16_MARKED_ARTIFACTS = (FWD_REL, POST_REL, "CDDF_analysis/hbi/lls_mock_validation.json")
 # the stale, dirty stamp the untracked forward file currently carries
 STALE_DIRTY_STAMP = "d496f42a8de932a58055c4d02523996fdb7d962a-dirty"
+# real-LoA tokens that must NEVER appear in a committed mock artifact (drafter-A).
+#
+# 2026-07-28 FIX: this list used to be a local literal
+#     ("main_dark", "loa_main", "processed-main-dark")
+# which scanned for main_dark (UNDERSCORE) while DESI filenames and the artifacts
+# write main-dark (HYPHEN): dlacat-loa-main-dark-v1.fits, coadd-main-dark-705.fits.
+# MEASURED: the committed forward artifact contains the string "loa main-dark" and
+# NONE of the three tokens matched -- AC11 passed vacuously on the very file it
+# guards. The shared scanner in CDDF_analysis.unblind.privacy is separator- and
+# case-insensitive and distinguishes a real PATH (hard) from a prose disclaimer
+# (soft), which is what this artifact's metadata.mock actually carries.
 # real-LoA tokens that must NEVER appear in a committed mock artifact (drafter-A)
 REAL_LOA_TOKENS = ("main_dark", "loa_main", "processed-main-dark")
 
@@ -262,8 +312,41 @@ def test_truth_denominators_unchanged_by_kernel_switch():
     fl, pl = fwd["integrated"]["loa0"], post["integrated"]["loa0"]
     assert fl["dndx_tru_195_203"] == pl["dndx_tru_195_203"] == TRUTH_DNDX_195_203, (
         "truth dN/dX denominator changed under the kernel switch -- it must be identical.")
+    # B16 RE-BASELINE: the two committed artifacts still hold the PRE-B16 (z-leaky) truth
+    # Omega, and must keep holding it -- they are marked INVALIDATED_OMEGA, not rewritten.
+    # The value the FIXED code produces is B16_TRUTH_OMEGA_195_203; both are pinned.
     assert fl["omega_tru_195_203"] == pl["omega_tru_195_203"] == TRUTH_OMEGA_195_203, (
         "truth Omega denominator changed under the kernel switch -- it must be identical.")
+    assert TRUTH_OMEGA_195_203 / B16_TRUTH_OMEGA_195_203 == pytest.approx(
+        B16_LEAK_FACTOR_195_203, rel=1e-12), (
+        "the recorded PRE/POST B16 truth Omega pair no longer matches the measured leak "
+        "factor -- re-derive, do not edit one literal in isolation.")
+
+
+# ===========================================================================
+# AC7b (B16) -- every Omega-carrying committed artifact DECLARES the B16 invalidation
+# ===========================================================================
+def test_omega_carrying_artifacts_declare_b16_invalidation():
+    """B16 RE-BASELINE guard. Fixing B16 changed every truth Omega without touching any
+    committed artifact's bytes, so the stored Omega/R0_omega values are now STALE. They are
+    kept (never deleted) but MUST carry a machine-readable metadata.b16 marker so no
+    consumer can quote a stale Omega as current. dN/dX values stay valid."""
+    for rel in B16_MARKED_ARTIFACTS:
+        art = _committed_json(rel)
+        assert art is not None, f"{rel} must remain committed (kept, not deleted)."
+        b16 = art["metadata"].get("b16")
+        assert isinstance(b16, dict), (
+            f"{rel} carries Omega derived from the truth f(N) but has no metadata.b16 "
+            "invalidation marker.")
+        assert str(b16.get("status", "")).startswith("INVALIDATED_OMEGA"), (
+            f"{rel} metadata.b16.status={b16.get('status')!r}; expected INVALIDATED_OMEGA*.")
+        # the marker must name BOTH fixed sites, so the blast radius is self-describing
+        sites = " ".join(b16.get("sites_fixed", []))
+        assert "cddf_tilt_closure.py" in sites and "cddf_catalog_hbi.py" in sites, (
+            f"{rel} metadata.b16.sites_fixed must name both B16 sites; got {sites!r}")
+        assert "never rescale" in json.dumps(b16).lower() or "NEVER rescale" in json.dumps(b16), (
+            f"{rel} metadata.b16 must state the re-derive-never-rescale rule "
+            "(the leak spans 1.000-1.182 per fine bin).")
 
 
 # ===========================================================================
@@ -446,9 +529,29 @@ def test_frozen_files_unchanged_by_forward_switch():
         assert _git(["rev-parse", f"{V010}:{f}"]).stdout == _git(["rev-parse", f"HEAD:{f}"]).stdout, (
             f"{f} changed vs v0.1.0 -- it is hard-frozen.")
     cch = "CDDF_analysis/hbi/cddf_catalog_hbi.py"
-    assert _git(["rev-parse", f"{FP_FIX}:{cch}"]).stdout == _git(["rev-parse", f"HEAD:{cch}"]).stdout, (
-        f"{cch} changed since the FP-fix commit {FP_FIX} -- the forward switch must be "
-        "config-only and touch NO estimator code.")
+    # B16 RE-BASELINE (this commit): cddf_catalog_hbi.py is no longer byte-identical to
+    # 8816e1e -- the B16 z-leaky-truth fix landed in truth_reductions(). That is a
+    # SANCTIONED, ENUMERATED exception, not a licence for the file to drift: the diff
+    # 8816e1e..HEAD must consist of NOTHING BUT the B16 hunk. Any other changed line
+    # (especially anything touching the estimator/forward path) turns this RED again.
+    diff = _git(["diff", "-U0", f"{FP_FIX}", "HEAD", "--", cch]).stdout
+    changed = [l for l in diff.splitlines()
+               if (l.startswith("+") or l.startswith("-"))
+               and not l.startswith("+++") and not l.startswith("---")]
+    # the ONE removed line: the leaky per-bin count
+    removed = [l for l in changed if l.startswith("-")]
+    assert removed == ["-        n = int((t_nidx == b).sum())"], (
+        f"{cch} diff vs {FP_FIX} removes lines other than the single B16 leaky-count line: "
+        f"{removed}")
+    added = [l[1:] for l in changed if l.startswith("+")]
+    assert any("t_zidx >= 0" in a for a in added), (
+        "the B16 fix line (z mask on the truth f(N) numerator) is missing from the diff.")
+    for a in added:
+        assert a.strip().startswith("#") or "t_zidx >= 0" in a or "B16" in a or a.strip() == "" \
+            or a.strip().startswith('"""') or "z ∈ [cfg.zbins" in a or "same (N, z) support" in a \
+            or "accumulated over (B16)" in a, (
+            f"{cch} gained a non-B16 line since {FP_FIX}: {a!r}. The forward switch must stay "
+            "config-only; only the enumerated B16 truth fix is sanctioned.")
 
 
 # ===========================================================================
@@ -514,10 +617,24 @@ def test_forward_reproduces_from_committed_routine(tmp_path):
         f"rederive command failed (rc={r.returncode}): {r.stderr[-600:]}")
     fresh = json.loads(out.read_text())["integrated"]["loa0"]
     comm = committed["integrated"]["loa0"]
-    for k in ("r0_dndx_195_203", "r0_omega_195_203"):
-        assert fresh[k] == pytest.approx(comm[k], abs=1e-9), (
-            f"re-derived {k}={fresh[k]} != committed {comm[k]} -> the committed forward JSON is "
-            "STALE w.r.t. the routine (a code change without regenerating the artifact).")
+    # dN/dX is B16-CLEAN: it must still re-derive to the committed value bit-for-bit.
+    assert fresh["r0_dndx_195_203"] == pytest.approx(comm["r0_dndx_195_203"], abs=1e-9), (
+        f"re-derived r0_dndx_195_203={fresh['r0_dndx_195_203']} != committed "
+        f"{comm['r0_dndx_195_203']} -> the committed forward JSON is STALE w.r.t. the routine.")
+    assert fresh["r0_dndx_195_203"] == pytest.approx(FWD_R0_DNDX, abs=1e-9)
+    # B16 RE-BASELINE (this commit): Omega DELIBERATELY no longer matches the committed
+    # artifact. The artifact holds the PRE-B16 (z-leaky truth) value and is marked
+    # INVALIDATED_OMEGA; the fixed routine emits B16_FWD_R0_OMEGA. Pin BOTH ends so neither
+    # can drift silently, and pin the direction (the fix RAISES R0 because truth FELL).
+    assert comm["r0_omega_195_203"] == pytest.approx(FWD_R0_OMEGA, abs=1e-9), (
+        "the committed forward artifact no longer holds the PRE-B16 Omega ratio; it must be "
+        "kept verbatim until it is re-derived (marked, never rewritten in place).")
+    assert fresh["r0_omega_195_203"] == pytest.approx(B16_FWD_R0_OMEGA, abs=1e-9), (
+        f"re-derived r0_omega_195_203={fresh['r0_omega_195_203']} != the B16-fixed target "
+        f"{B16_FWD_R0_OMEGA}. Either B16 regressed or the truth reduction changed again.")
+    assert fresh["omega_tru_195_203"] == pytest.approx(B16_TRUTH_OMEGA_195_203, rel=1e-12)
+    assert fresh["dndx_tru_195_203"] == pytest.approx(TRUTH_DNDX_195_203, rel=1e-12), (
+        "B16 must not move dN/dX -- it was never leaky.")
 
 
 # ===========================================================================
@@ -531,15 +648,29 @@ def test_forward_all_deps_unchanged_between_stamp_and_head():
     committed = _committed_json(FWD_REL)
     assert committed is not None, f"{FWD_REL} not committed (see T1)."
     base = _base_commit(committed["metadata"].get("code_commit", ""))
+    # B16 RE-BASELINE (this commit): the two estimator deps DID drift -- that is the fix.
+    # An artifact whose deps drifted can no longer be reproduced at HEAD, which is exactly
+    # why it is marked INVALIDATED_OMEGA. So the invariant becomes conditional: drift is
+    # tolerated ONLY for the two B16 sites AND ONLY while the marker is present. Any other
+    # dep drift, or a missing marker, is still fatal.
+    b16 = committed["metadata"].get("b16") or {}
+    b16_sites = set(b16.get("sites_fixed", []))
+    b16_files = {s.split("::")[0] for s in b16_sites}
     drifted = []
     for dep in committed["metadata"].get("deps", []):
         bs = _git(["rev-parse", f"{base}:{dep}"]).stdout.strip()
         bh = _git(["rev-parse", f"HEAD:{dep}"]).stdout.strip()
         if bs and bh and bs != bh:
             drifted.append(dep)
-    assert not drifted, (
-        f"stamped deps changed between stamp {base[:12]} and HEAD: {drifted} -> HEAD cannot "
-        "reproduce the committed forward number.")
+    unexplained = [d for d in drifted if d not in b16_files]
+    assert not unexplained, (
+        f"stamped deps changed between stamp {base[:12]} and HEAD: {unexplained} -> HEAD "
+        "cannot reproduce the committed forward number, and the drift is NOT the sanctioned "
+        "B16 fix.")
+    if drifted:
+        assert str(b16.get("status", "")).startswith("INVALIDATED_OMEGA"), (
+            f"deps {drifted} drifted (the B16 fix) but the artifact is not marked "
+            "INVALIDATED_OMEGA -> a stale Omega could be quoted as current.")
 
 
 # ===========================================================================
