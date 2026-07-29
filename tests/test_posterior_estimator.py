@@ -597,3 +597,72 @@ def test_no_prepared_sbatch_bypasses_the_forward_closure_gate():
     for p in sorted(_SBATCH_DIR.glob("*.sbatch")):
         assert "--allow-open-forward-model" not in p.read_text(), (
             f"{p.name} bypasses the forward-model closure gate")
+
+
+# ==========================================================================
+# PROVISIONAL / UNRATIFIED gate tolerances (2026-07-29)
+#
+# ``ratio_span_by_z_max`` and ``ratio_span_by_snr_max`` were introduced with
+# the by_z / by_snr gate arms.  Their VALUES (0.10, 0.15) were chosen by the
+# author, not requested and not ratified; project convention is that a
+# tolerance in a production fail-closed gate needs PI ratification.  The arms
+# stay armed, but the two numbers must be visibly flagged as provisional in
+# the code AND carried as provisional into every stamp, so a PI can ratify
+# (or move) them without archaeology.
+# ==========================================================================
+
+_PROVISIONAL = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
+
+def test_the_two_invented_tolerances_are_declared_provisional():
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    assert set(RP.PROVISIONAL_GATE_TOLERANCES) == set(_PROVISIONAL)
+    for k in _PROVISIONAL:
+        assert k in RP.GATE, k
+
+
+def test_the_ratified_tolerances_are_not_marked_provisional():
+    """The flag must DISCRIMINATE: the pre-existing z/chi2 tolerances are not
+    provisional, so a blanket 'everything is provisional' passes nothing."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    for k in ("z_total_max", "z_bin_max", "chi2_dof_max",
+              "z_zbin_max", "z_snrbin_max"):
+        assert k not in RP.PROVISIONAL_GATE_TOLERANCES, k
+
+
+def test_the_gate_report_carries_the_provisional_flag(spack):
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    g = RP.forward_closure_gate(spack)
+    assert set(g["gate_tolerances_provisional"]) == set(_PROVISIONAL)
+    assert g["gate_tolerances_provisional_note"]
+    note = g["gate_tolerances_provisional_note"].upper()
+    assert "UNRATIFIED" in note or "PROVISIONAL" in note
+
+
+def test_the_stamp_carries_the_provisional_flag(spack):
+    """A reader of the artifact alone must see which gate numbers are not
+    ratified -- the gate report is nested inside the stamp."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    from CDDF_analysis.hbi_mcmc import model_a as _MA
+    g = RP.forward_closure_gate(spack)
+    md = RP.stamp_metadata(
+        code_commit="0" * 40, code_dirty=False,
+        cfg=_MA.ModelAConfig(num_warmup=1, num_samples=1, num_chains=1),
+        args={"rederive": "x"}, gate_report=g,
+        estimand="POSTERIOR_MEDIAN_CI", paper_facing=False)
+    assert set(md["gate_tolerances_provisional"]) == set(_PROVISIONAL)
+    assert set(md["forward_gate"]["gate_tolerances_provisional"]) == set(_PROVISIONAL)
+    import json
+    assert "PROVISIONAL" in json.dumps(md, default=RP._jsonable).upper()
+
+
+def test_a_failure_message_from_a_provisional_arm_says_so(spack, fake_fold):
+    """If the gate REFUSES on an unratified number, the refusal text must
+    name it as unratified -- that is the moment a PI needs to know."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    fake_fold(_flat_tab(ratio_by_z=(1.22, 0.78)))    # span 0.44, |z| tiny
+    g = RP.forward_closure_gate(spack)
+    bad = [f for f in g["failures"] if "ratio_span_by_z" in f]
+    assert bad, g["failures"]
+    assert any("UNRATIFIED" in f.upper() or "PROVISIONAL" in f.upper()
+               for f in bad), bad

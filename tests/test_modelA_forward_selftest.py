@@ -27,6 +27,7 @@ D2  RESPONSE-POLYNOMIAL EXTRAPOLATION (the high-N defect).
 Both are UPSTREAM of NUTS: they are visible with zero sampling.
 """
 import dataclasses
+import json
 import os
 import pathlib
 
@@ -336,10 +337,136 @@ def test_rung9v3_sbatch_preflight_is_fail_closed_and_pad_guarded():
         "the pre-flight does not refuse an UNPADDED pack (finding D1)")
 
 
-def test_run_rung9_records_the_farr_bypass_as_a_bypass():
-    """Every prepared rung-9/10 sbatch passes --allow-low-farr, so the
-    artifact must say so in a machine-readable field, not only in a free-text
-    reason a reader has to notice."""
-    src = (_REPO / "CDDF_analysis/hbi_mcmc/run_rung9.py").read_text()
-    assert "bypasses=" in src
-    assert "paper_facing=False if a.allow_low_farr is not None" in src
+# --------------------------------------------------------------------------
+# run_rung9: the Farr-bypass stamp, tested BEHAVIOURALLY
+#
+# This used to be a source-text grep for two literal substrings, which a
+# semantically broken implementation keeping those substrings would pass.
+# These tests instead RUN ``main`` with a stubbed sampler and read the JSON it
+# writes.
+# --------------------------------------------------------------------------
+
+def _stub_rung9(monkeypatch, tmp_path):
+    """Stub out pack loading and NUTS; ``main`` is exercised for real."""
+    from CDDF_analysis.hbi_mcmc import run_rung9 as R9
+
+    class _Pack:
+        provenance = {"code_commit": "deadbeef", "mock": "synthetic"}
+
+    monkeypatch.setattr(R9, "load_pack", lambda path: _Pack())
+    monkeypatch.setattr(
+        R9, "run_model_a",
+        lambda pack, cfg: (None, {"diagnostics": {"r_hat_max": 1.0,
+                                                  "policy_pass": True},
+                                  "some_reduction": np.zeros(3)}))
+    return R9, str(tmp_path / "pack_2lpt0.npz"), str(tmp_path / "r9.json")
+
+
+def _run_rung9(monkeypatch, tmp_path, extra):
+    R9, pack, out = _stub_rung9(monkeypatch, tmp_path)
+    R9.main(["--pack", pack, "--out", out, "--smoke"] + extra)
+    return json.loads(pathlib.Path(out).read_text())
+
+
+def test_run_rung9_records_the_farr_bypass_as_a_bypass(monkeypatch, tmp_path):
+    """Every prepared rung-9/10 sbatch passes --allow-low-farr (7 files under
+    slurm/greatlakes/hbi_mcmc/ as of 2026-07-29), so the artifact must say so
+    in a MACHINE-READABLE field, not only in a free-text reason a reader has
+    to notice."""
+    REASON = "on-mock self-calibration: ratio 1.67 structural"
+    j = _run_rung9(monkeypatch, tmp_path, ["--allow-low-farr", REASON])
+    prov = j["provenance"]
+    assert prov["bypasses"] == {"allow_low_farr": REASON}, prov
+    assert prov["paper_facing"] is False, prov
+    assert prov["farr_gate_override"] == REASON
+
+
+def test_run_rung9_without_the_bypass_stamps_an_empty_bypass_dict(monkeypatch,
+                                                                  tmp_path):
+    """The field must be PRESENT and empty, never absent: a downstream reader
+    must be able to tell 'no bypass' from 'this artifact predates the field'."""
+    prov = _run_rung9(monkeypatch, tmp_path, [])["provenance"]
+    assert prov["bypasses"] == {}
+    assert prov["paper_facing"] is None      # decided downstream, not here
+    assert prov["farr_gate_override"] is None
+
+
+def test_run_rung9_bypass_actually_switches_the_farr_gate_off(monkeypatch,
+                                                              tmp_path):
+    """The stamp must describe what the run DID: --allow-low-farr must reach
+    ModelAConfig.enforce_farr_gate, and its absence must leave the gate ON."""
+    from CDDF_analysis.hbi_mcmc import run_rung9 as R9
+    seen = {}
+    _stub_rung9(monkeypatch, tmp_path)
+    real_cfg = R9.ModelAConfig
+
+    def _spy(**kw):
+        seen.update(kw)
+        return real_cfg(**kw)
+
+    monkeypatch.setattr(R9, "ModelAConfig", _spy)
+    R9.main(["--pack", str(tmp_path / "p.npz"), "--out", str(tmp_path / "a.json"),
+             "--smoke"])
+    assert seen["enforce_farr_gate"] is True
+    R9.main(["--pack", str(tmp_path / "p.npz"), "--out", str(tmp_path / "b.json"),
+             "--smoke", "--allow-low-farr", "documented reason"])
+    assert seen["enforce_farr_gate"] is False
+
+
+def test_run_rung9_bypass_flows_into_the_evidence_gate(monkeypatch, tmp_path):
+    """End-to-end meaning of the field: a rung-9 artifact carrying a bypass
+    must be un-stampable by the evidence gate, whatever its checks say."""
+    pytest.importorskip("jax")
+    from CDDF_analysis.hbi_mcmc import evidence as EV
+    prov = _run_rung9(monkeypatch, tmp_path,
+                      ["--allow-low-farr", "documented reason"])["provenance"]
+    blocks = {b: {"checks": {b + "_ok": True}, "incomplete": []}
+              for b in EV.REQUIRED_BLOCKS}
+    g = EV.gate(blocks, bypasses=prov["bypasses"])
+    assert g["stampable"] is False and g["paper_facing"] is False
+    # and the control: same blocks, no bypass -> stampable
+    assert EV.gate(blocks, bypasses={})["stampable"] is True
+
+
+# --------------------------------------------------------------------------
+# the forward-selftest stamp: "clean tree" was an overstatement
+#
+# The artifact carried only `code_commit`, and `_git()`'s dirty probe is
+# PATH-SCOPED to CDDF_analysis/hbi_mcmc/ -- it says nothing about the rest of
+# the tree.  So the stamp could not support the phrase "clean tree".  The
+# stamp now carries an explicit `code_dirty` flag AND the scope that flag was
+# measured over, so the claim is exactly as strong as the measurement.
+# --------------------------------------------------------------------------
+
+def test_selftest_stamp_declares_code_dirty_and_the_scope_it_measured():
+    stamp = FS._stamp_fields([("m", "/nonexistent/pack.npz")])
+    assert isinstance(stamp["code_dirty"], bool)
+    assert "hbi_mcmc" in stamp["code_dirty_scope"]
+    # the scope string must be an honest DISCLAIMER, not a boast
+    low = stamp["code_dirty_scope"].lower()
+    assert "not" in low and "tree" in low, stamp["code_dirty_scope"]
+
+
+def test_selftest_stamp_code_dirty_tracks_the_probe(monkeypatch):
+    """Discrimination: the flag must follow the probe, not be hard-coded."""
+    monkeypatch.setattr(FS, "_git_dirty", lambda: True)
+    assert FS._stamp_fields([("m", "/x.npz")])["code_dirty"] is True
+    monkeypatch.setattr(FS, "_git_dirty", lambda: False)
+    assert FS._stamp_fields([("m", "/x.npz")])["code_dirty"] is False
+
+
+def test_selftest_stamp_commit_is_a_bare_40_char_sha_and_dirt_is_a_field():
+    """A '-dirty' SUFFIX makes code_commit unusable with `git cat-file -e`,
+    which is the whole point of the 40-char stamp.  Dirt is a FIELD now."""
+    monkeypatch_free = FS._stamp_fields([("m", "/x.npz")])["code_commit"]
+    assert "-dirty" not in monkeypatch_free
+    assert monkeypatch_free == "unknown" or len(monkeypatch_free) == 40
+
+
+def test_the_committed_artifact_carries_the_field():
+    import json as _json
+    art = _json.loads(
+        (_REPO / "CDDF_analysis/hbi_mcmc/rung9_forward_selftest.json").read_text())
+    assert "code_dirty" in art, "artifact predates the field; re-derive it"
+    assert "code_dirty_scope" in art
+    assert len(art["code_commit"]) == 40 and "-dirty" not in art["code_commit"]

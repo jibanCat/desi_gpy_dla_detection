@@ -514,9 +514,10 @@ def test_integrated_only_verdict_is_reported_separately():
 # ==========================================================================
 # 9. THE FAIL-OPEN HOLES (2026-07-29 gate audit)
 #
-# Each test below reproduces a hole through which an artifact could be — and
-# in one case WAS — stamped ``stampable=True, paper_facing=True`` without the
-# evidence that stamp asserts.
+# Each test below reproduces a hole through which an artifact could be
+# stamped ``stampable=True, paper_facing=True`` without the evidence that
+# stamp asserts.  These are CODE-PATH defects, demonstrated by calling the
+# gate; no claim is made that a badly-stamped file was found on disk.
 # ==========================================================================
 
 def _sbc_only_blocks():
@@ -531,9 +532,11 @@ def test_a_narrowed_required_list_cannot_shrink_the_gate():
         assemble_evidence(blocks, required=("coverage_sbc",))
 
     and ``gate`` counts only blocks named in ``required`` as missing, so the
-    four absent blocks raised no objection.  The artifact on disk read
-    stampable=True, paper_facing=True, n_checks=2, blocks=['coverage_sbc'].
-    An SBC-only run must NEVER be stampable."""
+    four absent blocks raised no objection: the call RETURNED stampable=True,
+    paper_facing=True, n_checks=2, blocks=['coverage_sbc'].  (No artifact
+    written by that path was located on disk during the 2026-07-29 audit --
+    the claim here is about the code path's return value, which this test
+    exercises directly.)  An SBC-only run must NEVER be stampable."""
     g = EV.gate(_sbc_only_blocks(), required=("coverage_sbc",))
     assert g["stampable"] is False
     assert g["paper_facing"] is False

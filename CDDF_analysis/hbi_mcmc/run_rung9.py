@@ -37,7 +37,7 @@ def _git():
         return "unknown"
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
     ap.add_argument("--out", required=True)
@@ -54,7 +54,7 @@ def main():
                          "where the calibration set is the same mock as the data "
                          "so the 4x headroom is unattainable; the finite-"
                          "calibration variance is instead SAMPLED via psi_C)")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     assert "main_dark" not in a.pack, "REAL-LOA guard: mock packs only"
     pack = load_pack(a.pack)
@@ -124,6 +124,7 @@ def main():
     print(f"[rung9] wrote {a.out}  wall={wall:.0f}s  "
           f"r_hat_max={d.get('r_hat_max')}  ess_bulk_min={d.get('ess_bulk_min')}  "
           f"divergences={d.get('n_divergent')}  policy_pass={d.get('policy_pass')}")
+    return out
 
 
 if __name__ == "__main__":

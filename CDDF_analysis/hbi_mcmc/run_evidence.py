@@ -161,8 +161,11 @@ def main(argv=None):
                             f"--sbc-seed {a.sbc_seed} --out <out>")
         # NOTE: NO ``required=`` narrowing.  This used to pass
         # ``required=("coverage_sbc",)``, which made ``gate`` blind to the
-        # four absent blocks and produced an artifact on disk reading
-        # stampable=True / paper_facing=True / n_checks=2.  An SBC-only run is
+        # four absent blocks: the call returned stampable=True /
+        # paper_facing=True / n_checks=2, so anything this branch wrote would
+        # have carried that verdict.  (No such file was located on disk when
+        # this was audited on 2026-07-29; the defect is in the CODE PATH, and
+        # that is what is claimed here.)  An SBC-only run is
         # a PARTIAL evidence set: reportable, never stampable.  (``gate`` now
         # also unions REQUIRED_BLOCKS in, so this is belt AND braces.)
         prov["partial_evidence"] = True

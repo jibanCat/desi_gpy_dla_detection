@@ -93,9 +93,39 @@ GATE = {
     #     repair, whatever its z-score.
     "z_zbin_max": 5.0,           # max |z| over fine-z bins with obs > 0
     "z_snrbin_max": 5.0,         # max |z| over SNR strata with obs > 0
+    # 🔴 PROVISIONAL / UNRATIFIED -- see PROVISIONAL_GATE_TOLERANCES below.
     "ratio_span_by_z_max": 0.10,     # max(mu/obs) - min(mu/obs) across z
     "ratio_span_by_snr_max": 0.15,   # ... across SNR strata (fewer, noisier)
 }
+
+# 🔴 PROVISIONAL / UNRATIFIED GATE TOLERANCES.
+#
+# The two RATIO-SPAN numbers were chosen by the author when the by_z / by_snr
+# arms were added on 2026-07-29.  They were not requested, and project
+# convention is that a tolerance inside a production fail-closed gate is
+# ratified before it can refuse work.  The ARMS stay armed -- a forward model
+# that closes in total and in the N-marginal while carrying a large z-marginal
+# tilt is a real defect and must not sail through -- but the two THRESHOLDS
+# are flagged here, in the gate report, and in every stamp, so a PI can ratify
+# or move them without archaeology.
+#
+# What they are NOT: they are not measured, not calibrated against any
+# reference forward model, and carry no coverage statement.  0.10 / 0.15 were
+# picked as "a swing a sampler cannot repair"; the wider SNR value only
+# reflects that the SNR marginal has fewer, noisier strata.
+#
+# The z-score arms (z_total_max, z_bin_max, chi2_dof_max, z_zbin_max,
+# z_snrbin_max) are NOT in this set: they are conventional 5-sigma / chi2-per-
+# dof thresholds and pre-date this change.
+PROVISIONAL_GATE_TOLERANCES = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
+PROVISIONAL_GATE_TOLERANCES_NOTE = (
+    "PROVISIONAL / UNRATIFIED: ratio_span_by_z_max and ratio_span_by_snr_max "
+    "were set by the author on 2026-07-29 and have NOT been ratified. They are "
+    "not measured or calibrated and carry no coverage statement. The gate arms "
+    "they threshold are load-bearing and stay armed; the NUMBERS are open for "
+    "PI ratification. Every other tolerance in GATE is a conventional "
+    "z-score/chi2 threshold and pre-dates this change.")
 
 _REAL_TOKENS = ("main_dark", "loa_main_dark", "matterhorn", "dr3")
 
@@ -151,10 +181,12 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         if len(zs) and not (zmax <= gate[zkey]):
             fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}")
         if not (span <= gate[spankey]):
+            prov = (" [PROVISIONAL/UNRATIFIED tolerance]"
+                    if spankey in PROVISIONAL_GATE_TOLERANCES else "")
             fails.append(
                 f"ratio span in {key} = {span:.4f} "
                 f"(mu/obs {ratios.min():.4f}..{ratios.max():.4f}) "
-                f"> ratio_span_{key}_max = {gate[spankey]}")
+                f"> ratio_span_{key}_max = {gate[spankey]}{prov}")
 
     worst = sorted(rows, key=lambda b: -abs(b["z"]))[:5]
     return {
@@ -167,6 +199,9 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         "pass": not fails,
         "failures": fails,
         "gate": gate,
+        # which of the numbers above a PI has NOT ratified
+        "gate_tolerances_provisional": list(PROVISIONAL_GATE_TOLERANCES),
+        "gate_tolerances_provisional_note": PROVISIONAL_GATE_TOLERANCES_NOTE,
         "total_mu": float(tab["total"]["mu"]),
         "total_obs": float(tab["total"]["obs"]),
         "total_ratio": float(tab["total"]["ratio"]),
@@ -243,6 +278,15 @@ def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
         "paper_facing": bool(paper_facing),
         "forward_model_closes": bool(gate_report.get("pass")),
         "forward_gate": gate_report,
+        # hoisted to the TOP of the stamp, not left buried in forward_gate: a
+        # reader of the artifact alone must see which gate numbers are not
+        # ratified without opening the nested report.
+        "gate_tolerances_provisional": list(
+            gate_report.get("gate_tolerances_provisional")
+            or PROVISIONAL_GATE_TOLERANCES),
+        "gate_tolerances_provisional_note": (
+            gate_report.get("gate_tolerances_provisional_note")
+            or PROVISIONAL_GATE_TOLERANCES_NOTE),
         "date": time.strftime("%Y-%m-%d"),
         "pack_provenance": pack_provenance,
         "scope": "MOCK / SYNTHETIC ONLY",

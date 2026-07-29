@@ -307,16 +307,61 @@ def _git():
     stamp named a commit at which the routine could not have run.  A 40-char
     SHA is checkable with ``git cat-file -e <sha>:<routine>``; a 7-char one
     invites exactly the mis-resolution that happened.
+
+    NOTE the split from the dirty probe (2026-07-29).  A ``-dirty`` SUFFIX
+    makes ``code_commit`` unusable with ``git cat-file -e <sha>:<routine>``,
+    which is the entire reason the 40-char SHA is stamped.  Dirt is a separate
+    BOOLEAN FIELD now, reported alongside the SCOPE it was measured over.
     """
     here = os.path.dirname(os.path.abspath(__file__))
     try:
-        c = subprocess.check_output(["git", "rev-parse", "HEAD"],
-                                    cwd=here, text=True).strip()
-        d = subprocess.check_output(["git", "status", "--porcelain", "--", here],
-                                    cwd=here, text=True).strip()
-        return c + ("-dirty" if d else "")
+        return subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                       cwd=here, text=True).strip()
     except Exception:
         return "unknown"
+
+
+# the dirty probe is PATH-SCOPED; this string travels WITH the flag so no
+# reader can upgrade it into a claim about the whole working tree.
+_DIRTY_SCOPE = ("uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- "
+                "this is NOT a whole-tree cleanliness claim")
+
+
+def _git_dirty():
+    """True if CDDF_analysis/hbi_mcmc/ has uncommitted changes.
+
+    Path-scoped by design (the rest of the repo does not affect this routine's
+    result), and therefore NOT evidence of a clean tree.  Unknown -> True:
+    fail closed, an unprobeable tree is treated as dirty.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        return bool(subprocess.check_output(
+            ["git", "status", "--porcelain", "--", here],
+            cwd=here, text=True).strip())
+    except Exception:
+        return True
+
+
+def _stamp_fields(mocks):
+    """The provenance fields of the aggregate artifact.  Touches no pack, so
+    it is directly testable."""
+    return {
+        "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
+        "entry_point": "aggregate_report / --mock NAME=PATH",
+        "date": time.strftime("%Y-%m-%d"),
+        "code_commit": _git(),
+        "code_dirty": bool(_git_dirty()),
+        "code_dirty_scope": _DIRTY_SCOPE,
+        "scope": (f"MOCK ONLY ({' / '.join(n for n, _ in mocks)}). "
+                  f"No real-survey values."),
+        "rederive": ("OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "
+                     "MKL_NUM_THREADS=1 python -m "
+                     "CDDF_analysis.hbi_mcmc.forward_selftest "
+                     + " ".join(f"--mock {n}={p}" for n, p in mocks)
+                     + " --out CDDF_analysis/hbi_mcmc/"
+                       "rung9_forward_selftest.json"),
+    }
 
 
 def aggregate_report(mocks, *, clamps=("off", "both", "hi"), use_fp=True):
@@ -354,12 +399,7 @@ def aggregate_report(mocks, *, clamps=("off", "both", "hi"), use_fp=True):
         out_mocks[name] = entry
 
     return {
-        "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
-        "entry_point": "aggregate_report / --mock NAME=PATH",
-        "date": time.strftime("%Y-%m-%d"),
-        "code_commit": _git(),
-        "scope": (f"MOCK ONLY ({' / '.join(n for n, _ in mocks)}). "
-                  f"No real-survey values."),
+        **_stamp_fields(mocks),
         "what": ("pure forward-model truth-fold self-test: the pack's own "
                  "truth f(N,z) folded through the pack's own kernel/"
                  "completeness/g/dX/FP machinery at the truth-equivalent "
@@ -378,12 +418,6 @@ def aggregate_report(mocks, *, clamps=("off", "both", "hi"), use_fp=True):
             "forward_model_closes": bool(
                 closes and all(v["closes"] for v in closes.values())),
         },
-        "rederive": ("OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "
-                     "MKL_NUM_THREADS=1 python -m "
-                     "CDDF_analysis.hbi_mcmc.forward_selftest "
-                     + " ".join(f"--mock {n}={p}" for n, p in mocks)
-                     + " --out CDDF_analysis/hbi_mcmc/"
-                       "rung9_forward_selftest.json"),
     }
 
 
@@ -482,6 +516,8 @@ def main(argv=None):
                resp_clamp=clamp, n_pad_bins=n_pad,
                provenance=dict(routine="CDDF_analysis/hbi_mcmc/forward_selftest.py",
                                code_commit=_git(),
+                               code_dirty=bool(_git_dirty()),
+                               code_dirty_scope=_DIRTY_SCOPE,
                                date=time.strftime("%Y-%m-%d"),
                                rederive=("python -m CDDF_analysis.hbi_mcmc."
                                          f"forward_selftest --pack {a.pack}")))
