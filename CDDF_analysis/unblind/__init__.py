@@ -41,6 +41,13 @@ from .estimand import (
     normalize_estimand_metadata,
     normalize_estimand_stamp,
     stamp_band_estimand,
+    BAND_BEARING_ESTIMANDS,
+    PAPER_FACING_REFUSED_KEY,
+    DECLARATION_ABSENT,
+    DECLARATION_FALSE,
+    DECLARATION_TRUE,
+    DECLARATION_UNPARSEABLE,
+    parse_paper_facing_declaration,
 )
 from .loader import (
     DEFAULT_LOA0_ARTIFACT,
@@ -94,6 +101,10 @@ __all__ = [
     "PAPER_FACING_ESTIMANDS",
     "POSTERIOR_MEDIAN_CI", "PLUGIN_MAP_MC", "DIAGNOSTIC_RECENTERED",
     "MARGINAL_COMBINED", "POINT_ONLY", "UNKNOWN",
+    # -- fail-closed hardening of the producer veto (referee, 2026-07-29) --
+    "parse_paper_facing_declaration", "BAND_BEARING_ESTIMANDS",
+    "PAPER_FACING_REFUSED_KEY", "DECLARATION_TRUE", "DECLARATION_FALSE",
+    "DECLARATION_ABSENT", "DECLARATION_UNPARSEABLE",
     "load_stamp_block", "stamp_block", "stamp_kind",
     "ProvenanceResult", "ProvenanceError",
     "RE_DERIVABLE", "NOT_STAMPED", "DIRTY", "ORPHANED", "COMMIT_NOT_FOUND",

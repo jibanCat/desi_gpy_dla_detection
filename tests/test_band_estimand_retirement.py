@@ -509,7 +509,11 @@ def test_unblind_package_exports_every_name_it_imports_from_estimand():
                  "RecenteredBandRetired", "ESTIMAND_VOCABULARY",
                  "ESTIMAND_DETAIL_KEY", "POSTERIOR_MEDIAN_CI", "PLUGIN_MAP_MC",
                  "DIAGNOSTIC_RECENTERED", "MARGINAL_COMBINED", "POINT_ONLY",
-                 "UNKNOWN"):
+                 "UNKNOWN",
+                 # -- the 2026-07-29 fail-closed hardening --
+                 "parse_paper_facing_declaration", "BAND_BEARING_ESTIMANDS",
+                 "PAPER_FACING_REFUSED_KEY", "DECLARATION_TRUE", "DECLARATION_FALSE",
+                 "DECLARATION_ABSENT", "DECLARATION_UNPARSEABLE"):
         assert name in U.__all__, f"{name} imported but missing from __all__"
         assert getattr(U, name) is getattr(EST, name)
 
@@ -520,3 +524,191 @@ def test_unblind_all_is_fully_resolvable():
     missing = [n for n in U.__all__ if not hasattr(U, n)]
     assert not missing, missing
     assert len(set(U.__all__)) == len(U.__all__), "duplicate entries in __all__"
+
+
+# =============================================================================
+# 10. THE PRODUCER VETO IS A PARSE, NOT A `is False` IDENTITY CHECK
+# =============================================================================
+# REFEREE DEFECT 1 (2026-07-29).  ``_finish`` tested ``declared_pf is False``, so ONLY
+# the ``False`` singleton vetoed.  Probing classify_estimand with a band artifact
+# stamped POSTERIOR_MEDIAN_CI and metadata['paper_facing'] set to each falsy value:
+# ``0, 0.0, '', [], {}, 'false', 'False', 'no'`` were ALL certified paper_facing=True.
+# Nothing on disk was mis-certified (JSON ``false`` decodes to the singleton), so this
+# is a hardening gap -- but the veto is the last line of defence and it must parse.
+
+def _banded_posterior_artifact(declared, *, estimand=EST.POSTERIOR_MEDIAN_CI):
+    """A genuinely band-bearing artifact (point_q50 beside q16/q84) whose producer
+    declares ``paper_facing`` as ``declared``.  ``declared is _OMIT`` omits the key."""
+    band = dict(point_q50=1.0, q16=0.9, q84=1.1, q025=0.8, q975=1.2)
+    md = {"estimand": estimand}
+    if declared is not _OMIT:
+        md["paper_facing"] = declared
+    return dict(metadata=md, posterior={"tiers": {"t0": band, "t1": dict(band)}})
+
+
+_OMIT = object()
+
+#: every spelling of an explicit NO that a producer might plausibly write.
+_EXPLICIT_FALSE = [False, 0, 0.0, "false", "False", "FALSE", " false ",
+                   "no", "No", "n", "f", "0"]
+#: declarations that are neither a recognisable yes nor a recognisable no.
+_UNPARSEABLE = ["", "   ", [], {}, "maybe", "unknown", ["False"], {"ok": False},
+                2, -1, 0.5, float("nan")]
+#: every spelling of an explicit YES.
+_EXPLICIT_TRUE = [True, 1, 1.0, "true", "True", "TRUE", "yes", "Y", "t", "1"]
+
+
+@pytest.mark.parametrize("declared", _EXPLICIT_FALSE,
+                         ids=[repr(v) for v in _EXPLICIT_FALSE])
+def test_producer_veto_recognises_every_explicit_non_true_declaration(declared):
+    """REGRESSION (referee defect 1): only the ``False`` SINGLETON vetoed; 0, 0.0, '',
+    [], {}, 'false', 'False', 'no' were all certified paper_facing=True."""
+    res = EST.classify_estimand(_banded_posterior_artifact(declared), name="fixture")
+    assert res["n_band_records"] > 0, res           # the fixture really does band
+    assert res["estimand"] == EST.POSTERIOR_MEDIAN_CI
+    assert res["paper_facing"] is False, res
+    assert res["producer_declaration"] == EST.DECLARATION_FALSE
+    assert res["refusals"], "the refusal must be RECORDED, not silent"
+
+
+@pytest.mark.parametrize("declared", _UNPARSEABLE,
+                         ids=[repr(v) for v in _UNPARSEABLE])
+def test_unparseable_producer_declaration_refuses_to_certify(declared):
+    """DELIBERATE DECISION: a declaration we cannot parse is NOT a licence.  We do not
+    know what the producer meant, so we refuse to certify and say why."""
+    res = EST.classify_estimand(_banded_posterior_artifact(declared), name="fixture")
+    assert res["paper_facing"] is False, res
+    assert res["producer_declaration"] == EST.DECLARATION_UNPARSEABLE
+    assert any("UNPARSEABLE" in r for r in res["refusals"]), res["refusals"]
+
+
+@pytest.mark.parametrize("declared", _EXPLICIT_TRUE,
+                         ids=[repr(v) for v in _EXPLICIT_TRUE])
+def test_explicit_true_declaration_does_not_veto_an_admissible_band(declared):
+    """POWER CHECK for the two tests above: the veto must not be a constant False.
+    A genuinely band-bearing POSTERIOR_MEDIAN_CI artifact whose producer says YES is
+    still certified -- otherwise the parametrized veto tests could not fail."""
+    res = EST.classify_estimand(_banded_posterior_artifact(declared), name="fixture")
+    assert res["producer_declaration"] == EST.DECLARATION_TRUE
+    assert res["paper_facing"] is True, res
+    assert not res["refusals"], res
+
+
+def test_absent_producer_declaration_is_not_a_veto():
+    """A missing key is NOT a declaration: the classifier falls back to inference.
+    (JSON ``null`` is treated the same -- indistinguishable from missing to .get().)"""
+    for declared in (_OMIT, None):
+        res = EST.classify_estimand(_banded_posterior_artifact(declared), name="fx")
+        assert res["producer_declaration"] == EST.DECLARATION_ABSENT, declared
+        assert res["paper_facing"] is True, (declared, res)
+
+
+@pytest.mark.parametrize("value,expect", (
+    [(v, EST.DECLARATION_FALSE) for v in _EXPLICIT_FALSE]
+    + [(v, EST.DECLARATION_UNPARSEABLE) for v in _UNPARSEABLE]
+    + [(v, EST.DECLARATION_TRUE) for v in _EXPLICIT_TRUE]))
+def test_parse_paper_facing_declaration_unit(value, expect):
+    assert EST.parse_paper_facing_declaration(value) == expect
+
+
+def test_stamp_band_estimand_veto_also_parses_a_string_prior():
+    """The SAME defect lived in the WRITER: ``prior = metadata.get('paper_facing', True)``
+    then ``bool(prior)``, so a prior veto spelled ``'false'`` was re-authorized by an
+    admissible band stamp."""
+    for prior in ("false", "no", 0, ""):
+        md = {"paper_facing": prior, "resp_kind": "kappa"}
+        EST.stamp_band_estimand(md, band_recenter=False, posterior_sampled=True)
+        assert md["estimand"] == EST.POSTERIOR_MEDIAN_CI
+        assert md["paper_facing"] is False, prior
+    # and an ADMISSIBLE artifact with no prior veto is still stamped True (power check)
+    md = {}
+    EST.stamp_band_estimand(md, band_recenter=False, posterior_sampled=True)
+    assert md["paper_facing"] is True
+
+
+def test_assert_paper_facing_refuses_an_unparseable_declaration():
+    """A headline writer that cannot say cleanly whether it is paper-facing must not be
+    waved through by ``bool('maybe') == True`` semantics."""
+    md = dict(estimand=EST.POSTERIOR_MEDIAN_CI, paper_facing="maybe")
+    with pytest.raises(EST.RecenteredBandRetired):
+        EST.assert_paper_facing(md, where="fixture")
+    # an explicit NO, however spelled, is not a claim -- so it must NOT raise
+    for v in (False, "false", 0):
+        EST.assert_paper_facing(dict(estimand=EST.PLUGIN_MAP_MC, paper_facing=v))
+    # power check: a genuine claim over a retired class still raises
+    with pytest.raises(EST.RecenteredBandRetired):
+        EST.assert_paper_facing(dict(estimand=EST.PLUGIN_MAP_MC, paper_facing="yes"))
+
+
+# =============================================================================
+# 11. A BAND-BEARING STAMP OVER **ZERO** BAND RECORDS MAY NOT BE CERTIFIED
+# =============================================================================
+# REFEREE DEFECT 2 (2026-07-29).  Three probes were PAPER-FACING with
+# n_band_records == 0, on the strength of the artifact's own free-text stamp alone.
+# The third had previously CRASHED with TypeError and regressed to a SILENT pass when
+# the dict schema was made readable -- fail-loud became fail-open.
+_ZERO_BAND_PROBES = {
+    "map_only": {"result": {"MAP": 1.0},
+                 "metadata": {"estimand": "POSTERIOR_MEDIAN_CI"}},
+    "empty": {"metadata": {"estimand": "POSTERIOR_MEDIAN_CI"}},
+    "dict_label": {"result": {"MAP": 1.0},
+                   "metadata": {"estimand": {"label": "POSTERIOR_MEDIAN_CI"}}},
+}
+
+
+@pytest.mark.parametrize("probe", sorted(_ZERO_BAND_PROBES))
+def test_band_bearing_stamp_with_zero_band_records_is_not_certified(probe):
+    """FAIL CLOSED: the artifact declares an estimand that IS a band, and the file
+    contains no band.  A free-text stamp cannot substantiate a band that is not there,
+    so the artifact is refused -- with a recorded reason, never silently."""
+    art = json.loads(json.dumps(_ZERO_BAND_PROBES[probe]))
+    res = EST.classify_estimand(art, name=probe)
+    assert res["n_band_records"] == 0, res
+    assert res["paper_facing"] is False, res
+    assert any("zero band record" in r.lower() for r in res["refusals"]), res
+
+
+def test_zero_band_refusal_does_not_swallow_genuine_point_only_artifacts():
+    """POWER/SCOPE CHECK: the new rule must bite ONLY on a band-bearing claim.  A
+    POINT_ONLY artifact is band-free by definition and must not acquire a refusal, and
+    an artifact that really does carry band records is still certifiable."""
+    pt = dict(metadata=dict(estimand=EST.POINT_ONLY), summary=dict(n=3))
+    res = EST.classify_estimand(pt, name="point-only")
+    assert res["estimand"] == EST.POINT_ONLY
+    assert not res["refusals"], res
+    ok = EST.classify_estimand(_banded_posterior_artifact(True), name="banded")
+    assert ok["paper_facing"] is True and not ok["refusals"], ok
+
+
+def test_dict_stamp_with_a_vocabulary_label_neither_crashes_nor_passes_silently():
+    """The REGRESSED path, pinned in both directions: schema B carrying a vocabulary
+    word must be READ (no TypeError) and must still be refused when the artifact
+    exposes no band."""
+    art = {"result": {"MAP": 1.0},
+           "metadata": {"estimand": {"label": EST.POSTERIOR_MEDIAN_CI,
+                                     "interval": "NONE. --point-only."}}}
+    res = EST.classify_estimand(art, name="fixture")      # must not raise
+    assert res["stamped"] == EST.POSTERIOR_MEDIAN_CI      # the word WAS read
+    assert res["estimand_detail"]["interval"].startswith("NONE")
+    assert res["paper_facing"] is False, res
+    assert res["refusals"], res
+
+
+def test_every_refusal_is_also_in_the_evidence_trail():
+    """`unclassifiable -> not-paper-facing PLUS a recorded reason`: the reason must
+    reach the human-readable evidence list, not only the machine-readable field."""
+    res = EST.classify_estimand(_ZERO_BAND_PROBES["map_only"], name="fixture")
+    for r in res["refusals"]:
+        assert r in res["evidence"], (r, res["evidence"])
+
+
+def test_mark_retired_records_the_refusal_on_the_artifact(tmp_path):
+    """The refusal must survive to DISK: an artifact that was refused certification has
+    to say so in its own metadata, or the next reader re-litigates it."""
+    p = tmp_path / "z.json"
+    p.write_text(json.dumps(_ZERO_BAND_PROBES["map_only"]))
+    res = EST.mark_retired(str(p), dry_run=False, skip_point_only=False)
+    assert res["paper_facing"] is False
+    md = json.loads(p.read_text())["metadata"]
+    assert md["paper_facing"] is False
+    assert md[EST.PAPER_FACING_REFUSED_KEY], md
