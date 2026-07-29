@@ -115,8 +115,13 @@ def full_sha():
 
 
 def dirty():
-    return bool(subprocess.check_output(["git", "status", "--porcelain"],
-                                        cwd=REPO, text=True).strip())
+    """TRACKED-file dirtiness only (--untracked-files=no, matching
+    extract_pack._git_commit). The stamp asserts that the CODE was at
+    ``code_commit``; the artifact being written is itself untracked until it is
+    committed, and counting that would make every stamp read dirty."""
+    return bool(subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=REPO, text=True).strip())
 
 
 def _fold_kernel(pack, clamp):
