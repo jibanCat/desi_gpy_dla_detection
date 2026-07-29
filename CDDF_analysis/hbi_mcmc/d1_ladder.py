@@ -139,6 +139,107 @@ def _fold_kernel(pack, clamp):
     return W, c, K
 
 
+def subfloor_completeness_block():
+    """How much the ``const_extrap`` convention OVER-PREDICTS the sub-floor
+    completeness, on ONE explicitly stated weighting.
+
+    THE WEIGHTING (stated, not implied). The object is the completeness the fold
+    actually multiplies by: ``C[s, b] = sigmoid(consts.eta_hat)[:, b_to_cell]``
+    — one value per (SNR stratum s, true-N basis bin b). It enters ``fold_mu``
+    multiplied by the pathlength ``dX[k, s]``, so the only defensible scalar per
+    basis bin is the **dX-exposure-weighted mean over SNR strata**
+
+        C_eff(b) = sum_s w_s C[s, b] / sum_s w_s ,   w_s = sum_k dX[k, s]
+
+    and the reported ratio is ``C_eff^const_extrap(b) / C_eff^molly172(b)``.
+    ``C[s, b]`` is constant within a molly cell (``b_to_cell`` is a step map), so
+    one number per sub-floor molly cell is exact, not an average of averages.
+
+    WHY NOT the unweighted per-SNR mean of ratios: strata s=0 and s=1 (SNR <= 2)
+    carry EXACTLY ZERO pathlength — the op cut is SNR > 2 strict — so their
+    completeness cannot influence any prediction. Those two strata are also
+    where ``molly172`` measures ~0 detections (n_det = 0 of 11333 at
+    [18.5,19.0), s=0), which makes the RATIO blow up to ~83x and makes the
+    unweighted mean of ratios NON-MONOTONE in N. Both facts are reported below
+    (``ratio_unweighted_per_snr_mean``, ``zero_dX_strata``) so the disagreement
+    is visible rather than hidden; the dX-weighted number is the one to quote.
+    """
+    import jax
+    from CDDF_analysis.hbi_mcmc.forward import build_consts
+
+    out = {}
+    for mock in MOCKS:
+        packs = {cv: load_pack(os.path.join(
+            PACKDIR, f"modelA_pack_{mock}_pad18p0_{cv}.npz"))
+            for cv in CONVENTIONS}
+        p0 = packs["const_extrap"]
+        dX = np.asarray(p0.dX, float)
+        w_s = dX.sum(axis=0)
+        n_pad = p0.n_b - p0.n_c
+        lo = np.round(np.asarray(p0.ntrue_edges, float)[:-1], 3)
+        C = {}
+        for cv, pk in packs.items():
+            c = build_consts(pk, resp_clamp="both")
+            C[cv] = np.asarray(jax.nn.sigmoid(c.eta_hat))[:, np.asarray(c.b_to_cell)]
+        e172 = np.asarray(packs["molly172"].molly_nhi_edges, float)
+        rows, seen = [], set()
+        for b in range(n_pad):
+            j = int(np.searchsorted(e172, lo[b] + 1e-9)) - 1
+            key = (float(e172[j]), float(e172[j + 1]))
+            if key in seen:
+                continue
+            seen.add(key)
+            ce, cm = C["const_extrap"][:, b], C["molly172"][:, b]
+            rows.append(dict(
+                cell=list(key),
+                C_const_extrap_dX_weighted=float((w_s * ce).sum() / w_s.sum()),
+                C_molly172_dX_weighted=float((w_s * cm).sum() / w_s.sum()),
+                ratio_dX_weighted=float((w_s * ce).sum() / (w_s * cm).sum()),
+                ratio_unweighted_per_snr_mean=float(np.mean(ce / cm)),
+                ratio_unweighted_per_snr_max=float(np.max(ce / cm)),
+                molly172_n_tot_by_snr=[float(x) for x in
+                                       np.asarray(packs["molly172"].molly_n_tot,
+                                                  float)[:, j]],
+                molly172_n_det_by_snr=[float(x) for x in
+                                       np.asarray(packs["molly172"].molly_n_det,
+                                                  float)[:, j]]))
+        out[mock] = dict(
+            rows=rows,
+            zero_dX_strata=[int(s) for s in np.flatnonzero(w_s == 0.0)],
+            dX_weight_fraction_by_snr=[float(x) for x in w_s / w_s.sum()],
+            ge_floor_cells_bit_identical=bool(np.array_equal(
+                C["const_extrap"][:, n_pad:], C["molly172"][:, n_pad:])),
+        )
+    return dict(
+        what=("const_extrap vs the MEASURED floor-17.2 completeness, per "
+              "sub-floor molly cell, on the dX-exposure-weighted mean over SNR "
+              "strata (the only weighting the fold gives meaning to)."),
+        weighting=("C_eff(b) = sum_s w_s * sigmoid(eta_hat)[s, b_to_cell[b]] / "
+                   "sum_s w_s with w_s = sum_k dX[k, s]; ratio = "
+                   "C_eff(const_extrap) / C_eff(molly172)."),
+        routine="CDDF_analysis/hbi_mcmc/d1_ladder.py:subfloor_completeness_block",
+        per_mock=out,
+        finding=("const_extrap over-predicts the sub-floor completeness by "
+                 "1.149x at [19.0,19.5), 1.523x at [18.5,19.0) and 2.018x at "
+                 "[18.0,18.5) on 2LPT-0 (1.149/1.521/2.015 on london0, "
+                 "1.149/1.522/2.016 on saclay0) — MONOTONE in depth on this "
+                 "weighting, because C_eff falls 0.751 -> 0.653 -> 0.493 -> "
+                 "0.372 while const_extrap holds 0.751 flat. The UNWEIGHTED "
+                 "per-SNR mean of ratios is NOT monotone (1.80 / 12.69 / 4.74) "
+                 "and peaks at [18.5,19.0), but that shape is manufactured by "
+                 "SNR strata 0 and 1, which carry exactly zero pathlength and "
+                 "cannot enter any prediction. A pad floor should be chosen on "
+                 "the dX-weighted curve."),
+        supersedes=("CORRECTION 2026-07-29: the '~1.7x at [19.0,19.5) rising to "
+                    "~5.7x at [18.0,18.5)' quoted in the d20d572 commit message "
+                    "is WITHDRAWN. It was never reproducible: it is neither the "
+                    "dX-weighted ratio (1.149 / 2.018) nor the SNR-summed "
+                    "n_det/n_tot ratio (1.207 / 2.158) nor the unweighted "
+                    "per-SNR mean (1.803 / 4.742), and it asserted a monotone "
+                    "ramp without saying under which weighting."),
+    )
+
+
 def evidence_blocks():
     """Three supporting measurements the verdict rests on."""
     import jax
@@ -200,18 +301,75 @@ def evidence_blocks():
                 n_unknowns_minus_n_data=int(c.n_b - c.n_c),
                 kernel_rowmass_min=float(rm.min()),
                 kernel_rowmass_max=float(rm.max())))
+    # (2b) the OTHER operator: E4's SINGLE per-slice response kernel K[s, kk],
+    #      unstacked and unweighted. This is what the E4 escalation's 2.77e10
+    #      refers to; measuring it here reconciles the two numbers instead of
+    #      disputing them.
+    per_slice = []
+    for name in ("2lpt0_padnone_const_extrap", "2lpt0_pad18p0_const_extrap"):
+        pk = load_pack(os.path.join(PACKDIR, f"modelA_pack_{name}.npz"))
+        c = build_consts(pk)                       # E4's call: default clamp
+        K = np.asarray(build_K(jnp.zeros((2, c.n_sr, c.n_zr)), c))
+        dXa = np.asarray(pk.dX, float)
+        seen, rows_ = set(), []
+        for k in range(pk.n_k):
+            for s in range(pk.n_s):
+                if dXa[k, s] <= 0:
+                    continue
+                cell = (int(c.s_to_sresp[s]), int(c.K_to_zresp[c.kz_to_K[k]]))
+                if cell in seen:
+                    continue
+                seen.add(cell)
+                Km = K[s, c.kz_to_K[k]]
+                sv = np.linalg.svd(Km, compute_uv=False)
+                rows_.append(dict(resp_snr_cell=cell[0], resp_z_cell=cell[1],
+                                  shape=list(Km.shape),
+                                  cond=float(sv[0] / sv[-1])))
+        rows_.sort(key=lambda d: (d["resp_snr_cell"], d["resp_z_cell"]))
+        per_slice.append(dict(pack=name, rows=rows_,
+                              max_cond=max(r["cond"] for r in rows_),
+                              cell_0_0_cond=[r["cond"] for r in rows_
+                                             if (r["resp_snr_cell"],
+                                                 r["resp_z_cell"]) == (0, 0)][0]))
+
     conditioning = dict(
-        what=("SVD condition number of the dX-weighted (C, B) response kernel "
-              "the fold effectively inverts, vs pad depth and response clamp."),
+        what=("SVD condition number of the dX-weighted STACKED (C, B) operator "
+              "W = sum_{s,kk} (sum over the fine-z rows in kk of dX[k,s]) * "
+              "K[s,kk] — the operator the fold effectively inverts — vs pad "
+              "depth and response clamp. This is NOT the same object as the "
+              "single per-slice response kernel E4 reports; both are measured "
+              "here (see `single_slice_response_kernel_E4_object`)."),
+        operator_measured=("W = sum_{s,kk} dX_weight(s,kk) * K[s,kk], shape "
+                           "(n_c, n_b) — routine d1_ladder.py:_fold_kernel"),
         rows=cond,
-        finding=("the pad does NOT degrade conditioning (1.47e5 unpadded -> "
-                 "1.41e5 at pad 18.0 with the D2 clamp on; 3.63e8 with the "
-                 "clamp OFF, i.e. most of the ill-conditioning WAS D2). What "
-                 "the pad does instead is make the system UNDERDETERMINED: 44 "
-                 "true-N unknowns against 29 observed bins at pad 18.0. Note "
-                 "this is NOT the 2.77e10 quoted in the E4 escalation — that "
-                 "number is not reproduced by any configuration measured here "
-                 "and must be re-derived before it is used."),
+        single_slice_response_kernel_E4_object=dict(
+            what=("the object CDDF_analysis/hbi_mcmc/run_e4_conditioning.py "
+                  "reports as `response_kernel_spectra`: ONE per-(SNR-resp, "
+                  "z-resp) slice K[s, kk], unstacked and un-dX-weighted, at "
+                  "build_consts' default clamp."),
+            rows=per_slice,
+            reconciliation=(
+                "CORRECTION 2026-07-29: the E4 figure IS reproduced. On the "
+                "unpadded ladder pack the (SNR-resp 0, z-resp 0) slice gives "
+                "cond = 27699981558.74824, matching "
+                "/home/mfho/wt_e4/CDDF_analysis/hbi_mcmc/e4_conditioning.json "
+                "-> mocks.2lpt0.response_kernel_spectra[0].cond = "
+                "27699981558.74824 to the digit, on the independently built "
+                "modelA_pack_2lpt0_v11.npz. The earlier claim that 2.77e10 "
+                "'is not reproduced by any configuration here and must be "
+                "re-derived' was WRONG: it compared a different operator. Both "
+                "numbers are correct about different objects."),
+        ),
+        finding=("on the dX-weighted STACKED operator, D2-clamping dominates: "
+                 "3.63e8 with the clamp OFF vs 1.47e5 with it ON (unpadded), "
+                 "i.e. most of the ill-conditioning of THIS operator was D2. "
+                 "The pad then slightly IMPROVES it (1.47e5 -> 1.41e5 at pad "
+                 "18.0). What the pad does create is UNDER-DETERMINATION: 44 "
+                 "true-N unknowns against 29 observed bins at pad 18.0. "
+                 "Separately, on E4's single-slice object the worst slice is "
+                 "2.77e10 unpadded (reproduced exactly) — a much larger number "
+                 "because no dX weighting or stacking averages the slices, and "
+                 "because it is measured at build_consts' default clamp."),
     )
 
     # (3) the D1 mechanism, quantified: how much of mu in the lowest observed
@@ -247,7 +405,8 @@ def evidence_blocks():
     )
     return dict(powerlaw_surrogate_vs_measured_truth=powerlaw,
                 fold_kernel_conditioning=conditioning,
-                d1_mechanism=mechanism)
+                d1_mechanism=mechanism,
+                subfloor_completeness_convention=subfloor_completeness_block())
 
 
 def build_verdict(rows, extras):
@@ -309,17 +468,25 @@ def build_verdict(rows, extras):
                 "completeness conventions — it is residual D2, untouched by "
                 "D1, and it alone puts chi2/dof far over the gate."),
             does_E4_dominate=(
-                "NOT as stated. The measured conditioning of the fold kernel "
-                "is 1.4-1.5e5 with the D2 clamp on and is IMPROVED, not "
-                "degraded, by the pad; the 2.77e10 figure in the E4 "
-                "escalation is not reproduced here and should be re-derived "
-                "before use. What the pad DOES create is an "
-                "under-determination: 44 true-N unknowns against 29 observed "
-                "bins at pad 18.0, i.e. 15 unidentified directions that only "
-                "a prior can fill. So the ordering is: residual D2 dominates "
-                "the chi2, the two sub-floor conventions dominate the level, "
-                "and E4 becomes a real problem only once those two are fixed "
-                "and the pad has to be INFERRED rather than read from truth."),
+                "NOT on the operator measured here, and the two streams are "
+                "NOT in conflict (CORRECTED 2026-07-29). On the dX-weighted "
+                "STACKED fold operator the conditioning is 1.4-1.5e5 with the "
+                "D2 clamp on, against 3.63e8 with it off — so D2-clamping, not "
+                "the pad, dominates this operator's conditioning, and the pad "
+                "slightly IMPROVES it. E4's 2.77e10 is a DIFFERENT object: the "
+                "condition number of a SINGLE per-slice response kernel "
+                "K[s,kk], unstacked and un-dX-weighted. That figure IS "
+                "reproduced here to the digit (see "
+                "fold_kernel_conditioning.single_slice_response_kernel_E4_"
+                "object); the earlier claim that it 'is not reproduced by any "
+                "configuration here' is withdrawn. What the pad DOES create is "
+                "an under-determination: 44 true-N unknowns against 29 "
+                "observed bins at pad 18.0, i.e. 15 unidentified directions "
+                "that only a prior can fill. So the ordering is: residual D2 "
+                "dominates the chi2, the two sub-floor conventions dominate "
+                "the level, and E4 becomes a real problem only once those two "
+                "are fixed and the pad has to be INFERRED rather than read "
+                "from truth."),
         ),
         next_actions=[
             "D2 is NOT closed by the covariate clamp: a 1.23-1.43x (2lpt0) / "
@@ -453,6 +620,34 @@ def phase_selftest():
     )
     print("\n[xcheck committed gate]", json.dumps(xcheck, indent=1))
 
+    # PACK STAMP AUDIT (referee minor, 2026-07-29). The top-level code_commit
+    # stamps the SELFTEST phase only; the 30 packs are extracted in a separate
+    # env, in a separate process, and carry their OWN stamp. Previously every
+    # pack read "<base sha>-dirty" while the artifact advertised a clean sha,
+    # with nothing in the artifact saying so. Audit it explicitly and FAIL
+    # CLOSED on a dirty input.
+    pack_commits = sorted({v["pack_provenance_commit"] for v in rows.values()})
+    sha = full_sha()
+    stamp_audit = dict(
+        what=("the extract phase runs in its own process/env, so each pack "
+              "stamps itself; this reconciles those stamps against the "
+              "selftest phase's code_commit."),
+        selftest_phase_code_commit=sha,
+        pack_code_commits=pack_commits,
+        n_packs=len(rows) // len(CLAMPS),
+        all_packs_same_commit=bool(len(pack_commits) == 1),
+        any_pack_dirty=bool(any("-dirty" in (c or "") for c in pack_commits)),
+        packs_match_selftest_commit=bool(pack_commits == [sha]),
+    )
+    if stamp_audit["any_pack_dirty"]:
+        raise SystemExit(
+            "[ladder] REFUSING to stamp: input packs were extracted from a "
+            f"DIRTY tree {pack_commits}. Commit the extractor and re-run "
+            "--phase extract so the packs stamp a clean sha.")
+    if not stamp_audit["packs_match_selftest_commit"]:
+        print(f"[ladder] WARNING: packs stamped {pack_commits} but the "
+              f"selftest phase is at {sha} (recorded in metadata).")
+
     extras = evidence_blocks()
     verdict = build_verdict(rows, extras)
     out = dict(
@@ -460,8 +655,12 @@ def phase_selftest():
             title="D1 basis-pad ladder — forward-model closure vs true-N pad "
                   "floor, response clamp, and sub-floor completeness",
             date=time.strftime("%Y-%m-%d %H:%M:%S"),
-            code_commit=full_sha(),
+            code_commit=sha,
+            code_commit_scope=("the SELFTEST phase (this process). The input "
+                               "packs carry their own stamp — see "
+                               "pack_stamp_audit."),
             code_commit_dirty=dirty(),
+            pack_stamp_audit=stamp_audit,
             branch=subprocess.check_output(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=REPO,
                 text=True).strip(),

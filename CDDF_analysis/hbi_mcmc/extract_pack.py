@@ -231,6 +231,13 @@ def _git_commit() -> str:
 # ---------------------------------------------------------------------------
 # binning helpers (schema half-open [lo, hi) conventions)
 # ---------------------------------------------------------------------------
+def _jsonable(meta: dict) -> dict:
+    """numpy scalars -> python scalars, for the provenance sidecar."""
+    return {k: (int(v) if isinstance(v, (int, np.integer)) else
+                (float(v) if isinstance(v, (float, np.floating)) else v))
+            for k, v in dict(meta).items()}
+
+
 def _idx(edges: np.ndarray, x: np.ndarray) -> np.ndarray:
     return np.searchsorted(edges, np.asarray(x, float), side="right") - 1
 
@@ -658,6 +665,9 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
     # --- truth histogram, optionally on a DOWNWARD-padded true-N basis (D1) ---
     ntrue_edges, n_pad_bins = basis_pad_edges(pad_floor)
     truth_counts, truth_counts_bks, n_truth_in_window = build_truth_counts(bundle)
+    # which bundle the SAVED truth histogram was actually built from (the
+    # detection bundle unless a pad re-cuts the truth side at a lower floor)
+    truth_src = bundle
     pad_prov = dict(n_pad_bins=int(n_pad_bins), pad_floor=None,
                     truth_nhi_floor_used=19.5)
     if n_pad_bins > 0:
@@ -693,9 +703,26 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
             tail_guard="EXACT match to the unpadded truth over [19.5, 22.4)",
             truth_bundle_note=(
                 "truth_cut ONLY; the detection side stays on the 19.5-floor "
-                "bundle so `counts` is identical across the pad ladder"))
+                "bundle so `counts` is identical across the pad ladder"),
+            # the padded truth bundle's OWN cut totals. Reported explicitly
+            # because the top-level provenance["truth"]["n_truth_cut"] used to
+            # come from the 19.5-floor DETECTION bundle while
+            # n_truth_in_window came from THIS one — which made the sidecar
+            # report more systems "in window" than were "cut".
+            n_truth_cut_padded_bundle=int(len(tb["truth_cut"])),
+            padded_cut_meta=_jsonable(tb["meta"]),
+            cat_cut_discrepancy=(
+                "lowering truth_nhi_floor perturbs the PRIMARY truth match and "
+                "hence Z_TRUE, so make_lambda_z_BAL_cuts(use_truth_z=True) "
+                "moves a handful of cat_cut rows. MEASURED on 2LPT-0 at floor "
+                "19.5 -> 17.2: n_cat_cut 582855 -> 582078 (-0.13%) and the "
+                "binned detection total 88071 -> 88053 (-0.02%). This pack "
+                "therefore takes its DETECTION side from the 19.5-floor bundle "
+                "and its TRUTH side from the padded bundle, so `counts` is "
+                "bit-identical across the whole pad ladder."))
         truth_counts, truth_counts_bks = tc_pad, tc_pad_bks
         n_truth_in_window = n_pad_in_window
+        truth_src = tb
 
     # per-mock loa-0 exposure scalars (Loa0FP.from_product n_sl_prod semantics)
     ns0 = float(frozen["fp_prov"]["n_sl_loa0"])
@@ -817,9 +844,26 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
         resp_z_covariate=frozen["fwd_meta"]["z_covariate"],
         t_sigma=dict(values=[float(x) for x in frozen["t_sigma"]],
                      floor=T_SIGMA_FLOOR, detail=frozen["t_sigma_detail"]),
-        truth=dict(n_truth_cut=int(len(bundle["truth_cut"])),
-                   n_truth_in_window=int(n_truth_in_window),
-                   truth_nhi_floor=pad_prov["truth_nhi_floor_used"]),
+        truth=dict(
+            # BOTH totals come from the SAME bundle the saved histogram was
+            # built from, so n_truth_in_window <= n_truth_cut always holds.
+            n_truth_cut=int(len(truth_src["truth_cut"])),
+            n_truth_in_window=int(n_truth_in_window),
+            truth_nhi_floor=pad_prov["truth_nhi_floor_used"],
+            source_bundle=("padded truth-only cut at floor "
+                           f"{pad_prov['truth_nhi_floor_used']}"
+                           if n_pad_bins else "the 19.5-floor detection bundle"),
+            # the detection side NEVER moves with the pad; named separately so
+            # the sidecar cannot be read as carrying two truth floors for one
+            # object (cut_meta below is the DETECTION bundle's meta).
+            n_truth_cut_detection_bundle=int(len(bundle["truth_cut"])),
+            truth_nhi_floor_detection_bundle=float(
+                bundle["meta"].get("truth_nhi_floor", 19.5)),
+            note=("`truth_nhi_floor` is the floor of the bundle the SAVED "
+                  "truth histogram was cut at; `cut_meta.truth_nhi_floor` is "
+                  "the DETECTION bundle's floor and is 19.5 in every pack by "
+                  "construction. Under a pad the two differ on purpose — see "
+                  "basis_pad.cat_cut_discrepancy.")),
         basis_pad=dict(
             **pad_prov,
             ntrue_edges=[float(x) for x in ntrue_edges],
@@ -840,9 +884,7 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
             privacy_mock_only=True,
             fp_molly_rebin_exact=True,
         ),
-        cut_meta={k: (int(v) if isinstance(v, (int, np.integer)) else
-                      (float(v) if isinstance(v, (float, np.floating)) else v))
-                  for k, v in bundle["meta"].items()},
+        cut_meta=_jsonable(bundle["meta"]),   # the DETECTION bundle's meta
     )
     prov_path = npz_path[:-4] + ".provenance.json"
     with open(prov_path, "w") as f:

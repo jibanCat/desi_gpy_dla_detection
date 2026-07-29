@@ -185,7 +185,15 @@ def test_basis_pad_off_grid_floor_refused():
 
 
 class _FakeTable(dict):
-    pass
+    """Stands in for the astropy/structured table `load_and_cut_catalog`
+    returns: column access by key, and ``len()`` = number of ROWS (not
+    columns) — the extractor reports ``len(cat_cut)`` / ``len(truth_cut)`` as
+    row counts in the provenance sidecar."""
+
+    def __len__(self):
+        if dict.__len__(self) == 0:
+            return 0
+        return len(next(iter(self.values())))
 
 
 class _FakeCfg:
@@ -239,6 +247,284 @@ def test_build_truth_counts_padded_tail_is_bit_identical():
     assert tc1[np.isclose(lo, 19.4), :].sum() == 1
     assert tc1[np.isclose(lo, 18.5), :].sum() == 1
     assert tc1[np.isclose(lo, 19.0), :].sum() == 1
+
+
+# ---------------------------------------------------------------------------
+# D1 GUARD COVERAGE (2026-07-29, referee defect 1)
+#
+# The two guards that make the ladder's central claims true — "like-for-like"
+# (the padded truth histogram reproduces the unpadded one over the reporting
+# window) and ">= 19.5 molly cells stay bit-identical" — only execute inside a
+# REAL extraction. Nothing exercised them, so disabling either left the suite
+# green (MUTATION-VERIFIED by the referee: `if False:` => 58 passed).
+#
+# The tests below drive the REAL `extract_pack` / `load_molly_counts_block`
+# code paths on a tiny synthetic bundle. Every heavy ingredient (catalog cut,
+# build_M_b pathlength, forward NPZ, loa-0 product) is injected, but the guard
+# statements themselves are the committed ones.
+# ---------------------------------------------------------------------------
+def _tiny_bundle(rows, snr_min=2.0):
+    """A minimal bundle with the exact keys `extract_pack` reads.
+
+    ``rows`` = (nhi, z, s2n, is_detection) columns; detections are the op-mask
+    rows (the observed side), every row is a truth row.
+    """
+    nhi, z, s2n = (np.asarray(a, float) for a in rows[:3])
+    det = np.asarray(rows[3], bool)
+    tab = _FakeTable(NHI=nhi, Z_DLA=z, S2N_RED=s2n)
+    cfg = _FakeCfg()
+    cfg.snr_min = snr_min
+    return dict(cfg=cfg, cat_cut=tab, truth_cut=tab, op_mask=det,
+                X_tot=np.array([10.0, 20.0, 30.0]), n_sl=1234,
+                meta=dict(n_loaded=len(nhi), truth_nhi_floor=19.5,
+                          n_cat_cut=len(nhi), n_truth_cut=len(nhi)))
+
+
+def _truth_only_bundle(nhi, z, s2n, snr_min=2.0):
+    cfg = _FakeCfg()
+    cfg.snr_min = snr_min
+    return dict(cfg=cfg,
+                truth_cut=_FakeTable(NHI=np.asarray(nhi, float),
+                                     Z_DLA=np.asarray(z, float),
+                                     S2N_RED=np.asarray(s2n, float)),
+                meta=dict(n_loaded=len(nhi), truth_nhi_floor=float(min(nhi)),
+                          n_cat_cut=len(nhi), n_truth_cut=len(nhi)))
+
+
+def _tiny_frozen():
+    """The frozen calibration blocks, shaped exactly as the schema requires but
+    filled with cheap synthetic values (no NERSC/GPFS input is touched)."""
+    n_molly = 3
+    return dict(
+        molly=dict(molly_n_det=np.full((EP.N_S, n_molly), 5.0),
+                   molly_n_tot=np.full((EP.N_S, n_molly), 10.0),
+                   molly_nhi_edges=np.array([19.5, 20.0, 21.0, np.inf]),
+                   molly_snr_edges=EP.SNR_EDGES.copy()),
+        molly_prov=dict(path="<synthetic>", max_c_diff=0.0,
+                        convention="const_extrap", below_floor="<synthetic>"),
+        g_grid=np.ones((n_molly, EP.N_K)), g_occupancy=np.zeros((n_molly, EP.N_K)),
+        g_available=False,
+        fwd=dict(resp_mu_coef=np.zeros((2, 3, 3)), resp_sig_coef=np.zeros((2, 3, 3)),
+                 resp_skew_coef=np.zeros((2, 3, 3)),
+                 resp_snr_edges=np.array([0., 3., np.inf]),
+                 resp_z_edges=np.array([2.0, 2.5, 3.0, np.inf]),
+                 resp_sig_floor=np.float64(0.1),
+                 resp_skew_ramp=np.array([21.0, 0.5]),
+                 resp_N_ref=np.float64(20.3)),
+        fwd_meta=dict(path="<synthetic>", z_covariate="zqso",
+                      fwd_response_kind="skewnormal", deg_N=2),
+        fp_counts=np.zeros((EP.N_C, EP.N_S), dtype=np.int64),
+        fp_prov=dict(product="<synthetic>", loa0_out="<synthetic>",
+                     n_sl_loa0=1000.0),
+        t_sigma=np.full(EP.N_KC, 0.10), t_sigma_detail={},
+    )
+
+
+@pytest.fixture
+def _no_heavy_dX(monkeypatch):
+    """build_dX goes through build_M_b (the full PX machinery). The guards under
+    test are downstream of it, so stub it — everything else in extract_pack is
+    the committed code."""
+    monkeypatch.setattr(EP, "build_dX",
+                        lambda bundle: np.full((EP.N_K, EP.N_S), 4.0))
+
+
+# --- rows shared by the M1 guard tests ------------------------------------
+# in-window truth+detection rows (>= 19.5) and the sub-floor rows a pad adds
+_IN_WINDOW = [(19.55, 2.5, 5.0), (20.35, 2.6, 5.0), (21.05, 3.1, 8.0)]
+_SUB_FLOOR = [(18.05, 2.5, 5.0), (18.55, 2.5, 5.0), (19.45, 3.1, 5.0)]
+
+
+def _cols(rows):
+    return ([r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows])
+
+
+def _run_extract(tmp_path, monkeypatch, pad_floor, truth_rows_padded,
+                 tag="_guardtest"):
+    """Drive the REAL extract_pack with injected bundles."""
+    frozen = _tiny_frozen()
+    nhi, z, s2n = _cols(_IN_WINDOW)
+    frozen["_bundles"] = {"2lpt0": _tiny_bundle(
+        (nhi, z, s2n, [True] * len(nhi)))}
+    if truth_rows_padded is not None:
+        tn, tz, ts = _cols(truth_rows_padded)
+        frozen["_truth_bundles"] = {
+            ("2lpt0", round(float(pad_floor), 3)):
+                _truth_only_bundle(tn, tz, ts)}
+    return EP.extract_pack("2lpt0", str(tmp_path), frozen,
+                           pad_floor=pad_floor, tag=tag)
+
+
+def test_M1_basis_pad_guard_passes_on_a_consistent_padded_truth(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """POSITIVE leg: a real extraction with a pad whose padded truth reproduces
+    the unpadded histogram over [19.5, 22.4) must SUCCEED, and the written pack
+    must carry the sub-floor rows in the extra basis bins only."""
+    r = _run_extract(tmp_path, monkeypatch, 18.0, _SUB_FLOOR + _IN_WINDOW)
+    d = np.load(r["npz"], allow_pickle=False)
+    n_pad = len(d["ntrue_edges"]) - 1 - EP.N_C
+    assert n_pad == 15
+    assert d["truth_counts"][:n_pad].sum() == len(_SUB_FLOOR)
+    assert d["truth_counts"][n_pad:].sum() == len(_IN_WINDOW)
+    with open(r["provenance"]) as f:
+        prov = json.load(f)
+    assert prov["basis_pad"]["n_truth_below_reporting_floor"] == len(_SUB_FLOOR)
+
+
+def test_M1_basis_pad_guard_FIRES_when_the_padded_truth_moves_in_window(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """MUTATION TARGET (extract_pack.py `if not np.array_equal(tc_pad[n_pad:],
+    truth_counts)`): if the deeper truth cut perturbs a row at or above the
+    reporting floor, the ladder is no longer like-for-like and the extraction
+    MUST refuse. Disabling the guard makes this test go red."""
+    moved = list(_IN_WINDOW)
+    moved[0] = (20.95, 2.5, 5.0)          # 19.55 -> 20.95: an IN-WINDOW move
+    with pytest.raises(RuntimeError, match="reproduce the unpadded histogram"):
+        _run_extract(tmp_path, monkeypatch, 18.0, _SUB_FLOOR + moved)
+
+
+def test_M1_basis_pad_guard_FIRES_on_the_bks_leg_alone(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """The (b,k,s) leg has independent power: a row that keeps its (N, z) bin
+    but changes SNR stratum leaves the (b,k) histogram bit-identical and must
+    still be refused."""
+    moved = list(_IN_WINDOW)
+    moved[0] = (19.55, 2.5, 3.5)          # s=5 -> s=3, same (b, k)
+    with pytest.raises(RuntimeError, match=r"\(b,k,s\) padded truth"):
+        _run_extract(tmp_path, monkeypatch, 18.0, _SUB_FLOOR + moved)
+
+
+def test_M1_unpadded_extraction_never_enters_the_guarded_branch(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """Schema v1 regression lock, through the REAL extractor: with no pad the
+    truth bundle is never loaded and ntrue_edges == nhat_edges."""
+    called = []
+    monkeypatch.setattr(EP, "load_truth_bundle",
+                        lambda *a, **k: called.append(a) or (_ for _ in ()).throw(
+                            AssertionError("load_truth_bundle called with no pad")))
+    r = _run_extract(tmp_path, monkeypatch, None, None, tag="_guardtest_nopad")
+    d = np.load(r["npz"], allow_pickle=False)
+    assert np.array_equal(np.asarray(d["ntrue_edges"]), EP.NHAT_EDGES)
+    assert called == []
+    with open(r["provenance"]) as f:
+        prov = json.load(f)
+    assert prov["basis_pad"]["n_pad_bins"] == 0
+
+
+def test_padded_sidecar_truth_block_is_internally_coherent(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """Referee minor (2026-07-29): a padded pack used to report MORE truth
+    systems 'in window' than were 'cut' (146792 cut vs 147188 in window on
+    2LPT-0 at pad 18.0) because the two totals came from DIFFERENT bundles, and
+    it carried two contradictory truth floors with no way to tell them apart.
+    Both totals must now come from the bundle the saved histogram was built
+    from, and each floor must be labelled."""
+    # padded truth bundle deliberately LARGER than the detection bundle's
+    r = _run_extract(tmp_path, monkeypatch, 18.0, _SUB_FLOOR + _IN_WINDOW)
+    with open(r["provenance"]) as f:
+        prov = json.load(f)
+    t = prov["truth"]
+    assert t["n_truth_in_window"] <= t["n_truth_cut"], (
+        f"sidecar claims {t['n_truth_in_window']} in window but only "
+        f"{t['n_truth_cut']} cut")
+    assert t["n_truth_cut"] == len(_SUB_FLOOR) + len(_IN_WINDOW)
+    assert t["n_truth_cut_detection_bundle"] == len(_IN_WINDOW)
+    # the two floors are both present and each says which object it describes
+    assert t["truth_nhi_floor"] == 18.0
+    assert t["truth_nhi_floor_detection_bundle"] == 19.5
+    assert prov["cut_meta"]["truth_nhi_floor"] == 19.5
+    assert "detection bundle" in t["source_bundle"] or "padded" in t["source_bundle"]
+    # the ~0.1% cat_cut discrepancy is stated in the SIDECAR, not only in the
+    # module docstring (referee minor)
+    assert "582855" in prov["basis_pad"]["cat_cut_discrepancy"]
+    assert "88071" in prov["basis_pad"]["cat_cut_discrepancy"]
+    assert prov["basis_pad"]["n_truth_cut_padded_bundle"] == \
+        len(_SUB_FLOOR) + len(_IN_WINDOW)
+
+
+def test_unpadded_sidecar_truth_block_names_one_floor(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    r = _run_extract(tmp_path, monkeypatch, None, None, tag="_prov_nopad")
+    with open(r["provenance"]) as f:
+        prov = json.load(f)
+    t = prov["truth"]
+    assert t["truth_nhi_floor"] == t["truth_nhi_floor_detection_bundle"] == 19.5
+    assert t["n_truth_cut"] == t["n_truth_cut_detection_bundle"]
+    assert t["n_truth_in_window"] <= t["n_truth_cut"]
+    assert "cat_cut_discrepancy" not in prov["basis_pad"]
+
+
+# --- M2: the molly172 splice tail-subset check ------------------------------
+_CANON_EDGES = np.array([19.5, 20.0, 21.0, np.inf])
+
+
+def _fake_canonical_counts(path="<synthetic canonical>"):
+    return dict(snr_edges=EP.SNR_EDGES.copy(), nhi_edges=_CANON_EDGES.copy(),
+                cmp_nfound=np.full((EP.N_S, 3), 6.0),
+                cmp_nfid=np.full((EP.N_S, 3), 10.0),
+                max_c_diff=0.0, path=path)
+
+
+def _write_counts172(tmp_path, edges, name="molly_counts_nhi172.npz"):
+    p = str(tmp_path / name)
+    n = len(edges) - 1
+    np.savez(p, snr_edges=EP.SNR_EDGES, nhi_edges=np.asarray(edges, float),
+             cmp_nfound=np.arange(EP.N_S * n, dtype=float).reshape(EP.N_S, n),
+             cmp_nfid=np.full((EP.N_S, n), 100.0), max_c_diff=0.0)
+    return p
+
+
+def test_M2_molly172_splice_guard_passes_and_keeps_ge195_bit_identical(
+        tmp_path, monkeypatch):
+    """POSITIVE leg: the >= 19.5 cells of the spliced block must be BIT-identical
+    to the canonical matrix — that is the claim the whole convention rests on."""
+    monkeypatch.setattr(EP.FF, "load_molly_counts",
+                        lambda *a, **k: _fake_canonical_counts())
+    monkeypatch.setattr(
+        "CDDF_analysis.hbi.cddf_catalog_hbi.load_molly_matrix",
+        lambda *a, **k: "<mm_alt sentinel>")
+    p172 = _write_counts172(tmp_path, [18.0, 18.5, 19.0, 19.5, 20.0, 21.0, np.inf])
+    block, prov, mm_alt = EP.load_molly_counts_block(
+        convention="molly172", counts172_path=p172)
+    canon = _fake_canonical_counts()
+    assert prov["n_cells_spliced_below_floor"] == 3
+    assert np.array_equal(block["molly_n_det"][:, 3:], canon["cmp_nfound"])
+    assert np.array_equal(block["molly_n_tot"][:, 3:], canon["cmp_nfid"])
+    assert np.allclose(block["molly_nhi_edges"][3:-1], _CANON_EDGES[:-1])
+    assert mm_alt == "<mm_alt sentinel>"
+
+
+@pytest.mark.parametrize("edges,why", [
+    ([18.0, 18.5, 19.0, 19.6, 20.0, 21.0, np.inf], "interior edge 19.5 -> 19.6"),
+    ([18.0, 18.5, 19.0, 19.5, 20.0, 21.5, np.inf], "interior edge 21.0 -> 21.5"),
+    ([18.0, 18.5, 19.0, 19.5, 20.0, 21.0, 22.0], "top edge not +inf"),
+])
+def test_M2_molly172_splice_guard_FIRES_when_edges_are_not_a_tail_subset(
+        tmp_path, monkeypatch, edges, why):
+    """MUTATION TARGET (extract_pack.py `if not (np.allclose(tail[:-1], ...)
+    and np.isposinf(...))`): splicing a floor-17.2 matrix whose >= 19.5 cells do
+    NOT coincide with the canonical ones would silently change the completeness
+    INSIDE the reporting window. Disabling the check makes these go red."""
+    monkeypatch.setattr(EP.FF, "load_molly_counts",
+                        lambda *a, **k: _fake_canonical_counts())
+    p172 = _write_counts172(tmp_path, edges)
+    with pytest.raises(RuntimeError, match="not a tail"):
+        EP.load_molly_counts_block(convention="molly172", counts172_path=p172)
+
+
+def test_M2_molly172_splice_guard_FIRES_on_mismatched_snr_strata(
+        tmp_path, monkeypatch):
+    """Companion leg: the SNR strata must match too (a different stratification
+    would make the two matrices non-spliceable in the s axis)."""
+    monkeypatch.setattr(EP.FF, "load_molly_counts",
+                        lambda *a, **k: _fake_canonical_counts())
+    p = str(tmp_path / "bad_snr.npz")
+    np.savez(p, snr_edges=np.arange(EP.N_S + 1, dtype=float),
+             nhi_edges=np.array([18.0, 19.0, 19.5, 20.0, 21.0, np.inf]),
+             cmp_nfound=np.zeros((EP.N_S, 5)), cmp_nfid=np.ones((EP.N_S, 5)),
+             max_c_diff=0.0)
+    with pytest.raises(RuntimeError, match="SNR strata differ"):
+        EP.load_molly_counts_block(convention="molly172", counts172_path=p)
 
 
 def test_completeness_convention_names():
@@ -321,6 +607,34 @@ def test_pack_schema_conformance(path):
     assert prov["guards"]["forward_kernel_assert"] is True
     assert prov["guards"]["no_kappa_keys"] is True
     assert prov["guards"]["no_rho"] is True
+
+
+@needs_pack
+@pytest.mark.parametrize("path", packs, ids=[os.path.basename(p) for p in packs])
+def test_production_packs_are_unpadded(path):
+    """Referee minor (2026-07-29): ``test_pack_schema_conformance`` was relaxed
+    from ``ntrue_edges == nhat_edges`` to a TAIL-SUBSET assertion so the D1
+    ladder's padded packs would validate — which left NOTHING pinning that a
+    PRODUCTION pack is unpadded. The pad is a research configuration; a pack in
+    the production pack dir must still be schema v1 on the true-N axis, and its
+    sidecar must say so.
+
+    (The ladder's padded packs live in a scratch dir and are never in
+    ``MODELA_PACK_DIR``; if a padded pack ever lands here, this is the tripwire.)
+    """
+    d, prov = _load(path)
+    ne = np.asarray(d["ntrue_edges"], float)
+    assert np.array_equal(ne, EP.NHAT_EDGES), (
+        f"PRODUCTION pack {os.path.basename(path)} carries a basis pad "
+        f"({len(ne) - len(EP.NHAT_EDGES)} extra bins down to {ne[0]}). Padded "
+        "packs belong in a scratch ladder dir, not the production pack dir.")
+    assert d["truth_counts"].shape[0] == EP.N_C
+    # sidecars written before schema v1.1 carry no basis_pad block at all —
+    # which is itself unambiguous evidence of "no pad". If the block IS there
+    # it must agree with the arrays.
+    if "basis_pad" in prov:
+        assert prov["basis_pad"]["n_pad_bins"] == 0
+        assert prov["basis_pad"]["pad_floor"] is None
 
 
 @needs_pack

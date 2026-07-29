@@ -240,10 +240,49 @@ def test_ratio_tables_emits_chi2_dof_so_the_gate_is_not_fail_open(spack):
 
 
 def test_closure_verdict_fails_on_chi2_alone():
-    """A table whose totals and per-bin z are all tiny but whose chi2/dof is
-    huge must FAIL. Before the fix this returned closes=True."""
+    """``_closure_verdict``'s chi2 leg, in isolation: a table whose totals and
+    per-bin z are all tiny but whose chi2/dof is huge must FAIL.
+
+    HONESTY NOTE (referee, 2026-07-29): this test does NOT have power against
+    the 2026-07-29 fail-open bug and its earlier docstring claim that "before
+    the fix this returned closes=True" was FALSE. ``_closure_verdict`` was
+    never the broken half — it always read ``tab["total"]["chi2_dof"]``
+    correctly; the defect was that ``ratio_tables`` never PUT the key there, so
+    ``tot.get("chi2_dof", 0.0)`` read 0.0. Handing the verdict a hand-built
+    dict that already contains the key bypasses the entire bug. The powered
+    test is ``test_closure_verdict_is_fail_closed_end_to_end`` below, which
+    goes through ``ratio_tables``. This one is kept as a unit pin on the leg's
+    threshold arithmetic only."""
     tab = {"total": {"z": 0.1, "chi2_dof": 999.0},
            "by_nhat": [{"z": 0.1}], "by_z": [{"z": 0.1}]}
     v = FS._closure_verdict(tab, 5.0, 5.0, 3.0)
     assert v["closes"] is False
     assert any("chi2/dof" in r for r in v["reasons"])
+
+
+def test_closure_verdict_is_fail_closed_end_to_end(spack):
+    """THE powered test for the 2026-07-29 fail-open fix: run the REAL producer
+    (``ratio_tables``) and feed ITS output to ``_closure_verdict`` with the |z|
+    legs opened wide, so the chi2 leg is the only thing that can fail. Remove
+    the ``chi2_dof`` emission from ``ratio_tables`` and this goes red, because
+    ``tot.get("chi2_dof", 0.0)`` silently reads 0.0 <= tolerance."""
+    tab = FS.ratio_tables(FS.selftest(spack), spack)
+    # read it EXACTLY the way _closure_verdict does, so a missing key surfaces
+    # as the fail-open it is rather than as a KeyError
+    chi2 = tab["total"].get("chi2_dof", 0.0)
+    assert chi2 > 0.0, (
+        "ratio_tables produced no usable chi2_dof — _closure_verdict's "
+        "tot.get('chi2_dof', 0.0) would read 0.0 and the chi2 leg could never "
+        "fire (this IS the 2026-07-29 fail-open bug)")
+    # |z| legs wide open (nothing can trip them), chi2 tolerance well under the
+    # measured value -> the ONLY route to closes=False is the chi2 leg.
+    huge = 1e9
+    v = FS._closure_verdict(tab, huge, huge, chi2 / 2.0)
+    assert v["closes"] is False, (
+        "the chi2 leg did not fire on a table produced by ratio_tables — the "
+        "gate is fail-OPEN again (chi2_dof missing from tab['total']?)")
+    assert any("chi2/dof" in r for r in v["reasons"])
+    # and it PASSES when the tolerance is above the measured value, so the
+    # assertion above is about chi2 and not about some unrelated leg
+    v_ok = FS._closure_verdict(tab, huge, huge, chi2 * 2.0)
+    assert v_ok["closes"] is True
