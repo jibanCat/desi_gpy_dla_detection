@@ -624,3 +624,109 @@ def test_run_evidence_forwards_its_bypass_flag_into_the_artifact(tmp_path,
                   "--allow-low-farr", "documented on-mock reason"])
     assert ev["gate"]["bypasses"]["allow_low_farr"] == "documented on-mock reason"
     assert ev["gate"]["paper_facing"] is False
+
+
+# ==========================================================================
+# 10. HOLE 4 -- the non-dict hardening stopped one level too shallow
+#
+# Section 9 hardened the BLOCK level but left the CHECK VALUE level coercing
+# with ``bool(v)``, which is the same fail-open class one level down: a check
+# value of ``'no'`` or ``[0]`` is TRUTHY in Python while meaning "not ok" to
+# a human, so it stamped.  ``incomplete`` had the mirror hole: a non-list
+# was silently dropped by ``list(blk.get('incomplete') or [])``, and a
+# non-dict ``checks`` crashed with AttributeError instead of failing closed.
+# ==========================================================================
+
+# every one of these is a value a human would NOT call "this check passed"
+_NON_BOOL_CHECK_VALUES = ["no", [0], 1.0, "ok", ["ppc"], (), None, 0, 1,
+                          "True", "False", {}, {"ok": True}]
+
+
+@pytest.mark.parametrize("val", _NON_BOOL_CHECK_VALUES)
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_check_value_that_is_not_a_bool_refuses_the_stamp(block, val):
+    """A check must be a genuine bool.  ``'no'`` and ``[0]`` are the worst
+    case: truthy to Python, "not ok" to a human."""
+    b = _passing_blocks()
+    b[block] = {"checks": {"some_check_ok": val}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"{block}.some_check_ok={val!r} stamped"
+    assert g["paper_facing"] is False
+    assert g["checks"][f"{block}.some_check_ok"] is False
+    assert any("not a bool" in r for r in g["reasons"]), g["reasons"]
+
+
+@pytest.mark.parametrize("val", _NON_BOOL_CHECK_VALUES)
+def test_a_non_bool_check_in_a_NON_required_block_also_refuses(val):
+    b = _passing_blocks()
+    b["extra"] = {"checks": {"whatever_ok": val}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"extra.whatever_ok={val!r} stamped"
+    assert g["paper_facing"] is False
+
+
+@pytest.mark.parametrize("good", [True, np.bool_(True)])
+def test_genuine_bools_including_numpy_still_pass(good):
+    """The hardening must not break the real callers: model_a/ppc/sbc all
+    build checks with ``bool(...)`` or numpy comparisons."""
+    b = _passing_blocks()
+    b["ppc"] = {"checks": {"ppc_ok": good}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is True, g["reasons"]
+    assert g["checks"]["ppc.ppc_ok"] is True
+
+
+@pytest.mark.parametrize("bad", [False, np.bool_(False)])
+def test_genuine_false_still_fails_as_a_failed_check_not_a_malformed_one(bad):
+    b = _passing_blocks()
+    b["ppc"] = {"checks": {"ppc_ok": bad}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is False
+    assert any("failed check: ppc.ppc_ok" in r for r in g["reasons"]), g["reasons"]
+    assert not any("not a bool" in r for r in g["reasons"]), g["reasons"]
+
+
+@pytest.mark.parametrize("junk", [0, 1, 1.0, True, "ppc", "", object()])
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_non_sequence_incomplete_refuses_the_stamp(block, junk):
+    """``list(blk.get('incomplete') or [])`` silently dropped a non-list.
+    ``incomplete=0`` and ``incomplete='ppc'`` both used to stamp (the latter
+    would have exploded into per-character entries had it been truthy)."""
+    b = _passing_blocks()
+    b[block] = {"checks": {"x_ok": True}, "incomplete": junk}
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"{block}.incomplete={junk!r} stamped"
+    assert g["paper_facing"] is False
+    assert any("incomplete" in r and "sequence" in r for r in g["reasons"]), \
+        g["reasons"]
+
+
+@pytest.mark.parametrize("ok", [[], (), ["a"], ("a", "b")])
+def test_genuine_sequences_for_incomplete_are_honoured(ok):
+    b = _passing_blocks()
+    b["ppc"] = {"checks": {"ppc_ok": True}, "incomplete": ok}
+    g = EV.gate(b)
+    assert g["stampable"] is (not ok), g["reasons"]
+    if ok:
+        assert g["incomplete"]["ppc"] == list(ok)
+
+
+@pytest.mark.parametrize("junk", ["ok", [], 0, 1.0, ["ppc_ok"], (), True])
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_non_dict_checks_mapping_fails_closed_and_does_not_raise(block, junk):
+    """``blocks['ppc'] = {'checks': 'ok'}`` used to raise AttributeError out
+    of the gate.  A gate that crashes is not a gate that fails closed."""
+    b = _passing_blocks()
+    b[block] = {"checks": junk, "incomplete": []}
+    g = EV.gate(b)          # must NOT raise
+    assert g["stampable"] is False, f"{block}.checks={junk!r} stamped"
+    assert g["paper_facing"] is False
+    assert any(block in r for r in g["reasons"]), g["reasons"]
+
+
+def test_a_non_bool_check_survives_assembly_into_the_artifact():
+    ev = EV.assemble_evidence({**_passing_blocks(),
+                               "ppc": {"checks": {"ppc_pval_ok": "no"},
+                                       "incomplete": []}})
+    assert ev["gate"]["stampable"] is False
+    assert ev["gate"]["paper_facing"] is False
