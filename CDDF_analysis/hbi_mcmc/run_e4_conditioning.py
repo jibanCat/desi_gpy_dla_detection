@@ -792,14 +792,34 @@ def _summary(art, mocks):
 
     def rng(vals, fmt="{:.3g}"):
         """'a-b' over mocks, so no single mock's value is quoted as the number."""
-        lo, hi = float(np.min(vals)), float(np.max(vals))
-        return (fmt.format(lo) if lo == hi
-                else f"{fmt.format(lo)}-{fmt.format(hi)}")
+        lo, hi = fmt.format(float(np.min(vals))), fmt.format(float(np.max(vals)))
+        return lo if lo == hi else f"{lo}-{hi}"
 
     # --- measured inputs for the prose (nothing below is hand-entered) ------
     gK = over(lambda m: m["conditioning_decomposition"]["gain_from_K_median_over_z"])
     gW = over(lambda m: m["conditioning_decomposition"]["gain_from_w_median_over_z"])
     gT = over(lambda m: m["conditioning_decomposition"]["gain_total_median_over_z"])
+
+    def _detail(m, key):
+        """the canonical decomposition at the DETAIL_K bin (fallback: first)."""
+        pz = m["conditioning_decomposition"]["per_z"]
+        d = next((d for d in pz if d.get("k") == DETAIL_K), pz[0])
+        return d["canonical"][key]
+
+    gK_k = over(lambda m: _detail(m, "gain_from_K"))
+    gW_k = over(lambda m: _detail(m, "gain_from_w"))
+    gT_k = over(lambda m: _detail(m, "gain_total"))
+    base_k = over(lambda m: _detail(m, "cond_baseline"))
+    konly_k = over(lambda m: _detail(m, "cond_per_stratum_K_only"))
+    wonly_k = over(lambda m: _detail(m, "cond_per_stratum_w_only"))
+    act_k = over(lambda m: _detail(m, "cond_actual"))
+
+    def _z_span(key):
+        vals = [d["canonical"][key] for m in mocks
+                for d in art["mocks"][m]["conditioning_decomposition"]["per_z"]]
+        return float(np.min(vals)), float(np.max(vals))
+
+    gK_z, gW_z = _z_span("gain_from_K"), _z_span("gain_from_w")
     # min/max over EVERY reference-stratum choice, z bin and mock
     def _ref_span(key):
         vals = [d[key] for m in mocks
@@ -880,11 +900,21 @@ def _summary(art, mocks):
                 "TWO independently frozen inputs, and it is measured here by "
                 "counterfactual (conditioning_decomposition): relative to a "
                 "baseline that stacks identical blocks (common response AND "
-                "common weights), restoring the per-SNR response kernel alone "
-                f"buys {rng(gK, '{:.2g}')}x, and restoring the per-stratum "
+                f"common weights, cond {rng(base_k, '{:.3g}')} at the detail z "
+                f"bin k={DETAIL_K}), restoring the per-SNR response kernel "
+                f"alone gives cond {rng(konly_k, '{:.3g}')} — a "
+                f"{rng(gK_k, '{:.2g}')}x gain — and restoring the per-stratum "
                 "weight alone — the 7-level completeness step times the "
-                f"per-stratum dX — INDEPENDENTLY buys {rng(gW, '{:.2g}')}x "
-                f"(medians over z; total {rng(gT, '{:.2g}')}x). Neither is a "
+                f"per-stratum dX — INDEPENDENTLY gives cond "
+                f"{rng(wonly_k, '{:.4g}')}, a {rng(gW_k, '{:.2g}')}x gain "
+                f"(both restored: cond {rng(act_k, '{:.4g}')}, "
+                f"{rng(gT_k, '{:.2g}')}x). The gains fall steeply with z as the "
+                f"response cell changes: over all 15 z bins and all three mocks "
+                f"the response gain spans {gK_z[0]:.2g}x-{gK_z[1]:.2g}x and the "
+                f"weight gain {gW_z[0]:.2g}x-{gW_z[1]:.2g}x (medians over z "
+                f"{rng(gK, '{:.2g}')}x and {rng(gW, '{:.2g}')}x, total "
+                f"{rng(gT, '{:.2g}')}x), so no single number covers the whole "
+                "range and the per-z table must be read. Neither input is a "
                 "robustness margin: both are frozen calibrations, and the "
                 "conditioning of the operator the likelihood inverts is only "
                 "as real as they are. If either the SNR-resolved response fit "
@@ -906,9 +936,14 @@ def _summary(art, mocks):
                 "far better conditioned. The qualitative finding — two frozen "
                 "inputs, not one, carry the load — holds at every reference; "
                 "the numbers do not transfer."),
-            decomposition_gain_from_response_K=gK,
-            decomposition_gain_from_completeness_dX_weights=gW,
-            decomposition_gain_total=gT),
+            decomposition_gain_from_response_K_median_over_z=gK,
+            decomposition_gain_from_completeness_dX_weights_median_over_z=gW,
+            decomposition_gain_total_median_over_z=gT,
+            decomposition_at_detail_k=dict(
+                k=DETAIL_K, cond_baseline=base_k,
+                cond_per_stratum_K_only=konly_k,
+                cond_per_stratum_w_only=wonly_k, cond_actual=act_k,
+                gain_from_K=gK_k, gain_from_w=gW_k, gain_total=gT_k)),
         exact_data_self_inversion=dict(
             max_abs_ratio_minus_1=exact,
             verdict="RECOVERS THE TRUTH. With exact noiseless data the NNLS "

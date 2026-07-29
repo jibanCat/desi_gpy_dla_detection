@@ -439,9 +439,15 @@ def test_summary_caveat_names_both_frozen_inputs_and_quotes_measured_gains():
                 gain_from_K_median_over_z=gk,
                 gain_from_w_median_over_z=gw,
                 gain_total_median_over_z=gt,
-                per_z=[dict(gain_from_K_min=gk, gain_from_w_min=gw,
-                            k_reference_sensitivity=[
-                                dict(gain_from_K=gk, gain_from_w=gw)])]),
+                per_z=[dict(
+                    k=e4run.DETAIL_K,
+                    gain_from_K_min=gk, gain_from_w_min=gw,
+                    canonical=dict(
+                        gain_from_K=gk, gain_from_w=gw, gain_total=gt,
+                        cond_baseline=3.45e10, cond_per_stratum_K_only=469.0,
+                        cond_per_stratum_w_only=3827.0, cond_actual=344.0),
+                    k_reference_sensitivity=[
+                        dict(gain_from_K=gk, gain_from_w=gw)])]),
             self_inversion=dict(
                 exact_summary=dict(max_over_z=1e-10),
                 poisson_summary=dict(
