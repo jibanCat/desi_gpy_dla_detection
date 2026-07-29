@@ -2,8 +2,11 @@
  "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
  "entry_point": "aggregate_report / --mock NAME=PATH",
  "date": "2026-07-29",
- "code_commit": "59dec214beeb9c86b9200140d1cea0df197d3512",
+ "code_commit": "a9fe97b68d2077a85818e1678c79ecf6beb19078",
+ "code_dirty": false,
+ "code_dirty_scope": "uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- this is NOT a whole-tree cleanliness claim",
  "scope": "MOCK ONLY (2lpt0 / london0 / saclay0). No real-survey values.",
+ "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python -m CDDF_analysis.hbi_mcmc.forward_selftest --mock 2lpt0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_2lpt0_v11.npz --mock london0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_london0_v11.npz --mock saclay0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_saclay0_v11.npz --out CDDF_analysis/hbi_mcmc/rung9_forward_selftest.json",
  "what": "pure forward-model truth-fold self-test: the pack's own truth f(N,z) folded through the pack's own kernel/completeness/g/dX/FP machinery at the truth-equivalent parameter point, vs the pack's own observed counts. NO SAMPLING.",
  "mocks": {
   "2lpt0": {
@@ -4236,6 +4239,5 @@
   "D1_basis_pad_low_N": "OPEN \u2014 needs a re-extracted basis-padded pack",
   "D2_response_extrapolation_high_N": "FIXED in-code (resp_clamp, default 'both')",
   "forward_model_closes": false
- },
- "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python -m CDDF_analysis.hbi_mcmc.forward_selftest --mock 2lpt0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_2lpt0_v11.npz --mock london0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_london0_v11.npz --mock saclay0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_saclay0_v11.npz --out CDDF_analysis/hbi_mcmc/rung9_forward_selftest.json"
+ }
 }
