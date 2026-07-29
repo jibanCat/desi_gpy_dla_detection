@@ -181,15 +181,22 @@ def test_cli_reports_the_union_and_its_exit_code_tells_the_truth():
         f"exit {r.returncode} but re_derivable={summary['re_derivable']}/"
         f"{summary['total']}: the gate's exit code contradicts its own report")
 
-    # 4. nothing fails that is not on the ledger, and the ledger is accurate
+    # 4. nothing fails that is not on the ledger, the ledger is accurate, and no
+    #    ledgered artifact has simply VANISHED.  Without the third check this test was
+    #    still greenable by DELETING the offending artifact -- the exact flaw it was
+    #    written to replace.
     failing = {w["path"]: w["status"] for w in rows if w["status"] != P.RE_DERIVABLE}
-    unexpected = {p: s for p, s in failing.items() if p not in KNOWN_NOT_REDERIVABLE}
+    unexpected, mislabelled, vanished = _ledger_violations(
+        {w["path"] for w in rows}, failing, KNOWN_NOT_REDERIVABLE)
     assert not unexpected, (
         "NEW un-re-derivable artifact(s) -- a committed stamp that cannot be "
         f"re-derived is exactly what the provenance rule forbids: {unexpected}")
-    mislabelled = {p: (s, KNOWN_NOT_REDERIVABLE[p]) for p, s in failing.items()
-                   if KNOWN_NOT_REDERIVABLE[p] != s}
     assert not mislabelled, f"ledger status is stale: {mislabelled}"
+    assert not vanished, (
+        f"ledgered artifact(s) are no longer audited at all: {vanished}. DELETING a "
+        "failing artifact is not a repair, and this gate must not go green because "
+        "the evidence left the repo. If the removal is deliberate, drop the ledger "
+        "entry in the SAME change -- that edit is reviewable; a silent pass is not.")
 
 
 @pytest.mark.skipif(not os.path.isdir(SECOND_WT), reason="second worktree absent")
@@ -212,6 +219,16 @@ _PROSE_KEY_TOKENS = ("note", "why", "reason", "what", "rule", "defect", "comment
                      "supersedes", "correction", "evidence", "provenance_note")
 
 
+def _leaf_key(path: str) -> str:
+    """The key the value actually hangs off, with any list indices stripped.
+
+    ``/legs/2lpt1/code_commit_of_run`` -> ``code_commit_of_run``
+    ``/metadata/notes[0]``             -> ``notes``
+    """
+    seg = path.rsplit("/", 1)[-1]
+    return __import__("re").sub(r"(\[\d+\])+$", "", seg)
+
+
 def _stamp_like_dirty_values(doc):
     """Yield (path, value) for every DIRTY-looking sha that is a stamp, not prose."""
     def walk(x, p=""):
@@ -226,7 +243,10 @@ def _stamp_like_dirty_values(doc):
     for path, val in walk(doc):
         if not isinstance(val, str) or not _DIRTY_SHA.search(val):
             continue
-        if any(t in path.lower() for t in _PROSE_KEY_TOKENS):
+        # Scope the exemption to the LEAF key.  Matching the FULL path let any
+        # ancestor named note/why/reason/evidence/supersedes/... exempt its entire
+        # subtree, which is precisely where an aggregator parks its per-leg stamps.
+        if any(t in _leaf_key(path).lower() for t in _PROSE_KEY_TOKENS):
             continue
         yield path, val
 
@@ -267,3 +287,85 @@ def test_the_dirty_substamp_scanner_is_not_vacuous():
     }
     hits = dict(_stamp_like_dirty_values(planted))
     assert hits == {"/legs/2lpt1/variantA/code_commit_of_run": "d496f42-dirty"}, hits
+
+
+def test_the_prose_exemption_is_scoped_to_the_LEAF_key():
+    """REFEREE (2026-07-29): the exemption was ``any(t in path.lower() ...)`` over the
+    FULL path, so ANY ancestor key containing note/why/reason/what/rule/comment/
+    evidence/supersedes exempted its WHOLE subtree.  A real per-leg stamp buried under
+    a key called ``notes`` or ``evidence`` was invisible to the scanner -- and those are
+    exactly the container names an aggregator uses.  Measured pre-fix: this planted
+    document yielded ZERO hits, i.e. all three genuine dirty stamps were swallowed.
+
+    The exemption is about what a VALUE is (prose vs stamp), which is decided by the
+    key the value hangs off: the LEAF key.  Ancestors say nothing about it.
+    """
+    planted = {
+        # a genuine per-leg stamp under prose-named ANCESTORS -- must be CAUGHT
+        "notes": {"legs": {"a": {"code_commit_of_run": "d496f42-dirty"}}},
+        "evidence": {"run": {"code_commit": "abc1234-dirty"}},
+        "supersedes": {"prior": {"code_commit_of_run": "beefcafe-dirty"}},
+        # genuine prose, keyed by a prose LEAF -- must be EXEMPT
+        "metadata": {"note": "generated at d496f42-dirty; held untracked",
+                     "code_commit": "0" * 40},
+        "why": "the legs ran at d496f42-dirty, which is why they stay untracked",
+        # prose LIST: the leaf key is still the prose key, indices and all
+        "provenance_note": ["ran at d496f42-dirty", "held untracked"],
+    }
+    hits = dict(_stamp_like_dirty_values(planted))
+    assert hits == {
+        "/notes/legs/a/code_commit_of_run": "d496f42-dirty",
+        "/evidence/run/code_commit": "abc1234-dirty",
+        "/supersedes/prior/code_commit_of_run": "beefcafe-dirty",
+    }, hits
+
+
+# ---------------------------------------------------------------------------
+# the ledger check, as a pure function so it can be tested on planted rows
+# ---------------------------------------------------------------------------
+def _ledger_violations(audited_paths, failing, ledger):
+    """Three ways the KNOWN_NOT_REDERIVABLE ledger can be violated.
+
+    ``vanished`` is the one the referee flagged: the CLI gate test could be turned
+    GREEN by DELETING the offending artifact -- the exact flaw it was written to
+    replace.  A ledgered artifact that is no longer audited at all is a violation
+    until its ledger entry is removed in the same change, which is a reviewable edit.
+    """
+    unexpected = {p: s for p, s in failing.items() if p not in ledger}
+    mislabelled = {p: (s, ledger[p]) for p, s in failing.items()
+                   if p in ledger and ledger[p] != s}
+    vanished = sorted(set(ledger) - set(audited_paths))
+    return unexpected, mislabelled, vanished
+
+
+def test_the_ledger_check_catches_deletion_relabelling_and_new_failures():
+    """Guard the guard, all five directions on planted rows (no repo state involved)."""
+    ledger = {"a.json": "ORPHANED"}
+    # clean: the ledgered artifact is present and failing exactly as recorded
+    assert _ledger_violations({"a.json", "b.json"}, {"a.json": "ORPHANED"}, ledger) \
+        == ({}, {}, [])
+    # clean: it was REPAIRED -- present, no longer failing. Not a violation.
+    assert _ledger_violations({"a.json", "b.json"}, {}, ledger) == ({}, {}, [])
+    # VIOLATION: deleted. This is what made the gate greenable by deletion.
+    assert _ledger_violations({"b.json"}, {}, ledger)[2] == ["a.json"]
+    # VIOLATION: a new failure that is not on the ledger
+    assert _ledger_violations({"a.json", "b.json"}, {"b.json": "DIRTY"}, ledger)[0] \
+        == {"b.json": "DIRTY"}
+    # VIOLATION: on the ledger but failing for a different recorded reason
+    assert _ledger_violations({"a.json"}, {"a.json": "DIRTY"}, ledger)[1] \
+        == {"a.json": ("DIRTY", "ORPHANED")}
+
+
+def test_the_cli_gate_cannot_be_greened_by_deleting_the_offending_artifact():
+    """END-TO-END on the REAL ledger: drop every ledgered path from the audited set --
+    which is exactly what deleting those files would do -- and the gate must go red.
+
+    This is the assertion the referee asked for: it re-runs the same helper the CLI
+    test uses, against the live ledger, with the artifacts removed.
+    """
+    assert KNOWN_NOT_REDERIVABLE, "the ledger is empty; this guard needs an entry"
+    audited_without_them = {"some/other/artifact.json"}
+    _u, _m, vanished = _ledger_violations(
+        audited_without_them, {}, KNOWN_NOT_REDERIVABLE)
+    assert sorted(vanished) == sorted(KNOWN_NOT_REDERIVABLE), (
+        "deleting a ledgered artifact must be a hard failure, not a green gate")

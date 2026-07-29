@@ -275,9 +275,13 @@ def test_subdla_per_bin_f_tru_and_dndx_tru_are_the_same_object(name):
 
 @pytest.mark.parametrize("name", SUBDLA_JSONS)
 def test_subdla_per_bin_ESTIMATOR_closes_on_the_integrated_estimator(name):
-    """CONTROL.  The estimator column sums across the 8 rows to the integrated
-    estimator to machine precision.  This is what rules out a support/binning
-    explanation for the truth-side mismatch below: same rows, same band, same file."""
+    """CONTROL, and note what it does NOT show.  The estimator column sums across the
+    8 rows to the integrated estimator to machine precision.  That rules out an
+    ESTIMATOR-SIDE row-layout artifact -- the 8 fine bins tile the band and the per-bin
+    and integrated estimator columns share N edges and X normalisation -- so the
+    truth-side mismatch below is not a binning or summation error.  It says nothing
+    about the TRUTH column, and it does NOT rule out a SUPPORT explanation: the
+    diagnosed cause IS one (truth f(N) unmasked in z while X_sum is masked)."""
     doc = _subdla(name)
     for mode, rows in doc["per_bin"].items():
         s = sum(r["dndx_est"] for r in rows)
@@ -369,3 +373,50 @@ def test_lls_per_bin_dndx_really_is_clean_and_stays_marked_so():
                 continue
             for r in mode[path].get("per_bin", []):
                 assert "f_tru" not in r, "LLS per-bin gained an f_tru row; re-audit"
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_the_closure_evidence_does_not_overclaim_what_the_control_shows(name):
+    """REFEREE (2026-07-29).  ``evidence_closure_test`` said the estimator-side closure
+    "rules out any support/binning explanation".  It does not, twice over:
+
+      * it is a control on the ESTIMATOR column only.  It shows the 8 fine bins tile
+        [19.5,20.3) and that the per-bin and integrated estimator columns share N edges
+        and X normalisation -- so the discrepancy is not an artifact of the ROW LAYOUT.
+        It constrains the TRUTH column not at all; that column is built by a different
+        code path (f_truth integrals vs dndx_total differences).
+      * the diagnosed cause IS a support difference.  B16 is truth f(N) accumulated
+        with NO z-mask while X_sum is masked -- a z-SUPPORT mismatch.  A sentence that
+        "rules out any support explanation" contradicts the very leak it introduces.
+
+    Measured, from the committed artifacts: estimator sum/integrated = 1.0 to ~1e-16;
+    truth sum/integrated = 1.0563659477.  Both survive the rewording -- only the
+    inference drawn from them is narrowed.
+    """
+    txt = _subdla(name)["metadata"]["b16"]["correction_2026_07_29"][
+        "evidence_closure_test"]
+    low = txt.lower()
+    # the overclaim, in the forms it was written and the obvious paraphrases
+    for bad in ("rules out any support", "rules out any binning",
+                "rules out all support", "rules out a support/binning explanation"):
+        assert bad not in low, f"{name}: the overclaim is back: {bad!r} in {txt!r}"
+    # what must still be there: the control is named as ESTIMATOR-side...
+    assert "estimator-side" in low or "estimator side" in low, txt
+    # ...the measured leak is still quoted...
+    assert f"{EXPECT_PERBIN_TRUTH_LEAK}" in txt, txt
+    # ...and the z-mask is still named as the difference.
+    assert "z mask" in low or "z-mask" in low, txt
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_the_estimator_side_closure_is_reproduced_not_asserted(name):
+    """The number behind the softened claim, re-measured from the committed rows so it
+    is never an unverifiable stamp: the estimator column closes, the truth column does
+    not, and the gap is the leak factor the stamp quotes."""
+    doc = _subdla(name)
+    for mode, rows in doc["per_bin"].items():
+        est = sum(r["dndx_est"] for r in rows) / doc["integrated"][mode]["dndx_est_195_203"]
+        tru = sum(r["dndx_tru"] for r in rows) / doc["integrated"][mode]["dndx_tru_195_203"]
+        assert est == pytest.approx(1.0, abs=1e-12), f"{name}:{mode} estimator {est!r}"
+        assert tru == pytest.approx(EXPECT_PERBIN_TRUTH_LEAK, rel=1e-9), \
+            f"{name}:{mode} truth {tru!r}"
