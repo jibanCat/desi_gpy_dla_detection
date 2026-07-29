@@ -509,3 +509,118 @@ def test_integrated_only_verdict_is_reported_separately():
     assert g2["stampable"] is False and g2["stampable_integrated_only"] is False
     # and a fully-passing run is not labelled "integrated only"
     assert EV.gate(_passing_blocks())["stampable_integrated_only"] is False
+
+
+# ==========================================================================
+# 9. THE FAIL-OPEN HOLES (2026-07-29 gate audit)
+#
+# Each test below reproduces a hole through which an artifact could be — and
+# in one case WAS — stamped ``stampable=True, paper_facing=True`` without the
+# evidence that stamp asserts.
+# ==========================================================================
+
+def _sbc_only_blocks():
+    return {"coverage_sbc": {"checks": {"sbc_uniform_ok": True,
+                                        "sbc_enough_replicas": True},
+                             "incomplete": []}}
+
+
+def test_a_narrowed_required_list_cannot_shrink_the_gate():
+    """HOLE 1. ``run_evidence --mode sbc`` called
+
+        assemble_evidence(blocks, required=("coverage_sbc",))
+
+    and ``gate`` counts only blocks named in ``required`` as missing, so the
+    four absent blocks raised no objection.  The artifact on disk read
+    stampable=True, paper_facing=True, n_checks=2, blocks=['coverage_sbc'].
+    An SBC-only run must NEVER be stampable."""
+    g = EV.gate(_sbc_only_blocks(), required=("coverage_sbc",))
+    assert g["stampable"] is False
+    assert g["paper_facing"] is False
+    for b in ("convergence", "ppc", "closure", "ztilt"):
+        assert b in g["missing_blocks"], (b, g["missing_blocks"])
+
+
+def test_a_narrowed_required_list_cannot_shrink_the_assembled_artifact():
+    ev = EV.assemble_evidence(_sbc_only_blocks(), required=("coverage_sbc",))
+    assert ev["gate"]["stampable"] is False
+    assert ev["gate"]["paper_facing"] is False
+    assert set(ev["gate"]["required_blocks"]) >= set(EV.REQUIRED_BLOCKS)
+
+
+@pytest.mark.parametrize("junk", [[], "", 0, False, 1.0, "ok", ["ppc"], ()])
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_required_block_that_is_not_a_dict_refuses_the_stamp(block, junk):
+    """HOLE 2. ``gate`` skipped any non-dict block (``if not isinstance(blk,
+    dict): continue``) and only ``None``/``{}`` were caught as missing, so
+    ``blocks['ppc'] = []`` gave stampable=True, missing=[].  The existing
+    omission tests use exactly the None/{} pair, so they passed vacuously."""
+    b = _passing_blocks()
+    b[block] = junk
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"{block}={junk!r} was accepted"
+    assert g["paper_facing"] is False
+    assert block in g["missing_blocks"] + g["invalid_blocks"]
+    assert any(block in r for r in g["reasons"])
+
+
+@pytest.mark.parametrize("junk", [[], "", 0, False])
+def test_a_non_required_block_that_is_not_a_dict_also_refuses(junk):
+    """A malformed EXTRA block is a corrupt artifact, not a passing one."""
+    b = _passing_blocks()
+    b["extra_block"] = junk
+    g = EV.gate(b)
+    assert g["stampable"] is False
+    assert "extra_block" in g["invalid_blocks"]
+
+
+def test_a_bypass_flag_is_recorded_and_forces_paper_facing_false():
+    """HOLE 3. Any gate-bypass flag (--allow-low-farr, --allow-open-forward-
+    model) must appear IN the artifact and must make it non-paper-facing."""
+    g = EV.gate(_passing_blocks(),
+                bypasses={"allow_low_farr": "on-mock self-calibration"})
+    assert g["bypasses"] == {"allow_low_farr": "on-mock self-calibration"}
+    assert g["paper_facing"] is False
+    assert g["stampable"] is False
+    assert any("bypass" in r for r in g["reasons"])
+    # no bypass -> the field is present and empty, never absent
+    assert EV.gate(_passing_blocks())["bypasses"] == {}
+
+
+def test_assemble_records_bypasses_in_provenance_too():
+    ev = EV.assemble_evidence(_passing_blocks(),
+                              bypasses={"allow_open_forward_model": "why"})
+    assert ev["gate"]["bypasses"]
+    assert ev["provenance"]["bypasses"] == {"allow_open_forward_model": "why"}
+
+
+def test_sbc_mode_end_to_end_is_not_stampable(tmp_path, monkeypatch):
+    """The whole hole-1 path, through the CLI that produced the bad artifact."""
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+    from CDDF_analysis.hbi_mcmc import sbc as _sbc
+    monkeypatch.setattr(_sbc, "sbc_block", lambda *a, **k: {
+        "checks": {"sbc_uniform_ok": True, "sbc_enough_replicas": True},
+        "incomplete": []})
+    out = tmp_path / "ev_sbc.json"
+    ev = RE.main(["--mode", "sbc", "--sbc-sims", "2", "--out", str(out)])
+    assert ev["gate"]["stampable"] is False
+    assert ev["gate"]["paper_facing"] is False
+    assert set(ev["gate"]["missing_blocks"]) == {
+        "convergence", "ppc", "closure", "ztilt"}
+    import json as _json
+    on_disk = _json.loads(out.read_text())
+    assert on_disk["gate"]["stampable"] is False
+    assert on_disk["gate"]["paper_facing"] is False
+
+
+def test_run_evidence_forwards_its_bypass_flag_into_the_artifact(tmp_path,
+                                                                 monkeypatch):
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+    from CDDF_analysis.hbi_mcmc import sbc as _sbc
+    monkeypatch.setattr(_sbc, "sbc_block", lambda *a, **k: {
+        "checks": {"sbc_uniform_ok": True}, "incomplete": []})
+    out = tmp_path / "ev_sbc2.json"
+    ev = RE.main(["--mode", "sbc", "--sbc-sims", "2", "--out", str(out),
+                  "--allow-low-farr", "documented on-mock reason"])
+    assert ev["gate"]["bypasses"]["allow_low_farr"] == "documented on-mock reason"
+    assert ev["gate"]["paper_facing"] is False

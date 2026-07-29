@@ -731,11 +731,47 @@ def ztilt_block(run, pack, *, stat="dndx", thr=20.3, forward_fold=True,
 # 6. GATE + ASSEMBLY
 # ============================================================================
 
-def gate(blocks, *, required=REQUIRED_BLOCKS):
-    """FAIL-CLOSED.  Missing block == failure.  Any False check == failure."""
+def gate(blocks, *, required=REQUIRED_BLOCKS, bypasses=None):
+    """FAIL-CLOSED.  Missing block == failure.  Any False check == failure.
+
+    THREE fail-open holes closed 2026-07-29 (each had a live artifact or a
+    vacuous test behind it):
+
+    1. ``required`` may only ever GROW.  It used to be an override, and
+       ``run_evidence --mode sbc`` passed ``required=("coverage_sbc",)``,
+       which silenced the four absent blocks: the artifact on disk read
+       ``stampable=True, paper_facing=True, n_checks=2``.  ``REQUIRED_BLOCKS``
+       is now unioned in unconditionally, so no caller can narrow the gate.
+       A partial run is REPORTABLE; it is never STAMPABLE.
+
+    2. A block whose value is not a dict is INVALID, not absent-and-ignored.
+       The old loop did ``if not isinstance(blk, dict): continue`` and the
+       missing-list caught only ``None``/``{}`` -- so ``blocks['ppc'] = []``
+       (or ``''``, ``0``, ``False``) yielded ``stampable=True, missing=[]``.
+       The omission tests used exactly the None/{} pair and so passed
+       vacuously.
+
+    3. ``bypasses`` -- any gate-bypass flag actually used by the run (e.g.
+       ``--allow-low-farr``, ``--allow-open-forward-model``).  A bypass is
+       RECORDED in the verdict and forces ``paper_facing=False`` (and
+       ``stampable=False``): a result obtained by switching a gate off cannot
+       be certified by that gate.
+    """
     reasons, checks = [], {}
+    # (1) required may only GROW -- narrowing it is how the SBC-only artifact
+    #     came to be stamped.  Union, always.
+    required = tuple(dict.fromkeys(tuple(REQUIRED_BLOCKS) + tuple(required)))
+    bypasses = dict(bypasses or {})
+    # (2) any non-dict block is invalid; a required non-dict is ALSO missing
+    invalid = [name for name, blk in blocks.items()
+               if blk is not None and not isinstance(blk, dict)]
+    for name in invalid:
+        reasons.append(f"invalid evidence block (not a dict): {name} "
+                       f"(got {type(blocks[name]).__name__})")
+        checks[f"{name}.__well_formed__"] = False
     missing = [b for b in required
-               if b not in blocks or blocks.get(b) is None]
+               if b not in blocks or blocks.get(b) is None
+               or not isinstance(blocks.get(b), dict)]
     for b in missing:
         reasons.append(f"missing required evidence block: {b}")
     incomplete = {}
@@ -757,8 +793,11 @@ def gate(blocks, *, required=REQUIRED_BLOCKS):
         blk = blocks.get(b)
         if isinstance(blk, dict) and not (blk.get("checks") or {}):
             checks[f"{b}.__present__"] = False
-    stampable = (not missing) and (not incomplete) and bool(checks) and all(
-        checks.values())
+    for b in sorted(bypasses):
+        reasons.append(f"gate bypass in force: {b} ({bypasses[b]!r}) -- the "
+                       f"artifact can never be paper-facing")
+    stampable = (not missing) and (not incomplete) and (not invalid) and (
+        not bypasses) and bool(checks) and all(checks.values())
     # A SECOND, WEAKER verdict, because "the z-resolved product fails but the
     # z-marginalised one holds" is the project's actual situation and deserves
     # a name rather than a blanket refusal: everything passes EXCEPT that the
@@ -767,10 +806,14 @@ def gate(blocks, *, required=REQUIRED_BLOCKS):
     _Z = "ztilt.ztilt_z_resolved_ok"
     relaxed = {k: v for k, v in checks.items() if k != _Z}
     stampable_integrated_only = bool(
-        (not missing) and (not incomplete) and relaxed
+        (not missing) and (not incomplete) and (not invalid)
+        and (not bypasses) and relaxed
         and all(relaxed.values()) and not stampable)
     return {
         "checks": checks,
+        "required_blocks": list(required),
+        "invalid_blocks": invalid,
+        "bypasses": bypasses,
         "stampable_integrated_only": stampable_integrated_only,
         "stampable_integrated_only_note": (
             "every gate passes except the per-z coverage: only the INTEGRATED "
@@ -780,7 +823,9 @@ def gate(blocks, *, required=REQUIRED_BLOCKS):
         "n_checks": len(checks),
         "n_failed": int(sum(1 for v in checks.values() if not v)),
         "stampable": bool(stampable),
-        "paper_facing": bool(stampable),
+        # explicit, not merely implied by ``stampable``: a bypassed run is
+        # never paper-facing even if some future edit loosens ``stampable``.
+        "paper_facing": bool(stampable and not bypasses),
         "estimand": "POSTERIOR_MEDIAN_CI" if stampable else "NOT_STAMPABLE",
         "reasons": reasons,
         "policy_note": (
@@ -805,9 +850,11 @@ def _git(paths=("evidence.py", "sbc.py", "run_evidence.py", "model_a.py",
         return "unknown"
 
 
-def assemble_evidence(blocks, *, provenance=None, required=REQUIRED_BLOCKS):
-    g = gate(blocks, required=required)
+def assemble_evidence(blocks, *, provenance=None, required=REQUIRED_BLOCKS,
+                      bypasses=None):
+    g = gate(blocks, required=required, bypasses=bypasses)
     prov = dict(provenance or {})
+    prov["bypasses"] = dict(bypasses or {})
     prov.setdefault("routine", "CDDF_analysis/hbi_mcmc/run_evidence.py")
     prov.setdefault("module", "CDDF_analysis/hbi_mcmc/evidence.py")
     prov.setdefault("code_commit", _git())
