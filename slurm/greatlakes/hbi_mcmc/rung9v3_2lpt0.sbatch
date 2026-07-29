@@ -68,8 +68,14 @@ fi
 # always exits 0, so the `|| exit 1` below was decorative: run against the v11 pack
 # (total mu/obs 0.7312, chi2/dof 2216) it exited 0 and would have handed ~36 h of
 # sampler time to a forward model known not to close.
+#
+# --require-basis-pad is the SECOND half of the gate.  The `[ ! -f "$PACK" ]`
+# check above only proves a FILE exists; it cannot tell a basis-padded pack
+# from the v11 pack renamed.  n_pad_bins == 0 means the true-N basis stops at
+# the reporting floor, which is finding D1 itself -- refuse outright.
 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.forward_selftest \
-  --pack "$PACK" --out "${OUT%.json}_selftest.json" --require-closure || exit 1
+  --pack "$PACK" --out "${OUT%.json}_selftest.json" \
+  --require-basis-pad --require-closure || exit 1
 
 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.run_rung9 \
   --pack "$PACK" \

@@ -28,6 +28,7 @@ Both are UPSTREAM of NUTS: they are visible with zero sampling.
 """
 import dataclasses
 import os
+import pathlib
 
 import numpy as np
 import pytest
@@ -216,3 +217,120 @@ def test_D2_clamp_removes_the_high_N_excess_on_the_real_pack():
     assert hi_off.max() > 3.0
     assert hi_on.max() < 1.6, f"clamped high-N ratios still {hi_on}"
     assert np.all(hi_on < hi_off)
+
+
+# ---------------------------------------------------------------------------
+# THE PRE-FLIGHT GATE + THE STAMP (2026-07-29 audit)
+# ---------------------------------------------------------------------------
+_REPO = pathlib.Path(__file__).resolve().parents[1]
+_RUNG9_JSON = _REPO / "CDDF_analysis/hbi_mcmc/rung9_forward_selftest.json"
+_SBATCH_V3 = _REPO / "slurm/greatlakes/hbi_mcmc/rung9v3_2lpt0.sbatch"
+
+
+def test_selftest_stamps_a_full_40_char_sha_not_an_abbreviation():
+    """ITEM 5. ``_git`` used ``rev-parse --short HEAD`` and the committed
+    artifact carries ``code_commit: 'b76ded7'`` -- 7 chars, and at that commit
+    forward_selftest.py DID NOT EXIST (it was added at 85ddd95), which the
+    repo's own provenance audit classifies ORPHANED."""
+    sha = FS._git()
+    base = sha.split("-")[0]
+    assert len(base) == 40, f"stamped an abbreviated SHA: {sha!r}"
+    assert all(c in "0123456789abcdef" for c in base)
+
+
+def test_committed_rung9_selftest_artifact_carries_a_resolvable_full_sha():
+    import json as _json
+    import subprocess as _sp
+    d = _json.loads(_RUNG9_JSON.read_text())
+    sha = d["code_commit"].split("-")[0]
+    assert len(sha) == 40, f"artifact stamp is abbreviated: {sha!r}"
+    # PROVENANCE, not merely format: the routine must EXIST at that commit.
+    r = _sp.run(["git", "cat-file", "-e",
+                 f"{sha}:CDDF_analysis/hbi_mcmc/forward_selftest.py"],
+                cwd=str(_REPO), capture_output=True)
+    assert r.returncode == 0, (
+        f"ORPHANED stamp: forward_selftest.py does not exist at {sha}")
+
+
+def test_closure_verdict_chi2_arm_is_not_vacuous():
+    """FOUND WHILE VERIFYING ITEM 6, not on the task list.
+
+    ``_closure_verdict`` did ``float(tot.get("chi2_dof", 0.0))`` but
+    ``ratio_tables``'s ``total`` has only mu/obs/ratio/z -- it has NEVER
+    carried ``chi2_dof``.  So the chi2/dof arm read 0.0 always and could not
+    fire: a table of many mildly-off bins (each |z| under the per-bin limit)
+    passed.  10 bins at z=2 is chi2/dof = 4 > 3 and must REFUSE."""
+    tab = {"total": {"mu": 1.0, "obs": 1.0, "ratio": 1.0, "z": 0.0},
+           "by_nhat": [{"lo": 19.5, "hi": 19.6, "mu": 100.0, "obs": 100.0,
+                        "ratio": 1.0, "z": 2.0} for _ in range(10)],
+           "by_z": [], "by_snr": []}
+    v = FS._closure_verdict(tab, 5.0, 5.0, 3.0)
+    assert v["closes"] is False, v
+    assert any("chi2" in r for r in v["reasons"]), v["reasons"]
+    assert v["chi2_dof"] == pytest.approx(4.0)
+
+
+def test_closure_verdict_chi2_arm_passes_a_clean_table():
+    tab = {"total": {"mu": 1.0, "obs": 1.0, "ratio": 1.0, "z": 0.0},
+           "by_nhat": [{"lo": 19.5, "hi": 19.6, "mu": 100.0, "obs": 100.0,
+                        "ratio": 1.0, "z": 0.5} for _ in range(10)],
+           "by_z": [], "by_snr": []}
+    v = FS._closure_verdict(tab, 5.0, 5.0, 3.0)
+    assert v["closes"] is True, v["reasons"]
+
+
+def test_n_pad_bins_is_zero_on_an_unpadded_pack(spack):
+    """ITEM 6, second half."""
+    assert spack.n_pad_bins == 0
+    padded = dataclasses.replace(
+        spack, ntrue_edges=np.round(
+            np.concatenate([np.arange(spack.nhat_edges[0] - 0.3,
+                                      spack.nhat_edges[0] - 1e-9, 0.1),
+                            np.asarray(spack.nhat_edges, float)]), 10))
+    assert padded.n_pad_bins == 3
+
+
+def test_require_basis_pad_refuses_an_unpadded_pack(spack, monkeypatch):
+    """A pre-flight that cannot see the pad cannot enforce finding D1.
+
+    (The pack is injected rather than round-tripped: ``small_test_grid`` is a
+    non-standard grid that ``load_pack`` refuses, and the grid is irrelevant to
+    what is under test.)"""
+    from CDDF_analysis.hbi_mcmc import pack as PK
+    monkeypatch.setattr(PK, "load_pack", lambda *a, **k: spack)
+    assert spack.n_pad_bins == 0
+    with pytest.raises(SystemExit) as e:
+        FS.main(["--pack", "/tmp/unpadded_mock.npz", "--require-basis-pad"])
+    assert e.value.code != 0
+    assert "n_pad_bins=0" in str(e.value)
+    # ... and it does NOT refuse when the flag is absent (it is a REPORT then)
+    monkeypatch.setattr(FS, "structural_probes", lambda p: {"ntrue_lo": 19.5})
+    monkeypatch.setattr(FS, "selftest", lambda *a, **k: {"mu": None})
+    monkeypatch.setattr(FS, "ratio_tables", lambda *a, **k: {
+        "total": {"mu": 1.0, "obs": 1.0, "ratio": 1.0, "z": 0.0},
+        "by_nhat": [], "by_z": [], "by_snr": []})
+    out = FS.main(["--pack", "/tmp/unpadded_mock.npz"])
+    assert out["n_pad_bins"] == 0
+
+
+@pytest.mark.skipif(not os.path.exists(_PACK_V11), reason="v1.1 pack absent")
+def test_require_closure_exits_nonzero_on_the_v11_pack():
+    """ITEM 6, first half, VERIFIED BY EXECUTION rather than by reading the
+    commit message: the rung-9 v3 pre-flight must actually fail closed."""
+    with pytest.raises(SystemExit) as e:
+        FS.main(["--pack", _PACK_V11, "--require-closure"])
+    assert e.value.code != 0
+
+
+@pytest.mark.skipif(not os.path.exists(_PACK_V11), reason="v1.1 pack absent")
+def test_without_require_closure_the_command_is_a_report_that_exits_0():
+    """Which is exactly why --require-closure is load-bearing in the sbatch."""
+    out = FS.main(["--pack", _PACK_V11])
+    assert out["closure_verdict"]["closes"] is False
+
+
+def test_rung9v3_sbatch_preflight_is_fail_closed_and_pad_guarded():
+    txt = _SBATCH_V3.read_text()
+    assert "--require-closure" in txt, "pre-flight is a REPORT, not a gate"
+    assert "--require-basis-pad" in txt, (
+        "the pre-flight does not refuse an UNPADDED pack (finding D1)")
