@@ -19,11 +19,18 @@
 # WHY THIS IS SAFE TO LEAVE LYING AROUND
 # ---------------------------------------------------------------------------
 # run_posterior FAIL-CLOSES on the forward-model truth-fold gate BEFORE the
-# sampler is constructed, and it exits NONZERO when the gate fails.  (This is
-# the difference from slurm/greatlakes/hbi_mcmc/rung9v3_2lpt0.sbatch, whose
-# advertised "fail-closed pre-flight" calls forward_selftest, which has no
-# closure assertion and exits 0 on the failing pack.)  As of today EVERY real
-# mock pack FAILS the gate:
+# sampler is constructed, and it exits NONZERO when the gate fails.
+#
+# (An earlier revision of this comment said rung9v3_2lpt0.sbatch's "fail-closed
+# pre-flight" was decorative because forward_selftest had no closure assertion.
+# That was true of forward_selftest BEFORE 7bcaa5a and is NO LONGER TRUE:
+# re-verified by execution 2026-07-29 --
+#     forward_selftest --pack modelA_pack_2lpt0_v11.npz --require-closure
+#     -> EXIT 3, "FORWARD MODEL DOES NOT CLOSE -- refusing"
+# and rung9v3_2lpt0.sbatch does pass --require-closure.  Without that flag the
+# command is still a REPORT that exits 0, so the flag is load-bearing.)
+#
+# As of today EVERY real mock pack FAILS the gate:
 #
 #   modelA_pack_2lpt0_v11.npz   total mu/obs 0.7312  z=+93.3
 #                               lowest n-hat bin    0.1655  z=+216.4
@@ -94,17 +101,41 @@ TARGET_ACCEPT=0.95   # identical to rung-9 v2, whose SAMPLER was healthy
 
 cd "$WT"
 
+# ---------------------------------------------------------------------------
+# GATE BYPASSES ARE PER-MODE, NEVER UNCONDITIONAL          (2026-07-29 audit)
+# ---------------------------------------------------------------------------
+# This file used to carry --allow-low-farr on the ONE shared invocation line,
+# so MODE=mock -- the paper-facing path -- silently inherited the Farr-headroom
+# bypass that was justified only for the synthetic self-calibration case.  The
+# flag now lives in $BYPASS, set inside the MODE branch that can justify it.
+# run_posterior RECORDS every bypass in metadata.bypasses and stamps
+# paper_facing=False whenever one is in force, so a bypassed run can no longer
+# be mistaken for a clean one downstream either.
+BYPASS=""
+
 if [ "$MODE" = "synthetic" ]; then
   OUT=$PACKDIR/posterior_synthetic_prod_seed${SEED}.json
   SRC="--synthetic-smoke --synthetic-full-grid --synthetic-seed 0"
+  # SYNTHETIC ONLY: the molly calibration set IS the pack under fit, so the
+  # Farr 4x headroom is structurally unattainable; the finite-calibration
+  # variance is instead SAMPLED via psi_C.  The artifact is stamped
+  # paper_facing=False because of it -- that is the intended cost.
+  BYPASS="--allow-low-farr on-mock-SELF-calibration:calibration-set-is-the-pack-under-fit;finite-calibration-variance-sampled-via-psi_C"
 elif [ "$MODE" = "mock" ]; then
   OUT=$PACKDIR/posterior_2lpt0_prod.json
   SRC="--pack $PACK"
+  # NO BYPASS. A mock run is the paper-facing path; if the Farr gate fails on
+  # it, that is a result to report, not a flag to pass.
   if [ ! -f "$PACK" ]; then
     echo "REFUSING: $PACK does not exist. The basis-padded pack (finding D1)" >&2
     echo "has not been extracted; see the GATE block at the top of this file." >&2
     exit 2
   fi
+  # finding D1: refuse an UNPADDED pack outright (n_pad_bins == 0), even if a
+  # file by that name appears.
+  $PY -m CDDF_analysis.hbi_mcmc.forward_selftest \
+      --pack "$PACK" --require-basis-pad --require-closure \
+      --out "${OUT%.json}_selftest.json" || exit 1
 else
   echo "unknown MODE=$MODE (expected 'synthetic' or 'mock')" >&2; exit 2
 fi
@@ -117,8 +148,6 @@ $PY -m CDDF_analysis.hbi_mcmc.run_posterior \
     --target-accept $TARGET_ACCEPT \
     --resp-clamp both --fp-mode joint \
     --map-diagnostic \
-    --allow-low-farr "on-mock SELF-calibration: the molly calibration set IS \
-the mock under fit, so the Farr 4x headroom is structurally unattainable; the \
-finite-calibration variance is instead SAMPLED via psi_C"
+    $BYPASS
 
 echo "[sbatch] done: $OUT"
