@@ -78,7 +78,11 @@ def _json_default(o):
 def _print_verdict(ev):
     g = ev["gate"]
     print("\n=== inference evidence ===")
-    print(f"  stampable = {g['stampable']}   estimand = {g['estimand']}")
+    print(f"  stampable = {g['stampable']}   "
+          f"paper_facing = {g['paper_facing']}   estimand = {g['estimand']}")
+    if g.get("bypasses"):
+        for k, v in sorted(g["bypasses"].items()):
+            print(f"    BYPASS IN FORCE: {k} = {v!r} -> NOT paper-facing")
     print(f"  checks: {g['n_checks'] - g['n_failed']}/{g['n_checks']} pass")
     for r in g["reasons"]:
         print(f"    REFUSED: {r}")
@@ -121,7 +125,13 @@ def main(argv=None):
     ap.add_argument("--chains", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--resp-clamp", default="both")
-    ap.add_argument("--allow-low-farr", metavar="REASON", default=None)
+    ap.add_argument("--allow-low-farr", metavar="REASON", default=None,
+                    help="bypass the Farr headroom gate. RECORDED in the "
+                         "artifact and forces paper_facing=False.")
+    ap.add_argument("--allow-open-forward-model", metavar="REASON",
+                    default=None,
+                    help="bypass the forward-model closure gate. RECORDED in "
+                         "the artifact and forces paper_facing=False.")
     ap.add_argument("--ppc-draws", type=int, default=300)
     ap.add_argument("--sbc-sims", type=int, default=48)
     ap.add_argument("--sbc-seed", type=int, default=0)
@@ -135,15 +145,32 @@ def main(argv=None):
 
     t_start = time.time()
     blocks, prov = {}, {"date": time.strftime("%Y-%m-%d"), "mode": a.mode}
+    # every gate-bypass flag actually in force, recorded in the artifact; any
+    # one of them makes the artifact permanently non-paper-facing.
+    bypasses = {}
+    if a.allow_low_farr is not None:
+        bypasses["allow_low_farr"] = a.allow_low_farr
+    if a.allow_open_forward_model is not None:
+        bypasses["allow_open_forward_model"] = a.allow_open_forward_model
 
     if a.mode == "sbc":
-        from CDDF_analysis.hbi_mcmc.sbc import sbc_block
-        blocks["coverage_sbc"] = sbc_block(a.sbc_sims, seed=a.sbc_seed)
+        from CDDF_analysis.hbi_mcmc import sbc as _sbc
+        blocks["coverage_sbc"] = _sbc.sbc_block(a.sbc_sims, seed=a.sbc_seed)
         prov["rederive"] = (f"python -m CDDF_analysis.hbi_mcmc.run_evidence "
                             f"--mode sbc --sbc-sims {a.sbc_sims} "
                             f"--sbc-seed {a.sbc_seed} --out <out>")
-        ev = EV.assemble_evidence(blocks, provenance=prov,
-                                  required=("coverage_sbc",))
+        # NOTE: NO ``required=`` narrowing.  This used to pass
+        # ``required=("coverage_sbc",)``, which made ``gate`` blind to the
+        # four absent blocks: the call returned stampable=True /
+        # paper_facing=True / n_checks=2, so anything this branch wrote would
+        # have carried that verdict.  (No such file was located on disk when
+        # this was audited on 2026-07-29; the defect is in the CODE PATH, and
+        # that is what is claimed here.)  An SBC-only run is
+        # a PARTIAL evidence set: reportable, never stampable.  (``gate`` now
+        # also unions REQUIRED_BLOCKS in, so this is belt AND braces.)
+        prov["partial_evidence"] = True
+        prov["blocks_computed"] = ["coverage_sbc"]
+        ev = EV.assemble_evidence(blocks, provenance=prov, bypasses=bypasses)
         with open(a.out, "w") as fh:
             json.dump(ev, fh, indent=1, default=_json_default)
         _print_verdict(ev)
@@ -221,11 +248,11 @@ def main(argv=None):
         blocks["ztilt"] = {"incomplete": ["pack_has_no_truth_counts"],
                            "checks": {"ztilt_has_a_defensible_product": False}}
     if not a.no_sbc:
-        from CDDF_analysis.hbi_mcmc.sbc import sbc_block
-        blocks["coverage_sbc"] = sbc_block(a.sbc_sims, seed=a.sbc_seed)
+        from CDDF_analysis.hbi_mcmc import sbc as _sbc
+        blocks["coverage_sbc"] = _sbc.sbc_block(a.sbc_sims, seed=a.sbc_seed)
 
     prov["wallclock_s"] = float(time.time() - t_start)
-    ev = EV.assemble_evidence(blocks, provenance=prov)
+    ev = EV.assemble_evidence(blocks, provenance=prov, bypasses=bypasses)
     with open(a.out, "w") as fh:
         json.dump(ev, fh, indent=1, default=_json_default)
     print(f"[run_evidence] wrote {a.out}")

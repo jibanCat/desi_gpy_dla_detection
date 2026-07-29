@@ -297,20 +297,138 @@ def structural_probes(pack):
 # CLI
 # --------------------------------------------------------------------------
 def _git():
+    """FULL 40-char HEAD SHA (+ a dirty flag).
+
+    This used to be ``rev-parse --short HEAD``, and the artifact it stamped
+    (``rung9_forward_selftest.json``) carried ``code_commit: 'b76ded7'``.
+    Abbreviated SHAs are a known defect class in this repo -- the provenance
+    audit's ORPHANED class -- and that stamp was an instance of it: at b76ded7
+    ``forward_selftest.py`` did not yet exist (it was added at 85ddd95), so the
+    stamp named a commit at which the routine could not have run.  A 40-char
+    SHA is checkable with ``git cat-file -e <sha>:<routine>``; a 7-char one
+    invites exactly the mis-resolution that happened.
+
+    NOTE the split from the dirty probe (2026-07-29).  A ``-dirty`` SUFFIX
+    makes ``code_commit`` unusable with ``git cat-file -e <sha>:<routine>``,
+    which is the entire reason the 40-char SHA is stamped.  Dirt is a separate
+    BOOLEAN FIELD now, reported alongside the SCOPE it was measured over.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     try:
-        c = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
-                                    cwd=here, text=True).strip()
-        d = subprocess.check_output(["git", "status", "--porcelain", "--", here],
-                                    cwd=here, text=True).strip()
-        return c + ("-dirty" if d else "")
+        return subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                       cwd=here, text=True).strip()
     except Exception:
         return "unknown"
 
 
+# the dirty probe is PATH-SCOPED; this string travels WITH the flag so no
+# reader can upgrade it into a claim about the whole working tree.
+_DIRTY_SCOPE = ("uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- "
+                "this is NOT a whole-tree cleanliness claim")
+
+
+def _git_dirty():
+    """True if CDDF_analysis/hbi_mcmc/ has uncommitted changes.
+
+    Path-scoped by design (the rest of the repo does not affect this routine's
+    result), and therefore NOT evidence of a clean tree.  Unknown -> True:
+    fail closed, an unprobeable tree is treated as dirty.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        return bool(subprocess.check_output(
+            ["git", "status", "--porcelain", "--", here],
+            cwd=here, text=True).strip())
+    except Exception:
+        return True
+
+
+def _stamp_fields(mocks):
+    """The provenance fields of the aggregate artifact.  Touches no pack, so
+    it is directly testable."""
+    return {
+        "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
+        "entry_point": "aggregate_report / --mock NAME=PATH",
+        "date": time.strftime("%Y-%m-%d"),
+        "code_commit": _git(),
+        "code_dirty": bool(_git_dirty()),
+        "code_dirty_scope": _DIRTY_SCOPE,
+        "scope": (f"MOCK ONLY ({' / '.join(n for n, _ in mocks)}). "
+                  f"No real-survey values."),
+        "rederive": ("OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "
+                     "MKL_NUM_THREADS=1 python -m "
+                     "CDDF_analysis.hbi_mcmc.forward_selftest "
+                     + " ".join(f"--mock {n}={p}" for n, p in mocks)
+                     + " --out CDDF_analysis/hbi_mcmc/"
+                       "rung9_forward_selftest.json"),
+    }
+
+
+def aggregate_report(mocks, *, clamps=("off", "both", "hi"), use_fp=True):
+    """The MULTI-MOCK, MULTI-CLAMP report -- the committed routine behind
+    ``rung9_forward_selftest.json``.
+
+    ``mocks`` is a list of ``(name, pack_path)``.  This existed only as an
+    uncommitted scratch driver, which is how the artifact came to carry a
+    hand-written 7-char ``code_commit`` naming a commit at which this file did
+    not exist (the ORPHANED provenance class).  It is committed now so the
+    artifact has a `rederive` line that actually runs.
+
+    MOCKS ONLY.
+    """
+    from CDDF_analysis.hbi_mcmc.pack import load_pack
+
+    out_mocks, closes, pads = {}, {}, {}
+    for name, path in mocks:
+        assert "main_dark" not in path, "REAL-LOA guard: mock packs only"
+        pack = load_pack(path)
+        assert "loa_main_dark" not in json.dumps(pack.provenance or {}), \
+            "REAL-LOA guard (provenance)"
+        if pack.truth_counts is None:
+            raise SystemExit(f"{name}: pack carries no truth_counts")
+        entry = {"pack": os.path.basename(path),
+                 "n_pad_bins": int(pack.n_pad_bins),
+                 "probes": structural_probes(pack)}
+        for clamp in clamps:
+            tab = ratio_tables(selftest(pack, use_fp=use_fp, resp_clamp=clamp),
+                               pack)
+            entry[f"clamp_{clamp}"] = tab
+            if clamp == "both":
+                closes[name] = _closure_verdict(tab, 5.0, 5.0, 3.0)
+        pads[name] = int(pack.n_pad_bins)
+        out_mocks[name] = entry
+
+    return {
+        **_stamp_fields(mocks),
+        "what": ("pure forward-model truth-fold self-test: the pack's own "
+                 "truth f(N,z) folded through the pack's own kernel/"
+                 "completeness/g/dX/FP machinery at the truth-equivalent "
+                 "parameter point, vs the pack's own observed counts. NO "
+                 "SAMPLING."),
+        "mocks": out_mocks,
+        "closure_verdicts": closes,
+        "n_pad_bins": pads,
+        "verdict": {
+            "D1_basis_pad_low_N": (
+                "OPEN — needs a re-extracted basis-padded pack"
+                if any(v == 0 for v in pads.values())
+                else "a basis-padded pack is in use"),
+            "D2_response_extrapolation_high_N":
+                "FIXED in-code (resp_clamp, default 'both')",
+            "forward_model_closes": bool(
+                closes and all(v["closes"] for v in closes.values())),
+        },
+    }
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--pack", required=True)
+    ap.add_argument("--pack")
+    ap.add_argument("--mock", action="append", metavar="NAME=PATH",
+                    help="AGGREGATE mode: repeat once per mock. Emits the "
+                         "multi-mock / multi-clamp report "
+                         "(rung9_forward_selftest.json). Mutually exclusive "
+                         "with --pack.")
     ap.add_argument("--out", default=None)
     ap.add_argument("--truth-floor", type=float, default=None,
                     help="extend the TRUE-N grid down to this log N_HI using a "
@@ -328,10 +446,44 @@ def main(argv=None):
                          "and always exits 0 -- so `selftest ... || exit 1` in a "
                          "batch script is NOT a gate. Any script that spends "
                          "sampler time must pass this.")
+    ap.add_argument("--require-basis-pad", action="store_true",
+                    help="EXIT NONZERO unless the pack's true-N basis is padded "
+                         "BELOW the reporting floor (n_pad_bins > 0). Finding "
+                         "D1: an unpadded pack cannot arithmetically reproduce "
+                         "its own lowest observed bins, so no batch script that "
+                         "spends sampler time may run on one.")
+    ap.add_argument("--min-pad-bins", type=int, default=1)
     ap.add_argument("--max-abs-z-total", type=float, default=5.0)
     ap.add_argument("--max-abs-z-bin", type=float, default=5.0)
     ap.add_argument("--max-chi2-dof", type=float, default=3.0)
     a = ap.parse_args(argv)
+
+    if a.mock:
+        if a.pack:
+            raise SystemExit("--mock and --pack are mutually exclusive")
+        pairs = []
+        for spec in a.mock:
+            if "=" not in spec:
+                raise SystemExit(f"--mock expects NAME=PATH, got {spec!r}")
+            n, _, p = spec.partition("=")
+            pairs.append((n, p))
+        rep = aggregate_report(pairs)
+        for n, e in rep["mocks"].items():
+            print_tables(e["clamp_both"], f"{n} (resp_clamp=both, "
+                                          f"n_pad_bins={e['n_pad_bins']})")
+        print(f"\n[selftest] verdict: {json.dumps(rep['verdict'])}")
+        if a.out:
+            with open(a.out, "w") as fh:
+                json.dump(rep, fh, indent=1)
+            print(f"[selftest] wrote {a.out}")
+        if a.require_closure and not rep["verdict"]["forward_model_closes"]:
+            print("\n[selftest] FORWARD MODEL DOES NOT CLOSE -- refusing.",
+                  file=sys.stderr)
+            raise SystemExit(3)
+        return rep
+
+    if not a.pack:
+        raise SystemExit("--pack is required (or use --mock NAME=PATH)")
 
     from CDDF_analysis.hbi_mcmc.pack import load_pack
     assert "main_dark" not in a.pack, "REAL-LOA guard: mock packs only"
@@ -340,6 +492,17 @@ def main(argv=None):
         "REAL-LOA guard (provenance)"
     if pack.truth_counts is None:
         raise SystemExit("pack carries no truth_counts — self-test needs a mock")
+
+    # --- the BASIS-PAD gate (finding D1), before any other work -----------
+    n_pad = int(getattr(pack, "n_pad_bins", 0))
+    if a.require_basis_pad and n_pad < a.min_pad_bins:
+        raise SystemExit(
+            f"[selftest] REFUSING: pack has n_pad_bins={n_pad} "
+            f"(< {a.min_pad_bins}). The true-N basis stops at the reporting "
+            f"floor {float(np.asarray(pack.ntrue_edges, float)[0]):.2f}, so "
+            f"the truth cannot feed the lowest observed bins and the fold "
+            f"cannot close at ANY parameter value (finding D1). Re-extract a "
+            f"basis-padded pack (schema v1.1 permits a DOWNWARD pad).")
 
     t0 = time.time()
     probes = structural_probes(pack)
@@ -350,9 +513,11 @@ def main(argv=None):
                       f"resp_clamp={clamp})")
 
     out = dict(pack=os.path.basename(a.pack), probes=probes, baseline=tab,
-               resp_clamp=clamp,
+               resp_clamp=clamp, n_pad_bins=n_pad,
                provenance=dict(routine="CDDF_analysis/hbi_mcmc/forward_selftest.py",
                                code_commit=_git(),
+                               code_dirty=bool(_git_dirty()),
+                               code_dirty_scope=_DIRTY_SCOPE,
                                date=time.strftime("%Y-%m-%d"),
                                rederive=("python -m CDDF_analysis.hbi_mcmc."
                                          f"forward_selftest --pack {a.pack}")))
@@ -401,9 +566,19 @@ def _closure_verdict(tab, max_abs_z_total, max_abs_z_bin, max_chi2_dof):
     zt = abs(float(tot.get("z", 0.0)))
     if zt > max_abs_z_total:
         reasons.append(f"|z_total| {zt:.2f} > {max_abs_z_total}")
-    c2 = float(tot.get("chi2_dof", 0.0))
-    if c2 > max_chi2_dof:
-        reasons.append(f"chi2/dof {c2:.2f} > {max_chi2_dof}")
+    # chi2/dof is COMPUTED here from the n-hat rows.  It used to be read as
+    # ``tot.get("chi2_dof", 0.0)`` -- but ``ratio_tables``'s ``total`` has only
+    # mu/obs/ratio/z and has NEVER carried a ``chi2_dof`` key, so this arm read
+    # 0.0 unconditionally and could not fire.  A table of many mildly-off bins,
+    # each individually under the per-bin |z| limit, therefore "closed".
+    _rows = [r for r in (tab.get("by_nhat") or [])
+             if isinstance(r, dict) and r.get("obs", 0) > 0
+             and r.get("z") is not None and np.isfinite(float(r["z"]))]
+    _z = np.array([float(r["z"]) for r in _rows], float)
+    c2 = float((_z ** 2).sum() / len(_z)) if len(_z) else float("nan")
+    if np.isfinite(c2) and c2 > max_chi2_dof:
+        reasons.append(f"chi2/dof {c2:.2f} > {max_chi2_dof} "
+                       f"over {len(_z)} n-hat bins")
     for key in ("by_nhat", "by_z"):
         rows = tab.get(key) or {}
         zs = [abs(float(r.get("z", 0.0)))
@@ -412,6 +587,7 @@ def _closure_verdict(tab, max_abs_z_total, max_abs_z_bin, max_chi2_dof):
         if zs and max(zs) > max_abs_z_bin:
             reasons.append(f"max|z| in {key} = {max(zs):.2f} > {max_abs_z_bin}")
     return dict(closes=not reasons, reasons=reasons,
+                chi2_dof=c2, n_bins=int(len(_z)),
                 tolerances=dict(max_abs_z_total=max_abs_z_total,
                                 max_abs_z_bin=max_abs_z_bin,
                                 max_chi2_dof=max_chi2_dof))

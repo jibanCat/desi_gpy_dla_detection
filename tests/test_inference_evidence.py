@@ -20,6 +20,42 @@ All packs are SYNTHETIC.  Sampler settings are tiny; the assertions test
 structure, signs and discrimination, not sampler beauty.
 
 Run: conda run -n gpdla-hbi python -m pytest tests/test_inference_evidence.py -q
+
+TEST-COUNT PROVENANCE (2026-07-29 correction)
+---------------------------------------------
+Earlier reporting on this work quoted test counts with no stated selection,
+and three of those numbers do not reproduce.  Numbers are only meaningful with
+the selection that produced them, so the measured ones are recorded here:
+
+  "~66 tests, every one failing before its fix"  -> WRONG in "every one".
+      Selection: every test id present in tests/test_inference_evidence.py +
+      test_modelA_forward_selftest.py + test_posterior_estimator.py at 29a22e3
+      but ABSENT at 7bcaa5a^, run with the eight touched source files reverted
+      to 7bcaa5a^.
+      Measured: 77 before, 147 after, 70 ADDED; 66 red / 4 green on revert.
+      The 4 green are controls and one measurement artefact, not omissions:
+        test_forward_gate_still_passes_a_clean_table          (negative control)
+        test_no_prepared_sbatch_bypasses_the_forward_closure_gate (already true)
+        test_require_closure_exits_nonzero_on_the_v11_pack    (pack fails either way)
+        test_committed_rung9_selftest_artifact_carries_a_resolvable_full_sha
+              (reads the artifact JSON, which the revert set did not revert)
+      An independent referee measured 65 red / 5 green with a slightly
+      different revert set; both readings agree that "every one" is false.
+
+  "22 passed"   -> does NOT reproduce.  No selection at 29a22e3 gives 22.
+                   Dropped rather than reinterpreted.
+  "253 passed"  -> did NOT reproduce at the time it was written.  At 29a22e3
+                   this file held 96 tests; the three gate files together held
+                   147; modelA* + evidence + posterior held 241.  253 is the
+                   count of THIS FILE at a8e81fa and later, which is not what
+                   the original claim referred to.
+
+  The one count that DOES reproduce: d95668a's "50 new cases ... all failing
+  before" -- 46 -> 96 collected, and those exact 50 ids give 50 failed with
+  evidence.py at d95668a^ and 50 passed at d95668a.
+
+  Current (HEAD): this file 253 passed; test_posterior_estimator.py 39;
+  test_modelA_forward_selftest.py 24; the three together 316 passed.
 """
 import copy
 
@@ -509,3 +545,227 @@ def test_integrated_only_verdict_is_reported_separately():
     assert g2["stampable"] is False and g2["stampable_integrated_only"] is False
     # and a fully-passing run is not labelled "integrated only"
     assert EV.gate(_passing_blocks())["stampable_integrated_only"] is False
+
+
+# ==========================================================================
+# 9. THE FAIL-OPEN HOLES (2026-07-29 gate audit)
+#
+# Each test below reproduces a hole through which an artifact could be
+# stamped ``stampable=True, paper_facing=True`` without the evidence that
+# stamp asserts.  These are CODE-PATH defects, demonstrated by calling the
+# gate; no claim is made that a badly-stamped file was found on disk.
+# ==========================================================================
+
+def _sbc_only_blocks():
+    return {"coverage_sbc": {"checks": {"sbc_uniform_ok": True,
+                                        "sbc_enough_replicas": True},
+                             "incomplete": []}}
+
+
+def test_a_narrowed_required_list_cannot_shrink_the_gate():
+    """HOLE 1. ``run_evidence --mode sbc`` called
+
+        assemble_evidence(blocks, required=("coverage_sbc",))
+
+    and ``gate`` counts only blocks named in ``required`` as missing, so the
+    four absent blocks raised no objection: the call RETURNED stampable=True,
+    paper_facing=True, n_checks=2, blocks=['coverage_sbc'].  (No artifact
+    written by that path was located on disk during the 2026-07-29 audit --
+    the claim here is about the code path's return value, which this test
+    exercises directly.)  An SBC-only run must NEVER be stampable."""
+    g = EV.gate(_sbc_only_blocks(), required=("coverage_sbc",))
+    assert g["stampable"] is False
+    assert g["paper_facing"] is False
+    for b in ("convergence", "ppc", "closure", "ztilt"):
+        assert b in g["missing_blocks"], (b, g["missing_blocks"])
+
+
+def test_a_narrowed_required_list_cannot_shrink_the_assembled_artifact():
+    ev = EV.assemble_evidence(_sbc_only_blocks(), required=("coverage_sbc",))
+    assert ev["gate"]["stampable"] is False
+    assert ev["gate"]["paper_facing"] is False
+    assert set(ev["gate"]["required_blocks"]) >= set(EV.REQUIRED_BLOCKS)
+
+
+@pytest.mark.parametrize("junk", [[], "", 0, False, 1.0, "ok", ["ppc"], ()])
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_required_block_that_is_not_a_dict_refuses_the_stamp(block, junk):
+    """HOLE 2. ``gate`` skipped any non-dict block (``if not isinstance(blk,
+    dict): continue``) and only ``None``/``{}`` were caught as missing, so
+    ``blocks['ppc'] = []`` gave stampable=True, missing=[].  The existing
+    omission tests use exactly the None/{} pair, so they passed vacuously."""
+    b = _passing_blocks()
+    b[block] = junk
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"{block}={junk!r} was accepted"
+    assert g["paper_facing"] is False
+    assert block in g["missing_blocks"] + g["invalid_blocks"]
+    assert any(block in r for r in g["reasons"])
+
+
+@pytest.mark.parametrize("junk", [[], "", 0, False])
+def test_a_non_required_block_that_is_not_a_dict_also_refuses(junk):
+    """A malformed EXTRA block is a corrupt artifact, not a passing one."""
+    b = _passing_blocks()
+    b["extra_block"] = junk
+    g = EV.gate(b)
+    assert g["stampable"] is False
+    assert "extra_block" in g["invalid_blocks"]
+
+
+def test_a_bypass_flag_is_recorded_and_forces_paper_facing_false():
+    """HOLE 3. Any gate-bypass flag (--allow-low-farr, --allow-open-forward-
+    model) must appear IN the artifact and must make it non-paper-facing."""
+    g = EV.gate(_passing_blocks(),
+                bypasses={"allow_low_farr": "on-mock self-calibration"})
+    assert g["bypasses"] == {"allow_low_farr": "on-mock self-calibration"}
+    assert g["paper_facing"] is False
+    assert g["stampable"] is False
+    assert any("bypass" in r for r in g["reasons"])
+    # no bypass -> the field is present and empty, never absent
+    assert EV.gate(_passing_blocks())["bypasses"] == {}
+
+
+def test_assemble_records_bypasses_in_provenance_too():
+    ev = EV.assemble_evidence(_passing_blocks(),
+                              bypasses={"allow_open_forward_model": "why"})
+    assert ev["gate"]["bypasses"]
+    assert ev["provenance"]["bypasses"] == {"allow_open_forward_model": "why"}
+
+
+def test_sbc_mode_end_to_end_is_not_stampable(tmp_path, monkeypatch):
+    """The whole hole-1 path, through the CLI that produced the bad artifact."""
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+    from CDDF_analysis.hbi_mcmc import sbc as _sbc
+    monkeypatch.setattr(_sbc, "sbc_block", lambda *a, **k: {
+        "checks": {"sbc_uniform_ok": True, "sbc_enough_replicas": True},
+        "incomplete": []})
+    out = tmp_path / "ev_sbc.json"
+    ev = RE.main(["--mode", "sbc", "--sbc-sims", "2", "--out", str(out)])
+    assert ev["gate"]["stampable"] is False
+    assert ev["gate"]["paper_facing"] is False
+    assert set(ev["gate"]["missing_blocks"]) == {
+        "convergence", "ppc", "closure", "ztilt"}
+    import json as _json
+    on_disk = _json.loads(out.read_text())
+    assert on_disk["gate"]["stampable"] is False
+    assert on_disk["gate"]["paper_facing"] is False
+
+
+def test_run_evidence_forwards_its_bypass_flag_into_the_artifact(tmp_path,
+                                                                 monkeypatch):
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+    from CDDF_analysis.hbi_mcmc import sbc as _sbc
+    monkeypatch.setattr(_sbc, "sbc_block", lambda *a, **k: {
+        "checks": {"sbc_uniform_ok": True}, "incomplete": []})
+    out = tmp_path / "ev_sbc2.json"
+    ev = RE.main(["--mode", "sbc", "--sbc-sims", "2", "--out", str(out),
+                  "--allow-low-farr", "documented on-mock reason"])
+    assert ev["gate"]["bypasses"]["allow_low_farr"] == "documented on-mock reason"
+    assert ev["gate"]["paper_facing"] is False
+
+
+# ==========================================================================
+# 10. HOLE 4 -- the non-dict hardening stopped one level too shallow
+#
+# Section 9 hardened the BLOCK level but left the CHECK VALUE level coercing
+# with ``bool(v)``, which is the same fail-open class one level down: a check
+# value of ``'no'`` or ``[0]`` is TRUTHY in Python while meaning "not ok" to
+# a human, so it stamped.  ``incomplete`` had the mirror hole: a non-list
+# was silently dropped by ``list(blk.get('incomplete') or [])``, and a
+# non-dict ``checks`` crashed with AttributeError instead of failing closed.
+# ==========================================================================
+
+# every one of these is a value a human would NOT call "this check passed"
+_NON_BOOL_CHECK_VALUES = ["no", [0], 1.0, "ok", ["ppc"], (), None, 0, 1,
+                          "True", "False", {}, {"ok": True}]
+
+
+@pytest.mark.parametrize("val", _NON_BOOL_CHECK_VALUES)
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_check_value_that_is_not_a_bool_refuses_the_stamp(block, val):
+    """A check must be a genuine bool.  ``'no'`` and ``[0]`` are the worst
+    case: truthy to Python, "not ok" to a human."""
+    b = _passing_blocks()
+    b[block] = {"checks": {"some_check_ok": val}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"{block}.some_check_ok={val!r} stamped"
+    assert g["paper_facing"] is False
+    assert g["checks"][f"{block}.some_check_ok"] is False
+    assert any("not a bool" in r for r in g["reasons"]), g["reasons"]
+
+
+@pytest.mark.parametrize("val", _NON_BOOL_CHECK_VALUES)
+def test_a_non_bool_check_in_a_NON_required_block_also_refuses(val):
+    b = _passing_blocks()
+    b["extra"] = {"checks": {"whatever_ok": val}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"extra.whatever_ok={val!r} stamped"
+    assert g["paper_facing"] is False
+
+
+@pytest.mark.parametrize("good", [True, np.bool_(True)])
+def test_genuine_bools_including_numpy_still_pass(good):
+    """The hardening must not break the real callers: model_a/ppc/sbc all
+    build checks with ``bool(...)`` or numpy comparisons."""
+    b = _passing_blocks()
+    b["ppc"] = {"checks": {"ppc_ok": good}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is True, g["reasons"]
+    assert g["checks"]["ppc.ppc_ok"] is True
+
+
+@pytest.mark.parametrize("bad", [False, np.bool_(False)])
+def test_genuine_false_still_fails_as_a_failed_check_not_a_malformed_one(bad):
+    b = _passing_blocks()
+    b["ppc"] = {"checks": {"ppc_ok": bad}, "incomplete": []}
+    g = EV.gate(b)
+    assert g["stampable"] is False
+    assert any("failed check: ppc.ppc_ok" in r for r in g["reasons"]), g["reasons"]
+    assert not any("not a bool" in r for r in g["reasons"]), g["reasons"]
+
+
+@pytest.mark.parametrize("junk", [0, 1, 1.0, True, "ppc", "", object()])
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_non_sequence_incomplete_refuses_the_stamp(block, junk):
+    """``list(blk.get('incomplete') or [])`` silently dropped a non-list.
+    ``incomplete=0`` and ``incomplete='ppc'`` both used to stamp (the latter
+    would have exploded into per-character entries had it been truthy)."""
+    b = _passing_blocks()
+    b[block] = {"checks": {"x_ok": True}, "incomplete": junk}
+    g = EV.gate(b)
+    assert g["stampable"] is False, f"{block}.incomplete={junk!r} stamped"
+    assert g["paper_facing"] is False
+    assert any("incomplete" in r and "sequence" in r for r in g["reasons"]), \
+        g["reasons"]
+
+
+@pytest.mark.parametrize("ok", [[], (), ["a"], ("a", "b")])
+def test_genuine_sequences_for_incomplete_are_honoured(ok):
+    b = _passing_blocks()
+    b["ppc"] = {"checks": {"ppc_ok": True}, "incomplete": ok}
+    g = EV.gate(b)
+    assert g["stampable"] is (not ok), g["reasons"]
+    if ok:
+        assert g["incomplete"]["ppc"] == list(ok)
+
+
+@pytest.mark.parametrize("junk", ["ok", [], 0, 1.0, ["ppc_ok"], (), True])
+@pytest.mark.parametrize("block", EV.REQUIRED_BLOCKS)
+def test_a_non_dict_checks_mapping_fails_closed_and_does_not_raise(block, junk):
+    """``blocks['ppc'] = {'checks': 'ok'}`` used to raise AttributeError out
+    of the gate.  A gate that crashes is not a gate that fails closed."""
+    b = _passing_blocks()
+    b[block] = {"checks": junk, "incomplete": []}
+    g = EV.gate(b)          # must NOT raise
+    assert g["stampable"] is False, f"{block}.checks={junk!r} stamped"
+    assert g["paper_facing"] is False
+    assert any(block in r for r in g["reasons"]), g["reasons"]
+
+
+def test_a_non_bool_check_survives_assembly_into_the_artifact():
+    ev = EV.assemble_evidence({**_passing_blocks(),
+                               "ppc": {"checks": {"ppc_pval_ok": "no"},
+                                       "incomplete": []}})
+    assert ev["gate"]["stampable"] is False
+    assert ev["gate"]["paper_facing"] is False

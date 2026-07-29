@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import pathlib
 import types
 
 import numpy as np
@@ -450,3 +451,218 @@ def test_plugin_map_is_labelled_and_carries_no_band(spack):
     for tier, blk in m["tiers"].items():
         assert set(blk) == {"dndx_allz", "omega_allz"}
         assert np.isfinite(blk["dndx_allz"]) and blk["dndx_allz"] > 0
+
+
+# ==========================================================================
+# 5. THE FAIL-OPEN HOLES (2026-07-29 gate audit)
+# ==========================================================================
+
+_SBATCH_DIR = pathlib.Path(__file__).resolve().parents[1] / (
+    "slurm/greatlakes/hbi_mcmc")
+
+
+def _flat_tab(z_by_nhat=0.0, z_by_z=0.0, z_by_snr=0.0, z_total=0.0,
+              ratio_by_z=(1.0, 1.0), ratio_by_snr=(1.0, 1.0)):
+    """A ratio table whose TOTAL and N-marginal are perfect but whose z- and
+    snr-marginals can be poisoned independently."""
+    return {
+        "total": {"mu": 1000.0, "obs": 1000.0, "ratio": 1.0, "z": z_total},
+        "by_nhat": [{"lo": 19.5 + 0.1 * i, "hi": 19.6 + 0.1 * i,
+                     "mu": 500.0, "obs": 500.0, "ratio": 1.0, "z": z_by_nhat}
+                    for i in range(2)],
+        "by_z": [{"lo": 2.0 + 0.1 * i, "hi": 2.1 + 0.1 * i, "mu": 500.0 * r,
+                  "obs": 500.0, "ratio": r, "z": (z_by_z if i == 0 else -z_by_z)}
+                 for i, r in enumerate(ratio_by_z)],
+        "by_snr": [{"s": i, "mu": 500.0 * r, "obs": 500.0, "ratio": r,
+                    "z": (z_by_snr if i == 0 else -z_by_snr)}
+                   for i, r in enumerate(ratio_by_snr)],
+    }
+
+
+@pytest.fixture
+def fake_fold(monkeypatch):
+    """Swap the fold for a table we control; the gate's ARMS are under test,
+    not the fold."""
+    from CDDF_analysis.hbi_mcmc import forward_selftest as _FS
+
+    def _install(tab):
+        monkeypatch.setattr(_FS, "selftest", lambda *a, **k: {"mu": None})
+        monkeypatch.setattr(_FS, "ratio_tables", lambda *a, **k: tab)
+    return _install
+
+
+def test_gate_tolerances_are_explicit_named_constants():
+    """They have to be ratifiable, so they may not be magic numbers buried in
+    the body."""
+    for k in ("z_total_max", "z_bin_max", "chi2_dof_max",
+              "z_zbin_max", "z_snrbin_max",
+              "ratio_span_by_z_max", "ratio_span_by_snr_max"):
+        assert k in RP.GATE, f"{k} missing from RP.GATE"
+        assert isinstance(RP.GATE[k], float)
+
+
+def test_forward_gate_reads_by_z_which_ratio_tables_already_computes(
+        spack, fake_fold):
+    """HOLE 4. ``forward_closure_gate`` consumed only ``total`` and
+    ``by_nhat``; ``ratio_tables`` ALREADY computes ``by_z`` and ``by_snr`` and
+    both were thrown away.  A pack whose total and N-marginal close but whose
+    z-marginal swings ~+22% sailed straight through."""
+    fake_fold(_flat_tab(z_by_z=30.0, ratio_by_z=(1.22, 0.78)))
+    g = RP.forward_closure_gate(spack)
+    assert g["pass"] is False, g
+    assert any("by_z" in f for f in g["failures"]), g["failures"]
+    assert g["z_zbin_max"] == pytest.approx(30.0)
+    assert g["ratio_span_by_z"] == pytest.approx(0.44)
+    assert len(g["by_z"]) == 2          # the evidence is retained, not summarised away
+
+
+def test_forward_gate_reads_by_snr(spack, fake_fold):
+    fake_fold(_flat_tab(z_by_snr=25.0, ratio_by_snr=(1.3, 0.7)))
+    g = RP.forward_closure_gate(spack)
+    assert g["pass"] is False, g
+    assert any("by_snr" in f for f in g["failures"]), g["failures"]
+    assert g["ratio_span_by_snr"] == pytest.approx(0.6)
+
+
+def test_forward_gate_catches_a_ratio_swing_even_at_small_poisson_z(
+        spack, fake_fold):
+    """The z-scores can be small on a low-count pack while the RATIO swing is
+    still a ~22% z-marginal systematic.  The span arm is what catches that."""
+    fake_fold(_flat_tab(z_by_z=1.0, ratio_by_z=(1.22, 0.78)))
+    g = RP.forward_closure_gate(spack)
+    assert g["pass"] is False, g
+    assert any("ratio_span_by_z" in f for f in g["failures"]), g["failures"]
+
+
+def test_forward_gate_still_passes_a_clean_table(spack, fake_fold):
+    fake_fold(_flat_tab())
+    g = RP.forward_closure_gate(spack)
+    assert g["pass"] is True, g["failures"]
+
+
+def test_bypass_flags_are_recorded_in_the_stamp_and_kill_paper_facing(spack):
+    """HOLE 3. ``--allow-low-farr`` appeared in NEITHER ``paper_facing`` NOR
+    the stamp: a Farr-gate-bypassed run was indistinguishable from a clean one
+    in the artifact."""
+    cfg = MA.ModelAConfig(num_warmup=3, num_samples=3, num_chains=2, seed=5)
+    md = RP.stamp_metadata(
+        code_commit="a" * 40, code_dirty=False, cfg=cfg,
+        args={"rederive": "python -m ... --out x"},
+        gate_report={"pass": True},
+        estimand=MA.ESTIMAND_POSTERIOR, paper_facing=True,
+        bypasses={"allow_low_farr": "on-mock self-calibration"})
+    assert md["bypasses"] == {"allow_low_farr": "on-mock self-calibration"}
+    assert md["paper_facing"] is False, (
+        "a bypassed run was stamped paper-facing")
+
+
+def test_no_bypass_leaves_paper_facing_alone_and_records_an_empty_dict(spack):
+    cfg = MA.ModelAConfig(num_warmup=3, num_samples=3, num_chains=2, seed=5)
+    md = RP.stamp_metadata(
+        code_commit="a" * 40, code_dirty=False, cfg=cfg,
+        args={"rederive": "x"}, gate_report={"pass": True},
+        estimand=MA.ESTIMAND_POSTERIOR, paper_facing=True)
+    assert md["bypasses"] == {}
+    assert md["paper_facing"] is True
+
+
+def test_open_forward_model_override_is_recorded_as_a_bypass(spack):
+    cfg = MA.ModelAConfig(num_warmup=3, num_samples=3, num_chains=2, seed=5)
+    md = RP.stamp_metadata(
+        code_commit="a" * 40, code_dirty=False, cfg=cfg,
+        args={"rederive": "x"}, gate_report={"pass": False},
+        estimand=MA.ESTIMAND_POSTERIOR, paper_facing=False,
+        bypasses={"allow_open_forward_model": "diagnostic only"})
+    assert md["bypasses"]["allow_open_forward_model"] == "diagnostic only"
+    assert md["paper_facing"] is False
+
+
+def test_prepared_sbatch_never_passes_a_bypass_flag_in_mock_mode():
+    """HOLE 3, second half: posterior_production.sbatch passed
+    --allow-low-farr on the ONE unconditional invocation line, so MODE=mock
+    (the paper-facing path) silently inherited the bypass."""
+    txt = (_SBATCH_DIR / "posterior_production.sbatch").read_text()
+    lines = txt.splitlines()
+    mock_idx = [i for i, ln in enumerate(lines) if '"$MODE" = "mock"' in ln]
+    assert mock_idx, "could not find the MODE=mock branch"
+    after = "\n".join(lines[mock_idx[0]:])
+    assert "--allow-low-farr" not in after, (
+        "the mock branch, or the shared invocation below it, still carries a "
+        "gate-bypass flag")
+    assert "allow-low-farr" in txt, (
+        "the synthetic branch should still be able to justify the bypass")
+
+
+def test_no_prepared_sbatch_bypasses_the_forward_closure_gate():
+    for p in sorted(_SBATCH_DIR.glob("*.sbatch")):
+        assert "--allow-open-forward-model" not in p.read_text(), (
+            f"{p.name} bypasses the forward-model closure gate")
+
+
+# ==========================================================================
+# PROVISIONAL / UNRATIFIED gate tolerances (2026-07-29)
+#
+# ``ratio_span_by_z_max`` and ``ratio_span_by_snr_max`` were introduced with
+# the by_z / by_snr gate arms.  Their VALUES (0.10, 0.15) were chosen by the
+# author, not requested and not ratified; project convention is that a
+# tolerance in a production fail-closed gate needs PI ratification.  The arms
+# stay armed, but the two numbers must be visibly flagged as provisional in
+# the code AND carried as provisional into every stamp, so a PI can ratify
+# (or move) them without archaeology.
+# ==========================================================================
+
+_PROVISIONAL = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
+
+def test_the_two_invented_tolerances_are_declared_provisional():
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    assert set(RP.PROVISIONAL_GATE_TOLERANCES) == set(_PROVISIONAL)
+    for k in _PROVISIONAL:
+        assert k in RP.GATE, k
+
+
+def test_the_ratified_tolerances_are_not_marked_provisional():
+    """The flag must DISCRIMINATE: the pre-existing z/chi2 tolerances are not
+    provisional, so a blanket 'everything is provisional' passes nothing."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    for k in ("z_total_max", "z_bin_max", "chi2_dof_max",
+              "z_zbin_max", "z_snrbin_max"):
+        assert k not in RP.PROVISIONAL_GATE_TOLERANCES, k
+
+
+def test_the_gate_report_carries_the_provisional_flag(spack):
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    g = RP.forward_closure_gate(spack)
+    assert set(g["gate_tolerances_provisional"]) == set(_PROVISIONAL)
+    assert g["gate_tolerances_provisional_note"]
+    note = g["gate_tolerances_provisional_note"].upper()
+    assert "UNRATIFIED" in note or "PROVISIONAL" in note
+
+
+def test_the_stamp_carries_the_provisional_flag(spack):
+    """A reader of the artifact alone must see which gate numbers are not
+    ratified -- the gate report is nested inside the stamp."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    from CDDF_analysis.hbi_mcmc import model_a as _MA
+    g = RP.forward_closure_gate(spack)
+    md = RP.stamp_metadata(
+        code_commit="0" * 40, code_dirty=False,
+        cfg=_MA.ModelAConfig(num_warmup=1, num_samples=1, num_chains=1),
+        args={"rederive": "x"}, gate_report=g,
+        estimand="POSTERIOR_MEDIAN_CI", paper_facing=False)
+    assert set(md["gate_tolerances_provisional"]) == set(_PROVISIONAL)
+    assert set(md["forward_gate"]["gate_tolerances_provisional"]) == set(_PROVISIONAL)
+    import json
+    assert "PROVISIONAL" in json.dumps(md, default=RP._jsonable).upper()
+
+
+def test_a_failure_message_from_a_provisional_arm_says_so(spack, fake_fold):
+    """If the gate REFUSES on an unratified number, the refusal text must
+    name it as unratified -- that is the moment a PI needs to know."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    fake_fold(_flat_tab(ratio_by_z=(1.22, 0.78)))    # span 0.44, |z| tiny
+    g = RP.forward_closure_gate(spack)
+    bad = [f for f in g["failures"] if "ratio_span_by_z" in f]
+    assert bad, g["failures"]
+    assert any("UNRATIFIED" in f.upper() or "PROVISIONAL" in f.upper()
+               for f in bad), bad

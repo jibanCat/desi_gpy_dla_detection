@@ -71,11 +71,61 @@ __all__ = ["forward_closure_gate", "GATE", "stamp_metadata", "main"]
 # Tolerances are on Poisson z-scores of the pure truth-fold (no sampling).
 # They are deliberately loose: this gate is not a goodness-of-fit test, it is a
 # tripwire against a forward model that is broken by ORDERS of magnitude.
+#
+# EVERY tolerance is a named constant here so it can be ratified as a number
+# rather than discovered inside the gate body.
 GATE = {
     "z_total_max": 5.0,      # |z| on the total predicted-vs-observed counts
     "z_bin_max": 5.0,        # max |z| over reported n-hat bins with obs > 0
     "chi2_dof_max": 3.0,     # chi2/dof over those bins
+    # --- the z- and SNR-marginal arms (added 2026-07-29) --------------------
+    # ``ratio_tables`` has ALWAYS computed ``by_z`` and ``by_snr``; the gate
+    # consumed only ``total`` and ``by_nhat`` and DISCARDED them.  A forward
+    # model can close in total and in the N-marginal while carrying a large
+    # z-marginal tilt -- which is precisely the standing ZTILT defect -- and
+    # such a pack sailed through.  Two arms per marginal, because they fail
+    # in different regimes:
+    #   * the |z| arm catches a swing that is large relative to Poisson noise
+    #     (high-count packs);
+    #   * the RATIO-SPAN arm catches a swing that is large in PHYSICAL terms
+    #     but small in z because the marginal is count-starved.  A ~22%
+    #     max-to-min spread in mu/obs across z is a systematic no sampler can
+    #     repair, whatever its z-score.
+    "z_zbin_max": 5.0,           # max |z| over fine-z bins with obs > 0
+    "z_snrbin_max": 5.0,         # max |z| over SNR strata with obs > 0
+    # 🔴 PROVISIONAL / UNRATIFIED -- see PROVISIONAL_GATE_TOLERANCES below.
+    "ratio_span_by_z_max": 0.10,     # max(mu/obs) - min(mu/obs) across z
+    "ratio_span_by_snr_max": 0.15,   # ... across SNR strata (fewer, noisier)
 }
+
+# 🔴 PROVISIONAL / UNRATIFIED GATE TOLERANCES.
+#
+# The two RATIO-SPAN numbers were chosen by the author when the by_z / by_snr
+# arms were added on 2026-07-29.  They were not requested, and project
+# convention is that a tolerance inside a production fail-closed gate is
+# ratified before it can refuse work.  The ARMS stay armed -- a forward model
+# that closes in total and in the N-marginal while carrying a large z-marginal
+# tilt is a real defect and must not sail through -- but the two THRESHOLDS
+# are flagged here, in the gate report, and in every stamp, so a PI can ratify
+# or move them without archaeology.
+#
+# What they are NOT: they are not measured, not calibrated against any
+# reference forward model, and carry no coverage statement.  0.10 / 0.15 were
+# picked as "a swing a sampler cannot repair"; the wider SNR value only
+# reflects that the SNR marginal has fewer, noisier strata.
+#
+# The z-score arms (z_total_max, z_bin_max, chi2_dof_max, z_zbin_max,
+# z_snrbin_max) are NOT in this set: they are conventional 5-sigma / chi2-per-
+# dof thresholds and pre-date this change.
+PROVISIONAL_GATE_TOLERANCES = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
+PROVISIONAL_GATE_TOLERANCES_NOTE = (
+    "PROVISIONAL / UNRATIFIED: ratio_span_by_z_max and ratio_span_by_snr_max "
+    "were set by the author on 2026-07-29 and have NOT been ratified. They are "
+    "not measured or calibrated and carry no coverage statement. The gate arms "
+    "they threshold are load-bearing and stay armed; the NUMBERS are open for "
+    "PI ratification. Every other tolerance in GATE is a conventional "
+    "z-score/chi2 threshold and pre-dates this change.")
 
 _REAL_TOKENS = ("main_dark", "loa_main_dark", "matterhorn", "dr3")
 
@@ -112,11 +162,46 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     if not (chi2_dof <= gate["chi2_dof_max"]):
         fails.append(f"chi2/dof={chi2_dof:.2f} > {gate['chi2_dof_max']}")
 
+    # --- the z- and SNR-marginal arms -------------------------------------
+    # ``ratio_tables`` already computed these; the gate used to throw them
+    # away, so a forward model with a large z-marginal tilt but a closing
+    # total and N-marginal passed.  No new compute.
+    marg = {}
+    for key, zkey, spankey in (("by_z", "z_zbin_max", "ratio_span_by_z_max"),
+                               ("by_snr", "z_snrbin_max",
+                                "ratio_span_by_snr_max")):
+        mrows = [r for r in (tab.get(key) or []) if r.get("obs", 0) > 0]
+        zs = np.array([r["z"] for r in mrows], float)
+        ratios = np.array([r["ratio"] for r in mrows], float)
+        ratios = ratios[np.isfinite(ratios)]
+        zmax = float(np.abs(zs).max()) if len(zs) else float("nan")
+        span = (float(ratios.max() - ratios.min()) if len(ratios) >= 2
+                else 0.0)
+        marg[key] = dict(rows=mrows, zmax=zmax, span=span)
+        if len(zs) and not (zmax <= gate[zkey]):
+            fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}")
+        if not (span <= gate[spankey]):
+            prov = (" [PROVISIONAL/UNRATIFIED tolerance]"
+                    if spankey in PROVISIONAL_GATE_TOLERANCES else "")
+            fails.append(
+                f"ratio span in {key} = {span:.4f} "
+                f"(mu/obs {ratios.min():.4f}..{ratios.max():.4f}) "
+                f"> ratio_span_{key}_max = {gate[spankey]}{prov}")
+
     worst = sorted(rows, key=lambda b: -abs(b["z"]))[:5]
     return {
+        "by_z": marg["by_z"]["rows"],
+        "by_snr": marg["by_snr"]["rows"],
+        "z_zbin_max": marg["by_z"]["zmax"],
+        "z_snrbin_max": marg["by_snr"]["zmax"],
+        "ratio_span_by_z": marg["by_z"]["span"],
+        "ratio_span_by_snr": marg["by_snr"]["span"],
         "pass": not fails,
         "failures": fails,
         "gate": gate,
+        # which of the numbers above a PI has NOT ratified
+        "gate_tolerances_provisional": list(PROVISIONAL_GATE_TOLERANCES),
+        "gate_tolerances_provisional_note": PROVISIONAL_GATE_TOLERANCES_NOTE,
         "total_mu": float(tab["total"]["mu"]),
         "total_obs": float(tab["total"]["obs"]),
         "total_ratio": float(tab["total"]["ratio"]),
@@ -156,9 +241,22 @@ def _git_sha_full():
 
 
 def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
-                   estimand, paper_facing, pack_provenance=None):
-    """The artifact metadata block. Every field the 2026-07-28 contract requires."""
+                   estimand, paper_facing, pack_provenance=None,
+                   bypasses=None):
+    """The artifact metadata block. Every field the 2026-07-28 contract requires.
+
+    ``bypasses`` -- every gate-bypass flag actually in force for this run
+    (``allow_low_farr``, ``allow_open_forward_model``, ...).  Until 2026-07-29
+    ``--allow-low-farr`` appeared in NEITHER ``paper_facing`` NOR the stamp, so
+    a run with the Farr headroom gate switched off was indistinguishable in the
+    artifact from one that passed it.  A bypass is now RECORDED and FORCES
+    ``paper_facing=False``: a number obtained by switching a gate off cannot be
+    certified by that gate.
+    """
+    bypasses = dict(bypasses or {})
+    paper_facing = bool(paper_facing) and not bypasses
     return {
+        "bypasses": bypasses,
         "estimand": estimand,
         "resp_kind": "forward",   # Model A packs carry NO kappa object by schema
         "kernel_note": ("the measured forward response (skew-normal moment "
@@ -180,6 +278,15 @@ def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
         "paper_facing": bool(paper_facing),
         "forward_model_closes": bool(gate_report.get("pass")),
         "forward_gate": gate_report,
+        # hoisted to the TOP of the stamp, not left buried in forward_gate: a
+        # reader of the artifact alone must see which gate numbers are not
+        # ratified without opening the nested report.
+        "gate_tolerances_provisional": list(
+            gate_report.get("gate_tolerances_provisional")
+            or PROVISIONAL_GATE_TOLERANCES),
+        "gate_tolerances_provisional_note": (
+            gate_report.get("gate_tolerances_provisional_note")
+            or PROVISIONAL_GATE_TOLERANCES_NOTE),
         "date": time.strftime("%Y-%m-%d"),
         "pack_provenance": pack_provenance,
         "scope": "MOCK / SYNTHETIC ONLY",
@@ -285,8 +392,19 @@ def main(argv=None):
     summ = MA.posterior_summary(red, pack)
     wall = time.time() - t_start
 
-    paper_facing = bool(gate["pass"]) and bool(
-        (red.get("diagnostics") or {}).get("policy_pass"))
+    bypasses = {}
+    if a.allow_low_farr is not None:
+        bypasses["allow_low_farr"] = a.allow_low_farr
+    if a.allow_open_forward_model is not None:
+        bypasses["allow_open_forward_model"] = a.allow_open_forward_model
+    paper_facing = (bool(gate["pass"])
+                    and bool((red.get("diagnostics") or {}).get("policy_pass"))
+                    and not bypasses)
+    if bypasses:
+        for k, v in sorted(bypasses.items()):
+            print(f"[gate] BYPASS IN FORCE: {k} = {v!r}\n"
+                  f"       -> this artifact is stamped paper_facing=False, "
+                  f"permanently.")
 
     rederive = (
         "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "
@@ -312,7 +430,7 @@ def main(argv=None):
             code_commit=code_commit, code_dirty=code_dirty, cfg=cfg,
             args={"rederive": rederive}, gate_report=gate,
             estimand=MA.ESTIMAND_POSTERIOR, paper_facing=paper_facing,
-            pack_provenance=prov),
+            pack_provenance=prov, bypasses=bypasses),
     }
     # truth closure when the pack carries a known truth (synthetic packs do)
     if getattr(pack, "truth", None) is not None:

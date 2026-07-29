@@ -180,6 +180,16 @@ class ModelAPack:
     def n_molly(self):
         return len(self.molly_nhi_edges) - 1
 
+    @property
+    def n_pad_bins(self):
+        """Schema-v1.1 DOWNWARD basis-pad depth: true-N bins BELOW the
+        reporting floor (finding D1).  0 means the true-N basis is truncated at
+        the reporting floor and the fold is arithmetically incapable of
+        reproducing the lowest observed bins.  Exposed as a first-class number
+        so a pre-flight can REFUSE an unpadded pack instead of re-deriving the
+        edge arithmetic at every call site."""
+        return int(len(self.ntrue_edges) - len(self.nhat_edges))
+
 
 # --- validation ----------------------------------------------------------------
 

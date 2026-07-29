@@ -1,11 +1,17 @@
 {
  "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
- "date": "2026-07-28",
- "code_commit": "b76ded7",
- "scope": "MOCK ONLY (2LPT-0 / london0 / saclay0). No real-survey values.",
- "what": "pure forward-model truth-fold self-test: the pack's own truth f(N,z) folded through the pack's own kernel/completeness/g/dX/FP at the truth-equivalent parameter point, vs the pack's own observed counts. NO SAMPLING.",
+ "entry_point": "aggregate_report / --mock NAME=PATH",
+ "date": "2026-07-29",
+ "code_commit": "a9fe97b68d2077a85818e1678c79ecf6beb19078",
+ "code_dirty": false,
+ "code_dirty_scope": "uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- this is NOT a whole-tree cleanliness claim",
+ "scope": "MOCK ONLY (2lpt0 / london0 / saclay0). No real-survey values.",
+ "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python -m CDDF_analysis.hbi_mcmc.forward_selftest --mock 2lpt0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_2lpt0_v11.npz --mock london0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_london0_v11.npz --mock saclay0=/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs/modelA_pack_saclay0_v11.npz --out CDDF_analysis/hbi_mcmc/rung9_forward_selftest.json",
+ "what": "pure forward-model truth-fold self-test: the pack's own truth f(N,z) folded through the pack's own kernel/completeness/g/dX/FP machinery at the truth-equivalent parameter point, vs the pack's own observed counts. NO SAMPLING.",
  "mocks": {
   "2lpt0": {
+   "pack": "modelA_pack_2lpt0_v11.npz",
+   "n_pad_bins": 0,
    "probes": {
     "resp_clamp": "both",
     "has_resp_N_fit_range": true,
@@ -1394,6 +1400,8 @@
    }
   },
   "london0": {
+   "pack": "modelA_pack_london0_v11.npz",
+   "n_pad_bins": 0,
    "probes": {
     "resp_clamp": "both",
     "has_resp_N_fit_range": true,
@@ -2782,6 +2790,8 @@
    }
   },
   "saclay0": {
+   "pack": "modelA_pack_saclay0_v11.npz",
+   "n_pad_bins": 0,
    "probes": {
     "resp_clamp": "both",
     "has_resp_N_fit_range": true,
@@ -4169,6 +4179,61 @@
     ]
    }
   }
+ },
+ "closure_verdicts": {
+  "2lpt0": {
+   "closes": false,
+   "reasons": [
+    "|z_total| 93.27 > 5.0",
+    "chi2/dof 2216.25 > 3.0 over 29 n-hat bins",
+    "max|z| in by_nhat = 216.43 > 5.0",
+    "max|z| in by_z = 31.38 > 5.0"
+   ],
+   "chi2_dof": 2216.2533539940077,
+   "n_bins": 29,
+   "tolerances": {
+    "max_abs_z_total": 5.0,
+    "max_abs_z_bin": 5.0,
+    "max_chi2_dof": 3.0
+   }
+  },
+  "london0": {
+   "closes": false,
+   "reasons": [
+    "|z_total| 74.66 > 5.0",
+    "chi2/dof 1412.75 > 3.0 over 29 n-hat bins",
+    "max|z| in by_nhat = 169.07 > 5.0",
+    "max|z| in by_z = 24.85 > 5.0"
+   ],
+   "chi2_dof": 1412.7470454758368,
+   "n_bins": 29,
+   "tolerances": {
+    "max_abs_z_total": 5.0,
+    "max_abs_z_bin": 5.0,
+    "max_chi2_dof": 3.0
+   }
+  },
+  "saclay0": {
+   "closes": false,
+   "reasons": [
+    "|z_total| 83.62 > 5.0",
+    "chi2/dof 1734.27 > 3.0 over 29 n-hat bins",
+    "max|z| in by_nhat = 190.41 > 5.0",
+    "max|z| in by_z = 28.01 > 5.0"
+   ],
+   "chi2_dof": 1734.2718247289902,
+   "n_bins": 29,
+   "tolerances": {
+    "max_abs_z_total": 5.0,
+    "max_abs_z_bin": 5.0,
+    "max_chi2_dof": 3.0
+   }
+  }
+ },
+ "n_pad_bins": {
+  "2lpt0": 0,
+  "london0": 0,
+  "saclay0": 0
  },
  "verdict": {
   "D1_basis_pad_low_N": "OPEN \u2014 needs a re-extracted basis-padded pack",

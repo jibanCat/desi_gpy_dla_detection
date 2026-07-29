@@ -48,6 +48,7 @@ closure is a ratio so the physical constant cancels.
 """
 from __future__ import annotations
 
+import collections.abc as _abc
 import os
 import subprocess
 import time
@@ -731,34 +732,146 @@ def ztilt_block(run, pack, *, stat="dndx", thr=20.3, forward_fold=True,
 # 6. GATE + ASSEMBLY
 # ============================================================================
 
-def gate(blocks, *, required=REQUIRED_BLOCKS):
-    """FAIL-CLOSED.  Missing block == failure.  Any False check == failure."""
+def _is_bool(v):
+    """A GENUINE boolean.  ``np.bool_`` counts (model_a/ppc/sbc build checks
+    from numpy comparisons); ``int``/``float``/``str``/``list`` do NOT, however
+    truthy they are.  ``np.bool_`` is not a subclass of ``bool``, so it has to
+    be named explicitly."""
+    return isinstance(v, (bool, np.bool_))
+
+
+def _is_mapping(v):
+    return isinstance(v, _abc.Mapping)
+
+
+def _is_sequence(v):
+    """A genuine sequence of entries.  ``str``/``bytes`` are EXCLUDED: they
+    are sequences of characters, and ``incomplete='ppc'`` must be rejected as
+    malformed rather than expanded to ``['p', 'p', 'c']``."""
+    return (isinstance(v, (_abc.Sequence, _abc.Set))
+            and not isinstance(v, (str, bytes, bytearray)))
+
+
+def _usable_checks(blk):
+    """The check mapping of a block, or ``{}`` if it is absent/malformed."""
+    c = blk.get("checks")
+    return c if _is_mapping(c) else {}
+
+
+def gate(blocks, *, required=REQUIRED_BLOCKS, bypasses=None):
+    """FAIL-CLOSED.  Missing block == failure.  Any False check == failure.
+
+    FOUR fail-open holes closed 2026-07-29.  Each is stated as a CODE PATH,
+    because that is what was observed; no claim is made here about any
+    particular file having been found on disk.
+
+    1. ``required`` may only ever GROW.  It used to be an override, and
+       ``run_evidence --mode sbc`` passed ``required=("coverage_sbc",)``,
+       which silenced the four absent blocks: that call path returns
+       ``stampable=True, paper_facing=True, n_checks=2``, and anything it
+       wrote would carry that verdict.  ``REQUIRED_BLOCKS`` is now unioned in
+       unconditionally, so no caller can narrow the gate.  A partial run is
+       REPORTABLE; it is never STAMPABLE.
+
+    2. A block whose value is not a dict is INVALID, not absent-and-ignored.
+       The old loop did ``if not isinstance(blk, dict): continue`` and the
+       missing-list caught only ``None``/``{}`` -- so ``blocks['ppc'] = []``
+       (or ``''``, ``0``, ``False``) yielded ``stampable=True, missing=[]``.
+       The omission tests used exactly the None/{} pair and so passed
+       vacuously.
+
+    3. ``bypasses`` -- any gate-bypass flag actually used by the run (e.g.
+       ``--allow-low-farr``, ``--allow-open-forward-model``).  A bypass is
+       RECORDED in the verdict and forces ``paper_facing=False`` (and
+       ``stampable=False``): a result obtained by switching a gate off cannot
+       be certified by that gate.
+
+    4. Hole 2 stopped one level too shallow.  Individual CHECK VALUES were
+       still coerced with ``bool(v)``, so ``{'checks': {'ppc_pval_ok': 'no'}}``
+       and ``{'checks': {'ppc_pval_ok': [0]}}`` STAMPED -- both are truthy in
+       Python and both mean "not ok" to a human.  ``incomplete`` had the
+       mirror hole (``list(blk.get('incomplete') or [])`` silently dropped a
+       non-sequence such as ``0``), and a non-mapping ``checks`` raised
+       ``AttributeError`` out of the gate rather than failing closed.  A check
+       value must now be a genuine ``bool``/``np.bool_``, ``checks`` must be a
+       mapping, and ``incomplete`` must be a genuine sequence (a ``str`` is
+       NOT accepted: it would explode into per-character entries).  Anything
+       else is a MALFORMED-EVIDENCE failure, recorded as a False check.
+    """
     reasons, checks = [], {}
+    # (1) required may only GROW -- narrowing it is how the SBC-only artifact
+    #     came to be stamped.  Union, always.
+    required = tuple(dict.fromkeys(tuple(REQUIRED_BLOCKS) + tuple(required)))
+    bypasses = dict(bypasses or {})
+    # (2) any non-dict block is invalid; a required non-dict is ALSO missing
+    invalid = [name for name, blk in blocks.items()
+               if blk is not None and not isinstance(blk, dict)]
+    for name in invalid:
+        reasons.append(f"invalid evidence block (not a dict): {name} "
+                       f"(got {type(blocks[name]).__name__})")
+        checks[f"{name}.__well_formed__"] = False
     missing = [b for b in required
-               if b not in blocks or blocks.get(b) is None]
+               if b not in blocks or blocks.get(b) is None
+               or not isinstance(blocks.get(b), dict)]
     for b in missing:
         reasons.append(f"missing required evidence block: {b}")
     incomplete = {}
     for name, blk in blocks.items():
         if not isinstance(blk, dict):
             continue
-        for k, v in (blk.get("checks") or {}).items():
+        # (4a) ``checks`` must be a MAPPING.  A truthy non-mapping used to
+        #      raise AttributeError straight out of the gate; a gate that
+        #      crashes is not a gate that fails closed.
+        raw_checks = blk.get("checks")
+        if raw_checks is None or (not raw_checks and not _is_mapping(raw_checks)):
+            raw_checks = {}          # absent/empty -> handled as "no checks"
+        elif not _is_mapping(raw_checks):
+            reasons.append(f"malformed evidence in {name}: 'checks' is not a "
+                           f"mapping (got {type(raw_checks).__name__})")
+            checks[f"{name}.__checks_well_formed__"] = False
+            raw_checks = {}
+        for k, v in raw_checks.items():
+            # (4b) a check value must be a GENUINE bool.  `bool(v)` used to
+            #      coerce, and 'no' / [0] are truthy while meaning "not ok".
+            if not _is_bool(v):
+                checks[f"{name}.{k}"] = False
+                reasons.append(
+                    f"malformed check {name}.{k}: value is not a bool "
+                    f"(got {type(v).__name__} {v!r}) -- refusing to coerce")
+                continue
             checks[f"{name}.{k}"] = bool(v)
             if not v:
                 reasons.append(f"failed check: {name}.{k}")
-        inc = list(blk.get("incomplete") or [])
+        # (4c) ``incomplete`` must be a genuine sequence.  A non-sequence was
+        #      silently dropped by ``list(... or [])``; a str would have been
+        #      exploded into per-character entries.
+        raw_inc = blk.get("incomplete")
+        if raw_inc is None:
+            inc = []
+        elif _is_sequence(raw_inc):
+            inc = list(raw_inc)
+        else:
+            inc = []
+            reasons.append(f"malformed evidence in {name}: 'incomplete' is "
+                           f"not a sequence (got {type(raw_inc).__name__} "
+                           f"{raw_inc!r})")
+            checks[f"{name}.__incomplete_well_formed__"] = False
         if inc:
             incomplete[name] = inc
-            reasons.append(f"incomplete evidence in {name}: {', '.join(inc)}")
-        if not (blk.get("checks") or {}) and name in required:
+            reasons.append(f"incomplete evidence in {name}: "
+                           f"{', '.join(str(x) for x in inc)}")
+        if not raw_checks and name in required:
             reasons.append(f"block {name} reports no checks at all")
     # a required block that produced no checks cannot pass
     for b in required:
         blk = blocks.get(b)
-        if isinstance(blk, dict) and not (blk.get("checks") or {}):
+        if isinstance(blk, dict) and not _usable_checks(blk):
             checks[f"{b}.__present__"] = False
-    stampable = (not missing) and (not incomplete) and bool(checks) and all(
-        checks.values())
+    for b in sorted(bypasses):
+        reasons.append(f"gate bypass in force: {b} ({bypasses[b]!r}) -- the "
+                       f"artifact can never be paper-facing")
+    stampable = (not missing) and (not incomplete) and (not invalid) and (
+        not bypasses) and bool(checks) and all(checks.values())
     # A SECOND, WEAKER verdict, because "the z-resolved product fails but the
     # z-marginalised one holds" is the project's actual situation and deserves
     # a name rather than a blanket refusal: everything passes EXCEPT that the
@@ -767,10 +880,14 @@ def gate(blocks, *, required=REQUIRED_BLOCKS):
     _Z = "ztilt.ztilt_z_resolved_ok"
     relaxed = {k: v for k, v in checks.items() if k != _Z}
     stampable_integrated_only = bool(
-        (not missing) and (not incomplete) and relaxed
+        (not missing) and (not incomplete) and (not invalid)
+        and (not bypasses) and relaxed
         and all(relaxed.values()) and not stampable)
     return {
         "checks": checks,
+        "required_blocks": list(required),
+        "invalid_blocks": invalid,
+        "bypasses": bypasses,
         "stampable_integrated_only": stampable_integrated_only,
         "stampable_integrated_only_note": (
             "every gate passes except the per-z coverage: only the INTEGRATED "
@@ -780,7 +897,9 @@ def gate(blocks, *, required=REQUIRED_BLOCKS):
         "n_checks": len(checks),
         "n_failed": int(sum(1 for v in checks.values() if not v)),
         "stampable": bool(stampable),
-        "paper_facing": bool(stampable),
+        # explicit, not merely implied by ``stampable``: a bypassed run is
+        # never paper-facing even if some future edit loosens ``stampable``.
+        "paper_facing": bool(stampable and not bypasses),
         "estimand": "POSTERIOR_MEDIAN_CI" if stampable else "NOT_STAMPABLE",
         "reasons": reasons,
         "policy_note": (
@@ -805,9 +924,11 @@ def _git(paths=("evidence.py", "sbc.py", "run_evidence.py", "model_a.py",
         return "unknown"
 
 
-def assemble_evidence(blocks, *, provenance=None, required=REQUIRED_BLOCKS):
-    g = gate(blocks, required=required)
+def assemble_evidence(blocks, *, provenance=None, required=REQUIRED_BLOCKS,
+                      bypasses=None):
+    g = gate(blocks, required=required, bypasses=bypasses)
     prov = dict(provenance or {})
+    prov["bypasses"] = dict(bypasses or {})
     prov.setdefault("routine", "CDDF_analysis/hbi_mcmc/run_evidence.py")
     prov.setdefault("module", "CDDF_analysis/hbi_mcmc/evidence.py")
     prov.setdefault("code_commit", _git())
