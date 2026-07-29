@@ -20,6 +20,42 @@ All packs are SYNTHETIC.  Sampler settings are tiny; the assertions test
 structure, signs and discrimination, not sampler beauty.
 
 Run: conda run -n gpdla-hbi python -m pytest tests/test_inference_evidence.py -q
+
+TEST-COUNT PROVENANCE (2026-07-29 correction)
+---------------------------------------------
+Earlier reporting on this work quoted test counts with no stated selection,
+and three of those numbers do not reproduce.  Numbers are only meaningful with
+the selection that produced them, so the measured ones are recorded here:
+
+  "~66 tests, every one failing before its fix"  -> WRONG in "every one".
+      Selection: every test id present in tests/test_inference_evidence.py +
+      test_modelA_forward_selftest.py + test_posterior_estimator.py at 29a22e3
+      but ABSENT at 7bcaa5a^, run with the eight touched source files reverted
+      to 7bcaa5a^.
+      Measured: 77 before, 147 after, 70 ADDED; 66 red / 4 green on revert.
+      The 4 green are controls and one measurement artefact, not omissions:
+        test_forward_gate_still_passes_a_clean_table          (negative control)
+        test_no_prepared_sbatch_bypasses_the_forward_closure_gate (already true)
+        test_require_closure_exits_nonzero_on_the_v11_pack    (pack fails either way)
+        test_committed_rung9_selftest_artifact_carries_a_resolvable_full_sha
+              (reads the artifact JSON, which the revert set did not revert)
+      An independent referee measured 65 red / 5 green with a slightly
+      different revert set; both readings agree that "every one" is false.
+
+  "22 passed"   -> does NOT reproduce.  No selection at 29a22e3 gives 22.
+                   Dropped rather than reinterpreted.
+  "253 passed"  -> did NOT reproduce at the time it was written.  At 29a22e3
+                   this file held 96 tests; the three gate files together held
+                   147; modelA* + evidence + posterior held 241.  253 is the
+                   count of THIS FILE at a8e81fa and later, which is not what
+                   the original claim referred to.
+
+  The one count that DOES reproduce: d95668a's "50 new cases ... all failing
+  before" -- 46 -> 96 collected, and those exact 50 ids give 50 failed with
+  evidence.py at d95668a^ and 50 passed at d95668a.
+
+  Current (HEAD): this file 253 passed; test_posterior_estimator.py 39;
+  test_modelA_forward_selftest.py 24; the three together 316 passed.
 """
 import copy
 
