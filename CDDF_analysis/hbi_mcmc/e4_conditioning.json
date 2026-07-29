@@ -1,7 +1,7 @@
 {
  "metadata": {
   "artifact": "e4_conditioning",
-  "code_commit": "8c1f6036098c08d67a147528b74791987f14e8e0",
+  "code_commit": "05570324f455d9af5768bbbf341cfe690bfef096",
   "code_dirty": false,
   "routine": "CDDF_analysis/hbi_mcmc/run_e4_conditioning.py",
   "probe_module": "CDDF_analysis/hbi_mcmc/e4_probe.py",
@@ -20820,23 +20820,61 @@
     349.5011540383124,
     348.8092559735098
    ],
-   "caveat": "CORRECTED 2026-07-29 (an earlier version of this artifact attributed the whole gain to the response alone; a referee decomposition showed that is wrong). The gain is bought by TWO independently frozen inputs, and it is measured here by counterfactual (conditioning_decomposition): relative to a baseline that stacks identical blocks (common response AND common weights), restoring the per-SNR response kernel alone buys 7.3e+05-7.3e+05x, and restoring the per-stratum weight alone \u2014 the 7-level completeness step times the per-stratum dX \u2014 INDEPENDENTLY buys 7.2e+04-7.2e+04x (medians over z; total 1e+06-1e+06x). Neither is a robustness margin: both are frozen calibrations, and the conditioning of the operator the likelihood inverts is only as real as they are. If either the SNR-resolved response fit or the completeness step is wrong in its per-stratum DIFFERENCES, the well-conditioned stacked operator is a fiction. NOT VERIFIED HERE: no perturbation of either fit was run, so this is an attribution of the gain, not a measurement of the error it would induce.",
+   "caveat": "CORRECTED 2026-07-29 (an earlier version of this artifact attributed the whole gain to the response alone; a referee decomposition showed that is wrong). The gain is bought by TWO independently frozen inputs, and it is measured here by counterfactual (conditioning_decomposition): relative to a baseline that stacks identical blocks (common response AND common weights, cond 3.45e+10 at the detail z bin k=2), restoring the per-SNR response kernel alone gives cond 469 \u2014 a 7.4e+07x gain \u2014 and restoring the per-stratum weight alone \u2014 the 7-level completeness step times the per-stratum dX \u2014 INDEPENDENTLY gives cond 3827-3838, a 9e+06x gain (both restored: cond 344-344.7, 1e+08x). The gains fall steeply with z as the response cell changes: over all 15 z bins and all three mocks the response gain spans 6.1e+02x-9.3e+07x and the weight gain 66x-1.2e+07x (medians over z 7.3e+05x and 7.2e+04x, total 1e+06x), so no single number covers the whole range and the per-z table must be read. Neither input is a robustness margin: both are frozen calibrations, and the conditioning of the operator the likelihood inverts is only as real as they are. If either the SNR-resolved response fit or the completeness step is wrong in its per-stratum DIFFERENCES, the well-conditioned stacked operator is a fiction. NOT VERIFIED HERE: no perturbation of either fit was run, so this is an attribution of the gain, not a measurement of the error it would induce.",
    "caveat_reference_sensitivity": "the split depends on which stratum supplies the common response in the counterfactual. The canonical choice is the LOWEST live stratum (the worst-conditioned response cell \u2014 the 2.77e10 one). Over every live stratum as the reference, every z bin and all three mocks, the response gain spans 3.4x-9.3e+07x and the weight gain 2.6x-1.2e+07x: with the HIGHEST-SNR response cell as the reference both baselines and both gains collapse by orders of magnitude, because that cell is itself far better conditioned. The qualitative finding \u2014 two frozen inputs, not one, carry the load \u2014 holds at every reference; the numbers do not transfer.",
-   "decomposition_gain_from_response_K": [
+   "decomposition_gain_from_response_K_median_over_z": [
     732541.9503419122,
     732838.5522984498,
     732826.3804460842
    ],
-   "decomposition_gain_from_completeness_dX_weights": [
+   "decomposition_gain_from_completeness_dX_weights_median_over_z": [
     72154.69428060578,
     72104.61742442586,
     72163.6475756308
    ],
-   "decomposition_gain_total": [
+   "decomposition_gain_total_median_over_z": [
     1037173.8227980551,
     1041298.9439335186,
     1042119.5914563893
-   ]
+   ],
+   "decomposition_at_detail_k": {
+    "k": 2,
+    "cond_baseline": [
+     34498728148.66272,
+     34492813145.071175,
+     34485061908.53392
+    ],
+    "cond_per_stratum_K_only": [
+     469.0054704069742,
+     469.00226693008204,
+     469.0145151705067
+    ],
+    "cond_per_stratum_w_only": [
+     3827.0513569460604,
+     3838.454783353865,
+     3827.3764269443805
+    ],
+    "cond_actual": [
+     344.01144518992623,
+     344.71609324388794,
+     344.03085286207477
+    ],
+    "gain_from_K": [
+     73557197.78433892,
+     73545088.3230236,
+     73526641.05927967
+    ],
+    "gain_from_w": [
+     9014440.866085548,
+     8986119.439169984,
+     9010104.589076275
+    ],
+    "gain_total": [
+     100283663.90431057,
+     100061510.96829523,
+     100238282.76343374
+    ]
+   }
   },
   "exact_data_self_inversion": {
    "max_abs_ratio_minus_1": [
@@ -20942,7 +20980,7 @@
     0.0286637482176921
    ],
    "flat_control": {
-    "statement": "NULL CONTROL: the same L2 perturbation with no SHAPE (a pure rescale) gives gain 1-1 and 0 sign changes. The finding is therefore a property of the tilt's shape, not of its amplitude \u2014 and it is pinned by a test with power (test_systematic_misfit_ramp_rings_but_a_flat_rescale_does_not).",
+    "statement": "NULL CONTROL: the same L2 perturbation with no SHAPE (a pure rescale) gives gain 1 and 0 sign changes. The finding is therefore a property of the tilt's shape, not of its amplitude \u2014 and it is pinned by a test with power (test_systematic_misfit_ramp_rings_but_a_flat_rescale_does_not).",
     "gain_max_over_z": [
      1.0000000026092908,
      1.0000000010554138,
@@ -21118,7 +21156,7 @@
   },
   "recommendation": {
    "status": "RECOMMENDATION ONLY \u2014 not adopted, not implemented. The production basis width, prior and estimator are unchanged.",
-   "text": "Report on a 0.2 dex TRUE-N basis (reporting grid may stay 0.1 dex). It buys a 28x drop in condition number (175-176 -> 6.4-6.4), a 11x drop in the worst-bin variance inflation (46-62 -> 4.1-4.3), and costs a 0.81-0.86% representation error in the folded counts. 0.3 dex buys little more (amp 2.2-2.2) at roughly double the representation cost (1.5-1.7%; 0.4 dex 2.5-2.7%). Doing it by tightening sigma_N instead is worse: it hides the same loss of resolution inside a prior, where it does not appear in the error bar.",
+   "text": "Report on a 0.2 dex TRUE-N basis (reporting grid may stay 0.1 dex). It buys a 28x drop in condition number (175-176 -> 6.4), a 11x drop in the worst-bin variance inflation (46-62 -> 4.1-4.3), and costs a 0.81-0.86% representation error in the folded counts. 0.3 dex buys little more (amp 2.2) at roughly double the representation cost (1.5-1.7%; 0.4 dex 2.5-2.7%). Doing it by tightening sigma_N instead is worse: it hides the same loss of resolution inside a prior, where it does not appear in the error bar.",
    "representation_error_is_not_commensurable": "the ~0.8% representation cost is an L2 error on the FOLDED COUNT vector, computed against each pack's OWN truth. It is NOT in the same units as, and not directly comparable to, the population-level systematics quoted elsewhere (BAL, metals, FP subtraction, the B16 leak), which are fractional biases on f(N)/Omega. The earlier phrasing 'the smallest systematic in this problem by more than an order of magnitude' is WITHDRAWN: it compared incommensurable quantities. What can be said is that the representation error is small in its own units and grows roughly linearly with basis width.",
    "representation_error_is_not_transferable": "the representation error was measured only against each pack's own injected truth, and ALL the mocks share ONE injected f(N). It therefore measures how well a coarse basis represents THAT f(N) shape, and does not transfer to real data or to a different underlying CDDF.",
    "explicitly_not_claimed": "this does NOT fix D1 (the missing sub-19.5 true-N basis) or D2 (the residual high-N response excess). A coarser basis stops those defects being AMPLIFIED into ringing; it does not remove them. SCOPE: the counting argument (in-window truth < observed counts) is a statement about the pack's totals and is basis-independent by construction, but NO basis-width-resolved closure test was run here, so this artifact makes no claim about closure at any particular basis width."
