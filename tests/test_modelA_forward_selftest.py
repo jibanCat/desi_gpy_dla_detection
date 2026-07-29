@@ -216,3 +216,34 @@ def test_D2_clamp_removes_the_high_N_excess_on_the_real_pack():
     assert hi_off.max() > 3.0
     assert hi_on.max() < 1.6, f"clamped high-N ratios still {hi_on}"
     assert np.all(hi_on < hi_off)
+
+
+# ---------------------------------------------------------------------------
+# the gate itself — chi2 was FAIL-OPEN (2026-07-29)
+# ---------------------------------------------------------------------------
+def test_ratio_tables_emits_chi2_dof_so_the_gate_is_not_fail_open(spack):
+    """``_closure_verdict`` reads ``tab["total"]["chi2_dof"]``, but
+    ``ratio_tables`` never emitted that key — so ``tot.get("chi2_dof", 0.0)``
+    silently evaluated 0.0 <= max_chi2_dof and the chi2 leg of
+    ``--require-closure`` could NEVER fire. Same fail-open class the module's
+    own commit history flags. ``ratio_tables`` now emits it with the SAME
+    definition ``run_posterior.forward_closure_gate`` uses (Poisson z over the
+    reported n-hat bins with obs > 0)."""
+    res = FS.selftest(spack)
+    tab = FS.ratio_tables(res, spack)
+    assert "chi2_dof" in tab["total"]
+    rows = [b for b in tab["by_nhat"]
+            if b["obs"] > 0 and b["lo"] >= float(spack.nhat_edges[0]) - 1e-9]
+    z = np.array([b["z"] for b in rows], float)
+    assert np.isclose(tab["total"]["chi2_dof"], (z ** 2).sum() / len(z))
+    assert tab["total"]["n_gate_bins"] == len(z)
+
+
+def test_closure_verdict_fails_on_chi2_alone():
+    """A table whose totals and per-bin z are all tiny but whose chi2/dof is
+    huge must FAIL. Before the fix this returned closes=True."""
+    tab = {"total": {"z": 0.1, "chi2_dof": 999.0},
+           "by_nhat": [{"z": 0.1}], "by_z": [{"z": 0.1}]}
+    v = FS._closure_verdict(tab, 5.0, 5.0, 3.0)
+    assert v["closes"] is False
+    assert any("chi2/dof" in r for r in v["reasons"])
