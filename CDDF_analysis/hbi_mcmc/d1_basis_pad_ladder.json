@@ -1,9 +1,21 @@
 {
  "metadata": {
   "title": "D1 basis-pad ladder \u2014 forward-model closure vs true-N pad floor, response clamp, and sub-floor completeness",
-  "date": "2026-07-29 10:45:23",
-  "code_commit": "864fa1908270f512417e9f605d8a2ddbf513a553",
+  "date": "2026-07-29 11:55:23",
+  "code_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3",
+  "code_commit_scope": "the SELFTEST phase (this process). The input packs carry their own stamp \u2014 see pack_stamp_audit.",
   "code_commit_dirty": false,
+  "pack_stamp_audit": {
+   "what": "the extract phase runs in its own process/env, so each pack stamps itself; this reconciles those stamps against the selftest phase's code_commit.",
+   "selftest_phase_code_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3",
+   "pack_code_commits": [
+    "1c1b1499162c67b801693f851ae8fbfcae416ab3"
+   ],
+   "n_packs": 30,
+   "all_packs_same_commit": true,
+   "any_pack_dirty": false,
+   "packs_match_selftest_commit": true
+  },
   "branch": "wip/d1-basis-pad",
   "routines": {
    "driver": "CDDF_analysis/hbi_mcmc/d1_ladder.py (--phase extract, then --phase selftest)",
@@ -22,7 +34,7 @@
   },
   "mocks_only": true,
   "privacy": "mock packs only; no real-LOA path is touched",
-  "wall_seconds": 22.8
+  "wall_seconds": 25.6
  },
  "verdict": {
   "question": "does ANY (mock x pad_floor x resp_clamp x sub-floor completeness) configuration close the forward model inside the committed gate (|z_total| <= 5, max|z_bin| <= 5, chi2/dof <= 3)?",
@@ -128,7 +140,7 @@
    "answer": "NO",
    "level_vs_shape": "the pad fixes the LEVEL and leaves the SHAPE. At 2lpt0 / pad 18.0 / clamp=hi / const_extrap the total is 0.9973 (z=+0.8, inside the gate's total leg) while chi2/dof is 51.5 \u2014 17x the tolerance \u2014 and the per-bin ratio still runs 0.765 to 1.431.",
    "residual_is_not_one_defect": "the residual splits in two. (i) A LOW-N deficit in the two bins below 19.7 that keeps shrinking with pad depth and swings hard with the two undecided conventions \u2014 that is what is left of D1, and it is a CONVENTION problem, not a missing -basis problem. (ii) A HIGH-N excess of 1.23-1.43x on 2lpt0 (up to 1.80x on london0) above logN ~ 21.6, whose per-bin digits are IDENTICAL across every pad floor and both completeness conventions \u2014 it is residual D2, untouched by D1, and it alone puts chi2/dof far over the gate.",
-   "does_E4_dominate": "NOT as stated. The measured conditioning of the fold kernel is 1.4-1.5e5 with the D2 clamp on and is IMPROVED, not degraded, by the pad; the 2.77e10 figure in the E4 escalation is not reproduced here and should be re-derived before use. What the pad DOES create is an under-determination: 44 true-N unknowns against 29 observed bins at pad 18.0, i.e. 15 unidentified directions that only a prior can fill. So the ordering is: residual D2 dominates the chi2, the two sub-floor conventions dominate the level, and E4 becomes a real problem only once those two are fixed and the pad has to be INFERRED rather than read from truth."
+   "does_E4_dominate": "NOT on the operator measured here, and the two streams are NOT in conflict (CORRECTED 2026-07-29). On the dX-weighted STACKED fold operator the conditioning is 1.4-1.5e5 with the D2 clamp on, against 3.63e8 with it off \u2014 so D2-clamping, not the pad, dominates this operator's conditioning, and the pad slightly IMPROVES it. E4's 2.77e10 is a DIFFERENT object: the condition number of a SINGLE per-slice response kernel K[s,kk], unstacked and un-dX-weighted. That figure IS reproduced here to the digit (see fold_kernel_conditioning.single_slice_response_kernel_E4_object); the earlier claim that it 'is not reproduced by any configuration here' is withdrawn. What the pad DOES create is an under-determination: 44 true-N unknowns against 29 observed bins at pad 18.0, i.e. 15 unidentified directions that only a prior can fill. So the ordering is: residual D2 dominates the chi2, the two sub-floor conventions dominate the level, and E4 becomes a real problem only once those two are fixed and the pad has to be INFERRED rather than read from truth."
   },
   "next_actions": [
    "D2 is NOT closed by the covariate clamp: a 1.23-1.43x (2lpt0) / up to 1.80x (london0) excess survives above logN ~ 21.6 in every configuration. Attack that before any further pad work.",
@@ -483,7 +495,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_padnone_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=None|clamp=hi|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -829,7 +841,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_padnone_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=None|clamp=both|cmp=const_extrap": {
    "mock": "london0",
@@ -1175,7 +1187,7 @@
     }
    ],
    "pack": "modelA_pack_london0_padnone_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=None|clamp=hi|cmp=const_extrap": {
    "mock": "london0",
@@ -1521,7 +1533,7 @@
     }
    ],
    "pack": "modelA_pack_london0_padnone_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=None|clamp=both|cmp=const_extrap": {
    "mock": "saclay0",
@@ -1867,7 +1879,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_padnone_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=None|clamp=hi|cmp=const_extrap": {
    "mock": "saclay0",
@@ -2213,7 +2225,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_padnone_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.3|clamp=both|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -2559,7 +2571,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p3_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.3|clamp=hi|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -2905,7 +2917,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p3_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.3|clamp=both|cmp=const_extrap": {
    "mock": "london0",
@@ -3251,7 +3263,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p3_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.3|clamp=hi|cmp=const_extrap": {
    "mock": "london0",
@@ -3597,7 +3609,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p3_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.3|clamp=both|cmp=const_extrap": {
    "mock": "saclay0",
@@ -3943,7 +3955,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p3_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.3|clamp=hi|cmp=const_extrap": {
    "mock": "saclay0",
@@ -4289,7 +4301,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p3_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.0|clamp=both|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -4635,7 +4647,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.0|clamp=hi|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -4981,7 +4993,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.0|clamp=both|cmp=const_extrap": {
    "mock": "london0",
@@ -5327,7 +5339,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.0|clamp=hi|cmp=const_extrap": {
    "mock": "london0",
@@ -5673,7 +5685,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.0|clamp=both|cmp=const_extrap": {
    "mock": "saclay0",
@@ -6019,7 +6031,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.0|clamp=hi|cmp=const_extrap": {
    "mock": "saclay0",
@@ -6365,7 +6377,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.5|clamp=both|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -6711,7 +6723,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p5_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.5|clamp=hi|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -7057,7 +7069,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p5_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.5|clamp=both|cmp=const_extrap": {
    "mock": "london0",
@@ -7403,7 +7415,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p5_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.5|clamp=hi|cmp=const_extrap": {
    "mock": "london0",
@@ -7749,7 +7761,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p5_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.5|clamp=both|cmp=const_extrap": {
    "mock": "saclay0",
@@ -8095,7 +8107,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p5_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.5|clamp=hi|cmp=const_extrap": {
    "mock": "saclay0",
@@ -8441,7 +8453,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p5_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.0|clamp=both|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -8787,7 +8799,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.0|clamp=hi|cmp=const_extrap": {
    "mock": "2lpt0",
@@ -9133,7 +9145,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.0|clamp=both|cmp=const_extrap": {
    "mock": "london0",
@@ -9479,7 +9491,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.0|clamp=hi|cmp=const_extrap": {
    "mock": "london0",
@@ -9825,7 +9837,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.0|clamp=both|cmp=const_extrap": {
    "mock": "saclay0",
@@ -10171,7 +10183,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.0|clamp=hi|cmp=const_extrap": {
    "mock": "saclay0",
@@ -10517,7 +10529,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p0_const_extrap.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=None|clamp=both|cmp=molly172": {
    "mock": "2lpt0",
@@ -10863,7 +10875,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_padnone_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=None|clamp=hi|cmp=molly172": {
    "mock": "2lpt0",
@@ -11209,7 +11221,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_padnone_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=None|clamp=both|cmp=molly172": {
    "mock": "london0",
@@ -11555,7 +11567,7 @@
     }
    ],
    "pack": "modelA_pack_london0_padnone_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=None|clamp=hi|cmp=molly172": {
    "mock": "london0",
@@ -11901,7 +11913,7 @@
     }
    ],
    "pack": "modelA_pack_london0_padnone_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=None|clamp=both|cmp=molly172": {
    "mock": "saclay0",
@@ -12247,7 +12259,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_padnone_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=None|clamp=hi|cmp=molly172": {
    "mock": "saclay0",
@@ -12593,7 +12605,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_padnone_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.3|clamp=both|cmp=molly172": {
    "mock": "2lpt0",
@@ -12939,7 +12951,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p3_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.3|clamp=hi|cmp=molly172": {
    "mock": "2lpt0",
@@ -13285,7 +13297,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p3_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.3|clamp=both|cmp=molly172": {
    "mock": "london0",
@@ -13631,7 +13643,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p3_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.3|clamp=hi|cmp=molly172": {
    "mock": "london0",
@@ -13977,7 +13989,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p3_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.3|clamp=both|cmp=molly172": {
    "mock": "saclay0",
@@ -14323,7 +14335,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p3_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.3|clamp=hi|cmp=molly172": {
    "mock": "saclay0",
@@ -14669,7 +14681,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p3_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.0|clamp=both|cmp=molly172": {
    "mock": "2lpt0",
@@ -15015,7 +15027,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=19.0|clamp=hi|cmp=molly172": {
    "mock": "2lpt0",
@@ -15361,7 +15373,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad19p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.0|clamp=both|cmp=molly172": {
    "mock": "london0",
@@ -15707,7 +15719,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=19.0|clamp=hi|cmp=molly172": {
    "mock": "london0",
@@ -16053,7 +16065,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad19p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.0|clamp=both|cmp=molly172": {
    "mock": "saclay0",
@@ -16399,7 +16411,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=19.0|clamp=hi|cmp=molly172": {
    "mock": "saclay0",
@@ -16745,7 +16757,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad19p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.5|clamp=both|cmp=molly172": {
    "mock": "2lpt0",
@@ -17091,7 +17103,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p5_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.5|clamp=hi|cmp=molly172": {
    "mock": "2lpt0",
@@ -17437,7 +17449,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p5_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.5|clamp=both|cmp=molly172": {
    "mock": "london0",
@@ -17783,7 +17795,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p5_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.5|clamp=hi|cmp=molly172": {
    "mock": "london0",
@@ -18129,7 +18141,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p5_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.5|clamp=both|cmp=molly172": {
    "mock": "saclay0",
@@ -18475,7 +18487,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p5_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.5|clamp=hi|cmp=molly172": {
    "mock": "saclay0",
@@ -18821,7 +18833,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p5_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.0|clamp=both|cmp=molly172": {
    "mock": "2lpt0",
@@ -19167,7 +19179,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "2lpt0|pad=18.0|clamp=hi|cmp=molly172": {
    "mock": "2lpt0",
@@ -19513,7 +19525,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_pad18p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.0|clamp=both|cmp=molly172": {
    "mock": "london0",
@@ -19859,7 +19871,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "london0|pad=18.0|clamp=hi|cmp=molly172": {
    "mock": "london0",
@@ -20205,7 +20217,7 @@
     }
    ],
    "pack": "modelA_pack_london0_pad18p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.0|clamp=both|cmp=molly172": {
    "mock": "saclay0",
@@ -20551,7 +20563,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   },
   "saclay0|pad=18.0|clamp=hi|cmp=molly172": {
    "mock": "saclay0",
@@ -20897,7 +20909,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_pad18p0_molly172.npz",
-   "pack_provenance_commit": "7bcaa5ac0ed8ea54a2bb68f3c7a00bf4e78a9bd4-dirty"
+   "pack_provenance_commit": "1c1b1499162c67b801693f851ae8fbfcae416ab3"
   }
  },
  "structural_probes_2lpt0": {
@@ -22372,7 +22384,8 @@
   "finding": "the power-law surrogate OVER-PREDICTS the mock's own sub-floor truth by 4.1x integrated (up to 8.1x in the deepest bin). Any closure statement built on it is not a statement about this forward model \u2014 it is a statement about an injected surrogate population that does not exist in the mock."
  },
  "fold_kernel_conditioning": {
-  "what": "SVD condition number of the dX-weighted (C, B) response kernel the fold effectively inverts, vs pad depth and response clamp.",
+  "what": "SVD condition number of the dX-weighted STACKED (C, B) operator W = sum_{s,kk} (sum over the fine-z rows in kk of dX[k,s]) * K[s,kk] \u2014 the operator the fold effectively inverts \u2014 vs pad depth and response clamp. This is NOT the same object as the single per-slice response kernel E4 reports; both are measured here (see `single_slice_response_kernel_E4_object`).",
+  "operator_measured": "W = sum_{s,kk} dX_weight(s,kk) * K[s,kk], shape (n_c, n_b) \u2014 routine d1_ladder.py:_fold_kernel",
   "rows": [
    {
     "pack": "2lpt0_padnone_const_extrap",
@@ -22483,7 +22496,189 @@
     "kernel_rowmass_max": 1.0000000000000018
    }
   ],
-  "finding": "the pad does NOT degrade conditioning (1.47e5 unpadded -> 1.41e5 at pad 18.0 with the D2 clamp on; 3.63e8 with the clamp OFF, i.e. most of the ill-conditioning WAS D2). What the pad does instead is make the system UNDERDETERMINED: 44 true-N unknowns against 29 observed bins at pad 18.0. Note this is NOT the 2.77e10 quoted in the E4 escalation \u2014 that number is not reproduced by any configuration measured here and must be re-derived before it is used."
+  "single_slice_response_kernel_E4_object": {
+   "what": "the object CDDF_analysis/hbi_mcmc/run_e4_conditioning.py reports as `response_kernel_spectra`: ONE per-(SNR-resp, z-resp) slice K[s, kk], unstacked and un-dX-weighted, at build_consts' default clamp.",
+   "rows": [
+    {
+     "pack": "2lpt0_padnone_const_extrap",
+     "rows": [
+      {
+       "resp_snr_cell": 0,
+       "resp_z_cell": 0,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 27699981558.74824
+      },
+      {
+       "resp_snr_cell": 0,
+       "resp_z_cell": 1,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 105552730.70455983
+      },
+      {
+       "resp_snr_cell": 0,
+       "resp_z_cell": 2,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 150936.26081609915
+      },
+      {
+       "resp_snr_cell": 1,
+       "resp_z_cell": 0,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 11661847972.670097
+      },
+      {
+       "resp_snr_cell": 1,
+       "resp_z_cell": 1,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 40525556.87284307
+      },
+      {
+       "resp_snr_cell": 1,
+       "resp_z_cell": 2,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 126654.10956670303
+      },
+      {
+       "resp_snr_cell": 2,
+       "resp_z_cell": 0,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 7458234.887496576
+      },
+      {
+       "resp_snr_cell": 2,
+       "resp_z_cell": 1,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 578.9001209865628
+      },
+      {
+       "resp_snr_cell": 2,
+       "resp_z_cell": 2,
+       "shape": [
+        29,
+        29
+       ],
+       "cond": 1277.9399584033847
+      }
+     ],
+     "max_cond": 27699981558.74824,
+     "cell_0_0_cond": 27699981558.74824
+    },
+    {
+     "pack": "2lpt0_pad18p0_const_extrap",
+     "rows": [
+      {
+       "resp_snr_cell": 0,
+       "resp_z_cell": 0,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 783093735.0812693
+      },
+      {
+       "resp_snr_cell": 0,
+       "resp_z_cell": 1,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 81218030.93772066
+      },
+      {
+       "resp_snr_cell": 0,
+       "resp_z_cell": 2,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 159369.41298621712
+      },
+      {
+       "resp_snr_cell": 1,
+       "resp_z_cell": 0,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 765117062.8559728
+      },
+      {
+       "resp_snr_cell": 1,
+       "resp_z_cell": 1,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 29242993.33786897
+      },
+      {
+       "resp_snr_cell": 1,
+       "resp_z_cell": 2,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 113375.76099332048
+      },
+      {
+       "resp_snr_cell": 2,
+       "resp_z_cell": 0,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 7595631.85710845
+      },
+      {
+       "resp_snr_cell": 2,
+       "resp_z_cell": 1,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 588.6827661789748
+      },
+      {
+       "resp_snr_cell": 2,
+       "resp_z_cell": 2,
+       "shape": [
+        29,
+        44
+       ],
+       "cond": 1314.3556626397208
+      }
+     ],
+     "max_cond": 783093735.0812693,
+     "cell_0_0_cond": 783093735.0812693
+    }
+   ],
+   "reconciliation": "CORRECTION 2026-07-29: the E4 figure IS reproduced. On the unpadded ladder pack the (SNR-resp 0, z-resp 0) slice gives cond = 27699981558.74824, matching /home/mfho/wt_e4/CDDF_analysis/hbi_mcmc/e4_conditioning.json -> mocks.2lpt0.response_kernel_spectra[0].cond = 27699981558.74824 to the digit, on the independently built modelA_pack_2lpt0_v11.npz. The earlier claim that 2.77e10 'is not reproduced by any configuration here and must be re-derived' was WRONG: it compared a different operator. Both numbers are correct about different objects."
+  },
+  "finding": "on the dX-weighted STACKED operator, D2-clamping dominates: 3.63e8 with the clamp OFF vs 1.47e5 with it ON (unpadded), i.e. most of the ill-conditioning of THIS operator was D2. The pad then slightly IMPROVES it (1.47e5 -> 1.41e5 at pad 18.0). What the pad does create is UNDER-DETERMINATION: 44 true-N unknowns against 29 observed bins at pad 18.0. Separately, on E4's single-slice object the worst slice is 2.77e10 unpadded (reproduced exactly) \u2014 a much larger number because no dX weighting or stacking averages the slices, and because it is measured at build_consts' default clamp."
  },
  "d1_mechanism": {
   "what": "fraction of the predicted signal counts in each of the LOWEST observed n-hat bins that is fed by TRUE systems BELOW the reporting floor (pad 18.0). Schema v1 carried NONE of them.",
@@ -22538,5 +22733,350 @@
    ]
   },
   "finding": "83% of the predicted counts in [19.5, 19.6) come from true systems below 19.5. That is D1 stated as a number, and it is why the truncated basis under-predicted the lowest bin by 6x (mu/obs 0.1655)."
+ },
+ "subfloor_completeness_convention": {
+  "what": "const_extrap vs the MEASURED floor-17.2 completeness, per sub-floor molly cell, on the dX-exposure-weighted mean over SNR strata (the only weighting the fold gives meaning to).",
+  "weighting": "C_eff(b) = sum_s w_s * sigmoid(eta_hat)[s, b_to_cell[b]] / sum_s w_s with w_s = sum_k dX[k, s]; ratio = C_eff(const_extrap) / C_eff(molly172).",
+  "routine": "CDDF_analysis/hbi_mcmc/d1_ladder.py:subfloor_completeness_block",
+  "per_mock": {
+   "2lpt0": {
+    "rows": [
+     {
+      "cell": [
+       18.0,
+       18.5
+      ],
+      "C_const_extrap_dX_weighted": 0.7505757485922874,
+      "C_molly172_dX_weighted": 0.37190404212769756,
+      "ratio_dX_weighted": 2.018197340093896,
+      "ratio_unweighted_per_snr_mean": 4.7421307055884885,
+      "ratio_unweighted_per_snr_max": 11.12858465767859,
+      "molly172_n_tot_by_snr": [
+       10394.0,
+       9879.0,
+       6062.0,
+       3988.0,
+       2867.0,
+       2027.0,
+       1509.0,
+       6375.0
+      ],
+      "molly172_n_det_by_snr": [
+       3.0,
+       120.0,
+       525.0,
+       922.0,
+       1047.0,
+       953.0,
+       805.0,
+       4232.0
+      ]
+     },
+     {
+      "cell": [
+       18.5,
+       19.0
+      ],
+      "C_const_extrap_dX_weighted": 0.7505757485922874,
+      "C_molly172_dX_weighted": 0.4928485854477947,
+      "ratio_dX_weighted": 1.522933758469299,
+      "ratio_unweighted_per_snr_mean": 12.69304432952668,
+      "ratio_unweighted_per_snr_max": 83.02444033682484,
+      "molly172_n_tot_by_snr": [
+       11333.0,
+       11095.0,
+       6790.0,
+       4340.0,
+       3000.0,
+       2208.0,
+       1606.0,
+       7041.0
+      ],
+      "molly172_n_det_by_snr": [
+       0.0,
+       199.0,
+       962.0,
+       1451.0,
+       1562.0,
+       1372.0,
+       1137.0,
+       5782.0
+      ]
+     },
+     {
+      "cell": [
+       19.0,
+       19.5
+      ],
+      "C_const_extrap_dX_weighted": 0.7505757485922874,
+      "C_molly172_dX_weighted": 0.6530039443006845,
+      "ratio_dX_weighted": 1.1494199309869324,
+      "ratio_unweighted_per_snr_mean": 1.8028166016462022,
+      "ratio_unweighted_per_snr_max": 4.329862692395845,
+      "molly172_n_tot_by_snr": [
+       13594.0,
+       13164.0,
+       7915.0,
+       5198.0,
+       3783.0,
+       2637.0,
+       2014.0,
+       8428.0
+      ],
+      "molly172_n_det_by_snr": [
+       11.0,
+       618.0,
+       2246.0,
+       2948.0,
+       2781.0,
+       2194.0,
+       1718.0,
+       7733.0
+      ]
+     }
+    ],
+    "zero_dX_strata": [
+     0,
+     1
+    ],
+    "dX_weight_fraction_by_snr": [
+     0.0,
+     0.0,
+     0.2666845122294558,
+     0.17471056213308225,
+     0.12319120310935135,
+     0.08752676013988314,
+     0.06668360650240511,
+     0.2812033558858224
+    ],
+    "ge_floor_cells_bit_identical": true
+   },
+   "london0": {
+    "rows": [
+     {
+      "cell": [
+       18.0,
+       18.5
+      ],
+      "C_const_extrap_dX_weighted": 0.7507386175983866,
+      "C_molly172_dX_weighted": 0.37253535249073677,
+      "ratio_dX_weighted": 2.0152144288562623,
+      "ratio_unweighted_per_snr_mean": 4.7421307055884885,
+      "ratio_unweighted_per_snr_max": 11.12858465767859,
+      "molly172_n_tot_by_snr": [
+       10394.0,
+       9879.0,
+       6062.0,
+       3988.0,
+       2867.0,
+       2027.0,
+       1509.0,
+       6375.0
+      ],
+      "molly172_n_det_by_snr": [
+       3.0,
+       120.0,
+       525.0,
+       922.0,
+       1047.0,
+       953.0,
+       805.0,
+       4232.0
+      ]
+     },
+     {
+      "cell": [
+       18.5,
+       19.0
+      ],
+      "C_const_extrap_dX_weighted": 0.7507386175983866,
+      "C_molly172_dX_weighted": 0.49345106578243086,
+      "ratio_dX_weighted": 1.5214043897300997,
+      "ratio_unweighted_per_snr_mean": 12.69304432952668,
+      "ratio_unweighted_per_snr_max": 83.02444033682484,
+      "molly172_n_tot_by_snr": [
+       11333.0,
+       11095.0,
+       6790.0,
+       4340.0,
+       3000.0,
+       2208.0,
+       1606.0,
+       7041.0
+      ],
+      "molly172_n_det_by_snr": [
+       0.0,
+       199.0,
+       962.0,
+       1451.0,
+       1562.0,
+       1372.0,
+       1137.0,
+       5782.0
+      ]
+     },
+     {
+      "cell": [
+       19.0,
+       19.5
+      ],
+      "C_const_extrap_dX_weighted": 0.7507386175983866,
+      "C_molly172_dX_weighted": 0.653356265658918,
+      "ratio_dX_weighted": 1.1490493886076951,
+      "ratio_unweighted_per_snr_mean": 1.8028166016462022,
+      "ratio_unweighted_per_snr_max": 4.329862692395845,
+      "molly172_n_tot_by_snr": [
+       13594.0,
+       13164.0,
+       7915.0,
+       5198.0,
+       3783.0,
+       2637.0,
+       2014.0,
+       8428.0
+      ],
+      "molly172_n_det_by_snr": [
+       11.0,
+       618.0,
+       2246.0,
+       2948.0,
+       2781.0,
+       2194.0,
+       1718.0,
+       7733.0
+      ]
+     }
+    ],
+    "zero_dX_strata": [
+     0,
+     1
+    ],
+    "dX_weight_fraction_by_snr": [
+     0.0,
+     0.0,
+     0.26671443379654036,
+     0.1750306591425621,
+     0.12059372583652259,
+     0.087902878767095,
+     0.06603685738482469,
+     0.2837214450724551
+    ],
+    "ge_floor_cells_bit_identical": true
+   },
+   "saclay0": {
+    "rows": [
+     {
+      "cell": [
+       18.0,
+       18.5
+      ],
+      "C_const_extrap_dX_weighted": 0.7506380708210943,
+      "C_molly172_dX_weighted": 0.3722790230196101,
+      "ratio_dX_weighted": 2.016331902701791,
+      "ratio_unweighted_per_snr_mean": 4.7421307055884885,
+      "ratio_unweighted_per_snr_max": 11.12858465767859,
+      "molly172_n_tot_by_snr": [
+       10394.0,
+       9879.0,
+       6062.0,
+       3988.0,
+       2867.0,
+       2027.0,
+       1509.0,
+       6375.0
+      ],
+      "molly172_n_det_by_snr": [
+       3.0,
+       120.0,
+       525.0,
+       922.0,
+       1047.0,
+       953.0,
+       805.0,
+       4232.0
+      ]
+     },
+     {
+      "cell": [
+       18.5,
+       19.0
+      ],
+      "C_const_extrap_dX_weighted": 0.7506380708210943,
+      "C_molly172_dX_weighted": 0.4931913606907999,
+      "ratio_dX_weighted": 1.5220016623358847,
+      "ratio_unweighted_per_snr_mean": 12.69304432952668,
+      "ratio_unweighted_per_snr_max": 83.02444033682484,
+      "molly172_n_tot_by_snr": [
+       11333.0,
+       11095.0,
+       6790.0,
+       4340.0,
+       3000.0,
+       2208.0,
+       1606.0,
+       7041.0
+      ],
+      "molly172_n_det_by_snr": [
+       0.0,
+       199.0,
+       962.0,
+       1451.0,
+       1562.0,
+       1372.0,
+       1137.0,
+       5782.0
+      ]
+     },
+     {
+      "cell": [
+       19.0,
+       19.5
+      ],
+      "C_const_extrap_dX_weighted": 0.7506380708210943,
+      "C_molly172_dX_weighted": 0.6531834030494587,
+      "ratio_dX_weighted": 1.1491995468909004,
+      "ratio_unweighted_per_snr_mean": 1.8028166016462022,
+      "ratio_unweighted_per_snr_max": 4.329862692395845,
+      "molly172_n_tot_by_snr": [
+       13594.0,
+       13164.0,
+       7915.0,
+       5198.0,
+       3783.0,
+       2637.0,
+       2014.0,
+       8428.0
+      ],
+      "molly172_n_det_by_snr": [
+       11.0,
+       618.0,
+       2246.0,
+       2948.0,
+       2781.0,
+       2194.0,
+       1718.0,
+       7733.0
+      ]
+     }
+    ],
+    "zero_dX_strata": [
+     0,
+     1
+    ],
+    "dX_weight_fraction_by_snr": [
+     0.0,
+     0.0,
+     0.2668650994108414,
+     0.17475023835248424,
+     0.1215355606560378,
+     0.08798584842515561,
+     0.06598616541336663,
+     0.2828770877421143
+    ],
+    "ge_floor_cells_bit_identical": true
+   }
+  },
+  "finding": "const_extrap over-predicts the sub-floor completeness by 1.149x at [19.0,19.5), 1.523x at [18.5,19.0) and 2.018x at [18.0,18.5) on 2LPT-0 (1.149/1.521/2.015 on london0, 1.149/1.522/2.016 on saclay0) \u2014 MONOTONE in depth on this weighting, because C_eff falls 0.751 -> 0.653 -> 0.493 -> 0.372 while const_extrap holds 0.751 flat. The UNWEIGHTED per-SNR mean of ratios is NOT monotone (1.80 / 12.69 / 4.74) and peaks at [18.5,19.0), but that shape is manufactured by SNR strata 0 and 1, which carry exactly zero pathlength and cannot enter any prediction. A pad floor should be chosen on the dX-weighted curve.",
+  "supersedes": "CORRECTION 2026-07-29: the '~1.7x at [19.0,19.5) rising to ~5.7x at [18.0,18.5)' quoted in the d20d572 commit message is WITHDRAWN. It was never reproducible: it is neither the dX-weighted ratio (1.149 / 2.018) nor the SNR-summed n_det/n_tot ratio (1.207 / 2.158) nor the unweighted per-SNR mean (1.803 / 4.742), and it asserted a monotone ramp without saying under which weighting."
  }
 }
