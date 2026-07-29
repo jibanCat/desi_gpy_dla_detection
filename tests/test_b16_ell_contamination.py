@@ -204,3 +204,219 @@ def test_docstring_row_counts_are_recorded():
     # the leak factor is exactly the row-count ratio: same X_sum in both numerator and
     # denominator, so it cancels.
     assert n_all / n_win == pytest.approx(EXPECT_LEAK, rel=2e-6)
+
+
+# ===========================================================================
+# The sub-DLA per-bin rows: a SECOND mislabelled B16 blast radius
+# ===========================================================================
+"""
+The b16 stamp on ``subdla_mock_validation{,_forward}.json`` says::
+
+    "per_bin.*[*].f_tru (CONTAMINATED -- it IS f_truth)",
+    "integrated.*/dndx_* and per_bin.*[*].dndx_* (CLEAN)",
+
+The FIRST line is right.  The SECOND is WRONG, and it is wrong in the DANGEROUS
+direction: it declares clean a row that is not.
+
+``subdla_loa0_validation.py::run_mode`` reads ONE truth object and derives both
+per-bin columns from it::
+
+    :208   f_tru   = np.asarray(base["t0"]["f_truth"], float)     # LEAKY
+    :217   ft      = np.nansum(f_tru[sel])                        # -> per_bin f_tru
+    :219   dndx_t  = np.nansum(f_tru[sel] * dN_b[sel])            # -> per_bin dndx_tru
+    :220   r0      = dndx_e / dndx_t                              # -> per_bin r0
+
+so per-bin ``dndx_tru`` is a UNIT CONVERSION of the leaky ``f_truth`` (``sel`` picks
+exactly one fine bin, so ``dndx_tru == f_tru * dN_b`` identically), and per-bin ``r0``
+inherits it.  Only the INTEGRATED ``dndx_*`` come from ``t0["dndx_total"]``, which
+carries the ``t_zidx >= 0`` mask and IS clean -- which is why the artifact's own
+post-fix re-derivation records ``dndx_tru_195_203_UNCHANGED``.
+
+A prior reading of this ran the inference BACKWARDS -- it saw the exact identity
+``f_tru == dndx_tru / (10**bhi - 10**blo)`` and concluded that ``f_tru`` is a harmless
+unit conversion of a clean ``dndx_tru``, therefore quotable.  The identity is
+symmetric and settles nothing about direction.  What settles it is the CLOSURE TEST
+below: summing the 8 per-bin rows over [19.5,20.3) must reproduce the integrated
+value for that band.  On the ESTIMATOR side it does, to 1e-16.  On the TRUTH side it
+overshoots by 5.64% -- the B16 leak.  Same N support, same X_sum, same file; the only
+difference is the z mask.
+"""
+
+SUBDLA_JSONS = ("subdla_mock_validation_forward.json", "subdla_mock_validation.json")
+SUBDLA_BAND = (19.5, 20.3)
+#: sum(per_bin dndx_tru) / integrated dndx_tru_195_203, as committed (leaky per-bin).
+EXPECT_PERBIN_TRUTH_LEAK = 1.056365947727909
+#: the CLEAN band truth from t0["dndx_total"], recorded UNCHANGED by the post-fix
+#: re-derivation in metadata.b16.rederived_post_b16.loa0.
+CLEAN_DNDX_TRU_195_203 = 0.09272816200828467
+
+
+def _subdla(name):
+    return _load(os.path.join(_HBI, name))
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_subdla_per_bin_f_tru_and_dndx_tru_are_the_same_object(name):
+    """PIN THE DERIVATION IDENTITY: per-bin dndx == f * (10**bhi - 10**blo), exactly,
+    on BOTH the truth and the estimator column.  One fine bin per row, so this is
+    arithmetic, not a coincidence -- and it holds regardless of which of the two is
+    leaky, so it can NEVER be used on its own to argue either is clean."""
+    doc = _subdla(name)
+    n = 0
+    for mode, rows in doc["per_bin"].items():
+        for r in rows:
+            width = 10.0 ** r["bhi"] - 10.0 ** r["blo"]
+            for fk, dk in (("f_tru", "dndx_tru"), ("f_est", "dndx_est")):
+                assert r[dk] == pytest.approx(r[fk] * width, rel=1e-11), (
+                    f"{name}:{mode} [{r['blo']},{r['bhi']}) {fk}/{dk}")
+                n += 1
+    assert n >= 32, f"{name}: only {n} per-bin comparisons"
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_subdla_per_bin_ESTIMATOR_closes_on_the_integrated_estimator(name):
+    """CONTROL, and note what it does NOT show.  The estimator column sums across the
+    8 rows to the integrated estimator to machine precision.  That rules out an
+    ESTIMATOR-SIDE row-layout artifact -- the 8 fine bins tile the band and the per-bin
+    and integrated estimator columns share N edges and X normalisation -- so the
+    truth-side mismatch below is not a binning or summation error.  It says nothing
+    about the TRUTH column, and it does NOT rule out a SUPPORT explanation: the
+    diagnosed cause IS one (truth f(N) unmasked in z while X_sum is masked)."""
+    doc = _subdla(name)
+    for mode, rows in doc["per_bin"].items():
+        s = sum(r["dndx_est"] for r in rows)
+        integ = doc["integrated"][mode]["dndx_est_195_203"]
+        assert s == pytest.approx(integ, rel=1e-12), f"{name}:{mode}"
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_subdla_per_bin_TRUTH_does_not_close_and_that_is_the_leak(name):
+    """The decisive test.  sum(per-bin dndx_tru) over [19.5,20.3) must equal the
+    integrated dndx_tru_195_203.  It does not: it is high by the B16 z-leak, because
+    the per-bin column is f_truth-derived and the integrated one is dndx_total-derived.
+
+    Written to stay GREEN across a future re-derivation: post-fix the ratio becomes
+    1.0 and the artifact is consistent.  What is HARD-PINNED in both worlds is the
+    clean band truth, which the fix leaves UNCHANGED.
+    """
+    doc = _subdla(name)
+    ratios = []
+    for mode, rows in doc["per_bin"].items():
+        integ = doc["integrated"][mode]["dndx_tru_195_203"]
+        assert integ == pytest.approx(CLEAN_DNDX_TRU_195_203, rel=1e-12), (
+            f"{name}:{mode}: the CLEAN band truth moved -- that is a real change, "
+            "not a stamp issue; do not edit this constant to make it pass")
+        ratios.append(sum(r["dndx_tru"] for r in rows) / integ)
+    assert len(set(round(x, 12) for x in ratios)) == 1, (
+        f"{name}: truth is FP-mode independent, so every mode must give one ratio: "
+        f"{ratios}")
+    ratio = ratios[0]
+    if ratio == pytest.approx(1.0, rel=1e-9):
+        pytest.skip(f"{name}: per-bin truth re-derived post-B16 (ratio 1.0) -- "
+                    "the stamp correction below still applies")
+    assert ratio == pytest.approx(EXPECT_PERBIN_TRUTH_LEAK, rel=1e-9), (
+        f"{name}: per-bin/integrated truth ratio {ratio!r}")
+    assert ratio > 1.0, "the leak inflates truth; a deficit would be a different bug"
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_subdla_b16_stamp_does_not_declare_the_per_bin_dndx_clean(name):
+    """THE CORRECTION.  The stamp must not describe per-bin dndx / r0 as CLEAN: that
+    wrongly certifies a contaminated row as quotable.  Per-bin f_tru IS f_truth and
+    the stamp already says so; per-bin dndx_tru and r0 are derived from it and must
+    say so too, while the INTEGRATED dndx stays correctly marked clean."""
+    keys = _subdla(name)["metadata"]["b16"]["affected_keys"]
+    # Read the VERDICT, not any occurrence of the word: a corrected line legitimately
+    # says "...previously listed CLEAN, which is WRONG...". The verdict is the FIRST
+    # verdict token on the line. (Same disclaimer-vs-scanner trap as c596ff7.)
+    def verdict(line):
+        hits = [(line.find(w), w) for w in ("CONTAMINATED", "UNAFFECTED", "CLEAN")
+                if line.find(w) >= 0]
+        return min(hits)[1] if hits else None
+
+    verdicts = {k: verdict(k) for k in keys}
+    assert None not in verdicts.values(), f"{name}: unlabelled key line: {verdicts}"
+
+    # the true statements must survive
+    assert any("f_tru" in k and v == "CONTAMINATED" for k, v in verdicts.items()), keys
+    assert any("integrated" in k and "dndx_tru" in k and v == "CLEAN"
+               for k, v in verdicts.items()), keys
+    # the false one must be gone: no line may give a per_bin TRUTH dndx / r0 a
+    # non-CONTAMINATED verdict, and one line must name them.
+    named = 0
+    for k, v in verdicts.items():
+        if "per_bin" in k and ("dndx_tru" in k or "].r0" in k):
+            named += 1
+            assert v == "CONTAMINATED", (
+                f"{name}: per-bin dndx_tru is f_truth*dN_b "
+                f"(subdla_loa0_validation.py:219) and overshoots the clean band truth "
+                f"by {EXPECT_PERBIN_TRUTH_LEAK:.4f}x -- verdict {v!r} is wrong: {k!r}")
+        # the blanket pre-correction wording, which swept per_bin into the CLEAN line
+        assert not ("per_bin" in k and "dndx_*" in k and v == "CLEAN"), (
+            f"{name}: blanket 'per_bin ... dndx_* (CLEAN)' is back: {k!r}")
+    assert named >= 1, (
+        f"{name}: the stamp must NAME per-bin dndx_tru and r0, which inherit the leak "
+        f"through their denominator: {keys}")
+
+
+def test_lls_per_bin_dndx_really_is_clean_and_stays_marked_so():
+    """CONTRAST + guard against over-correcting.  The LLS routine builds its per-bin
+    dndx from t0['dndx_total'] differences (lls_loa0_validation.py:134-139), NOT from
+    f_truth, and its artifact carries no per-bin f_tru row at all -- so its 'dndx
+    CLEAN' line is TRUE and must not be swept up by the correction above."""
+    doc = _load(LLS_JSON)
+    keys = doc["metadata"]["b16"]["affected_keys"]
+    assert any("dndx" in k and "CLEAN" in k for k in keys), keys
+    for mode in doc["results"].values():
+        for path in ("v1", "v3x"):
+            if path not in mode or not isinstance(mode[path], dict):
+                continue
+            for r in mode[path].get("per_bin", []):
+                assert "f_tru" not in r, "LLS per-bin gained an f_tru row; re-audit"
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_the_closure_evidence_does_not_overclaim_what_the_control_shows(name):
+    """REFEREE (2026-07-29).  ``evidence_closure_test`` said the estimator-side closure
+    "rules out any support/binning explanation".  It does not, twice over:
+
+      * it is a control on the ESTIMATOR column only.  It shows the 8 fine bins tile
+        [19.5,20.3) and that the per-bin and integrated estimator columns share N edges
+        and X normalisation -- so the discrepancy is not an artifact of the ROW LAYOUT.
+        It constrains the TRUTH column not at all; that column is built by a different
+        code path (f_truth integrals vs dndx_total differences).
+      * the diagnosed cause IS a support difference.  B16 is truth f(N) accumulated
+        with NO z-mask while X_sum is masked -- a z-SUPPORT mismatch.  A sentence that
+        "rules out any support explanation" contradicts the very leak it introduces.
+
+    Measured, from the committed artifacts: estimator sum/integrated = 1.0 to ~1e-16;
+    truth sum/integrated = 1.0563659477.  Both survive the rewording -- only the
+    inference drawn from them is narrowed.
+    """
+    txt = _subdla(name)["metadata"]["b16"]["correction_2026_07_29"][
+        "evidence_closure_test"]
+    low = txt.lower()
+    # the overclaim, in the forms it was written and the obvious paraphrases
+    for bad in ("rules out any support", "rules out any binning",
+                "rules out all support", "rules out a support/binning explanation"):
+        assert bad not in low, f"{name}: the overclaim is back: {bad!r} in {txt!r}"
+    # what must still be there: the control is named as ESTIMATOR-side...
+    assert "estimator-side" in low or "estimator side" in low, txt
+    # ...the measured leak is still quoted...
+    assert f"{EXPECT_PERBIN_TRUTH_LEAK}" in txt, txt
+    # ...and the z-mask is still named as the difference.
+    assert "z mask" in low or "z-mask" in low, txt
+
+
+@pytest.mark.parametrize("name", SUBDLA_JSONS)
+def test_the_estimator_side_closure_is_reproduced_not_asserted(name):
+    """The number behind the softened claim, re-measured from the committed rows so it
+    is never an unverifiable stamp: the estimator column closes, the truth column does
+    not, and the gap is the leak factor the stamp quotes."""
+    doc = _subdla(name)
+    for mode, rows in doc["per_bin"].items():
+        est = sum(r["dndx_est"] for r in rows) / doc["integrated"][mode]["dndx_est_195_203"]
+        tru = sum(r["dndx_tru"] for r in rows) / doc["integrated"][mode]["dndx_tru_195_203"]
+        assert est == pytest.approx(1.0, abs=1e-12), f"{name}:{mode} estimator {est!r}"
+        assert tru == pytest.approx(EXPECT_PERBIN_TRUTH_LEAK, rel=1e-9), \
+            f"{name}:{mode} truth {tru!r}"
