@@ -198,3 +198,72 @@ def test_strict_sha_mode_flags_the_abbreviated_stamps():
     abbrev = [r for r in rows if r.status == P.ABBREVIATED_SHA]
     assert abbrev, "expected the 7-char FF stamps to be flagged under --strict-sha"
     assert all(r.stamp_kind == P.STAMP_ABBREV_SHA for r in abbrev)
+
+
+# ---------------------------------------------------------------------------
+# a top-level CLEAN stamp must not sit on top of DIRTY sub-stamps
+# ---------------------------------------------------------------------------
+_DIRTY_SHA = __import__("re").compile(r"\b[0-9a-f]{7,40}-dirty\b")
+
+#: keys whose values are PROSE about provenance -- a note that says the word
+#: "<sha>-dirty" is documentation, not a stamp.  (Same disclaimer-vs-scanner trap the
+#: unblind scanner hit at c596ff7.)
+_PROSE_KEY_TOKENS = ("note", "why", "reason", "what", "rule", "defect", "comment",
+                     "supersedes", "correction", "evidence", "provenance_note")
+
+
+def _stamp_like_dirty_values(doc):
+    """Yield (path, value) for every DIRTY-looking sha that is a stamp, not prose."""
+    def walk(x, p=""):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                yield from walk(v, f"{p}/{k}")
+        elif isinstance(x, list):
+            for i, v in enumerate(x):
+                yield from walk(v, f"{p}[{i}]")
+        else:
+            yield p, x
+    for path, val in walk(doc):
+        if not isinstance(val, str) or not _DIRTY_SHA.search(val):
+            continue
+        if any(t in path.lower() for t in _PROSE_KEY_TOKENS):
+            continue
+        yield path, val
+
+
+def test_no_committed_artifact_hides_dirty_substamps_under_a_clean_one():
+    """A committed artifact must not carry a DIRTY sha ANYWHERE in its body.
+
+    This is the aggregate-provenance failure mode: the top-level stamp is a clean
+    40-char sha and audits RE_DERIVABLE, while every per-leg `code_commit_of_run`
+    beneath it reads `<sha>-dirty`.  The artifact then makes a provenance claim that
+    its own contents contradict, and git cannot recover the tree those legs ran on.
+    validate_leg_stamp() (crossmock aggregator) refuses this at WRITE time; this is
+    the repo-wide check at REST, over both worktrees.
+    """
+    bad = {}
+    for wt in (_REPO, SECOND_WT):
+        if not os.path.isdir(wt):
+            continue
+        for r in A.audit_worktree(wt):
+            doc = A._committed_doc(wt, r.path)
+            if doc is None:
+                continue
+            hits = list(_stamp_like_dirty_values(doc))
+            if hits:
+                bad[f"{os.path.basename(wt)}:{r.path}"] = hits[:4]
+    assert not bad, (
+        "committed artifact(s) carry a DIRTY stamp in their body:\n"
+        + "\n".join(f"  {k}: {v}" for k, v in bad.items()))
+
+
+def test_the_dirty_substamp_scanner_is_not_vacuous():
+    """Guard the guard: it must fire on the real shape (a clean top-level stamp over
+    dirty per-leg stamps) and must NOT fire on prose that merely mentions one."""
+    planted = {
+        "metadata": {"code_commit": "0" * 40,
+                     "provenance_note": "generated at d496f42-dirty; held untracked"},
+        "legs": {"2lpt1": {"variantA": {"code_commit_of_run": "d496f42-dirty"}}},
+    }
+    hits = dict(_stamp_like_dirty_values(planted))
+    assert hits == {"/legs/2lpt1/variantA/code_commit_of_run": "d496f42-dirty"}, hits
