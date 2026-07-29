@@ -191,19 +191,46 @@ def selfinvert_poisson(M, f, *, n_mc=N_MC, seed0=0, data_f=None, data_M=None):
     )
 
 
-def systematic_misfit_test(M, f, eps=0.05):
+TILT_SHAPES = ("ramp", "flat")
+
+
+def tilt_vector(n, eps, shape="ramp"):
+    """The systematic-misfit data perturbation, as an explicit named SHAPE.
+
+    ``ramp``  1 + eps * (2 * i/(n-1) - 1): a smooth MONOTONE distortion across
+              the row index.  Rows are the live (c, s) cells in c-major order,
+              so the ramp is monotone in the observed-N_HI bin c — the shape a
+              residual response-calibration error makes.
+    ``flat``  1 + eps: a pure rescale.  NNLS is positively homogeneous, so this
+              maps to f_hat = (1 + eps) * f EXACTLY — gain 1, zero sign
+              changes, no ringing.  It is the null control that proves the
+              section-3 mechanism result is a statement about the tilt's SHAPE
+              and not about its amplitude.
+    """
+    if shape not in TILT_SHAPES:
+        raise ValueError(f"tilt shape must be one of {TILT_SHAPES}")
+    if shape == "flat":
+        return 1.0 + eps * np.ones(n)
+    return 1.0 + eps * (2.0 * (np.arange(n) / max(n - 1, 1)) - 1.0)
+
+
+def systematic_misfit_test(M, f, eps=0.05, shape="ramp"):
     """EXACT (noiseless) inversion of data carrying a SMOOTH systematic tilt.
 
-    Multiplies the folded truth by ``1 + eps * (2 * rank(row-Nhat) - 1)`` —
-    a smooth, monotone few-percent distortion across observed N_HI, the shape a
-    residual response-calibration error makes.  If a SMOOTH few-percent data
-    perturbation comes back as a large OSCILLATORY error in f, then the fold's
-    near-null directions are the mechanism that converts model misspecification
-    (D1/D2) into bin-to-bin ringing — with no noise involved at all.
+    Multiplies the folded truth by ``tilt_vector(n_rows, eps, shape)`` — by
+    default a smooth, monotone few-percent distortion across observed N_HI, the
+    shape a residual response-calibration error makes.  If a SMOOTH few-percent
+    data perturbation comes back as a large OSCILLATORY error in f, then the
+    fold's near-null directions are the mechanism that converts model
+    misspecification (D1/D2) into bin-to-bin ringing — with no noise involved
+    at all.
+
+    The SHAPE is load-bearing, not incidental: ``shape="flat"`` is the same
+    L2 perturbation with no shape, and returns gain 1 with zero sign changes.
     """
     mu = M @ f
     n = mu.size
-    tilt = 1.0 + eps * (2.0 * (np.arange(n) / max(n - 1, 1)) - 1.0)
+    tilt = tilt_vector(n, eps, shape)
     fh = e4.nnls_invert(M, mu * tilt)
     r = e4.ratio_profile(fh, f)
     fin = r[np.isfinite(r)]
@@ -211,6 +238,7 @@ def systematic_misfit_test(M, f, eps=0.05):
     nz = sgn[sgn != 0]
     return dict(
         eps=float(eps),
+        tilt_shape=str(shape),
         data_perturbation_rel_l2=float(np.linalg.norm(mu * tilt - mu)
                                        / np.linalg.norm(mu)),
         ratio=[None if not np.isfinite(v) else float(v) for v in r],
@@ -219,6 +247,130 @@ def systematic_misfit_test(M, f, eps=0.05):
         gain=float(np.max(np.abs(fin - 1.0))
                    / max(np.linalg.norm(mu * tilt - mu) / np.linalg.norm(mu), 1e-30)),
     )
+
+
+def fold_weights(pack, consts, k):
+    """w[s, b] — the DIAGONAL (non-response) half of the fold at fine-z ``k``.
+
+    ``forward.fold_mu`` computes
+
+        mu[c,k,s] = sum_b K[s,K(k),c,b] * (C_bs[s,b] * g[b,k] * f[b,k] * dN_b)
+                    * dX[k,s]
+
+    so at fixed k the design block factorises EXACTLY as
+
+        A[:, k, s, :] = K[s, K(k)] @ diag(w[s]),
+        w[s,b] = C_bs[s,b] * g[b,k] * dN_b * dX[k,s].
+
+    Two FROZEN inputs vary with the stratum s: the response kernel K (through
+    ``s_to_sresp``, 3 distinct SNR response cells) and the diagonal weight w
+    (through the 7-level completeness step C_bs and the per-stratum pathlength
+    dX).  This function returns the second one.  Callers MUST check the
+    factorisation against the probed operator rather than trusting it.
+    """
+    import jax
+    C_bs = np.asarray(jax.nn.sigmoid(consts.eta_hat))[:, np.asarray(consts.b_to_cell)]
+    g = np.asarray(consts.g_bk)[:, k]
+    dN = np.asarray(consts.dN_b)
+    dX = np.asarray(pack.dX, float)[k]
+    return C_bs * (g * dN)[None, :] * dX[:, None]          # (S, B)
+
+
+def stack_cond(blocks):
+    """Condition number of the vertically stacked design blocks."""
+    return float(np.linalg.cond(np.vstack(list(blocks))))
+
+
+def decompose_stack_gain(Ks, ws, *, ref):
+    """Counterfactual conditioning of a stacked design, on synthetic factors.
+
+    ``Ks``/``ws`` are equal-length sequences of per-stratum response blocks
+    (rows x B) and diagonal weights (B,).  ``ref`` indexes the stratum whose K
+    is used as the COMMON response; the common weight is the arithmetic mean
+    of ``ws`` (a mean, not a pick, so no single stratum's completeness level
+    sets the baseline).
+
+    Returns the four condition numbers and the two gains:
+
+      baseline  common K AND common w  (n identical blocks: no stratum
+                                        information at all)
+      k_only    per-stratum K restored, weights held common
+      w_only    per-stratum w restored, response held common
+      actual    both restored
+
+    This function contains NO physics — it is the arithmetic of the
+    decomposition alone, so it can be unit-tested against constructed factors
+    where the answer is known.
+    """
+    Ks = [np.asarray(x, float) for x in Ks]
+    ws = [np.asarray(x, float) for x in ws]
+    if len(Ks) != len(ws):
+        raise ValueError("Ks and ws must be the same length")
+    n = len(Ks)
+    Kr, wr = Ks[ref], np.mean(np.stack(ws), axis=0)
+    base = stack_cond([Kr * wr[None, :]] * n)
+    k_only = stack_cond([K * wr[None, :] for K in Ks])
+    w_only = stack_cond([Kr * w[None, :] for w in ws])
+    actual = stack_cond([K * w[None, :] for K, w in zip(Ks, ws)])
+    return dict(
+        ref_index=int(ref),
+        cond_baseline=base, cond_per_stratum_K_only=k_only,
+        cond_per_stratum_w_only=w_only, cond_actual=actual,
+        gain_from_K=float(base / k_only), gain_from_w=float(base / w_only),
+        gain_total=float(base / actual))
+
+
+def conditioning_decomposition(A, pack, consts, K, k):
+    """WHICH frozen input buys the stacked-design conditioning gain, at fine-z k.
+
+    The stacked design at fixed k has cond ~1e2 while a single stratum's block
+    has cond ~1e10.  That ~1e8 gain is not free information: it is bought by
+    believing that the strata DIFFER, and two independently frozen inputs make
+    them differ.  This isolates each one by counterfactual (see
+    ``decompose_stack_gain``).
+    """
+    dX = np.asarray(pack.dX, float)
+    live = [s for s in range(pack.n_s) if dX[k, s] > 0]
+    if len(live) < 2:
+        return None
+    kk = int(np.asarray(consts.kz_to_K)[k])
+    Ks = [np.asarray(K)[s, kk] for s in live]               # (C, B) each
+    W = fold_weights(pack, consts, k)
+    ws = [W[s] for s in live]
+
+    # the factorisation is ASSERTED against the probed operator, never assumed
+    err = 0.0
+    for i, s in enumerate(live):
+        blk = A[:, k, s, :]
+        scale = max(float(np.max(np.abs(blk))), 1e-300)
+        err = max(err, float(np.max(np.abs(blk - Ks[i] * ws[i][None, :])) / scale))
+    if err > 1e-10:
+        raise RuntimeError(
+            f"conditioning_decomposition: A[:,k={k},s,:] != K_s diag(w_s) "
+            f"(max rel dev {err:.3e}) — refusing to attribute a gain with a "
+            "factorisation that does not hold")
+
+    per_ref = [dict(ref_stratum=int(live[i]),
+                    resp_snr_cell=int(np.asarray(consts.s_to_sresp)[live[i]]),
+                    **decompose_stack_gain(Ks, ws, ref=i))
+               for i in range(len(live))]
+    canon = per_ref[0]
+    gk = [d["gain_from_K"] for d in per_ref]
+    gw = [d["gain_from_w"] for d in per_ref]
+    return dict(
+        k=int(k), live_strata=[int(s) for s in live],
+        factorisation_max_rel_error=err,
+        reference_convention=(
+            "common response K = the LOWEST live stratum's response cell (the "
+            "worst-conditioned one, i.e. the cell the recorded 2.77e10 refers "
+            "to); common weight = the arithmetic mean of the live strata's "
+            "w[s]. The K reference is consequential — see "
+            "k_reference_sensitivity — because the highest-SNR response cell "
+            "is itself far better conditioned."),
+        canonical=canon,
+        k_reference_sensitivity=per_ref,
+        gain_from_K_min=float(min(gk)), gain_from_K_max=float(max(gk)),
+        gain_from_w_min=float(min(gw)), gain_from_w_max=float(max(gw)))
 
 
 def prior_vs_data_precision(M, f, sigma_N):
@@ -391,6 +543,23 @@ def analyse_mock(name, *, n_mc=N_MC, verbose=True):
         per_k.append(rec)
     out["per_z_stacked"] = per_k
 
+    # -- Q1d: WHICH frozen input buys the stacked-design gain ----------------
+    decomp = [d for d in (conditioning_decomposition(A, pack, consts, K, k)
+                          for k in range(pack.n_k)) if d is not None]
+    out["conditioning_decomposition"] = dict(
+        note="the stacked design's ~1e8 conditioning gain over a single "
+             "stratum block, attributed by counterfactual to the TWO frozen "
+             "inputs that make the strata differ: the per-SNR response kernel "
+             "K_s, and the per-stratum diagonal weight w_s (the 7-level "
+             "completeness step times the per-stratum dX).",
+        gain_from_K_median_over_z=float(np.median(
+            [d["canonical"]["gain_from_K"] for d in decomp])),
+        gain_from_w_median_over_z=float(np.median(
+            [d["canonical"]["gain_from_w"] for d in decomp])),
+        gain_total_median_over_z=float(np.median(
+            [d["canonical"]["gain_total"] for d in decomp])),
+        per_z=decomp)
+
     kk = DETAIL_K
     Mk = e4.operator_matrix(A, pack, kk)
     spk = e4.spectrum(Mk)
@@ -443,7 +612,10 @@ def analyse_mock(name, *, n_mc=N_MC, verbose=True):
         ratio_max_over_z=float(max(d["ratio_max"] for d in mcs)),
         frac_pinned_zero_median=float(np.median([d["frac_pinned_zero"] for d in mcs])),
         dynamic_range_of_median_unpinned_max_over_z=float(max(
-            d["dynamic_range_of_median_unpinned"] for d in mcs)))
+            d["dynamic_range_of_median_unpinned"] for d in mcs)),
+        # the MEDIAN over z, so the worst z bin is never quoted as typical
+        dynamic_range_of_median_unpinned_median_over_z=float(np.median(
+            [d["dynamic_range_of_median_unpinned"] for d in mcs])))
     # per-bin detail at the representative z
     mc_detail = selfinvert_poisson(Mk, f_true[:, kk], n_mc=n_mc, seed0=1000 * kk)
     _, fh_exact = selfinvert_exact(Mk, f_true[:, kk])
@@ -468,10 +640,33 @@ def analyse_mock(name, *, n_mc=N_MC, verbose=True):
              "bin-to-bin ringing without any noise being involved.",
         per_z=[dict(k=k, **systematic_misfit_test(
             e4.operator_matrix(A, pack, k), f_true[:, k], eps=0.05))
+            for k in range(pack.n_k) if np.any(f_true[:, k] > 0)],
+        flat_control_note="the SAME L2 perturbation with no SHAPE (a pure "
+                          "rescale). NNLS is positively homogeneous, so this "
+                          "must return gain 1 and zero sign changes; it is the "
+                          "control that shows the ringing is a property of the "
+                          "tilt's shape, not of its amplitude.",
+        flat_control=[dict(k=k, **systematic_misfit_test(
+            e4.operator_matrix(A, pack, k), f_true[:, k], eps=0.05,
+            shape="flat"))
             for k in range(pack.n_k) if np.any(f_true[:, k] > 0)])
     g_all = [d["gain"] for d in si["systematic_misfit"]["per_z"]]
     si["systematic_misfit"]["gain_median_over_z"] = float(np.median(g_all))
     si["systematic_misfit"]["gain_max_over_z"] = float(np.max(g_all))
+    sc_all = [d["n_sign_changes_of_error"] for d in si["systematic_misfit"]["per_z"]]
+    l2_all = [d["data_perturbation_rel_l2"] for d in si["systematic_misfit"]["per_z"]]
+    mr_all = [d["max_abs_ratio_minus_1"] for d in si["systematic_misfit"]["per_z"]]
+    si["systematic_misfit"]["n_sign_changes_min_over_z"] = int(min(sc_all))
+    si["systematic_misfit"]["n_sign_changes_max_over_z"] = int(max(sc_all))
+    si["systematic_misfit"]["n_sign_changes_median_over_z"] = float(np.median(sc_all))
+    si["systematic_misfit"]["tilt_rel_l2_min_over_z"] = float(min(l2_all))
+    si["systematic_misfit"]["tilt_rel_l2_max_over_z"] = float(max(l2_all))
+    si["systematic_misfit"]["max_abs_ratio_minus_1_max_over_z"] = float(max(mr_all))
+    fc = si["systematic_misfit"]["flat_control"]
+    si["systematic_misfit"]["flat_control_gain_max_over_z"] = float(
+        max(d["gain"] for d in fc))
+    si["systematic_misfit"]["flat_control_sign_changes_max_over_z"] = int(
+        max(d["n_sign_changes_of_error"] for d in fc))
     out["self_inversion"] = si
 
     # -- how much of the answer is the prior, at the shipped basis ----------
@@ -594,6 +789,60 @@ def _summary(art, mocks):
     stack_max = over(lambda m: float(max(d["cond"] for d in m["per_z_stacked"])))
     exact = over(lambda m: m["self_inversion"]["exact_summary"]["max_over_z"])
     amp01 = over(lambda m: m["basis_width_sweep"][0]["amp_max_median_over_z"])
+
+    def rng(vals, fmt="{:.3g}"):
+        """'a-b' over mocks, so no single mock's value is quoted as the number."""
+        lo, hi = float(np.min(vals)), float(np.max(vals))
+        return (fmt.format(lo) if lo == hi
+                else f"{fmt.format(lo)}-{fmt.format(hi)}")
+
+    # --- measured inputs for the prose (nothing below is hand-entered) ------
+    gK = over(lambda m: m["conditioning_decomposition"]["gain_from_K_median_over_z"])
+    gW = over(lambda m: m["conditioning_decomposition"]["gain_from_w_median_over_z"])
+    gT = over(lambda m: m["conditioning_decomposition"]["gain_total_median_over_z"])
+    # min/max over EVERY reference-stratum choice, z bin and mock
+    def _ref_span(key):
+        vals = [d[key] for m in mocks
+                for dz in art["mocks"][m]["conditioning_decomposition"]["per_z"]
+                for d in dz["k_reference_sensitivity"]]
+        return float(np.min(vals)), float(np.max(vals))
+
+    gK_span = _ref_span("gain_from_K")
+    gW_span = _ref_span("gain_from_w")
+    sm = over(lambda m: m["self_inversion"]["systematic_misfit"])
+    sc_lo = [d["n_sign_changes_min_over_z"] for d in sm]
+    sc_hi = [d["n_sign_changes_max_over_z"] for d in sm]
+    sc_med = [d["n_sign_changes_median_over_z"] for d in sm]
+    l2_lo = [d["tilt_rel_l2_min_over_z"] for d in sm]
+    l2_hi = [d["tilt_rel_l2_max_over_z"] for d in sm]
+    mr_hi = [d["max_abs_ratio_minus_1_max_over_z"] for d in sm]
+    g_med = [d["gain_median_over_z"] for d in sm]
+    g_max = [d["gain_max_over_z"] for d in sm]
+    flat_g = [d["flat_control_gain_max_over_z"] for d in sm]
+    flat_sc = [d["flat_control_sign_changes_max_over_z"] for d in sm]
+    dr_med = over(lambda m: m["self_inversion"]["poisson_summary"][
+        "dynamic_range_of_median_unpinned_median_over_z"])
+    dr_max = over(lambda m: m["self_inversion"]["poisson_summary"][
+        "dynamic_range_of_median_unpinned_max_over_z"])
+    pin = over(lambda m: m["self_inversion"]["poisson_summary"]["frac_pinned_zero_median"])
+    nd_sc = over(lambda m: [d["n_sign_changes"]
+                            for d in m["detail_z_bin"]["null_directions"]])
+    nd_node = over(lambda m: [d["node_spacing_dex"]
+                              for d in m["detail_z_bin"]["null_directions"]])
+    n_b = art["mocks"][mocks[0]]["grid"]["n_b"]
+    rep02 = over(lambda m: m["basis_width_sweep"][1]["representation_rel_error_median"])
+    rep03 = over(lambda m: m["basis_width_sweep"][2]["representation_rel_error_median"])
+    rep04 = over(lambda m: m["basis_width_sweep"][3]["representation_rel_error_median"])
+    cond01 = over(lambda m: m["basis_width_sweep"][0]["cond_median"])
+    cond02 = over(lambda m: m["basis_width_sweep"][1]["cond_median"])
+    amp02 = over(lambda m: m["basis_width_sweep"][1]["amp_max_median_over_z"])
+    amp03 = over(lambda m: m["basis_width_sweep"][2]["amp_max_median_over_z"])
+    pd = over(lambda m: [(r["sigma_N"], r["n_prior_dominated"], r["n_active_bins"])
+                         for r in m["prior_vs_data_precision"]])
+    pd05 = [x[1] for mm in pd for x in mm if x[0] == 0.5]
+    pd01 = [x[1] for mm in pd for x in mm if x[0] == 0.1]
+    nact = [x[2] for mm in pd for x in mm]
+    sig2 = over(lambda m: m["rw2_regularisation"]["sigma_N_for_amp_le_2_median"])
     sweep = {}
     for i, g in enumerate(WIDTH_GROUPS):
         sweep[f"{0.1 * g:.1f}dex"] = dict(
@@ -624,10 +873,42 @@ def _summary(art, mocks):
                       "a per-stratum dX) at fixed fine-z gives a design matrix "
                       "with cond ~1.2e2-3.5e2.",
             stacked_cond_median=stack_med, stacked_cond_max=stack_max,
-            caveat="that ~1e8 improvement is bought ENTIRELY by believing the "
-                   "per-SNR differences of the frozen response. It is real "
-                   "information only to the extent the SNR-resolved response "
-                   "fit is right; it is not a robustness margin."),
+            caveat=(
+                "CORRECTED 2026-07-29 (an earlier version of this artifact "
+                "attributed the whole gain to the response alone; a referee "
+                "decomposition showed that is wrong). The gain is bought by "
+                "TWO independently frozen inputs, and it is measured here by "
+                "counterfactual (conditioning_decomposition): relative to a "
+                "baseline that stacks identical blocks (common response AND "
+                "common weights), restoring the per-SNR response kernel alone "
+                f"buys {rng(gK, '{:.2g}')}x, and restoring the per-stratum "
+                "weight alone — the 7-level completeness step times the "
+                f"per-stratum dX — INDEPENDENTLY buys {rng(gW, '{:.2g}')}x "
+                f"(medians over z; total {rng(gT, '{:.2g}')}x). Neither is a "
+                "robustness margin: both are frozen calibrations, and the "
+                "conditioning of the operator the likelihood inverts is only "
+                "as real as they are. If either the SNR-resolved response fit "
+                "or the completeness step is wrong in its per-stratum "
+                "DIFFERENCES, the well-conditioned stacked operator is a "
+                "fiction. NOT VERIFIED HERE: no perturbation of either fit was "
+                "run, so this is an attribution of the gain, not a measurement "
+                "of the error it would induce."),
+            caveat_reference_sensitivity=(
+                "the split depends on which stratum supplies the common "
+                "response in the counterfactual. The canonical choice is the "
+                "LOWEST live stratum (the worst-conditioned response cell — "
+                "the 2.77e10 one). Over every live stratum as the reference, "
+                "every z bin and all three mocks, the response gain spans "
+                f"{gK_span[0]:.2g}x-{gK_span[1]:.2g}x and the weight gain "
+                f"{gW_span[0]:.2g}x-{gW_span[1]:.2g}x: with the HIGHEST-SNR "
+                "response cell as the reference both baselines and both gains "
+                "collapse by orders of magnitude, because that cell is itself "
+                "far better conditioned. The qualitative finding — two frozen "
+                "inputs, not one, carry the load — holds at every reference; "
+                "the numbers do not transfer."),
+            decomposition_gain_from_response_K=gK,
+            decomposition_gain_from_completeness_dX_weights=gW,
+            decomposition_gain_total=gT),
         exact_data_self_inversion=dict(
             max_abs_ratio_minus_1=exact,
             verdict="RECOVERS THE TRUTH. With exact noiseless data the NNLS "
@@ -637,25 +918,60 @@ def _summary(art, mocks):
             amp_max_median_over_z_at_0p1dex=amp01,
             definition="amp_b = sd(log f_b) / (1/sqrt(n_b)); amp = 1 would be "
                        "the error a perfectly diagonal kernel gives.",
-            verdict="CONFIRMED PATHOLOGY: at the shipped 0.1 dex basis the "
-                    "unregularised per-bin error on log f is 30-220x the "
-                    "counting error, and Poisson MC self-inversion at the "
-                    "packs' own count level rings over more than a decade with "
-                    "~25% of bins pinned to zero."),
+            verdict=(
+                "CONFIRMED PATHOLOGY: at the shipped 0.1 dex basis the "
+                f"unregularised per-bin error on log f is up to {rng(amp01)}x "
+                "the counting error (max over bins, median over z), and "
+                "Poisson MC self-inversion at the packs' own count level "
+                f"leaves {rng([100 * p for p in pin], '{:.0f}')}% of "
+                "bin-draws pinned to zero. The dynamic range of the median "
+                f"recovered profile is {rng(dr_med, '{:.0f}')}x in the MEDIAN "
+                f"z bin and {rng(dr_max, '{:.0f}')}x in the WORST z bin — the "
+                "worst bin is not typical and is not quoted as such."),
+            dynamic_range_of_median_profile_median_over_z=dr_med,
+            dynamic_range_of_median_profile_max_over_z=dr_max,
+            frac_pinned_zero_median=pin),
         null_directions=dict(
-            statement="the small-singular-value right vectors alternate sign "
-                      "almost every bin (25-27 sign changes over 29 bins, node "
-                      "spacing 0.10-0.11 dex) and concentrate at the two ends "
-                      "of the grid. The unconstrained combinations ARE the "
-                      "bin-to-bin oscillations of a 0.1 dex basis - exactly "
-                      "what a 0.19-0.28 dex response cannot resolve."),
+            n_sign_changes_of_4_smallest_at_detail_k=nd_sc,
+            node_spacing_dex_of_4_smallest_at_detail_k=nd_node,
+            statement=(
+                "the small-singular-value right vectors alternate sign almost "
+                f"every bin ({min(min(x) for x in nd_sc)}-"
+                f"{max(max(x) for x in nd_sc)} sign changes over {n_b} bins "
+                "for the 4 smallest directions at the detail z bin, node "
+                f"spacing {min(min(x) for x in nd_node):.2f}-"
+                f"{max(max(x) for x in nd_node):.2f} dex) and concentrate at "
+                "the two ends of the grid. The unconstrained combinations ARE "
+                "the bin-to-bin oscillations of a 0.1 dex basis - exactly what "
+                "a 0.19-0.28 dex response cannot resolve."),
+            scope="measured at the single detail z bin (DETAIL_K), not over z."),
         misspecification_mechanism=dict(
-            statement="a SMOOTH ~2.9% (L2) tilt of the noiseless folded truth "
-                      "comes back as an OSCILLATORY f error up to 55%, i.e. a "
-                      "gain of ~3 (median) to ~19 (worst z) with no noise "
-                      "involved. The near-null directions are the mechanism "
-                      "that converts D1/D2 forward-model misfit into "
-                      "bin-to-bin ringing at narrow credible intervals."),
+            statement=(
+                f"a SMOOTH {100 * min(l2_lo):.1f}-{100 * max(l2_hi):.1f}% (L2) "
+                "tilt of the noiseless folded truth comes back as an "
+                "OSCILLATORY f error up to "
+                f"{100 * max(mr_hi):.0f}%, i.e. a gain of {rng(g_med, '{:.1f}')} "
+                f"(median over z) to {rng(g_max, '{:.0f}')} (worst z) with no "
+                "noise involved, with "
+                f"{min(sc_lo)}-{max(sc_hi)} sign changes of the error across z "
+                f"and mocks (median {rng(sc_med, '{:.0f}')}). The near-null "
+                "directions are the mechanism that converts D1/D2 "
+                "forward-model misfit into bin-to-bin ringing at narrow "
+                "credible intervals."),
+            n_sign_changes_min_over_z=sc_lo,
+            n_sign_changes_max_over_z=sc_hi,
+            n_sign_changes_median_over_z=sc_med,
+            tilt_rel_l2_min_over_z=l2_lo, tilt_rel_l2_max_over_z=l2_hi,
+            flat_control=dict(
+                statement=(
+                    "NULL CONTROL: the same L2 perturbation with no SHAPE (a "
+                    "pure rescale) gives gain "
+                    f"{rng(flat_g, '{:.3g}')} and {max(flat_sc)} sign changes. "
+                    "The finding is therefore a property of the tilt's shape, "
+                    "not of its amplitude — and it is pinned by a test with "
+                    "power (test_systematic_misfit_ramp_rings_but_a_flat_"
+                    "rescale_does_not)."),
+                gain_max_over_z=flat_g, sign_changes_max_over_z=flat_sc)),
         basis_width_sweep=sweep,
         rw2_prior=dict(
             production="sigma_N ~ HalfNormal(0.5) (ModelAConfig.sigma_N_scale)",
@@ -666,38 +982,98 @@ def _summary(art, mocks):
             n_prior_dominated_directions=over(
                 lambda m: [(r["sigma_N"], r["n_prior_dominated"], r["n_active_bins"])
                            for r in m["prior_vs_data_precision"]]),
-            statement="at the shipped 0.1 dex basis, 17-19 of the ~27-29 basis "
-                      "directions already have MORE prior precision than data "
-                      "precision at sigma_N = 0.5, rising to 21-24 at "
-                      "sigma_N = 0.1. Regularising 0.1 dex to amp <= 2 by the "
-                      "prior alone needs sigma_N ~ 0.15-0.18, i.e. the reported "
-                      "resolution would be supplied by the prior, not measured."),
+            statement=(
+                f"at the shipped 0.1 dex basis, {min(pd05)}-{max(pd05)} of the "
+                f"{min(nact)}-{max(nact)} active basis directions already have "
+                "MORE prior precision than data precision at sigma_N = 0.5, "
+                f"rising to {min(pd01)}-{max(pd01)} at sigma_N = 0.1. "
+                "Regularising 0.1 dex to amp <= 2 by the prior alone needs "
+                f"sigma_N ~ {rng(sig2, '{:.2g}')}, i.e. the reported "
+                "resolution would be supplied by the prior, not measured.")),
         recommendation=dict(
             status="RECOMMENDATION ONLY — not adopted, not implemented. The "
                    "production basis width, prior and estimator are unchanged.",
-            text="Report on a 0.2 dex TRUE-N basis (reporting grid may stay 0.1 "
-                 "dex). It buys a 27x drop in condition number (176 -> 6.4), an "
-                 "11x drop in the worst-bin variance inflation (46 -> 4.2), and "
-                 "costs a 0.8% representation error in the folded counts - the "
-                 "smallest systematic in this problem by more than an order of "
-                 "magnitude. 0.3 dex buys little more (amp 2.2) at double the "
-                 "representation cost. Doing it by tightening sigma_N instead "
-                 "is worse: it hides the same loss of resolution inside a "
-                 "prior, where it does not appear in the error bar.",
-            explicitly_not_claimed="this does NOT fix D1 (the missing sub-19.5 "
-                                   "true-N basis) or D2 (the residual high-N "
-                                   "response excess). A coarser basis stops "
-                                   "those defects being AMPLIFIED into ringing; "
-                                   "it does not remove them, and the counting "
-                                   "argument (truth < observed) still refutes "
-                                   "closure at every basis width."),
+            text=(
+                "Report on a 0.2 dex TRUE-N basis (reporting grid may stay 0.1 "
+                "dex). It buys a "
+                f"{np.median(cond01) / np.median(cond02):.0f}x drop in "
+                f"condition number ({rng(cond01, '{:.0f}')} -> "
+                f"{rng(cond02, '{:.1f}')}), a "
+                f"{np.median(amp01) / np.median(amp02):.0f}x drop in the "
+                f"worst-bin variance inflation ({rng(amp01, '{:.0f}')} -> "
+                f"{rng(amp02, '{:.1f}')}), and costs a "
+                f"{rng([100 * r for r in rep02], '{:.2g}')}% representation "
+                "error in the folded counts. 0.3 dex buys little more (amp "
+                f"{rng(amp03, '{:.1f}')}) at roughly double the representation "
+                f"cost ({rng([100 * r for r in rep03], '{:.2g}')}%; 0.4 dex "
+                f"{rng([100 * r for r in rep04], '{:.2g}')}%). Doing it by "
+                "tightening sigma_N instead is worse: it hides the same loss "
+                "of resolution inside a prior, where it does not appear in the "
+                "error bar."),
+            representation_error_is_not_commensurable=(
+                "the ~0.8% representation cost is an L2 error on the FOLDED "
+                "COUNT vector, computed against each pack's OWN truth. It is "
+                "NOT in the same units as, and not directly comparable to, the "
+                "population-level systematics quoted elsewhere (BAL, metals, "
+                "FP subtraction, the B16 leak), which are fractional biases on "
+                "f(N)/Omega. The earlier phrasing 'the smallest systematic in "
+                "this problem by more than an order of magnitude' is "
+                "WITHDRAWN: it compared incommensurable quantities. What can "
+                "be said is that the representation error is small in its own "
+                "units and grows roughly linearly with basis width."),
+            representation_error_is_not_transferable=(
+                "the representation error was measured only against each "
+                "pack's own injected truth, and ALL the mocks share ONE "
+                "injected f(N). It therefore measures how well a coarse basis "
+                "represents THAT f(N) shape, and does not transfer to real "
+                "data or to a different underlying CDDF."),
+            explicitly_not_claimed=(
+                "this does NOT fix D1 (the missing sub-19.5 true-N basis) or "
+                "D2 (the residual high-N response excess). A coarser basis "
+                "stops those defects being AMPLIFIED into ringing; it does not "
+                "remove them. SCOPE: the counting argument (in-window truth < "
+                "observed counts) is a statement about the pack's totals and "
+                "is basis-independent by construction, but NO basis-width-"
+                "resolved closure test was run here, so this artifact makes no "
+                "claim about closure at any particular basis width."),
+        ),
+        cross_mock_agreement=dict(
+            statement=(
+                "the three mocks do NOT agree to a single tolerance and no "
+                "single mock's value should be quoted as 'the' number. "
+                "Measured spreads (max/min over the three mocks): cond_median "
+                f"at 0.1 dex {rng(cond01, '{:.1f}')} "
+                f"({100 * (max(cond01) / min(cond01) - 1):.1f}% spread); "
+                f"amp_max_median at 0.1 dex {rng(amp01, '{:.1f}')} "
+                f"({100 * (max(amp01) / min(amp01) - 1):.0f}% spread); "
+                f"representation error at 0.2 dex "
+                f"{rng([100 * r for r in rep02], '{:.3g}')}% "
+                f"({100 * (max(rep02) / min(rep02) - 1):.0f}% spread). Every "
+                "range in this summary is quoted as a range over the three "
+                "mocks for exactly this reason."),
+            spread_ratio_max_over_min=dict(
+                cond_median_0p1dex=float(max(cond01) / min(cond01)),
+                amp_max_median_0p1dex=float(max(amp01) / min(amp01)),
+                representation_rel_error_0p2dex=float(max(rep02) / min(rep02)))),
         limitations=[
             "the fold is block-diagonal in fine-z, so this analysis is per-z; "
             "production additionally couples z through the RW1 sigma_z prior, "
             "which adds regularisation this diagnostic does not credit.",
-            "nuisances (psi_c, psi_k_delta, log t, FP) are frozen at their "
-            "prior centres; sampling them can only make the conditioning worse, "
-            "so every amplification here is a LOWER bound.",
+            "EXPECTATION, NOT MEASURED: nuisances (psi_c, psi_k_delta, log t, "
+            "FP) are frozen at their prior centres. Marginalising them adds "
+            "parameters that are partly degenerate with the population block, "
+            "which is expected to widen the posterior, so these amplifications "
+            "are expected to be a LOWER bound — but no run with the nuisances "
+            "sampled was made here, so that is an expectation and not a "
+            "demonstrated bound.",
+            "NOT MEASURED: no perturbation of the frozen response fit or of "
+            "the completeness step was run. The conditioning decomposition "
+            "attributes the stacked-design gain to those two frozen inputs; it "
+            "does NOT quantify the error a wrong fit would induce.",
+            "the response fit and the completeness step are FROZEN inputs "
+            "shared by all three packs, so the cross-mock agreement of the "
+            "kernel-level numbers is a check on the probe, not independent "
+            "evidence that either input is right.",
             "the analytic amplification is a Laplace/Fisher quantity; the MAP "
             "Monte Carlo reproduces it to within a factor 0.6-0.8 (analytic "
             "over-predicts), so the amplification numbers are conservative in "
@@ -706,6 +1082,14 @@ def _summary(art, mocks):
             "truth_counts, which is the D1-deficient truth (n_pad_bins = 0 on "
             "all three packs). That is deliberate: it makes the exact-data "
             "inversion self-consistent and isolates conditioning.",
+            "the truth vector used here is e4_probe.truth_f, which DIFFERS "
+            "from forward_selftest.truth_f by exactly the factor g_bk "
+            "(e4_probe.truth_f * g_bk == forward_selftest.truth_f, pinned by "
+            "test_truth_f_divergence_from_forward_selftest_is_exactly_g_bk). "
+            "That is required, not a bug: the fold applies g_bk itself, so "
+            "the operator's population coordinate is the g-divided one. Any "
+            "comparison of these numbers with forward_selftest quantities must "
+            "carry the g_bk factor.",
         ],
     )
 

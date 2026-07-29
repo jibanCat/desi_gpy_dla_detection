@@ -254,6 +254,25 @@ def truth_f(pack: ModelAPack, consts=None) -> np.ndarray:
     ``f[b,k] * g[b,k] * dN_b * dX[k,s]``; summing over s and matching
     ``truth_counts[b,k]`` inverts to the expression below.  Cells with zero
     z-shape or zero exposure return 0.
+
+    DIVERGENCE FROM ``forward_selftest.truth_f`` (documented 2026-07-29, after
+    a referee flagged the silent difference).  The two functions are NOT the
+    same quantity and neither is wrong:
+
+      forward_selftest.truth_f  =  truth_counts / (dX_tot * dN)          [1]
+      e4_probe.truth_f          =  truth_counts / (dX_tot * dN * g_bk)   [2]
+
+    so ``e4_probe.truth_f * g_bk == forward_selftest.truth_f`` EXACTLY (pinned
+    by ``test_truth_f_divergence_from_forward_selftest_is_exactly_g_bk``).
+    [1] is the physical CDDF per dex per dX.  [2] is the fold's own population
+    coordinate: the vector ``f`` for which ``A @ f`` reproduces the pack's
+    counts, because the fold applies ``g_bk`` itself
+    (``forward.fold_mu``: ``contrib = C_bs * g_bk * f * dN_b``).  Feeding [1]
+    into the operator recovered by ``build_fold_operator`` would double-count
+    the z-shape.  The two agree identically wherever ``g_grid == 1`` (which is
+    the case for ``pack.synthetic_pack``), so a test built only on the
+    synthetic pack cannot see the difference — the pinning test therefore
+    overrides ``g_grid`` to a non-unit shape on purpose.
     """
     if consts is None:
         consts = build_consts(pack)
