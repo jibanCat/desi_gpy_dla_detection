@@ -41,10 +41,45 @@ particular `fp_counts` is (c=29, s=8) — the schema's prose lists "(s=8 ..., c=
 MOCKS ONLY: 2lpt0 first, then saclay0/london0. This module HARD-REFUSES any
 input path under loa_main_dark_v1 (real LOA — private).
 
+SCHEMA v1.1 — the DOWNWARD BASIS PAD (finding D1, 2026-07-28/29)
+----------------------------------------------------------------
+``--basis-pad-floor FLOOR`` extends the TRUE-N basis (``ntrue_edges``) DOWN to
+FLOOR on the same 0.1 dex step. The DETECTION / REPORTING window
+(``nhat_edges``) does NOT move, so ``counts`` is bit-identical across the whole
+pad ladder (MEASURED: 88071 / 87840 / 86763 on 2lpt0 / london0 / saclay0 at
+every floor). Default = no pad = schema v1, bit-for-bit.
+
+WHY: the forward response has a +0.2937 dex measured mean bias and a 0.276 dex
+width at N = 19.503, so the lowest observed n-hat bins are fed overwhelmingly by
+TRUE systems BELOW the reporting floor — MEASURED here, 83% of the predicted
+counts in [19.5, 19.6) come from below 19.5. A basis truncated at the reporting
+floor cannot carry them (the same one-sided-support class as B16), and the
+counting argument settles it: 88071 observed > 73610 in-window truth on 2LPT-0
+with completeness <= 1 and kernel row mass <= 1.
+
+The truth histogram under a pad is built from a SEPARATE truth-only cut at the
+pad floor (``load_truth_bundle``) and GUARDED to reproduce the unpadded
+histogram exactly over the reporting window — lowering ``truth_nhi_floor``
+perturbs a handful of ``cat_cut`` rows through the truth-z lambda cut, and the
+detection side must not move.
+
+TWO UNDECIDED CONVENTIONS the pad exposes (both BRACKETED, neither chosen):
+  * the response below ~19.35 was never measured (``resp_N_fit_range`` spans
+    19.336-21.503 to 21.05-21.216); ``resp_clamp='both'`` freezes it, ``'hi'``
+    extrapolates it. They are identical unpadded and differ by up to 15% on the
+    total under a pad.
+  * the completeness below 19.5: ``--completeness-below-floor const_extrap``
+    (constant extrapolation of molly cell 0, KNOWN TOO HIGH) vs ``molly172``
+    (the measured sub-floor cells of the same production run's floor-17.2
+    lya_only matrix, spliced under bit-identical >= 19.5 cells). ~8% on the
+    total.
+
 CLI (script form, NOT `-m`: the hbi_mcmc package __init__ imports jax, which the
 `gpdla` data-plane env deliberately does not carry — this module needs no jax):
   conda run -n gpdla python CDDF_analysis/hbi_mcmc/extract_pack.py \
       --mocks 2lpt0 [saclay0 london0] \
+      [--basis-pad-floor 18.0] [--completeness-below-floor molly172] \
+      [--tag _pad18p0] \
       --out-dir /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs
 """
 from __future__ import annotations
@@ -98,6 +133,43 @@ Z_TAGS = ("z_2.0_2.5", "z_2.5_3.0", "z_3.0_3.5")
 DEF_OUT_DIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
                "modelA_packs")
 
+# --- schema-v1.1 BASIS PAD (finding D1, 2026-07-28) -------------------------
+# The TRUE-N basis may extend DOWN below the reporting floor; the OBSERVED
+# (n-hat) grid never moves. See pack.validate_pack's tail-subset rule.
+N_STEP = 0.1
+
+# completeness convention BELOW the reporting floor (the pad's leading
+# systematic; see `build_molly_counts_block`).
+COMPLETENESS_CONVENTIONS = ("const_extrap", "molly172")
+# the 2LPT-0 production molly matrix extracted down to the injector floor
+# (lya_only, same production run + same P_DLA>0.99 cut as the canonical
+# nhi195 matrix; molly_summary title "2lpt0_v1 floor17.2 lya_only").
+MOLLY_TSV_NHI172 = ("/scratch/cavestru_root/cavestru0/mfho/"
+                    "gl_prod_2lpt0_v1_20260526/figures_molly_nhi172/"
+                    "molly_matrix.tsv")
+
+
+def basis_pad_edges(pad_floor=None):
+    """(ntrue_edges, n_pad_bins) for a true-N basis padded DOWN to ``pad_floor``.
+
+    ``pad_floor=None`` (or >= the reporting floor) reproduces schema v1
+    EXACTLY: ``ntrue_edges == NHAT_EDGES`` and ``n_pad_bins == 0``. The pad only
+    ever goes DOWN — ``nhat_edges`` (the detection/reporting window) never
+    moves, and stays an exact TAIL subset of ``ntrue_edges``.
+    """
+    if pad_floor is None:
+        return NHAT_EDGES.copy(), 0
+    pad_floor = float(pad_floor)
+    n_pad = int(round((NHAT_EDGES[0] - pad_floor) / N_STEP))
+    if n_pad <= 0:
+        return NHAT_EDGES.copy(), 0
+    if abs((NHAT_EDGES[0] - n_pad * N_STEP) - pad_floor) > 1e-8:
+        raise ValueError(
+            f"--basis-pad-floor {pad_floor} is not on the {N_STEP} dex grid "
+            f"anchored at the reporting floor {NHAT_EDGES[0]}")
+    lo = np.round(NHAT_EDGES[0] - N_STEP * np.arange(n_pad, 0, -1), 3)
+    return np.round(np.concatenate([lo, NHAT_EDGES]), 3), n_pad
+
 # per-mock inputs: the committed drivers' own defaults (read, not retyped where a
 # module constant exists)
 MOCKS = {
@@ -122,6 +194,25 @@ def assert_mock_only(path: str) -> None:
         raise RuntimeError(
             f"PRIVACY GUARD: refusing real-LOA path {path!r} — the Model A "
             "extractor is mock-only (loa_main_dark_v1 is private real data).")
+
+
+_PACK_MOD = None
+
+
+def _pack_module():
+    """Load ``pack.py`` file-directly (never through the hbi_mcmc package
+    __init__, which imports jax — absent from the `gpdla` data-plane env)."""
+    global _PACK_MOD
+    if _PACK_MOD is None:
+        import importlib.util
+        p = os.path.join(_REPO, "CDDF_analysis", "hbi_mcmc", "pack.py")
+        spec = importlib.util.spec_from_file_location("_modelA_pack_nojax", p)
+        m = importlib.util.module_from_spec(spec)
+        # dataclasses resolves cls.__module__ through sys.modules
+        sys.modules[spec.name] = m
+        spec.loader.exec_module(m)
+        _PACK_MOD = m
+    return _PACK_MOD
 
 
 def _git_commit() -> str:
@@ -193,9 +284,26 @@ def load_forward_response_pack(path: str = TF._DEF_FORWARD):
         resp_skew_ramp=np.array([float(d["N_skew_collapse"]), 0.5]),
         resp_N_ref=np.float64(d["N_ref"]),      # required to evaluate the coef polys
     )
+    # schema v1.1 (finding D2): the CALIBRATED covariate range of the per-cell
+    # moment polynomials = the per-cell min/max of the empirical true-N anchors
+    # they were weighted-least-squares fit at. Emitted NATIVELY here so padded
+    # packs need no upgrade_pack_v11 round trip. Derived through the committed
+    # routine pack.resp_fit_range_from_forward_npz (loaded file-directly: the
+    # hbi_mcmc package __init__ imports jax, which the `gpdla` data-plane env
+    # deliberately does not carry).
+    fit_range = None
+    if "emp_N_anchors" in d.files:
+        fit_range = _pack_module().resp_fit_range_from_forward_npz(path)
+        fwd["resp_N_fit_range"] = np.asarray(fit_range, float)
     meta = dict(
         fwd_response_kind=kind,
         deg_N=int(d["deg_N"]),
+        resp_N_fit_range=(np.asarray(fit_range, float).tolist()
+                          if fit_range is not None else None),
+        resp_N_fit_range_source=("emp_N_anchors min/max per response cell "
+                                 "(pack.py:resp_fit_range_from_forward_npz)"
+                                 if fit_range is not None else
+                                 "ABSENT — no emp_N_anchors in the frozen NPZ"),
         z_covariate=(str(np.asarray(d["z_covariate"])) if "z_covariate" in d.files
                      else "zqso"),
         path=path,
@@ -228,19 +336,83 @@ def compute_t_sigma(hbi_dir: str = None, floor: float = T_SIGMA_FLOOR):
     return t, detail
 
 
-def load_molly_counts_block():
+def load_molly_counts_block(convention="const_extrap", counts172_path=None):
     """Molly completeness counts (matched-real numerator) via the committed
-    ff_fp_estimator cache; build it if absent. Purity is never read (RhoGuard)."""
+    ff_fp_estimator cache; build it if absent. Purity is never read (RhoGuard).
+
+    ``convention`` selects what the completeness does BELOW the reporting floor
+    (19.5) — the leading known systematic on the schema-v1.1 basis pad:
+
+      "const_extrap" (default, schema v1 behaviour): the pack carries ONLY the
+          canonical nhi195 cells, so ``forward.build_consts``'s
+          ``clip(digitize(Nc, molly_nhi_edges) - 1, 0, M-2)`` makes every
+          sub-floor true-N bin read cell 0 = [19.5, 20.0). That is a CONSTANT
+          EXTRAPOLATION and it is KNOWN TOO HIGH (the measured completeness
+          keeps falling below 19.5).
+      "molly172": SPLICE the measured sub-floor cells of the SAME production
+          run's floor-17.2 lya_only matrix underneath the canonical cells. The
+          cells at and above 19.5 are left BIT-IDENTICAL to the canonical
+          matrix, so the convention changes NOTHING inside the reporting
+          window — it only replaces the constant extrapolation with the
+          measured sub-floor completeness.
+
+    Returns (block, prov, mm_alt) — ``mm_alt`` is the loaded floor-17.2
+    MollyMatrix (or None) so the g(N,z) block can be spliced on the same cells.
+    """
+    if convention not in COMPLETENESS_CONVENTIONS:
+        raise ValueError(f"completeness convention must be one of "
+                         f"{COMPLETENESS_CONVENTIONS}, got {convention!r}")
     mc = FF.load_molly_counts()
     if mc is None:
         FF.build_molly_counts_cache()
         mc = FF.load_molly_counts()
-    return dict(
-        molly_n_det=np.asarray(mc["cmp_nfound"], float),   # (s=8, nhi_cells)
-        molly_n_tot=np.asarray(mc["cmp_nfid"], float),
-        molly_nhi_edges=np.asarray(mc["nhi_edges"], float),
-        molly_snr_edges=np.asarray(mc["snr_edges"], float),
-    ), dict(path=mc["path"], max_c_diff=float(mc["max_c_diff"]))
+    n_det = np.asarray(mc["cmp_nfound"], float)            # (s=8, nhi_cells)
+    n_tot = np.asarray(mc["cmp_nfid"], float)
+    nhi_edges = np.asarray(mc["nhi_edges"], float)
+    prov = dict(path=mc["path"], max_c_diff=float(mc["max_c_diff"]),
+                convention=convention,
+                below_floor=("constant extrapolation of molly cell 0 "
+                             "([19.5,20.0)) — forward.build_consts clips "
+                             "b_to_cell to 0"))
+    if convention == "const_extrap":
+        return dict(molly_n_det=n_det, molly_n_tot=n_tot,
+                    molly_nhi_edges=nhi_edges,
+                    molly_snr_edges=np.asarray(mc["snr_edges"], float)), prov, None
+
+    # --- molly172: splice the MEASURED sub-floor cells underneath ------------
+    assert_mock_only(MOLLY_TSV_NHI172)
+    counts172_path = counts172_path or os.path.join(
+        os.path.dirname(mc["path"]), "molly_counts_nhi172.npz")
+    if not os.path.exists(counts172_path):
+        FF.build_molly_counts_cache(out_path=counts172_path,
+                                    molly_tsv=MOLLY_TSV_NHI172)
+    d = np.load(counts172_path, allow_pickle=True)
+    e172 = np.asarray(d["nhi_edges"], float)
+    if not np.allclose(np.asarray(d["snr_edges"], float),
+                       np.asarray(mc["snr_edges"], float)):
+        raise RuntimeError("molly172 splice: SNR strata differ from the "
+                           "canonical matrix")
+    # the canonical edges must be an exact TAIL subset of the floor-17.2 edges
+    tail = e172[len(e172) - len(nhi_edges):]
+    if not (np.allclose(tail[:-1], nhi_edges[:-1], atol=1e-8)
+            and np.isposinf(tail[-1]) and np.isposinf(nhi_edges[-1])):
+        raise RuntimeError(
+            f"molly172 splice: canonical nhi edges {nhi_edges} are not a tail "
+            f"subset of the floor-17.2 edges {e172}")
+    n_sub = len(e172) - len(nhi_edges)                      # cells strictly < 19.5
+    det = np.concatenate([np.asarray(d["cmp_nfound"], float)[:, :n_sub], n_det], 1)
+    tot = np.concatenate([np.asarray(d["cmp_nfid"], float)[:, :n_sub], n_tot], 1)
+    prov.update(
+        path_below_floor=counts172_path, tsv_below_floor=MOLLY_TSV_NHI172,
+        max_c_diff_below_floor=float(d["max_c_diff"]),
+        n_cells_spliced_below_floor=int(n_sub),
+        below_floor=("MEASURED sub-floor cells from the same production run's "
+                     "floor-17.2 lya_only matrix; cells >= 19.5 are "
+                     "bit-identical to the canonical nhi195 matrix"))
+    from CDDF_analysis.hbi.cddf_catalog_hbi import load_molly_matrix as _lmm
+    return dict(molly_n_det=det, molly_n_tot=tot, molly_nhi_edges=e172,
+                molly_snr_edges=np.asarray(mc["snr_edges"], float)), \
+        prov, _lmm(MOLLY_TSV_NHI172)
 
 
 def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
@@ -313,11 +485,12 @@ def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
 # ---------------------------------------------------------------------------
 # per-mock extraction
 # ---------------------------------------------------------------------------
-def _make_cfg(mock: str, out_dir: str) -> HBIConfig:
+def _make_cfg(mock: str, out_dir: str, molly_tsv: str = None) -> HBIConfig:
     m = MOCKS[mock]
     for p in m.values():
         assert_mock_only(p)
-    molly_tsv = FF.DEF_MOLLY_TSV                    # frozen 2LPT-0 lya_only-nhi195
+    molly_tsv = molly_tsv or FF.DEF_MOLLY_TSV       # frozen 2LPT-0 lya_only-nhi195
+    assert_mock_only(molly_tsv)
     return HBIConfig(
         catalog_dir=m["catalog_dir"], truth_path=m["truth_path"],
         bal_cat_path=m["bal_cat_path"], molly_tsv=molly_tsv, out_dir=out_dir,
@@ -331,10 +504,10 @@ def _make_cfg(mock: str, out_dir: str) -> HBIConfig:
     )
 
 
-def load_mock_bundle(mock: str, out_dir: str):
+def load_mock_bundle(mock: str, out_dir: str, molly_tsv: str = None):
     """Load one mock's cut bundle + op mask + per-sightline pathlength through
     the committed machinery (ab_loa0_fp_baseline.build_ingredients path)."""
-    cfg = _make_cfg(mock, out_dir)
+    cfg = _make_cfg(mock, out_dir, molly_tsv=molly_tsv)
     mm = load_molly_matrix(cfg.molly_tsv)
     truth_floor = float(mm.nhi_edges[0])            # 19.5 (nhi195 matrix)
     t0 = time.time()
@@ -386,21 +559,55 @@ def build_g_block(bundle):
     return g_grid, g_occ
 
 
-def build_truth_counts(bundle):
-    """truth_counts (b=29, k=15) [+ (b,k,s)] — truth systems from the SAME cut
+def load_truth_bundle(mock: str, out_dir: str, truth_floor: float):
+    """TRUTH-ONLY cut bundle at a LOWER NHI floor (schema-v1.1 basis pad).
+
+    The detection side is deliberately NOT taken from here. Lowering
+    ``truth_nhi_floor`` changes the PRIMARY truth match, hence ``Z_TRUE``, hence
+    (through ``make_lambda_z_BAL_cuts(use_truth_z=True)``) a handful of rows in
+    ``cat_cut`` — MEASURED on 2LPT-0: n_cat_cut 582855 -> 582078 and the binned
+    detection total 88071 -> 88053 going from floor 19.5 to 17.2. The observed
+    counts must be IDENTICAL across the whole pad ladder or the comparison is
+    not like-for-like, so this loader is used for ``truth_cut`` ONLY and the
+    caller GUARDS that its >= reporting-floor histogram reproduces the
+    unpadded one exactly.
+    """
+    cfg = _make_cfg(mock, out_dir)
+    mm = load_molly_matrix(cfg.molly_tsv)
+    t0 = time.time()
+    qso_lookup = _build_qso_lookup(cfg)
+    cat_cut, truth_cut, _is_TP, _good, meta = load_and_cut_catalog(
+        cfg, truth_nhi_floor=float(truth_floor), qso_lookup=qso_lookup,
+        host_truth_floor=min(19.0, float(truth_floor)))
+    TS._snap_off_molly_edges(cat_cut, truth_cut, mm)
+    print(f"  [{mock}] truth-pad bundle @floor {truth_floor}: "
+          f"n_truth_cut={len(truth_cut)} ({time.time()-t0:.0f}s)")
+    return dict(cfg=cfg, truth_cut=truth_cut, meta=meta)
+
+
+def build_truth_counts(bundle, ntrue_edges=None):
+    """truth_counts (b, k) [+ (b,k,s)] — truth systems from the SAME cut
     bundle (identical windowing), SNR>2 strict (truth_one_file convention),
-    half-open binning on the schema grids."""
+    half-open binning on the schema grids.
+
+    ``ntrue_edges`` defaults to ``NHAT_EDGES`` (schema v1, b == c). Pass a
+    DOWNWARD-padded grid (``basis_pad_edges``) for schema v1.1; the z / SNR
+    axes and the SNR>2 cut are untouched, so the >= reporting-floor rows of the
+    padded histogram are bit-identical to the unpadded one.
+    """
+    ntrue_edges = NHAT_EDGES if ntrue_edges is None else np.asarray(ntrue_edges, float)
+    n_b = len(ntrue_edges) - 1
     t = bundle["truth_cut"]
     cfg = bundle["cfg"]
     n = np.asarray(t["NHI"], float)
     z = np.asarray(t["Z_DLA"], float)
     s2n = np.asarray(t["S2N_RED"], float)
     keep = s2n > cfg.snr_min
-    b = _idx(NHAT_EDGES, n[keep])
+    b = _idx(ntrue_edges, n[keep])
     k = _idx(ZF_EDGES, z[keep])
     s = np.clip(_idx(SNR_EDGES, s2n[keep]), 0, N_S - 1)
-    ok = (b >= 0) & (b < N_C) & (k >= 0) & (k < N_K)
-    tc_bks = np.zeros((N_C, N_K, N_S), float)
+    ok = (b >= 0) & (b < n_b) & (k >= 0) & (k < N_K)
+    tc_bks = np.zeros((n_b, N_K, N_S), float)
     np.add.at(tc_bks, (b[ok], k[ok], s[ok]), 1.0)
     return tc_bks.sum(axis=2), tc_bks, int(ok.sum())
 
@@ -408,14 +615,26 @@ def build_truth_counts(bundle):
 # ---------------------------------------------------------------------------
 # pack assembly
 # ---------------------------------------------------------------------------
-def extract_pack(mock: str, out_dir: str, frozen: dict) -> dict:
+def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
+                 tag: str = "") -> dict:
     """Build + save one mock's data pack. `frozen` carries the 2LPT-0 calibration
-    blocks (forward / molly counts / g / fp / t_sigma) built once."""
-    print(f"[pack] extracting {mock} ...")
+    blocks (forward / molly counts / g / fp / t_sigma) built once.
+
+    ``pad_floor`` (schema v1.1, finding D1): extend the TRUE-N basis DOWN to
+    this log N_HI on the same 0.1 dex step. ``None`` = schema v1, bit-for-bit.
+    The observed n-hat grid, ``counts``, ``dX`` and every calibration block are
+    UNCHANGED by the pad — only ``ntrue_edges`` and the truth histogram grow.
+    """
+    print(f"[pack] extracting {mock} (pad_floor={pad_floor}) ...")
     t0 = time.time()
-    bundle = frozen.get("_bundle_2lpt0") if mock == "2lpt0" else None
+    # DETECTION-side bundle cache: identical for every pad floor by
+    # construction (the pad touches the truth axis only), so a ladder sweep
+    # reuses it instead of re-cutting the catalog.
+    bundles = frozen.setdefault("_bundles", {})
+    bundle = bundles.get(mock)
     if bundle is None:
         bundle = load_mock_bundle(mock, out_dir)
+        bundles[mock] = bundle
 
     cat = bundle["cat_cut"]; op = bundle["op_mask"]
     nhat = np.asarray(cat["NHI"], float)[op]
@@ -436,7 +655,47 @@ def extract_pack(mock: str, out_dir: str, frozen: dict) -> dict:
     nz = col > 0
     fp_E_alloc[:, nz] = dX[:, nz] / col[nz]
 
+    # --- truth histogram, optionally on a DOWNWARD-padded true-N basis (D1) ---
+    ntrue_edges, n_pad_bins = basis_pad_edges(pad_floor)
     truth_counts, truth_counts_bks, n_truth_in_window = build_truth_counts(bundle)
+    pad_prov = dict(n_pad_bins=int(n_pad_bins), pad_floor=None,
+                    truth_nhi_floor_used=19.5)
+    if n_pad_bins > 0:
+        # TRUTH-side bundle cache: one cut per (mock, floor). The DEEPEST floor
+        # already carries every shallower pad's rows, but the cut is re-run per
+        # floor so each pack's provenance names the floor it was actually cut at.
+        tkey = (mock, round(float(ntrue_edges[0]), 3))
+        tcache = frozen.setdefault("_truth_bundles", {})
+        tb = tcache.get(tkey)
+        if tb is None:
+            tb = load_truth_bundle(mock, out_dir, float(ntrue_edges[0]))
+            tcache[tkey] = tb
+        tc_pad, tc_pad_bks, n_pad_in_window = build_truth_counts(tb, ntrue_edges)
+        # GUARD (like-for-like): the padded truth histogram must reproduce the
+        # UNPADDED one EXACTLY over the reporting window. Anything else means
+        # the lower truth floor perturbed the >= 19.5 truth rows and the ladder
+        # would be comparing different data.
+        if not np.array_equal(tc_pad[n_pad_bins:], truth_counts):
+            raise RuntimeError(
+                "basis-pad GUARD failed: the padded truth histogram does not "
+                "reproduce the unpadded histogram over the reporting window "
+                f"(max |diff| = {np.abs(tc_pad[n_pad_bins:] - truth_counts).max()})")
+        if not np.array_equal(tc_pad_bks[n_pad_bins:], truth_counts_bks):
+            raise RuntimeError(
+                "basis-pad GUARD failed: (b,k,s) padded truth != unpadded over "
+                "the reporting window")
+        pad_prov.update(
+            pad_floor=float(ntrue_edges[0]),
+            truth_nhi_floor_used=float(ntrue_edges[0]),
+            n_truth_in_window_unpadded=int(n_truth_in_window),
+            n_truth_in_window_padded=int(n_pad_in_window),
+            n_truth_below_reporting_floor=int(tc_pad[:n_pad_bins].sum()),
+            tail_guard="EXACT match to the unpadded truth over [19.5, 22.4)",
+            truth_bundle_note=(
+                "truth_cut ONLY; the detection side stays on the 19.5-floor "
+                "bundle so `counts` is identical across the pad ladder"))
+        truth_counts, truth_counts_bks = tc_pad, tc_pad_bks
+        n_truth_in_window = n_pad_in_window
 
     # per-mock loa-0 exposure scalars (Loa0FP.from_product n_sl_prod semantics)
     ns0 = float(frozen["fp_prov"]["n_sl_loa0"])
@@ -449,7 +708,7 @@ def extract_pack(mock: str, out_dir: str, frozen: dict) -> dict:
 
     pack = dict(
         # axes
-        nhat_edges=NHAT_EDGES, ntrue_edges=NHAT_EDGES.copy(),
+        nhat_edges=NHAT_EDGES, ntrue_edges=ntrue_edges,
         zf_edges=ZF_EDGES, zc_edges=ZC_EDGES, kz_to_K=KZ_TO_K,
         snr_edges=SNR_EDGES,
         nhat_masked_bins=masked,                    # explicit mask array (no NaN codes)
@@ -492,12 +751,13 @@ def extract_pack(mock: str, out_dir: str, frozen: dict) -> dict:
         raise RuntimeError("kappa-derived key in pack — forward-only violated")
 
     os.makedirs(out_dir, exist_ok=True)
-    npz_path = os.path.join(out_dir, f"modelA_pack_{mock}.npz")
+    npz_path = os.path.join(out_dir, f"modelA_pack_{mock}{tag}.npz")
     np.savez(npz_path, **pack)
 
     m = MOCKS[mock]
     prov = dict(
-        schema="modelA_pack_schema.md v1",
+        schema=("modelA_pack_schema.md v1.1 (+resp_N_fit_range"
+                + (", +basis pad)" if n_pad_bins else ")")),
         mock=mock,
         date=time.strftime("%Y-%m-%d %H:%M:%S"),
         code_commit=_git_commit(),
@@ -559,7 +819,15 @@ def extract_pack(mock: str, out_dir: str, frozen: dict) -> dict:
                      floor=T_SIGMA_FLOOR, detail=frozen["t_sigma_detail"]),
         truth=dict(n_truth_cut=int(len(bundle["truth_cut"])),
                    n_truth_in_window=int(n_truth_in_window),
-                   truth_nhi_floor=19.5),
+                   truth_nhi_floor=pad_prov["truth_nhi_floor_used"]),
+        basis_pad=dict(
+            **pad_prov,
+            ntrue_edges=[float(x) for x in ntrue_edges],
+            nhat_edges_unchanged=True,
+            routine="CDDF_analysis/hbi_mcmc/extract_pack.py:basis_pad_edges",
+            rule=("schema v1.1: ntrue_edges extends DOWN only; nhat_edges is an "
+                  "exact TAIL subset (pack.validate_pack enforces it). The "
+                  "reporting/detection window never moves.")),
         g_available=bool(frozen["g_available"]),
         checks=dict(
             counts_total_equals_op_in_window=True,
@@ -593,30 +861,56 @@ def extract_pack(mock: str, out_dir: str, frozen: dict) -> dict:
                 dx_gap=dx_gap, bundle=bundle)
 
 
-def build_frozen_calibration(out_dir: str) -> dict:
+def build_frozen_calibration(out_dir: str, completeness="const_extrap") -> dict:
     """Build the frozen 2LPT-0 calibration blocks ONCE (shared by every pack).
     Returns the dict extract_pack consumes; stashes the 2LPT-0 bundle so the
-    2lpt0 pack does not reload it."""
+    2lpt0 pack does not reload it.
+
+    ``completeness`` (see ``load_molly_counts_block``) selects the convention
+    BELOW the reporting floor. Under "molly172" the g(N,z) surface is spliced
+    the SAME way — measured sub-floor rows from a floor-17.2 bundle, the
+    >= 19.5 rows left bit-identical to the canonical 2LPT-0 surface — so the
+    two conventions differ ONLY below the reporting floor.
+    """
     print("[frozen] building 2LPT-0 calibration blocks ...")
     fwd, fwd_meta = load_forward_response_pack()
     t_sigma, t_detail = compute_t_sigma()
-    molly, molly_prov = load_molly_counts_block()
+    molly, molly_prov, mm_alt = load_molly_counts_block(convention=completeness)
     fp_counts, _loa0, fp_prov = build_fp_block()
     bundle0 = load_mock_bundle("2lpt0", out_dir)
     g_available = True
     try:
         g_grid, g_occ = build_g_block(bundle0)
+        if mm_alt is not None:
+            bundle_alt = load_mock_bundle("2lpt0", out_dir,
+                                          molly_tsv=MOLLY_TSV_NHI172)
+            g_alt, occ_alt = build_g_block(bundle_alt)
+            n_sub = g_alt.shape[0] - g_grid.shape[0]
+            if n_sub <= 0:
+                raise RuntimeError("molly172 g splice: alternate grid is not "
+                                   "deeper than the canonical one")
+            g_grid = np.concatenate([g_alt[:n_sub], g_grid], axis=0)
+            g_occ = np.concatenate([occ_alt[:n_sub], g_occ], axis=0)
+            molly_prov["g_below_floor"] = (
+                f"{n_sub} sub-floor rows from build_cnz_resolved on the "
+                "floor-17.2 molly matrix; >= 19.5 rows bit-identical to the "
+                "canonical 2LPT-0 surface")
     except Exception as e:          # committed builder needs heavy missing inputs
         print(f"[frozen] g(N,z) builder unavailable ({e}); emitting g=1")
         n_nhi = len(molly["molly_nhi_edges"]) - 1
         g_grid = np.ones((n_nhi, N_K))
         g_occ = np.zeros((n_nhi, N_K))
         g_available = False
+    if g_grid.shape[0] != len(molly["molly_nhi_edges"]) - 1:
+        raise RuntimeError(
+            f"g_grid has {g_grid.shape[0]} cells but the molly grid has "
+            f"{len(molly['molly_nhi_edges']) - 1}")
     return dict(fwd=fwd, fwd_meta=fwd_meta, t_sigma=t_sigma,
                 t_sigma_detail=t_detail, molly=molly, molly_prov=molly_prov,
                 fp_counts=fp_counts, fp_prov=fp_prov,
                 g_grid=g_grid, g_occupancy=g_occ, g_available=g_available,
-                _bundle_2lpt0=bundle0)
+                completeness_convention=completeness,
+                _bundles={"2lpt0": bundle0})
 
 
 def main(argv=None):
@@ -624,13 +918,31 @@ def main(argv=None):
     p.add_argument("--mocks", nargs="+", default=["2lpt0"],
                    choices=list(MOCKS))
     p.add_argument("--out-dir", default=DEF_OUT_DIR)
+    p.add_argument("--basis-pad-floor", type=float, default=None,
+                   help="schema v1.1 (finding D1): extend the TRUE-N basis DOWN "
+                        "to this log N_HI on the same 0.1 dex step. The "
+                        "detection/reporting window (nhat_edges) does NOT move. "
+                        "Default: no pad = schema v1, bit-for-bit.")
+    p.add_argument("--completeness-below-floor", default="const_extrap",
+                   choices=list(COMPLETENESS_CONVENTIONS),
+                   help="what the completeness does BELOW 19.5 under a pad: "
+                        "'const_extrap' = constant extrapolation of molly cell "
+                        "0 (KNOWN TOO HIGH); 'molly172' = the measured "
+                        "sub-floor cells of the same production run's "
+                        "floor-17.2 matrix.")
+    p.add_argument("--tag", default="",
+                   help="filename suffix so a ladder of packs can share one "
+                        "out-dir (modelA_pack_<mock><tag>.npz)")
     args = p.parse_args(argv)
     os.makedirs(args.out_dir, exist_ok=True)
-    frozen = build_frozen_calibration(args.out_dir)
+    frozen = build_frozen_calibration(
+        args.out_dir, completeness=args.completeness_below_floor)
     results = {}
     for mock in args.mocks:
         results[mock] = {k: v for k, v in
-                         extract_pack(mock, args.out_dir, frozen).items()
+                         extract_pack(mock, args.out_dir, frozen,
+                                      pad_floor=args.basis_pad_floor,
+                                      tag=args.tag).items()
                          if k != "bundle"}
     print(json.dumps(results, indent=1))
     return results

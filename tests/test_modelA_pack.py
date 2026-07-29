@@ -134,6 +134,119 @@ def test_forward_model_is_forward_not_kappa():
     assert meta["z_covariate"] in ("zqso", "zdla")
 
 
+def test_resp_N_fit_range_emitted_natively():
+    """Schema v1.1 (finding D2): the extractor must emit the CALIBRATED
+    covariate range directly, so a padded pack needs no upgrade_pack_v11 hop.
+    The range is what makes the sub-floor pad's response a BRACKETED
+    extrapolation instead of a silent one."""
+    fwd, meta = EP.load_forward_response_pack()
+    rr = fwd["resp_N_fit_range"]
+    s_resp, z_resp, _ = fwd["resp_mu_coef"].shape
+    assert rr.shape == (s_resp, z_resp, 2)
+    assert np.all(rr[..., 1] > rr[..., 0]) and np.all(np.isfinite(rr))
+    # the whole point: the fitted range does NOT reach the reporting floor, so
+    # every padded bin below rr.min() evaluates a CLAMPED covariate.
+    assert rr[..., 0].max() > 19.3
+    assert rr[..., 1].max() < 22.4
+
+
+# ---------------------------------------------------------------------------
+# D1 — the schema-v1.1 downward BASIS PAD (2026-07-28)
+# ---------------------------------------------------------------------------
+def test_basis_pad_default_is_schema_v1_bit_for_bit():
+    """No --basis-pad-floor => the true-N grid is IDENTICAL to schema v1.
+    This is the regression lock on 'the default did not move'."""
+    edges, n_pad = EP.basis_pad_edges(None)
+    assert n_pad == 0
+    assert edges.shape == EP.NHAT_EDGES.shape
+    assert np.array_equal(edges, EP.NHAT_EDGES)
+    # a floor AT or ABOVE the reporting floor is also a no-op (never shrink)
+    for floor in (19.5, 19.6, 20.0):
+        e, n = EP.basis_pad_edges(floor)
+        assert n == 0 and np.array_equal(e, EP.NHAT_EDGES)
+
+
+@pytest.mark.parametrize("floor,n_expect", [(19.4, 1), (19.3, 2), (19.0, 5),
+                                            (18.5, 10), (18.0, 15)])
+def test_basis_pad_edges_extend_down_only(floor, n_expect):
+    edges, n_pad = EP.basis_pad_edges(floor)
+    assert n_pad == n_expect
+    assert len(edges) == len(EP.NHAT_EDGES) + n_expect
+    assert np.isclose(edges[0], floor)
+    # the OBSERVED window never moves: exact tail subset, same step, same top
+    assert np.allclose(edges[n_expect:], EP.NHAT_EDGES)
+    assert np.allclose(np.diff(edges), EP.N_STEP)
+    assert np.isclose(edges[-1], EP.NHAT_EDGES[-1])
+
+
+def test_basis_pad_off_grid_floor_refused():
+    with pytest.raises(ValueError, match="not on the"):
+        EP.basis_pad_edges(19.27)
+
+
+class _FakeTable(dict):
+    pass
+
+
+class _FakeCfg:
+    snr_min = 2.0
+
+
+def _truth_fixture():
+    """Truth rows with the OUT-OF-WINDOW rows FIRST (the repo's own fixture
+    rule for the one-sided-support bug class): sub-floor N, over-top N,
+    out-of-z, and sub-SNR rows precede the in-window ones."""
+    nhi = np.array([
+        18.05, 18.55, 19.05, 19.45,     # BELOW the reporting floor 19.5
+        22.45,                          # above the top edge 22.4
+        19.55,                          # in N, but out of the z window
+        19.65,                          # in N and z, but SNR <= 2 (cut)
+        19.55, 19.95, 20.35, 21.05,     # in window
+    ])
+    z = np.array([2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 1.5, 2.5, 2.5, 3.4, 2.05])
+    s2n = np.array([5., 5., 5., 5., 5., 5., 5., 1.5, 5., 5., 5.])
+    return dict(cfg=_FakeCfg(),
+                truth_cut=_FakeTable(NHI=nhi, Z_DLA=z, S2N_RED=s2n))
+
+
+def test_build_truth_counts_unpadded_matches_schema_v1_grid():
+    tc, tc_bks, n_in = _truth_fixture(), None, None
+    b = _truth_fixture()
+    tc, tc_bks, n_in = EP.build_truth_counts(b)
+    assert tc.shape == (EP.N_C, EP.N_K)
+    # only the 4 genuinely in-window rows survive (sub-floor / over-top /
+    # out-of-z / sub-SNR all dropped)
+    assert n_in == 4 and tc.sum() == 4
+    assert np.allclose(tc_bks.sum(axis=2), tc)
+
+
+def test_build_truth_counts_padded_tail_is_bit_identical():
+    """The pad may only ADD rows below the reporting floor. If the >= 19.5 part
+    of the padded histogram moved, the ladder would not be like-for-like."""
+    b = _truth_fixture()
+    tc0, tc0_bks, n0 = EP.build_truth_counts(b)
+    edges, n_pad = EP.basis_pad_edges(18.0)
+    tc1, tc1_bks, n1 = EP.build_truth_counts(b, edges)
+    assert tc1.shape == (EP.N_C + n_pad, EP.N_K)
+    assert np.array_equal(tc1[n_pad:], tc0)
+    assert np.array_equal(tc1_bks[n_pad:], tc0_bks)
+    # the 4 sub-floor rows are now CARRIED (they were silently dropped in v1)
+    assert tc1[:n_pad].sum() == 4
+    assert n1 == n0 + 4
+    # ... and they land in the right bins: 18.05 -> [18.0,18.1), 19.45 -> [19.4,19.5)
+    lo = np.round(edges[:-1], 3)
+    assert tc1[np.isclose(lo, 18.0), :].sum() == 1
+    assert tc1[np.isclose(lo, 19.4), :].sum() == 1
+    assert tc1[np.isclose(lo, 18.5), :].sum() == 1
+    assert tc1[np.isclose(lo, 19.0), :].sum() == 1
+
+
+def test_completeness_convention_names():
+    assert EP.COMPLETENESS_CONVENTIONS == ("const_extrap", "molly172")
+    with pytest.raises(ValueError, match="convention"):
+        EP.load_molly_counts_block(convention="nonsense")
+
+
 def test_privacy_guard_rejects_real_loa():
     with pytest.raises(RuntimeError):
         EP.assert_mock_only("/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/"
@@ -152,7 +265,13 @@ def test_pack_schema_conformance(path):
     d, prov = _load(path)
     # -- edges (values, not just shapes)
     assert np.allclose(d["nhat_edges"], EP.NHAT_EDGES)
-    assert np.allclose(d["ntrue_edges"], EP.NHAT_EDGES)   # v1: same grid
+    # schema v1.1 (finding D1): ntrue_edges may EXTEND DOWN; nhat_edges must
+    # stay an exact TAIL subset (the reporting window never moves).
+    ne = np.asarray(d["ntrue_edges"], float)
+    assert len(ne) >= len(EP.NHAT_EDGES)
+    assert np.allclose(ne[len(ne) - len(EP.NHAT_EDGES):], EP.NHAT_EDGES)
+    assert np.allclose(np.diff(ne), EP.N_STEP)
+    n_b = len(ne) - 1
     assert np.allclose(d["zf_edges"], EP.ZF_EDGES)
     assert np.allclose(d["zc_edges"], EP.ZC_EDGES)
     assert np.array_equal(d["kz_to_K"], EP.KZ_TO_K)
@@ -170,8 +289,8 @@ def test_pack_schema_conformance(path):
     assert d["fp_E_alloc"].shape == (15, 8)
     assert d["fp_ell_eff"].shape == () and d["fp_w_sightline_ratio"].shape == ()
     assert d["t_sigma"].shape == (3,)
-    assert d["truth_counts"].shape == (29, 15)
-    assert d["truth_counts_bks"].shape == (29, 15, 8)
+    assert d["truth_counts"].shape == (n_b, 15)
+    assert d["truth_counts_bks"].shape == (n_b, 15, 8)
     assert d["resp_mu_coef"].ndim == 3
     assert d["nhat_masked_bins"].shape == (29,) and d["nhat_masked_bins"].dtype == bool
     # [19.5, 19.7) mask carried
