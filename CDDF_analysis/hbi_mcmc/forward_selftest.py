@@ -206,6 +206,16 @@ def ratio_tables(res, pack):
         out["by_snr"].append(dict(
             s=s, mu=m, obs=o,
             ratio=(m / o if o > 0 else float("nan")), z=float(_z(m, o))))
+    # chi2/dof over the REPORTED n-hat bins with obs > 0 — the SAME definition
+    # run_posterior.forward_closure_gate uses.  It lives in ``total`` because
+    # ``_closure_verdict`` reads it from there: before 2026-07-29 the key was
+    # never emitted, so ``tot.get("chi2_dof", 0.0)`` always evaluated 0.0 and
+    # the chi2 leg of ``--require-closure`` could NEVER fire (fail-OPEN).
+    floor = float(nhat[0])
+    zs = np.array([b["z"] for b in out["by_nhat"]
+                   if b["obs"] > 0 and b["lo"] >= floor - 1e-9], float)
+    out["total"]["chi2_dof"] = float((zs ** 2).sum() / max(len(zs), 1))
+    out["total"]["n_gate_bins"] = int(len(zs))
     return out
 
 
@@ -213,7 +223,8 @@ def print_tables(tab, title=""):
     print(f"\n=== {title} ===")
     t = tab["total"]
     print(f"TOTAL   mu={t['mu']:12.1f}  obs={t['obs']:12.1f}  "
-          f"ratio={t['ratio']:.4f}  z={t['z']:+.1f}")
+          f"ratio={t['ratio']:.4f}  z={t['z']:+.1f}  "
+          f"chi2/dof={t.get('chi2_dof', float('nan')):.1f}")
     print(" n-hat bin        mu         obs      mu/obs      z")
     for r in tab["by_nhat"]:
         print(f" [{r['lo']:.1f},{r['hi']:.1f})  {r['mu']:10.2f} {r['obs']:10.0f} "

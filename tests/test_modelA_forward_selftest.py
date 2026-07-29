@@ -470,3 +470,87 @@ def test_the_committed_artifact_carries_the_field():
     assert "code_dirty" in art, "artifact predates the field; re-derive it"
     assert "code_dirty_scope" in art
     assert len(art["code_commit"]) == 40 and "-dirty" not in art["code_commit"]
+
+# the gate itself — chi2 was FAIL-OPEN (2026-07-29)
+# ---------------------------------------------------------------------------
+def test_ratio_tables_emits_chi2_dof_so_the_gate_is_not_fail_open(spack):
+    """``_closure_verdict`` reads ``tab["total"]["chi2_dof"]``, but
+    ``ratio_tables`` never emitted that key — so ``tot.get("chi2_dof", 0.0)``
+    silently evaluated 0.0 <= max_chi2_dof and the chi2 leg of
+    ``--require-closure`` could NEVER fire. Same fail-open class the module's
+    own commit history flags. ``ratio_tables`` now emits it with the SAME
+    definition ``run_posterior.forward_closure_gate`` uses (Poisson z over the
+    reported n-hat bins with obs > 0)."""
+    res = FS.selftest(spack)
+    tab = FS.ratio_tables(res, spack)
+    assert "chi2_dof" in tab["total"]
+    rows = [b for b in tab["by_nhat"]
+            if b["obs"] > 0 and b["lo"] >= float(spack.nhat_edges[0]) - 1e-9]
+    z = np.array([b["z"] for b in rows], float)
+    assert np.isclose(tab["total"]["chi2_dof"], (z ** 2).sum() / len(z))
+    assert tab["total"]["n_gate_bins"] == len(z)
+
+
+def test_closure_verdict_fails_on_chi2_alone():
+    """``_closure_verdict``'s chi2 leg, in isolation: a table whose totals and
+    per-bin z are all tiny but whose chi2/dof is huge must FAIL.
+
+    HISTORY (2026-07-29 integration). Two branches fixed the same fail-open in
+    two different places, and the MERGED contract is the stronger one:
+
+      * ``wip/d1-basis-pad`` made ``ratio_tables`` EMIT ``total["chi2_dof"]``,
+        because ``_closure_verdict`` read ``tot.get("chi2_dof", 0.0)`` and the
+        key was never present, so the arm read 0.0 and could not fire.
+      * ``wip/gate-failopen`` instead made ``_closure_verdict`` COMPUTE chi2/dof
+        itself from the ``by_nhat`` rows, so it can no longer depend on a
+        producer remembering to supply a key.
+
+    The computed version wins on merge, which retired this test's original
+    form: it planted ``total["chi2_dof"] = 999`` and asserted the gate read it.
+    Under the merged contract a planted total is correctly IGNORED, so the old
+    assertion inverted. Rewritten here to exercise the arm as it now works —
+    and to pin the scenario the arm actually exists for, which the planted-key
+    version never reached: MANY MILDLY-OFF BINS, each individually inside the
+    per-bin |z| limit, whose chi2/dof is nonetheless way over tolerance."""
+    # every |z| = 2.0 < max_abs_z_bin 5.0, but mean(z^2) = 4.0 > max_chi2_dof 3.0
+    rows = [{"z": 2.0, "obs": 100.0} for _ in range(12)]
+    tab = {"total": {"z": 0.1}, "by_nhat": rows, "by_z": [{"z": 0.1}]}
+    v = FS._closure_verdict(tab, 5.0, 5.0, 3.0)
+    assert v["closes"] is False, v
+    assert any("chi2/dof" in r for r in v["reasons"]), v["reasons"]
+    assert v["chi2_dof"] == pytest.approx(4.0)
+    assert v["n_bins"] == 12
+    # the |z| legs must NOT be what failed it — the chi2 arm is doing the work
+    assert not any("max|z|" in r for r in v["reasons"]), v["reasons"]
+    # and a planted total["chi2_dof"] must be IGNORED, not trusted
+    tab_planted = {"total": {"z": 0.1, "chi2_dof": 999.0},
+                   "by_nhat": [{"z": 0.1, "obs": 100.0}], "by_z": [{"z": 0.1}]}
+    assert FS._closure_verdict(tab_planted, 5.0, 5.0, 3.0)["closes"] is True
+
+
+def test_closure_verdict_is_fail_closed_end_to_end(spack):
+    """THE powered test for the 2026-07-29 fail-open fix: run the REAL producer
+    (``ratio_tables``) and feed ITS output to ``_closure_verdict`` with the |z|
+    legs opened wide, so the chi2 leg is the only thing that can fail. Remove
+    the ``chi2_dof`` emission from ``ratio_tables`` and this goes red, because
+    ``tot.get("chi2_dof", 0.0)`` silently reads 0.0 <= tolerance."""
+    tab = FS.ratio_tables(FS.selftest(spack), spack)
+    # read it EXACTLY the way _closure_verdict does, so a missing key surfaces
+    # as the fail-open it is rather than as a KeyError
+    chi2 = tab["total"].get("chi2_dof", 0.0)
+    assert chi2 > 0.0, (
+        "ratio_tables produced no usable chi2_dof — _closure_verdict's "
+        "tot.get('chi2_dof', 0.0) would read 0.0 and the chi2 leg could never "
+        "fire (this IS the 2026-07-29 fail-open bug)")
+    # |z| legs wide open (nothing can trip them), chi2 tolerance well under the
+    # measured value -> the ONLY route to closes=False is the chi2 leg.
+    huge = 1e9
+    v = FS._closure_verdict(tab, huge, huge, chi2 / 2.0)
+    assert v["closes"] is False, (
+        "the chi2 leg did not fire on a table produced by ratio_tables — the "
+        "gate is fail-OPEN again (chi2_dof missing from tab['total']?)")
+    assert any("chi2/dof" in r for r in v["reasons"])
+    # and it PASSES when the tolerance is above the measured value, so the
+    # assertion above is about chi2 and not about some unrelated leg
+    v_ok = FS._closure_verdict(tab, huge, huge, chi2 * 2.0)
+    assert v_ok["closes"] is True
