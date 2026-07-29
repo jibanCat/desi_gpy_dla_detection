@@ -345,3 +345,178 @@ def test_subdla_mock_records_a_multi_sigma_point_vs_median_gap():
         assert abs(gap) / hw > 5.0, (
             f"{kind}: |raw_median-MAP|/halfwidth68 = {abs(gap)/hw:.2f}")
         assert gap > 0, f"{kind}: expected the sub-DLA MC median ABOVE the MAP"
+
+
+# =============================================================================
+# 8. the classifier must FAIL CLOSED and must not crash on the second schema
+# =============================================================================
+#: a real posterior artifact keys its point as ``point_q50`` beside q16/q84 -- there is
+#: no ``MAP``/``point`` key anywhere in it.
+def _posterior_artifact(*, paper_facing, estimand=EST.POSTERIOR_MEDIAN_CI, n=3):
+    tiers = {}
+    for i in range(n):
+        tiers[f"tier{i}"] = dict(mean=1.0, sd=0.1, n_draws=2000, point_q50=1.0,
+                                 q025=0.8, q16=0.9, q84=1.1, q975=1.2)
+    md = dict(paper_facing=paper_facing)
+    if estimand is not None:
+        md["estimand"] = estimand
+    return dict(metadata=md, posterior={"tiers": tiers})
+
+
+def test_classifier_sees_bands_keyed_by_point_q50():
+    """REGRESSION: _POINT_KEYS lacked point_q50/q50, so a posterior artifact with dozens
+    of band records looked like a POINT_ONLY artifact and every structural check was
+    silently skipped."""
+    art = _posterior_artifact(paper_facing=True, n=7)
+    res = EST.classify_estimand(art, name="fixture")
+    assert res["n_band_records"] == 7, res
+
+
+def test_producer_paper_facing_false_is_never_overturned():
+    """FAIL CLOSED: the artifact's own producer stamped paper_facing=False. No amount of
+    inference may re-authorize it -- a gate may veto, never re-authorize."""
+    art = _posterior_artifact(paper_facing=False)
+    res = EST.classify_estimand(art, name="fixture")
+    assert res["estimand"] == EST.POSTERIOR_MEDIAN_CI
+    assert res["paper_facing"] is False, res
+    assert res["producer_paper_facing"] is False
+
+
+def test_producer_paper_facing_false_vetoes_a_band_free_artifact_too():
+    """The band-free (POINT_ONLY-shaped) return path is the one that actually shipped
+    the bug: it returned early and never looked at metadata['paper_facing']."""
+    art = dict(metadata=dict(estimand=EST.POSTERIOR_MEDIAN_CI, paper_facing=False),
+               summary=dict(n=3))
+    res = EST.classify_estimand(art, name="fixture")
+    assert res["n_band_records"] == 0
+    assert res["paper_facing"] is False, res
+
+
+def test_producer_paper_facing_true_cannot_launder_a_recentered_band():
+    """The veto is one-directional: a producer's True does NOT re-authorize."""
+    art = _artifact(1.0, 1.0, paper_facing=True, estimand=EST.POSTERIOR_MEDIAN_CI)
+    res = EST.classify_estimand(art, name="fixture")
+    assert res["estimand"] == EST.DIAGNOSTIC_RECENTERED
+    assert res["paper_facing"] is False
+
+
+# --- the two incompatible metadata['estimand'] schemas ----------------------
+_DICT_STAMP = {
+    "quantity": "R0 = recovered / truth, INTEGRATED (z-marginalised)",
+    "point": "PLUG-IN MAP of the catalog-HBI v3 estimator. NOT a posterior median.",
+    "interval": "NONE. --point-only: no MC band was drawn.",
+}
+
+
+def test_classify_estimand_does_not_crash_on_a_dict_stamp():
+    """REGRESSION: `stamped in ESTIMAND_VOCABULARY` raised TypeError (unhashable dict)
+    on every artifact using the descriptive schema."""
+    art = dict(metadata=dict(estimand=dict(_DICT_STAMP)), summary=dict(n=1))
+    res = EST.classify_estimand(art, name="fixture")
+    assert res["estimand"] in EST.ESTIMAND_VOCABULARY
+    assert res["paper_facing"] is False
+    assert res["estimand_detail"] == _DICT_STAMP
+
+
+def test_dict_stamp_carrying_a_vocabulary_word_is_read_from_it():
+    stamp = dict(_DICT_STAMP, **{"class": EST.PLUGIN_MAP_MC})
+    art = dict(metadata=dict(estimand=stamp), summary=dict(n=1))
+    res = EST.classify_estimand(art, name="fixture")
+    assert res["estimand"] == EST.PLUGIN_MAP_MC
+    assert res["estimand_detail"]["quantity"] == _DICT_STAMP["quantity"]
+
+
+def test_assert_paper_facing_does_not_crash_on_a_dict_stamp():
+    md = dict(estimand=dict(_DICT_STAMP), paper_facing=True)
+    with pytest.raises(EST.RecenteredBandRetired):
+        EST.assert_paper_facing(md, where="fixture")
+
+
+def test_normalize_estimand_stamp_accepts_both_schemas():
+    assert EST.normalize_estimand_stamp(EST.PLUGIN_MAP_MC) == (EST.PLUGIN_MAP_MC, None)
+    label, detail = EST.normalize_estimand_stamp(dict(_DICT_STAMP))
+    assert label is None and detail == _DICT_STAMP
+    label, detail = EST.normalize_estimand_stamp("some free text")
+    assert label is None and detail == {"legacy_estimand_text": "some free text"}
+
+
+def test_normalize_estimand_metadata_emits_one_schema():
+    """ACCEPT BOTH ON READ, EMIT ONE ON WRITE: after normalisation metadata['estimand']
+    is always a vocabulary STRING and the descriptive dict lives under
+    metadata['estimand_detail'] -- nothing is discarded."""
+    md = dict(estimand=dict(_DICT_STAMP), paper_facing=False)
+    out = EST.normalize_estimand_metadata(md, label=EST.POINT_ONLY)
+    assert out is md                                   # in place
+    assert md["estimand"] == EST.POINT_ONLY
+    assert md[EST.ESTIMAND_DETAIL_KEY] == _DICT_STAMP
+    # idempotent
+    again = dict(md)
+    EST.normalize_estimand_metadata(md)
+    assert md == again
+
+
+def test_stamp_band_estimand_migrates_a_pre_existing_dict_stamp():
+    md = dict(estimand=dict(_DICT_STAMP))
+    EST.stamp_band_estimand(md, band_recenter=False, posterior_sampled=False)
+    assert md["estimand"] == EST.PLUGIN_MAP_MC
+    assert md[EST.ESTIMAND_DETAIL_KEY] == _DICT_STAMP
+
+
+# --- the real artifacts that exercised both defects -------------------------
+_DICT_SCHEMA_ARTIFACTS = (
+    os.path.join(_REPO, "CDDF_analysis", "hbi", "crossmock_transfer_artifact.json"),
+    "/home/mfho/hbi_mcmc_wt/CDDF_analysis/hbi/calccddf_vs_hbi.json",
+)
+_FAIL_OPEN_ARTIFACT = (
+    "/home/mfho/hbi_mcmc_wt/CDDF_analysis/hbi_mcmc/posterior_synthetic_smoke.json")
+
+
+@pytest.mark.parametrize("path", _DICT_SCHEMA_ARTIFACTS)
+def test_real_dict_schema_artifacts_classify_without_crashing(path):
+    if not os.path.exists(path):
+        pytest.skip(f"artifact absent: {path}")
+    res = EST.classify_estimand(path)
+    assert res["estimand"] in EST.ESTIMAND_VOCABULARY
+    assert res["paper_facing"] is False
+
+
+@pytest.mark.skipif(not os.path.exists(_FAIL_OPEN_ARTIFACT),
+                    reason="second worktree artifact absent")
+def test_real_posterior_smoke_artifact_is_not_certified_paper_facing():
+    """The exact fail-open case: a synthetic SELF-calibration smoke whose producer
+    stamped paper_facing=False, which the classifier certified True."""
+    with open(_FAIL_OPEN_ARTIFACT) as fh:
+        doc = json.load(fh)
+    assert doc["metadata"]["paper_facing"] is False, "fixture assumption changed"
+    res = EST.classify_estimand(doc, name=_FAIL_OPEN_ARTIFACT)
+    assert res["n_band_records"] > 0, "point_q50 band records still invisible"
+    assert res["paper_facing"] is False, res
+
+
+# =============================================================================
+# 9. the package surface: every imported estimand name is EXPORTED
+# =============================================================================
+def test_unblind_package_exports_every_name_it_imports_from_estimand():
+    """The uncommitted __init__ diff imported ``estimand`` + 12 of its names but listed
+    NONE of them in __all__, so ``from CDDF_analysis.unblind import *`` (and every
+    tooling surface that trusts __all__) could not see the estimand vocabulary."""
+    import CDDF_analysis.unblind as U
+
+    assert "estimand" in U.__all__
+    for name in ("classify_estimand", "band_estimand", "stamp_band_estimand",
+                 "assert_paper_facing", "is_paper_facing",
+                 "normalize_estimand_stamp", "normalize_estimand_metadata",
+                 "RecenteredBandRetired", "ESTIMAND_VOCABULARY",
+                 "ESTIMAND_DETAIL_KEY", "POSTERIOR_MEDIAN_CI", "PLUGIN_MAP_MC",
+                 "DIAGNOSTIC_RECENTERED", "MARGINAL_COMBINED", "POINT_ONLY",
+                 "UNKNOWN"):
+        assert name in U.__all__, f"{name} imported but missing from __all__"
+        assert getattr(U, name) is getattr(EST, name)
+
+
+def test_unblind_all_is_fully_resolvable():
+    """Guard the guard: every __all__ entry must actually exist on the package."""
+    import CDDF_analysis.unblind as U
+    missing = [n for n in U.__all__ if not hasattr(U, n)]
+    assert not missing, missing
+    assert len(set(U.__all__)) == len(U.__all__), "duplicate entries in __all__"

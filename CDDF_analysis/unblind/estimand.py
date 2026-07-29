@@ -98,8 +98,80 @@ class RecenteredBandRetired(RuntimeError):
     declared diagnostic-only.  See :mod:`CDDF_analysis.unblind.estimand`."""
 
 
-def is_paper_facing(estimand: str) -> bool:
-    """True only for the estimand classes admissible as a paper-facing band."""
+#: metadata key that carries the free-text / structured DESCRIPTION accompanying the
+#: one-word ``estimand`` label.  See :func:`normalize_estimand_stamp`.
+ESTIMAND_DETAIL_KEY = "estimand_detail"
+
+#: keys inside a dict-valued ``estimand`` stamp that may carry the vocabulary word.
+_DETAIL_LABEL_KEYS = ("estimand", "class", "label", "kind", "vocabulary")
+
+
+def normalize_estimand_stamp(value, detail=None):
+    """Accept EITHER ``metadata['estimand']`` schema; return ``(label, detail)``.
+
+    Two incompatible schemas are in circulation in this repo:
+
+      * SCHEMA A (canonical) -- a single vocabulary STRING, e.g. ``"PLUGIN_MAP_MC"``.
+      * SCHEMA B (descriptive) -- a DICT of free-text prose keyed by aspect
+        (``quantity`` / ``point`` / ``interval`` / ``ff`` / ``hbi`` / ...), written by
+        ``crossmock_transfer_artifact.json`` and ``calccddf_vs_hbi.json``.
+
+    Schema B carries no vocabulary word, so it cannot be compared against
+    ``ESTIMAND_VOCABULARY`` -- and doing so literally crashed
+    (``TypeError: unhashable type: 'dict'``), which is worse than misclassifying:
+    the artifact could not be audited at all.
+
+    ``label`` is a member of :data:`ESTIMAND_VOCABULARY`, or ``None`` when the stamp
+    carries no vocabulary word (the caller must then INFER the class).  ``detail`` is
+    the descriptive dict, or ``None``.  Nothing is ever discarded: a non-vocabulary
+    string is preserved under ``detail['legacy_estimand_text']``.
+    """
+    out_detail = dict(detail) if isinstance(detail, dict) else {}
+    if isinstance(value, dict):
+        for k in _DETAIL_LABEL_KEYS:
+            v = value.get(k)
+            if isinstance(v, str) and v in ESTIMAND_VOCABULARY:
+                label = v
+                break
+        else:
+            label = None
+        out_detail.update(value)
+        return label, (out_detail or None)
+    if value is None:
+        return None, (out_detail or None)
+    if isinstance(value, str):
+        if value in ESTIMAND_VOCABULARY:
+            return value, (out_detail or None)
+        out_detail.setdefault("legacy_estimand_text", value)
+        return None, out_detail
+    out_detail.setdefault("legacy_estimand_text", repr(value))
+    return None, out_detail
+
+
+def normalize_estimand_metadata(metadata: dict, *, label: str = None) -> dict:
+    """EMIT ONE SCHEMA: rewrite ``metadata`` in place so ``metadata['estimand']`` is a
+    vocabulary STRING and any descriptive dict lives under
+    ``metadata[ESTIMAND_DETAIL_KEY]``.  Returns ``metadata``.  Idempotent.
+
+    ``label`` overrides the label read from the stamp; when neither is available the
+    label becomes :data:`UNKNOWN` (explicitly unclassified, never silently admissible).
+    """
+    read_label, detail = normalize_estimand_stamp(
+        metadata.get("estimand"), metadata.get(ESTIMAND_DETAIL_KEY))
+    metadata["estimand"] = label or read_label or UNKNOWN
+    if detail:
+        metadata[ESTIMAND_DETAIL_KEY] = detail
+    return metadata
+
+
+def is_paper_facing(estimand) -> bool:
+    """True only for the estimand classes admissible as a paper-facing band.
+
+    Tolerates a dict-valued (schema B) stamp: it is normalised first, and a stamp with
+    no vocabulary word is NOT paper-facing.
+    """
+    if not isinstance(estimand, str):
+        estimand, _ = normalize_estimand_stamp(estimand)
     return estimand in PAPER_FACING_ESTIMANDS
 
 
@@ -139,7 +211,10 @@ def stamp_band_estimand(metadata: dict, *, band_recenter: bool,
                         posterior_sampled=posterior_sampled,
                         marginal_combined=marginal_combined,
                         has_band=has_band)
-    metadata["estimand"] = est
+    # migrate any pre-existing descriptive (schema B) stamp into ``estimand_detail``
+    # instead of silently clobbering it -- that prose is the only record of WHAT the
+    # number is on several artifacts.
+    normalize_estimand_metadata(metadata, label=est)
     metadata["band_paper_facing"] = bool(is_paper_facing(est))
     # ``paper_facing`` is a CONJUNCTION of every admissibility gate on the artifact
     # (the resp_kind/kernel gate in CDDF_analysis.unblind.resp_kind already writes it),
@@ -155,7 +230,8 @@ def stamp_band_estimand(metadata: dict, *, band_recenter: bool,
 def assert_paper_facing(metadata: dict, where: str = "") -> None:
     """Fail loudly if ``metadata`` claims paper_facing=True while carrying an estimand
     class that the PI decision retired.  Cheap guard for headline writers."""
-    est = metadata.get("estimand", UNKNOWN)
+    label, _detail = normalize_estimand_stamp(metadata.get("estimand"))
+    est = label or UNKNOWN     # a descriptive-only (schema B) stamp is UNKNOWN, not OK
     claimed = bool(metadata.get("paper_facing", False))
     if claimed and not is_paper_facing(est):
         raise RecenteredBandRetired(
@@ -169,7 +245,12 @@ def assert_paper_facing(metadata: dict, where: str = "") -> None:
 # ---------------------------------------------------------------------------
 _BAND_KEYS = ("q16", "q84", "q025", "q975", "band68", "band95",
               "lo68", "hi68", "lo95", "hi95", "f68_lo", "f68_hi")
-_POINT_KEYS = ("MAP", "point", "f", "MAP_R0")
+# NOTE: ``point_q50`` / ``q50`` MUST be here.  A faithful posterior artifact
+# (``run_posterior.py``) keys its reported point as ``point_q50`` beside q16/q84 and
+# carries NO ``MAP``/``point`` key anywhere.  While they were missing, such an artifact
+# yielded ZERO band records, took the POINT_ONLY early-return, and every structural
+# check was silently skipped -- the classifier then trusted the free-text stamp.
+_POINT_KEYS = ("MAP", "point", "f", "MAP_R0", "point_q50", "q50")
 
 
 def _walk(node, path=""):
@@ -230,18 +311,41 @@ def classify_estimand(artifact, name: str = "") -> dict:
     if not isinstance(meta, dict):
         meta = {}
     evidence = []
-    stamped = meta.get("estimand")
-    if stamped is not None:
-        evidence.append(f"stamped estimand={stamped!r}")
+    raw_stamp = meta.get("estimand")
+    stamped, detail = normalize_estimand_stamp(raw_stamp, meta.get(ESTIMAND_DETAIL_KEY))
+    if isinstance(raw_stamp, dict):
+        evidence.append(
+            f"stamped estimand is a DESCRIPTIVE DICT (schema B, keys "
+            f"{sorted(raw_stamp)}); vocabulary label={stamped!r}")
+    elif raw_stamp is not None:
+        evidence.append(f"stamped estimand={raw_stamp!r} -> label={stamped!r}")
+
+    # The PRODUCER'S VETO.  ``metadata['paper_facing']`` is written by the routine that
+    # made the artifact and knows things the file's shape cannot show (here: that the
+    # molly calibration set IS the same synthetic mock, so the run is a self-
+    # calibration smoke).  Inference may only ever REMOVE paper-facing status, never
+    # restore it, so this is ANDed into every return path below.
+    declared_pf = meta.get("paper_facing")
+
+    def _finish(est, n_records):
+        pf = is_paper_facing(est)
+        if pf and declared_pf is False:
+            pf = False
+            evidence.append(
+                "producer stamped metadata['paper_facing']=False -- the producer's "
+                "veto WINS over the inferred class (a gate may veto, never "
+                "re-authorize)")
+        return dict(name=name, estimand=est, paper_facing=pf, stamped=stamped,
+                    estimand_detail=detail, producer_paper_facing=declared_pf,
+                    evidence=evidence, n_band_records=n_records)
 
     recs = _band_records(artifact)
     if not recs:
         est = POINT_ONLY
         evidence.append("no band record found (point-only artifact)")
-        if stamped in ESTIMAND_VOCABULARY and stamped != POINT_ONLY:
+        if stamped is not None and stamped != POINT_ONLY:
             est = stamped
-        return dict(name=name, estimand=est, paper_facing=is_paper_facing(est),
-                    stamped=stamped, evidence=evidence, n_band_records=0)
+        return _finish(est, 0)
 
     n_rec = 0
     for path, rec in recs:
@@ -277,16 +381,16 @@ def classify_estimand(artifact, name: str = "") -> dict:
 
     if n_rec:
         est = DIAGNOSTIC_RECENTERED
-    elif stamped in ESTIMAND_VOCABULARY:
+    elif stamped is not None:
         est = stamped
     else:
-        # unstamped, not recentered: the historical default on every band writer in
-        # this repo is a plug-in MAP point with a bootstrap/MC cloud around it.
+        # unstamped (or descriptive-only), not recentered: the historical default on
+        # every band writer in this repo is a plug-in MAP point with a bootstrap/MC
+        # cloud around it.
         est = PLUGIN_MAP_MC
         evidence.append("unstamped, not recentered -> historical plug-in MAP + MC cloud")
 
-    return dict(name=name, estimand=est, paper_facing=is_paper_facing(est),
-                stamped=stamped, evidence=evidence, n_band_records=len(recs))
+    return _finish(est, len(recs))
 
 
 def _sniff_indent(raw: str, default: int = 2) -> int:
@@ -322,7 +426,9 @@ def mark_retired(path: str, *, dry_run: bool = True,
     if skip_point_only and res["estimand"] == POINT_ONLY:
         return res
     meta = art.setdefault("metadata", {})
-    meta["estimand"] = res["estimand"]
+    # normalise to ONE schema on write: vocabulary string in ``estimand``, any
+    # descriptive dict preserved verbatim under ``estimand_detail``.
+    normalize_estimand_metadata(meta, label=res["estimand"])
     meta["paper_facing"] = bool(res["paper_facing"])
     if res["estimand"] in _RETIRED_REASON_BY_CLASS:
         meta["retired_reason"] = _RETIRED_REASON_BY_CLASS[res["estimand"]]
