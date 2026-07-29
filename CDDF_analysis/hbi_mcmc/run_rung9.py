@@ -92,6 +92,18 @@ def main():
             code_commit=code_commit,
             pack_provenance_commit=prov.get("code_commit"),
             farr_gate_override=a.allow_low_farr,
+            # A bypass must be visible AS a bypass downstream, not merely as a
+            # free-text reason field a reader has to notice: every prepared
+            # rung-9/10 sbatch passes --allow-low-farr, so without this every
+            # such artifact was indistinguishable from a clean one.
+            bypasses=({"allow_low_farr": a.allow_low_farr}
+                      if a.allow_low_farr is not None else {}),
+            paper_facing=False if a.allow_low_farr is not None else None,
+            paper_facing_note=(
+                "a run with the Farr headroom gate bypassed can never be "
+                "paper-facing" if a.allow_low_farr is not None else
+                "rung 9 is a VALIDATION rung; paper-facing status is decided "
+                "by run_posterior / run_evidence, not here"),
             date=time.strftime("%Y-%m-%d"),
             rederive=(f"conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc."
                       f"run_rung9 --pack {a.pack} --out <out> --warmup {a.warmup} "

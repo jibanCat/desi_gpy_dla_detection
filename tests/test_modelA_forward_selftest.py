@@ -334,3 +334,12 @@ def test_rung9v3_sbatch_preflight_is_fail_closed_and_pad_guarded():
     assert "--require-closure" in txt, "pre-flight is a REPORT, not a gate"
     assert "--require-basis-pad" in txt, (
         "the pre-flight does not refuse an UNPADDED pack (finding D1)")
+
+
+def test_run_rung9_records_the_farr_bypass_as_a_bypass():
+    """Every prepared rung-9/10 sbatch passes --allow-low-farr, so the
+    artifact must say so in a machine-readable field, not only in a free-text
+    reason a reader has to notice."""
+    src = (_REPO / "CDDF_analysis/hbi_mcmc/run_rung9.py").read_text()
+    assert "bypasses=" in src
+    assert "paper_facing=False if a.allow_low_farr is not None" in src
