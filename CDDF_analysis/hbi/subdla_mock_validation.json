@@ -31,7 +31,7 @@
         "CDDF_analysis/hbi/cddf_catalog_hbi.py::truth_reductions"
       ],
       "fixture": "tests/test_b16_truth_zmask.py",
-      "rule": "CONTAMINATION TEST: is the number built from tr['f_truth']? -- NOT 'is it called Omega?'. Contaminated here: every omega_tru_*, every r0_omega_*, and every per-bin f_tru (which IS f_truth). CLEAN here: every dN/dX (dndx_est/dndx_tru/r0_dndx), which goes through dndx_total and was always z-masked. The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
+      "rule": "CONTAMINATION TEST: is the number built from tr['f_truth']? -- NOT 'is it called Omega?'. Contaminated here: every omega_tru_*, every r0_omega_*, and every per-bin f_tru (which IS f_truth). CLEAN here: every INTEGRATED dN/dX (integrated dndx_est/dndx_tru/r0_dndx), which goes through dndx_total and was always z-masked. NOT clean: the PER-BIN dndx_tru/r0, which are built from f_truth, not from dndx_total (CORRECTED 2026-07-29). The leak is NOT a scalar -- RE-DERIVE per configuration, NEVER rescale.",
       "measured_leak_factor": {
         "omega_cum_19.5": 1.059321381914033,
         "omega_cum_20.0": 1.0595311425486416,
@@ -43,8 +43,10 @@
       "affected_keys": [
         "integrated.*/omega_tru_* (CONTAMINATED)",
         "integrated.*/r0_omega_* (CONTAMINATED)",
-        "per_bin.*[*].f_tru (CONTAMINATED -- it IS f_truth)",
-        "integrated.*/dndx_* and per_bin.*[*].dndx_* (CLEAN)"
+        "per_bin.*[*].f_tru (CONTAMINATED -- it IS t0['f_truth'], read directly at CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py:208)",
+        "per_bin.*[*].dndx_tru and per_bin.*[*].r0 (CONTAMINATED -- CORRECTED 2026-07-29; these were previously listed CLEAN, which is WRONG in the dangerous direction. per-bin dndx_tru is NOT read from t0['dndx_total']: it is f_tru*dN_b (subdla_loa0_validation.py:219), i.e. a unit conversion of the LEAKY f_truth (sel picks exactly one fine bin, so dndx_tru == f_tru*(10**bhi - 10**blo) identically), and per-bin r0 = dndx_est/dndx_tru inherits it through its denominator.",
+        "integrated.*/dndx_est_*, dndx_tru_*, r0_dndx_* (CLEAN -- these DO come from t0['dndx_total'], which always carried the t_zidx >= 0 mask; this is why the post-fix re-derivation records dndx_tru_195_203_UNCHANGED)",
+        "integrated.*/omega_est_* and per_bin.*[*].{f_est,dndx_est} (estimator side, UNAFFECTED by B16)"
       ],
       "rederived_post_b16": {
         "_how": "python CDDF_analysis/diagnostics/subdla/subdla_loa0_validation.py --force (kappa path; re-run 2026-07-28 on the post-fix tree)",
@@ -59,6 +61,21 @@
           "r0_omega_195_203": 0.6551600518757067,
           "r0_dndx_195_203_UNCHANGED": 0.4506168124275738
         }
+      },
+      "correction_2026_07_29": {
+        "on": "2026-07-29",
+        "what": "affected_keys previously read 'integrated.*/dndx_* and per_bin.*[*].dndx_* (CLEAN)'. The per_bin half of that is FALSE.",
+        "why_it_matters": "It certified a contaminated row as quotable. The converse error is also on record: a reading that took the exact identity f_tru == dndx_tru/(10**bhi - 10**blo) as proof that f_tru is a harmless unit conversion of a clean dndx_tru. The identity is symmetric and settles nothing about direction; the source and the closure test settle it.",
+        "evidence_source": "subdla_loa0_validation.py:208 f_tru = t0['f_truth']; :217 per-bin f_tru = sum(f_tru[sel]); :219 per-bin dndx_tru = sum(f_tru[sel]*dN_b[sel]); :220 per-bin r0 = dndx_est/dndx_tru. Only the INTEGRATED dndx_* (:229-:235) read t0['dndx_total'].",
+        "evidence_closure_test": "Summing the 8 per-bin rows over [19.5,20.3) must reproduce the integrated value for the same band. ESTIMATOR side: closes to 1e-16 (rules out any support/binning explanation). TRUTH side: overshoots by 1.056365947727909x -- the B16 z-leak. Same N support, same X_sum, same file; the only difference is the z mask.",
+        "measured": {
+          "sum_per_bin_dndx_tru_195_203": 0.09795487274094873,
+          "integrated_dndx_tru_195_203_CLEAN": 0.09272816200828467,
+          "ratio": 1.056365947727909,
+          "sum_per_bin_dndx_est_over_integrated_dndx_est": 1.0
+        },
+        "still_true": "per_bin f_tru IS f_truth and IS contaminated -- that line was always correct. The INTEGRATED dndx_* remain CLEAN.",
+        "fixture": "tests/test_b16_ell_contamination.py (test_subdla_per_bin_* / test_subdla_b16_stamp_does_not_declare_the_per_bin_dndx_clean)"
       }
     }
   },
