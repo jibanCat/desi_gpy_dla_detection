@@ -486,14 +486,23 @@ def test_two_independent_forward_derivations_agree_bitforbit():
 
     NOTE: this PASSES on the current tree -- it is a genuine cross-file corroboration of two
     separately-generated MOCK artifacts (not a tautology, not gated on the deliverable). It
-    certifies the number the re-stamp will commit is reproduced by two pipelines."""
+    certifies the number the re-stamp will commit is reproduced by two pipelines.
+
+    SCOPE, stated rather than overclaimed: for three of the four endpoints this compares two
+    hex strings that live in the SAME committed file, so it certifies that the builder saw
+    the two sides agree at stamp time -- it does NOT re-derive either side. Only the
+    dN/dX cum(19.5) endpoint has arithmetic teeth, via the cross-namespace anchor below:
+    its digest must equal the DERIVED commitment's digest, and that one is recomputed from
+    committed data (see test_tripwire_derived_commitment_recomputes_from_committed_data and
+    step (ii) of test_band_is_cumulative_difference_not_direct_integral). A fabricated
+    endpoint block is therefore caught at that pointer, and only at that pointer."""
     # --- part 1: the head-vs-crossmock endpoint agreement. UNCONDITIONAL. ---------------
     # Both source artifacts were untracked scratch; the headline is now RETIRED (decision
     # 7). Its tombstone commits sha256(repr(float)) at each pointer for BOTH sides, and the
     # builder refused to write the tombstone unless the digests matched. Asserting digest
-    # equality here therefore certifies exactly the same bit-for-bit claim, needs no file
-    # on disk, and can never degrade to a skip.
-    cs, _ = _headline_tripwire()
+    # equality here re-affirms the record of that stamp-time check, needs no file on disk,
+    # and can never degrade to a skip -- but it is a record check, not a re-derivation.
+    cs, derived = _headline_tripwire()
     endpoints = [f"/measurement/{lim}/{m}/integrated/MAP"
                  for m in ("dndx", "omega") for lim in ("19.5", "20.3")]
     for ptr in endpoints:
@@ -506,6 +515,24 @@ def test_two_independent_forward_derivations_agree_bitforbit():
             "two independent forward derivations do NOT agree bit-for-bit.")
     assert len({cs[p]["sha256_of_repr"] for p in endpoints}) == 4, (
         "the four endpoint commitments are not distinct -- they cannot all be the same leaf.")
+
+    # --- part 2: the ONE endpoint with real arithmetic teeth. ----------------------------
+    # The four assertions above compare two hex strings inside one committed file, so on
+    # their own they cannot detect a FABRICATED endpoint block (four distinct matching pairs
+    # certifying numbers that never existed pass them all). The dN/dX cum(19.5) pointer is
+    # shared with the DERIVED commitment, which IS recomputed from committed data, so
+    # requiring the two namespaces to agree at that pointer anchors the endpoint block on
+    # arithmetic. They are identical by construction at stamp time (both are
+    # sha256(repr(cum195_dndx))), so this is a free, exact cross-check.
+    cum195 = "/measurement/19.5/dndx/integrated/MAP"
+    assert cum195 in derived, (
+        "the tombstone carries no DERIVED commitment for cum(19.5) -- the endpoint block "
+        "then has no arithmetic anchor at all.")
+    assert cs[cum195]["sha256_of_repr"] == derived[cum195]["sha256_of_repr"], (
+        f"the endpoint commitment at {cum195} disagrees with the DERIVED commitment for the "
+        "SAME pointer. They are the same float by construction, so either the endpoint "
+        "block was fabricated/edited or the derived anchor was: the tripwire's only "
+        "re-derivable endpoint no longer certifies anything.")
 
 
 def test_crossmock_artifact_still_matches_the_certified_endpoints():

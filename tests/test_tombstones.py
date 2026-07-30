@@ -23,16 +23,32 @@ loa-124) and this module holds no values at all, mock or otherwise.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
+import sys
 
 import pytest
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOMB_DIR_REL = "CDDF_analysis/hbi/tombstones"
 TOMB_DIR = os.path.join(_REPO, TOMB_DIR_REL)
+BUILDER_REL = f"{TOMB_DIR_REL}/build_tombstones.py"
+BUILDER = os.path.join(_REPO, "CDDF_analysis", "hbi", "tombstones",
+                       "build_tombstones.py")
+
+# Two DIFFERENT roles, kept apart on purpose (defect 3):
+#   RECORDING_WORKTREE -- a HISTORICAL fact about the stamp, pinned here independently of
+#       the records so a record that redirects `artifact.read_from_worktree` is RED. Host-
+#       independent: it is what the record must DECLARE, whatever host runs the test.
+#   CANDIDATE_TREES    -- where this HOST is willing to look for a reappeared copy. Also
+#       pinned, never read from the record. Absent trees make the byte-level half inert,
+#       which is reported explicitly rather than passed over.
+RECORDING_WORKTREE = "/home/mfho/desi_gpy_dla_detection"
+CANDIDATE_TREES = tuple(dict.fromkeys((_REPO, RECORDING_WORKTREE)))
 
 # ---------------------------------------------------------------------------
 # THE PIN. Hard rule 4: this set may not shrink silently.
@@ -47,6 +63,25 @@ TOMBSTONED = {
         "CDDF_analysis/hbi/subdla_floor_mc_band.json",
     "subdla_mock_headline.tombstone.json":
         "CDDF_analysis/hbi/subdla_mock_headline.json",
+}
+
+# ---------------------------------------------------------------------------
+# THE FINGERPRINT PIN (defect 3). tombstone filename -> (sha256, bytes) of the RETIRED
+# artifact, held here so the reappearance guard does not take both the expected digest and
+# the path to compare against from the record it is auditing. Hex digests and byte counts
+# are not science values; the retired artifacts were MOCK (2LPT-0, loa-124) in any case.
+# These must equal the committed records; test_working_tree_reappearance_* asserts both
+# directions, so a re-stamp that changes them is RED until this pin is updated deliberately.
+# ---------------------------------------------------------------------------
+EXPECTED_FINGERPRINT = {
+    "lls_recovery_figures.tombstone.json": (
+        "84c0c802b44fa0218c32f7802b070e559507f7a3db5687ead7cc7ca82735928a", 6407),
+    "subdla_edge_systematic.tombstone.json": (
+        "b22c729d75409f7174973a54f67a1bc38afce90bb76f52dacabacdfee28a3742", 14192),
+    "subdla_floor_mc_band.tombstone.json": (
+        "4b37051ed0c7d65a4fd642ca006085e9e6d6531f767adcab24973514e6e9f5cb", 9340),
+    "subdla_mock_headline.tombstone.json": (
+        "b13adddae7099f0fa9b99da3fae3ef460a67bdfacf18410017ff0eee96f79268", 59484),
 }
 
 ALLOWED_DEFECT_CODES = {
@@ -124,6 +159,114 @@ def _resolve(doc, pointer):
         else:
             return None
     return cur
+
+
+def _load_builder():
+    spec = importlib.util.spec_from_file_location("_tomb_builder", BUILDER)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_tomb_builder"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _source_artifacts_present():
+    """True iff a tree that still physically holds all four retired artifacts is reachable,
+    which is what ``--check`` needs (they were never committed)."""
+    return all(any(os.path.exists(os.path.join(t, rel)) for t in CANDIDATE_TREES)
+               for rel in TOMBSTONED.values())
+
+
+# ===========================================================================
+# --check must verify the tombstone PAYLOAD, and something must invoke it
+# ===========================================================================
+def test_check_mode_treats_only_timestamps_and_the_head_stamp_as_volatile():
+    """``--check`` used to drop the whole ``metadata`` AND ``retirement`` blocks before
+    comparing, so the record's actual payload -- which defect, and whether the producing
+    source is recoverable -- was verified by nothing: flipping ``recoverable_from_git``,
+    rewriting ``recovery_note`` to prose that contradicts it and swapping a defect code all
+    printed OK with exit 0. Only the two timestamps and the builder's own HEAD sha are
+    genuinely volatile; this pins that set from both sides."""
+    b = _load_builder()
+    assert set(b.VOLATILE_LEAVES) == {
+        ("retirement", "retired_utc"),
+        ("metadata", "generated_utc"),
+        ("metadata", "code_commit"),
+    }, (f"VOLATILE_LEAVES={b.VOLATILE_LEAVES} -- --check may only ignore the timestamps "
+        "and the builder's HEAD stamp. Ignoring a whole block hides the payload.")
+
+    tomb = _load_tombstone("subdla_edge_systematic.tombstone.json")
+    # (a) the volatile leaves really are ignored
+    drifted = copy.deepcopy(tomb)
+    drifted["retirement"]["retired_utc"] = "1999-01-01T00:00:00Z"
+    drifted["metadata"]["generated_utc"] = "1999-01-01T00:00:00Z"
+    drifted["metadata"]["code_commit"] = "0" * 40
+    assert b.strip_volatile(drifted) == b.strip_volatile(tomb), (
+        "re-stamping (new timestamps, new HEAD) must not read as DRIFT.")
+
+    # (b) every payload leaf the referee falsified must read as DRIFT
+    for mutate, what in (
+        (lambda d: d["retirement"].__setitem__("recoverable_from_git",
+                                               not d["retirement"]["recoverable_from_git"]),
+         "retirement.recoverable_from_git"),
+        (lambda d: d["retirement"].__setitem__(
+            "recovery_note", "FABRICATED: totally unrecoverable, trust me."),
+         "retirement.recovery_note"),
+        (lambda d: d["retirement"]["defects"][0].__setitem__(
+            "code", "STALE_FP_RESAMPLE_SEMANTICS"), "a defect code"),
+        (lambda d: d["retirement"]["defects"][0].__setitem__(
+            "detail", "x" * 200), "a defect detail"),
+        (lambda d: d["metadata"].__setitem__("paper_facing", True),
+         "metadata.paper_facing"),
+        (lambda d: d["metadata"].__setitem__("routine", "not/the/builder.py"),
+         "metadata.routine"),
+    ):
+        bad = copy.deepcopy(tomb)
+        mutate(bad)
+        assert b.strip_volatile(bad) != b.strip_volatile(tomb), (
+            f"--check would report OK after falsifying {what}.")
+
+
+def test_check_mode_runs_clean_and_detects_a_falsified_payload():
+    """Nothing invoked ``--check``, so its blindness was invisible. This invokes it.
+
+    It is HARD (not a skip) whenever a tree holding the four untracked retired artifacts is
+    reachable; where it is not, ``--check`` physically cannot rebuild and the skip says so.
+    Power comes from the second half: the committed record is falsified on disk, ``--check``
+    must exit non-zero with DRIFT, and the bytes are restored."""
+    if not _source_artifacts_present():
+        pytest.skip(
+            f"the four retired artifacts are not present under {RECORDING_WORKTREE}; "
+            "--check cannot rebuild them (they were never committed). This skip is "
+            "host-dependence, not a pass: the unit-level coverage of the same logic is "
+            "test_check_mode_treats_only_timestamps_and_the_head_stamp_as_volatile.")
+    cmd = [sys.executable, BUILDER, "--check", "--source-worktree", RECORDING_WORKTREE]
+    r = subprocess.run(cmd, cwd=_REPO, capture_output=True, text=True)
+    assert r.returncode == 0, (
+        f"`build_tombstones.py --check` failed on a clean tree:\n{r.stdout}\n{r.stderr}")
+    assert r.stdout.count("OK ") == len(TOMBSTONED) and "DRIFT" not in r.stdout, (
+        f"--check did not report OK for all {len(TOMBSTONED)} tombstones:\n{r.stdout}")
+
+    target = os.path.join(TOMB_DIR, "subdla_edge_systematic.tombstone.json")
+    original = open(target, "rb").read()
+    try:
+        doc = json.loads(original)
+        ret = doc["retirement"]
+        ret["recoverable_from_git"] = not ret["recoverable_from_git"]
+        ret["recovery_note"] = "FABRICATED: totally unrecoverable, trust me."
+        for d in ret["defects"]:
+            if d["code"] == "DIRTY_STAMP_NOT_REDERIVABLE":
+                d["code"] = "STALE_FP_RESAMPLE_SEMANTICS"
+        with open(target, "w") as fh:
+            json.dump(doc, fh, indent=2)
+            fh.write("\n")
+        r2 = subprocess.run(cmd, cwd=_REPO, capture_output=True, text=True)
+    finally:
+        with open(target, "wb") as fh:
+            fh.write(original)
+    assert open(target, "rb").read() == original, "failed to restore the tombstone bytes"
+    assert r2.returncode != 0 and "DRIFT" in r2.stdout, (
+        "--check reported no DRIFT after the retirement payload was falsified "
+        f"(rc={r2.returncode}):\n{r2.stdout}\n{r2.stderr}")
 
 
 # ===========================================================================
@@ -252,20 +395,89 @@ def test_working_tree_reappearance_must_match_the_recorded_fingerprint(name):
     """A tolerated working-tree copy must be the SAME bytes the tombstone fingerprinted.
     If it differs, someone re-ran the retired routine and wrote the result back under the
     retired identity -- a silent regeneration, which is the resurrection this schema
-    forbids even before it reaches the index."""
+    forbids even before it reaches the index.
+
+    2026-07-29 FIX (defect 3). This guard used to take BOTH the expected digest AND the
+    path to compare against from the record it was auditing, so falsifying the record
+    disarmed it: with ``artifact.sha256='f'*64`` and
+    ``artifact.read_from_worktree='/nonexistent/tree'`` the loop ``continue``d on both
+    candidates and the test still passed (measured: 4 passed). And its teeth depended on the
+    literal path ``/home/mfho/desi_gpy_dla_detection`` existing, so on any other host it was
+    SILENTLY vacuous. Now: the expected digest and the candidate trees are pinned HERE, the
+    record must agree with those pins (a falsified record is RED, not a skip), and vacuity
+    is reported explicitly instead of passing quietly."""
     tomb = _load_tombstone(name)
-    for tree in (_REPO, tomb["artifact"].get("read_from_worktree") or _REPO):
+    art = tomb["artifact"]
+    exp_sha, exp_bytes = EXPECTED_FINGERPRINT[name]
+
+    # (1) the record must agree with the independently pinned fingerprint. This is what a
+    #     falsified record trips: the comparison below no longer trusts the record.
+    assert art["sha256"] == exp_sha and art["bytes"] == exp_bytes, (
+        f"{name}.artifact fingerprint {art['sha256'][:12]}/{art['bytes']}B does not match "
+        f"the fingerprint pinned in {os.path.basename(__file__)} "
+        f"({exp_sha[:12]}/{exp_bytes}B). Either the record was edited (a tombstone is "
+        "immutable once stamped) or the retired artifact was re-stamped -- neither is a "
+        "silent update.")
+    # (2) the record must not redirect the guard away from the recording worktree.
+    assert art.get("read_from_worktree") == RECORDING_WORKTREE, (
+        f"{name}.artifact.read_from_worktree={art.get('read_from_worktree')!r} != the "
+        f"pinned recording worktree {RECORDING_WORKTREE!r}. Redirecting this field at a "
+        "path that does not exist is exactly how this guard was defeated.")
+
+    # (3) hash every candidate tree that is REACHABLE. Candidates are pinned, not read from
+    #     the record. A candidate tree that exists but no longer holds the artifact is a
+    #     legitimate deletion of untracked scratch; a candidate tree that is absent is
+    #     host-dependence, and both are reported rather than swallowed.
+    checked, absent_tree, deleted = [], [], []
+    for tree in CANDIDATE_TREES:
+        if not os.path.isdir(tree):
+            absent_tree.append(tree)
+            continue
         path = os.path.join(tree, TOMBSTONED[name])
         if not os.path.exists(path):
+            deleted.append(path)
             continue
         with open(path, "rb") as fh:
             raw = fh.read()
         got = hashlib.sha256(raw).hexdigest()
-        assert got == tomb["artifact"]["sha256"], (
-            f"{path} differs from the fingerprint recorded in {name} "
-            f"({got[:12]} != {tomb['artifact']['sha256'][:12]}, {len(raw)} vs "
-            f"{tomb['artifact']['bytes']} bytes). The retired routine appears to have "
-            "been re-run into the retired identity. Write the successor to a NEW path.")
+        assert got == exp_sha and len(raw) == exp_bytes, (
+            f"{path} differs from the fingerprint pinned for {name} "
+            f"({got[:12]} != {exp_sha[:12]}, {len(raw)} vs {exp_bytes} bytes). The retired "
+            "routine appears to have been re-run into the retired identity. Write the "
+            "successor to a NEW path.")
+        checked.append(path)
+
+    if not checked:
+        # EXPLICIT, not silent: parts (1) and (2) above still ran with full force; only the
+        # byte-level comparison had nothing to look at.
+        pytest.skip(
+            f"byte-level fingerprint comparison VACUOUS for {name}: no reachable copy "
+            f"(trees absent: {absent_tree or 'none'}; artifact deleted from: "
+            f"{deleted or 'none'}). The record-vs-pin assertions still ran. This guard is "
+            f"byte-level only on a host that holds {RECORDING_WORKTREE}.")
+
+
+def test_fingerprint_guard_host_dependence_is_declared():
+    """The guard above is byte-level only where a reachable tree still holds the untracked
+    retired artifacts. Make that dependence a first-class, visible fact: on the recording
+    host all four must be checkable, and off it the reason must be a missing tree rather
+    than anything about the records."""
+    reachable = [t for t in CANDIDATE_TREES if os.path.isdir(t)]
+    assert reachable, (
+        "neither the repo worktree nor the pinned recording worktree exists -- the "
+        "fingerprint guard cannot be byte-level anywhere on this host.")
+    if _source_artifacts_present():
+        for name, rel in sorted(TOMBSTONED.items()):
+            assert any(os.path.exists(os.path.join(t, rel)) for t in reachable), (
+                f"{rel} is present under {RECORDING_WORKTREE} by the reachability check "
+                f"but not found from {reachable} -- the guard for {name} would go vacuous "
+                "on a host that can in fact check it.")
+    else:
+        pytest.skip(
+            f"{RECORDING_WORKTREE} does not hold all four retired artifacts on this host, "
+            "so the byte-level half of the fingerprint guard is inert here BY DESIGN. The "
+            "record-vs-pin half (digest, byte count, read_from_worktree) is host-"
+            "independent and always runs.")
 
 
 # ===========================================================================
@@ -280,7 +492,14 @@ def test_tripwire_commitments_certify_bitforbit_agreement():
     Because ``repr()`` of an IEEE-754 double is round-trip exact,
     ``sha256(repr(a)) == sha256(repr(b))`` iff ``a == b`` bit-for-bit. The tombstone
     commits BOTH digests, so this assertion runs unconditionally, needs neither untracked
-    file, and carries no value that could be quoted or plotted."""
+    file, and carries no value that could be quoted or plotted.
+
+    LIMIT, stated: the two-sided comparison is between two hex strings in ONE committed
+    file, so by itself it records the builder's stamp-time check rather than re-deriving
+    it -- a fabricated pair would satisfy it. The dN/dX cum(19.5) endpoint is pinned to the
+    DERIVED commitment (which IS recomputed from committed data by
+    ``test_tripwire_derived_commitment_recomputes_from_committed_data``); that is where the
+    endpoint block gets its teeth, and it is one endpoint of four."""
     tomb = _load_tombstone("subdla_mock_headline.tombstone.json")
     tw = tomb["tripwire"]
     cs = tw["commitments"]
@@ -298,6 +517,21 @@ def test_tripwire_commitments_certify_bitforbit_agreement():
         "the four endpoint commitments are not distinct -- the tripwire would pass even if "
         "every pointer had been aimed at the same leaf.")
     assert tw["consumer"].startswith(CONSUMER_REL)
+
+    # The ONE endpoint with arithmetic teeth: /measurement/19.5/dndx/integrated/MAP is also
+    # the derived commitment's pointer, and the derived digest is recomputed from committed
+    # data. Identical by construction at stamp time, so requiring equality here makes a
+    # fabricated endpoint block detectable at that pointer.
+    cum195 = "/measurement/19.5/dndx/integrated/MAP"
+    by_ptr = {c["pointer"]: c for c in cs}
+    dv = {d["equals_pointer_in_retired_artifact"]: d for d in tw["derived_commitments"]}
+    assert cum195 in by_ptr and cum195 in dv, (
+        f"{cum195} must appear in BOTH the endpoint and derived commitment namespaces; "
+        "without that overlap the endpoint block has no re-derivable anchor.")
+    assert by_ptr[cum195]["sha256_of_repr"] == dv[cum195]["sha256_of_repr"], (
+        f"endpoint and derived commitments disagree at {cum195}. They are digests of the "
+        "same float by construction, so one of the two blocks has been edited or "
+        "fabricated.")
 
 
 def test_tripwire_derived_commitment_recomputes_from_committed_data():

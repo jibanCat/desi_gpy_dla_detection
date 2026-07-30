@@ -23,6 +23,7 @@ precisely the defect three of these four artifacts are being retired for).
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime as _dt
 import hashlib
 import json
@@ -334,6 +335,34 @@ def _assert_no_floats(obj, path="$"):
             _assert_no_floats(v, f"{path}[{i}]")
 
 
+# --------------------------------------------------------------------------------------
+# --check comparison: what is genuinely volatile is a handful of LEAVES, not whole blocks
+# --------------------------------------------------------------------------------------
+# 2026-07-29 FIX. This used to be `volatile = ("metadata", "retirement")`, i.e. --check
+# dropped the ENTIRE retirement block before comparing. MEASURED consequence: flipping
+# recoverable_from_git True->False, rewriting recovery_note to "FABRICATED: totally
+# unrecoverable, trust me." and swapping the defect code DIRTY_STAMP_NOT_REDERIVABLE ->
+# STALE_FP_RESAMPLE_SEMANTICS produced `OK` for all four tombstones and exit 0 -- the
+# tombstone's actual PAYLOAD (which defect, and whether the source is recoverable) was
+# verified by nothing. Only the two timestamps and the builder's own HEAD stamp are
+# legitimately volatile, so only those are dropped.
+VOLATILE_LEAVES = (
+    ("retirement", "retired_utc"),
+    ("metadata", "generated_utc"),
+    ("metadata", "code_commit"),
+)
+
+
+def strip_volatile(doc):
+    """Deep copy of ``doc`` with the volatile LEAVES removed, for --check comparison."""
+    out = copy.deepcopy(doc)
+    for block, leaf in VOLATILE_LEAVES:
+        blk = out.get(block)
+        if isinstance(blk, dict):
+            blk.pop(leaf, None)
+    return out
+
+
 def _stamp_class(code_commit):
     if code_commit is None:
         return "MISSING"
@@ -527,10 +556,7 @@ def main(argv=None):
                 rc = 1
                 continue
             old = json.load(open(out))
-            volatile = ("metadata", "retirement")
-            a_cmp = {k: v for k, v in tomb.items() if k not in volatile}
-            b_cmp = {k: v for k, v in old.items() if k not in volatile}
-            status = "OK" if a_cmp == b_cmp else "DRIFT"
+            status = "OK" if strip_volatile(tomb) == strip_volatile(old) else "DRIFT"
             if status == "DRIFT":
                 rc = 1
             print(f"{status} {out}")
