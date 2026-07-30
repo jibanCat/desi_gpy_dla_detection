@@ -41,6 +41,22 @@ from CDDF_analysis.hbi_mcmc.pack import synthetic_pack      # noqa: E402
 _SPAN_TOLERANCES = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
 _Z_ARMS = ("z_total_max", "z_bin_max", "z_zbin_max", "z_snrbin_max")
 
+#: EXACTLY the three things decision 8 ratified, verbatim from the decision:
+#: "Ratify the fail-closed framework, matched-configuration SBC and chi2/dof
+#: <= 3 closure requirement."  Nothing else may claim PI authority.
+_PI_RATIFIED = ("chi2_dof_max", "fail_closed_framework",
+                "matched_configuration_sbc")
+
+#: the introduction commit of each |z| arm, as `git log -S<name>` reports it.
+#: ``z_zbin_max`` / ``z_snrbin_max`` were added on 2026-07-29 in the SAME HUNK
+#: as the two span numbers the PI declined -- they pre-date nothing.
+_Z_ARM_INTRODUCED_BY = {
+    "z_total_max": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+    "z_bin_max": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+    "z_zbin_max": "0e7fa0bd62d1f177126737fa32d1963e558b18d2",
+    "z_snrbin_max": "0e7fa0bd62d1f177126737fa32d1963e558b18d2",
+}
+
 
 @pytest.fixture(scope="module")
 def spack():
@@ -54,13 +70,29 @@ def spack():
         fp_frac=0.15, t_true=np.array([0.2, -0.15]))
 
 
+@pytest.fixture(scope="module")
+def padded_spack():
+    """The geometry decisions 3 and 4 ACTUALLY adopted: a true-N basis padded
+    two bins BELOW the reporting floor (schema v1.1, ``n_pad_bins = 2``).
+
+    Every matched-SBC test that ran only on an UNPADDED pack passed vacuously:
+    with ``ntrue_edges == nhat_edges`` an omission of ``ntrue_edges`` from the
+    match kwargs is invisible."""
+    return synthetic_pack(
+        0, nhat_edges=np.round(np.arange(19.9, 20.4 + 1e-9, 0.1), 10),
+        ntrue_edges=np.round(np.arange(19.7, 20.4 + 1e-9, 0.1), 10),
+        zf_edges=np.round(np.arange(2.0, 2.4 + 1e-9, 0.1), 10),
+        zc_edges=np.array([2.0, 2.2, 2.4]),
+        snr_edges=np.array([0.0, 3.0, np.inf]), n_molly_cells=3,
+        fp_frac=0.15, t_true=np.array([0.2, -0.15]))
+
+
 # ==========================================================================
 # 1. THE RATIFICATION RECORD
 # ==========================================================================
 
 def test_the_three_ratified_criteria_are_recorded_with_date_and_authority():
-    for key in ("fail_closed_framework", "matched_configuration_sbc",
-                "chi2_dof_max"):
+    for key in _PI_RATIFIED:
         assert RAT.is_ratified(key), key
         rec = RAT.record(key)
         assert rec["status"] == "RATIFIED"
@@ -69,6 +101,123 @@ def test_the_three_ratified_criteria_are_recorded_with_date_and_authority():
         assert "PI" in rec["authority"]
         assert rec["statement"].strip()
         assert rec["applies_to"], f"{key} names no code it governs"
+
+
+def test_EXACTLY_three_things_are_ratified_and_nothing_else_claims_PI():
+    """🔴 THE DEFECT THIS PINS.  ``ratification.py`` used to record the four
+    ``|z| <= 5`` arms as RATIFIED, dated 2026-07-29, ``authority="PI (project
+    decision 8, 2026-07-29)"``, on the stated grounds that they "pre-date
+    decision 8".  Decision 8 ratified three things and called ``|z| <= 5``
+    MALFORMED AS STATED, asking for a restatement -- the opposite of ratifying
+    it.  So the ratified set is EXACTLY three, and PI authority may be claimed
+    by exactly those three."""
+    assert set(RAT.ratified_names()) == set(_PI_RATIFIED), RAT.ratified_names()
+    assert set(RAT.PI_RATIFIED_ITEMS) == set(_PI_RATIFIED)
+    for key in _Z_ARMS:
+        assert RAT.is_ratified(key) is False, (
+            f"{key} claims ratification the PI never granted")
+
+
+def test_no_record_anywhere_may_claim_PI_authority_off_the_allow_list():
+    """The guard, not just the data.  ``audit_authority_claims`` must return
+    the empty list for the shipped record AND must actually catch a violation
+    -- otherwise it is a hardcoded pass."""
+    assert RAT.audit_authority_claims() == []
+    bad = dict(RAT.all_records())
+    bad["z_bin_max"] = dict(bad["z_bin_max"],
+                            authority="PI (project decision 8, 2026-07-29)")
+    v = RAT.audit_authority_claims(bad)
+    assert v and any("z_bin_max" in x for x in v), v
+    # ... and the same for a brand-new entry somebody adds tomorrow
+    bad2 = dict(RAT.all_records())
+    bad2["invented_tomorrow_max"] = {"status": "RATIFIED", "authority": "PI",
+                                     "contributes_to_pass_fail": True}
+    assert any("invented_tomorrow_max" in x
+               for x in RAT.audit_authority_claims(bad2))
+
+
+def test_the_import_time_guard_refuses_a_fabricated_PI_authority_claim():
+    """The allow-list must be ENFORCED, not merely reportable: a record that
+    claims PI authority off the allow-list must raise, so the module cannot be
+    imported in the state the defect left it in."""
+    with pytest.raises(RAT.FabricatedAuthorityError) as ei:
+        RAT.enforce_authority_allow_list(
+            {"z_zbin_max": {"status": "RATIFIED", "authority": RAT.PI_AUTHORITY,
+                            "contributes_to_pass_fail": True}})
+    assert "z_zbin_max" in str(ei.value)
+    RAT.enforce_authority_allow_list(RAT.all_records())     # no raise
+
+
+def test_the_z_arms_are_RESTATED_NOT_RATIFIED_with_honest_provenance():
+    """Decision 8 item 3, verbatim: "restate the malformed |z| <= 5 criterion
+    with its exact mathematical definition".  The restatement was delivered
+    (``forward_selftest.poisson_z``); the RESTATED form has not been ratified.
+    Each arm must say so, must NOT name the PI as its authority, and must name
+    the commit that actually introduced it."""
+    for key in _Z_ARMS:
+        rec = RAT.record(key)
+        assert rec["status"] == "RESTATED_NOT_RATIFIED", (key, rec["status"])
+        assert "PI" not in rec["authority"], (key, rec["authority"])
+        assert "MALFORMED" in rec["pi_disposition"].upper(), key
+        assert "NOT RATIFIED" in rec["pi_disposition"].upper(), key
+        assert rec["restatement_lives_in"].endswith("poisson_z")
+        assert rec["introduced_by"] == _Z_ARM_INTRODUCED_BY[key], key
+        assert len(rec["introduced_by"]) == 40
+
+
+def test_the_two_new_z_arms_do_not_predate_decision_8_and_the_record_says_so():
+    """The false premise, pinned.  ``z_zbin_max`` and ``z_snrbin_max`` were
+    added in the SAME HUNK as the declined ``ratio_span_*`` pair, by the same
+    author, on the same day.  A record that calls them "conventional arms that
+    pre-date decision 8" is false on the git history."""
+    for key in ("z_zbin_max", "z_snrbin_max"):
+        rec = RAT.record(key)
+        assert rec["predates_decision_8"] is False, key
+        assert rec["introduced_same_hunk_as"] == list(_SPAN_TOLERANCES), key
+        assert rec["introduced_date"] == "2026-07-29", key
+    for key in ("z_total_max", "z_bin_max"):
+        rec = RAT.record(key)
+        assert rec["predates_decision_8"] is True, key
+        assert rec["introduced_same_hunk_as"] == [], key
+        assert rec["introduced_date"] == "2026-07-28", key
+        # pre-dating is NOT ratification, and the record must not imply it
+        assert rec["status"] == "RESTATED_NOT_RATIFIED"
+
+
+def test_the_recorded_introduction_commits_are_the_ones_git_reports():
+    """Provenance verified against the repository, not asserted.  ``git log
+    -S<name>`` lists newest-first; its LAST entry is the commit that
+    introduced the string."""
+    import subprocess
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for key in _Z_ARMS:
+        out = subprocess.run(
+            ["git", "log", "--format=%H", f"-S{key}", "--",
+             "CDDF_analysis/hbi_mcmc/run_posterior.py"],
+            cwd=str(root), capture_output=True, text=True, check=True).stdout
+        shas = [s for s in out.split() if s]
+        assert shas, key
+        assert shas[-1] == RAT.record(key)["introduced_by"], (
+            key, shas[-1], RAT.record(key)["introduced_by"])
+
+
+def test_the_four_z_arms_GATE_and_the_record_admits_it_without_claiming_authority():
+    """The honest record must state the UNCOMFORTABLE fact rather than resolve
+    it: these four numbers DO refuse work (``fails.append`` in
+    ``forward_closure_gate``) and no deciding authority has ratified them.  A
+    record that reported ``contributes_to_pass_fail=False`` here would be as
+    false as the fabricated-PI one, in the other direction."""
+    for key in _Z_ARMS:
+        rec = RAT.record(key)
+        assert rec["contributes_to_pass_fail"] is True, key
+        assert RAT.gates(key) is True, key
+        assert RAT.is_ratified(key) is False, key
+    assert set(RAT.unratified_but_gating_names()) == set(_Z_ARMS)
+    st = RAT.ratification_stamp()
+    assert set(st["unratified_but_gating"]) == set(_Z_ARMS)
+    assert "no deciding authority" in st["unratified_but_gating_note"].lower()
+    assert "PI DECISION REQUIRED" in st["open_pi_decisions_note"].upper()
 
 
 def test_the_two_declined_tolerances_are_unratified_and_report_only():
@@ -88,10 +237,13 @@ def test_the_record_discriminates_and_is_fail_closed_on_unknown_names():
     one-sided test.  Both sets must be non-empty, disjoint, and an unknown name
     must inherit NOTHING from its neighbours in GATE."""
     r, u = set(RAT.ratified_names()), set(RAT.unratified_names())
-    assert r and u and not (r & u)
+    s = set(RAT.restated_not_ratified_names())
+    assert r and u and s
+    assert not (r & u) and not (r & s) and not (u & s)
     assert u == set(_SPAN_TOLERANCES)
-    for key in _Z_ARMS + ("chi2_dof_max",):
-        assert key in r, key
+    assert s == set(_Z_ARMS)
+    assert r == set(_PI_RATIFIED)
+    assert "chi2_dof_max" in r
     rec = RAT.record("some_tolerance_added_tomorrow")
     assert rec["status"] == "UNKNOWN"
     assert rec["contributes_to_pass_fail"] is False
@@ -102,7 +254,12 @@ def test_every_tolerance_in_GATE_has_a_ratification_record():
     """The point of the module: no number in a production fail-closed gate may
     be unaccounted for."""
     for key in RP.GATE:
-        assert RAT.record(key)["status"] in ("RATIFIED", "UNRATIFIED"), key
+        assert RAT.record(key)["status"] in (
+            "RATIFIED", "UNRATIFIED", "RESTATED_NOT_RATIFIED"), key
+        # and every gating number says, explicitly, who authorised it
+        rec = RAT.record(key)
+        if rec["contributes_to_pass_fail"]:
+            assert rec["authority"].strip(), key
 
 
 def test_the_calibration_spec_exists_and_states_the_unratified_status():
@@ -180,9 +337,11 @@ def test_a_RATIFIED_span_tolerance_WOULD_still_gate(spack, fake_fold,
     assert not any("ratio_span_by_z" in a for a in g["advisories"])
 
 
-def test_the_ratified_z_marginal_arms_still_gate(spack, fake_fold):
-    """Decision 8 moved only the two SPAN numbers.  ``z_zbin_max`` is ratified
-    and a 30-sigma z-marginal residual must still refuse."""
+def test_the_z_marginal_arms_still_gate(spack, fake_fold):
+    """Decision 8 moved only the two SPAN numbers.  ``z_zbin_max`` is
+    UNRATIFIED-BUT-GATING (see the provenance tests above): it still refuses a
+    30-sigma z-marginal residual, and nothing in this stream may silently
+    disarm it."""
     fake_fold(_flat_tab(z=30.0))
     g = RP.forward_closure_gate(spack)
     assert g["pass"] is False, g
@@ -193,7 +352,8 @@ def test_the_ratified_z_marginal_arms_still_gate(spack, fake_fold):
 def test_the_gate_report_and_the_stamp_carry_the_ratification_state(spack):
     g = RP.forward_closure_gate(spack)
     assert set(g["gate_tolerances_unratified"]) == set(_SPAN_TOLERANCES)
-    assert set(g["gate_tolerances_ratified"]) >= set(_Z_ARMS + ("chi2_dof_max",))
+    assert set(g["gate_tolerances_ratified"]) == set(_PI_RATIFIED)
+    assert set(g["gate_tolerances_unratified_but_gating"]) == set(_Z_ARMS)
     assert g["unratified_effect"] == "REPORT_ONLY_DOES_NOT_GATE"
     assert g["ratification"]["ratification_date"] == "2026-07-29"
     md = RP.stamp_metadata(
@@ -288,7 +448,10 @@ def test_ratio_span_null_measures_the_false_alarm_rate_of_the_proposed_numbers(
     PI's refusal: under a null in which the forward model is EXACTLY right,
     ``ratio_span_by_z_max = 0.10`` refuses a large fraction of runs while
     ``ratio_span_by_snr_max = 0.15`` never fires.  A matched pair of
-    tolerances cannot have false-alarm rates orders of magnitude apart."""
+    tolerances cannot have false-alarm rates orders of magnitude apart.
+
+    🔴 ON THIS PACK (5 x 4 x 2, FOUR fine-z rows).  The magnitude does NOT
+    transfer to a 15-row production arm -- see the geometry tests below."""
     nul = FS.ratio_span_null(spack, n_draws=4000, seed=1)
     az, asn = nul["arms"]["by_z"], nul["arms"]["by_snr"]
     assert az["n_rows"] == 4 and asn["n_rows"] == 2
@@ -349,6 +512,159 @@ def test_the_committed_calibration_artifact_agrees_with_the_spec_table():
             assert f"{e['quantiles'][q]:.4f}" in txt, (arm, q)
     assert f"{art['pack']['total_mu']:.2f}" in txt
     assert str(int(art["pack"]["total_obs"])) in txt
+    # ... and the PRODUCTION-GEOMETRY table too (defect 2)
+    for gname, g in art["geometries"].items():
+        assert gname in txt, gname
+        for arm in ("by_z", "by_snr"):
+            far = g["arms"][arm]["measured_false_alarm_rate"]
+            assert f"{far:.4f}" in txt, (gname, arm, far)
+
+
+# ==========================================================================
+# 3b. 🔴 DEFECT 2 -- THE 34% DOES NOT TRANSFER BETWEEN GRIDS
+#
+# ``ratio_span_by_z_max = 0.10 refuses 34% of perfectly correct forward
+# models'' was measured on a 5x4x2 synthetic pack whose by_z arm has FOUR rows,
+# and was then quoted unqualified in the spec intro, in the artifact verdict,
+# in two commit messages and in a report.  The spec's own §1.1 item 1 says a
+# range statistic's null grows with the row count and "a 15-bin fine-z arm and
+# a 4-bin one do not share a threshold".
+# ==========================================================================
+
+_GEOM_N_DRAWS = 2000
+
+
+@pytest.fixture(scope="module")
+def geom_report():
+    """One (measured ~3 min) calibration report, shared by the geometry tests."""
+    return FS.ratio_span_null_report(n_draws=_GEOM_N_DRAWS, seed=1)
+
+
+def test_the_false_alarm_rate_is_measured_PER_GEOMETRY_and_they_do_not_agree(
+        geom_report):
+    """The defect, as arithmetic: the same threshold, the same statistic, the
+    same null -- and a false-alarm rate that differs by a factor ~4 between the
+    calibration pack and production.  A single unqualified number is therefore
+    not a property of the tolerance."""
+    g = geom_report["geometries"]
+    assert set(g) >= {"calib_5x4x2", "prod_17x15x8", "prod_29x15x8"}
+    assert g["calib_5x4x2"]["arms"]["by_z"]["n_rows"] == 4
+    assert g["prod_17x15x8"]["arms"]["by_z"]["n_rows"] == 15
+    assert g["prod_29x15x8"]["arms"]["by_z"]["n_rows"] == 15
+    far = {k: v["arms"]["by_z"]["measured_false_alarm_rate"]
+           for k, v in g.items()}
+    # the 5x4x2 number is the ~0.34 that was quoted unqualified ...
+    assert 0.28 < far["calib_5x4x2"] < 0.42, far
+    # ... and production is several times smaller, on BOTH production grids
+    for k in ("prod_17x15x8", "prod_29x15x8"):
+        assert 0.03 < far[k] < 0.15, (k, far[k])
+        assert far[k] < 0.4 * far["calib_5x4x2"], far
+    # the by_snr arm is inert at production scale -- the pair-mismatch that
+    # justified the PI's refusal SURVIVES the geometry change
+    for k in ("prod_17x15x8", "prod_29x15x8"):
+        assert g[k]["arms"]["by_snr"]["measured_false_alarm_rate"] == 0.0, k
+
+
+def test_the_artifact_CORRECTS_the_unqualified_34_percent_and_names_the_grids(
+        geom_report):
+    txt = geom_report["geometry_correction"] + " " + geom_report["verdict"]
+    assert "CORRECTION" in txt
+    assert "0.3434" in txt and "5x4x2" in txt
+    for gname in ("prod_17x15x8", "prod_29x15x8"):
+        assert gname in txt, gname
+    assert "must name its grid" in txt
+    assert geom_report["schema"] == "ratio_span_null_calibration/v2"
+
+
+def test_no_document_quotes_a_span_false_alarm_rate_without_its_grid():
+    """DOC-DRIFT GUARD with teeth.  Every place that quotes the 34% / 0.3434 /
+    'a third' must name the geometry it was measured on, in the same paragraph.
+    This is the exact failure mode of defect 2: a correct number, quoted where
+    it does not apply."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    targets = [root / "docs" / "ratio_span_calibration_spec.md",
+               root / "CDDF_analysis" / "hbi_mcmc" / "ratification.py",
+               root / "CDDF_analysis" / "hbi_mcmc" / "forward_selftest.py"]
+    pat = re.compile(r"0\.3434|34%|34 %|third of perfectly|a third of")
+    # forms that genuinely NAME the geometry.  Deliberately narrow: "on the
+    # synthetic pack" is not a geometry, and must not satisfy this guard.
+    grid_pat = re.compile(r"5\s*[x×]\s*4\s*[x×]\s*2|4 z rows|"
+                          r"[Ff]our fine-z|FOUR fine-z|4 rows|FOUR rows|"
+                          r"[Ff]our[- ]row|4-row|calib_5x4x2")
+    n_quotes = 0
+    for p in targets:
+        txt = p.read_text()
+        # paragraphs, so "in the same breath" is testable
+        for para in re.split(r"\n\s*\n", txt):
+            if pat.search(para):
+                n_quotes += 1
+                assert grid_pat.search(para), (
+                    f"{p.name}: quotes the span false-alarm rate without its "
+                    f"geometry:\n{para[:400]}")
+    assert n_quotes >= 2, ("the guard found nothing to check -- it would pass "
+                           "vacuously if the quotes were merely deleted")
+
+
+def test_the_power_curve_compares_BOTH_guards_on_the_SAME_injected_tilt(
+        geom_report):
+    """🔴 THE MEASUREMENT THE DISARM DECISION TURNS ON, and which did not exist.
+
+    Disarming the span arms is only harmless if the still-armed ``z_zbin_max``
+    catches what they would have caught.  Exposed to the same injected
+    peak-to-peak z-tilt at PRODUCTION geometry, it does not: the span arm is
+    the more sensitive of the two, so disarming it DOES cost real detection
+    power.  That is a PI tradeoff, and it must be measured rather than
+    asserted in either direction."""
+    for gname in ("prod_17x15x8", "prod_29x15x8"):
+        p = geom_report["power"][gname]
+        assert p["n_rows_by_z"] == 15
+        assert p["z_threshold"] == 5.0
+        # the d = 0 row IS the false-alarm rate, so both live on one curve
+        assert p["curve"][0]["tilt_peak_to_peak"] == 0.0
+        assert p["false_alarm_z_arm"] == 0.0
+        assert 0.03 < p["false_alarm_span_arm"] < 0.15
+        # power rises with the injected tilt for BOTH arms (not a flat curve)
+        assert p["curve"][-1]["p_z_arm_fires"] > 0.9
+        assert p["curve"][-1]["p_span_arm_fires"] > 0.9
+        # the span arm detects a SMALLER tilt than the z arm, at both levels
+        assert p["span_arm_d90"] < p["z_arm_d90"], (gname, p)
+        assert p["span_arm_d50"] < p["z_arm_d50"], (gname, p)
+        # and a CALIBRATED span threshold (FAR ~ 0.005) is still the more
+        # sensitive guard -- which is what makes spec option A actionable
+        c = p["calibrated"]
+        assert c["false_alarm_span_arm"] <= 0.02, c
+        assert c["span_threshold"] > RP.GATE["ratio_span_by_z_max"]
+        assert c["span_arm_d90"] < p["z_arm_d90"], (gname, c)
+
+
+def test_ratio_span_power_null_row_reproduces_the_null_false_alarm_rate(spack):
+    """The two routines must agree where they overlap, or the power curve is
+    measuring something else."""
+    pw = FS.ratio_span_power(spack, tilts=(0.0,), n_draws=3000, seed=5)
+    nul = FS.ratio_span_null(spack, n_draws=3000, seed=5)
+    thr = RP.GATE["ratio_span_by_z_max"]
+    q = nul["arms"]["by_z"]["quantiles"]
+    # the null's own quantiles bracket the measured false-alarm rate: if
+    # FAR ~ 0.35 then the threshold sits between q50 and q95
+    assert q["0.5"] < thr < q["0.95"]
+    assert 0.25 < pw["false_alarm_span_arm"] < 0.45, pw
+
+
+def test_the_disarm_decision_is_recorded_as_an_OPEN_PI_TRADEOFF(geom_report):
+    """My instruction was that an unratified tolerance must not gate -- and
+    that if disarming removes the only guard against the standing z-marginal
+    defect, that must be said plainly and handed back, not resolved here."""
+    d = RAT.OPEN_PI_DECISIONS["span_arms_disarmed"]
+    assert "PI" in RAT.OPEN_PI_DECISIONS_NOTE
+    assert "5x4x2" in d["measured_tradeoff"]
+    assert "0.0894" in d["measured_tradeoff"] or "0.08" in d["measured_tradeoff"]
+    assert d["what_the_code_does_meanwhile"]
+    # the artifact must point at the tradeoff rather than settle it
+    assert "PI TRADEOFF" in geom_report["verdict"]
+    assert "not resolved here" in geom_report["verdict"]
+    assert "OPEN_PI_DECISIONS" in geom_report["verdict"]
 
 
 # ==========================================================================
@@ -576,20 +892,115 @@ def test_the_committed_reduced_SBC_constants_do_NOT_match_production(spack):
         assert expect in keys, (expect, keys)
 
 
-def test_matched_sbc_kwargs_reproduces_the_run_configuration(spack):
+@pytest.mark.parametrize("fixture_name", ["spack", "padded_spack"])
+def test_matched_sbc_kwargs_reproduces_the_run_configuration(
+        request, fixture_name):
     """The escape hatch must actually work: the kwargs it hands back, fed
     through the same configuration builder, MATCH.  Otherwise the ratified
-    requirement would be unsatisfiable in principle."""
+    requirement would be unsatisfiable in principle.
+
+    🔴 RUN ON A PADDED FIXTURE TOO.  The unpadded case passed VACUOUSLY: with
+    ``ntrue_edges == nhat_edges`` the omission of ``ntrue_edges`` from
+    ``matched_sbc_kwargs['grid']`` is invisible, because ``synthetic_pack``
+    used to hardcode ``ntrue_edges = nhat_edges.copy()`` and so reproduced it
+    by accident.  ``grid.ntrue_edges`` IS a MATCH_KEY, decisions 3 and 4
+    adopted a PADDED basis, and on a padded pack the old code could not
+    construct a matched SBC at any price."""
+    pack = request.getfixturevalue(fixture_name)
     cfg = MA.ModelAConfig()
-    kw = SBC.matched_sbc_kwargs(spack, cfg)
+    kw = SBC.matched_sbc_kwargs(pack, cfg)
     sp = synthetic_pack(0, **kw["grid"], fp_frac=0.0)
     sampler = dict(kw["sampler"])
     sampler.pop("n_ranks")
     sbc_cfg = SBC._configuration(sp, prior=kw["prior"], sampler=sampler,
                                  resp_clamp=kw["resp_clamp"],
                                  reported_names=SBC._reported_names(sp))
-    m = SBC.configuration_match(sbc_cfg, SBC.run_configuration(spack, cfg))
+    m = SBC.configuration_match(sbc_cfg, SBC.run_configuration(pack, cfg))
     assert m["matched"] is True, m["mismatches"]
+
+
+def test_matched_sbc_kwargs_carries_the_LATENT_basis_not_just_the_observed_one(
+        padded_spack):
+    """The precise omission: ``grid.ntrue_edges`` is in ``MATCH_KEYS`` and was
+    absent from the kwargs, so the kwargs described a DIFFERENT latent
+    parameter vector from the run they claimed to match."""
+    kw = SBC.matched_sbc_kwargs(padded_spack, MA.ModelAConfig())
+    assert "ntrue_edges" in kw["grid"], (
+        "matched_sbc_kwargs omits the latent basis, which is a MATCH_KEY")
+    np.testing.assert_allclose(kw["grid"]["ntrue_edges"],
+                               padded_spack.ntrue_edges)
+    # and the omission is only detectable when the two axes DIFFER
+    assert padded_spack.n_pad_bins == 2
+    assert len(padded_spack.ntrue_edges) != len(padded_spack.nhat_edges)
+
+
+def test_synthetic_pack_can_BUILD_a_padded_basis_at_all(padded_spack):
+    """The capability the ratified requirement needed and did not have.
+    ``synthetic_pack`` had no ``ntrue_edges`` parameter and hardcoded
+    ``ntrue_edges = nhat_edges.copy()`` (pack.py:694), so NO padded pack could
+    be generated -- every padded pack in the suite was a hand-built
+    ``SimpleNamespace`` or a ``dataclasses.replace`` diagnostic that dropped
+    ``truth_counts`` and skipped validation."""
+    from CDDF_analysis.hbi_mcmc.pack import validate_pack
+    p = padded_spack
+    assert p.n_pad_bins == 2
+    assert p.n_b == p.n_c + 2
+    np.testing.assert_allclose(p.ntrue_edges[2:], p.nhat_edges)
+    validate_pack(p, allow_nonstandard_grid=True)          # schema-conformant
+    assert p.truth_counts is not None                      # a REAL pack
+    assert p.truth.get("f_true") is not None
+    # the fold works on it: a padded basis is not merely constructible but usable
+    g = RP.forward_closure_gate(p)
+    assert np.isfinite(g["total_mu"]) and g["total_mu"] > 0
+
+
+def test_synthetic_pack_refuses_a_basis_pad_the_schema_forbids():
+    """Pad DOWN only, same step, exact tail subset.  The new parameter must not
+    become a way to build an invalid pack."""
+    from CDDF_analysis.hbi_mcmc.pack import PackSchemaError
+    nhat = np.round(np.arange(19.9, 20.4 + 1e-9, 0.1), 10)
+    common = dict(zf_edges=np.round(np.arange(2.0, 2.2 + 1e-9, 0.1), 10),
+                  zc_edges=np.array([2.0, 2.2]),
+                  snr_edges=np.array([0.0, np.inf]), n_molly_cells=3,
+                  fp_frac=0.0)
+    for bad, why in (
+            (np.round(np.arange(19.9, 20.6 + 1e-9, 0.1), 10), "pads UP"),
+            (np.round(np.arange(20.0, 20.4 + 1e-9, 0.1), 10), "shrinks"),
+            (np.round(np.arange(19.7, 20.4 + 1e-9, 0.2), 10), "wrong step"),
+    ):
+        with pytest.raises((PackSchemaError, ValueError)):
+            synthetic_pack(0, nhat_edges=nhat, ntrue_edges=bad, **common)
+
+
+def test_a_REAL_sbc_run_on_a_PADDED_grid_records_the_padded_basis_and_matches():
+    """END-TO-END CONSTRUCTIBILITY of the ratified requirement, on the geometry
+    decisions 3 and 4 actually adopted.  ``sbc_run`` builds its template pack
+    with ``synthetic_pack(pack_seed, **grid, fp_frac=0.0)``, so an
+    ``ntrue_edges`` that ``synthetic_pack`` cannot accept makes a padded
+    matched SBC impossible at ANY cost -- which is a capability gap, not the
+    ~1600 CPU-h the docstring blamed.  Absurdly small sampler; measured ~30 s.
+    """
+    grid = dict(nhat_edges=np.round(np.arange(19.9, 20.4 + 1e-9, 0.1), 10),
+                ntrue_edges=np.round(np.arange(19.7, 20.4 + 1e-9, 0.1), 10),
+                zf_edges=np.round(np.arange(2.0, 2.2 + 1e-9, 0.1), 10),
+                zc_edges=np.array([2.0, 2.2]),
+                snr_edges=np.array([0.0, np.inf]), n_molly_cells=3)
+    samp = dict(num_warmup=8, num_samples=8, num_chains=1, max_tree_depth=4,
+                target_accept=0.8, n_ranks=4)
+    ranks, meta = SBC.sbc_run(2, seed=0, grid=grid, sampler=samp)
+    cfg = SBC.sbc_configuration(meta)
+    assert cfg is not None
+    np.testing.assert_allclose(cfg["grid"]["ntrue_edges"], grid["ntrue_edges"])
+    assert len(cfg["grid"]["ntrue_edges"]) == len(cfg["grid"]["nhat_edges"]) + 2
+    # ... and it MATCHES a run configuration on the same padded pack, given the
+    # same prior/sampler: the requirement is satisfiable, only expensive.
+    padded = synthetic_pack(0, **grid, fp_frac=0.0)
+    run_cfg = SBC._configuration(
+        padded, prior=SBC.SBC_PRIOR,
+        sampler={k: v for k, v in samp.items() if k != "n_ranks"},
+        resp_clamp="both", reported_names=SBC._reported_names(padded))
+    assert SBC.configuration_match(cfg, run_cfg)["matched"] is True, \
+        SBC.configuration_match(cfg, run_cfg)["mismatches"]
 
 
 def test_fp_nuisance_prior_scales_are_inert_when_the_FP_BLOCK_IS_OFF(spack):

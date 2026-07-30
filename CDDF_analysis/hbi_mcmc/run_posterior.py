@@ -77,9 +77,19 @@ __all__ = ["forward_closure_gate", "GATE", "stamp_metadata", "main",
 #
 # EVERY tolerance is a named constant here so it can be ratified as a number
 # rather than discovered inside the gate body.
+#
+# 🔴 RATIFICATION STATUS PER NUMBER -- decision 8 ratified EXACTLY THREE things
+# and NONE of them is a |z| number.  ``|z| <= 5`` was called MALFORMED AS
+# STATED and sent back for restatement; the restated form has not been
+# ratified.  The four |z| arms below therefore GATE WITHOUT RATIFIED AUTHORITY
+# (status RESTATED_NOT_RATIFIED in ratification.py) and that is stamped into
+# every artifact as ``gate_tolerances_unratified_but_gating``.  Do NOT read
+# "it is in GATE" as "somebody authorised it".
 GATE = {
+    # RESTATED_NOT_RATIFIED (inherited, f23961e 2026-07-28)
     "z_total_max": 5.0,      # |z| on the total predicted-vs-observed counts
     "z_bin_max": 5.0,        # max |z| over reported n-hat bins with obs > 0
+    # RATIFIED by the PI (decision 8) -- the only ratified number in this dict
     "chi2_dof_max": 3.0,     # chi2/dof over those bins
     # --- the z- and SNR-marginal arms (added 2026-07-29) --------------------
     # ``ratio_tables`` has ALWAYS computed ``by_z`` and ``by_snr``; the gate
@@ -94,6 +104,9 @@ GATE = {
     #     but small in z because the marginal is count-starved.  A ~22%
     #     max-to-min spread in mu/obs across z is a systematic no sampler can
     #     repair, whatever its z-score.
+    # 🔴 RESTATED_NOT_RATIFIED.  These two were added in the SAME HUNK as the
+    # two span numbers below, which the PI declined the same day (0e7fa0b,
+    # 2026-07-29 10:21).  They ARE armed; nobody ratified them.
     "z_zbin_max": 5.0,           # max |z| over fine-z bins with obs > 0
     "z_snrbin_max": 5.0,         # max |z| over SNR strata with obs > 0
     # 🔴 UNRATIFIED as of 2026-07-29 (decision 8) -- REPORTED, DOES NOT GATE.
@@ -189,7 +202,11 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
                    f"(mu/obs {sp['lo']:.4f}..{sp['hi']:.4f}, "
                    f"n_rows_used={sp['n_rows_used']}) "
                    f"> {spankey} = {gate[spankey]}")
-            if RAT.is_ratified(spankey):
+            # ``gates()``, not ``is_ratified()``: authority and gating are
+            # SEPARATE facts (see ratification.py, "THE THREE STATES").  The
+            # four |z| arms gate WITHOUT being ratified, and conflating the two
+            # is exactly the defect that fabricated a PI authority for them.
+            if RAT.gates(spankey):
                 fails.append(msg)
             else:
                 # UNRATIFIED (decision 8): report, do not gate.
@@ -224,6 +241,12 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         "gate_tolerances_provisional_note": PROVISIONAL_GATE_TOLERANCES_NOTE,
         "gate_tolerances_unratified": list(RAT.unratified_names()),
         "gate_tolerances_ratified": list(RAT.ratified_names()),
+        # 🔴 the numbers that REFUSE WORK with no ratified authority.  A reader
+        # of the JSON alone must be able to see this without opening the source.
+        "gate_tolerances_unratified_but_gating":
+            list(RAT.unratified_but_gating_names()),
+        "gate_tolerances_unratified_but_gating_note":
+            RAT.UNRATIFIED_BUT_GATING_NOTE,
         "unratified_effect": RAT.UNRATIFIED_EFFECT,
         "ratification": RAT.ratification_stamp(),
         "total_mu": float(tab["total"]["mu"]),
