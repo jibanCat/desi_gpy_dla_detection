@@ -292,7 +292,12 @@ def test_closes_REFUSES_an_EMPTY_reporting_window(WS):
     assert v["closes"] is False, (
         "closes() passed an EMPTY reporting window — every informative arm was "
         "skipped as non-finite and |z_total| passed on 0/sqrt(1e-12)")
-    assert any("n_bins" in f for f in v["failures"]), v["failures"]
+    # the message must name the EMPTY selection specifically -- "no bin is
+    # occupied" is a DIFFERENT vacuous shape (see the next test) and the two
+    # must not be able to stand in for one another.
+    assert any("selects NO fully-contained" in f for f in v["failures"]), \
+        v["failures"]
+    assert not any("n_bins_occupied" in f for f in v["failures"]), v["failures"]
 
 
 def test_closes_REFUSES_when_NO_bin_is_occupied(WS):
@@ -566,6 +571,19 @@ def test_build_fp_block_molly_rebin_guard_fails_closed_on_a_drifted_catalog(
     monkeypatch.setattr(EP, "load_loa0_fp_catalog", lambda p: fp_catalog["cat"])
     monkeypatch.setattr(EP, "Loa0FP", _FakeLoa0FP._maker(99, 2))   # wrong count
     with pytest.raises(RuntimeError, match="n_fp_molly"):
+        EP.build_fp_block(loa0_out=str(tmp_path / "d"),
+                          product_path=fp_catalog["product"])
+
+
+def test_build_fp_block_n_fp_fine_crosscheck_fails_closed(
+        EP, monkeypatch, fp_catalog, tmp_path):
+    """The SECOND committed cross-check: the schema-grid FP total must equal the
+    committed product's z-windowed fine-grid total over N >= 19.5. n_fp_molly
+    agrees here, so only this arm can catch the drift."""
+    monkeypatch.setattr(EP, "load_loa0_fp_catalog", lambda p: fp_catalog["cat"])
+    monkeypatch.setattr(EP, "Loa0FP",
+                        _FakeLoa0FP._maker(fp_catalog["n_op_prod"], 7))
+    with pytest.raises(RuntimeError, match="n_fp_fine"):
         EP.build_fp_block(loa0_out=str(tmp_path / "d"),
                           product_path=fp_catalog["product"])
 
