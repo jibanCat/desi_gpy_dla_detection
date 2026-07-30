@@ -230,7 +230,8 @@ they inherit every omission in §2.1. The step-6 power curve is now measured —
 Provenance: these numbers come from the committed routine
 `forward_selftest.ratio_span_null_report`, not from a scratch script, and are
 stamped in `CDDF_analysis/hbi_mcmc/ratio_span_null_calibration.json` with the
-full 40-char SHA. Reproduce (measured 1 m 32 s wall, 1.6 GB peak RSS, one core):
+full 40-char SHA. Reproduce (measured 1 m 15 s / 1 m 16 s / 1 m 32 s wall over three runs, 1.6 GB
+peak RSS, one core; the 1 m 32 s run was the one under `/usr/bin/time -v`):
 
 ```
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
@@ -338,7 +339,7 @@ being settled by whoever happened to be editing the file:
   stamped per pack, and it is calibrated against a null that §2.1 says is too
   narrow — so it will still fire slightly too often. Benefit: recovers detection
   down to `d ≈ 0.14` at a defensible, *measured* false-alarm rate.
-  Compute cost is negligible (1 m 32 s, one core, no MCMC).
+  Compute cost is negligible (~1.5 min, one core, no MCMC; §4).
 
 Neither option is adopted here. Note also that `ratio_span_by_snr` is inert at
 `0.15` on every production geometry measured, so nothing in this decision turns
