@@ -9,12 +9,16 @@ DECISION 1 — the primary reporting window is 19.7 <= log N_HI <= 21.6.
     * the 19.7 FLOOR is not new.  It is the sub-DLA runner's ``NONIDENT_EDGE``
       and it is re-exported here with the SAME meaning (see
       ``NONIDENT_EDGE_SOURCE`` / ``NONIDENT_EDGE_REASON``), never re-derived.
-    * the 21.6 CEILING is NEW.  It exists because the frozen forward response's
-      moment polynomials were fitted over anchors spanning ~19.34-21.22 dex
-      (``resp_N_fit_range``) and the measured residual high-N excess (finding
-      D2, 1.23-1.80x) sits ABOVE log N ~ 21.6 in every one of the 60
-      configurations of the D1 ladder.  Above 21.6 the response is
-      EXTRAPOLATED, not measured.
+    * the 21.6 CEILING is NEW.  It exists because the measured residual high-N
+      excess (finding D2, 1.23-1.80x) sits ABOVE log N ~ 21.6 in every one of
+      the 60 configurations of the D1 ladder.
+      🔴 IT IS *NOT* WHERE THE RESPONSE STOPS BEING MEASURED.  The frozen
+      response's top true-N anchor is at 21.0406-21.2164 depending on the cell
+      (``RESPONSE_ANCHOR_MEASURED``), so 0.38-0.56 dex of EXTRAPOLATED response
+      sits INSIDE [19.7, 21.6] — inside the one window where Omega_HI is
+      authorized, carrying ~28% of the N-weighted Omega.  See
+      ``extrapolated_response_inside_window``; this is a STATED LIMIT, not a
+      resolved issue.
     * Omega_HI: a TOTAL Omega headline is NOT authorized.  ``omega_decision``
       REFUSES any Omega whose N window is not contained in [19.7, 21.6].  There
       is no tail extrapolation here, by design — inventing one is a PI decision.
@@ -29,9 +33,13 @@ DECISION 3 — the LATENT true-N basis is 0.2 dex.  The OBSERVED (n-hat) grid an
     is exactly one implementation).
 
 DECISION 4 — pad floor 19.0 with the ``molly172`` sub-floor completeness.  The
-    padded bins are a LATENT NUISANCE: ``assert_no_subwindow_bins`` fails closed
-    if a reported/paper-facing block carries a basis bin below 19.7.  The
-    clamp x completeness convention dependence is propagated as a NAMED
+    padded bins are a LATENT NUISANCE.  ``assert_no_subwindow_bins`` fails
+    closed when a PAPER-FACING tier's integration weights reach below 19.7 —
+    and NOT every tier is paper-facing: ``subdla_195_203`` and ``all_195_up``
+    reach below 19.7 BY DEFINITION, so they are marked NOT_PAPER_FACING with
+    the offending bins named rather than silently guarded.  The exact scope is
+    enumerated in ``SUBWINDOW_GUARD_SCOPE`` — read it before quoting the guard.
+    The clamp x completeness convention dependence is propagated as a NAMED
     per-bin + integrated systematic (``convention_systematic``), not as prose.
 
 DECISION 8 — the malformed "|z| <= 5" criterion is restated with its exact
@@ -49,8 +57,11 @@ __all__ = [
     # decision 1
     "NONIDENT_EDGE", "NONIDENT_EDGE_SOURCE", "NONIDENT_EDGE_REASON",
     "RESPONSE_ANCHOR_CEILING", "RESPONSE_ANCHOR_CEILING_REASON",
+    "RESPONSE_ANCHOR_MEASURED", "extrapolated_response_inside_window",
     "REPORTING_WINDOW", "REPORTING_WINDOW_LABEL",
     "omega_decision", "OMEGA_RULE",
+    "reported_tier_decision", "SUBWINDOW_GUARD_SCOPE",
+    "truth_overlap_fractions",
     # decision 3
     "BASIS_WIDTH_DEFAULT", "BASIS_WIDTH_ADOPTED", "OBSERVED_STEP",
     "basis_groups", "merge_basis_columns", "merged_truth", "merged_edges",
@@ -92,17 +103,96 @@ NONIDENT_EDGE_REASON = (
     "of NONIDENT_EDGE and it is unchanged here.")
 
 RESPONSE_ANCHOR_CEILING = 21.6
+
+# MEASURED, not quoted: the per-cell min/max of the frozen forward response's
+# empirical true-N anchors (`emp_N_anchors`), reduced through the committed
+# routine `pack.resp_fit_range_from_forward_npz`. All 24 adopted-config packs
+# carry BIT-IDENTICAL values (they share one frozen 2LPT-0 response NPZ).
+# CORRECTION 2026-07-29 (referee): the previous prose said the anchors span
+# "~19.336-21.503 down to 21.05-21.216". 21.503 appears in NO pack -- it is the
+# BOTTOM anchor's 19.502988 mistyped -- and the top anchor's floor is 21.0406,
+# not 21.05. Pinned to the NPZ by
+# tests/test_adopted_reporting.py::test_response_anchor_measured_reproduces_
+# from_the_frozen_npz.
+RESPONSE_ANCHOR_MEASURED = dict(
+    source=("/scratch/.../track_c/stage0/forward_response_2lpt0.npz "
+            "-> pack.resp_fit_range_from_forward_npz -> emp_N_anchors"),
+    n_response_cells=9,                 # (SR, ZR) = (3, 3)
+    n_anchors_per_cell=7,
+    bottom_anchor_min=19.336020,        # min over cells of the LOW anchor
+    bottom_anchor_max=19.502988,        # max over cells of the LOW anchor
+    top_anchor_min=21.040565,           # min over cells of the HIGH anchor
+    top_anchor_max=21.216358,           # max over cells of the HIGH anchor
+    measured_2026_07_29=True,
+)
+
 RESPONSE_ANCHOR_CEILING_REASON = (
-    "NEW (PI decision 1, 2026-07-29). The frozen forward response's moment "
-    "polynomials were fitted over true-N anchors spanning ~19.336-21.503 down "
-    "to 21.05-21.216 dex depending on the response cell (pack.resp_N_fit_range); "
-    "above the top anchor the degree-2 surfaces are EXTRAPOLATED. The measured "
-    "residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits "
-    "ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad "
-    "floor and both completeness conventions of the 60-config D1 ladder. The PI "
-    "capped the primary reporting window at 21.6 rather than refit the poorly "
-    "anchored high-N response. This is a REPORTING cap, not a fix: the excess "
-    "is still there, it is just outside what is reported.")
+    "NEW (PI decision 1, 2026-07-29). The measured residual excess of finding "
+    "D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its "
+    "per-bin digits are INVARIANT across every pad floor and both completeness "
+    "conventions of the 60-config D1 ladder. The PI capped the primary "
+    "reporting window at 21.6 rather than refit the poorly anchored high-N "
+    "response. This is a REPORTING cap, not a fix: the excess is still there, "
+    "it is just outside what is reported. "
+    "CORRECTION (referee, 2026-07-29): 21.6 is NOT where the response stops "
+    "being measured, and an earlier version of this string implied it was. The "
+    "frozen response's moment polynomials were fitted at true-N anchors whose "
+    "per-cell LOW end spans 19.336-19.503 and whose per-cell HIGH end spans "
+    "21.041-21.216 (pack.resp_N_fit_range; measured, see "
+    "RESPONSE_ANCHOR_MEASURED). Above the top anchor the degree-2 surfaces are "
+    "EXTRAPOLATED, so 0.38-0.56 dex of EXTRAPOLATED response lies INSIDE the "
+    "authorized window [19.7, 21.6] -- see "
+    "extrapolated_response_inside_window(). The earlier string also quoted a "
+    "top anchor above 21.5, which appears in no pack: it was the LOW range's "
+    "19.503 mistyped with a 21 in front.")
+
+
+def extrapolated_response_inside_window(top_anchor_min=None,
+                                        top_anchor_max=None,
+                                        ceiling=None):
+    """How much EXTRAPOLATED response the authorized Omega window still contains.
+
+    The window ceiling was set at 21.6 for a residual-excess reason (finding
+    D2), NOT at the top of the calibrated covariate range.  The two are
+    different numbers and conflating them is the defect this function exists to
+    make un-conflatable: it returns the dex of ``[top_anchor, ceiling]`` for the
+    BEST-anchored cell (``top_anchor_max``) and for the WORST (``top_anchor_min``).
+
+    Defaults come from ``RESPONSE_ANCHOR_MEASURED`` (the frozen 2LPT-0 response).
+    """
+    lo = RESPONSE_ANCHOR_MEASURED["top_anchor_min"] if top_anchor_min is None \
+        else float(top_anchor_min)
+    hi = RESPONSE_ANCHOR_MEASURED["top_anchor_max"] if top_anchor_max is None \
+        else float(top_anchor_max)
+    c = RESPONSE_ANCHOR_CEILING if ceiling is None else float(ceiling)
+    best = max(c - hi, 0.0)      # the most favourable cell
+    worst = max(c - lo, 0.0)     # the least favourable cell
+    return dict(
+        ceiling=c,
+        top_anchor_min=lo, top_anchor_max=hi,
+        dex_extrapolated_best_cell=float(best),
+        dex_extrapolated_worst_cell=float(worst),
+        inside_the_authorized_omega_window=bool(worst > 0.0),
+        statement=(
+            f"the authorized Omega_HI window [{NONIDENT_EDGE}, {c}] CONTAINS "
+            f"{best:.3f}-{worst:.3f} dex over which the forward response is "
+            f"EXTRAPOLATED, not measured: the frozen response's top true-N "
+            f"anchor sits at {lo:.4f}-{hi:.4f} depending on the response cell, "
+            f"BELOW the ceiling {c}. The ceiling was chosen for a residual-"
+            f"excess reason (finding D2), not because the response is measured "
+            f"up to it. This is a STATED LIMIT of every Omega_HI emitted in "
+            f"this window."
+            if worst > 0.0 else
+            f"the response is anchored to {lo:.4f}-{hi:.4f}, at or above the "
+            f"ceiling {c}: no extrapolated response lies inside the window."),
+        why_it_matters=(
+            "Omega_HI is an N-WEIGHTED mass, so the top of the window "
+            "dominates it. On the adopted 0.2-dex packs the N-weighted Omega "
+            "share of [21.2, 21.6) alone is 27.5-29.6% of the in-window total "
+            "(2LPT-0 / london-0 / saclay-0), and that whole sub-interval is "
+            "above the best-anchored cell's top anchor. A reader must not take "
+            "'window = [19.7, 21.6]' to mean 'measured response throughout'."),
+    )
 
 # closed on both ends: 19.7 <= log N_HI <= 21.6 (the PI's own wording)
 REPORTING_WINDOW = (NONIDENT_EDGE, RESPONSE_ANCHOR_CEILING)
@@ -295,6 +385,35 @@ def window_overlap_weights(edges, lo=NONIDENT_EDGE, hi=RESPONSE_ANCHOR_CEILING):
     return np.clip(w, 0.0, None)
 
 
+def truth_overlap_fractions(edges, lo=NONIDENT_EDGE, hi=RESPONSE_ANCHOR_CEILING):
+    """FRACTION of each basis bin inside [lo, hi] — the COUNT-side counterpart
+    of ``window_overlap_weights``.
+
+    ``window_overlap_weights`` is the weight for a quantity carried as a DENSITY
+    (f, per dex): weight = overlapping dex.  Truth-side closure quantities are
+    carried as COUNTS already integrated over the whole bin, so their weight is
+    the same overlap divided by the bin width.  Using the two together makes the
+    posterior and the truth side integrate the SAME support:
+
+        f_b * w_b            (density side)
+        counts_b * frac_b    (count side),  counts_b = f_b * dN_b * dX
+
+    are identical whenever ``counts_b == f_b * dN_b * dX``.
+
+    🔴 THIS FUNCTION EXISTS BECAUSE OF THE PROJECT'S SIGNATURE BUG CLASS
+    ([[one-sided support]], now 5 occurrences).  Selecting truth bins BY CENTRE
+    while the posterior integrates BY OVERLAP produced a ~20% spurious deficit
+    on ``dndx_20p0`` at the adopted 0.2-dex basis that was pure bookkeeping.  Any
+    new truth-side reduction MUST route through here.
+    """
+    e = np.asarray(edges, float)
+    dN = np.diff(e)
+    if np.any(dN <= 0):
+        raise ReportingGuardError(
+            f"truth_overlap_fractions: non-increasing edges {e}")
+    return window_overlap_weights(e, lo, hi) / dN
+
+
 def bins_fully_inside(edges, lo=NONIDENT_EDGE, hi=RESPONSE_ANCHOR_CEILING):
     """Boolean mask of bins ENTIRELY inside [lo, hi] (differential reporting).
 
@@ -339,6 +458,77 @@ def assert_no_subwindow_bins(edges, weights_or_mask, *, where,
               "may never appear in a reported/paper-facing quantity "
               "(PI decisions 1 and 4).")
     return True
+
+
+def reported_tier_decision(lo, hi):
+    """Is a tier's INTEGRATED dN/dX a PAPER-FACING (Paper-1 reportable) number?
+
+    Decision 4: Paper 1 reports only log N_HI >= 19.7.  The schema-v1.1 downward
+    pad AND the non-identifiable [19.5, 19.7) edge are LATENT NUISANCE support.
+    A tier whose own window floor is below 19.7 therefore CANNOT produce a
+    paper-facing dN/dX no matter how clean its weights are — its estimand
+    includes nuisance support by definition.
+
+    This is deliberately SEPARATE from ``omega_decision``:
+      * ``omega_decision`` is two-sided (needs hi <= 21.6) because Omega_HI is an
+        N-weighted mass whose top the extrapolated response dominates.
+      * ``reported_tier_decision`` is ONE-sided (needs lo >= 19.7) because dN/dX
+        is a line density: an open top does not import nuisance support, a floor
+        below 19.7 does.
+    Conflating them is what wired the decision-4 guard where it could not fire
+    (referee defect 5, 2026-07-29): the guard ran only under
+    ``omega_decision(...)['emit']``, i.e. only for the one tier whose weights are
+    zero below 19.7 by construction.
+    """
+    lo = float(lo)
+    hi = float(hi)
+    if lo >= NONIDENT_EDGE - 1e-9:
+        return dict(
+            paper_facing=True, window_logN=[lo, hi],
+            reason=("PAPER_FACING: the tier's own floor is at or above the "
+                    f"reporting floor {NONIDENT_EDGE}, so its dN/dX draws on no "
+                    "latent-nuisance basis support. Its integration weights are "
+                    "additionally checked by assert_no_subwindow_bins."))
+    return dict(
+        paper_facing=False, window_logN=[lo, hi],
+        reason=(f"NOT_PAPER_FACING: the tier floor {lo:g} is below the reporting "
+                f"floor {NONIDENT_EDGE}, so its integrated dN/dX necessarily "
+                "includes the non-identifiable [19.5, 19.7) edge and/or the "
+                "schema-v1.1 downward pad. Those are LATENT NUISANCE support "
+                "(PI decisions 1 and 4) and Paper 1 reports only "
+                f">= {NONIDENT_EDGE}. This tier is retained as a rung-ladder / "
+                "tier-coupling DIAGNOSTIC on mocks and may not be quoted as a "
+                "measurement."))
+
+
+# The exact scope of ``assert_no_subwindow_bins``.  Written out because the
+# previous prose ("fails closed if a reported/paper-facing block carries a basis
+# bin below 19.7") over-claimed: the guard cannot make a tier whose own window
+# starts at 19.5 legitimate, and it was only ever CALLED for one tier.
+SUBWINDOW_GUARD_SCOPE = dict(
+    guard="reporting.assert_no_subwindow_bins",
+    called_from=("model_a.reduce_f_posterior, for EVERY tier whose "
+                 "reported_tier_decision is paper_facing (2026-07-29; it "
+                 "previously ran only where omega_decision emitted, i.e. for "
+                 "report_197_216 alone)"),
+    guarded_tiers=["dla_20p0", "dla_20p3", "report_197_216"],
+    refused_tiers=["subdla_195_203", "all_195_up"],
+    what_IS_guarded=("for a paper-facing tier: any nonzero integration weight on "
+                     "a basis bin whose LOWER edge is below 19.7 raises "
+                     "ReportingGuardError. This is a tripwire against a future "
+                     "weighting change, and it is now armed on every "
+                     "paper-facing tier rather than on one."),
+    what_is_NOT_guarded=(
+        "the guard does NOT and CANNOT rescue subdla_195_203 or all_195_up: "
+        "their windows START below 19.7, so their integrated dN/dX includes "
+        "latent-nuisance support by definition. They are not guarded, they are "
+        "REFUSED as paper-facing -- posterior_summary marks them "
+        "paper_facing=False and attaches dndx_paper_facing_REFUSED naming the "
+        "sub-19.7 basis bins they draw on. Nor does it cover the open-topped "
+        "omega_20p0 / omega_20p3 DRAW arrays, which omega_decision refuses "
+        "separately at the emission point."),
+    pi_decisions=["1 (reporting window)", "4 (pad = latent nuisance)"],
+)
 
 
 # --- the convention systematic (decision 4: "as a SYSTEMATIC, not narratively")

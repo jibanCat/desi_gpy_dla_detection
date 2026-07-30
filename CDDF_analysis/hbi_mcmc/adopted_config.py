@@ -429,8 +429,24 @@ def phase_closure():
         coverage=(coverage_block(n_sims=N_SBC_SIMS, seed=SBC_SEED)
                   if N_SBC_SIMS else dict(
                       skipped="--sbc-sims 0", reason="coverage not requested")),
-        limitations=_limitations(),
+        limitations=_limitations(
+            verdict.get("extrapolated_response_inside_the_omega_window")),
     )
+    # FAIL CLOSED before writing: an artifact may not carry two contradictory
+    # statements about the same measured quantity (referee defect 4).
+    assert_no_contradictory_chi2_claims(out)
+    out["metadata"]["self_consistency_checks"] = {
+        "no_contradictory_chi2_claims": True,
+        "routine": ("CDDF_analysis/hbi_mcmc/adopted_config.py:"
+                    "assert_no_contradictory_chi2_claims"),
+        "measured_window_chi2_gain_by_mock": window_chi2_gain(rows),
+        "what_it_refuses": (
+            "any 'order of magnitude' class claim about the window's chi2 gain "
+            "when the MAX measured full-grid/in-window chi2/dof factor is below "
+            "10. This gate exists because commit fd60337 corrected "
+            "residual_decomposition and left verdict.what_the_window_removes "
+            "asserting the opposite."),
+    }
     with open(OUT, "w") as f:
         json.dump(out, f, indent=1)
     print(f"\n[adopted] wrote {OUT}")
@@ -550,6 +566,196 @@ def convention_systematic_block(rows):
     )
 
 
+# ---------------------------------------------------------------------------
+# the window's chi2 gain: MEASURED, and its narrative GENERATED from it
+# ---------------------------------------------------------------------------
+# 2026-07-29 (referee defect 4): `verdict.what_the_window_removes` asserted the
+# windowed chi2/dof "falls by more than an order of magnitude" while
+# `residual_decomposition.correction`, in the SAME artifact, explicitly refuted
+# that reading. Commit fd60337 patched the correction and left the verdict. The
+# cure for a hand-written number contradicting a computed one is to stop hand-
+# writing it: the statement below is GENERATED from the measured factors, and
+# `assert_no_contradictory_chi2_claims` refuses to stamp an artifact whose prose
+# claims a >=10x gain the numbers do not support.
+_ORDER_OF_MAGNITUDE_PHRASES = (
+    "order of magnitude",
+    "orders of magnitude",
+    "more than 10x",
+    "more than 10-fold",
+    "tenfold",
+)
+
+# narrative fields that are allowed to talk about the chi2 gain at all; each is
+# a (block, key) path into the artifact.
+_CHI2_CLAIM_FIELDS = (
+    ("verdict", "what_the_window_removes"),
+    ("verdict", "answer_detail"),
+    ("verdict", "residual_inside_the_window"),
+    ("residual_decomposition", "correction"),
+    ("residual_decomposition", "why_the_ceiling_is_still_right"),
+    ("residual_decomposition", "inside_the_window_the_residual_is_a_FLOOR_EFFECT"),
+)
+
+
+def window_chi2_gain(rows):
+    """MEASURED full-grid chi2/dof divided by in-window chi2/dof, per mock,
+    at the adopted configuration."""
+    out = {}
+    for m in MOCKS:
+        r = rows[key_for(m, ADOPTED_WIDTH, ADOPTED_FLOOR, ADOPTED_CONV,
+                         ADOPTED_CLAMP)]
+        full = float(r["full_grid"]["chi2_dof"])
+        win = float(r["window"]["chi2_dof"])
+        out[m] = full / win if win > 0 else float("inf")
+    return out
+
+
+def window_removal_statement(factors):
+    """The ``what_the_window_removes`` narrative, GENERATED from the measured
+    per-mock chi2/dof gain factors so it cannot contradict them."""
+    vals = [float(v) for v in factors.values()]
+    lo, hi = min(vals), max(vals)
+    body = (
+        "the reporting window drops the 2 non-identifiable bins below 19.7 and "
+        "the 8 observed bins at/above 21.6, leaving 19 of 29 observed n-hat "
+        "bins. MEASURED chi2/dof gain from the restriction: "
+        + " / ".join(f"{k} {float(v):.2f}x" for k, v in factors.items())
+        + f" (range {lo:.1f}-{hi:.1f}x). ")
+    if hi >= 10.0:
+        body += ("That IS an order of magnitude or more on at least one mock. ")
+    else:
+        body += (
+            "🔴 THAT IS NOT AN ORDER OF MAGNITUDE, and an earlier version of "
+            "this field said it was. It is a factor "
+            f"{lo:.1f}-{hi:.1f}. ")
+    body += (
+        "AND THE GAIN IS NOT THE HIGH-N BINS: see "
+        "residual_decomposition.correction — the bins at/above 21.6 carry only "
+        "0.2-0.8% of the full-grid chi2 (they are count-starved), while the two "
+        "NON-IDENTIFIABLE bins below 19.7 carry 87.4-91.4% of it. The window's "
+        "chi2 improvement is almost entirely the sub-19.7 bins. The 21.6 "
+        "ceiling is still right, for a reason that is NOT chi2: above it the "
+        "per-bin mu/obs runs 1.05-1.81x on an EXTRAPOLATED response. Note "
+        "further that capping at 21.6 does NOT put the whole window on measured "
+        "response — see verdict."
+        "extrapolated_response_inside_the_omega_window.")
+    return body
+
+
+def assert_no_contradictory_chi2_claims(artifact):
+    """FAIL CLOSED if the artifact's prose claims a chi2 gain its own numbers refute.
+
+    A stamped artifact must not be able to carry two contradictory statements
+    about the same measured quantity.  This scans the narrative fields that are
+    allowed to discuss the window's chi2 gain for "order of magnitude"-class
+    phrases and checks them against the MAX measured factor in
+    ``residual_decomposition.per_mock`` (full_grid chi2/dof over reporting_window
+    chi2/dof).  A phrase claiming >=10x with a measured max below 10 raises.
+    """
+    REP = _REP()
+    per_mock = ((artifact.get("residual_decomposition") or {})
+                .get("per_mock") or {})
+    factors = {}
+    for m, blk in per_mock.items():
+        try:
+            full = float(blk["full_grid"]["chi2_dof"])
+            win = float(blk["reporting_window"]["chi2_dof"])
+        except (KeyError, TypeError):
+            continue
+        factors[m] = full / win if win > 0 else float("inf")
+    if not factors:
+        raise REP.ReportingGuardError(
+            "assert_no_contradictory_chi2_claims: no measured chi2/dof factors "
+            "in residual_decomposition.per_mock — the scanner cannot vouch for "
+            "any claim, so it refuses (fail closed).")
+    worst = max(factors.values())
+    offenders = []
+    for block, key in _CHI2_CLAIM_FIELDS:
+        txt = ((artifact.get(block) or {}).get(key) or "")
+        if not isinstance(txt, str):
+            continue
+        low = txt.lower()
+        for phrase in _ORDER_OF_MAGNITUDE_PHRASES:
+            if phrase not in low:
+                continue
+            # a field is allowed to say "NOT an order of magnitude"
+            i = low.find(phrase)
+            before = low[max(0, i - 60):i]
+            if "not " in before or "n't " in before:
+                continue
+            if worst < 10.0:
+                offenders.append(f"{block}.{key}: {phrase!r}")
+    if offenders:
+        raise REP.ReportingGuardError(
+            "CONTRADICTORY CHI2 CLAIM: the artifact asserts an order-of-"
+            f"magnitude chi2 improvement in {len(offenders)} field(s) "
+            + "; ".join(offenders)
+            + f" while its own residual_decomposition measures a MAX factor of "
+            f"{worst:.2f}x ("
+            + ", ".join(f"{k} {v:.2f}x" for k, v in sorted(factors.items()))
+            + "). A stamped artifact may not carry two contradictory statements "
+              "about the same measured quantity.")
+    return True
+
+
+def extrapolated_response_block(rows):
+    """DEFECT 3 (referee, 2026-07-29): how much of the AUTHORIZED Omega window
+    still sits on EXTRAPOLATED response, and how much N-weighted Omega that is.
+
+    The dex comes from ``reporting.extrapolated_response_inside_window`` (the
+    frozen response's own anchors).  The Omega SHARE is measured here, from the
+    in-window per-bin counts of the adopted folds: an N-weighted share, because
+    Omega_HI is an N-weighted mass and a plain bin count badly understates the
+    top of the window.
+    """
+    REP = _REP()
+    ex = dict(REP.extrapolated_response_inside_window())
+    # the sub-interval that is above EVERY response cell's top anchor, snapped
+    # DOWN to the observed 0.1-dex grid so it is a union of whole reported bins.
+    edge = float(np.floor(ex["top_anchor_max"] / REP.OBSERVED_STEP + 1e-9)
+                 * REP.OBSERVED_STEP)
+    share_obs, share_mu = {}, {}
+    for m in MOCKS:
+        pb = rows[key_for(m, ADOPTED_WIDTH, ADOPTED_FLOOR, ADOPTED_CONV,
+                          ADOPTED_CLAMP)]["window"]["per_bin"]
+        lo = np.array([float(b["lo"]) for b in pb])
+        hi = np.array([float(b["hi"]) for b in pb])
+        w = 10.0 ** (0.5 * (lo + hi) - 21.0)          # the Omega weight
+        sel = lo >= edge - 1e-9
+        for name, key, dest in (("obs", "obs", share_obs), ("mu", "mu", share_mu)):
+            v = np.array([float(b[key]) for b in pb])
+            tot = float((v * w).sum())
+            dest[m] = float((v * w)[sel].sum() / tot) if tot > 0 else float("nan")
+    ex.update(
+        what=("the fraction of the AUTHORIZED Omega window that sits above the "
+              "response's top measured anchor, and the N-weighted Omega share "
+              "carried there. MOCK truth-folds only; no population value."),
+        routine="CDDF_analysis/hbi_mcmc/adopted_config.py:extrapolated_response_block",
+        anchor_source=REP.RESPONSE_ANCHOR_MEASURED,
+        subinterval_logN=[edge, REP.RESPONSE_ANCHOR_CEILING],
+        subinterval_note=(
+            f"[{edge}, {REP.RESPONSE_ANCHOR_CEILING}) is the part of the window "
+            "that lies above the BEST-anchored response cell's top anchor "
+            f"({ex['top_anchor_max']:.4f}), snapped down to the observed "
+            f"{REP.OBSERVED_STEP}-dex grid so it is a union of whole reported "
+            "bins. For the WORST-anchored cell the extrapolated part starts "
+            f"lower still, at {ex['top_anchor_min']:.4f}."),
+        omega_share_of_subinterval_by_mock_truth_counts=share_obs,
+        omega_share_of_subinterval_by_mock_predicted_counts=share_mu,
+        omega_share_definition=(
+            "sum over n-hat bins in the sub-interval of counts * 10^(Nc - 21), "
+            "divided by the same sum over ALL bins inside [19.7, 21.6]. "
+            "N-weighted, because Omega_HI is an N-weighted mass."),
+        headline=(
+            f"{100 * min(share_obs.values()):.1f}-{100 * max(share_obs.values()):.1f}% "
+            "of the in-window N-weighted Omega comes from "
+            f"[{edge}, {REP.RESPONSE_ANCHOR_CEILING}), which is entirely above "
+            "the top measured response anchor. THE PI MUST NOT LEARN THIS "
+            "LATER."),
+    )
+    return ex
+
+
 def build_verdict(rows, syst, resid=None):
     REP = _REP()
     gate = dict(_RP().GATE)
@@ -639,14 +845,8 @@ def build_verdict(rows, syst, resid=None):
                 chi2_dof=rows[key_for(m, ADOPTED_WIDTH, f, ADOPTED_CONV,
                                       ADOPTED_CLAMP)]["window"]["chi2_dof"])
                 for f in FLOORS} for m in MOCKS},
-        what_the_window_removes=(
-            "the reporting window drops the 2 non-identifiable bins below 19.7 "
-            "and the 8 observed bins at/above 21.6, leaving 19 of 29 observed "
-            "n-hat bins. The dropped high-N bins are exactly where residual D2 "
-            "lives (a 1.23-1.80x excess whose per-bin digits are invariant "
-            "across every pad floor and completeness convention), which is why "
-            "the PI capped the window there — and it is why the windowed "
-            "chi2/dof falls by more than an order of magnitude."),
+        what_the_window_removes=window_removal_statement(
+            window_chi2_gain(rows)),
         residual_inside_the_window=(
             "what is LEFT inside the window is not D2 and is not the pad; it is "
             "a FLOOR EFFECT plus a floor of its own. The window's per-bin ratio "
@@ -673,9 +873,14 @@ def build_verdict(rows, syst, resid=None):
             "over the whole observed grid. It is carried as a SEPARATE LINEAR "
             "ENVELOPE, not in quadrature (see "
             "convention_systematic.estimator)."),
+        extrapolated_response_inside_the_omega_window=extrapolated_response_block(
+            rows),
         omega_hi=("NOT emitted as a total. Only Omega_HI limited to "
                   "[19.7, 21.6] and labelled as such is emittable "
-                  "(omega_policy)."),
+                  "(omega_policy). 🔴 AND EVEN THAT WINDOW IS NOT ALL MEASURED "
+                  "RESPONSE — see extrapolated_response_inside_the_omega_window: "
+                  "the top ~0.4 dex of it is EXTRAPOLATED and carries ~28% of "
+                  "the N-weighted Omega."),
         rung10=("STAYS GATED. No configuration passes the pre-flight, in the "
                 "window or out of it."),
         next_actions=[
@@ -998,11 +1203,34 @@ def coverage_block(n_sims=64, seed=0):
     )
 
 
-def _limitations():
+def _limitations(omega_extrap=None):
+    REP = _REP()
+    ex = omega_extrap or REP.extrapolated_response_inside_window()
     return [
+        # 🔴 FIRST, because it is the one a reader is most likely to get wrong
+        # and it was not stated at all before 2026-07-29 (referee defect 3).
+        ("🔴 THE AUTHORIZED Omega_HI WINDOW STILL CONTAINS EXTRAPOLATED "
+         "RESPONSE. Capping the window at 21.6 does NOT put it on measured "
+         f"response: the frozen response's top true-N anchor is at "
+         f"{ex['top_anchor_min']:.4f}-{ex['top_anchor_max']:.4f} depending on "
+         f"the response cell, so {ex['dex_extrapolated_best_cell']:.2f}-"
+         f"{ex['dex_extrapolated_worst_cell']:.2f} dex of EXTRAPOLATED response "
+         "sits INSIDE [19.7, 21.6] — the one window where Omega_HI is "
+         "authorized. On the adopted packs the N-weighted Omega share of "
+         "[21.2, 21.6) alone is 27.5-29.6% of the in-window total, and that "
+         "whole sub-interval is above the BEST-anchored cell's top anchor. "
+         "21.6 was chosen for a residual-excess reason (finding D2), not "
+         "because the response is measured up to it. See "
+         "verdict.extrapolated_response_inside_the_omega_window."),
         "the 21.6 ceiling is a REPORTING cap, not a fix. Residual D2 (the "
         "1.23-1.80x high-N excess) is still in the model; it has been moved "
         "outside what is reported. Any statement that D2 is 'closed' is wrong.",
+        "the decision-4 sub-window guard is armed on every PAPER-FACING tier, "
+        "which is NOT every tier: subdla_195_203 and all_195_up have windows "
+        "that START below 19.7 and are therefore REFUSED as paper-facing rather "
+        "than guarded (their dN/dX draws w = 0.20 dex on the non-identifiable "
+        "[19.5, 19.7) basis bin). Read reporting.SUBWINDOW_GUARD_SCOPE before "
+        "quoting the guard; an earlier version of that prose over-claimed.",
         "21.6 - 19.7 = 1.9 dex is an ODD multiple of 0.1, so NO uniform 0.2-dex "
         "basis can carry both window edges. The adopted grid puts 19.5 and 19.7 "
         "on exact basis edges and leaves 21.6 astride the [21.5, 21.7) basis "

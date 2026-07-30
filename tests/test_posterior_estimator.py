@@ -448,9 +448,27 @@ def test_plugin_map_is_labelled_and_carries_no_band(spack):
     m = MA.plugin_map_diagnostic(spack, cfg, num_steps=200)
     assert m["estimand"] == "PLUGIN_MAP"
     assert m["band"] is None, "a plug-in MAP must never carry a band"
+    n_refused = 0
     for tier, blk in m["tiers"].items():
-        assert set(blk) == {"dndx_allz", "omega_allz"}
+        # PI DECISION 1 (2026-07-29) added the Omega refusal to this diagnostic
+        # too: an unqualified/open-topped Omega is NEVER emitted, not even
+        # without a band, and the refusal carries its reason IN THE SCHEMA.
+        assert set(blk) == {"dndx_allz", "omega_allz",
+                            "omega_label", "omega_REFUSED"}, (tier, sorted(blk))
         assert np.isfinite(blk["dndx_allz"]) and blk["dndx_allz"] > 0
+        # exactly one of {emitted, refused} -- never both, never neither
+        emitted = blk["omega_allz"] is not None
+        refused = blk["omega_REFUSED"] is not None
+        assert emitted != refused, (tier, blk["omega_allz"], blk["omega_REFUSED"])
+        if emitted:
+            assert blk["omega_label"] == "OMEGA_HI_LIMITED_19.7_21.6", tier
+            assert np.isfinite(blk["omega_allz"]) and blk["omega_allz"] > 0
+        else:
+            n_refused += 1
+            assert blk["omega_label"] is None, tier
+            assert blk["omega_REFUSED"].startswith("REFUSED"), tier
+    # the open-topped tiers MUST be among the refused, or the guard is inert
+    assert n_refused >= 2, m["tiers"]
 
 
 # ==========================================================================

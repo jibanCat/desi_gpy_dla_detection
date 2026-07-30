@@ -36,6 +36,14 @@ def _extract_pack_module():
 EP = _extract_pack_module()
 
 
+def _adopted_config_module():
+    """The closure driver.  Imported through the package (this suite already
+    needs jax via ``hbi_mcmc.__init__``), so it is the SAME object the artifact
+    was produced by."""
+    from CDDF_analysis.hbi_mcmc import adopted_config as AC
+    return AC
+
+
 # ===========================================================================
 # DECISION 1 — the reporting window
 # ===========================================================================
@@ -688,3 +696,360 @@ def test_reduce_f_posterior_guards_the_window_tier_against_pad_bins(monkeypatch)
     monkeypatch.setattr(MA.RP, "window_overlap_weights", leaky)
     with pytest.raises(RP.ReportingGuardError, match="REPORTING GUARD"):
         MA.reduce_f_posterior(f, p)
+
+
+# ===========================================================================
+# THE 2026-07-29 REFEREE DEFECTS (adversarial re-run; each defect first)
+# ===========================================================================
+
+def _exact_truth_pack(basis_width, pad_floor=None, seed=0):
+    """A pack whose ``truth_counts`` are EXACTLY ``dX_k * f_true * dN``.
+
+    No Poisson draw.  That makes a posterior/truth ratio of 1.0 a pure
+    BOOKKEEPING IDENTITY at ``f = f_true``: any departure is a support or
+    weighting-convention mismatch between the two sides, never sampling scatter.
+    This is the fixture shape the [[one-sided support]] class demands — build the
+    case where the two sides CANNOT differ for a statistical reason.
+    """
+    p = PK.synthetic_pack(seed=seed, fp_frac=0.0)
+    if basis_width != 0.1 or pad_floor is not None:
+        p = PK.coarsen_basis(p, basis_width, pad_floor=pad_floor)
+    f = np.asarray(p.truth["f_true"], float)
+    dN = np.diff(np.asarray(p.ntrue_edges, float))
+    dX_k = np.asarray(p.dX, float).sum(axis=1)
+    return dataclasses.replace(p, truth_counts=dX_k[None, :] * f * dN[:, None])
+
+
+@pytest.mark.parametrize("basis_width,pad_floor", [
+    (0.1, None),        # the aligned case the old test already covered
+    (0.2, None),        # THE ADOPTED BASIS — 20.0 is NOT an edge here
+    (0.2, 19.0),        # adopted basis + adopted pad
+    (0.2, 18.0),        # adopted basis + a deep pad (uneven pad groups)
+])
+def test_truth_side_uses_the_same_window_convention_as_the_posterior(
+        basis_width, pad_floor):
+    """DEFECT 2 (referee, 2026-07-29): at ``f = f_true`` EVERY reported
+    quantity's post/truth ratio must be 1 on a COARSE basis, not only on 0.1 dex.
+
+    ``reduce_f_posterior`` integrates with dex-overlap weights while
+    ``evidence._truth_reported`` selected basis bins BY CENTRE on truth counts.
+    On the adopted 0.2-dex basis 20.0 is not a basis edge, so the posterior
+    integrated HALF of [19.9, 20.1) and the truth integrated ALL of it —
+    ``closure_block`` was comparing two different estimands.  MEASURED before
+    the fix (this fixture, bw=0.2): dndx_20p0_integrated 0.7868,
+    omega_20p0_integrated 0.9175, while the ALIGNED 20.3 tier sat at 1.0000.
+    A ~20% deficit that is pure bookkeeping.
+
+    MUTATION: restore the centre selection in ``evidence._truth_reported``
+    (``sel = Nc >= thr - 1e-9`` weighting whole bins) -> RED at every bw=0.2
+    case, still green at bw=0.1 (which is exactly why the old 0.1-dex-only
+    equivalence test could not see this).
+
+    NOTE the parametrization deliberately stops at 0.2 dex: on a 0.3-dex basis
+    19.7 is not a basis edge at all, and the decision-4 guard REFUSES that
+    geometry outright (pinned separately by
+    ``test_a_basis_that_straddles_the_reporting_floor_refuses_the_window_tier``).
+    """
+    from CDDF_analysis.hbi_mcmc import evidence as EV
+    p = _exact_truth_pack(basis_width, pad_floor)
+    f = np.asarray(p.truth["f_true"], float)
+    rep = EV.reported_quantities(f[None, None], p)          # (1, 1, B, Kf)
+    truth, n_truth = EV._truth_reported(p)
+    assert set(rep) == set(truth), (sorted(set(rep) ^ set(truth)))
+    for name in sorted(rep):
+        post = float(np.asarray(rep[name]).reshape(-1)[0])
+        T = float(truth[name])
+        assert T > 0, name
+        assert post / T == pytest.approx(1.0, rel=1e-10), (
+            f"{name}: post/truth = {post / T:.6f} at f = f_true on a "
+            f"{basis_width}-dex basis — the two sides do not share a support")
+
+
+@pytest.mark.parametrize("basis_width", [0.1, 0.2])
+def test_analyze_rung9_truth_tier_table_shares_the_posterior_convention(
+        basis_width):
+    """DEFECT 2, second site: ``analyze_rung9.truth_tier_table`` selected by
+    centre too, so the rung-ladder closure table carried the same ~20% deficit.
+
+    MUTATION: restore ``sel = Nc >= thr - 1e-9`` in ``truth_tier_table`` -> RED
+    at 0.2 dex (green at 0.1, the aligned blind spot).
+    """
+    from CDDF_analysis.hbi_mcmc import analyze_rung9 as AR
+    from CDDF_analysis.hbi_mcmc import model_a as MA
+    p = _exact_truth_pack(basis_width)
+    f = np.asarray(p.truth["f_true"], float)[None, ...]
+    red = MA.reduce_f_posterior(f, p)
+    tab = AR.truth_tier_table(p)
+    kz = np.asarray(p.kz_to_K)
+    dX_k = np.asarray(p.dX, float).sum(axis=1)
+    for tag in ("20p0", "20p3"):
+        post = AR._coarse_avg(np.asarray(red[f"dndx_{tag}"], float),
+                              kz, dX_k, p.n_kk)[0]
+        for K in range(p.n_kk):
+            T = float(tab[tag]["dndx_truth"][K])
+            assert post[K] / T == pytest.approx(1.0, rel=1e-10), (tag, K,
+                                                                  post[K] / T)
+
+
+def test_response_anchor_reason_quotes_the_numbers_the_packs_actually_carry():
+    """DEFECT 3 (referee): the ceiling justification quoted 19.336-21.503 and
+    '21.05'.  21.503 appears in no pack — it is the LO range's 19.503 mistyped —
+    and the measured top anchor is 21.040565-21.216358, not 21.05.
+
+    MUTATION: put '21.503' back into ``RESPONSE_ANCHOR_CEILING_REASON`` -> RED.
+    """
+    r = RP.RESPONSE_ANCHOR_CEILING_REASON
+    m = RP.RESPONSE_ANCHOR_MEASURED
+    assert "21.503" not in r, "21.503 is a typo for the LO range's 19.503"
+    assert m["top_anchor_min"] == pytest.approx(21.040565, abs=1e-6)
+    assert m["top_anchor_max"] == pytest.approx(21.216358, abs=1e-6)
+    assert m["bottom_anchor_min"] == pytest.approx(19.336020, abs=1e-6)
+    assert m["bottom_anchor_max"] == pytest.approx(19.502988, abs=1e-6)
+    # the prose must quote the measured digits, so the two cannot drift apart
+    for tok in ("19.336", "19.503", "21.041", "21.216"):
+        assert tok in r, f"{tok} missing from RESPONSE_ANCHOR_CEILING_REASON"
+    assert m["source"].endswith("emp_N_anchors")
+
+
+def test_the_authorized_omega_window_contains_extrapolated_response():
+    """DEFECT 3: ~0.4 dex of EXTRAPOLATED response sits INSIDE [19.7, 21.6] —
+    the one window where Omega_HI is authorized.  That must be a COMPUTED
+    number, stated, not a prose claim.
+
+    MUTATION: make ``extrapolated_response_inside_window`` clamp the top anchor
+    up to the ceiling (return 0.0) -> RED.
+    """
+    e = RP.extrapolated_response_inside_window()
+    assert e["dex_extrapolated_best_cell"] == pytest.approx(0.3836, abs=1e-3)
+    assert e["dex_extrapolated_worst_cell"] == pytest.approx(0.5594, abs=1e-3)
+    assert e["inside_the_authorized_omega_window"] is True
+    assert "EXTRAPOLATED" in e["statement"]
+    # arithmetic, on a fit range that is NOT the committed one
+    e2 = RP.extrapolated_response_inside_window(
+        top_anchor_min=20.0, top_anchor_max=21.0, ceiling=21.6)
+    assert e2["dex_extrapolated_best_cell"] == pytest.approx(0.6)
+    assert e2["dex_extrapolated_worst_cell"] == pytest.approx(1.6)
+    # a response measured ABOVE the ceiling leaves nothing extrapolated inside
+    e3 = RP.extrapolated_response_inside_window(
+        top_anchor_min=21.9, top_anchor_max=22.0, ceiling=21.6)
+    assert e3["dex_extrapolated_worst_cell"] == 0.0
+    assert e3["inside_the_authorized_omega_window"] is False
+
+
+@pytest.mark.parametrize("npz", [os.path.join(
+    "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0",
+    "forward_response_2lpt0.npz")])
+def test_response_anchor_measured_reproduces_from_the_frozen_npz(npz):
+    """DEFECT 3, the real pin: ``RESPONSE_ANCHOR_MEASURED`` must reproduce from
+    the FROZEN forward-response NPZ through the committed routine, not be a
+    hand-copied literal.  (2LPT-0 mock calibration artifact; no survey data.)
+
+    MUTATION: change ``top_anchor_max`` in RESPONSE_ANCHOR_MEASURED -> RED.
+    """
+    if not os.path.exists(npz):
+        pytest.skip(f"frozen forward-response NPZ absent: {npz}")
+    rr = PK.resp_fit_range_from_forward_npz(npz)
+    m = RP.RESPONSE_ANCHOR_MEASURED
+    assert float(rr[..., 0].min()) == pytest.approx(m["bottom_anchor_min"], abs=5e-7)
+    assert float(rr[..., 0].max()) == pytest.approx(m["bottom_anchor_max"], abs=5e-7)
+    assert float(rr[..., 1].min()) == pytest.approx(m["top_anchor_min"], abs=5e-7)
+    assert float(rr[..., 1].max()) == pytest.approx(m["top_anchor_max"], abs=5e-7)
+
+
+def test_order_of_magnitude_chi2_claims_must_be_backed_by_the_measured_factor():
+    """DEFECT 4 (referee): ``verdict.what_the_window_removes`` claimed the
+    windowed chi2/dof "falls by more than an order of magnitude" while
+    ``residual_decomposition.correction`` refuted it in the same file.  The
+    measured factors are 7.80 / 5.58 / 6.92 — none exceeds 10x.
+
+    MUTATION: drop the ``>= 10`` test in
+    ``adopted_config.assert_no_contradictory_chi2_claims`` (accept any claim)
+    -> RED.
+    """
+    AC = _adopted_config_module()
+    factors = {"a": 7.80, "b": 5.58, "c": 6.92}
+    txt = AC.window_removal_statement(factors)
+    # it may MENTION the phrase, but only to deny it, and it must quote the
+    # measured factors rather than a narrative adjective
+    i = txt.lower().find("order of magnitude")
+    assert i > 0, txt
+    assert "not" in txt.lower()[max(0, i - 60):i], txt
+    assert "7.80x" in txt and "5.58x" in txt and "5.6-7.8x" in txt
+    # the scanner must FIRE on a hand-edited contradiction
+    bad = {"verdict": {"what_the_window_removes":
+                       "... the windowed chi2/dof falls by more than an order "
+                       "of magnitude."},
+           "residual_decomposition": {"per_mock": {
+               m: {"full_grid": {"chi2_dof": f * 3.0},
+                   "reporting_window": {"chi2_dof": 3.0}}
+               for m, f in factors.items()}}}
+    with pytest.raises(RP.ReportingGuardError, match="CONTRADICT"):
+        AC.assert_no_contradictory_chi2_claims(bad)
+    # and must PASS once the claim matches the measurement
+    bad["verdict"]["what_the_window_removes"] = txt
+    assert AC.assert_no_contradictory_chi2_claims(bad) is True
+    # a genuine >=10x improvement may say so
+    big = {"verdict": {"what_the_window_removes":
+                       "falls by more than an order of magnitude"},
+           "residual_decomposition": {"per_mock": {
+               "a": {"full_grid": {"chi2_dof": 400.0},
+                     "reporting_window": {"chi2_dof": 3.0}}}}}
+    assert AC.assert_no_contradictory_chi2_claims(big) is True
+
+
+@pytest.mark.parametrize("artifact,why", [
+    ({}, "no residual_decomposition block at all"),
+    ({"residual_decomposition": None}, "the block is present but null"),
+    ({"residual_decomposition": {"per_mock": {}}}, "per_mock is empty"),
+    ({"residual_decomposition": {"per_mock": {
+        "a": {"full_grid": {"chi2_dof": 400.0}}}}},
+     "reporting_window leg missing -> no factor computable"),
+    ({"residual_decomposition": {"per_mock": {
+        "a": {"full_grid": None, "reporting_window": None}}}},
+     "both legs null -> TypeError path"),
+    ({"residual_decomposition": {"per_mock": {
+        "a": {"full_grid": {"ratio": 0.84},
+              "reporting_window": {"ratio": 0.95}}}}},
+     "legs present but carry no chi2_dof"),
+])
+def test_the_chi2_contradiction_scanner_FAILS_CLOSED_when_it_cannot_measure(
+        artifact, why):
+    """DEFECT 4, the fail-closed half: a guard that cannot measure the quantity
+    it is vouching for must REFUSE, not wave the artifact through.
+
+    This is the branch a mutation survivor exposed (mutant 4c): every other test
+    of ``assert_no_contradictory_chi2_claims`` hands it a well-formed
+    ``residual_decomposition.per_mock``, so replacing the ``if not factors:
+    raise`` with ``return True`` left the whole suite GREEN while the scanner
+    became a no-op on exactly the artifact shape it exists to police -- one where
+    the measured factors are missing, renamed or nulled.  Note the guard must
+    refuse even when the prose contains NO offending phrase: a scanner that
+    silently passes because it read nothing is worse than no scanner, because it
+    stamps ``no_contradictory_chi2_claims: True`` into the metadata.
+
+    MUTATION 4c: in ``adopted_config.assert_no_contradictory_chi2_claims``
+    replace the ``if not factors: raise REP.ReportingGuardError(...)`` with
+    ``return True`` -> RED on all six cases here (previously survived: no test
+    covered it).
+    """
+    AC = _adopted_config_module()
+    with pytest.raises(RP.ReportingGuardError, match="fail closed"):
+        AC.assert_no_contradictory_chi2_claims(dict(artifact))
+    # ... and it is the ABSENCE of a measurement that refuses, not the prose:
+    # adding a perfectly innocent narrative does not rescue it.
+    a2 = dict(artifact)
+    a2["verdict"] = {"what_the_window_removes": "the window drops 10 bins."}
+    with pytest.raises(RP.ReportingGuardError, match="cannot vouch"):
+        AC.assert_no_contradictory_chi2_claims(a2)
+
+
+def test_the_committed_artifact_carries_no_contradictory_chi2_claim():
+    """DEFECT 4, on the STAMPED file: the artifact in git must pass its own
+    contradiction scanner.
+
+    MUTATION: revert ``verdict.what_the_window_removes`` in
+    adopted_config_closure.json to the 'order of magnitude' wording -> RED.
+    """
+    import json
+    AC = _adopted_config_module()
+    p = os.path.join(REPO, "CDDF_analysis/hbi_mcmc/adopted_config_closure.json")
+    with open(p) as fh:
+        art = json.load(fh)
+    assert AC.assert_no_contradictory_chi2_claims(art) is True
+    # and the extrapolated-response disclosure must be present and prominent
+    assert art["verdict"]["extrapolated_response_inside_the_omega_window"][
+        "inside_the_authorized_omega_window"] is True
+    lim = json.dumps(art["limitations"])
+    assert "EXTRAPOLATED" in lim
+
+
+@pytest.mark.parametrize("basis_width,pad_floor", [(0.2, 19.0), (0.1, None)])
+def test_every_reported_tier_is_either_guarded_or_explicitly_refused(
+        basis_width, pad_floor):
+    """DEFECT 5 (referee): ``assert_no_subwindow_bins`` ran ONLY inside
+    ``if omega_decisions[tier]['emit']`` — i.e. only for ``report_197_216``,
+    whose weights are zero below 19.7 BY CONSTRUCTION.  Meanwhile
+    ``window_weights_subdla_195_203`` and ``window_weights_all_195_up`` carry
+    w = 0.20 dex on the [19.5, 19.7) basis bin and ``posterior_summary`` still
+    emitted ``dndx_allz`` for both.  The guard was wired where it cannot fire.
+
+    The contract enforced here: for EVERY tier, either (a) the tier is
+    paper-facing and its weights are clean below 19.7, or (b) the tier is
+    explicitly marked NOT paper-facing with the offending bins named.
+
+    MUTATION: make ``reporting.reported_tier_decision`` return paper_facing=True
+    unconditionally -> RED (the sub-19.7 tiers then claim to be paper-facing and
+    the guard raises).  MUTATION 2: stop recording
+    ``subwindow_bins_<tier>`` / drop the ``dndx_paper_facing_REFUSED`` block in
+    ``posterior_summary`` -> RED.
+    """
+    from CDDF_analysis.hbi_mcmc import model_a as MA
+    p = _exact_truth_pack(basis_width, pad_floor)
+    f = np.asarray(p.truth["f_true"], float)[None, ...]
+    red = MA.reduce_f_posterior(f, p)
+    ntrue = np.asarray(p.ntrue_edges, float)
+    summ = MA.posterior_summary(red, p)
+    n_refused = 0
+    for tier in MA.TIERS:
+        if f"window_weights_{tier}" not in red:
+            continue
+        w = np.asarray(red[f"window_weights_{tier}"], float)
+        blk = summ["tiers"][tier]
+        dec = red["tier_decisions"][tier]
+        assert blk["paper_facing"] is dec["paper_facing"]
+        if dec["paper_facing"]:
+            # (a) clean: the guard must actually pass on the weights USED
+            assert RP.assert_no_subwindow_bins(
+                ntrue, w, where=f"test {tier}") is True
+            assert "dndx_paper_facing_REFUSED" not in blk
+        else:
+            # (b) refused, with the offending bins NAMED
+            n_refused += 1
+            ref = blk["dndx_paper_facing_REFUSED"]
+            assert ref["reason"].startswith("NOT_PAPER_FACING")
+            bins = red[f"subwindow_bins_{tier}"]
+            assert bins, tier
+            assert all(b[0] < RP.NONIDENT_EDGE - 1e-9 for b in bins), (tier, bins)
+            assert ref["subwindow_bins"] == bins
+    # the sub-DLA tier and the coupled all-195-up tier MUST be among the refused
+    assert n_refused >= 2
+    assert summ["tiers"]["subdla_195_203"]["paper_facing"] is False
+    assert summ["tiers"]["all_195_up"]["paper_facing"] is False
+    assert summ["tiers"]["report_197_216"]["paper_facing"] is True
+
+
+def test_a_basis_that_straddles_the_reporting_floor_refuses_the_window_tier():
+    """DEFECT 5, the other half: the guard must actually BITE on a real geometry,
+    not only under monkeypatch.  On a 0.3-dex basis anchored at 19.5 the value
+    19.7 is not a basis edge, so ``report_197_216`` straddles [19.5, 19.8) and
+    picks up 0.1 dex of non-identifiable support.  That must refuse.
+
+    MUTATION: remove the ``assert_no_subwindow_bins`` call from
+    ``reduce_f_posterior`` -> RED (DID NOT RAISE), and the 0.3-dex geometry
+    would silently report a dN/dX built partly on [19.5, 19.7).
+    """
+    from CDDF_analysis.hbi_mcmc import model_a as MA
+    p = _exact_truth_pack(0.3)
+    assert not np.any(np.isclose(np.asarray(p.ntrue_edges, float),
+                                 RP.NONIDENT_EDGE, atol=1e-8))
+    f = np.asarray(p.truth["f_true"], float)[None, ...]
+    with pytest.raises(RP.ReportingGuardError, match="REPORTING GUARD"):
+        MA.reduce_f_posterior(f, p)
+
+
+def test_reporting_module_states_exactly_what_the_subwindow_guard_covers():
+    """DEFECT 5: the module docstring claimed the guard 'fails closed if a
+    reported/paper-facing block carries a basis bin below 19.7' — which is not
+    what the code did.  The claim must now be exact.
+
+    MUTATION: delete ``SUBWINDOW_GUARD_SCOPE`` (or drop its enumeration of the
+    refused tiers) -> RED.
+    """
+    s = RP.SUBWINDOW_GUARD_SCOPE
+    assert "report_197_216" in s["guarded_tiers"]
+    assert "subdla_195_203" in s["refused_tiers"]
+    assert "all_195_up" in s["refused_tiers"]
+    assert "dla_20p0" in s["guarded_tiers"]
+    assert "dla_20p3" in s["guarded_tiers"]
+    assert set(s["guarded_tiers"]) & set(s["refused_tiers"]) == set()
+    assert "not" in s["what_is_NOT_guarded"].lower()

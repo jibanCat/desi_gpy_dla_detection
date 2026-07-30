@@ -355,6 +355,7 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
         out[f"omega_{tag}"] = omega
     # the coupled DLA + sub-DLA tier windows, all off the same draws
     omega_decisions = {}
+    tier_decisions = {}
     for tier, (lo, hi) in TIERS.items():
         w = _wts(lo, hi)
         if not np.any(w > 0):
@@ -371,14 +372,30 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
         out[f"n_bins_{tier}"] = int(np.sum(w > 0))
         out[f"window_weights_{tier}"] = w
         omega_decisions[tier] = RP.omega_decision(lo, hi)
-        # DECISION-4 GUARD, fail-closed: a tier inside the primary reporting
-        # window may not draw on ANY basis bin below the reporting floor 19.7
-        # (the schema-v1.1 pad + the non-identifiable [19.5,19.7) edge are
-        # LATENT NUISANCE support).  Checked on the weights actually used.
-        if omega_decisions[tier]["emit"]:
+        tier_decisions[tier] = RP.reported_tier_decision(lo, hi)
+        # which basis bins BELOW the reporting floor this tier's weights touch --
+        # recorded for EVERY tier, so a refusal can NAME them instead of gesturing.
+        out[f"subwindow_bins_{tier}"] = [
+            [float(ntrue[b]), float(ntrue[b + 1]), float(w[b])]
+            for b in np.flatnonzero((ntrue[:-1] < RP.NONIDENT_EDGE - 1e-9)
+                                    & (np.abs(w) > 0))]
+        # DECISION-4 GUARD, fail-closed.  ARMED ON EVERY PAPER-FACING TIER
+        # (2026-07-29 correction).  It previously ran under
+        # ``omega_decisions[tier]["emit"]`` -- a two-sided test that is true ONLY
+        # for report_197_216, whose weights are zero below 19.7 by construction,
+        # so the guard was wired where it could not fire (referee defect 5) while
+        # subdla_195_203 and all_195_up quietly carried w = 0.20 dex on the
+        # [19.5, 19.7) basis bin.  The correct predicate is the ONE-SIDED
+        # reported_tier_decision: dN/dX is a line density, so an open top is
+        # fine and a floor below 19.7 is not.  Tiers that are NOT paper-facing
+        # are not guarded (they cannot be made legitimate) -- they are REFUSED
+        # at the emission point, see posterior_summary.
+        if tier_decisions[tier]["paper_facing"]:
             RP.assert_no_subwindow_bins(
                 ntrue, w, where=f"reduce_f_posterior tier {tier!r}")
     out["omega_decisions"] = omega_decisions
+    out["tier_decisions"] = tier_decisions
+    out["subwindow_guard_scope"] = RP.SUBWINDOW_GUARD_SCOPE
     return out
 
 
@@ -416,20 +433,40 @@ def posterior_summary(red, pack=None):
            "reporting_window_logN": list(RP.REPORTING_WINDOW),
            "reporting_window_label": RP.REPORTING_WINDOW_LABEL,
            "omega_rule": RP.OMEGA_RULE,
+           "subwindow_guard_scope": RP.SUBWINDOW_GUARD_SCOPE,
+           "extrapolated_response_inside_the_omega_window":
+               RP.extrapolated_response_inside_window(),
            "primary_reporting_tier": "report_197_216"}
     for tier in TIERS:
         if f"dndx_{tier}_allz" not in red:
             continue
         lo, hi = float(TIERS[tier][0]), float(TIERS[tier][1])
         dec = (red.get("omega_decisions") or {}).get(tier) or RP.omega_decision(lo, hi)
+        tdec = ((red.get("tier_decisions") or {}).get(tier)
+                or RP.reported_tier_decision(lo, hi))
         blk = {
             "window_logN": [lo, hi],
             "n_bins": int(red[f"n_bins_{tier}"]),
             "in_primary_reporting_window": bool(dec["emit"]),
+            "paper_facing": bool(tdec["paper_facing"]),
             "dndx_allz": _q(red[f"dndx_{tier}_allz"]),
             "dndx_coarse_z": [_q(red[f"dndx_{tier}_coarse"][:, q])
                               for q in range(red[f"dndx_{tier}_coarse"].shape[1])],
         }
+        # --- DECISION 4 at the dN/dX emission point --------------------------
+        # dN/dX is not refused by decision 1 (it is a line density, so an open
+        # top is harmless), but decision 4 still applies: Paper 1 reports only
+        # >= 19.7, and a tier whose floor is below that integrates the
+        # non-identifiable [19.5, 19.7) edge and/or the schema-v1.1 pad.  Such a
+        # tier is kept as a DIAGNOSTIC and marked, with the offending basis bins
+        # NAMED, so a downstream reader cannot mistake it for a measurement.
+        if not tdec["paper_facing"]:
+            blk["dndx_paper_facing_REFUSED"] = {
+                "reason": tdec["reason"],
+                "subwindow_bins": red.get(f"subwindow_bins_{tier}", []),
+                "reporting_floor": RP.NONIDENT_EDGE,
+                "guard_scope": RP.SUBWINDOW_GUARD_SCOPE["what_is_NOT_guarded"],
+            }
         # --- PI DECISION 1: Omega_HI is emitted ONLY inside [19.7, 21.6] -----
         # dN/dX is a LINE DENSITY and is unaffected by this ruling; Omega_HI is
         # an N-WEIGHTED MASS whose integral is dominated by the top of the
