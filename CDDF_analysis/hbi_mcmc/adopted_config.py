@@ -134,6 +134,88 @@ def dirty():
 
 
 # ---------------------------------------------------------------------------
+# pack-stamp reconciliation (fail-closed)
+# ---------------------------------------------------------------------------
+# Files whose content can change what a PACK contains.  If any of these moved
+# between the commit the packs were extracted at and the commit the closure phase
+# runs at, the packs are STALE and the artifact must not be stamped -- even
+# though nothing looks wrong.  Everything else (this driver, the tests, notes)
+# cannot change a pack, so a mismatch confined to those files is provably benign
+# and is RECORDED rather than fatal.  A bare "WARNING: packs stamped X but the
+# closure phase is at Y" printed to a log is not a guard; this is.
+PACK_DETERMINING_FILES = (
+    "CDDF_analysis/hbi_mcmc/extract_pack.py",
+    "CDDF_analysis/hbi_mcmc/pack.py",
+    "CDDF_analysis/hbi_mcmc/reporting.py",
+    "CDDF_analysis/hbi/cddf_catalog_hbi.py",
+    "CDDF_analysis/hbi/ff_fp_estimator.py",
+    "CDDF_analysis/hbi/build_loa0_fp_product.py",
+    "CDDF_analysis/hbi/znz_kernel.py",
+    "CDDF_analysis/hbi/track_c_tf_loa.py",
+    "CDDF_analysis/hbi/track_c_tf_saclay.py",
+    "CDDF_analysis/hbi/track_c_tf_london0.py",
+    "CDDF_analysis/hbi/ab_loa0_fp_baseline.py",
+)
+
+
+def pack_stamp_verdict(pack_commits, closure_sha, changed_files):
+    """Is a pack-stamp / closure-stamp mismatch benign?  Pure function, tested.
+
+    ``changed_files`` is the list of repo-relative paths that differ between the
+    pack commit and the closure commit (empty when they are the same commit).
+
+    Returns a dict with ``ok`` (may this artifact be stamped?) and the evidence.
+    A DIRTY pack is never ok.  A mismatch is ok ONLY if no
+    ``PACK_DETERMINING_FILES`` entry changed.
+    """
+    pack_commits = list(pack_commits)
+    changed = sorted(set(changed_files or ()))
+    dirty_pack = any("-dirty" in (c or "") for c in pack_commits)
+    match = pack_commits == [closure_sha]
+    touched = [f for f in changed if f in PACK_DETERMINING_FILES]
+    if dirty_pack:
+        ok, why = False, ("input packs were extracted from a DIRTY tree "
+                          f"{pack_commits}; commit the extractor and re-run "
+                          "--phase extract")
+    elif match:
+        ok, why = True, "packs and closure phase are at the same commit"
+    elif touched:
+        ok, why = False, (
+            "packs are STALE: they were extracted at "
+            f"{pack_commits} but {len(touched)} pack-determining file(s) changed "
+            f"before the closure commit {closure_sha}: {touched}. Re-run "
+            "--phase extract.")
+    else:
+        ok, why = True, (
+            "packs were extracted at a DIFFERENT commit "
+            f"({pack_commits}) than the closure phase ({closure_sha}), but the "
+            f"{len(changed)} file(s) that changed in between cannot change a "
+            "pack (none is in PACK_DETERMINING_FILES), so the packs are current "
+            "in content. Recorded, not waved away.")
+    return dict(
+        ok=bool(ok), reason=why,
+        packs_match_closure_commit=bool(match),
+        any_pack_dirty=bool(dirty_pack),
+        files_changed_between_pack_and_closure_commit=changed,
+        pack_determining_files_changed=touched,
+        pack_determining_files=list(PACK_DETERMINING_FILES),
+    )
+
+
+def _files_changed_between(a, b):
+    """Repo-relative paths differing between two commits ([] if a == b)."""
+    if a == b:
+        return []
+    try:
+        out = subprocess.check_output(
+            ["git", "diff", "--name-only", a, b], cwd=REPO, text=True,
+            stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        return None            # unknown -> pack_stamp_verdict cannot clear it
+    return [l for l in out.splitlines() if l.strip()]
+
+
+# ---------------------------------------------------------------------------
 # phase 1 — extract (env: gpdla, jax-free)
 # ---------------------------------------------------------------------------
 def phase_extract():
@@ -301,25 +383,33 @@ def phase_closure():
     # ---- pack stamp audit (fail closed on a dirty input) -------------------
     pack_commits = sorted({v["pack_provenance_commit"] for v in rows.values()})
     sha = full_sha()
+    changed = (_files_changed_between(pack_commits[0], sha)
+               if len(pack_commits) == 1 and pack_commits[0] else None)
+    verdict_stamp = pack_stamp_verdict(pack_commits, sha,
+                                       [] if changed is None else changed)
+    if changed is None and not verdict_stamp["packs_match_closure_commit"]:
+        verdict_stamp["ok"] = False
+        verdict_stamp["reason"] = (
+            "could not diff the pack commit against the closure commit, so the "
+            "mismatch cannot be cleared. Re-run --phase extract.")
     stamp_audit = dict(
         what=("the extract phase runs in its own process/env, so each pack "
               "stamps itself; this reconciles those stamps against the closure "
-              "phase's code_commit."),
+              "phase's code_commit AND decides, from the actual file diff, "
+              "whether a mismatch could have changed a pack."),
+        routine="CDDF_analysis/hbi_mcmc/adopted_config.py:pack_stamp_verdict",
         closure_phase_code_commit=sha,
         pack_code_commits=pack_commits,
         n_packs=len(rows) // len(CLAMPS),
         all_packs_same_commit=bool(len(pack_commits) == 1),
-        any_pack_dirty=bool(any("-dirty" in (c or "") for c in pack_commits)),
-        packs_match_closure_commit=bool(pack_commits == [sha]),
+        **verdict_stamp,
     )
-    if stamp_audit["any_pack_dirty"]:
-        raise SystemExit(
-            "[adopted] REFUSING to stamp: input packs were extracted from a "
-            f"DIRTY tree {pack_commits}. Commit the extractor and re-run "
-            "--phase extract so the packs stamp a clean sha.")
+    if not stamp_audit["ok"]:
+        raise SystemExit("[adopted] REFUSING to stamp: "
+                         + stamp_audit["reason"])
     if not stamp_audit["packs_match_closure_commit"]:
-        print(f"[adopted] WARNING: packs stamped {pack_commits} but the closure "
-              f"phase is at {sha} (recorded in metadata).")
+        print("[adopted] pack-stamp mismatch CLEARED: "
+              + stamp_audit["reason"], flush=True)
 
     syst = convention_systematic_block(rows)
     resid = residual_decomposition_block(rows)

@@ -552,6 +552,46 @@ def test_coarsen_basis_refuses_a_pack_that_is_already_coarse():
 
 
 # ===========================================================================
+# the pack-stamp guard: a mismatch is CLEARED or FATAL, never a printed warning
+# ===========================================================================
+
+def test_pack_stamp_verdict_clears_a_benign_mismatch_and_refuses_a_stale_one():
+    """A stamp mismatch must be DECIDED from the file diff, not warned about.
+
+    MUTATION: return ``ok=True`` in the ``touched`` branch -> RED on the stale
+    leg. Verified.
+    MUTATION: drop the ``dirty_pack`` branch -> RED on the dirty leg. Verified.
+    """
+    from CDDF_analysis.hbi_mcmc import adopted_config as AC
+    same = AC.pack_stamp_verdict(["abc"], "abc", [])
+    assert same["ok"] and same["packs_match_closure_commit"]
+
+    benign = AC.pack_stamp_verdict(
+        ["abc"], "def", ["CDDF_analysis/hbi_mcmc/adopted_config.py",
+                         "tests/test_adopted_reporting.py"])
+    assert benign["ok"] is True
+    assert benign["packs_match_closure_commit"] is False
+    assert benign["pack_determining_files_changed"] == []
+    assert "cannot change a pack" in benign["reason"]
+
+    stale = AC.pack_stamp_verdict(
+        ["abc"], "def", ["CDDF_analysis/hbi_mcmc/extract_pack.py"])
+    assert stale["ok"] is False
+    assert stale["pack_determining_files_changed"] == [
+        "CDDF_analysis/hbi_mcmc/extract_pack.py"]
+    assert "STALE" in stale["reason"]
+
+    dirty = AC.pack_stamp_verdict(["abc-dirty"], "abc-dirty", [])
+    assert dirty["ok"] is False and dirty["any_pack_dirty"] is True
+
+    # the extractor's OWN inputs count, not just its own file
+    for f in ("CDDF_analysis/hbi_mcmc/pack.py",
+              "CDDF_analysis/hbi_mcmc/reporting.py",
+              "CDDF_analysis/hbi/cddf_catalog_hbi.py"):
+        assert AC.pack_stamp_verdict(["abc"], "def", [f])["ok"] is False, f
+
+
+# ===========================================================================
 # coverage: the matched configuration and the MEASURED power check
 # ===========================================================================
 
