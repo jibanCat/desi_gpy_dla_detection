@@ -1,6 +1,6 @@
 # Development map — repository structure, key entry points, reproduction workflows
 
-> Written 2026-05-12. Intended as the **first doc to read** when starting a new session on this repo. Pairs with `CLAUDE.md` (session handoff state) and `docs/notes/` (investigation logs). Branch: `production_533`.
+> Written 2026-05-12. Intended as the **first doc to read** when starting a new session on this repo. Pairs with `docs/RULES.md` (**binding working rules — read before dispatching any automated work stream**) and `docs/notes/` (investigation logs). Branch: `production_533`.
 
 ## What this repo does
 
