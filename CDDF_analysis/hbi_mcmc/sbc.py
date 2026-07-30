@@ -48,7 +48,9 @@ import warnings
 import numpy as np
 
 __all__ = ["SBC_GRID", "SBC_PRIOR", "SBC_SAMPLER", "sbc_run", "rank_histogram",
-           "uniformity_test", "sbc_block"]
+           "uniformity_test", "sbc_block", "MATCH_KEYS", "REPORTED_ONLY_KEYS",
+           "sbc_configuration", "run_configuration", "configuration_match",
+           "matched_sbc_kwargs"]
 
 # --- R1: the reduced grid ---------------------------------------------------
 SBC_GRID = dict(
@@ -76,8 +78,254 @@ def _reported_from_f(f, pack):
     return {k: float(np.asarray(v).reshape(-1)[0]) for k, v in rep.items()}
 
 
+# ===========================================================================
+# MATCHED-CONFIGURATION SBC  (decision 8, RATIFIED 2026-07-29)
+#
+# RATIFIED STATEMENT (see ratification.py, key "matched_configuration_sbc"):
+#   simulation-based calibration may certify ONLY the configuration it
+#   actually ran.  An SBC whose grid, prior, FP mode, response clamp, sampler
+#   or reported-quantity set differs from the run it is attached to does NOT
+#   certify that run, and an artifact carrying an unmatched -- or an
+#   UNSPECIFIED -- SBC is NOT STAMPABLE.
+#
+# WHY THIS IS AN ENFORCED CHECK AND NOT A README LINE.  The reductions R1-R4
+# in the module docstring are honestly documented, and were still, before this
+# change, invisible to the gate: ``sbc_block`` reported a uniformity p-value,
+# ``evidence.gate`` turned it into ``coverage_sbc.sbc_uniform_ok``, and a
+# 5 x 2 x 1 single-chain narrowed-prior FP-off SBC therefore certified a
+# 29 x 15 x 8 four-chain production fit.  Rank uniformity of object A is not
+# evidence about object B.
+#
+# WHAT IS AND IS NOT ATTEMPTED HERE.  Making a matched SBC CHEAP is out of
+# scope (O(100) production-scale fits; see ``matched_sbc_kwargs`` for the
+# cost statement).  Making an UNMATCHED one REFUSE TO CERTIFY is what is
+# implemented, and it is the half that closes the hole: after this change the
+# existing reduced SBC is still run, still reported and still diagnostic, but
+# ``coverage_sbc.sbc_configuration_matches_run`` is False, so the artifact is
+# not stampable and cannot be quietly mistaken for a certified one.
+# ===========================================================================
+
+#: The configuration coordinates that MUST be identical for an SBC to certify
+#: a run.  Dotted paths into the mapping built by ``_configuration``.  Adding a
+#: key here can only ever make matching STRICTER, which is the fail-closed
+#: direction; removing one requires a ratification edit.
+MATCH_KEYS = (
+    # R1 -- the grid.  Both N axes: ``ntrue_edges`` is the LATENT basis
+    # (decision 3, the 0.2-dex basis) and ``nhat_edges`` the observed axis;
+    # an SBC on a different basis calibrates a different parameter vector.
+    "grid.nhat_edges", "grid.ntrue_edges", "grid.zf_edges", "grid.zc_edges",
+    "grid.snr_edges", "grid.n_molly_cells",
+    # R3 -- the prior, INCLUDING the FP block mode.
+    "prior.level_scale", "prior.slope_scale", "prior.sigma_N_scale",
+    "prior.sigma_z_scale", "prior.fp_mode", "prior.fp_eps_rate",
+    "prior.fp_shape_sd",
+    # R4 / D2 -- the response covariate-range clamp.
+    "response.resp_clamp",
+    # R2 -- the sampler.  SBC ranks are a joint statement about the model AND
+    # the sampler that drew them; 1 chain x 150/150 at tree depth 8 is not the
+    # production sampler, so it is a match coordinate, not a footnote.
+    "sampler.num_warmup", "sampler.num_samples", "sampler.num_chains",
+    "sampler.max_tree_depth", "sampler.target_accept",
+    # the functionals the ranks were computed on must be the ones reported.
+    "reported.quantities",
+)
+
+#: Coordinates that are RECORDED but are deliberately NOT match coordinates:
+#: they change what the SBC's own error bar is, not what object it certifies.
+REPORTED_ONLY_KEYS = ("sbc.n_sims_requested", "sbc.n_sims_used",
+                      "sbc.n_ranks_L", "sbc.seed", "sbc.pack_seed",
+                      "sbc.wallclock_s")
+
+_PRIOR_KEYS = ("level_scale", "slope_scale", "sigma_N_scale", "sigma_z_scale",
+               "fp_mode", "fp_eps_rate", "fp_shape_sd")
+_SAMPLER_KEYS = ("num_warmup", "num_samples", "num_chains", "max_tree_depth",
+                 "target_accept")
+
+#: prior defaults, so that a config built from a partial kwargs dict is
+#: compared against the value the model would actually have used.
+_PRIOR_DEFAULTS = dict(level_scale=4.0, slope_scale=2.0, sigma_N_scale=0.5,
+                       sigma_z_scale=0.5, fp_mode="joint", fp_eps_rate=1e-6,
+                       fp_shape_sd=3.0)
+
+
+def _edges(a):
+    return [float(x) for x in np.asarray(a, float).ravel()]
+
+
+def _grid_config(pack):
+    """The realized geometry of a pack -- read off the pack, never from the
+    kwargs that were *asked* for (a builder is free to round or extend them)."""
+    return {
+        "nhat_edges": _edges(pack.nhat_edges),
+        "ntrue_edges": _edges(pack.ntrue_edges),
+        "zf_edges": _edges(pack.zf_edges),
+        "zc_edges": _edges(pack.zc_edges),
+        "snr_edges": _edges(pack.snr_edges),
+        "n_molly_cells": int(pack.n_molly),
+    }
+
+
+def _prior_config(prior):
+    """Normalised prior coordinates.
+
+    ``fp_eps_rate`` / ``fp_shape_sd`` are set to ``None`` when
+    ``fp_mode == 'off'``: with the FP block off they parameterise nothing, and
+    comparing them would manufacture a mismatch that is not a difference.  A
+    difference in ``fp_mode`` itself is always a mismatch.
+    """
+    p = dict(_PRIOR_DEFAULTS)
+    p.update({k: v for k, v in dict(prior or {}).items() if k in _PRIOR_KEYS})
+    out = {}
+    for k in _PRIOR_KEYS:
+        v = p.get(k)
+        out[k] = v if isinstance(v, str) or v is None else float(v)
+    if out["fp_mode"] == "off":
+        out["fp_eps_rate"] = None
+        out["fp_shape_sd"] = None
+    return out
+
+
+def _sampler_config(sampler):
+    s = dict(sampler or {})
+    out = {}
+    for k in _SAMPLER_KEYS:
+        v = s.get(k)
+        if v is None:
+            out[k] = None
+        elif k == "target_accept":
+            out[k] = float(v)
+        else:
+            out[k] = int(v)
+    return out
+
+
+def _configuration(pack, *, prior, sampler, resp_clamp, reported_names):
+    return {
+        "grid": _grid_config(pack),
+        "prior": _prior_config(prior),
+        "response": {"resp_clamp": (None if resp_clamp is None
+                                    else str(resp_clamp))},
+        "sampler": _sampler_config(sampler),
+        "reported": {"quantities": sorted(str(n) for n in reported_names)},
+    }
+
+
+def _reported_names(pack):
+    """The reported-functional NAME SET for a pack (values are irrelevant)."""
+    from CDDF_analysis.hbi_mcmc.evidence import reported_quantities
+    f = np.ones((1, 1, pack.n_b, pack.n_k), float)
+    return sorted(reported_quantities(f, pack))
+
+
+def run_configuration(pack, cfg=None, *, resp_clamp=None,
+                      reported_names=None):
+    """The configuration coordinates of a PRODUCTION run.
+
+    ``cfg`` is a ``model_a.ModelAConfig`` (or anything with the same
+    attributes).  ``resp_clamp`` defaults to ``cfg.resp_clamp``.  The
+    reported-quantity set is derived from the pack unless given.
+    """
+    prior, sampler = {}, {}
+    if cfg is not None:
+        prior = {k: getattr(cfg, k) for k in _PRIOR_KEYS if hasattr(cfg, k)}
+        sampler = {k: getattr(cfg, k) for k in _SAMPLER_KEYS if hasattr(cfg, k)}
+        if hasattr(cfg, "target_accept"):
+            sampler["target_accept"] = cfg.target_accept
+        if resp_clamp is None:
+            resp_clamp = getattr(cfg, "resp_clamp", None)
+    if reported_names is None:
+        reported_names = _reported_names(pack)
+    return _configuration(pack, prior=prior, sampler=sampler,
+                          resp_clamp=resp_clamp, reported_names=reported_names)
+
+
+def sbc_configuration(block_or_meta):
+    """The configuration an SBC ACTUALLY ran, or ``None`` if it did not record
+    one.  ``None`` is the fail-closed answer: an SBC that cannot say what it
+    ran certifies nothing (see ``configuration_match``)."""
+    if not isinstance(block_or_meta, dict):
+        return None
+    if isinstance(block_or_meta.get("configuration"), dict):
+        return block_or_meta["configuration"]
+    meta = block_or_meta.get("meta")
+    if isinstance(meta, dict) and isinstance(meta.get("configuration"), dict):
+        return meta["configuration"]
+    return None
+
+
+def _flat(cfg, key):
+    cur = cfg
+    for part in key.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return ("__ABSENT__",)
+        cur = cur[part]
+    return cur
+
+
+def configuration_match(sbc_cfg, run_cfg, *, keys=MATCH_KEYS):
+    """Does ``sbc_cfg`` certify ``run_cfg``?  FAIL-CLOSED.
+
+    Returns ``{"matched": bool, "mismatches": [...], "keys_compared": [...],
+    "reasons": [...]}``.
+
+    ``matched`` is True only when BOTH configurations are present and EVERY
+    key in ``keys`` is present in both and equal.  An absent configuration on
+    either side, or an absent key, is a MISMATCH -- never a pass.  That is the
+    whole point: "we did not record what the SBC ran" must not certify.
+    """
+    reasons, mism = [], []
+    if not isinstance(sbc_cfg, dict):
+        reasons.append("the SBC recorded NO configuration: an SBC that cannot "
+                       "state what it ran certifies nothing")
+    if not isinstance(run_cfg, dict):
+        reasons.append("no RUN configuration was supplied to the SBC block: "
+                       "there is nothing for the SBC to be matched against")
+    if reasons:
+        return {"matched": False, "mismatches": [], "reasons": reasons,
+                "keys_compared": list(keys),
+                "sbc_configuration": sbc_cfg, "run_configuration": run_cfg}
+    for k in keys:
+        a, b = _flat(sbc_cfg, k), _flat(run_cfg, k)
+        if a == ("__ABSENT__",) or b == ("__ABSENT__",) or a != b:
+            mism.append({"key": k, "sbc": a, "run": b})
+    if mism:
+        reasons.append(
+            "the SBC certifies a DIFFERENT configuration from the run it is "
+            "attached to; it is reportable and diagnostic, but it does not "
+            "certify this run. Mismatched: "
+            + ", ".join(m["key"] for m in mism))
+    return {"matched": not mism, "mismatches": mism, "reasons": reasons,
+            "keys_compared": list(keys),
+            "sbc_configuration": sbc_cfg, "run_configuration": run_cfg}
+
+
+def matched_sbc_kwargs(pack, cfg, *, n_ranks=None, resp_clamp=None):
+    """The ``sbc_run`` kwargs that WOULD produce a matched SBC for this run.
+
+    Provided so that nobody has to reverse-engineer the match coordinates, and
+    so the COST of a matched SBC is computable rather than rhetorical: one
+    replica costs one production-configuration NUTS fit, and SBC needs O(100)
+    of them.  On the 29 x 15 x 8 pack at 4 x (1500 + 1000) that is O(100) x
+    ~16 h = O(1600) CPU-h, which is above this project's 500 CPU-h sign-off
+    threshold and is a PI decision, not a script.
+    """
+    grid = dict(nhat_edges=np.asarray(pack.nhat_edges, float),
+                zf_edges=np.asarray(pack.zf_edges, float),
+                zc_edges=np.asarray(pack.zc_edges, float),
+                snr_edges=np.asarray(pack.snr_edges, float),
+                n_molly_cells=int(pack.n_molly))
+    prior = {k: getattr(cfg, k) for k in _PRIOR_KEYS if hasattr(cfg, k)}
+    sampler = {k: getattr(cfg, k) for k in _SAMPLER_KEYS if hasattr(cfg, k)}
+    sampler["n_ranks"] = int(n_ranks if n_ranks is not None
+                             else min(SBC_SAMPLER["n_ranks"],
+                                      int(sampler.get("num_samples", 150))))
+    return {"grid": grid, "prior": prior, "sampler": sampler,
+            "resp_clamp": (resp_clamp if resp_clamp is not None
+                           else getattr(cfg, "resp_clamp", None))}
+
+
 def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
-            pack_seed=0, verbose=False):
+            pack_seed=0, verbose=False, resp_clamp="both"):
     """Run the reduced SBC.  Returns (ranks dict, meta dict).
 
     ``ranks[name]`` is a list of ``n_sims`` integers in ``{0, ..., L}``.
@@ -100,7 +348,8 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
     # a template pack fixes the GEOMETRY (dX, molly, response, edges); only the
     # population parameters and the counts are re-drawn per replica.
     pack = synthetic_pack(pack_seed, **grid, fp_frac=0.0)
-    consts = build_consts(pack, resp_clamp="both")
+    consts = build_consts(pack, resp_clamp=resp_clamp,
+                          allow_unclamped_response=(resp_clamp == "off"))
     model = partial(ma.model_a, **prior)
 
     # -- prior draws of the latents AND their simulated counts (one call)
@@ -183,6 +432,14 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
             "functionals (both 20.0 and 20.3 thresholds are on the grid)."),
         "truths": truths, "post_medians": meds,
     }
+    # THE object this SBC certifies, read off the pack it actually built and
+    # the prior/sampler it actually used.  Recorded unconditionally: an SBC
+    # that does not state its configuration certifies nothing (decision 8,
+    # matched_configuration_sbc).
+    meta["configuration"] = _configuration(
+        pack, prior=prior, sampler=samp, resp_clamp=resp_clamp,
+        reported_names=(names if names else _reported_names(pack)))
+    meta["configuration_match_keys"] = list(MATCH_KEYS)
     return ranks, meta
 
 
@@ -225,12 +482,47 @@ def uniformity_test(rank_list, L, n_bins=10):
             "shape": shape, "hist": hist}
 
 
-def sbc_block(n_sims=48, *, seed=0, n_bins=10, **kw):
-    """Block 4.  Runs the reduced SBC and gates on rank uniformity."""
+def _match_fields(meta, run_config):
+    """The configuration-match sub-block + its (single) gating check.
+
+    Kept separate from ``sbc_block`` so the degenerate early-return path gets
+    the SAME treatment: a block that produced no replicas must still be unable
+    to claim a matched configuration.
+    """
+    sbc_cfg = sbc_configuration(meta if isinstance(meta, dict) else None)
+    m = configuration_match(sbc_cfg, run_config)
+    return {
+        "configuration": sbc_cfg,
+        "run_configuration": run_config,
+        "configuration_match": m,
+        "configuration_match_note": (
+            "RATIFIED 2026-07-29 (decision 8, matched-configuration SBC): an "
+            "SBC certifies ONLY the configuration it ran. sbc_configuration_"
+            "matches_run is False whenever the SBC's configuration differs "
+            "from -- or is not stated alongside -- the run's, and a False "
+            "check makes the artifact NOT STAMPABLE. The reduced SBC "
+            "(reductions R1-R4) is still REPORTED and still diagnostic; it "
+            "just no longer certifies a production run. See "
+            "sbc.matched_sbc_kwargs for what a matched one would cost."),
+    }, {"sbc_configuration_matches_run": bool(m["matched"])}
+
+
+def sbc_block(n_sims=48, *, seed=0, n_bins=10, run_config=None, **kw):
+    """Block 4.  Runs the reduced SBC and gates on rank uniformity.
+
+    ``run_config`` is the configuration of the run this block is evidence
+    ABOUT, as built by ``run_configuration(pack, cfg)``.  Omitting it is not a
+    shortcut: with no run to be matched against, the block reports
+    ``sbc_configuration_matches_run=False`` and the artifact is not stampable
+    (decision 8, ratified 2026-07-29).
+    """
     ranks, meta = sbc_run(n_sims, seed=seed, **kw)
     if not ranks:
-        return {"incomplete": ["sbc_produced_no_usable_replicas"],
-                "checks": {"sbc_uniform_ok": False}, "meta": meta}
+        mfields, mchecks = _match_fields(meta, run_config)
+        out = {"incomplete": ["sbc_produced_no_usable_replicas"],
+               "checks": {"sbc_uniform_ok": False, **mchecks}, "meta": meta}
+        out.update(mfields)
+        return out
     L = meta["n_ranks_L"]
     per_q, worst_p, worst_name = {}, 1.0, None
     for name, rk in sorted(ranks.items()):
@@ -248,8 +540,11 @@ def sbc_block(n_sims=48, *, seed=0, n_bins=10, **kw):
     # Bonferroni over the reported quantities (they are strongly correlated,
     # so this is conservative in the direction of NOT crying wolf)
     out["worst_p_bonferroni"] = float(min(1.0, worst_p * len(per_q)))
+    mfields, mchecks = _match_fields(meta, run_config)
+    out.update(mfields)
     out["checks"] = {
         "sbc_uniform_ok": bool(out["worst_p_bonferroni"] >= SBC_UNIFORM_P_MIN),
         "sbc_enough_replicas": bool(meta["n_sims_used"] >= 20),
+        **mchecks,
     }
     return out

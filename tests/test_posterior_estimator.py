@@ -524,14 +524,27 @@ def test_forward_gate_reads_by_snr(spack, fake_fold):
     assert g["ratio_span_by_snr"] == pytest.approx(0.6)
 
 
-def test_forward_gate_catches_a_ratio_swing_even_at_small_poisson_z(
+def test_forward_gate_reports_a_ratio_swing_even_at_small_poisson_z(
         spack, fake_fold):
     """The z-scores can be small on a low-count pack while the RATIO swing is
-    still a ~22% z-marginal systematic.  The span arm is what catches that."""
+    still a ~22% z-marginal systematic.  The span arm is what SEES that.
+
+    CHANGED 2026-07-29 (decision 8).  This test used to assert that the swing
+    REFUSED the run.  The PI declined to ratify the 0.10 / 0.15 thresholds and
+    required prospective calibration, so the arm now computes and reports the
+    statistic as an ADVISORY and does not contribute to pass/fail.  The measured
+    reason is in docs/ratio_span_calibration_spec.md: under a null where the
+    forward model is exactly right, 0.10 refuses ~34% of runs on the synthetic
+    pack while 0.15 refuses ~0.02%.  What is still asserted here is the part
+    that was always the point -- the swing must be VISIBLE and must not be
+    silently dropped.  The refusal behaviour is pinned, for a hypothetically
+    ratified tolerance, in tests/test_gate_ratification.py.
+    """
     fake_fold(_flat_tab(z_by_z=1.0, ratio_by_z=(1.22, 0.78)))
     g = RP.forward_closure_gate(spack)
-    assert g["pass"] is False, g
-    assert any("ratio_span_by_z" in f for f in g["failures"]), g["failures"]
+    assert g["ratio_span_by_z"] == pytest.approx(0.44)
+    assert not any("ratio_span_by_z" in f for f in g["failures"]), g["failures"]
+    assert any("ratio_span_by_z" in a for a in g["advisories"]), g["advisories"]
 
 
 def test_forward_gate_still_passes_a_clean_table(spack, fake_fold):
@@ -656,13 +669,19 @@ def test_the_stamp_carries_the_provisional_flag(spack):
     assert "PROVISIONAL" in json.dumps(md, default=RP._jsonable).upper()
 
 
-def test_a_failure_message_from_a_provisional_arm_says_so(spack, fake_fold):
-    """If the gate REFUSES on an unratified number, the refusal text must
-    name it as unratified -- that is the moment a PI needs to know."""
+def test_an_unratified_arm_reports_an_advisory_and_says_it_does_not_block(
+        spack, fake_fold):
+    """SUPERSEDES ``test_a_failure_message_from_a_provisional_arm_says_so``
+    (decision 8, 2026-07-29).  An unratified tolerance may not REFUSE at all,
+    so the requirement is now that the exceedance appears as an ADVISORY whose
+    text says both that it is unratified and that it does not block -- the two
+    things a reader could otherwise get wrong in opposite directions."""
     from CDDF_analysis.hbi_mcmc import run_posterior as RP
     fake_fold(_flat_tab(ratio_by_z=(1.22, 0.78)))    # span 0.44, |z| tiny
     g = RP.forward_closure_gate(spack)
-    bad = [f for f in g["failures"] if "ratio_span_by_z" in f]
-    assert bad, g["failures"]
-    assert any("UNRATIFIED" in f.upper() or "PROVISIONAL" in f.upper()
-               for f in bad), bad
+    assert g["pass"] is True, g["failures"]
+    adv = [a for a in g["advisories"] if "ratio_span_by_z" in a]
+    assert adv, g["advisories"]
+    assert "UNRATIFIED" in adv[0].upper()
+    assert "does not block" in adv[0].lower()
+    assert not any("ratio_span" in f for f in g["failures"]), g["failures"]

@@ -54,7 +54,8 @@ import time
 
 import numpy as np
 
-__all__ = ["truth_f", "extend_pack_truth", "selftest", "ratio_tables"]
+__all__ = ["truth_f", "extend_pack_truth", "selftest", "ratio_tables",
+           "poisson_z", "ratio_span", "ratio_span_null"]
 
 
 # --------------------------------------------------------------------------
@@ -170,16 +171,286 @@ def selftest(pack, f=None, *, use_fp=True, psi_c=None, resp_clamp="both"):
                 counts=np.asarray(pack.counts, float), consts=consts, f=f)
 
 
+#: the floor added to the variance so that a mu==0 cell cannot divide by zero.
+#: It is NOT a regularizer with a statistical meaning: at mu==0 and obs>0 the
+#: score residual is mathematically +infinity and this floor merely renders it
+#: as a very large finite number (obs * 1e6) so the gate FAILS rather than
+#: raising.  See ``poisson_z``, "EMPTY AND ZERO-PREDICTION BINS".
+_Z_VAR_FLOOR = 1e-12
+
+
+def poisson_z(mu, obs):
+    r"""THE exact definition of the ``z`` that ``|z| <= 5`` thresholds.
+
+    (Decision 8, item 3, 2026-07-29: the criterion was called "malformed as
+    currently stated". This docstring is the restatement. Nothing about the
+    arithmetic changed; it was hoisted out of a nested closure so it could be
+    named, documented and pinned by a test.)
+
+    DEFINITION
+    ----------
+    For an aggregate cell with predicted expected count ``mu`` and observed
+    count ``obs``,
+
+        z = (obs - mu) / sqrt(max(mu, 1e-12))
+
+    i.e. the **Pearson/Poisson score residual of the observed count about the
+    predicted count**, with the variance taken as the PREDICTED mean (the
+    Poisson variance under the null "the forward model is right"), not the
+    observed count and not a fitted variance.
+
+    Every clause of that sentence is load-bearing, so, itemised:
+
+    WHICH RATIO / WHICH ESTIMATOR
+        None. ``z`` is NOT computed from the ``mu/obs`` ratio that sits beside
+        it in these tables and it involves NO posterior, NO sampler and NO
+        estimator. ``mu`` is the pack's own truth folded through the pack's own
+        kernel at the truth-equivalent parameter point (see the module
+        docstring); ``obs`` is the pack's recorded counts. The whole statistic
+        is a deterministic function of the pack.
+
+    SIGN
+        ``obs - mu``. z > 0 means the model UNDER-predicts. (The ratio column
+        is mu/obs, so ratio > 1 pairs with z < 0. This inversion is a genuine
+        readability trap and is why both are reported.)
+
+    OVER WHAT ROWS
+        Per AGGREGATE cell, never pooled, and never per (N,z,SNR) voxel:
+          * ``total``   -- one z over the sum of all cells with dX > 0.
+          * ``by_nhat`` -- one z per observed-N-hat bin (sum over z and SNR).
+          * ``by_z``    -- one z per fine-z bin (sum over N-hat and SNR).
+          * ``by_snr``  -- one z per SNR stratum (sum over N-hat and z).
+        Cells with dX == 0 are zeroed out of BOTH mu and obs before any sum, so
+        they can contribute to neither.
+        The GATE then thresholds ``max |z|`` over the rows of an arm that have
+        ``obs > 0``; for ``by_nhat`` it additionally keeps only rows with
+        ``lo >= nhat_edges[0]``, i.e. the REPORTED bins, excluding any
+        below-floor basis-pad bins.
+
+    WHAT IS IN THE DENOMINATOR
+        ``sqrt(mu)`` only. This is the Poisson standard deviation of ``obs``
+        under the null. It contains:
+          * NO nuisance uncertainty. psi_c, psi_k, t and lam_fp are all held at
+            their point values for the fold, so the uncertainty on completeness,
+            on the response coefficients, on the transfer factors and on the FP
+            rate contributes NOTHING to the denominator.
+          * NO Monte-Carlo or truth-estimation uncertainty on ``mu`` itself,
+            although ``mu`` is built from a f_truth that is itself a finite-count
+            estimate.
+        Both omissions make ``|z|`` LARGER than a fully propagated residual
+        would be, i.e. the gate is conservative in the refusing direction. It is
+        therefore usable as a tripwire and is NOT usable as a calibrated
+        significance.
+
+    EMPTY AND ZERO-PREDICTION BINS
+        * ``obs == 0``: the row is DROPPED by the gate (never counted as a
+          pass and never counted as a failure). Consequence, stated because it
+          is a real hole: a bin the model predicts should be full but which is
+          observed empty is INVISIBLE to this arm. That direction of failure is
+          caught, if at all, by the total.
+        * ``obs > 0`` and ``mu == 0``: z = obs / 1e-6 -- a huge finite number,
+          so the gate FAILS, which is the correct verdict (the model assigns
+          zero probability to something that happened). The value itself is an
+          artifact of the floor and must not be quoted.
+        * ``obs == 0`` and ``mu == 0``: dropped, as above.
+
+    CHI2/DOF
+        ``chi2/dof = sum(z^2) / n_rows`` over exactly the ``by_nhat`` rows the
+        gate keeps. ``dof = n_rows``, NOT ``n_rows - n_params``, because the
+        truth fold fits nothing: there is no parameter estimated from ``obs``.
+
+    WHY 5 IS NOT SCALE-FREE
+        For a fixed FRACTIONAL model error ``mu = (1+d) * obs_expected``, the
+        residual grows as ``z ~ -d * sqrt(mu)``. So the same physical bias
+        crosses |z| = 5 at ``mu ~ 25/d^2``: a 10% bias is invisible below ~2500
+        counts per bin and unmissable above it. A fixed threshold of 5 therefore
+        tightens without limit as the survey grows, and on a count-starved pack
+        it will pass a forward model that is wrong by tens of percent. THAT is
+        the sense in which "|z| <= 5" is ill-posed as a standalone criterion,
+        and it is the exact defect the (unratified) ratio-span arms were
+        invented to cover.
+
+        The criterion is nevertheless kept, RATIFIED, with its purpose narrowed
+        to what it can actually do: it is a tripwire against a forward model
+        that is wrong by ORDERS OF MAGNITUDE (the observed failure mode -- the
+        2LPT-0 v1.1 pack folds to a total z of +93 and a lowest-bin z of +216).
+        The closest defensible description of the implemented statistic is
+        "the maximum absolute Poisson score residual over aggregate marginal
+        cells, with the model's own predicted mean as the variance and no
+        nuisance propagation, thresholded at a fixed 5". It is NOT a 5-sigma
+        significance statement, NOT multiplicity-corrected over the ~29 + 15 + 8
+        rows it maximises over, and NOT a goodness-of-fit test.
+    """
+    mu = np.asarray(mu, float)
+    obs = np.asarray(obs, float)
+    return (obs - mu) / np.sqrt(np.maximum(mu, _Z_VAR_FLOOR))
+
+
+def ratio_span(rows):
+    r"""THE exact definition of ``ratio_span_by_z`` / ``ratio_span_by_snr``.
+
+    🔴 UNRATIFIED STATISTIC.  The PI declined (decision 8, 2026-07-29) to
+    ratify the thresholds 0.10 / 0.15 that were attached to this statistic, and
+    required that it be "defined and calibrated prospectively".  This docstring
+    is the definition half; the calibration procedure is
+    ``docs/ratio_span_calibration_spec.md`` and the null sampler is
+    ``ratio_span_null`` below.  The statistic IS computed and reported on every
+    run and does NOT contribute to pass/fail (``ratification.py``).
+
+    DEFINITION
+    ----------
+    Let ``R`` be the rows of one marginal arm of ``ratio_tables`` -- ``by_z``
+    (one row per FINE-z bin) or ``by_snr`` (one row per SNR stratum) -- each row
+    an aggregate over the other two axes with ``dX == 0`` cells zeroed out.
+    Keep the subset
+
+        R+ = { r in R : obs_r > 0 and mu_r / obs_r is finite }
+
+    and define, with ratio_r = mu_r / obs_r,
+
+        ratio_span(R) = max_{r in R+} ratio_r  -  min_{r in R+} ratio_r      if |R+| >= 2
+        ratio_span(R) = 0                                                    otherwise
+
+    It is a RANGE (a max-minus-min), not a variance, not an sd, and not a
+    normalised dispersion.  Units: dimensionless, since it is a difference of
+    two ratios of counts.
+
+    PROPERTIES THAT MATTER FOR CALIBRATION -- stated because they are the
+    reasons a threshold cannot be guessed:
+
+    * It is a RANGE, so its null distribution grows with the NUMBER OF ROWS
+      (~sqrt(2 log n) sd for Gaussian-ish rows).  A 15-bin fine-z arm and a
+      3-bin one do not share a threshold.  0.10 was chosen with neither row
+      count in mind.
+    * It is heteroscedastic across rows: the per-row Poisson sd of ratio_r is
+      ~ mu_r / obs_r^{3/2} ~ 1/sqrt(obs_r), so a count-starved row dominates the
+      range for purely statistical reasons.  The span therefore mixes a real
+      shape systematic with the noise of the emptiest row.
+    * It uses ``obs`` in the DENOMINATOR, so E[ratio] does not exist in the
+      strict sense (Poisson obs has positive mass at 0 and the row is dropped
+      rather than being infinite).  Dropping ``obs == 0`` rows makes the
+      statistic conditional on which rows happened to be non-empty.
+    * The ``|R+| < 2`` case returns 0, i.e. PASSES VACUOUSLY.  On the SBC-style
+      1-stratum grid ``ratio_span_by_snr`` is identically 0 and its arm has
+      never been able to fire.  A vacuous 0 is indistinguishable, downstream,
+      from a measured 0.
+
+    A better-behaved statistic would be a range (or sd) of ``log(mu/obs)``, or
+    a dispersion of ``poisson_z`` across rows, both of which have a stable null.
+    This function deliberately does NOT redefine anything: it implements what
+    the production gate has been computing, so that the calibration is a
+    calibration OF THE DEPLOYED STATISTIC.  The candidate replacements are
+    written up in the spec and are a PI decision, not a silent edit.
+
+    Parameters
+    ----------
+    rows : sequence of mapping
+        Rows of one arm of ``ratio_tables`` (``by_z`` or ``by_snr``); each row
+        needs ``obs`` and ``ratio``.
+
+    Returns
+    -------
+    dict with ``span``, ``lo``, ``hi``, ``n_rows_used``, ``vacuous``.
+    """
+    keep = [r for r in (rows or [])
+            if float(r.get("obs", 0.0)) > 0
+            and np.isfinite(float(r.get("ratio", np.nan)))]
+    ratios = np.array([float(r["ratio"]) for r in keep], float)
+    if len(ratios) < 2:
+        return {"span": 0.0, "lo": None, "hi": None,
+                "n_rows_used": int(len(ratios)), "vacuous": True}
+    return {"span": float(ratios.max() - ratios.min()),
+            "lo": float(ratios.min()), "hi": float(ratios.max()),
+            "n_rows_used": int(len(ratios)), "vacuous": False}
+
+
+def ratio_span_null(pack, *, n_draws=2000, seed=0, resp_clamp="both",
+                    arms=("by_z", "by_snr"), res=None):
+    """Sample the NULL distribution of ``ratio_span`` (the prospective
+    calibration of the two tolerances the PI declined to ratify).
+
+    THE NULL, stated exactly.  "The forward model is right": the folded
+    prediction ``mu`` is taken as the true expected counts, the nuisances
+    (psi_c, psi_k, t, lam_fp) are held FIXED at the point values the fold used,
+    and the observed cell counts are independent Poisson,
+
+        obs*_{c,k,s} ~ Poisson(mu_{c,k,s})     independently over cells,
+        obs*_{c,k,s} = 0 wherever dX_{k,s} == 0 (as in ``ratio_tables``),
+
+    Each replicate is marginalised exactly as ``ratio_tables`` marginalises,
+    and ``ratio_span`` is recomputed.  The resulting distribution is the
+    span you would see from PURE COUNTING NOISE with a perfect forward model,
+    for THIS pack's row counts and THIS pack's per-row exposure -- which is why
+    the threshold is pack-dependent and cannot be a global constant.
+
+    WHAT THIS NULL DOES NOT CONTAIN (so it is a LOWER bound on the null width):
+    nuisance uncertainty, response-coefficient uncertainty, the Monte-Carlo
+    error of ``f_truth`` itself, and any real overdispersion of the counts
+    (clustering of absorbers along sightlines). A threshold set from this null
+    is therefore ANTI-conservative -- it will fire too often. The spec says so.
+
+    Cost: pure numpy, no MCMC, no JAX beyond the single fold. Measured at
+    ~1e-4 s per replicate on the SBC-size synthetic pack (see the spec).
+
+    Returns a dict of per-arm ``{"span_draws", "quantiles", "n_rows_used"}``
+    plus the observed span, plus the metadata a threshold proposal needs.
+    """
+    if res is None:
+        res = selftest(pack, resp_clamp=resp_clamp)
+    mu = np.asarray(res["mu"], float)
+    dxpos = np.asarray(pack.dX, float) > 0
+    mask3 = np.broadcast_to(dxpos[None, :, :], mu.shape)
+    mu_m = np.where(mask3, mu, 0.0)
+
+    axes = {"by_z": (0, 2), "by_snr": (0, 1)}      # axes SUMMED OVER
+    rng = np.random.default_rng(seed)
+    obs_star = rng.poisson(np.broadcast_to(mu_m, (n_draws,) + mu_m.shape))
+
+    out = {"n_draws": int(n_draws), "seed": int(seed),
+           "resp_clamp": str(resp_clamp), "arms": {},
+           "null_note": (
+               "obs* ~ independent Poisson(mu) with nuisances FIXED; contains "
+               "NO nuisance, response-coefficient or f_truth Monte-Carlo "
+               "uncertainty and NO count overdispersion, so it is a LOWER "
+               "bound on the true null width and a threshold read off it is "
+               "ANTI-conservative. See docs/ratio_span_calibration_spec.md.")}
+    for arm in arms:
+        ax = axes[arm]
+        mu_r = mu_m.sum(axis=ax)                              # (n_rows,)
+        obs_r = obs_star.sum(axis=tuple(a + 1 for a in ax))   # (n_draws, n_rows)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(obs_r > 0, mu_r[None, :] / obs_r, np.nan)
+        n_used = np.isfinite(ratio).sum(axis=1)
+        hi = np.nanmax(np.where(np.isfinite(ratio), ratio, -np.inf), axis=1)
+        lo = np.nanmin(np.where(np.isfinite(ratio), ratio, np.inf), axis=1)
+        span = np.where(n_used >= 2, hi - lo, 0.0)
+        qs = (0.5, 0.9, 0.95, 0.99, 0.995, 0.999)
+        out["arms"][arm] = {
+            "n_rows": int(mu_r.size),
+            "n_rows_nonempty_median": float(np.median(n_used)),
+            "quantiles": {str(q): float(np.quantile(span, q)) for q in qs},
+            "mean": float(span.mean()), "sd": float(span.std(ddof=1)),
+            "span_draws_summary": [float(span.min()), float(span.max())],
+        }
+    tab = ratio_tables(res, pack)
+    for arm in arms:
+        out["arms"][arm]["observed"] = ratio_span(tab.get(arm))
+    return out
+
+
 def ratio_tables(res, pack):
-    """Per-cell / marginal mu-over-counts ratios + Poisson z-scores."""
+    """Per-cell / marginal mu-over-counts ratios + Poisson z-scores.
+
+    ``z`` is ``poisson_z``; read its docstring for the exact definition, the
+    row set, the denominator and the empty-bin convention.
+    """
     mu = res["mu"]
     obs = res["counts"]
     nhat = np.asarray(pack.nhat_edges, float)
     zf = np.asarray(pack.zf_edges, float)
     dxpos = np.asarray(pack.dX, float) > 0
 
-    def _z(m, o):
-        return (o - m) / np.sqrt(np.maximum(m, 1e-12))
+    _z = poisson_z          # THE definition; see its docstring
 
     mask3 = np.broadcast_to(dxpos[None, :, :], mu.shape)
     mu_m = np.where(mask3, mu, 0.0)

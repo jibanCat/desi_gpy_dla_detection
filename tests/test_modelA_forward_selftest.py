@@ -422,6 +422,10 @@ def test_run_rung9_bypass_flows_into_the_evidence_gate(monkeypatch, tmp_path):
                       ["--allow-low-farr", "documented reason"])["provenance"]
     blocks = {b: {"checks": {b + "_ok": True}, "incomplete": []}
               for b in EV.REQUIRED_BLOCKS}
+    # structurally required since the matched-configuration-SBC ratification
+    # (2026-07-29, evidence.REQUIRED_CHECKS); without it the CONTROL below
+    # cannot stamp and this test would pass for the wrong reason.
+    blocks["coverage_sbc"]["checks"]["sbc_configuration_matches_run"] = True
     g = EV.gate(blocks, bypasses=prov["bypasses"])
     assert g["stampable"] is False and g["paper_facing"] is False
     # and the control: same blocks, no bypass -> stampable

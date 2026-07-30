@@ -155,6 +155,10 @@ def main(argv=None):
 
     if a.mode == "sbc":
         from CDDF_analysis.hbi_mcmc import sbc as _sbc
+        # NO run_config: --mode sbc has no run to be matched against, so the
+        # block reports sbc_configuration_matches_run=False and the artifact is
+        # not stampable.  That is the ratified behaviour (decision 8), not an
+        # oversight -- an SBC standing alone certifies nothing.
         blocks["coverage_sbc"] = _sbc.sbc_block(a.sbc_sims, seed=a.sbc_seed)
         prov["rederive"] = (f"python -m CDDF_analysis.hbi_mcmc.run_evidence "
                             f"--mode sbc --sbc-sims {a.sbc_sims} "
@@ -204,6 +208,12 @@ def main(argv=None):
     consts = build_consts(pack, resp_clamp=a.resp_clamp,
                           allow_unclamped_response=(a.resp_clamp == "off"))
 
+    # The configuration the SBC would have to MATCH in order to certify this
+    # run (decision 8, ratified 2026-07-29).  Built for --mode fit, where the
+    # ModelAConfig is in hand; left None for --mode artifact, because a saved
+    # result artifact does not record the prior scales and an unverifiable
+    # configuration must not be asserted (fail closed).
+    run_config = None
     if a.mode == "artifact":
         if not a.result:
             raise SystemExit("--mode artifact needs --result")
@@ -223,6 +233,8 @@ def main(argv=None):
                            num_chains=a.chains, seed=a.seed,
                            resp_clamp=a.resp_clamp,
                            enforce_farr_gate=(a.allow_low_farr is None))
+        from CDDF_analysis.hbi_mcmc import sbc as _sbc_cfgmod
+        run_config = _sbc_cfgmod.run_configuration(pack, cfg)
         mcmc, red = run_model_a(pack, cfg)
         run = EV.posterior_run_from_mcmc(mcmc, pack,
                                          max_tree_depth=cfg.max_tree_depth)
@@ -249,7 +261,11 @@ def main(argv=None):
                            "checks": {"ztilt_has_a_defensible_product": False}}
     if not a.no_sbc:
         from CDDF_analysis.hbi_mcmc import sbc as _sbc
-        blocks["coverage_sbc"] = _sbc.sbc_block(a.sbc_sims, seed=a.sbc_seed)
+        blocks["coverage_sbc"] = _sbc.sbc_block(
+            a.sbc_sims, seed=a.sbc_seed, run_config=run_config)
+        prov["sbc_configuration_match"] = (
+            (blocks["coverage_sbc"].get("configuration_match") or {})
+            .get("matched"))
 
     prov["wallclock_s"] = float(time.time() - t_start)
     ev = EV.assemble_evidence(blocks, provenance=prov, bypasses=bypasses)
