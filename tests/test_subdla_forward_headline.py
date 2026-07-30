@@ -158,18 +158,24 @@ def _commit_float(value):
     return hashlib.sha256(repr(float(value)).encode("utf-8")).hexdigest()
 
 
-def _headline_commitments():
-    """{json-pointer-in-the-retired-headline: sha256_of_repr} from the committed tombstone."""
+def _headline_tripwire():
+    """The committed tripwire block of the retired sub-DLA headline's tombstone.
+
+    Returns ``(endpoints, derived)``, each keyed by the json pointer INTO THE RETIRED
+    ARTIFACT. They are kept in separate namespaces on purpose: the derived commitment
+    re-anchors the SAME pointer (/measurement/19.5/dndx/integrated/MAP) on committed data
+    and has a different shape (no ``corroborating_sha256_of_repr``), so merging them into
+    one dict silently shadows the two-sided endpoint commitment with a one-sided one."""
     tomb = _committed_json(HEADLINE_TOMBSTONE_REL)
     assert tomb is not None, (
         f"{HEADLINE_TOMBSTONE_REL} is not committed at HEAD. The retired sub-DLA headline's "
         "tripwire lives there; without it these assertions have no anchor. This is a hard "
         "failure, NOT a skip.")
     tw = tomb["tripwire"]
-    out = {c["pointer"]: c for c in tw["commitments"]}
-    for d in tw["derived_commitments"]:
-        out[d["equals_pointer_in_retired_artifact"]] = d
-    return out
+    endpoints = {c["pointer"]: c for c in tw["commitments"]}
+    derived = {d["equals_pointer_in_retired_artifact"]: d
+               for d in tw["derived_commitments"]}
+    return endpoints, derived
 
 
 def _blob_exists(commit, relpath):
@@ -344,9 +350,12 @@ def test_band_is_cumulative_difference_not_direct_integral():
     # This was an OPPORTUNISTIC working-tree read (`if head is not None`) of an artifact
     # now retired under PI decision 7. It is re-anchored on the tombstone's DERIVED
     # commitment, so it is UNCONDITIONAL and STRONGER: bit-for-bit instead of abs=1e-9.
-    cs = _headline_commitments()
+    _, derived = _headline_tripwire()
     cum195_ptr = "/measurement/19.5/dndx/integrated/MAP"
-    assert _commit_float(band + dla) == cs[cum195_ptr]["sha256_of_repr"], (
+    assert cum195_ptr in derived, (
+        "the tombstone carries no DERIVED commitment for cum(19.5) -- the secondary "
+        "band-arithmetic check has been disarmed.")
+    assert _commit_float(band + dla) == derived[cum195_ptr]["sha256_of_repr"], (
         "band + DLA-tier does not reproduce the retired headline's cum(19.5) bit-for-bit: "
         "the band is NOT cum(19.5) - cum(20.3).")
     # and the band must NOT itself be the full cum(19.5) (the naive mis-pin). Given the
@@ -484,7 +493,7 @@ def test_two_independent_forward_derivations_agree_bitforbit():
     # builder refused to write the tombstone unless the digests matched. Asserting digest
     # equality here therefore certifies exactly the same bit-for-bit claim, needs no file
     # on disk, and can never degrade to a skip.
-    cs = _headline_commitments()
+    cs, _ = _headline_tripwire()
     endpoints = [f"/measurement/{lim}/{m}/integrated/MAP"
                  for m in ("dndx", "omega") for lim in ("19.5", "20.3")]
     for ptr in endpoints:
@@ -498,14 +507,22 @@ def test_two_independent_forward_derivations_agree_bitforbit():
     assert len({cs[p]["sha256_of_repr"] for p in endpoints}) == 4, (
         "the four endpoint commitments are not distinct -- they cannot all be the same leaf.")
 
-    # --- part 2: the crossmock file's own internal arithmetic + the forward target -------
-    # This half never needed the retired headline. It reads only the crossmock artifact,
-    # which is still untracked, so its presence gate is PRE-EXISTING and unchanged -- the
-    # assertions above are the ones the retirement had to keep armed.
+
+def test_crossmock_artifact_still_matches_the_certified_endpoints():
+    """The other half of AC8, SPLIT OUT so the certification above always reports as a real
+    PASS instead of being swallowed by this half's skip.
+
+    This half never needed the retired headline: it reads only `crossmock_transfer_loa0.json`
+    (still untracked scratch), checks that artifact's own internal band arithmetic, and
+    confirms it has not drifted from the endpoints the tombstone certified. Its presence
+    gate is PRE-EXISTING and unchanged by the retirement."""
+    cs, _ = _headline_tripwire()
     xm = _worktree_json(XM_REL)
     if xm is None:
         pytest.skip(f"{XM_REL} absent from the working tree (untracked scratch); the "
-                    "head-vs-crossmock certification above already ran unconditionally.")
+                    "head-vs-crossmock certification in "
+                    "test_two_independent_forward_derivations_agree_bitforbit already ran "
+                    "unconditionally.")
     xs = xm["self_recovery_baseline_2lpt0"]
     cm = xs["cumulative_map"]
     # the crossmock endpoints must still be the ones the tombstone committed
