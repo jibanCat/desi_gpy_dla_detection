@@ -74,6 +74,8 @@ ADOPTED_CLAMP = "both"
 
 PACKDIR = DEF_PACKDIR
 OUT = DEF_OUT
+N_SBC_SIMS = 64      # matched-configuration SBC replicas (0 = skip)
+SBC_SEED = 0
 
 
 def tag_for(width, floor, conv):
@@ -330,6 +332,9 @@ def phase_closure():
         plotting_grid_disclosure=REP.plotting_grid_disclosure(ADOPTED_WIDTH),
         z_criterion=REP.Z_CRITERION,
         omega_policy=_omega_block(),
+        coverage=(coverage_block(n_sims=N_SBC_SIMS, seed=SBC_SEED)
+                  if N_SBC_SIMS else dict(
+                      skipped="--sbc-sims 0", reason="coverage not requested")),
         limitations=_limitations(),
     )
     with open(OUT, "w") as f:
@@ -411,6 +416,8 @@ def convention_systematic_block(rows):
                 **REP.convention_systematic(corners_bin, adopted)),
         )
     fr = {m: out[m]["integrated_reporting_window"]["frac_conv"] for m in MOCKS}
+    fs_full = {m: out[m]["integrated_full_grid"]["frac_span"] for m in MOCKS}
+    fs_win = {m: out[m]["integrated_reporting_window"]["frac_span"] for m in MOCKS}
     return dict(
         what=("the clamp x completeness convention dependence, propagated as a "
               "NAMED per-bin and integrated systematic on the predicted counts "
@@ -427,6 +434,25 @@ def convention_systematic_block(rows):
                          "reported per mock so no single mock can be quoted as "
                          "'the' systematic."),
         frac_conv_in_window_max_over_mocks=max(fr.values()),
+        frac_span_full_grid_by_mock=fs_full,
+        frac_span_in_window_by_mock=fs_win,
+        reconciliation_of_the_5p5_percent_figure=(
+            "the '~5.5% of the total at pad 19.0' figure in circulation is the "
+            "FULL bracket WIDTH on the FULL observed grid, and it is "
+            f"reproduced here: max-min over the 2x2 corners divided by the "
+            f"adopted corner is "
+            f"{100 * max(fs_full.values()):.2f}% "
+            f"(min over mocks {100 * min(fs_full.values()):.2f}%) at basis "
+            f"width {ADOPTED_WIDTH} and pad {ADOPTED_FLOOR}. Two corrections "
+            "to how it should be quoted: (i) the PROPAGATED systematic is the "
+            "HALF-span, i.e. "
+            f"{100 * max(out[m]['integrated_full_grid']['frac_conv'] for m in MOCKS):.2f}% "
+            "on the full grid, not 5.5%; (ii) INSIDE the reporting window the "
+            "bracket is smaller: full width "
+            f"{100 * max(fs_win.values()):.2f}%, half-span "
+            f"{100 * max(fr.values()):.2f}%. Reporting only [19.7, 21.6] "
+            "therefore also nearly HALVES the convention systematic, which is a "
+            "second, previously unmeasured benefit of the window."),
     )
 
 
@@ -533,12 +559,16 @@ def build_verdict(rows, syst):
             f"{_leg(ad['2lpt0'], 'window')['per_bin_ratio_max']:.4f}. That is a "
             "systematic no sampler and no window can repair."),
         convention_systematic_headline=(
-            "the clamp x completeness 2x2 spans "
+            "the clamp x completeness 2x2 half-span is "
             f"{100 * syst['frac_conv_in_window_max_over_mocks']:.2f}% "
-            "(half-span / adopted, max over mocks) of the integrated predicted "
-            "counts INSIDE the reporting window at the adopted basis and pad. "
-            "It is carried as a SEPARATE LINEAR ENVELOPE, not in quadrature "
-            "(see convention_systematic.estimator)."),
+            "(max over mocks) of the integrated predicted counts INSIDE the "
+            "reporting window at the adopted basis and pad — full bracket width "
+            f"{100 * max(syst['frac_span_in_window_by_mock'].values()):.2f}%, "
+            "against a full width of "
+            f"{100 * max(syst['frac_span_full_grid_by_mock'].values()):.2f}% "
+            "over the whole observed grid. It is carried as a SEPARATE LINEAR "
+            "ENVELOPE, not in quadrature (see "
+            "convention_systematic.estimator)."),
         omega_hi=("NOT emitted as a total. Only Omega_HI limited to "
                   "[19.7, 21.6] and labelled as such is emittable "
                   "(omega_policy)."),
@@ -615,6 +645,129 @@ def _metadata(sha, stamp_audit, t_start):
     )
 
 
+def coverage_block(n_sims=64, seed=0):
+    """MATCHED-CONFIGURATION SBC on the ADOPTED latent geometry, WITH a measured
+    detection curve (PI decision 8 + the project's power-check rule).
+
+    Truth-containment is monotone in band width and therefore cannot fail an
+    over-wide band -- a 2x over-dispersed posterior has previously passed 24/24
+    tests and 8/8 containment on this project.  So the coverage claim is reported
+    ONLY alongside the detection curve over ``sbc.DISPERSION_SCALES``: the same
+    posterior draws re-scaled in log f about their per-bin median, at no extra
+    sampling cost.  If s = 2.0 is not flagged, the s = 1.0 result certifies
+    nothing and this block says so.
+    """
+    from CDDF_analysis.hbi_mcmc import sbc as S
+    from CDDF_analysis.hbi_mcmc.evidence import SBC_UNIFORM_P_MIN
+    t0 = time.time()
+    ranks, meta = S.sbc_run(n_sims, seed=seed, grid=S.SBC_GRID_ADOPTED,
+                            dispersion_scales=S.DISPERSION_SCALES,
+                            verbose=True, **S.SBC_ADOPTED_BASIS)
+    if not ranks:
+        return dict(incomplete=["sbc_produced_no_usable_replicas"], meta=meta)
+    L = meta["n_ranks_L"]
+    curve = {}
+    for s, rk_by_q in meta["ranks_by_scale"].items():
+        per_q = {}
+        worst_p, worst_name = 1.0, None
+        for name, rk in sorted(rk_by_q.items()):
+            t = S.uniformity_test(rk, L, n_bins=10)
+            per_q[name] = dict(p_value=t["p_value"], chi2=t["chi2"],
+                               shape=t["shape"],
+                               edge_mass_frac=t["edge_mass_frac"],
+                               hist=t["hist"]["counts"])
+            if t["p_value"] is not None and t["p_value"] < worst_p:
+                worst_p, worst_name = t["p_value"], name
+        bonf = float(min(1.0, worst_p * max(len(per_q), 1)))
+        curve[s] = dict(
+            worst_p_value=float(worst_p), worst_quantity=worst_name,
+            worst_p_bonferroni=bonf,
+            flagged=bool(bonf < SBC_UNIFORM_P_MIN),
+            per_quantity=per_q)
+    flagged = {s: curve[s]["flagged"] for s in curve}
+    detects_2x = bool(flagged.get("2", False))
+    detects_0p5x = bool(flagged.get("0.5", False))
+    over = sorted(float(s) for s in curve if float(s) > 1.0)
+    under = sorted((float(s) for s in curve if float(s) < 1.0), reverse=True)
+    det_over = [s for s in over if flagged[f"{s:g}"]]
+    und_over = [s for s in over if not flagged[f"{s:g}"]]
+    det_under = [s for s in under if flagged[f"{s:g}"]]
+    und_under = [s for s in under if not flagged[f"{s:g}"]]
+    blind = dict(
+        smallest_DETECTED_over_dispersion=(min(det_over) if det_over else None),
+        largest_UNDETECTED_over_dispersion=(max(und_over) if und_over else None),
+        largest_DETECTED_under_dispersion=(max(det_under) if det_under else None),
+        smallest_UNDETECTED_under_dispersion=(min(und_under) if und_under
+                                              else None),
+        monotone_in_s=bool(all(
+            flagged[f"{s:g}"] for s in over
+            if det_over and s >= min(det_over))),
+        note=("the detection curve is NOT monotone in s at this power: a scale "
+              "can sit between a detected and an undetected one. The numbers "
+              "above are the measured envelope, not an interpolation."),
+    )
+    return dict(
+        what=("simulation-based calibration of the SAME estimator on the ADOPTED "
+              "latent geometry (0.2-dex basis, pad 19.0), with a MEASURED "
+              "detection curve rather than a bare pass/fail."),
+        routine="CDDF_analysis/hbi_mcmc/sbc.py:sbc_run",
+        matched_configuration=dict(
+            basis_width_dex=meta["basis_width"], pad_floor=meta["pad_floor"],
+            n_basis_bins=meta["n_basis_bins"],
+            n_observed_bins=meta["n_observed_bins"],
+            n_pad_bins=meta["n_pad_bins"], ntrue_edges=meta["ntrue_edges"],
+            matched_on=("the LATENT basis width and the downward pad -- the two "
+                        "things decisions 3 and 4 changed"),
+            NOT_matched_on=("the grid extent, the sampler scale, the prior "
+                            "widths and the response realisation. Those are "
+                            "reductions R1-R5, enumerated in meta.reduction_"
+                            "note, and they are the reason this is a "
+                            "calibration statement about the SAMPLER + FORWARD "
+                            "MODEL, not about the production prior."),
+        ),
+        p_threshold=SBC_UNIFORM_P_MIN,
+        detection_curve=curve,
+        detection_curve_definition=meta["dispersion_scale_definition"],
+        dispersion_scales=meta["dispersion_scales"],
+        flagged_by_scale=flagged,
+        power_verdict=(
+            "USABLE WITH A STATED BLIND SPOT" if detects_2x
+            else "NOT USABLE AS A COVERAGE CERTIFICATE"),
+        detection_envelope=blind,
+        power_statement=(
+            f"at n_sims_used = {meta['n_sims_used']} and L = {L} the test "
+            f"{'DOES' if detects_2x else 'DOES NOT'} flag a 2.0x over-dispersed "
+            f"posterior and {'DOES' if detects_0p5x else 'DOES NOT'} flag a 0.5x "
+            "under-dispersed one. THE BLIND SPOT, MEASURED: the largest "
+            "over-dispersion this configuration does NOT flag is "
+            f"{blind['largest_UNDETECTED_over_dispersion']}x, and the smallest "
+            "it DOES flag is "
+            f"{blind['smallest_DETECTED_over_dispersion']}x. "
+            + ("So the s = 1.0 result is interpretable as 'not mis-scaled by "
+               f"{blind['smallest_DETECTED_over_dispersion']}x or more', and it "
+               "is NOT evidence that the band is correct to better than "
+               f"~{blind['largest_UNDETECTED_over_dispersion']}x. Quote it with "
+               "that qualifier or not at all."
+               if detects_2x else
+               "The s = 1.0 result therefore CERTIFIES NOTHING about band width: "
+               "a uniform rank histogram at this power is consistent with a "
+               "substantially mis-scaled posterior. Do not quote it as coverage.")),
+        worst_quantity_at_s1=(curve.get("1") or {}).get("worst_quantity"),
+        worst_quantity_note=(
+            "if the worst quantity at s = 1 is the reporting-window functional, "
+            "say so: it is the one the paper would quote and it is the one whose "
+            "calibration matters, whatever the Bonferroni verdict."),
+        s1_result=curve.get("1"),
+        conclusion_scope=(
+            "MOCK/SYNTHETIC only, REDUCED scale. This is not a coverage "
+            "statement about the production 29x15x8 fit, whose forward model "
+            "does not close (see verdict) -- a coverage statement about a "
+            "non-closing model would be meaningless anyway."),
+        wall_seconds=round(time.time() - t0, 1),
+        meta=meta,
+    )
+
+
 def _limitations():
     return [
         "the 21.6 ceiling is a REPORTING cap, not a fix. Residual D2 (the "
@@ -640,19 +793,31 @@ def _limitations():
         "re-running closure and closure still fails.",
         "the two ratio-span gate tolerances remain UNRATIFIED (PI decision 8) "
         "and are not used by this artifact's verdict.",
+        "the coverage block's SBC is matched on the LATENT BASIS WIDTH and the "
+        "PAD only. It is reduced in grid extent, sampler scale, prior width and "
+        "response realisation (R1-R5), and its measured power has a stated blind "
+        "spot: read coverage.detection_envelope before quoting coverage.detection"
+        "_curve['1']. A uniform rank histogram at this power does NOT certify the "
+        "band to better than the largest UNDETECTED mis-scaling.",
     ]
 
 
 # ---------------------------------------------------------------------------
 def main(argv=None):
-    global PACKDIR, OUT
+    global PACKDIR, OUT, N_SBC_SIMS, SBC_SEED
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", required=True, choices=["extract", "closure"])
     p.add_argument("--pack-dir", default=DEF_PACKDIR)
     p.add_argument("--out", default=DEF_OUT)
+    p.add_argument("--sbc-sims", type=int, default=N_SBC_SIMS,
+                   help="matched-configuration SBC replicas (0 = skip the "
+                        "coverage block). ~6 s each after JIT warmup, MEASURED.")
+    p.add_argument("--sbc-seed", type=int, default=SBC_SEED)
     a = p.parse_args(argv)
     PACKDIR = a.pack_dir
     OUT = a.out
+    N_SBC_SIMS = a.sbc_sims
+    SBC_SEED = a.sbc_seed
     if a.phase == "extract":
         return phase_extract()
     return phase_closure()

@@ -409,6 +409,9 @@ def convention_systematic(corners: dict, adopted_key: str):
     half = 0.5 * span
     frac = np.divide(half, np.abs(adopted),
                      out=np.full_like(half, np.nan), where=np.abs(adopted) > 0)
+    frac_span = np.divide(span, np.abs(adopted),
+                          out=np.full_like(span, np.nan),
+                          where=np.abs(adopted) > 0)
     scalar = vals.shape[1] == 1
 
     def _out(a):
@@ -424,6 +427,14 @@ def convention_systematic(corners: dict, adopted_key: str):
         span=_out(span),
         sigma_conv=_out(half),
         frac_conv=_out(frac),
+        # BOTH normalisations, because "the conventions span X%" is ambiguous
+        # and has already been quoted both ways: frac_conv is the HALF-span over
+        # the adopted corner (the propagated systematic); frac_span is the FULL
+        # max-minus-min over the adopted corner (the bracket WIDTH). frac_span
+        # == 2 * frac_conv by construction.
+        frac_span=_out(frac_span),
+        frac_conv_definition="sigma_conv / |adopted| = half-span, THE systematic",
+        frac_span_definition="span / |adopted| = full bracket width = 2 x frac_conv",
         combination_rule=CONVENTION_SYSTEMATIC["combination_rule"],
         combination_rule_definition=CONVENTION_SYSTEMATIC[
             "combination_rule_definition"],

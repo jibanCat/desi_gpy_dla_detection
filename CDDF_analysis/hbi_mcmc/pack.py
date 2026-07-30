@@ -61,6 +61,7 @@ __all__ = [
     "synthetic_pack",
     "small_test_grid",
     "upgrade_pack_v11",
+    "coarsen_basis",
     "resp_fit_range_from_forward_npz",
     "REAL_NHAT_EDGES",
     "REAL_ZF_EDGES",
@@ -652,6 +653,80 @@ def resp_fit_range_from_forward_npz(forward_npz) -> np.ndarray:
     if a.ndim != 3:
         _fail(f"emp_N_anchors: expected (SR, ZR, n_anchor), got {a.shape}")
     return np.stack([a.min(axis=-1), a.max(axis=-1)], axis=-1)
+
+
+def coarsen_basis(pack: ModelAPack, basis_width, pad_floor=None) -> ModelAPack:
+    """Re-grid a pack's LATENT true-N basis to ``basis_width`` (PI decision 3).
+
+    SYNTHETIC / TEST utility.  ``extract_pack`` builds real packs on the coarse
+    basis directly from the catalogue; this exists so a SYNTHETIC pack can be put
+    on the ADOPTED geometry (coarse basis, optional downward pad) for coverage
+    work, using EXACTLY the adopted convention: ``reporting.basis_groups`` in two
+    segments split at the reporting floor, truth COUNTS summed within a group,
+    truth ``f`` dN-weighted-averaged (``reporting.merged_truth``).
+
+    The observed axis (``nhat_edges``, ``counts``, ``dX``, every calibration
+    block) is untouched.  New pad bins carry ZERO truth counts -- the pad's role
+    here is to supply latent nuisance SUPPORT, and a synthetic study draws its own
+    truth on that support from the prior.
+    """
+    from CDDF_analysis.hbi_mcmc import reporting as _RP
+    fine = np.asarray(pack.ntrue_edges, float)
+    if not np.allclose(np.diff(fine), _N_STEP, atol=1e-8):
+        _fail("coarsen_basis: the input pack's basis must be on the observed "
+              f"{_N_STEP} dex step (got widths {np.diff(fine)})")
+    obs_lo = float(np.asarray(pack.nhat_edges, float)[0])
+    n_pad_fine = 0
+    if pad_floor is not None:
+        n_pad_fine = int(round((fine[0] - float(pad_floor)) / _N_STEP))
+        if n_pad_fine < 0:
+            n_pad_fine = 0
+        elif n_pad_fine and abs(fine[0] - n_pad_fine * _N_STEP
+                                - float(pad_floor)) > 1e-8:
+            _fail(f"coarsen_basis: pad_floor {pad_floor} is off the "
+                  f"{_N_STEP} dex grid")
+        if n_pad_fine:
+            fine = np.round(np.concatenate(
+                [fine[0] - _N_STEP * np.arange(n_pad_fine, 0, -1), fine]), 10)
+    n_below = int(np.sum(fine[:-1] < obs_lo - 1e-9))
+    n_above = len(fine) - 1 - n_below
+    g = int(round(float(basis_width) / _N_STEP))
+    if g < 1 or abs(g * _N_STEP - float(basis_width)) > 1e-8:
+        _fail(f"coarsen_basis: basis_width {basis_width} must be a positive "
+              f"integer multiple of {_N_STEP}")
+    groups = []
+    if n_below:
+        groups += _RP.basis_groups(n_below, g)
+    groups += [[b + n_below for b in gr] for gr in _RP.basis_groups(n_above, g)]
+    edges = _RP.merged_edges(fine, groups)
+
+    def _pad_sum(a):
+        if a is None:
+            return None
+        a = np.asarray(a, float)
+        if n_pad_fine:
+            a = np.concatenate([np.zeros((n_pad_fine,) + a.shape[1:]), a], 0)
+        return np.stack([a[gr].sum(axis=0) for gr in groups])
+
+    truth = None
+    if pack.truth is not None:
+        truth = dict(pack.truth)
+        if "f_true" in truth:
+            f = np.asarray(truth["f_true"], float)
+            if n_pad_fine:
+                f = np.concatenate([np.zeros((n_pad_fine,) + f.shape[1:]), f], 0)
+            dNf = np.diff(fine)
+            truth["f_true"] = np.stack(
+                [_RP.merged_truth(f[:, k], dNf, groups) for k in range(f.shape[1])],
+                axis=1)
+            truth["basis_coarsened_to_dex"] = float(basis_width)
+    out = dataclasses.replace(
+        pack, ntrue_edges=edges,
+        truth_counts=_pad_sum(pack.truth_counts),
+        truth_counts_bks=_pad_sum(pack.truth_counts_bks),
+        truth=truth)
+    validate_pack(out, allow_nonstandard_grid=True)
+    return out
 
 
 def upgrade_pack_v11(npz_in, npz_out, *, forward_npz=None,

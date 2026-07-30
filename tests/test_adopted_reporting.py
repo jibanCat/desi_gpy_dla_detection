@@ -479,6 +479,93 @@ def test_posterior_summary_refuses_unqualified_omega_and_emits_the_windowed_one(
         assert blk["dndx_allz"]["point_q50"] > 0, tier
 
 
+# ===========================================================================
+# pack.coarsen_basis — putting a SYNTHETIC pack on the adopted geometry
+# ===========================================================================
+
+def test_coarsen_basis_reproduces_the_extractor_grid_shape():
+    """The synthetic path and the extractor must use ONE convention.
+
+    MUTATION: merge in one pass inside ``coarsen_basis`` -> RED (19.5 stops being
+    an edge and validate_pack refuses it). Verified.
+    """
+    p = PK.synthetic_pack(seed=0, **PK.small_test_grid())
+    c = PK.coarsen_basis(p, 0.2, pad_floor=19.0)
+    assert [round(float(x), 3) for x in c.ntrue_edges] == [
+        19.0, 19.2, 19.5, 19.7, 19.9, 20.1, 20.3, 20.5]
+    assert c.n_pad_bins == 2
+    assert np.array_equal(c.nhat_edges, p.nhat_edges)      # observed never moves
+    assert np.array_equal(c.counts, p.counts)
+    # the SAME two-segment structure the extractor produces
+    e_ext, n_ext = EP.basis_pad_edges(19.0, 0.2)
+    assert np.allclose(np.diff(e_ext)[:n_ext], np.diff(c.ntrue_edges)[:2])
+
+
+def test_coarsen_basis_conserves_truth_counts_and_the_f_integral():
+    """MUTATION: use a plain mean instead of ``merged_truth``'s dN weighting
+    -> RED on the f leg (the 0.3-dex bins are mis-weighted). Verified.
+    """
+    p = PK.synthetic_pack(seed=0, **PK.small_test_grid())
+    c = PK.coarsen_basis(p, 0.2)
+    assert np.asarray(c.truth_counts).sum() == pytest.approx(
+        np.asarray(p.truth_counts).sum())
+    f0, f1 = np.asarray(p.truth["f_true"]), np.asarray(c.truth["f_true"])
+    i0 = (f0 * np.diff(np.asarray(p.ntrue_edges))[:, None]).sum()
+    i1 = (f1 * np.diff(np.asarray(c.ntrue_edges))[:, None]).sum()
+    assert i1 == pytest.approx(i0, rel=1e-12)
+    assert c.truth["basis_coarsened_to_dex"] == 0.2
+
+
+def test_coarsen_basis_refuses_a_pack_that_is_already_coarse():
+    """MUTATION: drop the input-step check -> RED. Verified."""
+    p = PK.coarsen_basis(PK.synthetic_pack(seed=0, **PK.small_test_grid()), 0.2)
+    with pytest.raises(PK.PackSchemaError, match="must be on the observed"):
+        PK.coarsen_basis(p, 0.2)
+
+
+# ===========================================================================
+# coverage: the matched configuration and the MEASURED power check
+# ===========================================================================
+
+def test_sbc_reports_the_primary_reporting_window_functional():
+    """After decision 1 the REPORTED functional is the windowed one; an SBC that
+    ranks only the open-topped 20.0/20.3 thresholds says nothing about it.
+
+    MUTATION: drop the reduce_f_posterior extension in ``_reported_from_f``
+    -> RED. Verified.
+    """
+    from CDDF_analysis.hbi_mcmc import sbc as S
+    p = PK.coarsen_basis(PK.synthetic_pack(seed=0, **S.SBC_GRID_ADOPTED),
+                         **S.SBC_ADOPTED_BASIS)
+    q = S._reported_from_f(np.asarray(p.truth["f_true"], float), p)
+    assert "dndx_report_197_216_allz" in q
+    assert "omega_report_197_216_allz" in q
+    assert q["dndx_report_197_216_allz"] > 0
+
+
+def test_dispersion_scale_one_is_the_identity_and_two_is_not():
+    """The power check must be a real transformation of the SAME draws, and s = 1
+    must be EXACTLY the unscaled ranks -- otherwise the detection curve's own
+    baseline is not the result being certified.
+
+    MUTATION: use ``s * log_post`` instead of pivoting about ``log_med``
+    -> RED (s = 1 stops being the identity). Verified.
+    """
+    from CDDF_analysis.hbi_mcmc import sbc as S
+    samp = dict(S.SBC_SAMPLER, num_warmup=30, num_samples=30, n_ranks=10)
+    ranks, meta = S.sbc_run(2, seed=3, grid=S.SBC_GRID_ADOPTED, sampler=samp,
+                            dispersion_scales=(1.0, 2.0), **S.SBC_ADOPTED_BASIS)
+    assert meta["n_sims_used"] >= 1
+    assert meta["ranks_by_scale"]["1"] == ranks          # exact identity
+    assert meta["dispersion_scales"] == [1.0, 2.0]
+    assert meta["matched_configuration"] is True
+    assert meta["basis_width"] == 0.2 and meta["pad_floor"] == 19.0
+    assert meta["n_pad_bins"] == 2
+    # a 2x log-space widening must move at least one rank somewhere
+    assert meta["ranks_by_scale"]["2"] != ranks
+    assert "R5 REPORTING WINDOW" in meta["reduction_note"]
+
+
 def test_reduce_f_posterior_guards_the_window_tier_against_pad_bins(monkeypatch):
     """The decision-4 guard must be WIRED INTO the reduction, not merely
     available as a function.
