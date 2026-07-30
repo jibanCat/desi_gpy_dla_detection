@@ -15,6 +15,15 @@ occupied by a refusal.
    which rejects any float-valued leaf anywhere in a tombstone. Every number a tombstone
    is allowed to hold is an **integer** (byte counts, schema version, counts) or a **hex
    digest string**.
+
+   ⚠️ **Known limit of that check, stated rather than papered over:** the no-float rule
+   sees JSON *types*, so it cannot see a number written inside a prose string. The
+   tombstones here do contain such numbers — log-N window edges (17.2, 17.5, 19.0, 19.2,
+   19.5, 20.3), basis resolutions (0.1, 0.2 dex) and the B16 leak factors
+   (1.0557–1.1818, already committed verbatim elsewhere in the repo). These are
+   *configuration and defect-magnitude* descriptors, not the retired measurement, and the
+   leak range is what makes "RE-DERIVE, never rescale" actionable. A reviewer adding a
+   tombstone must still read the prose: the mechanical rule is a floor, not a proof.
 2. **Regeneration is a NEW MEASUREMENT with a NEW ARTIFACT IDENTITY.** Re-running the
    retired routine post-B16 does not repair the retired artifact's provenance; it produces
    a different measurement of a different (corrected) estimand. It must be written to a
@@ -46,7 +55,23 @@ occupied by a refusal.
 | `successor_policy` | statement + `requirements[]` + `must_not_reuse_identity` + `successor_identity_rule` |
 | `values_policy` | explicit `carries_science_values: false` + rationale |
 | `tripwire` | *optional*; present only where a live test depended on the retired file (see below) |
-| `metadata` | `code_commit` (full 40 chars), `builder`, `paper_facing: false` |
+| `metadata` | `code_commit` (clean full 40 chars), `routine` + `rederive` (the **tombstone's own** builder, so it audits `RE_DERIVABLE` rather than `NO_ROUTINE`), `builder`, `paper_facing: false` |
+
+### Interaction with the repo-wide audit
+
+A tombstone is itself a committed artifact, so `CDDF_analysis/unblind/audit.py` walks it.
+Two consequences:
+
+* it must declare its **own** generating routine in `metadata.routine` / `metadata.rederive`
+  (the builder). The retired artifact's command lives separately and read-only at
+  `/artifact/rederive_command_as_stamped` and is never used as the tombstone's provenance.
+* `/artifact/stamped_code_commit` legitimately holds a `<sha>-dirty` string, which
+  `tests/test_unblind_audit.py::test_no_committed_artifact_hides_dirty_substamps_under_a_clean_one`
+  is designed to reject. It is exempted **only** at that exact path and **only** for docs
+  declaring `schema == "hbi-artifact-tombstone"`. The exemption is itself guarded by
+  `test_the_tombstone_exemption_is_narrow_and_cannot_be_abused`: a schema-blind or
+  prefix-widened exemption fails it, a dirty sha anywhere else in a tombstone still fires,
+  and a tombstone whose **own** `metadata.code_commit` is dirty still fires.
 
 ### Defect codes
 
@@ -71,16 +96,43 @@ to a *committed constant*:
 "tripwire": {
   "consumer": "tests/test_subdla_forward_headline.py::...",
   "commitments": [{"pointer": "/measurement/19.5/dndx/integrated/MAP",
-                   "sha256_of_repr": "…"}]
+                   "corroborating_pointer": "/self_recovery_baseline_2lpt0/cumulative_map/dndx/19.5",
+                   "sha256_of_repr": "…",
+                   "corroborating_sha256_of_repr": "…"}],
+  "derived_commitments": [{"from_committed_artifact": "…subdla_mock_validation_forward.json",
+                           "sum_of_pointers": ["…/dndx_est_195_203", "…/dndx_est_203"],
+                           "equals_pointer_in_retired_artifact": "/measurement/19.5/dndx/integrated/MAP",
+                           "sha256_of_repr": "…"}]
 }
 ```
 
 `sha256_of_repr` is `sha256(repr(float(value)).encode())`. It is a **commitment, not a
 value**: it cannot be plotted, quoted, or integrated, and it is not a number the schema's
-no-float rule would admit. The corroborating artifact
-(`crossmock_transfer_loa0.json`) is hashed the same way at test time and must match — so
-the bit-for-bit head-vs-crossmock agreement the retired file used to certify is *still*
-certified, with the retired file gone.
+no-float rule would admit.
+
+**Why the commitment is TWO-SIDED.** The corroborating artifact
+(`crossmock_transfer_loa0.json`) is *also* untracked scratch, so a one-sided commitment
+would leave the agreement unverifiable the moment both files are gone. The builder
+therefore hashes both sides and **refuses to write the tombstone unless the digests
+match**. Because `repr()` of an IEEE-754 double is round-trip exact,
+`sha256(repr(a)) == sha256(repr(b))` **iff** `a == b` bit-for-bit — so the committed pair
+of digests is a permanent, value-free certificate of the agreement, and the consumer test
+asserts it **unconditionally**, with no file present and no `pytest.skip` path.
+
+**`derived_commitments`** re-anchor a *secondary* check that also read the retired file
+(`band + DLA-tier == cum(19.5)`, i.e. the band is a difference-slice and not a mislabelled
+cumulative). Both summands live in a **committed** artifact, so the tombstone commits the
+digest of their sum. The consumer recomputes that sum and must reproduce the digest — this
+is the one place with real arithmetic teeth, and it upgraded the original check from an
+opportunistic `abs=1e-9` read to an unconditional bit-for-bit assertion.
+
+Endpoint and derived commitments share a pointer, so consumers must keep them in
+**separate namespaces**; merging them into one pointer-keyed dict silently shadows the
+two-sided endpoint commitment with a one-sided derived one (this was a real bug, caught by
+running it).
+
+Net effect of the retirement on the tripwire, measured: naively deleting the record now
+turns **3 tests RED**; before the retirement the same deletion produced a silent skip.
 
 ## Adding a tombstone
 

@@ -151,7 +151,13 @@ def test_tombstones_carry_no_science_values(name):
     """A tombstone may hold ints and hex digests, never a float. This is the mechanical
     proxy for 'carries no retired science value': every quantity these artifacts were
     retired for (dN/dX, Omega, f(N), ell(X), lambda_mfp, tau_eff_LL, any recovery ratio R0)
-    is a float, so a no-float rule cannot be satisfied while smuggling one."""
+    is a float, so a no-float rule cannot be satisfied while smuggling one.
+
+    LIMIT, stated rather than papered over: this sees JSON *types*, so it cannot see a
+    number written inside a prose string. The tombstones do contain such numbers (log-N
+    window edges, dex resolutions, the B16 leak range) -- configuration and defect-magnitude
+    descriptors, not the retired measurement. See SCHEMA.md hard rule 1: the mechanical
+    rule is a floor, not a proof, and a reviewer must still read the prose."""
     tomb = _load_tombstone(name)
     offenders = [p for p, v in _walk(tomb)
                  if isinstance(v, float) and not isinstance(v, bool)]
