@@ -314,6 +314,44 @@ def test_protocol_is_fixed_and_names_the_reference_window(WS):
     assert str(WS.REPORT_LO) in joined and str(WS.REPORT_HI) in joined
 
 
+def test_response_swap_covers_EVERY_resp_field(WS):
+    """The attribution cross-fold swaps the response between two packs. If a new
+    ``resp_*`` pack field is ever added and NOT listed, the cross-fold would
+    leave part of the old response in place and silently mis-attribute the
+    window effect. Assert the list is exhaustive against the pack dataclass."""
+    import dataclasses
+    # file-direct: the hbi_mcmc package __init__ imports jax, absent from gpdla
+    PK = _load("_pack_under_test", "CDDF_analysis/hbi_mcmc/pack.py")
+    fields = {f.name for f in dataclasses.fields(PK.ModelAPack)
+              if f.name.startswith("resp_")}
+    assert fields, "no resp_* fields found — the introspection broke"
+    missing = fields - set(WS._RESP_KEYS)
+    assert not missing, f"response fields not swapped by the cross-fold: {missing}"
+    extra = set(WS._RESP_KEYS) - fields
+    assert not extra, f"_RESP_KEYS names non-existent pack fields: {extra}"
+
+
+def test_pilot_cost_parses_the_runners_own_log_line(WS, tmp_path, monkeypatch):
+    """ARM 2's per-spectrum cost is read from the finder's OWN log line, not
+    retyped. A silently-unparsed log must return None, never a wrong number."""
+    monkeypatch.setattr(WS, "ARM2_DIR", str(tmp_path))
+    d = tmp_path / "run_tagX" / "logs"
+    d.mkdir(parents=True)
+    log = d / "pilot_tagX.log"
+    log.write_text(
+        "INFO:dlasearch.py:266:dlasearch_mock: Completed processing of 4 "
+        "spectra from /some/spectra-16-39.fits in 328.19s\n")
+    c = WS._pilot_cost("tagX")
+    assert c["n_spectra"] == 4
+    assert c["inference_seconds"] == pytest.approx(328.19)
+    assert c["seconds_per_spectrum"] == pytest.approx(328.19 / 4)
+    # a log with no such line yields None -- never a fabricated cost
+    log.write_text("INFO: nothing useful here\n")
+    assert WS._pilot_cost("tagX") is None
+    # a missing log yields None
+    assert WS._pilot_cost("tagY") is None
+
+
 def test_basis_resolution_status_is_explicit_about_decision_3(WS):
     """The study must SAY it did not implement the 0.2-dex basis rather than
     let a reader assume the PI-adopted configuration was fully realised."""

@@ -699,6 +699,7 @@ def phase_selftest():
         ),
         verdict=verdict,
         arm1_analysis_window=rows,
+        arm1_response_attribution=response_attribution(gate),
         pack_metadata=packmeta,
         committed_gate_crosscheck=xcheck,
         window_matching=[assert_window_matched(w) for w in WINDOWS],
@@ -708,6 +709,87 @@ def phase_selftest():
         json.dump(out, f, indent=1)
     print(f"\n[window] wrote {OUT}")
     return out
+
+
+_RESP_KEYS = ("resp_mu_coef", "resp_sig_coef", "resp_skew_coef",
+              "resp_snr_edges", "resp_z_edges", "resp_sig_floor",
+              "resp_skew_ramp", "resp_N_ref", "resp_N_fit_range",
+              "resp_fitcov_diag")
+
+
+def response_attribution(gate):
+    """ATTRIBUTION: is the window effect the SELECTION or the RE-MEASURED RESPONSE?
+
+    ARM 1 is a matched comparison, so the two arms differ in BOTH the absorber /
+    pathlength / completeness / FP SELECTION and in the forward RESPONSE (which
+    had to be re-measured at 911 A, and came out wider: sigma at N=20.4 goes
+    0.195 -> 0.206 / 0.140 -> 0.156 / 0.096 -> 0.104 across SNR 2.5 / 5 / 20,
+    with the up-bias at z_QSO 2.75 going +0.0140 -> +0.0216 dex). A matched
+    comparison is the RIGHT comparison, but it cannot by itself say WHICH of the
+    two moved the answer.
+
+    This block splits them by CROSS-FOLDING: take each window's pack and swap in
+    the OTHER window's response arrays, leaving everything else untouched.
+
+    THE CROSS-FOLDS ARE DELIBERATELY MISMATCHED CONFIGURATIONS. They are
+    DIAGNOSTIC ONLY and must never be quoted as a closure result -- a 1025-A
+    response folded against a 911-A selection is exactly the defect
+    ``assert_window_matched`` exists to refuse. They are computed here, in
+    memory, from packs that are themselves matched, and no mismatched pack is
+    ever written to disk.
+    """
+    import dataclasses
+
+    out = {}
+    for mock in MOCKS:
+        packs = {w: load_pack(os.path.join(PACKDIR, pack_name(mock, w)))
+                 for w in WINDOWS}
+        entry = {}
+        for w in WINDOWS:
+            other = "lya_lyb" if w == "lya_only" else "lya_only"
+            swap = {k: getattr(packs[other], k) for k in _RESP_KEYS}
+            crossed = dataclasses.replace(packs[w], **swap)
+            for label, pk in (("matched", packs[w]), ("response_swapped",
+                                                      crossed)):
+                tab = _FS().ratio_tables(
+                    _FS().selftest(pk, resp_clamp="both"), pk)
+                rep = window_metrics(tab["by_nhat"], REPORT_LO, REPORT_HI)
+                hin = window_metrics(tab["by_nhat"], HIGHN_LO, None)
+                entry[f"{w}|{label}"] = dict(
+                    selection_window=w,
+                    response_window=(w if label == "matched" else other),
+                    matched=bool(label == "matched"),
+                    reporting_chi2_dof=rep["chi2_dof"],
+                    reporting_ratio=rep["ratio"],
+                    high_n_ratio=hin["ratio"],
+                )
+        # decompose the high-N residual move, at FIXED selection = lya_lyb:
+        #   response effect  = swap the response only
+        #   selection effect = the rest of the matched difference
+        h_oo = entry["lya_only|matched"]["high_n_ratio"]         # sel 1025, resp 1025
+        h_ob = entry["lya_only|response_swapped"]["high_n_ratio"]  # sel 1025, resp 911
+        h_bb = entry["lya_lyb|matched"]["high_n_ratio"]           # sel  911, resp 911
+        h_bo = entry["lya_lyb|response_swapped"]["high_n_ratio"]   # sel  911, resp 1025
+        entry["decomposition_high_n_ratio"] = dict(
+            matched_lya_only=h_oo, matched_lya_lyb=h_bb,
+            total_change=h_bb - h_oo,
+            response_only_at_fixed_lya_only_selection=h_ob - h_oo,
+            selection_only_at_fixed_lya_only_response=h_bo - h_oo,
+            interaction=(h_bb - h_oo) - (h_ob - h_oo) - (h_bo - h_oo),
+        )
+        out[mock] = entry
+    return dict(
+        what=("cross-fold attribution: each window's pack folded with the OTHER "
+              "window's response arrays, everything else untouched. Splits the "
+              "matched window effect into a SELECTION part and a RESPONSE "
+              "RE-MEASUREMENT part."),
+        warning=("THE `response_swapped` ROWS ARE MISMATCHED CONFIGURATIONS. "
+                 "DIAGNOSTIC ONLY -- never quote them as closure results. No "
+                 "mismatched pack is written to disk."),
+        routine="CDDF_analysis/hbi_mcmc/window_study.py:response_attribution",
+        swapped_keys=list(_RESP_KEYS),
+        per_mock=out,
+    )
 
 
 def build_verdict(rows, packmeta):
@@ -776,23 +858,316 @@ def build_verdict(rows, packmeta):
                   "campaign and was NOT authorized. See "
                   "arm2_fitting_window_pilot for the costed decision."),
         ),
+        recommendation=recommendation(rows, per_clamp),
+    )
+
+
+def recommendation(rows, per_clamp):
+    """The answer to the deliverable's question, decided by P1-P6 ONLY."""
+    def g(mock, window, clamp, field, sub):
+        return rows[f"{mock}|{window}|clamp={clamp}"][field][sub]
+
+    return dict(
+        answer=("KEEP lya_only (1025 A) AS THE PRIMARY REPORTING "
+                "CONFIGURATION; KEEP lya_lyb (911 A) AS A REPORTED "
+                "SENSITIVITY. Neither window closes, so this is a "
+                "PREFERENCE BETWEEN TWO NON-CLOSING CONFIGURATIONS, not a "
+                "closure result."),
+        rests_on="ARM 1 (COMPLETE)",
+        reasoning=[
+            ("P2 (PRIMARY, decides the recommendation): the nominal lya_only "
+             "window has a MUCH lower chi2/dof over the PI's 19.7-21.6 "
+             "reporting window, unanimously on all three mocks and at both "
+             "clamps. At clamp=both: 63.7 vs 106.6 (2lpt0), 44.2 vs 74.2 "
+             "(london0), 49.7 vs 80.7 (saclay0) — the wider window adds +30 to "
+             "+43 to chi2/dof. That is the axis the PI's decision 1 defined the "
+             "reporting window on, so it decides."),
+            ("P3 (SECONDARY, does NOT overturn P2 but must be reported): the "
+             "wider lya_lyb window moves the EXCLUDED high-N residual "
+             "(logN >= 21.6) TOWARD 1, also unanimously — 1.169 -> 1.080 "
+             "(2lpt0), 1.245 -> 1.167 (london0), 1.231 -> 1.178 (saclay0), i.e. "
+             "|ratio - 1| falls by 0.053-0.088. The attribution cross-fold "
+             "(arm1_response_attribution) shows this is a SELECTION effect "
+             "(-0.108 to -0.143 at fixed response) partly cancelled by the "
+             "RE-MEASURED response (+0.067 to +0.068), NOT an artefact of "
+             "having rebuilt the kernel at 911 A. So the blue end really does "
+             "carry information about the high-N residual — the opposite sign "
+             "to the PI's hypothesis."),
+            ("P4: the total is NOT used. For the record the wider window's "
+             "reporting-window mu/obs is UNIFORMLY FURTHER from 1 "
+             "(-0.023 to -0.029), so the level does not argue for it either."),
+            ("P5: every direction above is unanimous 3/3, at both clamps. No "
+             "2-of-3 split was found, so nothing is being reported as an "
+             "effect that is really a split."),
+            ("MARGINALS (measured, gating nothing — PI decision 8 declined to "
+             "ratify the span tolerances): the wider window slightly REDUCES "
+             "both marginal tilts (2lpt0 by_z span 0.152 -> 0.140, by_snr span "
+             "0.188 -> 0.162) while raising max|z| (19.9 -> 22.6 by z; "
+             "39.0 -> 43.3 by SNR) — the latter purely because there are ~21% "
+             "more counts, so Poisson errors shrink. Neither window closes on "
+             "any marginal arm."),
+        ],
+        what_this_does_NOT_say=[
+            "It does NOT say the Lya-only window is ROBUST. Neither window "
+            "closes: the best configuration measured here is london0 | "
+            "lya_only | clamp=hi at chi2/dof 29.6 over 19.7-21.6, still ~10x "
+            "the ratified tolerance of 3.",
+            "It does NOT test the PI's stated MECHANISM. The analysis window "
+            "is a post-hoc SELECTION; blue-edge truncation inside the GP fit is "
+            "the FITTING window, which only ARM 2 touches and which ARM 2 only "
+            "pilots.",
+            "It does NOT carry the PI-adopted 0.2-dex latent basis (decision 3, "
+            "sibling stream). The window CONTRAST is at fixed basis on both "
+            "arms and its DIRECTION is unaffected, but no ABSOLUTE closure "
+            "number here is the PI-adopted configuration's closure.",
+            "It is NOT a statement about real DESI data: mocks only.",
+        ],
+        follow_ups_for_the_PI=[
+            "The high-N residual and the reporting-window chi2/dof disagree "
+            "about the blue end, unanimously and in opposite directions. That "
+            "is new information about D2 and it is worth more than either "
+            "window choice: the >= 21.6 excess is NOT purely a response-"
+            "extrapolation artefact, since a pure SELECTION change moves it by "
+            "-0.11 to -0.14 at fixed kernel.",
+            "The two sub-floor conventions and the D2 clamp still dominate: "
+            "clamp=hi beats clamp=both by ~20-35 chi2/dof units in EVERY "
+            "configuration, in both windows.",
+            "ARM 2's costed decision is in arm2_fitting_window_pilot."
+            "campaign_cost_estimate. It is far above the ~500 CPU-h sign-off "
+            "threshold and was not requested.",
+        ],
+        best_measured=dict(
+            config="london0|lya_only|clamp=hi",
+            reporting_chi2_dof=g("london0", "lya_only", "hi",
+                                 "primary_reporting_window", "chi2_dof"),
+            reporting_ratio=g("london0", "lya_only", "hi",
+                              "primary_reporting_window", "ratio"),
+            high_n_ratio=g("london0", "lya_only", "hi",
+                           "high_n_above_21p6", "ratio"),
+            still_over_gate_by=g("london0", "lya_only", "hi",
+                                 "primary_reporting_window", "chi2_dof") / 3.0,
+        ),
     )
 
 
 def load_pilot():
-    """ARM 2's pilot result, written by ``--phase pilot`` to the pack dir."""
-    p = os.path.join(PACKDIR, "arm2_pilot.json")
+    """ARM 2's pilot result, written by ``--phase pilot-analyze``."""
+    p = os.path.join(ARM2_DIR, "arm2_pilot.json")
     if not os.path.exists(p):
         return dict(status="NOT RUN", path=p)
     with open(p) as f:
         return json.load(f)
 
 
+# ---------------------------------------------------------------------------
+# ARM 2 — the FITTING-window pilot analyser (POINTER, NOT A MEASUREMENT)
+# ---------------------------------------------------------------------------
+ARM2_DIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+            "window_study/arm2")
+ARM2_ARMS = {"lam911p75": 911.75, "lam1025p0": 1025.0}
+# the production op cut, so the pilot's detections are selected exactly like the
+# catalog the analysis arm consumes
+PILOT_P_DLA_MIN, PILOT_SNR_MIN = 0.99, 2.0
+
+
+def _read_pilot_dlacat(tag):
+    import glob as _g
+    import fitsio
+    pats = sorted(_g.glob(os.path.join(ARM2_DIR, f"run_{tag}", "dlacat-*.fits")))
+    if not pats:
+        return None, None
+    return fitsio.read(pats[0]), pats[0]
+
+
+def _pilot_cost(tag):
+    """Per-spectrum inference cost from the run's own log line."""
+    import re
+    log = os.path.join(ARM2_DIR, f"run_{tag}", "logs", f"pilot_{tag}.log")
+    if not os.path.exists(log):
+        return None
+    n, secs = None, None
+    with open(log, errors="replace") as f:
+        for line in f:
+            m = re.search(r"Completed processing of (\d+) spectra from .* in "
+                          r"([0-9.]+)s", line)
+            if m:
+                n, secs = int(m.group(1)), float(m.group(2))
+    if n is None:
+        return None
+    return dict(n_spectra=n, inference_seconds=secs,
+                seconds_per_spectrum=secs / max(n, 1), log=log)
+
+
+def analyze_pilot(spectra_per_mock=361167, n_mocks=3):
+    """Pair the two fitting-window arms on the SAME spectra; cost the campaign.
+
+    ``spectra_per_mock`` defaults to the MEASURED number of unique sightlines
+    the committed 2LPT-0 V1 production run actually produced catalog rows for
+    (361,167 unique TARGETIDs in combined_catalog/dlacat-v2.8.5-mockcat.fits).
+    """
+    import numpy as _np
+
+    with open(os.path.join(ARM2_DIR, "pilot_truth.json")) as f:
+        pt = json.load(f)
+    truth = {int(r["TARGETID"]): r for r in pt["truth"]}
+    tids = _np.loadtxt(os.path.join(ARM2_DIR, "pilot12_tids.txt"),
+                       dtype=_np.int64, ndmin=1)
+
+    per_arm, missing = {}, {}
+    for tag in ARM2_ARMS:
+        cat, path = _read_pilot_dlacat(tag)
+        if cat is None:
+            return dict(status="INCOMPLETE",
+                        reason=f"no dlacat for arm {tag}", arm2_dir=ARM2_DIR)
+        pdla = _np.asarray(cat["P_DLA"], float)
+        flag = _np.asarray(cat["DLAFLAG"], int)
+        snr = _np.asarray(cat["SNR_REDSIDE"], float)
+        op = (pdla > PILOT_P_DLA_MIN) & (flag == 0) & (snr > PILOT_SNR_MIN)
+        sel = cat[op]
+        best, absent = {}, []
+        for t in tids:
+            rows = sel[_np.asarray(sel["TARGETID"], _np.int64) == int(t)]
+            if len(rows) == 0:
+                absent.append(int(t))
+                continue
+            # the detection CLOSEST IN REDSHIFT to the truth DLA (not the
+            # highest-N one: picking by N would bias the very quantity measured)
+            zt = float(truth[int(t)]["Z"])
+            j = int(_np.argmin(_np.abs(_np.asarray(rows["Z_DLA"], float) - zt)))
+            best[int(t)] = dict(
+                NHI=float(rows["NHI"][j]), Z_DLA=float(rows["Z_DLA"][j]),
+                P_DLA=float(rows["P_DLA"][j]),
+                SNR_REDSIDE=float(rows["SNR_REDSIDE"][j]),
+                n_candidates=int(len(rows)))
+        per_arm[tag] = dict(path=path, n_op_rows=int(op.sum()),
+                            matched=best, absent=absent,
+                            cost=_pilot_cost(tag))
+        missing[tag] = absent
+
+    paired = []
+    a, b = "lam911p75", "lam1025p0"
+    for t in sorted(set(per_arm[a]["matched"]) & set(per_arm[b]["matched"])):
+        nt = float(truth[t]["NHI"])
+        n911 = per_arm[a]["matched"][t]["NHI"]
+        n1025 = per_arm[b]["matched"][t]["NHI"]
+        paired.append(dict(
+            TARGETID=t, NHI_true=nt, Z_true=float(truth[t]["Z"]),
+            SNR=float(truth[t]["SNR"]),
+            NHI_min_lambda_911p75=n911, NHI_min_lambda_1025p0=n1025,
+            delta_NHI_bluecut_minus_full=n1025 - n911,
+            bias_911p75=n911 - nt, bias_1025p0=n1025 - nt,
+            delta_abs_bias=abs(n1025 - nt) - abs(n911 - nt)))
+
+    def stats(vals):
+        v = _np.asarray(vals, float)
+        n = len(v)
+        if n == 0:
+            return dict(n=0)
+        sd = float(v.std(ddof=1)) if n > 1 else float("nan")
+        sem = sd / _np.sqrt(n) if n > 1 else float("nan")
+        return dict(n=int(n), mean=float(v.mean()), median=float(_np.median(v)),
+                    sd=sd, sem=float(sem),
+                    t_like=(float(v.mean() / sem) if n > 1 and sem > 0
+                            else float("nan")),
+                    n_positive=int((v > 0).sum()), n_negative=int((v < 0).sum()),
+                    min=float(v.min()), max=float(v.max()))
+
+    d_nhi = stats([p["delta_NHI_bluecut_minus_full"] for p in paired])
+    d_bias = stats([p["delta_abs_bias"] for p in paired])
+    cost = {t: per_arm[t]["cost"] for t in ARM2_ARMS}
+    sps = [c["seconds_per_spectrum"] for c in cost.values() if c]
+    sps_mean = float(_np.mean(sps)) if sps else float("nan")
+    cpuh_per_mock = sps_mean * spectra_per_mock / 3600.0
+
+    return dict(
+        status="PILOT COMPLETE (POINTER ONLY)",
+        what=("the FINDER run twice on the SAME spectra at min_lambda = 911.75 "
+              "(production) and 1025.0 (the controlled blue-end cut), "
+              "everything else byte-identical. This is the ONLY arm that can "
+              "test the PI's mechanism (blue-edge truncation INSIDE the GP fit); "
+              "the analysis-window arm is a post-hoc selection and cannot."),
+        routine=("CDDF_analysis/hbi_mcmc/window_study.py:analyze_pilot; runner "
+                 "slurm/greatlakes/production/arm2_fitting_window_pilot.sh"),
+        design=dict(
+            mock="2lpt0", spectra_file=pt["spectra_file"],
+            level2_index=pt["level2_index"],
+            selection=("the 12 sightlines with the LARGEST truth log NHI in one "
+                       "spectra-16 file, one DLA per sightline, chosen from "
+                       "TRUTH (NHI >= 21.0) and therefore independent of either "
+                       "arm's output"),
+            n_requested=int(len(tids)),
+            truth_NHI_range=[min(r["NHI"] for r in pt["truth"][:len(tids)]),
+                             max(r["NHI"] for r in pt["truth"][:len(tids)])],
+            detection_matching=("per TARGETID, the op-cut detection CLOSEST IN "
+                                "Z_DLA to the truth DLA — NOT the highest-N "
+                                "one, which would bias the measured quantity"),
+            op_cut=dict(p_dla_min=PILOT_P_DLA_MIN, dlaflag=0,
+                        snr_redside_min=PILOT_SNR_MIN),
+            arms=ARM2_ARMS,
+            what_else_changed="NOTHING — only --min_lambda differs",
+        ),
+        per_spectrum=paired,
+        n_paired=len(paired),
+        not_recovered_by_arm=missing,
+        delta_NHI_bluecut_minus_full=d_nhi,
+        delta_abs_bias_bluecut_minus_full=d_bias,
+        cost=cost,
+        campaign_cost_estimate=dict(
+            seconds_per_spectrum_measured=sps_mean,
+            measured_on=("LARGE-DLA sightlines (truth log NHI >= 21.0), which "
+                         "are SLOWER than a random sightline: every one of them "
+                         "escalates the multi-DLA model ladder (MAX_DLAS=4, "
+                         "100k PW samples). This makes the figure an UPPER "
+                         "BOUND on the per-spectrum mean, and the campaign "
+                         "numbers below UPPER BOUNDS with it."),
+            spectra_per_mock_measured=int(spectra_per_mock),
+            spectra_per_mock_source=("unique TARGETIDs in the committed 2LPT-0 "
+                                     "V1 production catalog "
+                                     "combined_catalog/dlacat-v2.8.5-"
+                                     "mockcat.fits"),
+            cpu_hours_per_mock_one_window=cpuh_per_mock,
+            cpu_hours_three_mocks_one_window=cpuh_per_mock * n_mocks,
+            note=("a fitting-window campaign needs only ONE new window per "
+                  "mock: production already ran at min_lambda = 911.75, so the "
+                  "911.75 arm is FREE and only the cut arm is new."),
+            budget_context=("the project compute cap is ~5,000 CPU-h and any "
+                            "job above ~500 CPU-h needs explicit PI sign-off. "
+                            "No sign-off has been given, and none was sought."),
+        ),
+        uncertainty=dict(
+            headline=("A PILOT OF TWELVE SPECTRA IS A POINTER, NOT A "
+                      "MEASUREMENT."),
+            what_n_12_can_resolve=(
+                "with n = 12 paired differences the standard error on the mean "
+                "delta log NHI is sd/sqrt(12) = sd/3.46, so an effect smaller "
+                "than about 0.6 sd is indistinguishable from zero at 2 sigma. "
+                "The measured sd and sem are reported above; read t_like as a "
+                "rough paired-t statistic on 11 dof (|t| >~ 2.2 is 2-sided "
+                "p < 0.05) and NOT as a calibrated test — the 12 sightlines "
+                "were chosen as the LARGEST truth NHI in one healpix, so they "
+                "are neither a random sample of DLAs nor independent of each "
+                "other's sky region."),
+            what_it_cannot_do=(
+                "it cannot estimate the CDDF, cannot say anything about "
+                "completeness or purity, cannot generalise to the other two "
+                "mocks, and cannot be turned into a forward-closure statement. "
+                "Any closure claim about the fitting window requires the full "
+                "campaign costed above."),
+            selection_caveat=(
+                "the sample is deliberately restricted to LARGE DLAs "
+                "(NHI >= 21.0) because that is the population the PI's "
+                "hypothesis is about. It therefore says nothing about the "
+                "low-N end, and its per-spectrum cost is an upper bound."),
+        ),
+    )
+
+
 def main(argv=None):
     global PACKDIR, OUT
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", required=True,
-                   choices=["extract", "selftest", "check-windows"])
+                   choices=["extract", "selftest", "check-windows",
+                            "pilot-analyze"])
     p.add_argument("--pack-dir", default=DEF_PACKDIR)
     p.add_argument("--out", default=DEF_OUT)
     a = p.parse_args(argv)
@@ -802,6 +1177,18 @@ def main(argv=None):
         for w in WINDOWS:
             print(json.dumps(assert_window_matched(w), indent=1))
         return None
+    if a.phase == "pilot-analyze":
+        rep = analyze_pilot()
+        p = os.path.join(ARM2_DIR, "arm2_pilot.json")
+        rep["code_commit"] = full_sha()
+        rep["code_commit_dirty"] = dirty()
+        rep["date"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(p, "w") as f:
+            json.dump(rep, f, indent=1)
+        print(json.dumps({k: v for k, v in rep.items()
+                          if k not in ("per_spectrum",)}, indent=1))
+        print(f"[arm2] wrote {p}")
+        return rep
     if a.phase == "extract":
         return phase_extract()
     return phase_selftest()
