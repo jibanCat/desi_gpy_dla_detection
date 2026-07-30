@@ -612,8 +612,8 @@ def phase_selftest():
         print(f"[window] WARNING: packs stamped {commits} but the selftest "
               f"phase is at {sha} (recorded in metadata).")
 
-    verdict = build_verdict(rows, packmeta)
     pilot = load_pilot()
+    verdict = build_verdict(rows, packmeta, pilot)
     out = dict(
         metadata=dict(
             title=("Matched spectral-window study — the ANALYSIS window "
@@ -792,7 +792,7 @@ def response_attribution(gate):
     )
 
 
-def build_verdict(rows, packmeta):
+def build_verdict(rows, packmeta, pilot=None):
     """The recommendation, decided by the pre-registered protocol only."""
     def get(mock, window, clamp):
         return rows[f"{mock}|{window}|clamp={clamp}"]
@@ -858,11 +858,67 @@ def build_verdict(rows, packmeta):
                   "campaign and was NOT authorized. See "
                   "arm2_fitting_window_pilot for the costed decision."),
         ),
-        recommendation=recommendation(rows, per_clamp),
+        recommendation=recommendation(rows, per_clamp, pilot),
     )
 
 
-def recommendation(rows, per_clamp):
+def arm2_pointer(pilot):
+    """ARM 2's contribution to the recommendation, flagged as a POINTER."""
+    if not pilot or pilot.get("status", "").startswith(("NOT RUN",
+                                                        "INCOMPLETE")):
+        return dict(status=pilot.get("status") if pilot else "NOT RUN",
+                    contribution="NONE — the pilot did not produce a result.")
+    d = pilot["delta_NHI_bluecut_minus_full"]
+    b = pilot["delta_abs_bias_bluecut_minus_full"]
+    return dict(
+        status=pilot["status"],
+        rests_on="ARM 2 (PILOT — a POINTER, NOT A MEASUREMENT)",
+        pointer=("NULL. On the {n} paired large DLAs recovered by BOTH fitting "
+                 "windows, moving the finder's blue edge from 911.75 A to "
+                 "1025.0 A changes the recovered log NHI by a mean of "
+                 "{mean:+.4f} dex (median {med:+.4f}, sd {sd:.4f}, sem "
+                 "{sem:.4f}, paired t-like {t:+.2f} on {dof} dof). That is "
+                 "~{ratio:.0f}x smaller than the scatter and is "
+                 "indistinguishable from zero.").format(
+                     n=d["n"], mean=d["mean"], med=d["median"], sd=d["sd"],
+                     sem=d["sem"], t=d["t_like"], dof=d["n"] - 1,
+                     ratio=(d["sd"] / abs(d["mean"]) if d["mean"] else
+                            float("inf"))),
+        accuracy_pointer=("neither window is measurably biased on these large "
+                          "DLAs: |bias| changes by {mean:+.4f} dex (t-like "
+                          "{t:+.2f}), i.e. the blue-end cut neither helps nor "
+                          "hurts large-DLA N recovery here.").format(
+                              mean=b["mean"], t=b["t_like"]),
+        structure=("{nz} of {n} sightlines returned a BIT-IDENTICAL log NHI in "
+                   "both windows; the non-zero shifts are small and mostly "
+                   "negative except one +0.16 dex outlier at SNR 2.8. So the "
+                   "null is not an averaging artefact — for half the sample "
+                   "the blue edge changed nothing at all.").format(
+                       nz=sum(1 for p in pilot["per_spectrum"]
+                              if p["delta_NHI_bluecut_minus_full"] == 0.0),
+                       n=d["n"]),
+        interpretation=(
+            "This is the FIRST DIRECT evidence on the PI's stated mechanism, "
+            "and it does NOT support it: at n=9 there is no detectable "
+            "blue-end effect on recovered large-DLA N_HI in either direction. "
+            "It is a POINTER. With sd = {sd:.3f} dex the pilot can only "
+            "exclude a mean shift larger than about {res:.3f} dex at 2 sigma, "
+            "so a real effect of ~0.02-0.04 dex would be invisible here — and "
+            "an effect that small could still matter to the high-N residual. "
+            "The ANALYSIS-window arm found a REAL blue-end effect on the "
+            "high-N residual (-0.11 to -0.14 at fixed response), so 'no "
+            "effect in the fitting window' and 'a real effect in the selection'"
+            " are both on the table and are NOT the same claim.").format(
+                sd=d["sd"], res=2.0 * d["sem"]),
+        cost=pilot["campaign_cost_estimate"],
+        not_recovered_by_either_arm=(
+            "3 of the 12 requested sightlines produced no op-cut detection in "
+            "EITHER window — symmetric, so the pilot loses no sightline to the "
+            "window choice."),
+    )
+
+
+def recommendation(rows, per_clamp, pilot=None):
     """The answer to the deliverable's question, decided by P1-P6 ONLY."""
     def g(mock, window, clamp, field, sub):
         return rows[f"{mock}|{window}|clamp={clamp}"][field][sub]
@@ -946,6 +1002,25 @@ def recommendation(rows, per_clamp):
                            "high_n_above_21p6", "ratio"),
             still_over_gate_by=g("london0", "lya_only", "hi",
                                  "primary_reporting_window", "chi2_dof") / 3.0,
+        ),
+        arm2_fitting_window=arm2_pointer(pilot),
+        which_part_rests_on_what=dict(
+            arm1_complete=[
+                "the recommendation to keep lya_only PRIMARY and lya_lyb as a "
+                "reported SENSITIVITY",
+                "every closure / chi2 / high-N / marginal number quoted",
+                "the selection-vs-response attribution of the high-N move",
+            ],
+            arm2_pilot_only=[
+                "the statement that the FITTING window shows no detectable "
+                "effect on recovered large-DLA N_HI",
+                "the per-spectrum finder cost and the campaign cost estimate",
+            ],
+            neither=[
+                "any claim that either window CLOSES — none does",
+                "any absolute number under the PI-adopted 0.2-dex basis "
+                "(decision 3 is not implemented here)",
+            ],
         ),
     )
 
