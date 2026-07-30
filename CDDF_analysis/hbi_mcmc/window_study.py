@@ -176,6 +176,42 @@ PROTOCOL = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# POST-HOC AMENDMENTS — kept SEPARATE from PROTOCOL, which is pre-registered
+# ---------------------------------------------------------------------------
+# P6 forbids re-tuning a configuration after its number is seen, and PROTOCOL
+# above is asserted to have been fixed before any outcome was inspected. So a
+# discriminator added AFTER the fact does not get to be quietly renumbered into
+# it. It is recorded here instead, labelled post-hoc, with the reason.
+POST_HOC_AMENDMENTS = [
+    ("A1", "2026-07-30",
+     "P2's chi2/dof IS CONFOUNDED WITH SAMPLE SIZE and the study did not say "
+     "so. The lya_lyb arm carries 20-22% MORE counts in the reporting window "
+     "(2lpt0 67086 -> 82008, x1.222; london0 69631 -> 85111, x1.222; saclay0 "
+     "67424 -> 81033, x1.202), so its Poisson denominators shrink and chi2/dof "
+     "rises MECHANICALLY. Pure power scaling alone predicts 63.65 x 1.222 = "
+     "77.8 for 2lpt0 against 106.59 observed (london0 54.1 vs 74.23; saclay0 "
+     "59.8 vs 80.71) — i.e. roughly ONE THIRD of each quoted '+30 to +43 in "
+     "chi2/dof' is statistical power, not model adequacy. The artifact "
+     "disclosed exactly this confound for the marginal max|z| and said nothing "
+     "about it for P2. Every chi2/dof MAGNITUDE quoted for the window contrast "
+     "must be read with this discount."),
+    ("A2", "2026-07-30",
+     "A SCALE-FREE primary discriminator is added and the recommendation is "
+     "restated on it: `rms_frac_dev`, the counts-weighted RMS fractional "
+     "deviation of mu/obs over the occupied bins of the reporting window, "
+     "which is invariant under a common rescaling of mu and obs. It is "
+     "reported as a MEASUREMENT (PI decision 8 ratified chi2/dof <= 3 and "
+     "nothing else; no tolerance on this statistic has been calibrated). The "
+     "CONCLUSION SURVIVES: D rises from lya_only to lya_lyb in all three mocks "
+     "at BOTH clamps (clamp=both 0.1193->0.1366, 0.0993->0.1142, "
+     "0.1063->0.1211; clamp=hi 0.0997->0.1160, 0.0844->0.0959, "
+     "0.0886->0.1016) — unanimous 6/6. So the DIRECTION of P2 holds on a "
+     "measure that cannot be produced by sample size; only the MAGNITUDE was "
+     "inflated."),
+]
+
+
 def restated_gate_criteria():
     """PI decision 8: the EXACT mathematical definition of the closure gate.
 
@@ -274,6 +310,32 @@ def select_bins(by_nhat, lo=None, hi=None, eps=1e-9):
     return out
 
 
+def rms_frac_dev(rows):
+    """COUNTS-WEIGHTED RMS FRACTIONAL DEVIATION of mu/obs — a SCALE-FREE
+    closure statistic, over the OCCUPIED bins of ``rows``.
+
+        w_c = obs_c,   f_c = mu_c / obs_c - 1,   D = sqrt( sum w_c f_c^2
+                                                           / sum w_c )
+
+    WHY IT EXISTS (referee defect 3, 2026-07-30). ``chi2_dof`` is CONFOUNDED
+    WITH SAMPLE SIZE: scale every mu and obs by a common factor L (same
+    fractional residual shape, more counts) and chi2/dof scales by exactly L,
+    because the Poisson denominator sqrt(mu) shrinks relative to the residual.
+    The 911-A arm carries 20-22% more counts in the reporting window than the
+    1025-A arm, so PART of its higher chi2/dof is statistical POWER, not model
+    inadequacy. ``D`` is invariant under that common scaling (f_c is invariant
+    and w_c cancels), so it compares the residual SHAPE at two different sample
+    sizes. It is a MEASUREMENT, not a gate: PI decision 8 ratified chi2/dof <= 3
+    and nothing else, and no tolerance on D has been calibrated.
+    """
+    occ = [r for r in rows if float(r["obs"]) > 0]
+    if not occ:
+        return float("nan")
+    w = np.array([float(r["obs"]) for r in occ], float)
+    f = np.array([float(r["mu"]) / float(r["obs"]) - 1.0 for r in occ], float)
+    return float(np.sqrt((w * f ** 2).sum() / w.sum()))
+
+
 def window_metrics(by_nhat, lo=None, hi=None):
     """Closure metrics over the n-hat bins fully contained in [lo, hi].
 
@@ -297,6 +359,10 @@ def window_metrics(by_nhat, lo=None, hi=None):
         z_total=float((obs - mu) / np.sqrt(max(mu, _MU_FLOOR))),
         z_bin_max=(float(np.abs(z).max()) if len(z) else float("nan")),
         chi2_dof=(float((z ** 2).sum() / len(z)) if len(z) else float("nan")),
+        # SCALE-FREE companion to chi2_dof (see rms_frac_dev's docstring): the
+        # only one of the two that can be compared across the two arms'
+        # different sample sizes. MEASURED, gates nothing.
+        rms_frac_dev=rms_frac_dev(rows),
         per_bin=[dict(lo=float(b["lo"]), hi=float(b["hi"]),
                       mu=float(b["mu"]), obs=float(b["obs"]),
                       ratio=(float(b["mu"]) / float(b["obs"])
@@ -712,6 +778,14 @@ def phase_selftest():
         protocol=dict(
             fixed_before_outcome=True,
             rules=[dict(id=i, rule=r) for i, r in PROTOCOL],
+            post_hoc_amendments=[dict(id=i, date=d, amendment=a)
+                                 for i, d, a in POST_HOC_AMENDMENTS],
+            post_hoc_amendments_note=(
+                "These were added AFTER the outcome was seen, in response to a "
+                "referee finding, and are kept OUT of `rules` for that reason "
+                "(P6). They add a disclosure and a scale-free discriminator; "
+                "they drop, re-run and re-tune nothing, and no configuration "
+                "was removed."),
             selection_discipline=("The nominal Molly window (lya_only) is the "
                                   "standard reference and is reported "
                                   "unconditionally. No window was preferred "
@@ -814,6 +888,51 @@ def response_attribution(gate):
     )
 
 
+def p2_power_confound(rows):
+    """QUANTIFY amendment A1: how much of P2's chi2/dof jump is sample size.
+
+    Pure power scaling = "identical fractional residual shape, L times the
+    counts", under which chi2/dof scales by exactly L. L is measured as the
+    observed-count ratio of the two arms over the SAME reporting window, so the
+    prediction uses nothing but the two arms' own counts.
+    """
+    out = {}
+    for clamp in CLAMPS:
+        per = {}
+        for m in MOCKS:
+            a = rows[f"{m}|lya_only|clamp={clamp}"]["primary_reporting_window"]
+            b = rows[f"{m}|lya_lyb|clamp={clamp}"]["primary_reporting_window"]
+            L = b["obs"] / a["obs"]
+            pred = a["chi2_dof"] * L
+            d_obs = b["chi2_dof"] - a["chi2_dof"]
+            d_pow = pred - a["chi2_dof"]
+            per[m] = dict(
+                obs_counts_lya_only=a["obs"], obs_counts_lya_lyb=b["obs"],
+                counts_ratio_L=L,
+                chi2_dof_lya_only=a["chi2_dof"],
+                chi2_dof_lya_lyb_observed=b["chi2_dof"],
+                chi2_dof_lya_lyb_predicted_by_pure_power_scaling=pred,
+                delta_chi2_dof_observed=d_obs,
+                delta_chi2_dof_attributable_to_counts=d_pow,
+                fraction_of_delta_that_is_statistical_power=(
+                    d_pow / d_obs if d_obs else float("nan")),
+                rms_frac_dev_lya_only=a["rms_frac_dev"],
+                rms_frac_dev_lya_lyb=b["rms_frac_dev"],
+                delta_rms_frac_dev=b["rms_frac_dev"] - a["rms_frac_dev"],
+            )
+        out[clamp] = per
+    return dict(
+        statistic="primary_reporting_window.chi2_dof",
+        confound=("chi2/dof scales LINEARLY with the number of counts at fixed "
+                  "fractional residual shape, and the two arms are NOT "
+                  "matched in counts. See POST_HOC_AMENDMENTS A1."),
+        scale_free_alternative=("primary_reporting_window.rms_frac_dev — "
+                               "invariant under a common rescaling of mu and "
+                               "obs; see rms_frac_dev()'s docstring."),
+        per_clamp=out,
+    )
+
+
 def build_verdict(rows, packmeta, pilot=None):
     """The recommendation, decided by the pre-registered protocol only."""
     def get(mock, window, clamp):
@@ -832,8 +951,14 @@ def build_verdict(rows, packmeta, pilot=None):
         d_ratio = {m: (get(m, "lya_lyb", clamp)["primary_reporting_window"]["ratio"]
                        - get(m, "lya_only", clamp)["primary_reporting_window"]["ratio"])
                    for m in MOCKS}
+        # amendment A2: the SCALE-FREE companion to P2, which the
+        # recommendation now rests on (P2's magnitude is confounded — A1).
+        d_rms = {m: (get(m, "lya_lyb", clamp)["primary_reporting_window"]["rms_frac_dev"]
+                     - get(m, "lya_only", clamp)["primary_reporting_window"]["rms_frac_dev"])
+                 for m in MOCKS}
         per_clamp[clamp] = dict(
             P2_delta_chi2_dof_reporting_window=direction_verdict(d_chi2),
+            A2_delta_rms_frac_dev_reporting_window=direction_verdict(d_rms),
             P3_delta_abs_highn_residual_from_1=direction_verdict(d_high),
             measured_delta_reporting_ratio=direction_verdict(d_ratio),
         )
@@ -863,6 +988,14 @@ def build_verdict(rows, packmeta, pilot=None):
             gate_max=3.0,
             factor_over_gate=best[1]["primary_reporting_window"]["chi2_dof"] / 3.0),
         reporting_window_chi2_dof=table("primary_reporting_window", "chi2_dof"),
+        reporting_window_chi2_dof_caveat=(
+            "CONFOUNDED WITH SAMPLE SIZE — see p2_power_confound and "
+            "POST_HOC_AMENDMENTS A1. Do not compare these MAGNITUDES across "
+            "windows; compare reporting_window_rms_frac_dev."),
+        reporting_window_rms_frac_dev=table("primary_reporting_window",
+                                            "rms_frac_dev"),
+        reporting_window_obs_counts=table("primary_reporting_window", "obs"),
+        p2_power_confound=p2_power_confound(rows),
         reporting_window_ratio=table("primary_reporting_window", "ratio"),
         high_n_above_21p6_ratio=table("high_n_above_21p6", "ratio"),
         full_grid_chi2_dof=table("full_grid", "chi2_dof"),
@@ -952,14 +1085,33 @@ def recommendation(rows, per_clamp, pilot=None):
                 "PREFERENCE BETWEEN TWO NON-CLOSING CONFIGURATIONS, not a "
                 "closure result."),
         rests_on="ARM 1 (COMPLETE)",
+        decided_on=("the SCALE-FREE reporting-window statistic "
+                    "primary_reporting_window.rms_frac_dev (amendment A2), NOT "
+                    "on the chi2/dof MAGNITUDE, which is confounded with "
+                    "sample size (amendment A1)."),
         reasoning=[
-            ("P2 (PRIMARY, decides the recommendation): the nominal lya_only "
-             "window has a MUCH lower chi2/dof over the PI's 19.7-21.6 "
-             "reporting window, unanimously on all three mocks and at both "
-             "clamps. At clamp=both: 63.7 vs 106.6 (2lpt0), 44.2 vs 74.2 "
-             "(london0), 49.7 vs 80.7 (saclay0) — the wider window adds +30 to "
-             "+43 to chi2/dof. That is the axis the PI's decision 1 defined the "
-             "reporting window on, so it decides."),
+            ("A2 (PRIMARY as restated, decides the recommendation): on the "
+             "SCALE-FREE measure — the counts-weighted RMS fractional "
+             "deviation of mu/obs over the PI's 19.7-21.6 reporting window — "
+             "the nominal lya_only window is closer to its own prediction than "
+             "lya_lyb, unanimously on all three mocks at BOTH clamps. "
+             "clamp=both: 0.1193 -> 0.1366 (2lpt0), 0.0993 -> 0.1142 "
+             "(london0), 0.1063 -> 0.1211 (saclay0); clamp=hi: 0.0997 -> "
+             "0.1160, 0.0844 -> 0.0959, 0.0886 -> 0.1016. That is 6 of 6 in "
+             "the same direction on a statistic that CANNOT be moved by having "
+             "more counts, so the window effect on residual SHAPE is real."),
+            ("P2 (as PRE-REGISTERED — direction stands, MAGNITUDE DISCOUNTED): "
+             "chi2/dof over the reporting window is 63.7 vs 106.6 (2lpt0), "
+             "44.2 vs 74.2 (london0), 49.7 vs 80.7 (saclay0) at clamp=both. "
+             "THOSE '+30 to +43' GAPS ARE INFLATED. The lya_lyb arm carries "
+             "20-22% more counts in the reporting window (67086 -> 82008, "
+             "69631 -> 85111, 67424 -> 81033), and chi2/dof scales linearly "
+             "with counts at fixed fractional shape: pure power scaling alone "
+             "predicts 77.8 / 54.1 / 59.8 against the 106.6 / 74.2 / 80.7 "
+             "observed, so about ONE THIRD of each gap is statistical power "
+             "rather than model adequacy. See verdict.p2_power_confound for the "
+             "per-mock decomposition. P2 therefore supports the DIRECTION and "
+             "is not quoted for the size of the effect."),
             ("P3 (SECONDARY, does NOT overturn P2 but must be reported): the "
              "wider lya_lyb window moves the EXCLUDED high-N residual "
              "(logN >= 21.6) TOWARD 1, also unanimously — 1.169 -> 1.080 "
@@ -974,18 +1126,28 @@ def recommendation(rows, per_clamp, pilot=None):
             ("P4: the total is NOT used. For the record the wider window's "
              "reporting-window mu/obs is UNIFORMLY FURTHER from 1 "
              "(-0.023 to -0.029), so the level does not argue for it either."),
-            ("P5: every direction above is unanimous 3/3, at both clamps. No "
-             "2-of-3 split was found, so nothing is being reported as an "
-             "effect that is really a split."),
+            ("P5: every direction above is unanimous 3/3, at both clamps — "
+             "including the scale-free A2 measure (6/6 legs). No 2-of-3 split "
+             "was found, so nothing is being reported as an effect that is "
+             "really a split."),
             ("MARGINALS (measured, gating nothing — PI decision 8 declined to "
              "ratify the span tolerances): the wider window slightly REDUCES "
              "both marginal tilts (2lpt0 by_z span 0.152 -> 0.140, by_snr span "
              "0.188 -> 0.162) while raising max|z| (19.9 -> 22.6 by z; "
              "39.0 -> 43.3 by SNR) — the latter purely because there are ~21% "
              "more counts, so Poisson errors shrink. Neither window closes on "
-             "any marginal arm."),
+             "any marginal arm. NOTE (amendment A1): that same counts confound "
+             "applies to the reporting-window chi2/dof and the original "
+             "artifact disclosed it HERE ONLY. It is now disclosed for P2 too."),
         ],
         what_this_does_NOT_say=[
+            "It does NOT rest on the SIZE of the chi2/dof gap. About a third of "
+            "the quoted +30 to +43 is the 20-22% count difference between the "
+            "two arms, not model inadequacy (amendment A1). The recommendation "
+            "rests on the scale-free rms_frac_dev direction (A2).",
+            "The scale-free measure is NOT a gate. PI decision 8 ratified "
+            "chi2/dof <= 3 and nothing else; no tolerance on rms_frac_dev has "
+            "been defined or calibrated, so it is reported as a measurement.",
             "It does NOT say the Lya-only window is ROBUST. Neither window "
             "closes: the best configuration measured here is london0 | "
             "lya_only | clamp=hi at chi2/dof 29.6 over 19.7-21.6, still ~10x "

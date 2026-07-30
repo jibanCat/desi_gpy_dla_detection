@@ -851,6 +851,17 @@ def test_phase_selftest_HAPPY_PATH_stamps_and_writes(WS, monkeypatch, tmp_path):
                                                "2lpt0|lya_lyb|clamp=both"}
     assert out["arm1_analysis_window"]["2lpt0|lya_only|clamp=both"][
         "primary_closes"]["closes"] is True
+    # the post-hoc amendments (referee defect 3) must reach the ARTIFACT, and
+    # must stay OUT of the pre-registered rule list (P6)
+    prot = out["protocol"]
+    assert [a["id"] for a in prot["post_hoc_amendments"]] == ["A1", "A2"]
+    assert [r["id"] for r in prot["rules"]] == ["P1", "P2", "P3", "P4", "P5",
+                                               "P6"]
+    assert "AFTER the outcome was seen" in prot["post_hoc_amendments_note"]
+    # ... and the scale-free statistic must be carried per configuration
+    rep = out["arm1_analysis_window"]["2lpt0|lya_only|clamp=both"][
+        "primary_reporting_window"]
+    assert "rms_frac_dev" in rep and np.isfinite(rep["rms_frac_dev"])
 
 
 def test_phase_selftest_REFUSES_a_pack_filed_under_the_WRONG_window(
@@ -896,3 +907,154 @@ def test_phase_selftest_REFUSES_when_the_committed_gate_xcheck_DISAGREES(
         with pytest.raises(SystemExit, match="REFUSING to stamp"):
             _drive_selftest(WS, monkeypatch, tmp_path,
                             gate_result=dict(_FAKE_FULL, **bad))
+
+
+# ---------------------------------------------------------------------------
+# (5) THE SCALE-FREE DISCRIMINATOR AND THE P2 SAMPLE-SIZE CONFOUND
+#
+# Referee defect 3 (2026-07-30): P2 (chi2/dof over the reporting window) is
+# CONFOUNDED WITH SAMPLE SIZE. The lya_lyb arm carries 20-22% more counts, and
+# chi2/dof scales LINEARLY with counts at fixed fractional residual shape, so
+# ~1/3 of each quoted "+30 to +43 chi2/dof" is statistical power. The artifact
+# disclosed exactly this confound for the marginal max|z| and said nothing about
+# it for P2.
+# ---------------------------------------------------------------------------
+def test_rms_frac_dev_is_hand_computed_on_the_fixture(WS, by_nhat):
+    """D = sqrt( sum_c obs_c (mu_c/obs_c - 1)^2 / sum_c obs_c ) over the
+    OCCUPIED bins of the reporting window. Hand-computed from the fixture."""
+    m = WS.window_metrics(by_nhat, WS.REPORT_LO, WS.REPORT_HI)
+    # occupied reporting-window bins: (100,121), (25,20), (400,340)
+    num = (121.0 * (100.0 / 121.0 - 1.0) ** 2
+           + 20.0 * (25.0 / 20.0 - 1.0) ** 2
+           + 340.0 * (400.0 / 340.0 - 1.0) ** 2)
+    den = 121.0 + 20.0 + 340.0
+    assert m["rms_frac_dev"] == pytest.approx(math.sqrt(num / den))
+    # the obs == 0 bin is excluded (mu/obs is undefined there), exactly as for
+    # chi2_dof / z_bin_max
+    assert m["n_bins_occupied"] == 3
+
+
+def test_rms_frac_dev_is_INVARIANT_under_a_common_counts_rescaling(WS):
+    """THE WHOLE POINT. Scale every mu and obs by L -- the same fractional
+    residual shape with L times the counts -- and:
+        * chi2_dof scales by EXACTLY L (this is the confound), while
+        * rms_frac_dev does not move at all.
+    Without this property the measure could not separate "more counts" from
+    "worse model" and the restated recommendation would be unfounded.
+    """
+    base = [_row(19.7, 19.8, 100.0, 110.0), _row(19.8, 19.9, 400.0, 380.0),
+            _row(19.9, 20.0, 50.0, 44.0)]
+    L = 1.222                                   # the MEASURED counts ratio
+    scaled = [_row(r["lo"], r["hi"], r["mu"] * L, r["obs"] * L) for r in base]
+    a = WS.window_metrics(base, WS.REPORT_LO, WS.REPORT_HI)
+    b = WS.window_metrics(scaled, WS.REPORT_LO, WS.REPORT_HI)
+    assert b["obs"] == pytest.approx(L * a["obs"])
+    assert b["chi2_dof"] == pytest.approx(L * a["chi2_dof"], rel=1e-12), (
+        "chi2_dof must scale LINEARLY with counts — that is the confound being "
+        "disclosed")
+    assert b["rms_frac_dev"] == pytest.approx(a["rms_frac_dev"], rel=1e-12), (
+        "rms_frac_dev moved under a pure counts rescaling — it is not "
+        "scale-free and cannot be the primary discriminator")
+
+
+def test_rms_frac_dev_still_MOVES_when_the_residual_SHAPE_worsens(WS):
+    """POWER: scale-free must not mean insensitive. Doubling every fractional
+    deviation at FIXED counts must roughly double D."""
+    base = [_row(19.7, 19.8, 110.0, 100.0), _row(19.8, 19.9, 380.0, 400.0)]
+    worse = [_row(19.7, 19.8, 120.0, 100.0), _row(19.8, 19.9, 360.0, 400.0)]
+    a = WS.window_metrics(base, WS.REPORT_LO, WS.REPORT_HI)["rms_frac_dev"]
+    b = WS.window_metrics(worse, WS.REPORT_LO, WS.REPORT_HI)["rms_frac_dev"]
+    assert b == pytest.approx(2.0 * a, rel=1e-12)
+
+
+def test_rms_frac_dev_of_an_unoccupied_window_is_nan(WS, by_nhat):
+    assert math.isnan(WS.window_metrics(by_nhat, 30.0, 31.0)["rms_frac_dev"])
+    assert math.isnan(WS.rms_frac_dev([_row(19.7, 19.8, 9.0, 0.0)]))
+
+
+def test_rms_frac_dev_is_NOT_a_gate_arm(WS, by_nhat):
+    """PI decision 8 ratified chi2/dof <= 3 and nothing else. No tolerance on
+    this statistic has been calibrated, so it must not gate."""
+    g = WS.restated_gate_criteria()
+    assert "rms_frac_dev" not in g["ratified_arms"]
+    m = WS.window_metrics(by_nhat, WS.REPORT_LO, WS.REPORT_HI)
+    v = WS.closes(m, g["ratified_arms"])
+    assert not any("rms_frac_dev" in f for f in v["failures"])
+
+
+def _confound_rows(chi2_only, chi2_lyb, obs_only, obs_lyb, rms_only, rms_lyb):
+    """A minimal `rows` table shaped like phase_selftest's, for the confound
+    decomposition only."""
+    out = {}
+    for mock in ("2lpt0", "london0", "saclay0"):
+        for win, c2, ob, rd in (("lya_only", chi2_only, obs_only, rms_only),
+                                ("lya_lyb", chi2_lyb, obs_lyb, rms_lyb)):
+            block = dict(primary_reporting_window=dict(
+                chi2_dof=c2, obs=ob, rms_frac_dev=rd, ratio=1.0),
+                high_n_above_21p6=dict(ratio=1.1))
+            for clamp in ("both", "hi"):
+                out[f"{mock}|{win}|clamp={clamp}"] = block
+    return out
+
+
+def test_p2_power_confound_decomposes_the_chi2_jump(WS, monkeypatch):
+    """The 2LPT-0 numbers, hand-checked: 67086 -> 82008 counts is L = 1.2224, so
+    pure power scaling predicts 63.652 x L = 77.80 of the 106.586 observed, i.e.
+    14.15 of the 42.93 rise (33%) is statistical power alone."""
+    monkeypatch.setattr(WS, "CLAMPS", ["both"])
+    rows = _confound_rows(63.65206298413061, 106.58576787999633,
+                          67086.0, 82008.0, 0.1193, 0.1366)
+    c = WS.p2_power_confound(rows)
+    p = c["per_clamp"]["both"]["2lpt0"]
+    assert p["counts_ratio_L"] == pytest.approx(82008.0 / 67086.0)
+    assert p["counts_ratio_L"] == pytest.approx(1.2224, abs=5e-5)
+    assert p["chi2_dof_lya_lyb_predicted_by_pure_power_scaling"] == \
+        pytest.approx(77.80, abs=0.02)
+    assert p["delta_chi2_dof_observed"] == pytest.approx(42.93, abs=0.01)
+    assert p["delta_chi2_dof_attributable_to_counts"] == \
+        pytest.approx(14.15, abs=0.02)
+    assert p["fraction_of_delta_that_is_statistical_power"] == \
+        pytest.approx(0.33, abs=0.01)
+    # and the scale-free delta is carried alongside, so the reader can see the
+    # direction survives the discount
+    assert p["delta_rms_frac_dev"] == pytest.approx(0.1366 - 0.1193)
+    assert "NOT\n                  matched in counts" in c["confound"] or \
+        "NOT matched in counts" in " ".join(c["confound"].split())
+    assert "rms_frac_dev" in c["scale_free_alternative"]
+
+
+def test_p2_power_confound_is_DISCLOSED_and_the_amendments_are_recorded(WS):
+    """The disclosure must exist in the module, name the confound for P2 (not
+    only for the marginal max|z|), and be labelled POST-HOC rather than
+    smuggled into the pre-registered PROTOCOL (P6)."""
+    ids = [i for i, _d, _a in WS.POST_HOC_AMENDMENTS]
+    assert ids == ["A1", "A2"]
+    text = " ".join(a for _i, _d, a in WS.POST_HOC_AMENDMENTS)
+    assert "CONFOUNDED WITH SAMPLE SIZE" in text
+    assert "chi2/dof" in text and "rms_frac_dev" in text
+    assert "77.8" in text                       # the power-scaling prediction
+    assert "106.59" in text                     # the observed value
+    # the pre-registered protocol is UNCHANGED: still exactly P1..P6
+    assert [i for i, _ in WS.PROTOCOL] == ["P1", "P2", "P3", "P4", "P5", "P6"]
+    assert not any(i.startswith("A") for i, _ in WS.PROTOCOL)
+
+
+def test_recommendation_rests_on_the_SCALE_FREE_measure(WS, monkeypatch):
+    """The restated recommendation must (a) say which statistic decides, (b)
+    still say KEEP lya_only, and (c) state the discount on the chi2/dof
+    magnitude instead of quoting it as the reason."""
+    monkeypatch.setattr(WS, "CLAMPS", ["both"])
+    monkeypatch.setattr(WS, "MOCKS", ["2lpt0", "london0", "saclay0"])
+    rows = _confound_rows(63.65206298413061, 106.58576787999633,
+                          67086.0, 82008.0, 0.1193, 0.1366)
+    rec = WS.recommendation(rows, {}, None)
+    assert rec["answer"].startswith("KEEP lya_only")
+    assert "rms_frac_dev" in rec["decided_on"]
+    assert "NOT" in rec["decided_on"] and "confounded" in rec["decided_on"]
+    joined = " ".join(rec["reasoning"])
+    assert "A2 (PRIMARY as restated" in joined
+    assert "MAGNITUDE DISCOUNTED" in joined
+    assert "20-22% more counts" in joined and "ONE THIRD" in joined
+    assert any("SIZE of the chi2/dof gap" in s
+               for s in rec["what_this_does_NOT_say"])
+    assert any("NOT a gate" in s for s in rec["what_this_does_NOT_say"])
