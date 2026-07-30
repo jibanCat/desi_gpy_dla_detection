@@ -394,6 +394,50 @@ def test_M1_basis_pad_guard_FIRES_on_the_bks_leg_alone(
         _run_extract(tmp_path, monkeypatch, 18.0, _SUB_FLOOR + moved)
 
 
+def _run_extract_with_windows(tmp_path, pad_floor, det_lam, truth_lam,
+                              tag="_winguard"):
+    """``_run_extract`` with an explicit ``lam_rf_min`` on BOTH cfgs, so the
+    window guards (which skip test doubles that carry no lam_rf_min) actually
+    execute. The frozen block carries no ``analysis_window``, so the extractor
+    defaults to lya_only = 1025 A."""
+    frozen = _tiny_frozen()
+    nhi, z, s2n = _cols(_IN_WINDOW)
+    det = _tiny_bundle((nhi, z, s2n, [True] * len(nhi)))
+    det["cfg"].lam_rf_min = det_lam
+    frozen["_bundles"] = {"2lpt0": det}
+    tn, tz, ts = _cols(_SUB_FLOOR + _IN_WINDOW)
+    tb = _truth_only_bundle(tn, tz, ts)
+    tb["cfg"].lam_rf_min = truth_lam
+    frozen["_truth_bundles"] = {("2lpt0", round(float(pad_floor), 3)): tb}
+    return EP.extract_pack("2lpt0", str(tmp_path), frozen,
+                           pad_floor=pad_floor, tag=tag)
+
+
+def test_M1_padded_TRUTH_bundle_window_guard_FIRES(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """MUTATION TARGET (extract_pack.py `if _tb_lam is not None and abs(...)`):
+    the padded TRUTH bundle is cached on (mock, floor) and NOT on the window, so
+    a truth bundle cut at a different lam_rf_min than the frozen calibration
+    would silently contribute a mixed-window truth histogram. The detection-side
+    sibling of this guard is covered in tests/test_window_study.py; this leg is
+    the truth side, and it survived an 18-mutant battery until now.
+    """
+    with pytest.raises(RuntimeError, match="padded TRUTH bundle"):
+        _run_extract_with_windows(tmp_path, 18.0, det_lam=1025.0,
+                                  truth_lam=911.0)
+
+
+def test_M1_padded_TRUTH_bundle_window_guard_PASSES_when_matched(
+        tmp_path, monkeypatch, _no_heavy_dX):
+    """POSITIVE leg: both bundles at the frozen calibration's own 1025 A must
+    extract cleanly, so the guard above cannot be a refuse-everything stub."""
+    r = _run_extract_with_windows(tmp_path, 18.0, det_lam=1025.0,
+                                  truth_lam=1025.0, tag="_winguard_ok")
+    d = np.load(r["npz"], allow_pickle=False)
+    n_pad = len(d["ntrue_edges"]) - 1 - EP.N_C
+    assert d["truth_counts"][:n_pad].sum() == len(_SUB_FLOOR)
+
+
 def test_M1_unpadded_extraction_never_enters_the_guarded_branch(
         tmp_path, monkeypatch, _no_heavy_dX):
     """Schema v1 regression lock, through the REAL extractor: with no pad the
