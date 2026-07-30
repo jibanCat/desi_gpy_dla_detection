@@ -1050,6 +1050,7 @@ def test_recommendation_rests_on_the_SCALE_FREE_measure(WS, monkeypatch):
     rec = WS.recommendation(rows, {}, None)
     assert rec["answer"].startswith("KEEP lya_only")
     assert "rms_frac_dev" in rec["decided_on"]
+    assert "SCALE-FREE" in rec["decided_on"]
     assert "NOT" in rec["decided_on"] and "confounded" in rec["decided_on"]
     joined = " ".join(rec["reasoning"])
     assert "A2 (PRIMARY as restated" in joined
