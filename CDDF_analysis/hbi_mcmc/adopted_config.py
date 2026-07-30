@@ -71,6 +71,8 @@ ADOPTED_WIDTH = 0.2
 ADOPTED_FLOOR = 19.0
 ADOPTED_CONV = "molly172"
 ADOPTED_CLAMP = "both"
+NONIDENT_EDGE_LOCAL = 19.7    # == reporting.NONIDENT_EDGE
+CEILING_LOCAL = 21.6          # == reporting.RESPONSE_ANCHOR_CEILING
 
 PACKDIR = DEF_PACKDIR
 OUT = DEF_OUT
@@ -320,12 +322,14 @@ def phase_closure():
               f"phase is at {sha} (recorded in metadata).")
 
     syst = convention_systematic_block(rows)
-    verdict = build_verdict(rows, syst)
+    resid = residual_decomposition_block(rows)
+    verdict = build_verdict(rows, syst, resid)
     out = dict(
         metadata=_metadata(sha, stamp_audit, t_start),
         adopted_configuration=_adopted_block(),
         verdict=verdict,
         convention_systematic=syst,
+        residual_decomposition=resid,
         closure=rows,
         latent_basis_grids=grids,
         committed_gate_crosscheck=xcheck,
@@ -456,7 +460,7 @@ def convention_systematic_block(rows):
     )
 
 
-def build_verdict(rows, syst):
+def build_verdict(rows, syst, resid=None):
     REP = _REP()
     gate = dict(_RP().GATE)
     ad = {m: rows[key_for(m, ADOPTED_WIDTH, ADOPTED_FLOOR, ADOPTED_CONV,
@@ -495,12 +499,15 @@ def build_verdict(rows, syst):
             f"{ad['2lpt0']['full_grid']['total_ratio']:.4f} (full grid) to "
             f"{ad['2lpt0']['window']['total_ratio']:.4f} (window) on 2LPT-0 and "
             f"chi2/dof from {ad['2lpt0']['full_grid']['chi2_dof']:.1f} to "
-            f"{ad['2lpt0']['window']['chi2_dof']:.1f} — i.e. the excluded high-N "
-            "bins really were carrying most of the misfit — but the windowed "
-            f"chi2/dof is still {ad['2lpt0']['window']['chi2_dof'] / gate['chi2_dof_max']:.0f}x "
+            f"{ad['2lpt0']['window']['chi2_dof']:.1f}, but the windowed chi2/dof "
+            f"is still {ad['2lpt0']['window']['chi2_dof'] / gate['chi2_dof_max']:.0f}x "
             "the ratified tolerance of 3.0 and max|z_bin| is still "
             f"{ad['2lpt0']['window']['z_bin_max']:.1f} against a tolerance of 5. "
-            "No configuration in the 48-fold cross closes in the window."),
+            "No configuration in the 48-fold cross closes in the window. "
+            "WHERE THE IMPROVEMENT COMES FROM is NOT what it looks like -- see "
+            "residual_decomposition.correction: the bins at/above 21.6 carry "
+            "under 1% of the full-grid chi2 (they are count-starved), and it is "
+            "the two NON-IDENTIFIABLE bins below 19.7 that carried ~90% of it."),
         gate_tolerances=gate,
         gate_tolerances_ratified=["z_total_max", "z_bin_max", "chi2_dof_max"],
         gate_tolerances_not_ratified=list(
@@ -551,13 +558,20 @@ def build_verdict(rows, syst):
             "the PI capped the window there — and it is why the windowed "
             "chi2/dof falls by more than an order of magnitude."),
         residual_inside_the_window=(
-            "what is LEFT inside the window is not D2 and is not the pad. It is "
-            "a monotone SHAPE residual across the window: see "
-            "closure.<config>.window.per_bin ratios. The window's own per-bin "
-            "ratio range on the adopted 2LPT-0 configuration is "
+            "what is LEFT inside the window is not D2 and is not the pad; it is "
+            "a FLOOR EFFECT plus a floor of its own. The window's per-bin ratio "
+            "range on the adopted 2LPT-0 configuration is "
             f"{_leg(ad['2lpt0'], 'window')['per_bin_ratio_min']:.4f} to "
-            f"{_leg(ad['2lpt0'], 'window')['per_bin_ratio_max']:.4f}. That is a "
-            "systematic no sampler and no window can repair."),
+            f"{_leg(ad['2lpt0'], 'window')['per_bin_ratio_max']:.4f}, and "
+            + ((f"{100 * min(resid['per_mock'][m]['reporting_window']['chi2_frac_from_the_two_bins_just_above_the_floor'] for m in MOCKS):.0f}"
+                f"-{100 * max(resid['per_mock'][m]['reporting_window']['chi2_frac_from_the_two_bins_just_above_the_floor'] for m in MOCKS):.0f}% "
+                "of the in-window chi2 sits in the TWO bins immediately above "
+                "19.7. Excluding those two bins chi2/dof is "
+                f"{min(resid['per_mock'][m]['reporting_window']['chi2_dof_excluding_the_two_bins_just_above_the_floor'] for m in MOCKS):.1f}"
+                f"-{max(resid['per_mock'][m]['reporting_window']['chi2_dof_excluding_the_two_bins_just_above_the_floor'] for m in MOCKS):.1f}, "
+                "so raising the floor further would buy a factor ~4-5 and STILL "
+                "NOT CLOSE. ") if resid else "")
+            + "That is a systematic no sampler and no window can repair."),
         convention_systematic_headline=(
             "the clamp x completeness 2x2 half-span is "
             f"{100 * syst['frac_conv_in_window_max_over_mocks']:.2f}% "
@@ -575,8 +589,18 @@ def build_verdict(rows, syst):
         rung10=("STAYS GATED. No configuration passes the pre-flight, in the "
                 "window or out of it."),
         next_actions=[
-            "the binding constraint is now the IN-WINDOW shape residual, not "
-            "D2 and not D1. Attack that before any further window or pad work.",
+            "the binding constraint is now the IN-WINDOW residual, and it "
+            "decomposes: ~3/4 of it is the two 0.1-dex bins immediately above "
+            "the 19.7 floor (an edge effect one bin higher than the one "
+            "NONIDENT_EDGE was created for), and the rest is a ~4x-over-gate "
+            "floor that survives removing them. Attack both, in that order, "
+            "before any further window or pad work.",
+            "residual D2 is NOT closed and is NOT chi2-visible: it is a "
+            "1.05-1.81x per-bin PHYSICAL bias in a count-starved tail. Any "
+            "future gate arm intended to catch it must be a RATIO-SPAN arm, "
+            "which is precisely the arm PI decision 8 left unratified. The "
+            "measured spans are recorded in residual_decomposition."
+            "prospective_ratio_span_calibration as calibration input.",
             "resp_clamp is still not a free choice; it is carried as half of "
             "the convention systematic and the response below ~19.35 remains "
             "unmeasured.",
@@ -584,6 +608,121 @@ def build_verdict(rows, syst):
             "reduced SBC scale (see coverage block); a matched-configuration "
             "SBC on the production geometry is a compute decision for the PI.",
         ],
+    )
+
+
+def residual_decomposition_block(rows):
+    """WHERE the misfit actually lives, per mock, at the ADOPTED configuration.
+
+    Written because the first reading of these numbers was WRONG in a way that
+    matters. "The window helps, so the excluded high-N bins were carrying the
+    misfit" is a natural inference and it is FALSE here: the >= 21.6 bins carry
+    under 1% of the full-grid chi2, because they are count-starved. Almost all of
+    the chi2 improvement from the window comes from dropping the two
+    NON-IDENTIFIABLE bins below 19.7.
+
+    The 21.6 ceiling is still right, and this block says why in the only terms
+    that survive scrutiny: it removes a large PHYSICAL bias (mu/obs 1.05-1.81 per
+    bin) that a chi2 cannot see. That is exactly the regime the (UNRATIFIED)
+    ratio-span gate arms were invented for, so the measured spans are reported
+    here as PROSPECTIVE calibration input for PI decision 8 -- not as a
+    threshold, and not as a ratification.
+    """
+    import numpy as np
+    out = {}
+    for mock in MOCKS:
+        row = rows[key_for(mock, ADOPTED_WIDTH, ADOPTED_FLOOR, ADOPTED_CONV,
+                           ADOPTED_CLAMP)]
+        leg = {}
+        for name, blk in (("full_grid", row["full_grid"]),
+                          ("reporting_window", row["window"])):
+            pb = [b for b in blk["per_bin"] if b["obs"] > 0]
+            z = np.array([b["z"] for b in pb], float)
+            lo = np.array([b["lo"] for b in pb], float)
+            r = np.array([b["ratio"] for b in pb], float)
+            chi2 = float((z ** 2).sum())
+            below = lo < NONIDENT_EDGE_LOCAL - 1e-9
+            above = lo >= CEILING_LOCAL - 1e-9
+            first_two = below if name == "full_grid" else (
+                lo < NONIDENT_EDGE_LOCAL + 0.2 - 1e-9)
+            leg[name] = dict(
+                n_bins=int(len(z)), chi2=chi2,
+                chi2_dof=float(chi2 / max(len(z), 1)),
+                chi2_frac_from_bins_below_19p7=float(
+                    (z[below] ** 2).sum() / chi2) if chi2 > 0 else None,
+                chi2_frac_from_bins_at_or_above_21p6=float(
+                    (z[above] ** 2).sum() / chi2) if chi2 > 0 else None,
+                chi2_frac_from_the_two_bins_just_above_the_floor=float(
+                    (z[first_two] ** 2).sum() / chi2) if chi2 > 0 else None,
+                chi2_dof_excluding_the_two_bins_just_above_the_floor=(
+                    float((z[~first_two] ** 2).sum() / max((~first_two).sum(), 1))
+                    if (~first_two).any() else None),
+                ratio_span=float(r.max() - r.min()),
+                ratio_min=float(r.min()), ratio_max=float(r.max()),
+                ratio_by_bin_at_or_above_21p6=[float(x) for x in r[above]],
+            )
+        zr = [b["ratio"] for b in row["by_z"] if b["obs"] > 0]
+        leg["by_z_ratio_span_full_grid"] = float(max(zr) - min(zr))
+        out[mock] = leg
+    fr = [out[m]["reporting_window"][
+        "chi2_frac_from_the_two_bins_just_above_the_floor"] for m in MOCKS]
+    ex = [out[m]["reporting_window"][
+        "chi2_dof_excluding_the_two_bins_just_above_the_floor"] for m in MOCKS]
+    hi = [out[m]["full_grid"]["chi2_frac_from_bins_at_or_above_21p6"]
+          for m in MOCKS]
+    bl = [out[m]["full_grid"]["chi2_frac_from_bins_below_19p7"] for m in MOCKS]
+    return dict(
+        what=("where the misfit lives, per mock, at the adopted configuration; "
+              "computed from the per-bin z of the same folds."),
+        routine=("CDDF_analysis/hbi_mcmc/adopted_config.py:"
+                 "residual_decomposition_block"),
+        per_mock=out,
+        correction=(
+            "CORRECTION, stated because the obvious reading is wrong: the "
+            "window's chi2 improvement is NOT mostly the high-N bins. On the "
+            "full observed grid the bins at/above 21.6 carry only "
+            f"{100 * min(hi):.1f}-{100 * max(hi):.1f}% of chi2, while the two "
+            "NON-IDENTIFIABLE bins below 19.7 carry "
+            f"{100 * min(bl):.1f}-{100 * max(bl):.1f}%. The 21.6 bins are "
+            "count-starved, so a 1.05-1.81x per-bin bias there produces almost "
+            "no z. Any statement of the form 'the window works because it "
+            "removes D2' is unsupported by these numbers."),
+        why_the_ceiling_is_still_right=(
+            "because a chi2 is the wrong instrument in a count-starved tail. "
+            "Above 21.6 the per-bin mu/obs runs 1.05-1.81x -- a 5-81% PHYSICAL "
+            "bias on exactly the bins that dominate an N-weighted Omega -- and "
+            "the fitted response there is EXTRAPOLATION. Capping the reporting "
+            "window removes that bias from what is reported. It does not remove "
+            "it from the model."),
+        inside_the_window_the_residual_is_a_FLOOR_EFFECT=(
+            "of the in-window chi2, "
+            f"{100 * min(fr):.0f}-{100 * max(fr):.0f}% comes from the TWO "
+            "0.1-dex bins immediately above the reporting floor ([19.7, 19.9)), "
+            "consistently across all three mocks. Excluding those two bins the "
+            f"in-window chi2/dof is {min(ex):.1f}-{max(ex):.1f} -- still "
+            f"{min(ex) / 3.0:.1f}-{max(ex) / 3.0:.1f}x the ratified tolerance of "
+            "3.0. So raising the reporting floor further would buy roughly a "
+            "factor 4-5 in chi2/dof AND STILL NOT CLOSE. That is the "
+            "decision-relevant consequence: the floor is not the remaining "
+            "defect, it is only the loudest part of it."),
+        prospective_ratio_span_calibration=dict(
+            status=("INPUT FOR A FUTURE PI DECISION, NOT A RATIFICATION. PI "
+                    "decision 8 declined to ratify ratio_span_by_z_max = 0.10 "
+                    "and ratio_span_by_snr_max = 0.15 and asked for them to be "
+                    "defined and calibrated prospectively. These are MEASURED "
+                    "spans on mocks whose forward model does not close, so they "
+                    "cannot be turned into a tolerance yet; they are recorded so "
+                    "the calibration starts from numbers."),
+            measured_by_nhat_ratio_span_in_window={
+                m: out[m]["reporting_window"]["ratio_span"] for m in MOCKS},
+            measured_by_nhat_ratio_span_full_grid={
+                m: out[m]["full_grid"]["ratio_span"] for m in MOCKS},
+            measured_by_z_ratio_span_full_grid={
+                m: out[m]["by_z_ratio_span_full_grid"] for m in MOCKS},
+            note=("the by-N span is 3-4x smaller inside the window than over the "
+                  "full grid; the by-z span is unchanged by an N window, as it "
+                  "must be, since the window does not touch the z marginal."),
+        ),
     )
 
 
