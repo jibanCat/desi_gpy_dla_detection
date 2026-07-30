@@ -484,8 +484,7 @@ def _truth_closure(pack, summ):
         # different estimands). Identical to the old centre-selection on any
         # 0.1-dex pack.
         from CDDF_analysis.hbi_mcmc import reporting as RP
-        w = np.where(rep, RP.window_overlap_weights(ntrue, lo, min(hi, ntrue[-1])),
-                     0.0)
+        w = np.where(rep, RP.window_overlap_weights(ntrue, lo, hi), 0.0)
         dndx_k = (f_true * w[:, None]).sum(axis=0)
         om_k = (f_true * (10.0 ** (Nc - 21.0))[:, None] * w[:, None]).sum(axis=0)
         row = {}

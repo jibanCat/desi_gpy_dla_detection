@@ -332,8 +332,11 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
     # under the adopted merging convention ("f is constant across the merged
     # bin") -- it introduces no new assumption.
     def _wts(lo, hi):
-        w = RP.window_overlap_weights(ntrue, lo, min(hi, ntrue[-1]))
-        return np.where(reported, w, 0.0)
+        # hi is NOT clamped to ntrue[-1]: window_overlap_weights already takes
+        # min(bin_hi, hi) per bin, so an open-topped (inf) window integrates to
+        # the top basis edge and no further.  (An earlier version clamped it
+        # here; mutation testing showed the clamp could not change any value.)
+        return np.where(reported, RP.window_overlap_weights(ntrue, lo, hi), 0.0)
 
     # legacy threshold keys (analyze_rung9 and the rung ladder consume these)
     for thr in _THRESHOLDS:

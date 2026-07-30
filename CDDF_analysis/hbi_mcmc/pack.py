@@ -346,11 +346,15 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
                       "one basis bin straddles the pad/report boundary and "
                       "mixes convention-dependent sub-floor support into an "
                       f"in-window bin. got {_ne}")
-            if np.max(np.diff(_ne)) < _N_STEP - 1e-8:
-                _fail("ntrue_edges: a latent basis FINER than the observed "
-                      f"{_N_STEP} dex grid is refused (PI decision 3: the "
-                      "observed and reporting grids never move, and a finer "
-                      "basis would claim resolution the data cannot carry)")
+            # NOTE (2026-07-29, found by mutation testing): there is NO
+            # separate "finer than the observed grid" check, because it would be
+            # DEAD CODE.  The on-grid rule above already forbids it: every ntrue
+            # edge must sit on the observed 0.1-dex grid, and edges must be
+            # strictly increasing, so the narrowest representable basis bin IS
+            # 0.1 dex.  A 0.05-dex basis is refused by the on-grid rule, with
+            # that rule's message.  An earlier version of this function carried
+            # an extra max(diff) < _N_STEP check; it could never fire and a test
+            # that "verified" it was in fact exercising the on-grid rule.
     if not allow_nonstandard_grid:
         for name, got, want in (("nhat_edges", pack.nhat_edges, REAL_NHAT_EDGES),
                                 ("zf_edges", pack.zf_edges, REAL_ZF_EDGES),

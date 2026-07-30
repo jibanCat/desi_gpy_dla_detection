@@ -49,7 +49,7 @@ import numpy as np
 
 __all__ = ["SBC_GRID", "SBC_PRIOR", "SBC_SAMPLER", "sbc_run", "rank_histogram",
            "uniformity_test", "sbc_block", "SBC_GRID_ADOPTED",
-           "SBC_ADOPTED_BASIS", "DISPERSION_SCALES"]
+           "SBC_ADOPTED_BASIS", "DISPERSION_SCALES", "rescale_dispersion"]
 
 # --- R1: the reduced grid ---------------------------------------------------
 SBC_GRID = dict(
@@ -101,6 +101,30 @@ SBC_ADOPTED_BASIS = dict(basis_width=0.2, pad_floor=19.0)
 # s = 2.0, then it cannot certify the s = 1 result either, and the artifact must
 # say so instead of claiming coverage.
 DISPERSION_SCALES = (0.5, 0.75, 1.0, 1.5, 2.0)
+
+
+def rescale_dispersion(f_draws, s):
+    """Re-scale posterior DISPERSION by ``s`` about the per-bin median, in log f.
+
+        f_s(l) = exp( log_med + s * (log f(l) - log_med) ),
+        log_med = median over draws of log f, per (b, k) bin.
+
+    THREE properties, each pinned by a test (they are what make this a power
+    check rather than an arbitrary perturbation):
+      1. ``s == 1`` returns the input OBJECT unchanged (bit-identical), so the
+         detection curve's own baseline IS the result being certified;
+      2. the per-bin MEDIAN over draws is invariant for every s -- the transform
+         moves the WIDTH and not the location, so a flag at s != 1 cannot be a
+         location bias in disguise;
+      3. the per-bin SD of log f is multiplied by exactly s.
+    """
+    f_draws = np.asarray(f_draws, float)
+    if float(s) == 1.0:
+        return f_draws
+    with np.errstate(divide="ignore"):
+        log_post = np.log(np.clip(f_draws, 1e-300, None))
+    log_med = np.median(log_post, axis=0)
+    return np.exp(log_med[None, ...] + float(s) * (log_post - log_med[None, ...]))
 
 
 def _reported_from_f(f, pack):
@@ -213,25 +237,33 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
             meds = {k: [] for k in names}
             for s in scales:
                 ranks_by_scale[f"{s:g}"] = {k: [] for k in names}
-        # per-bin median of the draws, in log f -- the pivot the power check
-        # rescales about. Computed ONCE per replica and shared by every scale.
-        with np.errstate(divide="ignore"):
-            log_post = np.log(np.clip(f_post, 1e-300, None))
-        log_med = np.median(log_post, axis=0)
-        for s in scales:
-            f_s = (f_post if s == 1.0
-                   else np.exp(log_med[None, ...] + s * (log_post - log_med[None, ...])))
-            q_post = {k: [] for k in names}
+
+        def _q_post(fd):
+            acc = {k: [] for k in names}
             for l in range(L):
-                for k, v in _reported_from_f(f_s[l], pack).items():
-                    q_post[k].append(v)
+                for k, v in _reported_from_f(fd[l], pack).items():
+                    acc[k].append(v)
+            return {k: np.asarray(v, float) for k, v in acc.items()}
+
+        # THE headline ranks, computed from the UNSCALED draws on their own code
+        # path.  Deliberately NOT read out of the s == 1.0 iteration of the loop
+        # below: if both came from the same evaluation, "ranks_by_scale['1'] ==
+        # ranks" would be a tautology instead of a check that the power curve's
+        # baseline really is the reported result (mutation testing caught exactly
+        # that -- doubling every scale left the assertion green).
+        q0 = _q_post(f_post)
+        for k in names:
+            ranks[k].append(int((q0[k] < q_true[k]).sum()))
+            truths[k].append(float(q_true[k]))
+            meds[k].append(float(np.median(q0[k])))
+        for s in scales:
+            # NOT short-circuited at s == 1.0 on purpose: the s == 1 entry must
+            # travel the SAME rescale_dispersion call path as every other scale,
+            # or a bug in that path would be invisible exactly at the baseline.
+            qs = _q_post(rescale_dispersion(f_post, s))
             for k in names:
-                arr = np.asarray(q_post[k], float)
-                ranks_by_scale[f"{s:g}"][k].append(int((arr < q_true[k]).sum()))
-                if s == 1.0:
-                    ranks[k].append(int((arr < q_true[k]).sum()))
-                    truths[k].append(float(q_true[k]))
-                    meds[k].append(float(np.median(arr)))
+                ranks_by_scale[f"{s:g}"][k].append(
+                    int((qs[k] < q_true[k]).sum()))
         n_used += 1
         if verbose:
             print(f"  [sbc] {i+1}/{n_sims} used={n_used} "

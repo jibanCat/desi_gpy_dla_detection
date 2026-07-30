@@ -281,11 +281,24 @@ def test_validate_pack_refuses_a_basis_that_straddles_the_reporting_floor():
 
 
 def test_validate_pack_refuses_a_basis_finer_than_the_observed_grid():
-    """MUTATION: drop the finer-than-observed check -> RED. Verified."""
+    """A latent basis FINER than the observed 0.1-dex grid must be refused.
+
+    It is refused BY THE ON-GRID RULE, and that is the whole story: every ntrue
+    edge must sit on the observed 0.1-dex grid, so the narrowest representable
+    basis bin is 0.1 dex and a finer basis is unrepresentable. Mutation testing
+    proved that the separate ``max(diff) < 0.1`` check this file used to carry was
+    DEAD CODE -- deleting it left this test green, because the on-grid rule fires
+    first. The check has been removed and this test now asserts the real
+    mechanism, including the message.
+
+    MUTATION: the on-grid check (``if not np.allclose(off, np.round(off))``)
+    -> ``if False`` -> RED here AND in
+    test_validate_pack_refuses_a_basis_edge_off_the_observed_grid. Verified.
+    """
     p = PK.synthetic_pack(seed=0, **PK.small_test_grid())
     fine = np.round(np.arange(19.5, 20.5 + 1e-9, 0.05), 10)
     tc = np.zeros((len(fine) - 1, p.n_k))
-    with pytest.raises(PK.PackSchemaError):
+    with pytest.raises(PK.PackSchemaError, match="observed 0.1 dex grid"):
         PK.validate_pack(dataclasses.replace(p, ntrue_edges=fine,
                                              truth_counts=tc,
                                              truth_counts_bks=None),
@@ -434,8 +447,16 @@ def test_window_closure_metrics_restricts_to_bins_fully_inside():
 def test_overlap_weights_are_bit_identical_to_centre_selection_on_0p1dex():
     """The new integrated reduction must be BIT-IDENTICAL on every 0.1-dex pack.
 
-    MUTATION: drop the ``min(hi, ntrue[-1])`` clamp -> RED (the open-topped
-    tiers then integrate past the top edge). Verified.
+    MUTATION: drop the lower clamp in ``window_overlap_weights``
+    (``np.maximum(e[:-1], lo)`` -> ``e[:-1]``) -> RED: every bin below the window
+    then picks up a spurious weight. Verified.
+
+    NOT a valid mutation, found by mutation testing: removing a
+    ``min(hi, ntrue[-1])`` clamp at the call site. It could never change a value,
+    because ``window_overlap_weights`` already takes ``min(bin_hi, hi)`` per bin,
+    so an open-topped window integrates to the top basis edge and no further. The
+    redundant clamp has been deleted from both call sites rather than left in with
+    a false test claim attached to it.
     """
     from CDDF_analysis.hbi_mcmc import model_a as MA
     p = PK.synthetic_pack(seed=0, **PK.small_test_grid())
@@ -502,8 +523,15 @@ def test_coarsen_basis_reproduces_the_extractor_grid_shape():
 
 
 def test_coarsen_basis_conserves_truth_counts_and_the_f_integral():
-    """MUTATION: use a plain mean instead of ``merged_truth``'s dN weighting
-    -> RED on the f leg (the 0.3-dex bins are mis-weighted). Verified.
+    """MUTATION: sum instead of average the group's f (``f[gr].sum(axis=0)``
+    in place of ``merged_truth``) -> RED on the f leg. Verified.
+
+    HONEST LIMIT of this test, found by mutation testing: replacing
+    ``merged_truth``'s dN weighting by a PLAIN MEAN does NOT make it red, and
+    cannot. ``coarsen_basis`` refuses a non-uniform input basis, so every fine
+    bin inside a group has the same dN and the dN-weighted mean IS the plain
+    mean. The weighting is load-bearing only for a non-uniform input, which this
+    function does not accept. Stated rather than papered over.
     """
     p = PK.synthetic_pack(seed=0, **PK.small_test_grid())
     c = PK.coarsen_basis(p, 0.2)
@@ -543,13 +571,36 @@ def test_sbc_reports_the_primary_reporting_window_functional():
     assert q["dndx_report_197_216_allz"] > 0
 
 
-def test_dispersion_scale_one_is_the_identity_and_two_is_not():
-    """The power check must be a real transformation of the SAME draws, and s = 1
-    must be EXACTLY the unscaled ranks -- otherwise the detection curve's own
-    baseline is not the result being certified.
+def test_rescale_dispersion_moves_the_width_and_not_the_location():
+    """The three properties that make the power check a POWER check.
 
-    MUTATION: use ``s * log_post`` instead of pivoting about ``log_med``
-    -> RED (s = 1 stops being the identity). Verified.
+    Without property 2 a flag at s != 1 could be a location shift rather than a
+    mis-scaled width, and the detection curve would measure the wrong thing.
+
+    MUTATION A: ``np.exp(s * log_post)`` (no median pivot) -> RED (the per-bin
+    median moves). Verified.
+    MUTATION B: ``s * log_med + (log_post - log_med)`` (scale the pivot instead
+    of the residual) -> RED (the log-SD stops scaling by s). Verified.
+    """
+    from CDDF_analysis.hbi_mcmc import sbc as S
+    rng = np.random.default_rng(0)
+    f = np.exp(rng.normal(-20.0, 0.4, size=(400, 6, 3)))
+    assert S.rescale_dispersion(f, 1.0) is f            # bit-identical identity
+    lm0 = np.median(np.log(f), axis=0)
+    sd0 = np.std(np.log(f), axis=0)
+    for s in (0.5, 1.5, 2.0):
+        g = S.rescale_dispersion(f, s)
+        assert np.allclose(np.median(np.log(g), axis=0), lm0, atol=1e-12)
+        assert np.allclose(np.std(np.log(g), axis=0), s * sd0, rtol=1e-12)
+
+
+def test_dispersion_scale_one_is_the_identity_and_two_is_not():
+    """End-to-end: the SBC's own ranks at s = 1 must be EXACTLY the unscaled
+    ranks, otherwise the detection curve's baseline is not the result being
+    certified.
+
+    MUTATION: ``f_s = rescale_dispersion(f_post, s)`` -> ``rescale_dispersion(
+    f_post, 2.0 * s)`` -> RED (s = 1 stops being the identity). Verified.
     """
     from CDDF_analysis.hbi_mcmc import sbc as S
     samp = dict(S.SBC_SAMPLER, num_warmup=30, num_samples=30, n_ranks=10)
