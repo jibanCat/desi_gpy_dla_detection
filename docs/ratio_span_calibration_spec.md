@@ -290,7 +290,7 @@ sensitivities are directly comparable.
 
 `prod_17x15x8` (`prod_29x15x8` agrees to Monte-Carlo error throughout):
 
-| `d` | P(span arm fires @0.10) | P(`z_zbin_max` fires @5) | median span | median max·|z| |
+| `d` | P(span arm fires @0.10) | P(`z_zbin_max` fires @5) | median span | median max abs z |
 |---|---|---|---|---|
 | 0.00 | 0.0885 | 0.0000 | 0.0732 | 2.00 |
 | 0.02 | 0.1235 | 0.0000 | 0.0766 | 2.09 |
