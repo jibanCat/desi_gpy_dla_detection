@@ -308,17 +308,39 @@ def window_metrics(by_nhat, lo=None, hi=None):
 
 
 def closes(metrics, gate):
-    """The three RATIFIED arms, on one ``window_metrics`` dict."""
+    """The three RATIFIED arms, on one ``window_metrics`` dict.
+
+    FAIL CLOSED ON A VACUOUS SELECTION. An earlier version skipped any arm that
+    came out non-finite, which made an EMPTY (or wholly unoccupied) reporting
+    window "close": both per-bin arms were skipped and ``z_total`` was
+    0/sqrt(1e-12) = 0.0, so ``{'closes': True, 'failures': []}`` came back about
+    a window containing no data. Emptiness is a refusal, never a pass — a gate
+    may only say "closes" about a selection it could actually evaluate.
+    """
     fails = []
-    if not (abs(metrics["z_total"]) <= gate["abs_z_total_max"]):
-        fails.append(f"|z_total|={abs(metrics['z_total']):.2f} > "
-                     f"{gate['abs_z_total_max']}")
-    zb = metrics["z_bin_max"]
-    if np.isfinite(zb) and not (zb <= gate["z_bin_max"]):
-        fails.append(f"z_bin_max={zb:.2f} > {gate['z_bin_max']}")
-    c2 = metrics["chi2_dof"]
-    if np.isfinite(c2) and not (c2 <= gate["chi2_dof_max"]):
-        fails.append(f"chi2_dof={c2:.2f} > {gate['chi2_dof_max']}")
+    n_bins = int(metrics.get("n_bins", 0))
+    n_occ = int(metrics.get("n_bins_occupied", 0))
+    if n_bins <= 0:
+        fails.append(
+            "n_bins=0: the window selects NO fully-contained n-hat bin, so no "
+            "gate arm is evaluable — REFUSING (an empty selection is not a "
+            "closure)")
+    elif n_occ <= 0:
+        fails.append(
+            f"n_bins_occupied=0 of {n_bins}: no bin carries an observed count, "
+            "so z_bin_max and chi2_dof are undefined and |z_total| alone is a "
+            "level, not a closure test — REFUSING")
+    for name, key, lim in (("z_total", "z_total", "abs_z_total_max"),
+                           ("z_bin_max", "z_bin_max", "z_bin_max"),
+                           ("chi2_dof", "chi2_dof", "chi2_dof_max")):
+        v = float(metrics[key])
+        av = abs(v) if name == "z_total" else v
+        if not np.isfinite(av):
+            fails.append(f"{name} is not finite ({v!r}) — REFUSING rather than "
+                         "skipping the arm")
+        elif not (av <= gate[lim]):
+            label = "|z_total|" if name == "z_total" else name
+            fails.append(f"{label}={av:.2f} > {gate[lim]}")
     return dict(closes=not fails, failures=fails, gate=dict(gate))
 
 
