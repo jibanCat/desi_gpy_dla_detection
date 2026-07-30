@@ -2,20 +2,41 @@
  "metadata": {
   "title": "ADOPTED configuration \u2014 forward closure + coverage under the 0.2-dex latent basis, pad floor 19.0/molly172, and the 19.7-21.6 primary reporting window",
   "artifact": "adopted_config_closure",
-  "date": "2026-07-29 20:27:31",
-  "code_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+  "date": "2026-07-29 22:28:31",
+  "code_commit": "d957aef97902b2722fdd0ed20288c4fd938a6a53",
   "code_commit_scope": "the CLOSURE phase (this process). The input packs carry their own stamp \u2014 see pack_stamp_audit.",
-  "code_commit_dirty": true,
+  "code_commit_dirty": false,
   "pack_stamp_audit": {
-   "what": "the extract phase runs in its own process/env, so each pack stamps itself; this reconciles those stamps against the closure phase's code_commit.",
-   "closure_phase_code_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "what": "the extract phase runs in its own process/env, so each pack stamps itself; this reconciles those stamps against the closure phase's code_commit AND decides, from the actual file diff, whether a mismatch could have changed a pack.",
+   "routine": "CDDF_analysis/hbi_mcmc/adopted_config.py:pack_stamp_verdict",
+   "closure_phase_code_commit": "d957aef97902b2722fdd0ed20288c4fd938a6a53",
    "pack_code_commits": [
-    "a4be6bd0878b189707d03588c867323ea19609f6"
+    "385aa95eec0786c8463283944e2f27c23512c727"
    ],
    "n_packs": 24,
    "all_packs_same_commit": true,
+   "ok": true,
+   "reason": "packs were extracted at a DIFFERENT commit (['385aa95eec0786c8463283944e2f27c23512c727']) than the closure phase (d957aef97902b2722fdd0ed20288c4fd938a6a53), but the 2 file(s) that changed in between cannot change a pack (none is in PACK_DETERMINING_FILES), so the packs are current in content. Recorded, not waved away.",
+   "packs_match_closure_commit": false,
    "any_pack_dirty": false,
-   "packs_match_closure_commit": true
+   "files_changed_between_pack_and_closure_commit": [
+    "CDDF_analysis/hbi_mcmc/adopted_config.py",
+    "tests/test_adopted_reporting.py"
+   ],
+   "pack_determining_files_changed": [],
+   "pack_determining_files": [
+    "CDDF_analysis/hbi_mcmc/extract_pack.py",
+    "CDDF_analysis/hbi_mcmc/pack.py",
+    "CDDF_analysis/hbi_mcmc/reporting.py",
+    "CDDF_analysis/hbi/cddf_catalog_hbi.py",
+    "CDDF_analysis/hbi/ff_fp_estimator.py",
+    "CDDF_analysis/hbi/build_loa0_fp_product.py",
+    "CDDF_analysis/hbi/znz_kernel.py",
+    "CDDF_analysis/hbi/track_c_tf_loa.py",
+    "CDDF_analysis/hbi/track_c_tf_saclay.py",
+    "CDDF_analysis/hbi/track_c_tf_london0.py",
+    "CDDF_analysis/hbi/ab_loa0_fp_baseline.py"
+   ]
   },
   "branch": "wip/adopt-basis-pad-window",
   "routines": {
@@ -28,8 +49,8 @@
    "window_metrics": "CDDF_analysis/hbi_mcmc/reporting.py:window_closure_metrics",
    "gate": "CDDF_analysis/hbi_mcmc/run_posterior.py:forward_closure_gate"
   },
-  "pack_dir": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs",
-  "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla python CDDF_analysis/hbi_mcmc/adopted_config.py --phase extract --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs  &&  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.adopted_config --phase closure --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs --out /home/mfho/wt_cfg/CDDF_analysis/hbi_mcmc/adopted_config_closure.json",
+  "pack_dir": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs2",
+  "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla python CDDF_analysis/hbi_mcmc/adopted_config.py --phase extract --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs2  &&  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.adopted_config --phase closure --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs2 --out /home/mfho/wt_cfg/CDDF_analysis/hbi_mcmc/adopted_config_closure.json",
   "pack_note": "packs are INPUTS, written to scratch, never committed",
   "gate_tolerances": {
    "z_total_max": 5.0,
@@ -46,7 +67,7 @@
   "paper_facing_reason": "the forward model does NOT close inside the reporting window (see verdict). Nothing here may be promoted.",
   "privacy": "mock packs only; no real-LOA path is touched",
   "mocks_only": true,
-  "wall_seconds": 15.8
+  "wall_seconds": 16.4
  },
  "adopted_configuration": {
   "basis_width_dex": 0.2,
@@ -75,7 +96,7 @@
  "verdict": {
   "question": "under the ADOPTED configuration (0.2-dex latent basis, pad floor 19.0, molly172 sub-floor completeness), does the forward model close inside the PRIMARY REPORTING WINDOW 19.7 <= logN <= 21.6, even though it fails over the full observed grid?",
   "answer": "NO",
-  "answer_detail": "the window restriction is a LARGE, real improvement and it is not enough. On the adopted configuration the total ratio moves from 0.8462 (full grid) to 0.9516 (window) on 2LPT-0 and chi2/dof from 441.4 to 56.6 \u2014 i.e. the excluded high-N bins really were carrying most of the misfit \u2014 but the windowed chi2/dof is still 19x the ratified tolerance of 3.0 and max|z_bin| is still 24.4 against a tolerance of 5. No configuration in the 48-fold cross closes in the window.",
+  "answer_detail": "the window restriction is a LARGE, real improvement and it is not enough. On the adopted configuration the total ratio moves from 0.8462 (full grid) to 0.9516 (window) on 2LPT-0 and chi2/dof from 441.4 to 56.6, but the windowed chi2/dof is still 19x the ratified tolerance of 3.0 and max|z_bin| is still 24.4 against a tolerance of 5. No configuration in the 48-fold cross closes in the window. WHERE THE IMPROVEMENT COMES FROM is NOT what it looks like -- see residual_decomposition.correction: the bins at/above 21.6 carry under 1% of the full-grid chi2 (they are count-starved), and it is the two NON-IDENTIFIABLE bins below 19.7 that carried ~90% of it.",
   "gate_tolerances": {
    "z_total_max": 5.0,
    "z_bin_max": 5.0,
@@ -284,12 +305,13 @@
    }
   },
   "what_the_window_removes": "the reporting window drops the 2 non-identifiable bins below 19.7 and the 8 observed bins at/above 21.6, leaving 19 of 29 observed n-hat bins. The dropped high-N bins are exactly where residual D2 lives (a 1.23-1.80x excess whose per-bin digits are invariant across every pad floor and completeness convention), which is why the PI capped the window there \u2014 and it is why the windowed chi2/dof falls by more than an order of magnitude.",
-  "residual_inside_the_window": "what is LEFT inside the window is not D2 and is not the pad. It is a monotone SHAPE residual across the window: see closure.<config>.window.per_bin ratios. The window's own per-bin ratio range on the adopted 2LPT-0 configuration is 0.7579 to 1.1017. That is a systematic no sampler and no window can repair.",
+  "residual_inside_the_window": "what is LEFT inside the window is not D2 and is not the pad; it is a FLOOR EFFECT plus a floor of its own. The window's per-bin ratio range on the adopted 2LPT-0 configuration is 0.7579 to 1.1017, and 73-82% of the in-window chi2 sits in the TWO bins immediately above 19.7. Excluding those two bins chi2/dof is 11.0-12.2, so raising the floor further would buy a factor ~4-5 and STILL NOT CLOSE. That is a systematic no sampler and no window can repair.",
   "convention_systematic_headline": "the clamp x completeness 2x2 half-span is 1.89% (max over mocks) of the integrated predicted counts INSIDE the reporting window at the adopted basis and pad \u2014 full bracket width 3.78%, against a full width of 5.33% over the whole observed grid. It is carried as a SEPARATE LINEAR ENVELOPE, not in quadrature (see convention_systematic.estimator).",
   "omega_hi": "NOT emitted as a total. Only Omega_HI limited to [19.7, 21.6] and labelled as such is emittable (omega_policy).",
   "rung10": "STAYS GATED. No configuration passes the pre-flight, in the window or out of it.",
   "next_actions": [
-   "the binding constraint is now the IN-WINDOW shape residual, not D2 and not D1. Attack that before any further window or pad work.",
+   "the binding constraint is now the IN-WINDOW residual, and it decomposes: ~3/4 of it is the two 0.1-dex bins immediately above the 19.7 floor (an edge effect one bin higher than the one NONIDENT_EDGE was created for), and the rest is a ~4x-over-gate floor that survives removing them. Attack both, in that order, before any further window or pad work.",
+   "residual D2 is NOT closed and is NOT chi2-visible: it is a 1.05-1.81x per-bin PHYSICAL bias in a count-starved tail. Any future gate arm intended to catch it must be a RATIO-SPAN arm, which is precisely the arm PI decision 8 left unratified. The measured spans are recorded in residual_decomposition.prospective_ratio_span_calibration as calibration input.",
    "resp_clamp is still not a free choice; it is carried as half of the convention systematic and the response below ~19.35 remains unmeasured.",
    "coverage under the adopted 0.2-dex basis is measured only at the reduced SBC scale (see coverage block); a matched-configuration SBC on the production geometry is a compute decision for the PI."
   ]
@@ -1314,6 +1336,148 @@
   },
   "reconciliation_of_the_5p5_percent_figure": "the '~5.5% of the total at pad 19.0' figure in circulation is the FULL bracket WIDTH on the FULL observed grid, and it is reproduced here: max-min over the 2x2 corners divided by the adopted corner is 5.33% (min over mocks 5.08%) at basis width 0.2 and pad 19.0. Two corrections to how it should be quoted: (i) the PROPAGATED systematic is the HALF-span, i.e. 2.67% on the full grid, not 5.5%; (ii) INSIDE the reporting window the bracket is smaller: full width 3.78%, half-span 1.89%. Reporting only [19.7, 21.6] therefore also nearly HALVES the convention systematic, which is a second, previously unmeasured benefit of the window."
  },
+ "residual_decomposition": {
+  "what": "where the misfit lives, per mock, at the adopted configuration; computed from the per-bin z of the same folds.",
+  "routine": "CDDF_analysis/hbi_mcmc/adopted_config.py:residual_decomposition_block",
+  "per_mock": {
+   "2lpt0": {
+    "full_grid": {
+     "n_bins": 29,
+     "chi2": 12800.855317329404,
+     "chi2_dof": 441.4088040458415,
+     "chi2_frac_from_bins_below_19p7": 0.9136628223079465,
+     "chi2_frac_from_bins_at_or_above_21p6": 0.0023500448111555224,
+     "chi2_frac_from_the_two_bins_just_above_the_floor": 0.9136628223079465,
+     "chi2_dof_excluding_the_two_bins_just_above_the_floor": 40.93295259787155,
+     "ratio_span": 1.047743106403571,
+     "ratio_min": 0.4302230938737033,
+     "ratio_max": 1.4779662002772742,
+     "ratio_by_bin_at_or_above_21p6": [
+      1.051325063346153,
+      1.3174204127351812,
+      1.257082627259341,
+      1.289071140896207,
+      1.3942395836434365,
+      1.4779662002772742,
+      1.333171048718926,
+      1.0549000813013323
+     ]
+    },
+    "reporting_window": {
+     "n_bins": 19,
+     "chi2": 1075.1071365256894,
+     "chi2_dof": 56.58458613293102,
+     "chi2_frac_from_bins_below_19p7": 0.0,
+     "chi2_frac_from_bins_at_or_above_21p6": 0.0,
+     "chi2_frac_from_the_two_bins_just_above_the_floor": 0.8209212108320666,
+     "chi2_dof_excluding_the_two_bins_just_above_the_floor": 11.325228484401443,
+     "ratio_span": 0.3437295805743351,
+     "ratio_min": 0.7579257531645601,
+     "ratio_max": 1.1016553337388952,
+     "ratio_by_bin_at_or_above_21p6": []
+    },
+    "by_z_ratio_span_full_grid": 0.15834392021951404
+   },
+   "london0": {
+    "full_grid": {
+     "n_bins": 29,
+     "chi2": 6497.131723898637,
+     "chi2_dof": 224.03902496202195,
+     "chi2_frac_from_bins_below_19p7": 0.8743028355945913,
+     "chi2_frac_from_bins_at_or_above_21p6": 0.00826107174723129,
+     "chi2_frac_from_the_two_bins_just_above_the_floor": 0.8743028355945913,
+     "chi2_dof_excluding_the_two_bins_just_above_the_floor": 30.247075350462357,
+     "ratio_span": 1.2792455980169923,
+     "ratio_min": 0.528554660887973,
+     "ratio_max": 1.8078002589049653,
+     "ratio_by_bin_at_or_above_21p6": [
+      1.1552461368499838,
+      1.2176139569108098,
+      1.5598838592596505,
+      1.3449894274907557,
+      1.4353209368700925,
+      1.8078002589049653,
+      0.9279595229739073,
+      1.5842436793856132
+     ]
+    },
+    "reporting_window": {
+     "n_bins": 19,
+     "chi2": 762.9977631401443,
+     "chi2_dof": 40.15777700737602,
+     "chi2_frac_from_bins_below_19p7": 0.0,
+     "chi2_frac_from_bins_at_or_above_21p6": 0.0,
+     "chi2_frac_from_the_two_bins_just_above_the_floor": 0.7275483487914512,
+     "chi2_dof_excluding_the_two_bins_just_above_the_floor": 12.228235319762447,
+     "ratio_span": 0.3109419378558429,
+     "ratio_min": 0.7855503188425292,
+     "ratio_max": 1.0964922566983721,
+     "ratio_by_bin_at_or_above_21p6": []
+    },
+    "by_z_ratio_span_full_grid": 0.1370778917093619
+   },
+   "saclay0": {
+    "full_grid": {
+     "n_bins": 29,
+     "chi2": 8867.310417497234,
+     "chi2_dof": 305.7693247412839,
+     "chi2_frac_from_bins_below_19p7": 0.9000939998768034,
+     "chi2_frac_from_bins_at_or_above_21p6": 0.005171610464825654,
+     "chi2_frac_from_the_two_bins_just_above_the_floor": 0.9000939998768034,
+     "chi2_dof_excluding_the_two_bins_just_above_the_floor": 32.81101909862606,
+     "ratio_span": 1.2607199535704519,
+     "ratio_min": 0.4801535049642971,
+     "ratio_max": 1.740873458534749,
+     "ratio_by_bin_at_or_above_21p6": [
+      1.139083435344351,
+      1.23423160739784,
+      1.740873458534749,
+      1.2359801622606386,
+      1.423169152612934,
+      1.0327791269065616,
+      1.2072342325686747,
+      1.3162077651215423
+     ]
+    },
+    "reporting_window": {
+     "n_bins": 19,
+     "chi2": 840.0392403129175,
+     "chi2_dof": 44.21259159541671,
+     "chi2_frac_from_bins_below_19p7": 0.0,
+     "chi2_frac_from_bins_at_or_above_21p6": 0.0,
+     "chi2_frac_from_the_two_bins_just_above_the_floor": 0.7775675018696797,
+     "chi2_dof_excluding_the_two_bins_just_above_the_floor": 10.991295691194049,
+     "ratio_span": 0.37975165627863006,
+     "ratio_min": 0.7781152199682884,
+     "ratio_max": 1.1578668762469184,
+     "ratio_by_bin_at_or_above_21p6": []
+    },
+    "by_z_ratio_span_full_grid": 0.1653604440097749
+   }
+  },
+  "correction": "CORRECTION, stated because the obvious reading is wrong: the window's chi2 improvement is NOT mostly the high-N bins. On the full observed grid the bins at/above 21.6 carry only 0.2-0.8% of chi2, while the two NON-IDENTIFIABLE bins below 19.7 carry 87.4-91.4%. The 21.6 bins are count-starved, so a 1.05-1.81x per-bin bias there produces almost no z. Any statement of the form 'the window works because it removes D2' is unsupported by these numbers.",
+  "why_the_ceiling_is_still_right": "because a chi2 is the wrong instrument in a count-starved tail. Above 21.6 the per-bin mu/obs runs 1.05-1.81x -- a 5-81% PHYSICAL bias on exactly the bins that dominate an N-weighted Omega -- and the fitted response there is EXTRAPOLATION. Capping the reporting window removes that bias from what is reported. It does not remove it from the model.",
+  "inside_the_window_the_residual_is_a_FLOOR_EFFECT": "of the in-window chi2, 73-82% comes from the TWO 0.1-dex bins immediately above the reporting floor ([19.7, 19.9)), consistently across all three mocks. Excluding those two bins the in-window chi2/dof is 11.0-12.2 -- still 3.7-4.1x the ratified tolerance of 3.0. So raising the reporting floor further would buy roughly a factor 4-5 in chi2/dof AND STILL NOT CLOSE. That is the decision-relevant consequence: the floor is not the remaining defect, it is only the loudest part of it.",
+  "prospective_ratio_span_calibration": {
+   "status": "INPUT FOR A FUTURE PI DECISION, NOT A RATIFICATION. PI decision 8 declined to ratify ratio_span_by_z_max = 0.10 and ratio_span_by_snr_max = 0.15 and asked for them to be defined and calibrated prospectively. These are MEASURED spans on mocks whose forward model does not close, so they cannot be turned into a tolerance yet; they are recorded so the calibration starts from numbers.",
+   "measured_by_nhat_ratio_span_in_window": {
+    "2lpt0": 0.3437295805743351,
+    "london0": 0.3109419378558429,
+    "saclay0": 0.37975165627863006
+   },
+   "measured_by_nhat_ratio_span_full_grid": {
+    "2lpt0": 1.047743106403571,
+    "london0": 1.2792455980169923,
+    "saclay0": 1.2607199535704519
+   },
+   "measured_by_z_ratio_span_full_grid": {
+    "2lpt0": 0.15834392021951404,
+    "london0": 0.1370778917093619,
+    "saclay0": 0.1653604440097749
+   },
+   "note": "the by-N span is 3-4x smaller inside the window than over the full grid; the by-z span is unchanged by an N window, as it must be, since the window does not touch the z marginal."
+  }
+ },
  "closure": {
   "2lpt0|bw=0.1|pad=None|cmp=const_extrap|clamp=both": {
    "mock": "2lpt0",
@@ -1897,7 +2061,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=None|cmp=const_extrap|clamp=hi": {
@@ -2482,7 +2646,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=const_extrap|clamp=both": {
@@ -3067,7 +3231,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=const_extrap|clamp=hi": {
@@ -3652,7 +3816,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=const_extrap|clamp=both": {
@@ -4237,7 +4401,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=const_extrap|clamp=hi": {
@@ -4822,7 +4986,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=None|cmp=molly172|clamp=both": {
@@ -5407,7 +5571,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=None|cmp=molly172|clamp=hi": {
@@ -5992,7 +6156,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=molly172|clamp=both": {
@@ -6577,7 +6741,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=molly172|clamp=hi": {
@@ -7162,7 +7326,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=molly172|clamp=both": {
@@ -7747,7 +7911,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=molly172|clamp=hi": {
@@ -8332,7 +8496,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -8917,7 +9081,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -9502,7 +9666,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -10087,7 +10251,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -10672,7 +10836,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -11257,7 +11421,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -11842,7 +12006,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=molly172|clamp=both": {
@@ -12427,7 +12591,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=molly172|clamp=hi": {
@@ -13012,7 +13176,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=molly172|clamp=both": {
@@ -13597,7 +13761,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=molly172|clamp=hi": {
@@ -14182,7 +14346,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=molly172|clamp=both": {
@@ -14767,7 +14931,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=molly172|clamp=hi": {
@@ -15352,7 +15516,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.2|pad=None|cmp=const_extrap|clamp=both": {
@@ -15937,7 +16101,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=None|cmp=const_extrap|clamp=hi": {
@@ -16522,7 +16686,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=const_extrap|clamp=both": {
@@ -17107,7 +17271,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=const_extrap|clamp=hi": {
@@ -17692,7 +17856,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=const_extrap|clamp=both": {
@@ -18277,7 +18441,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=const_extrap|clamp=hi": {
@@ -18862,7 +19026,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=None|cmp=molly172|clamp=both": {
@@ -19447,7 +19611,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=None|cmp=molly172|clamp=hi": {
@@ -20032,7 +20196,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=molly172|clamp=both": {
@@ -20617,7 +20781,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=molly172|clamp=hi": {
@@ -21202,7 +21366,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=molly172|clamp=both": {
@@ -21787,7 +21951,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=molly172|clamp=hi": {
@@ -22372,7 +22536,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -22957,7 +23121,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -23542,7 +23706,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -24127,7 +24291,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -24712,7 +24876,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -25297,7 +25461,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -25882,7 +26046,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=molly172|clamp=both": {
@@ -26467,7 +26631,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=molly172|clamp=hi": {
@@ -27052,7 +27216,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=molly172|clamp=both": {
@@ -27637,7 +27801,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=molly172|clamp=hi": {
@@ -28222,7 +28386,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=molly172|clamp=both": {
@@ -28807,7 +28971,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=molly172|clamp=hi": {
@@ -29392,7 +29556,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "a4be6bd0878b189707d03588c867323ea19609f6",
+   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
    "pack_basis_width_stamp": 0.2
   }
  },
@@ -31242,8 +31406,18 @@
    "1.5": false,
    "2": true
   },
-  "power_verdict": "USABLE",
-  "power_statement": "at n_sims_used = 64 and L = 50 the test DOES flag a 2.0x over-dispersed posterior and DOES flag a 0.5x under-dispersed one. The s = 1.0 result below is therefore interpretable.",
+  "power_verdict": "USABLE WITH A STATED BLIND SPOT",
+  "detection_envelope": {
+   "smallest_DETECTED_over_dispersion": 2.0,
+   "largest_UNDETECTED_over_dispersion": 1.5,
+   "largest_DETECTED_under_dispersion": 0.75,
+   "smallest_UNDETECTED_under_dispersion": null,
+   "over_dispersion_detection_is_monotone": true,
+   "note": "these are MEASURED envelope values on the scales actually run (dispersion_scales), not an interpolation: nothing here says the test's power is monotone BETWEEN two adjacent scales, and an undetected scale ABOVE a detected one would show up as over_dispersion_detection_is_monotone = false."
+  },
+  "power_statement": "at n_sims_used = 64 and L = 50 the test DOES flag a 2.0x over-dispersed posterior and DOES flag a 0.5x under-dispersed one. THE BLIND SPOT, MEASURED: the largest over-dispersion this configuration does NOT flag is 1.5x, and the smallest it DOES flag is 2.0x. So the s = 1.0 result is interpretable as 'not mis-scaled by 2.0x or more', and it is NOT evidence that the band is correct to better than ~1.5x. Quote it with that qualifier or not at all.",
+  "worst_quantity_at_s1": "dndx_report_197_216_allz",
+  "worst_quantity_note": "if the worst quantity at s = 1 is the reporting-window functional, say so: it is the one the paper would quote and it is the one whose calibration matters, whatever the Bonferroni verdict.",
   "s1_result": {
    "worst_p_value": 0.04494193495473368,
    "worst_quantity": "dndx_report_197_216_allz",
@@ -31451,13 +31625,13 @@
    }
   },
   "conclusion_scope": "MOCK/SYNTHETIC only, REDUCED scale. This is not a coverage statement about the production 29x15x8 fit, whose forward model does not close (see verdict) -- a coverage statement about a non-closing model would be meaningless anyway.",
-  "wall_seconds": 438.4,
+  "wall_seconds": 430.7,
   "meta": {
    "n_sims_requested": 64,
    "n_sims_used": 64,
    "n_ranks_L": 50,
    "seed": 0,
-   "wallclock_s": 435.1208174228668,
+   "wallclock_s": 427.6004822254181,
    "reductions": {
     "R1_grid": {
      "nhat_edges": [
@@ -36637,6 +36811,7 @@
   "all three mocks share ONE injected f(N), so the cross-mock spread here bounds pipeline/realisation differences, NOT population-model error.",
   "the closure numbers fold the pack's OWN truth. They are a statement about the forward model, not about the estimator's coverage; coverage is the separate block and it runs at REDUCED scale.",
   "the 0.2-dex basis is a first-class OPTION, not the default. The shipped default is still 0.1 dex, because decision 3 was conditioned on re-running closure and closure still fails.",
-  "the two ratio-span gate tolerances remain UNRATIFIED (PI decision 8) and are not used by this artifact's verdict."
+  "the two ratio-span gate tolerances remain UNRATIFIED (PI decision 8) and are not used by this artifact's verdict.",
+  "the coverage block's SBC is matched on the LATENT BASIS WIDTH and the PAD only. It is reduced in grid extent, sampler scale, prior width and response realisation (R1-R5), and its measured power has a stated blind spot: read coverage.detection_envelope before quoting coverage.detection_curve['1']. A uniform rank histogram at this power does NOT certify the band to better than the largest UNDETECTED mis-scaling."
  ]
 }
