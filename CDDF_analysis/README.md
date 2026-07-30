@@ -2,7 +2,7 @@
 
 Population statistics (dN/dX, f(N), Omega_DLA) from GP-DLA catalogs. Two supported pathways:
 
-## Pathway A — Bayesian posteriors (Bird/Ho+2021 reproduction)
+## Pathway A — Bayesian posteriors (Bird 2017 / Ho et al. 2020 lineage)
 
 `calc_cddf.py` consumes GP-DLA HDF5 posteriors to produce dN/dX, f(N), and Omega with
 Poisson-binomial CIs. Figures/tables via `make_plots.py`, `make_tables.py`,
@@ -27,8 +27,10 @@ The 7 bare `*.py` files at root matching `hbi/` module names (`cddf_catalog_hbi.
 ## Legacy (SDSS / plotting)
 
 `qso_loader.py` (+ `set_parameters.py`, `voigt.py`) — the QSOLoader plotting utilities
-from the SDSS DR12/DR16 era. To reproduce Bird (2017) / Ho+2021 CDDF/dN/dX/OmegaDLA
-plots use `calc_cddf.py`; to manipulate a MATLAB catalogue without
+from the SDSS DR12/DR16 era. To produce CDDF/dN/dX/Omega_DLA plots in the style of
+Bird (2017) and the SDSS-era GP-DLA papers use `calc_cddf.py` — note this is a plot-style
+and estimator lineage, **not** a like-for-like reproduction of any published catalogue
+(see `docs/provenance/METHOD_LINEAGE.md`); to manipulate a MATLAB catalogue without
 `sample_log_likelihoods_dla` use `qso_loader.py`.
 
 ```python

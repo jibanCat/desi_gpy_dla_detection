@@ -24,6 +24,7 @@ file EXISTS but is untracked, so a working-tree read would mask the entire deliv
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -45,8 +46,16 @@ from CDDF_analysis.unblind import provenance as P  # noqa: E402
 # ---------------------------------------------------------------------------
 FWD_REL = "CDDF_analysis/hbi/subdla_mock_validation_forward.json"
 POST_REL = "CDDF_analysis/hbi/subdla_mock_validation.json"
-HEADLINE_REL = "CDDF_analysis/hbi/subdla_mock_headline.json"
 XM_REL = "CDDF_analysis/hbi/crossmock_transfer_loa0.json"
+# The sub-DLA mock headline artifact this suite used to read from the working tree is
+# RETIRED under PI decision 7. It is replaced by its committed tombstone, which carries
+# value-free sha256(repr(float)) COMMITMENTS at the exact pointers this suite read -- see
+# CDDF_analysis/hbi/tombstones/SCHEMA.md. Naming the retired path here again would
+# re-acquire a presence-gated dependency and silently degrade the assertions below to a
+# pytest.skip; tests/test_tombstones.py::test_consumer_no_longer_depends_on_a_tombstoned_path
+# goes RED if it reappears.
+HEADLINE_TOMBSTONE_REL = (
+    "CDDF_analysis/hbi/tombstones/subdla_mock_headline.tombstone.json")
 FLOOR190_REL = "CDDF_analysis/diagnostics/subdla/subdla_loa0_validation_floor190.py"
 
 # ---------------------------------------------------------------------------
@@ -138,6 +147,29 @@ def _worktree_json(relpath):
         return None
     with open(p) as fh:
         return json.load(fh)
+
+
+def _commit_float(value):
+    """The tombstone commitment: sha256 of the exact repr of the double. NOT the value.
+
+    repr() of an IEEE-754 double is round-trip exact, so equality of two such digests is
+    equivalent to bit-for-bit equality of the two floats. That is what lets a retired
+    artifact's bit-for-bit corroboration survive as a committed, value-free certificate."""
+    return hashlib.sha256(repr(float(value)).encode("utf-8")).hexdigest()
+
+
+def _headline_commitments():
+    """{json-pointer-in-the-retired-headline: sha256_of_repr} from the committed tombstone."""
+    tomb = _committed_json(HEADLINE_TOMBSTONE_REL)
+    assert tomb is not None, (
+        f"{HEADLINE_TOMBSTONE_REL} is not committed at HEAD. The retired sub-DLA headline's "
+        "tripwire lives there; without it these assertions have no anchor. This is a hard "
+        "failure, NOT a skip.")
+    tw = tomb["tripwire"]
+    out = {c["pointer"]: c for c in tw["commitments"]}
+    for d in tw["derived_commitments"]:
+        out[d["equals_pointer_in_retired_artifact"]] = d
+    return out
 
 
 def _blob_exists(commit, relpath):
@@ -308,16 +340,21 @@ def test_band_is_cumulative_difference_not_direct_integral():
         f"dndx_est_195_203={band} is not the [19.5,20.3) slice sum {perbin_sum} -> the band "
         "was pinned to the wrong quantity (a direct cumulative, not the difference-slice).")
 
-    # (ii) cross-check against the independent headline's cum(19.5): band + DLA == cum(19.5)
-    head = _worktree_json(HEADLINE_REL)
-    if head is not None:
-        cum195 = head["measurement"]["19.5"]["dndx"]["integrated"]["MAP"]
-        assert (band + dla) == pytest.approx(cum195, abs=1e-9), (
-            "band + DLA-tier != cum(19.5): the band is NOT cum(19.5) - cum(20.3).")
-        # and the band must NOT itself be the full cum(19.5) (the naive mis-pin)
-        assert abs(band - cum195) > 0.04, (
-            "dndx_est_195_203 equals the full cum(19.5) including the DLA tier -> wrong "
-            "quantity pinned.")
+    # (ii) cross-check against the retired headline's cum(19.5): band + DLA == cum(19.5).
+    # This was an OPPORTUNISTIC working-tree read (`if head is not None`) of an artifact
+    # now retired under PI decision 7. It is re-anchored on the tombstone's DERIVED
+    # commitment, so it is UNCONDITIONAL and STRONGER: bit-for-bit instead of abs=1e-9.
+    cs = _headline_commitments()
+    cum195_ptr = "/measurement/19.5/dndx/integrated/MAP"
+    assert _commit_float(band + dla) == cs[cum195_ptr]["sha256_of_repr"], (
+        "band + DLA-tier does not reproduce the retired headline's cum(19.5) bit-for-bit: "
+        "the band is NOT cum(19.5) - cum(20.3).")
+    # and the band must NOT itself be the full cum(19.5) (the naive mis-pin). Given the
+    # assertion above, cum(19.5) - band == dla exactly, so this is the same check the
+    # original `abs(band - cum195) > 0.04` made, expressed on committed data only.
+    assert dla > 0.04, (
+        "the DLA tier is ~0, so dndx_est_195_203 is indistinguishable from the full "
+        "cum(19.5) including the DLA tier -> wrong quantity pinned.")
 
 
 # ===========================================================================
@@ -441,18 +478,43 @@ def test_two_independent_forward_derivations_agree_bitforbit():
     NOTE: this PASSES on the current tree -- it is a genuine cross-file corroboration of two
     separately-generated MOCK artifacts (not a tautology, not gated on the deliverable). It
     certifies the number the re-stamp will commit is reproduced by two pipelines."""
-    head = _worktree_json(HEADLINE_REL)
+    # --- part 1: the head-vs-crossmock endpoint agreement. UNCONDITIONAL. ---------------
+    # Both source artifacts were untracked scratch; the headline is now RETIRED (decision
+    # 7). Its tombstone commits sha256(repr(float)) at each pointer for BOTH sides, and the
+    # builder refused to write the tombstone unless the digests matched. Asserting digest
+    # equality here therefore certifies exactly the same bit-for-bit claim, needs no file
+    # on disk, and can never degrade to a skip.
+    cs = _headline_commitments()
+    endpoints = [f"/measurement/{lim}/{m}/integrated/MAP"
+                 for m in ("dndx", "omega") for lim in ("19.5", "20.3")]
+    for ptr in endpoints:
+        c = cs.get(ptr)
+        assert c is not None, (
+            f"the retired headline's tombstone carries no commitment at {ptr} -- the "
+            "tripwire has been disarmed.")
+        assert c["sha256_of_repr"] == c["corroborating_sha256_of_repr"], (
+            f"headline vs crossmock differ at {ptr} <-> {c['corroborating_pointer']}: the "
+            "two independent forward derivations do NOT agree bit-for-bit.")
+    assert len({cs[p]["sha256_of_repr"] for p in endpoints}) == 4, (
+        "the four endpoint commitments are not distinct -- they cannot all be the same leaf.")
+
+    # --- part 2: the crossmock file's own internal arithmetic + the forward target -------
+    # This half never needed the retired headline. It reads only the crossmock artifact,
+    # which is still untracked, so its presence gate is PRE-EXISTING and unchanged -- the
+    # assertions above are the ones the retirement had to keep armed.
     xm = _worktree_json(XM_REL)
-    if head is None or xm is None:
-        pytest.skip("headline/crossmock source artifacts absent from the working tree.")
+    if xm is None:
+        pytest.skip(f"{XM_REL} absent from the working tree (untracked scratch); the "
+                    "head-vs-crossmock certification above already ran unconditionally.")
     xs = xm["self_recovery_baseline_2lpt0"]
     cm = xs["cumulative_map"]
-    for metric, hkey in (("dndx", "dndx"), ("omega", "omega")):
+    # the crossmock endpoints must still be the ones the tombstone committed
+    for metric in ("dndx", "omega"):
         for lim in ("19.5", "20.3"):
-            hv = head["measurement"][lim][hkey]["integrated"]["MAP"]
-            xv = cm[metric][lim]
-            assert hv == xv, (
-                f"headline vs crossmock cum {metric}({lim}) differ bit-for-bit: {hv} != {xv}")
+            ptr = f"/measurement/{lim}/{metric}/integrated/MAP"
+            assert _commit_float(cm[metric][lim]) == cs[ptr]["sha256_of_repr"], (
+                f"{XM_REL} cum {metric}({lim}) no longer matches the committed commitment "
+                "-- the crossmock artifact drifted from the certified agreement.")
     band = xs["subdla_band_19p5_20p3"]
     # crossmock band is internally the DIFFERENCE of its own cumulatives
     assert band["dndx"]["num_map"] == cm["dndx"]["19.5"] - cm["dndx"]["20.3"]
