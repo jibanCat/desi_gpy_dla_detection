@@ -56,6 +56,11 @@ the selection that produced them, so the measured ones are recorded here:
 
   Current (HEAD): this file 253 passed; test_posterior_estimator.py 39;
   test_modelA_forward_selftest.py 24; the three together 316 passed.
+
+  2026-07-29, gate-ratification branch (measured, `--collect-only | grep -c ::`
+  in env gpdla-hbi): this file 253; test_posterior_estimator.py 39;
+  test_modelA_forward_selftest.py 27; test_gate_ratification.py 45 (new);
+  all four together 364 passed in 116 s.
 """
 import copy
 

@@ -288,6 +288,46 @@ def test_ratio_span_null_is_reproducible_and_seed_sensitive(spack):
     assert a["quantiles"] != c["quantiles"]
 
 
+def test_the_calibration_report_is_a_committed_stamped_routine():
+    """Project rule: a number that is quoted anywhere comes from a committed
+    routine with a full 40-char SHA, never a scratch script."""
+    rep = FS.ratio_span_null_report(n_draws=1000, seed=1)
+    md = rep["metadata"]
+    assert len(md["code_commit"]) == 40 or md["code_commit"] == "unknown"
+    assert md["paper_facing"] is False
+    assert "SYNTHETIC ONLY" in md["scope"]
+    assert md["ratification"]["ratification_date"] == "2026-07-29"
+    assert "--ratio-span-null" in md["rederive"]
+    for arm, key in (("by_z", "ratio_span_by_z_max"),
+                     ("by_snr", "ratio_span_by_snr_max")):
+        e = rep["null"]["arms"][arm]
+        assert e["proposed_threshold_name"] == key
+        assert e["proposed_threshold"] == RP.GATE[key]
+        assert e["ratification_status"] == "UNRATIFIED"
+        assert 0.0 <= e["measured_false_alarm_rate"] <= 1.0
+    assert "NO THRESHOLD IS PROPOSED" in rep["verdict"]
+
+
+def test_the_committed_calibration_artifact_agrees_with_the_spec_table():
+    """Guards against doc/artifact drift -- the exact failure mode that made
+    an earlier stream's quoted numbers unreproducible.  Every headline number
+    in the spec's §4 table must be present in the committed artifact."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    art = json.loads(
+        (root / "CDDF_analysis" / "hbi_mcmc"
+         / "ratio_span_null_calibration.json").read_text())
+    txt = (root / "docs" / "ratio_span_calibration_spec.md").read_text()
+    assert len(art["metadata"]["code_commit"]) == 40
+    for arm in ("by_z", "by_snr"):
+        e = art["null"]["arms"][arm]
+        assert f"{e['measured_false_alarm_rate']:.4f}" in txt, (arm, e)
+        for q in ("0.5", "0.95", "0.99"):
+            assert f"{e['quantiles'][q]:.4f}" in txt, (arm, q)
+    assert f"{art['pack']['total_mu']:.2f}" in txt
+    assert str(int(art["pack"]["total_obs"])) in txt
+
+
 # ==========================================================================
 # 4. THE EXACT |z| <= 5 DEFINITION  (decision 8, item 3)
 # ==========================================================================
@@ -596,6 +636,41 @@ def test_sbc_block_cannot_claim_a_match_when_it_produced_no_replicas(
     assert "sbc_configuration_matches_run" in blk["checks"]
     assert blk["checks"]["sbc_uniform_ok"] is False
     assert blk["incomplete"] == ["sbc_produced_no_usable_replicas"]
+
+
+def test_a_REAL_sbc_run_records_the_configuration_it_actually_ran():
+    """The one link the stubbed tests above cannot cover: ``sbc_run`` itself
+    must WRITE the configuration into its meta.  A mutation that renames that
+    field survives every other test in this file, so this test runs a genuine
+    (absurdly small) SBC -- measured ~27 s -- and reads the record back.
+
+    It also pins the DEFECT end-to-end: what the shipped SBC records does not
+    match a production ModelAConfig, so it cannot certify one.
+    """
+    samp = dict(num_warmup=8, num_samples=8, num_chains=1, max_tree_depth=4,
+                target_accept=0.8, n_ranks=4)
+    ranks, meta = SBC.sbc_run(2, seed=0, sampler=samp)
+    cfg = SBC.sbc_configuration(meta)
+    assert cfg is not None, "sbc_run did not record what it ran"
+    # the SAMPLER it actually used, not the module default
+    assert cfg["sampler"] == {k: v for k, v in samp.items() if k != "n_ranks"}
+    assert cfg["sampler"]["num_warmup"] == 8            # not SBC_SAMPLER's 150
+    # the NARROWED prior with the FP block OFF (reduction R3), as run
+    assert cfg["prior"]["fp_mode"] == "off"
+    assert cfg["prior"]["level_scale"] == SBC.SBC_PRIOR["level_scale"]
+    # the REALIZED grid, read off the pack
+    assert cfg["grid"]["nhat_edges"][0] == pytest.approx(19.9)
+    assert cfg["grid"]["snr_edges"] == [0.0, float("inf")]   # 1 stratum
+    # the functionals the ranks were actually computed on
+    assert cfg["reported"]["quantities"] == sorted(ranks)
+    assert SBC.configuration_match(cfg, cfg)["matched"] is True
+    # ... and it does NOT certify a production run
+    prod = SBC.run_configuration(
+        __import__("CDDF_analysis.hbi_mcmc.pack", fromlist=["x"])
+        .synthetic_pack(0, **SBC.SBC_GRID, fp_frac=0.0), MA.ModelAConfig())
+    m = SBC.configuration_match(cfg, prod)
+    assert m["matched"] is False
+    assert "prior.fp_mode" in [x["key"] for x in m["mismatches"]]
 
 
 def test_an_sbc_meta_without_a_configuration_certifies_nothing(spack):

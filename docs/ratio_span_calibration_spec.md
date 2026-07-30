@@ -168,35 +168,41 @@ Pack: `synthetic_pack(0, nhat_edges=19.9…20.4 step 0.1, zf_edges=2.0…2.4 ste
 fp_frac=0.15, t_true=[0.2,−0.15])`; `resp_clamp="both"`. Total `mu = 2283.95`
 against total `obs = 2274`. `n_draws = 20000`, `seed = 1`.
 
-| arm | rows | null q50 | null q95 | null q99 | proposed max | **measured false-alarm rate at the proposed max** |
-|---|---|---|---|---|---|---|
-| `by_z`   | 4 | 0.0865 | 0.1574 | 0.1923 | **0.10** | **0.3434** |
-| `by_snr` | 2 | 0.0275 | 0.0825 | 0.1099 | **0.15** | **0.0002** |
+| arm | rows | null q50 | null q95 | null q99 | null q99.5 | proposed max | **measured false-alarm rate at the proposed max** |
+|---|---|---|---|---|---|---|---|
+| `by_z`   | 4 | 0.0841 | 0.1574 | 0.1923 | 0.2058 | **0.10** | **0.3434** |
+| `by_snr` | 2 | 0.0286 | 0.0825 | 0.1099 | 0.1174 | **0.15** | **0.0003** |
 
 Read that table twice. Under a null in which the forward model is *exactly
 right*, `ratio_span_by_z_max = 0.10` refuses **34% of runs**, while
 `ratio_span_by_snr_max = 0.15` refuses **0.02%** — the two numbers, presented as
 a matched pair with the SNR one "wider because the strata are noisier", differ in
-false-alarm rate by more than three orders of magnitude, and in the *opposite*
+false-alarm rate by three orders of magnitude, and in the *opposite*
 direction to the stated rationale. This is what an uncalibrated tolerance inside
 a production fail-closed gate looks like.
 
-The same fold's *observed* `by_z` span on this pack is 0.1734, which the arm
+The same fold's *observed* `by_z` span on this pack is 0.1734 (`by_snr`:
+0.0164), which the arm
 would have reported as a failure and which the null puts at roughly the 98th
 percentile of pure counting noise — suggestive, not decisive, and precisely the
 sort of claim that needs a calibrated threshold before it can refuse anything.
 
 At the Bonferroni `alpha = 0.005` of §3 the *pack-specific* thresholds would be
-`by_z ≈ 0.198`, `by_snr ≈ 0.113` (the q0.995 column of `ratio_span_null`). These
+`by_z ≈ 0.206`, `by_snr ≈ 0.117` (the q99.5 column above). These
 are **not** proposed for ratification here: they come from a synthetic pack, they
 inherit every omission in §2.1, and no power curve (step 6) has been measured.
 
-Reproduce with:
+Provenance: these numbers come from the committed routine
+`forward_selftest.ratio_span_null_report`, not from a scratch script, and are
+stamped in `CDDF_analysis/hbi_mcmc/ratio_span_null_calibration.json` with the
+full 40-char SHA. Reproduce (~5 s):
 
 ```
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-/home/mfho/.conda/envs/gpdla-hbi/bin/python -m pytest \
-    tests/test_gate_ratification.py -q -k ratio_span_null
+python -m CDDF_analysis.hbi_mcmc.forward_selftest --ratio-span-null \
+    --null-draws 20000 --null-seed 1 \
+    --out CDDF_analysis/hbi_mcmc/ratio_span_null_calibration.json
+python -m pytest tests/test_gate_ratification.py -q -k ratio_span_null
 ```
 
 ---

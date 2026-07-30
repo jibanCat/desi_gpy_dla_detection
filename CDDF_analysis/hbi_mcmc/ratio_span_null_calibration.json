@@ -1,0 +1,187 @@
+{
+ "schema": "ratio_span_null_calibration/v1",
+ "null": {
+  "n_draws": 20000,
+  "seed": 1,
+  "resp_clamp": "both",
+  "arms": {
+   "by_z": {
+    "n_rows": 4,
+    "n_rows_nonempty_median": 4.0,
+    "quantiles": {
+     "0.5": 0.0840676718668989,
+     "0.9": 0.13940651646485316,
+     "0.95": 0.15735805904450506,
+     "0.99": 0.19227966162683785,
+     "0.995": 0.2057606201934828,
+     "0.999": 0.23790434942898012
+    },
+    "mean": 0.08784382923355495,
+    "sd": 0.03855632940726777,
+    "span_draws_summary": [
+     0.0030385327058549683,
+     0.2869622929523168
+    ],
+    "observed": {
+     "span": 0.17337545828259626,
+     "lo": 0.9107839886721202,
+     "hi": 1.0841594469547164,
+     "n_rows_used": 4,
+     "vacuous": false
+    },
+    "proposed_threshold": 0.1,
+    "proposed_threshold_name": "ratio_span_by_z_max",
+    "measured_false_alarm_rate": 0.3434,
+    "ratification_status": "UNRATIFIED"
+   },
+   "by_snr": {
+    "n_rows": 2,
+    "n_rows_nonempty_median": 2.0,
+    "quantiles": {
+     "0.5": 0.028611399626209844,
+     "0.9": 0.06909261520752985,
+     "0.95": 0.08254029990908764,
+     "0.99": 0.10986747277613247,
+     "0.995": 0.11738349145953632,
+     "0.999": 0.13673882857714276
+    },
+    "mean": 0.03363436137280465,
+    "sd": 0.025399610277424413,
+    "span_draws_summary": [
+     4.113048542420117e-06,
+     0.16260084470706915
+    ],
+    "observed": {
+     "span": 0.016403326196352208,
+     "lo": 0.9950502937612492,
+     "hi": 1.0114536199576014,
+     "n_rows_used": 2,
+     "vacuous": false
+    },
+    "proposed_threshold": 0.15,
+    "proposed_threshold_name": "ratio_span_by_snr_max",
+    "measured_false_alarm_rate": 0.0003,
+    "ratification_status": "UNRATIFIED"
+   }
+  },
+  "null_note": "obs* ~ independent Poisson(mu) with nuisances FIXED; contains NO nuisance, response-coefficient or f_truth Monte-Carlo uncertainty and NO count overdispersion, so it is a LOWER bound on the true null width and a threshold read off it is ANTI-conservative. See docs/ratio_span_calibration_spec.md."
+ },
+ "pack": {
+  "kind": "synthetic_pack",
+  "seed": 0,
+  "fp_frac": 0.15,
+  "t_true": [
+   0.2,
+   -0.15
+  ],
+  "grid": {
+   "nhat_edges": [
+    19.9,
+    20.0,
+    20.1,
+    20.2,
+    20.3,
+    20.4
+   ],
+   "zf_edges": [
+    2.0,
+    2.1,
+    2.2,
+    2.3,
+    2.4
+   ],
+   "zc_edges": [
+    2.0,
+    2.2,
+    2.4
+   ],
+   "snr_edges": [
+    0.0,
+    3.0,
+    Infinity
+   ],
+   "n_molly_cells": 3
+  },
+  "total_mu": 2283.953868784964,
+  "total_obs": 2274.0
+ },
+ "verdict": "NO THRESHOLD IS PROPOSED FOR RATIFICATION. This artifact is the prospective-calibration EVIDENCE that the two declined thresholds are indefensible as a pair: their measured false-alarm rates under a null in which the forward model is exactly right differ by orders of magnitude, in the opposite direction to the stated rationale. Procedure, omissions and options: docs/ratio_span_calibration_spec.md.",
+ "metadata": {
+  "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
+  "entry_point": "ratio_span_null_report / --ratio-span-null",
+  "date": "2026-07-29",
+  "code_commit": "88f2ecb43eff2a8f2baa5df2535988c577a2ff3e",
+  "code_dirty": true,
+  "code_dirty_scope": "uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- this is NOT a whole-tree cleanliness claim",
+  "scope": "SYNTHETIC ONLY. No real-survey data or values.",
+  "paper_facing": false,
+  "ratification": {
+   "schema": "gate_ratification/v1",
+   "ratification_date": "2026-07-29",
+   "authority": "PI (project decision 8, 2026-07-29)",
+   "ratified": {
+    "chi2_dof_max": {
+     "status": "RATIFIED",
+     "statement": "Forward-model closure requires chi2/dof <= 3 over the reported n-hat bins with obs > 0, with chi2 = sum of squared Poisson score residuals (see forward_selftest.poisson_z) and dof = the number of such bins (the truth fold estimates no parameters).",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    },
+    "fail_closed_framework": {
+     "status": "RATIFIED",
+     "statement": "The evidence gate is FAIL-CLOSED: a missing required block is a FAILURE, a block that reports no checks is a FAILURE, a malformed block/check/incomplete field is a FAILURE, a gate bypass in force is a FAILURE for paper-facing purposes, and `required` may only ever GROW. There is no code path by which not running a check produces a stamp.",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    },
+    "matched_configuration_sbc": {
+     "status": "RATIFIED",
+     "statement": "Simulation-based calibration may certify ONLY the configuration it actually ran. An SBC whose grid, prior, FP mode, response clamp or reported-quantity set differs from the run it is attached to does NOT certify that run, and an artifact carrying an unmatched (or unspecified) SBC is NOT STAMPABLE.",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    },
+    "z_bin_max": {
+     "status": "RATIFIED",
+     "statement": "|z| <= 5 on the reported n-hat bins with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    },
+    "z_snrbin_max": {
+     "status": "RATIFIED",
+     "statement": "|z| <= 5 on the SNR-stratum marginals with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    },
+    "z_total_max": {
+     "status": "RATIFIED",
+     "statement": "|z| <= 5 on the total predicted-vs-observed count, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    },
+    "z_zbin_max": {
+     "status": "RATIFIED",
+     "statement": "|z| <= 5 on the fine-z marginal bins with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
+     "date": "2026-07-29",
+     "authority": "PI (project decision 8, 2026-07-29)"
+    }
+   },
+   "unratified": {
+    "ratio_span_by_snr_max": {
+     "status": "UNRATIFIED",
+     "statement": "PROPOSED (NOT ratified): ratio_span_by_snr <= 0.15.",
+     "effect": "REPORT_ONLY_DOES_NOT_GATE",
+     "declined_by": "PI (project decision 8, 2026-07-29)",
+     "calibration_spec": "docs/ratio_span_calibration_spec.md"
+    },
+    "ratio_span_by_z_max": {
+     "status": "UNRATIFIED",
+     "statement": "PROPOSED (NOT ratified): ratio_span_by_z <= 0.10.",
+     "effect": "REPORT_ONLY_DOES_NOT_GATE",
+     "declined_by": "PI (project decision 8, 2026-07-29)",
+     "calibration_spec": "docs/ratio_span_calibration_spec.md"
+    }
+   },
+   "unratified_effect": "REPORT_ONLY_DOES_NOT_GATE",
+   "unratified_note": "UNRATIFIED TOLERANCES: ratio_span_by_snr_max, ratio_span_by_z_max. Their statistics ARE computed and ARE reported on every run; they DO NOT contribute to pass/fail (effect=REPORT_ONLY_DOES_NOT_GATE). A reported value that exceeds the proposed number is an ADVISORY, never a refusal. Do NOT read 'the span arm did not fire' as 'the span arm passed': no threshold was applied. Prospective calibration spec: docs/ratio_span_calibration_spec.md."
+  },
+  "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python -m CDDF_analysis.hbi_mcmc.forward_selftest --ratio-span-null --null-draws 20000 --null-seed 1 --out CDDF_analysis/hbi_mcmc/ratio_span_null_calibration.json"
+ }
+}

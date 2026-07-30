@@ -646,6 +646,100 @@ def _stamp_fields(mocks):
     }
 
 
+#: the SYNTHETIC pack the ratio-span calibration in
+#: ``docs/ratio_span_calibration_spec.md`` was measured on.  Named here so the
+#: artifact, the spec and the test all quote the same object.
+RATIO_SPAN_NULL_GRID = dict(
+    nhat_edges=np.round(np.arange(19.9, 20.4 + 1e-9, 0.1), 10),
+    zf_edges=np.round(np.arange(2.0, 2.4 + 1e-9, 0.1), 10),
+    zc_edges=np.array([2.0, 2.2, 2.4]),
+    snr_edges=np.array([0.0, 3.0, np.inf]),
+    n_molly_cells=3,
+)
+
+
+def ratio_span_null_report(*, n_draws=20000, seed=1, pack=None):
+    """The committed routine behind ``ratio_span_null_calibration.json``.
+
+    Emits the null distribution of the two UNRATIFIED span statistics plus the
+    MEASURED FALSE-ALARM RATE of the two thresholds the PI declined to ratify
+    (decision 8, 2026-07-29).  Provenance-stamped, because the spec quotes its
+    numbers and this project's rule is committed-routine-plus-git-stamp, never
+    a scratch JSON.
+
+    SYNTHETIC pack only.  No survey data, no survey-derived value.
+    """
+    from CDDF_analysis.hbi_mcmc.pack import synthetic_pack
+    from CDDF_analysis.hbi_mcmc.run_posterior import GATE
+    from CDDF_analysis.hbi_mcmc import ratification as _RAT
+
+    if pack is None:
+        pack = synthetic_pack(0, **RATIO_SPAN_NULL_GRID, fp_frac=0.15,
+                              t_true=np.array([0.2, -0.15]))
+    res = selftest(pack, resp_clamp="both")
+    nul = ratio_span_null(pack, n_draws=n_draws, seed=seed, res=res)
+
+    # the false-alarm rate of each PROPOSED threshold under the same null
+    mu = np.asarray(res["mu"], float)
+    dxpos = np.asarray(pack.dX, float) > 0
+    mu_m = np.where(np.broadcast_to(dxpos[None, :, :], mu.shape), mu, 0.0)
+    rng = np.random.default_rng(seed)
+    obs_star = rng.poisson(np.broadcast_to(mu_m, (n_draws,) + mu_m.shape))
+    for arm, ax, key in (("by_z", (0, 2), "ratio_span_by_z_max"),
+                         ("by_snr", (0, 1), "ratio_span_by_snr_max")):
+        mu_r = mu_m.sum(axis=ax)
+        o = obs_star.sum(axis=tuple(a + 1 for a in ax))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            r = np.where(o > 0, mu_r[None, :] / o, np.nan)
+        fin = np.isfinite(r)
+        hi = np.max(np.where(fin, r, -np.inf), axis=1)
+        lo = np.min(np.where(fin, r, np.inf), axis=1)
+        span = np.where(fin.sum(axis=1) >= 2, hi - lo, 0.0)
+        thr = float(GATE[key])
+        nul["arms"][arm]["proposed_threshold"] = thr
+        nul["arms"][arm]["proposed_threshold_name"] = key
+        nul["arms"][arm]["measured_false_alarm_rate"] = float((span > thr).mean())
+        nul["arms"][arm]["ratification_status"] = _RAT.record(key)["status"]
+
+    return {
+        "schema": "ratio_span_null_calibration/v1",
+        "null": nul,
+        "pack": {"kind": "synthetic_pack", "seed": 0, "fp_frac": 0.15,
+                 "t_true": [0.2, -0.15],
+                 "grid": {k: (v.tolist() if isinstance(v, np.ndarray) else v)
+                          for k, v in RATIO_SPAN_NULL_GRID.items()},
+                 "total_mu": float(mu_m.sum()),
+                 "total_obs": float(np.where(
+                     np.broadcast_to(dxpos[None, :, :], mu.shape),
+                     res["counts"], 0).sum())},
+        "verdict": (
+            "NO THRESHOLD IS PROPOSED FOR RATIFICATION. This artifact is the "
+            "prospective-calibration EVIDENCE that the two declined "
+            "thresholds are indefensible as a pair: their measured "
+            "false-alarm rates under a null in which the forward model is "
+            "exactly right differ by orders of magnitude, in the opposite "
+            "direction to the stated rationale. Procedure, omissions and "
+            "options: docs/ratio_span_calibration_spec.md."),
+        "metadata": {
+            "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
+            "entry_point": "ratio_span_null_report / --ratio-span-null",
+            "date": time.strftime("%Y-%m-%d"),
+            "code_commit": _git(),
+            "code_dirty": bool(_git_dirty()),
+            "code_dirty_scope": _DIRTY_SCOPE,
+            "scope": "SYNTHETIC ONLY. No real-survey data or values.",
+            "paper_facing": False,
+            "ratification": _RAT.ratification_stamp(),
+            "rederive": (
+                "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "
+                "python -m CDDF_analysis.hbi_mcmc.forward_selftest "
+                f"--ratio-span-null --null-draws {int(n_draws)} "
+                f"--null-seed {int(seed)} --out CDDF_analysis/hbi_mcmc/"
+                "ratio_span_null_calibration.json"),
+        },
+    }
+
+
 def aggregate_report(mocks, *, clamps=("off", "both", "hi"), use_fp=True):
     """The MULTI-MOCK, MULTI-CLAMP report -- the committed routine behind
     ``rung9_forward_selftest.json``.
@@ -738,7 +832,31 @@ def main(argv=None):
     ap.add_argument("--max-abs-z-total", type=float, default=5.0)
     ap.add_argument("--max-abs-z-bin", type=float, default=5.0)
     ap.add_argument("--max-chi2-dof", type=float, default=3.0)
+    ap.add_argument("--ratio-span-null", action="store_true",
+                    help="prospective calibration of the two UNRATIFIED "
+                         "ratio-span tolerances on a SYNTHETIC pack: null "
+                         "distribution + measured false-alarm rate. Emits "
+                         "ratio_span_null_calibration.json. See "
+                         "docs/ratio_span_calibration_spec.md.")
+    ap.add_argument("--null-draws", type=int, default=20000)
+    ap.add_argument("--null-seed", type=int, default=1)
     a = ap.parse_args(argv)
+
+    if a.ratio_span_null:
+        rep = ratio_span_null_report(n_draws=a.null_draws, seed=a.null_seed)
+        for arm, e in rep["null"]["arms"].items():
+            print(f"[null] {arm}: rows={e['n_rows']} "
+                  f"q50={e['quantiles']['0.5']:.4f} "
+                  f"q95={e['quantiles']['0.95']:.4f} "
+                  f"q99={e['quantiles']['0.99']:.4f} | proposed "
+                  f"{e['proposed_threshold_name']}={e['proposed_threshold']} "
+                  f"({e['ratification_status']}) -> measured false-alarm rate "
+                  f"{e['measured_false_alarm_rate']:.4f}")
+        if a.out:
+            with open(a.out, "w") as fh:
+                json.dump(rep, fh, indent=1)
+            print(f"[null] wrote {a.out}")
+        return rep
 
     if a.mock:
         if a.pack:
