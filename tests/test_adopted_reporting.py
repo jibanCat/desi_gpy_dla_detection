@@ -957,10 +957,33 @@ def test_the_committed_artifact_carries_no_contradictory_chi2_claim():
         art = json.load(fh)
     assert AC.assert_no_contradictory_chi2_claims(art) is True
     # and the extrapolated-response disclosure must be present and prominent
-    assert art["verdict"]["extrapolated_response_inside_the_omega_window"][
-        "inside_the_authorized_omega_window"] is True
+    ex = art["verdict"]["extrapolated_response_inside_the_omega_window"]
+    assert ex["inside_the_authorized_omega_window"] is True
     lim = json.dumps(art["limitations"])
     assert "EXTRAPOLATED" in lim
+    # DEFECT 3 must be the FIRST limitation, not buried in the list: a reader who
+    # stops after one bullet must still learn it.
+    assert "EXTRAPOLATED RESPONSE" in art["limitations"][0], art["limitations"][0]
+
+    # --- the disclosure's own numbers -----------------------------------------
+    # The sub-interval edge is snapped to the OBSERVED 0.1-dex grid, so it must be
+    # exactly 21.2.  np.floor(21.216358 / 0.1) * 0.1 evaluates to
+    # 21.200000000000003 in binary floating point, and that string appeared in the
+    # PI-facing `headline` of the first regenerated artifact.
+    # MUTATION: drop the round(..., 6) in
+    # ``adopted_config.extrapolated_response_block`` -> RED.
+    assert ex["subinterval_logN"] == [21.2, RP.RESPONSE_ANCHOR_CEILING], (
+        ex["subinterval_logN"])
+    blob = json.dumps(ex)
+    assert "21.200000000000003" not in blob, "float noise in a PI-facing field"
+    # the N-weighted Omega share is the load-bearing number of defect 3; pin the
+    # order of magnitude so a silent change to the weighting cannot pass.
+    for key in ("omega_share_of_subinterval_by_mock_truth_counts",
+                "omega_share_of_subinterval_by_mock_predicted_counts"):
+        vals = list(ex[key].values())
+        assert len(vals) == 3, (key, vals)
+        assert all(0.20 < v < 0.40 for v in vals), (key, vals)
+    assert "27.5-29.6%" in ex["headline"], ex["headline"]
 
 
 @pytest.mark.parametrize("basis_width,pad_floor", [(0.2, 19.0), (0.1, None)])

@@ -712,8 +712,11 @@ def extrapolated_response_block(rows):
     ex = dict(REP.extrapolated_response_inside_window())
     # the sub-interval that is above EVERY response cell's top anchor, snapped
     # DOWN to the observed 0.1-dex grid so it is a union of whole reported bins.
-    edge = float(np.floor(ex["top_anchor_max"] / REP.OBSERVED_STEP + 1e-9)
-                 * REP.OBSERVED_STEP)
+    # round to the observed grid's own precision: np.floor(21.216358 / 0.1) * 0.1
+    # is 21.200000000000003 in binary floating point, and that is not a number to
+    # put in a PI-facing headline.
+    edge = round(float(np.floor(ex["top_anchor_max"] / REP.OBSERVED_STEP + 1e-9)
+                       * REP.OBSERVED_STEP), 6)
     share_obs, share_mu = {}, {}
     for m in MOCKS:
         pb = rows[key_for(m, ADOPTED_WIDTH, ADOPTED_FLOOR, ADOPTED_CONV,
