@@ -834,7 +834,7 @@
   "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
   "entry_point": "ratio_span_null_report / --ratio-span-null",
   "date": "2026-07-30",
-  "code_commit": "9b5f991aa380016dc5154ac0ecf7055d7739db1e",
+  "code_commit": "cf6a962bec7f0bf3e8e2a9aea5b1fa2fcde11d09",
   "code_dirty": false,
   "code_dirty_scope": "uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- this is NOT a whole-tree cleanliness claim",
   "scope": "SYNTHETIC ONLY. No real-survey data or values.",
@@ -843,6 +843,7 @@
    "schema": "gate_ratification/v2",
    "ratification_date": "2026-07-29",
    "authority": "PI (project decision 8, 2026-07-29)",
+   "authority_scope": "The `authority` field above applies to `pi_ratified_items` AND TO NOTHING ELSE IN THIS STAMP. Entries under `restated_not_ratified` and `unratified` are NOT covered by it: each carries its own `authority` field naming who actually set it, and for all of them that is not the PI. Read those fields, not this one.",
    "pi_ratified_items": [
     "fail_closed_framework",
     "matched_configuration_sbc",
