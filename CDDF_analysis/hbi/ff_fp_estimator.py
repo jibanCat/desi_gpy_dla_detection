@@ -316,11 +316,23 @@ def load_molly_counts(path=DEF_MOLLY_COUNTS):
     )
 
 
-def build_molly_counts_cache(out_path=DEF_MOLLY_COUNTS, molly_tsv=DEF_MOLLY_TSV):
+def build_molly_counts_cache(out_path=DEF_MOLLY_COUNTS, molly_tsv=DEF_MOLLY_TSV,
+                             lam_rf_min=1025.0):
     """Regenerate the 2LPT-0 lya_only-nhi195 molly (n_det, n_tot) counts from the
     production catalog + truth (the TSV stores ratios only) and cache to npz.
     ~15 s. Guards: regenerated ratios must reproduce the committed TSV to 5e-3
-    (the run_pipeline hard-guard threshold)."""
+    (the run_pipeline hard-guard threshold).
+
+    ``lam_rf_min`` (2026-07-29, PI decision 2 — the matched spectral-window
+    study) is the ANALYSIS window the counts are regenerated under. It USED to
+    be hardcoded 1025.0 while ``molly_tsv`` was a free argument, so passing the
+    lya_lyb (911 A) matrix regenerated its counts from a lya_only (1025 A) cut
+    bundle — a silent window mismatch between the completeness numerator and
+    its own reference ratios. The default is unchanged (1025.0, the canonical
+    lya_only matrix), so every existing call is byte-identical; a caller that
+    supplies a 911-A matrix MUST also supply ``lam_rf_min=911.0`` or the 5e-3
+    ratio-replication guard below fires.
+    """
     from CDDF_analysis.hbi import ab_loa0_fp_baseline as AB
     from CDDF_analysis.hbi.cddf_catalog_hbi import (
         HBIConfig, load_molly_matrix, regenerate_molly_counts,
@@ -330,7 +342,7 @@ def build_molly_counts_cache(out_path=DEF_MOLLY_COUNTS, molly_tsv=DEF_MOLLY_TSV)
         catalog_dir=AB.DEF_CAT, truth_path=AB.DEF_TRUTH, bal_cat_path=AB.DEF_BAL,
         molly_tsv=molly_tsv, out_dir=os.path.dirname(out_path) or ".",
         mockdir=os.path.dirname(AB.DEF_TRUTH),
-        lam_rf_min=1025.0,      # lya_only window (molly_summary: lam_rf_min 1025)
+        lam_rf_min=float(lam_rf_min),   # ANALYSIS window; MUST match molly_tsv
         no_bal=True)
     mm = load_molly_matrix(molly_tsv)
     truth_floor = float(mm.nhi_edges[0])
@@ -349,7 +361,7 @@ def build_molly_counts_cache(out_path=DEF_MOLLY_COUNTS, molly_tsv=DEF_MOLLY_TSV)
              cmp_nfound=mm.cmp_nfound, cmp_nfid=mm.cmp_nfid,
              pur_ntp=mm.pur_ntp, pur_ntot=mm.pur_ntot,   # stored, never exposed
              max_p_diff=mm._max_p_diff, max_c_diff=mm._max_c_diff,
-             molly_tsv=molly_tsv, lam_rf_min=1025.0)
+             molly_tsv=molly_tsv, lam_rf_min=float(lam_rf_min))
     print(f"[ff_fp] molly counts cached -> {out_path} "
           f"({time.time()-t0:.0f}s; max_c_diff={mm._max_c_diff:.1e})")
     return out_path
