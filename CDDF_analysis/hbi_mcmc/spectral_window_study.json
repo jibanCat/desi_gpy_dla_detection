@@ -1,19 +1,19 @@
 {
  "metadata": {
   "title": "Matched spectral-window study \u2014 the ANALYSIS window (lya_only 1025 A vs lya_lyb 911 A) at the PI-adopted pad/completeness/reporting configuration, plus a bounded FINDER-FITTING-window pilot",
-  "date": "2026-07-29 20:57:32",
-  "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
+  "date": "2026-07-30 00:12:18",
+  "code_commit": "6fc183fa38e6866c821671a90a3a5ba86967c8f0",
   "code_commit_scope": "the SELFTEST phase (this process). Input packs carry their own stamp \u2014 see pack_stamp_audit.",
   "code_commit_dirty": false,
   "pack_stamp_audit": {
-   "selftest_phase_code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
+   "selftest_phase_code_commit": "6fc183fa38e6866c821671a90a3a5ba86967c8f0",
    "pack_code_commits": [
     "89233244acf1dd1013440016fc63ab34804a9a90"
    ],
    "n_packs": 6,
    "all_packs_same_commit": true,
    "any_pack_dirty": false,
-   "packs_match_selftest_commit": true
+   "packs_match_selftest_commit": false
   },
   "branch": "wip/spectral-window",
   "routines": {
@@ -71,7 +71,7 @@
   },
   "mocks_only": true,
   "privacy": "mock packs only; no real-LOA path is touched",
-  "wall_seconds": 6.2
+  "wall_seconds": 7.3
  },
  "protocol": {
   "fixed_before_outcome": true,
@@ -101,6 +101,19 @@
     "rule": "No configuration is dropped, re-run, or re-tuned after its number is seen. The full cross (2 windows x 3 mocks x 2 clamps) is emitted."
    }
   ],
+  "post_hoc_amendments": [
+   {
+    "id": "A1",
+    "date": "2026-07-30",
+    "amendment": "P2's chi2/dof IS CONFOUNDED WITH SAMPLE SIZE and the study did not say so. The lya_lyb arm carries 20-22% MORE counts in the reporting window (2lpt0 67086 -> 82008, x1.222; london0 69631 -> 85111, x1.222; saclay0 67424 -> 81033, x1.202), so its Poisson denominators shrink and chi2/dof rises MECHANICALLY. Pure power scaling alone predicts 63.65 x 1.222 = 77.8 for 2lpt0 against 106.59 observed (london0 54.1 vs 74.23; saclay0 59.8 vs 80.71) \u2014 i.e. roughly ONE THIRD of each quoted '+30 to +43 in chi2/dof' is statistical power, not model adequacy. The artifact disclosed exactly this confound for the marginal max|z| and said nothing about it for P2. Every chi2/dof MAGNITUDE quoted for the window contrast must be read with this discount."
+   },
+   {
+    "id": "A2",
+    "date": "2026-07-30",
+    "amendment": "A SCALE-FREE primary discriminator is added and the recommendation is restated on it: `rms_frac_dev`, the counts-weighted RMS fractional deviation of mu/obs over the occupied bins of the reporting window, which is invariant under a common rescaling of mu and obs. It is reported as a MEASUREMENT (PI decision 8 ratified chi2/dof <= 3 and nothing else; no tolerance on this statistic has been calibrated). The CONCLUSION SURVIVES: D rises from lya_only to lya_lyb in all three mocks at BOTH clamps (clamp=both 0.1193->0.1366, 0.0993->0.1142, 0.1063->0.1211; clamp=hi 0.0997->0.1160, 0.0844->0.0959, 0.0886->0.1016) \u2014 unanimous 6/6. So the DIRECTION of P2 holds on a measure that cannot be produced by sample size; only the MAGNITUDE was inflated."
+   }
+  ],
+  "post_hoc_amendments_note": "These were added AFTER the outcome was seen, in response to a referee finding, and are kept OUT of `rules` for that reason (P6). They add a disclosure and a scale-free discriminator; they drop, re-run and re-tune nothing, and no configuration was removed.",
   "selection_discipline": "The nominal Molly window (lya_only) is the standard reference and is reported unconditionally. No window was preferred for giving a nicer answer; P2/P3/P5 were written before any closure number was inspected."
  },
  "verdict": {
@@ -128,6 +141,130 @@
    "london0|lya_lyb|clamp=hi": 49.461456842863576,
    "saclay0|lya_lyb|clamp=both": 80.71198862835121,
    "saclay0|lya_lyb|clamp=hi": 53.638966987943135
+  },
+  "reporting_window_chi2_dof_caveat": "CONFOUNDED WITH SAMPLE SIZE \u2014 see p2_power_confound and POST_HOC_AMENDMENTS A1. Do not compare these MAGNITUDES across windows; compare reporting_window_rms_frac_dev.",
+  "reporting_window_rms_frac_dev": {
+   "2lpt0|lya_only|clamp=both": 0.11934358645375448,
+   "2lpt0|lya_only|clamp=hi": 0.0997051058568252,
+   "london0|lya_only|clamp=both": 0.09926233881641335,
+   "london0|lya_only|clamp=hi": 0.08436039573013084,
+   "saclay0|lya_only|clamp=both": 0.10632568161295212,
+   "saclay0|lya_only|clamp=hi": 0.08861160581912468,
+   "2lpt0|lya_lyb|clamp=both": 0.13655190728090175,
+   "2lpt0|lya_lyb|clamp=hi": 0.1159983982874315,
+   "london0|lya_lyb|clamp=both": 0.11422810283342784,
+   "london0|lya_lyb|clamp=hi": 0.09586291566767073,
+   "saclay0|lya_lyb|clamp=both": 0.12105083660572939,
+   "saclay0|lya_lyb|clamp=hi": 0.10160488613302109
+  },
+  "reporting_window_obs_counts": {
+   "2lpt0|lya_only|clamp=both": 67086.0,
+   "2lpt0|lya_only|clamp=hi": 67086.0,
+   "london0|lya_only|clamp=both": 69631.0,
+   "london0|lya_only|clamp=hi": 69631.0,
+   "saclay0|lya_only|clamp=both": 67424.0,
+   "saclay0|lya_only|clamp=hi": 67424.0,
+   "2lpt0|lya_lyb|clamp=both": 82008.0,
+   "2lpt0|lya_lyb|clamp=hi": 82008.0,
+   "london0|lya_lyb|clamp=both": 85111.0,
+   "london0|lya_lyb|clamp=hi": 85111.0,
+   "saclay0|lya_lyb|clamp=both": 81033.0,
+   "saclay0|lya_lyb|clamp=hi": 81033.0
+  },
+  "p2_power_confound": {
+   "statistic": "primary_reporting_window.chi2_dof",
+   "confound": "chi2/dof scales LINEARLY with the number of counts at fixed fractional residual shape, and the two arms are NOT matched in counts. See POST_HOC_AMENDMENTS A1.",
+   "scale_free_alternative": "primary_reporting_window.rms_frac_dev \u2014 invariant under a common rescaling of mu and obs; see rms_frac_dev()'s docstring.",
+   "per_clamp": {
+    "both": {
+     "2lpt0": {
+      "obs_counts_lya_only": 67086.0,
+      "obs_counts_lya_lyb": 82008.0,
+      "counts_ratio_L": 1.2224309095787496,
+      "chi2_dof_lya_only": 63.65206298413061,
+      "chi2_dof_lya_lyb_observed": 106.58576787999633,
+      "chi2_dof_lya_lyb_predicted_by_pure_power_scaling": 77.81024925025464,
+      "delta_chi2_dof_observed": 42.933704895865716,
+      "delta_chi2_dof_attributable_to_counts": 14.158186266124034,
+      "fraction_of_delta_that_is_statistical_power": 0.3297685652907022,
+      "rms_frac_dev_lya_only": 0.11934358645375448,
+      "rms_frac_dev_lya_lyb": 0.13655190728090175,
+      "delta_rms_frac_dev": 0.017208320827147267
+     },
+     "london0": {
+      "obs_counts_lya_only": 69631.0,
+      "obs_counts_lya_lyb": 85111.0,
+      "counts_ratio_L": 1.222314773592222,
+      "chi2_dof_lya_only": 44.23779483453576,
+      "chi2_dof_lya_lyb_observed": 74.22798344581827,
+      "chi2_dof_lya_lyb_predicted_by_pure_power_scaling": 54.07251017739475,
+      "delta_chi2_dof_observed": 29.990188611282505,
+      "delta_chi2_dof_attributable_to_counts": 9.834715342858985,
+      "fraction_of_delta_that_is_statistical_power": 0.32793109340963267,
+      "rms_frac_dev_lya_only": 0.09926233881641335,
+      "rms_frac_dev_lya_lyb": 0.11422810283342784,
+      "delta_rms_frac_dev": 0.014965764017014493
+     },
+     "saclay0": {
+      "obs_counts_lya_only": 67424.0,
+      "obs_counts_lya_lyb": 81033.0,
+      "counts_ratio_L": 1.201842074038918,
+      "chi2_dof_lya_only": 49.741689473765135,
+      "chi2_dof_lya_lyb_observed": 80.71198862835121,
+      "chi2_dof_lya_lyb_predicted_by_pure_power_scaling": 59.781655243349704,
+      "delta_chi2_dof_observed": 30.970299154586073,
+      "delta_chi2_dof_attributable_to_counts": 10.039965769584569,
+      "fraction_of_delta_that_is_statistical_power": 0.32418045816964136,
+      "rms_frac_dev_lya_only": 0.10632568161295212,
+      "rms_frac_dev_lya_lyb": 0.12105083660572939,
+      "delta_rms_frac_dev": 0.014725154992777267
+     }
+    },
+    "hi": {
+     "2lpt0": {
+      "obs_counts_lya_only": 67086.0,
+      "obs_counts_lya_lyb": 82008.0,
+      "counts_ratio_L": 1.2224309095787496,
+      "chi2_dof_lya_only": 41.46275765413335,
+      "chi2_dof_lya_lyb_observed": 72.61873619063766,
+      "chi2_dof_lya_lyb_predicted_by_pure_power_scaling": 50.68535655278549,
+      "delta_chi2_dof_observed": 31.155978536504314,
+      "delta_chi2_dof_attributable_to_counts": 9.222598898652144,
+      "fraction_of_delta_that_is_statistical_power": 0.29601377751131663,
+      "rms_frac_dev_lya_only": 0.0997051058568252,
+      "rms_frac_dev_lya_lyb": 0.1159983982874315,
+      "delta_rms_frac_dev": 0.0162932924306063
+     },
+     "london0": {
+      "obs_counts_lya_only": 69631.0,
+      "obs_counts_lya_lyb": 85111.0,
+      "counts_ratio_L": 1.222314773592222,
+      "chi2_dof_lya_only": 29.605561515514744,
+      "chi2_dof_lya_lyb_observed": 49.461456842863576,
+      "chi2_dof_lya_lyb_predicted_by_pure_power_scaling": 36.187315220907,
+      "delta_chi2_dof_observed": 19.855895327348833,
+      "delta_chi2_dof_attributable_to_counts": 6.581753705392259,
+      "fraction_of_delta_that_is_statistical_power": 0.3314760476364305,
+      "rms_frac_dev_lya_only": 0.08436039573013084,
+      "rms_frac_dev_lya_lyb": 0.09586291566767073,
+      "delta_rms_frac_dev": 0.011502519937539896
+     },
+     "saclay0": {
+      "obs_counts_lya_only": 67424.0,
+      "obs_counts_lya_lyb": 81033.0,
+      "counts_ratio_L": 1.201842074038918,
+      "chi2_dof_lya_only": 32.133920329514936,
+      "chi2_dof_lya_lyb_observed": 53.638966987943135,
+      "chi2_dof_lya_lyb_predicted_by_pure_power_scaling": 38.61989745582558,
+      "delta_chi2_dof_observed": 21.5050466584282,
+      "delta_chi2_dof_attributable_to_counts": 6.485977126310644,
+      "fraction_of_delta_that_is_statistical_power": 0.30160256005623115,
+      "rms_frac_dev_lya_only": 0.08861160581912468,
+      "rms_frac_dev_lya_lyb": 0.10160488613302109,
+      "delta_rms_frac_dev": 0.012993280313896405
+     }
+    }
+   }
   },
   "reporting_window_ratio": {
    "2lpt0|lya_only|clamp=both": 0.9379595276352878,
@@ -230,6 +367,21 @@
      "sign": 1,
      "n_mocks": 3
     },
+    "A2_delta_rms_frac_dev_reporting_window": {
+     "per_mock": {
+      "2lpt0": 0.017208320827147267,
+      "london0": 0.014965764017014493,
+      "saclay0": 0.014725154992777267
+     },
+     "signs": {
+      "2lpt0": 1,
+      "london0": 1,
+      "saclay0": 1
+     },
+     "unanimous": true,
+     "sign": 1,
+     "n_mocks": 3
+    },
     "P3_delta_abs_highn_residual_from_1": {
      "per_mock": {
       "2lpt0": -0.08833461126211706,
@@ -267,6 +419,21 @@
       "2lpt0": 31.155978536504314,
       "london0": 19.855895327348833,
       "saclay0": 21.5050466584282
+     },
+     "signs": {
+      "2lpt0": 1,
+      "london0": 1,
+      "saclay0": 1
+     },
+     "unanimous": true,
+     "sign": 1,
+     "n_mocks": 3
+    },
+    "A2_delta_rms_frac_dev_reporting_window": {
+     "per_mock": {
+      "2lpt0": 0.0162932924306063,
+      "london0": 0.011502519937539896,
+      "saclay0": 0.012993280313896405
      },
      "signs": {
       "2lpt0": 1,
@@ -348,14 +515,18 @@
   "recommendation": {
    "answer": "KEEP lya_only (1025 A) AS THE PRIMARY REPORTING CONFIGURATION; KEEP lya_lyb (911 A) AS A REPORTED SENSITIVITY. Neither window closes, so this is a PREFERENCE BETWEEN TWO NON-CLOSING CONFIGURATIONS, not a closure result.",
    "rests_on": "ARM 1 (COMPLETE)",
+   "decided_on": "the SCALE-FREE reporting-window statistic primary_reporting_window.rms_frac_dev (amendment A2), NOT on the chi2/dof MAGNITUDE, which is confounded with sample size (amendment A1).",
    "reasoning": [
-    "P2 (PRIMARY, decides the recommendation): the nominal lya_only window has a MUCH lower chi2/dof over the PI's 19.7-21.6 reporting window, unanimously on all three mocks and at both clamps. At clamp=both: 63.7 vs 106.6 (2lpt0), 44.2 vs 74.2 (london0), 49.7 vs 80.7 (saclay0) \u2014 the wider window adds +30 to +43 to chi2/dof. That is the axis the PI's decision 1 defined the reporting window on, so it decides.",
+    "A2 (PRIMARY as restated, decides the recommendation): on the SCALE-FREE measure \u2014 the counts-weighted RMS fractional deviation of mu/obs over the PI's 19.7-21.6 reporting window \u2014 the nominal lya_only window is closer to its own prediction than lya_lyb, unanimously on all three mocks at BOTH clamps. clamp=both: 0.1193 -> 0.1366 (2lpt0), 0.0993 -> 0.1142 (london0), 0.1063 -> 0.1211 (saclay0); clamp=hi: 0.0997 -> 0.1160, 0.0844 -> 0.0959, 0.0886 -> 0.1016. That is 6 of 6 in the same direction on a statistic that CANNOT be moved by having more counts, so the window effect on residual SHAPE is real.",
+    "P2 (as PRE-REGISTERED \u2014 direction stands, MAGNITUDE DISCOUNTED): chi2/dof over the reporting window is 63.7 vs 106.6 (2lpt0), 44.2 vs 74.2 (london0), 49.7 vs 80.7 (saclay0) at clamp=both. THOSE '+30 to +43' GAPS ARE INFLATED. The lya_lyb arm carries 20-22% more counts in the reporting window (67086 -> 82008, 69631 -> 85111, 67424 -> 81033), and chi2/dof scales linearly with counts at fixed fractional shape: pure power scaling alone predicts 77.8 / 54.1 / 59.8 against the 106.6 / 74.2 / 80.7 observed, so about ONE THIRD of each gap is statistical power rather than model adequacy. See verdict.p2_power_confound for the per-mock decomposition. P2 therefore supports the DIRECTION and is not quoted for the size of the effect.",
     "P3 (SECONDARY, does NOT overturn P2 but must be reported): the wider lya_lyb window moves the EXCLUDED high-N residual (logN >= 21.6) TOWARD 1, also unanimously \u2014 1.169 -> 1.080 (2lpt0), 1.245 -> 1.167 (london0), 1.231 -> 1.178 (saclay0), i.e. |ratio - 1| falls by 0.053-0.088. The attribution cross-fold (arm1_response_attribution) shows this is a SELECTION effect (-0.108 to -0.143 at fixed response) partly cancelled by the RE-MEASURED response (+0.067 to +0.068), NOT an artefact of having rebuilt the kernel at 911 A. So the blue end really does carry information about the high-N residual \u2014 the opposite sign to the PI's hypothesis.",
     "P4: the total is NOT used. For the record the wider window's reporting-window mu/obs is UNIFORMLY FURTHER from 1 (-0.023 to -0.029), so the level does not argue for it either.",
-    "P5: every direction above is unanimous 3/3, at both clamps. No 2-of-3 split was found, so nothing is being reported as an effect that is really a split.",
-    "MARGINALS (measured, gating nothing \u2014 PI decision 8 declined to ratify the span tolerances): the wider window slightly REDUCES both marginal tilts (2lpt0 by_z span 0.152 -> 0.140, by_snr span 0.188 -> 0.162) while raising max|z| (19.9 -> 22.6 by z; 39.0 -> 43.3 by SNR) \u2014 the latter purely because there are ~21% more counts, so Poisson errors shrink. Neither window closes on any marginal arm."
+    "P5: every direction above is unanimous 3/3, at both clamps \u2014 including the scale-free A2 measure (6/6 legs). No 2-of-3 split was found, so nothing is being reported as an effect that is really a split.",
+    "MARGINALS (measured, gating nothing \u2014 PI decision 8 declined to ratify the span tolerances): the wider window slightly REDUCES both marginal tilts (2lpt0 by_z span 0.152 -> 0.140, by_snr span 0.188 -> 0.162) while raising max|z| (19.9 -> 22.6 by z; 39.0 -> 43.3 by SNR) \u2014 the latter purely because there are ~21% more counts, so Poisson errors shrink. Neither window closes on any marginal arm. NOTE (amendment A1): that same counts confound applies to the reporting-window chi2/dof and the original artifact disclosed it HERE ONLY. It is now disclosed for P2 too."
    ],
    "what_this_does_NOT_say": [
+    "It does NOT rest on the SIZE of the chi2/dof gap. About a third of the quoted +30 to +43 is the 20-22% count difference between the two arms, not model inadequacy (amendment A1). The recommendation rests on the scale-free rms_frac_dev direction (A2).",
+    "The scale-free measure is NOT a gate. PI decision 8 ratified chi2/dof <= 3 and nothing else; no tolerance on rms_frac_dev has been defined or calibrated, so it is reported as a measurement.",
     "It does NOT say the Lya-only window is ROBUST. Neither window closes: the best configuration measured here is london0 | lya_only | clamp=hi at chi2/dof 29.6 over 19.7-21.6, still ~10x the ratified tolerance of 3.",
     "It does NOT test the PI's stated MECHANISM. The analysis window is a post-hoc SELECTION; blue-edge truncation inside the GP fit is the FITTING window, which only ARM 2 touches and which ARM 2 only pilots.",
     "It does NOT carry the PI-adopted 0.2-dex latent basis (decision 3, sibling stream). The window CONTRAST is at fixed basis on both arms and its DIRECTION is unaffected, but no ABSOLUTE closure number here is the PI-adopted configuration's closure.",
@@ -429,6 +600,7 @@
     "z_total": 53.386532100614644,
     "z_bin_max": 94.81758723335912,
     "chi2_dof": 456.9094557182174,
+    "rms_frac_dev": 0.2709685506600549,
     "per_bin": [
      {
       "lo": 19.5,
@@ -677,6 +849,7 @@
     "z_total": 16.592009782311496,
     "z_bin_max": 26.88473054943395,
     "chi2_dof": 63.65206298413061,
+    "rms_frac_dev": 0.11934358645375448,
     "per_bin": [
      {
       "lo": 19.7,
@@ -858,6 +1031,7 @@
     "z_total": -4.104652989935814,
     "z_bin_max": 3.142533174090164,
     "chi2_dof": 3.0877220318543017,
+    "rms_frac_dev": 0.2149613688247231,
     "per_bin": [
      {
       "lo": 21.6,
@@ -938,6 +1112,7 @@
     "z_total": 105.12927231017783,
     "z_bin_max": 94.81758723335912,
     "chi2_dof": 6008.141621437497,
+    "rms_frac_dev": 0.51961222394895,
     "per_bin": [
      {
       "lo": 19.5,
@@ -1165,7 +1340,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 5.33
+   "wall_seconds": 4.86
   },
   "2lpt0|lya_only|clamp=hi": {
    "mock": "2lpt0",
@@ -1186,6 +1361,7 @@
     "z_total": 44.67929604066284,
     "z_bin_max": 85.94253569671726,
     "chi2_dof": 359.4620884183623,
+    "rms_frac_dev": 0.2477319048093199,
     "per_bin": [
      {
       "lo": 19.5,
@@ -1434,6 +1610,7 @@
     "z_total": 10.964513744770002,
     "z_bin_max": 20.98321566370865,
     "chi2_dof": 41.46275765413335,
+    "rms_frac_dev": 0.0997051058568252,
     "per_bin": [
      {
       "lo": 19.7,
@@ -1615,6 +1792,7 @@
     "z_total": -4.1047204774059045,
     "z_bin_max": 3.142562793887738,
     "chi2_dof": 3.087764859006748,
+    "rms_frac_dev": 0.21496291964380077,
     "per_bin": [
      {
       "lo": 21.6,
@@ -1695,6 +1873,7 @@
     "z_total": 93.32913536555087,
     "z_bin_max": 85.94253569671726,
     "chi2_dof": 4805.95302491596,
+    "rms_frac_dev": 0.481569241573937,
     "per_bin": [
      {
       "lo": 19.5,
@@ -1922,7 +2101,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.09
+   "wall_seconds": 0.08
   },
   "london0|lya_only|clamp=both": {
    "mock": "london0",
@@ -1943,6 +2122,7 @@
     "z_total": 36.63425191683176,
     "z_bin_max": 65.03279216762526,
     "chi2_dof": 231.9969599080888,
+    "rms_frac_dev": 0.21249349549047333,
     "per_bin": [
      {
       "lo": 19.5,
@@ -2191,6 +2371,7 @@
     "z_total": 11.602314586738732,
     "z_bin_max": 23.532695953616244,
     "chi2_dof": 44.23779483453576,
+    "rms_frac_dev": 0.09926233881641335,
     "per_bin": [
      {
       "lo": 19.7,
@@ -2372,6 +2553,7 @@
     "z_total": -6.075281572234069,
     "z_bin_max": 4.293650995599,
     "chi2_dof": 5.827886449897685,
+    "rms_frac_dev": 0.2953240983946232,
     "per_bin": [
      {
       "lo": 21.6,
@@ -2452,6 +2634,7 @@
     "z_total": 73.83958274727465,
     "z_bin_max": 65.03279216762526,
     "chi2_dof": 2920.385321939608,
+    "rms_frac_dev": 0.429211909364747,
     "per_bin": [
      {
       "lo": 19.5,
@@ -2679,7 +2862,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.08
+   "wall_seconds": 0.07
   },
   "london0|lya_only|clamp=hi": {
    "mock": "london0",
@@ -2700,6 +2883,7 @@
     "z_total": 28.249373251607807,
     "z_bin_max": 57.192232498616576,
     "chi2_dof": 170.96292254839574,
+    "rms_frac_dev": 0.18883483178222102,
     "per_bin": [
      {
       "lo": 19.5,
@@ -2948,6 +3132,7 @@
     "z_total": 6.097366843920367,
     "z_bin_max": 17.704297856097885,
     "chi2_dof": 29.605561515514744,
+    "rms_frac_dev": 0.08436039573013084,
     "per_bin": [
      {
       "lo": 19.7,
@@ -3129,6 +3314,7 @@
     "z_total": -6.075343581910907,
     "z_bin_max": 4.293661691405043,
     "chi2_dof": 5.827960011640055,
+    "rms_frac_dev": 0.29532586013270845,
     "per_bin": [
      {
       "lo": 21.6,
@@ -3209,6 +3395,7 @@
     "z_total": 63.13375340900449,
     "z_bin_max": 57.192232498616576,
     "chi2_dof": 2174.3977025077884,
+    "rms_frac_dev": 0.3838376863378385,
     "per_bin": [
      {
       "lo": 19.5,
@@ -3457,6 +3644,7 @@
     "z_total": 44.406977039646264,
     "z_bin_max": 78.34285208705747,
     "chi2_dof": 316.53752794182753,
+    "rms_frac_dev": 0.23898082604573134,
     "per_bin": [
      {
       "lo": 19.5,
@@ -3705,6 +3893,7 @@
     "z_total": 14.33207286557109,
     "z_bin_max": 24.377550007117858,
     "chi2_dof": 49.741689473765135,
+    "rms_frac_dev": 0.10632568161295212,
     "per_bin": [
      {
       "lo": 19.7,
@@ -3886,6 +4075,7 @@
     "z_total": -5.463436211019602,
     "z_bin_max": 4.751823836206326,
     "chi2_dof": 5.014529227085263,
+    "rms_frac_dev": 0.2960125201682437,
     "per_bin": [
      {
       "lo": 21.6,
@@ -3966,6 +4156,7 @@
     "z_total": 86.79189951979305,
     "z_bin_max": 78.34285208705747,
     "chi2_dof": 4097.189988247389,
+    "rms_frac_dev": 0.4707294639202277,
     "per_bin": [
      {
       "lo": 19.5,
@@ -4193,7 +4384,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.08
+   "wall_seconds": 0.07
   },
   "saclay0|lya_only|clamp=hi": {
    "mock": "saclay0",
@@ -4214,6 +4405,7 @@
     "z_total": 35.65762284612735,
     "z_bin_max": 69.85487164460989,
     "chi2_dof": 239.73290623174532,
+    "rms_frac_dev": 0.21486520312443091,
     "per_bin": [
      {
       "lo": 19.5,
@@ -4462,6 +4654,7 @@
     "z_total": 8.639716434090523,
     "z_bin_max": 18.4257370031647,
     "chi2_dof": 32.133920329514936,
+    "rms_frac_dev": 0.08861160581912468,
     "per_bin": [
      {
       "lo": 19.7,
@@ -4643,6 +4836,7 @@
     "z_total": -5.4634994118808775,
     "z_bin_max": 4.75183434305806,
     "chi2_dof": 5.014595830747783,
+    "rms_frac_dev": 0.29601435638148443,
     "per_bin": [
      {
       "lo": 21.6,
@@ -4723,6 +4917,7 @@
     "z_total": 75.39718664067483,
     "z_bin_max": 69.85487164460989,
     "chi2_dof": 3150.7965139069242,
+    "rms_frac_dev": 0.4279638545892911,
     "per_bin": [
      {
       "lo": 19.5,
@@ -4950,7 +5145,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.06
   },
   "2lpt0|lya_lyb|clamp=both": {
    "mock": "2lpt0",
@@ -4971,6 +5166,7 @@
     "z_total": 66.32042256848878,
     "z_bin_max": 103.20413017559542,
     "chi2_dof": 575.09232914994,
+    "rms_frac_dev": 0.27660071884169934,
     "per_bin": [
      {
       "lo": 19.5,
@@ -5219,6 +5415,7 @@
     "z_total": 26.373346915403488,
     "z_bin_max": 34.49441217403784,
     "chi2_dof": 106.58576787999633,
+    "rms_frac_dev": 0.13655190728090175,
     "per_bin": [
      {
       "lo": 19.7,
@@ -5400,6 +5597,7 @@
     "z_total": -2.401374469129978,
     "z_bin_max": 2.1803628311969434,
     "chi2_dof": 1.997553645776069,
+    "rms_frac_dev": 0.14284081431784318,
     "per_bin": [
      {
       "lo": 21.6,
@@ -5480,6 +5678,7 @@
     "z_total": 116.88137348672336,
     "z_bin_max": 103.20413017559542,
     "chi2_dof": 7318.28376323106,
+    "rms_frac_dev": 0.5275185148959654,
     "per_bin": [
      {
       "lo": 19.5,
@@ -5707,7 +5906,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.04
+   "wall_seconds": 0.08
   },
   "2lpt0|lya_lyb|clamp=hi": {
    "mock": "2lpt0",
@@ -5728,6 +5927,7 @@
     "z_total": 57.07953095534587,
     "z_bin_max": 94.08239940524511,
     "chi2_dof": 457.22041689049536,
+    "rms_frac_dev": 0.25369008006040467,
     "per_bin": [
      {
       "lo": 19.5,
@@ -5976,6 +6176,7 @@
     "z_total": 20.281406067029888,
     "z_bin_max": 28.15824029948491,
     "chi2_dof": 72.61873619063766,
+    "rms_frac_dev": 0.1159983982874315,
     "per_bin": [
      {
       "lo": 19.7,
@@ -6157,6 +6358,7 @@
     "z_total": -2.401547072932046,
     "z_bin_max": 2.1803664375004073,
     "chi2_dof": 1.9976197945428567,
+    "rms_frac_dev": 0.14284320547943316,
     "per_bin": [
      {
       "lo": 21.6,
@@ -6237,6 +6439,7 @@
     "z_total": 104.59744338766447,
     "z_bin_max": 94.08239940524511,
     "chi2_dof": 5931.827571922955,
+    "rms_frac_dev": 0.49157137925629474,
     "per_bin": [
      {
       "lo": 19.5,
@@ -6464,7 +6667,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.08
   },
   "london0|lya_lyb|clamp=both": {
    "mock": "london0",
@@ -6485,6 +6688,7 @@
     "z_total": 49.418286156228916,
     "z_bin_max": 72.19548792670227,
     "chi2_dof": 307.98365374824493,
+    "rms_frac_dev": 0.2208462727436766,
     "per_bin": [
      {
       "lo": 19.5,
@@ -6733,6 +6937,7 @@
     "z_total": 21.666392595135587,
     "z_bin_max": 29.43191334451736,
     "chi2_dof": 74.22798344581827,
+    "rms_frac_dev": 0.11422810283342784,
     "per_bin": [
      {
       "lo": 19.7,
@@ -6914,6 +7119,7 @@
     "z_total": -4.993358686196755,
     "z_bin_max": 3.7508739322696854,
     "chi2_dof": 4.756170052140508,
+    "rms_frac_dev": 0.21684120128166035,
     "per_bin": [
      {
       "lo": 21.6,
@@ -6994,6 +7200,7 @@
     "z_total": 84.26874810562019,
     "z_bin_max": 72.19548792670227,
     "chi2_dof": 3741.5724564057155,
+    "rms_frac_dev": 0.4432415130884943,
     "per_bin": [
      {
       "lo": 19.5,
@@ -7221,7 +7428,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.05
+   "wall_seconds": 0.06
   },
   "london0|lya_lyb|clamp=hi": {
    "mock": "london0",
@@ -7242,6 +7449,7 @@
     "z_total": 40.48063334015033,
     "z_bin_max": 64.08019099274175,
     "chi2_dof": 230.24979473046253,
+    "rms_frac_dev": 0.19684350620421637,
     "per_bin": [
      {
       "lo": 19.5,
@@ -7490,6 +7698,7 @@
     "z_total": 15.685642345943018,
     "z_bin_max": 23.21903982642264,
     "chi2_dof": 49.461456842863576,
+    "rms_frac_dev": 0.09586291566767073,
     "per_bin": [
      {
       "lo": 19.7,
@@ -7671,6 +7880,7 @@
     "z_total": -4.9935174955540225,
     "z_bin_max": 3.750908421325211,
     "chi2_dof": 4.75633084060618,
+    "rms_frac_dev": 0.21684489048529154,
     "per_bin": [
      {
       "lo": 21.6,
@@ -7751,6 +7961,7 @@
     "z_total": 73.0572131487579,
     "z_bin_max": 64.08019099274175,
     "chi2_dof": 2849.7128602220773,
+    "rms_frac_dev": 0.40056279115071364,
     "per_bin": [
      {
       "lo": 19.5,
@@ -7978,7 +8189,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.08
+   "wall_seconds": 0.07
   },
   "saclay0|lya_lyb|clamp=both": {
    "mock": "saclay0",
@@ -7999,6 +8210,7 @@
     "z_total": 55.477550701072275,
     "z_bin_max": 85.16962450548299,
     "chi2_dof": 400.0150392884461,
+    "rms_frac_dev": 0.24557490180302669,
     "per_bin": [
      {
       "lo": 19.5,
@@ -8247,6 +8459,7 @@
     "z_total": 22.818914479272298,
     "z_bin_max": 30.764376532041762,
     "chi2_dof": 80.71198862835121,
+    "rms_frac_dev": 0.12105083660572939,
     "per_bin": [
      {
       "lo": 19.7,
@@ -8428,6 +8641,7 @@
     "z_total": -4.922813893401153,
     "z_bin_max": 4.651739011733445,
     "chi2_dof": 4.813304544380251,
+    "rms_frac_dev": 0.24457331658564693,
     "per_bin": [
      {
       "lo": 21.6,
@@ -8508,6 +8722,7 @@
     "z_total": 96.86968355811777,
     "z_bin_max": 85.16962450548299,
     "chi2_dof": 5014.20095953561,
+    "rms_frac_dev": 0.4812306813703719,
     "per_bin": [
      {
       "lo": 19.5,
@@ -8735,7 +8950,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.06
+   "wall_seconds": 0.07
   },
   "saclay0|lya_lyb|clamp=hi": {
    "mock": "saclay0",
@@ -8756,6 +8971,7 @@
     "z_total": 46.34050667690888,
     "z_bin_max": 76.520364596191,
     "chi2_dof": 307.26989523173575,
+    "rms_frac_dev": 0.22176926860169333,
     "per_bin": [
      {
       "lo": 19.5,
@@ -9004,6 +9220,7 @@
     "z_total": 16.77093688449177,
     "z_bin_max": 24.485577266498964,
     "chi2_dof": 53.638966987943135,
+    "rms_frac_dev": 0.10160488613302109,
     "per_bin": [
      {
       "lo": 19.7,
@@ -9185,6 +9402,7 @@
     "z_total": -4.922952563145195,
     "z_bin_max": 4.651767307908382,
     "chi2_dof": 4.813432461400888,
+    "rms_frac_dev": 0.24457653016494088,
     "per_bin": [
      {
       "lo": 21.6,
@@ -9265,6 +9483,7 @@
     "z_total": 85.11383226125217,
     "z_bin_max": 76.520364596191,
     "chi2_dof": 3926.589564629107,
+    "rms_frac_dev": 0.4410210839360493,
     "per_bin": [
      {
       "lo": 19.5,
@@ -9492,7 +9711,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.06
+   "wall_seconds": 0.07
   }
  },
  "arm1_response_attribution": {
