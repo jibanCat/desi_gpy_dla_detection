@@ -386,6 +386,27 @@ def test_poisson_z_docstring_states_every_clause_the_PI_asked_for():
         assert clause in d, f"poisson_z docstring is missing: {clause!r}"
 
 
+def test_the_docstrings_worked_example_matches_the_committed_artifact():
+    """The ``|z|`` docstring justifies keeping a fixed threshold of 5 by
+    pointing at an observed order-of-magnitude failure.  If that example does
+    not reproduce from a committed artifact it is rhetoric, and this project
+    has been burned by exactly that.  (The earlier draft also mislabelled the
+    pack as 'v1.1' when the artifact records n_pad_bins=0.)"""
+    from pathlib import Path
+    art = json.loads(
+        (Path(__file__).resolve().parents[1] / "CDDF_analysis" / "hbi_mcmc"
+         / "rung9_forward_selftest.json").read_text())
+    e = art["mocks"]["2lpt0"]
+    assert e["n_pad_bins"] == 0, "the docstring's 'UNPADDED' claim"
+    tot = e["clamp_both"]["total"]
+    worst = max(e["clamp_both"]["by_nhat"], key=lambda b: abs(b["z"]))
+    assert tot["z"] == pytest.approx(93.3, abs=0.05)
+    assert worst["z"] == pytest.approx(216.4, abs=0.05)
+    assert worst["lo"] == pytest.approx(19.5)
+    d = FS.poisson_z.__doc__
+    assert "+93.3" in d and "+216.4" in d and "n_pad_bins=0" in d
+
+
 def test_ratio_tables_and_the_gate_use_poisson_z_and_nothing_else(
         spack, monkeypatch):
     """If ratio_tables recomputed z inline, negating the named function could

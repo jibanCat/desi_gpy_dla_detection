@@ -272,8 +272,13 @@ def poisson_z(mu, obs):
 
         The criterion is nevertheless kept, RATIFIED, with its purpose narrowed
         to what it can actually do: it is a tripwire against a forward model
-        that is wrong by ORDERS OF MAGNITUDE (the observed failure mode -- the
-        2LPT-0 v1.1 pack folds to a total z of +93 and a lowest-bin z of +216).
+        that is wrong by ORDERS OF MAGNITUDE, which is the observed failure
+        mode.  Verified against the committed ``rung9_forward_selftest.json``
+        (2lpt0, resp_clamp="both", n_pad_bins=0 -- i.e. the UNPADDED pack; the
+        earlier draft of this docstring called it "v1.1", which the artifact
+        contradicts): total z = +93.3, worst n-hat bin z = +216.4 at
+        [19.5, 19.6). The other two mocks in that artifact agree in sign and
+        order (london0 +74.7 / +169.1, saclay0 +83.6 / +190.4).
         The closest defensible description of the implemented statistic is
         "the maximum absolute Poisson score residual over aggregate marginal
         cells, with the model's own predicted mean as the variance and no
