@@ -263,12 +263,23 @@ for _name, _what, _sha, _date, _pre, _hunk, _n in (
          "NOT ratification and this record does not imply it."),
         ("z_zbin_max", "the fine-z marginal bins with obs > 0",
          _SHA_SAMEHUNK, "2026-07-29", False, _DECLINED_PAIR,
-         "🔴 Introduced 2026-07-29 10:21, by the same author, in the SAME "
-         "HUNK as the two ratio_span numbers the PI declined the same day "
-         "(four consecutive added lines of one hunk of 0e7fa0b). It PRE-DATES "
-         "NOTHING. An earlier version of this file claimed it was a "
-         "conventional arm pre-dating decision 8 and stamped it "
-         "authority=PI; that claim was fabricated."),
+         "🔴 Introduced 2026-07-29 10:21 in the SAME HUNK as the two "
+         "ratio_span numbers the PI declined the same day (four consecutive "
+         "added lines, 0e7fa0b, run_posterior.py). It PRE-DATES NOTHING. An "
+         "earlier version of this file claimed it was a conventional arm "
+         "pre-dating decision 8 and stamped it authority=PI; that claim was "
+         "fabricated. 🔴 SECOND CORRECTION (2026-07-30): this note, and the "
+         "message of the retracting commit, also said 'by the same author'. "
+         "MEASURED, git: 0e7fa0b's author is 'panel5' and 88f2ecb's -- the "
+         "commit that stamped the false RATIFIED record -- is 'jibanmich'. "
+         "They are NOT the same git author. The claim was not checked before "
+         "it was written, which is the same failure as the original "
+         "fabrication in miniature, so it is withdrawn rather than reworded. "
+         "The SAME-HUNK fact is what matters and it is the one that is "
+         "verifiable: `git show 0e7fa0b -- "
+         "CDDF_analysis/hbi_mcmc/run_posterior.py`. (The retracting commit "
+         "message cannot be amended -- no history rewrite on this branch -- so "
+         "this record is the correction of record.)"),
         ("z_snrbin_max", "the SNR-stratum marginals with obs > 0",
          _SHA_SAMEHUNK, "2026-07-29", False, _DECLINED_PAIR,
          "🔴 Same hunk, same commit, same day as the declined pair -- see "

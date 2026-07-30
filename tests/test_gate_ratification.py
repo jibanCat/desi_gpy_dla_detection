@@ -213,6 +213,56 @@ def test_no_docstring_or_stamp_string_calls_an_UNRATIFIED_criterion_RATIFIED():
                            "sentence at all -- it would pass vacuously")
 
 
+def test_every_provenance_CLAIM_in_the_z_arm_records_checks_out_against_git():
+    """A retraction whose own evidence is unverified is not a retraction.
+    Each ``RESTATED_NOT_RATIFIED`` record asserts a 40-char introducing SHA, a
+    date and a same-hunk relationship; all three are checked against the
+    repository here rather than trusted.
+
+    🔴 This is how the "by the same author" claim was caught: it was in the
+    retracting commit's message AND in the record, and it is FALSE -- 0e7fa0b's
+    git author is `panel5`, 88f2ecb's is `jibanmich`. No record may make an
+    author claim, because none of them was checked."""
+    import subprocess
+    from pathlib import Path
+    root = str(Path(__file__).resolve().parents[1])
+
+    def git(*a):
+        return subprocess.check_output(["git", *a], cwd=root, text=True).strip()
+
+    for key, rec in RAT.RESTATED_NOT_RATIFIED.items():
+        sha = rec["introduced_by"]
+        assert len(sha) == 40, (key, sha)
+        # the SHA must exist and its date must be the one claimed
+        assert git("show", "-s", "--format=%ad", "--date=short",
+                   sha) == rec["introduced_date"], key
+        # ... and no record may assert an author, since that was the one claim
+        # nobody verified
+        assert "same author" not in rec["note"] or "MEASURED" in rec["note"], key
+
+    # the SAME-HUNK claim, verified as text: the four names on added lines of
+    # ONE commit's diff of run_posterior.py
+    sha = RAT.RESTATED_NOT_RATIFIED["z_zbin_max"]["introduced_by"]
+    diff = git("show", sha, "--", "CDDF_analysis/hbi_mcmc/run_posterior.py")
+    added = [l for l in diff.splitlines() if l.startswith("+")]
+    for name in ("z_zbin_max", "z_snrbin_max",
+                 "ratio_span_by_z_max", "ratio_span_by_snr_max"):
+        assert any(f'"{name}"' in l for l in added), (name, sha)
+    # and it is the EARLIEST such commit, i.e. the arm really does not pre-date
+    hist = git("log", "--format=%H", "-Sz_zbin_max", "--",
+               "CDDF_analysis/hbi_mcmc/run_posterior.py").split()
+    assert hist[-1] == sha, (hist, sha)
+
+    # the AUTHOR FACT itself, so the correction cannot silently drift back
+    a_intro = git("show", "-s", "--format=%an", sha)
+    a_stamp = git("show", "-s", "--format=%an",
+                  "88f2ecb43eff2a8f2baa5df2535988c577a2ff3e")
+    assert a_intro != a_stamp, (a_intro, a_stamp)
+    note = RAT.RESTATED_NOT_RATIFIED["z_zbin_max"]["note"]
+    assert a_intro in note and a_stamp in note, (a_intro, a_stamp)
+    assert "NOT the same git author" in note
+
+
 def test_the_RESTATEMENT_ITSELF_does_not_claim_to_have_been_ratified():
     """The sentence-scoped guard above cannot catch this one, and that is why it
     is here: ``poisson_z``'s docstring said "The criterion is nevertheless kept,
