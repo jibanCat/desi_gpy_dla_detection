@@ -90,14 +90,58 @@ def _RP():
 def _RAT():
     """The gate-ratification record (decision 8, 2026-07-29).
 
-    The ladder's ``closes`` verdict uses ONLY the three RATIFIED criteria; the
-    two ratio-span tolerances that also live in ``run_posterior.GATE`` have
-    never taken part in it.  The artifact says which is which so that a reader
-    of ``metadata.gate_tolerances`` cannot assume the whole dict was
-    load-bearing.
+    The ladder's ``closes`` verdict uses THREE criteria -- z_total_max,
+    z_bin_max, chi2_dof_max -- and the two ratio-span tolerances that also live
+    in ``run_posterior.GATE`` have never taken part in it.  The artifact says
+    which is which so that a reader of ``metadata.gate_tolerances`` cannot
+    assume the whole dict was load-bearing.
+
+    🔴 An earlier draft of this docstring called those three "the three RATIFIED
+    criteria".  ONE of them is.  chi2_dof_max is PI-ratified; z_total_max and
+    z_bin_max are ``RESTATED_NOT_RATIFIED`` -- they gate with no ratified
+    authority.  ``closes_criteria_note`` is therefore BUILT from the record by
+    ``_closes_criteria_note`` rather than asserted in prose, so the artifact
+    cannot drift from ``ratification.py`` again.
     """
     from CDDF_analysis.hbi_mcmc import ratification as RAT
     return RAT
+
+
+#: the criteria that actually decide ``closes`` (see ``forward_closure_gate``)
+CLOSES_CRITERIA = ("z_total_max", "z_bin_max", "chi2_dof_max")
+
+
+def _closes_criteria_note(criteria=CLOSES_CRITERIA):
+    """``closes_criteria_note``, DERIVED from the ratification record.
+
+    The ratification status of each criterion is read from
+    ``ratification.record`` at stamp time, never restated here.  A prose claim
+    would drift the moment a status changed -- which is precisely what happened:
+    the hardcoded predecessor of this function said "All three are RATIFIED",
+    and after the 2026-07-29 retraction only one of the three was.
+    """
+    RAT = _RAT()
+    ok = [k for k in criteria if RAT.is_ratified(k)]
+    not_ok = [k for k in criteria if not RAT.is_ratified(k)]
+    parts = [
+        "closes = (|z_total| <= z_total_max) AND (max|z_bin| <= z_bin_max) AND "
+        "(chi2/dof <= chi2_dof_max), over the reported n-hat bins with obs > 0."]
+    if ok:
+        parts.append("PI-RATIFIED: " + ", ".join(ok) + ".")
+    if not_ok:
+        parts.append(
+            "🔴 NOT RATIFIED BY ANY DECIDING AUTHORITY, yet contributing to "
+            "`closes`: " + ", ".join(
+                f"{k} ({RAT.record(k)['status']})" for k in not_ok)
+            + ". A `closes: true` in this artifact therefore rests partly on "
+              "tolerances nobody ratified; see "
+              "ratification.OPEN_PI_DECISIONS['z_arms_gate_unratified'].")
+    parts.append(
+        "The exact definition of z is the docstring of "
+        "CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z; it is an "
+        "order-of-magnitude tripwire, NOT a 5-sigma significance and NOT "
+        "multiplicity-corrected.")
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -701,19 +745,14 @@ def phase_selftest():
             # a deciding authority has NOT ratified.  Dumping all of GATE
             # without this distinction implies the whole dict was
             # load-bearing; it was not.  ``closes`` is z_total_max AND
-            # z_bin_max AND chi2_dof_max -- all three RATIFIED (decision 8,
-            # 2026-07-29) -- and the two ratio-span tolerances that appear in
-            # ``gate_tolerances`` above played NO part in it, before or after
-            # the ratification.
-            closes_criteria=["z_total_max", "z_bin_max", "chi2_dof_max"],
-            closes_criteria_note=(
-                "closes = (|z_total| <= z_total_max) AND (max|z_bin| <= "
-                "z_bin_max) AND (chi2/dof <= chi2_dof_max), over the reported "
-                "n-hat bins with obs > 0. All three are RATIFIED. The exact "
-                "definition of z is the docstring of "
-                "CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z; it is an "
-                "order-of-magnitude tripwire, NOT a 5-sigma significance and "
-                "NOT multiplicity-corrected."),
+            # z_bin_max AND chi2_dof_max, and the two ratio-span tolerances
+            # that appear in ``gate_tolerances`` above played NO part in it,
+            # before or after decision 8.
+            # 🔴 The note is DERIVED from ratification.py, not written out here:
+            # the hardcoded version said "All three are RATIFIED", which the
+            # 2026-07-29 retraction made false for two of the three.
+            closes_criteria=list(CLOSES_CRITERIA),
+            closes_criteria_note=_closes_criteria_note(),
             gate_tolerances_ratified=list(_RAT().ratified_names()),
             gate_tolerances_unratified=list(_RAT().unratified_names()),
             gate_tolerances_unratified_note=_RAT().UNRATIFIED_NOTE,

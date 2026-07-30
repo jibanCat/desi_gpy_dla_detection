@@ -148,6 +148,119 @@ def test_the_import_time_guard_refuses_a_fabricated_PI_authority_claim():
     RAT.enforce_authority_allow_list(RAT.all_records())     # no raise
 
 
+# --------------------------------------------------------------------------
+# 1b. 🔴 THE SAME FABRICATION, IN PROSE, IN THREE PLACES THE ALLOW-LIST
+#     CANNOT SEE.
+#
+# ``enforce_authority_allow_list`` polices the RECORDS.  It cannot police an
+# English sentence in a docstring or a stamp string, and after the retraction
+# three of those still asserted the fabricated authority:
+#   * the stamp's own top-level ``authority`` key, which v1 left unscoped -- the
+#     exact mechanism by which the |z| arms acquired PI authority;
+#   * ``forward_selftest.poisson_z``: "The criterion is nevertheless kept,
+#     RATIFIED";
+#   * ``d1_ladder``'s ``closes_criteria_note``: "All three are RATIFIED", of
+#     z_total_max + z_bin_max + chi2_dof_max, of which exactly one is.
+# --------------------------------------------------------------------------
+
+def test_the_stamps_top_level_authority_states_its_own_SCOPE():
+    """v1's mechanism, closed.  A bare ``authority: "PI (...)"`` at the top of
+    the stamp reads as authorising the whole block, which is how four |z| arms
+    became PI-ratified.  The stamp must scope it in the JSON itself, because a
+    reader of the artifact cannot open ``ratification.py``."""
+    st = RAT.ratification_stamp()
+    assert st["authority"] == RAT.PI_AUTHORITY
+    scope = st["authority_scope"]
+    assert "pi_ratified_items" in scope
+    assert "NOTHING ELSE" in scope.upper()
+    # it must name the sections it does NOT cover, or it is not a scope
+    for k in ("restated_not_ratified", "unratified"):
+        assert k in scope, k
+
+
+def test_no_docstring_or_stamp_string_calls_an_UNRATIFIED_criterion_RATIFIED():
+    """PROSE-DRIFT GUARD.  For every name whose status is not RATIFIED, no
+    module under ``hbi_mcmc`` may put that name and a bare ``RATIFIED`` in the
+    same sentence.  Deliberately sentence-scoped: the modules must and do
+    discuss these names next to the word (``RESTATED_NOT_RATIFIED``, "NOT
+    RATIFIED", "is not ratified"), so the guard keys on the BARE claim."""
+    import re
+    from pathlib import Path
+    mods = sorted((Path(RAT.__file__).parent).glob("*.py"))
+    assert len(mods) > 5, mods
+    unratified = set(RAT.RESTATED_NOT_RATIFIED) | set(RAT.UNRATIFIED)
+    assert unratified                      # not vacuous
+    # a sentence: text between terminators, with newlines flattened
+    n_checked = 0
+    for m in mods:
+        if m.name == "ratification.py":
+            continue                       # the record itself; tested above
+        txt = re.sub(r"\s+", " ", m.read_text())
+        for sent in re.split(r"(?<=[.!?])\s", txt):
+            if "RATIFIED" not in sent:
+                continue
+            # the qualified forms are the CORRECT way to mention these names
+            if re.search(r"NOT[ _]RATIFIED|not ratified|UNRATIFIED|"
+                         r"RESTATED_NOT_RATIFIED|nobody ratified|"
+                         r"no deciding authority", sent):
+                continue
+            n_checked += 1
+            for name in unratified:
+                assert name not in sent, (
+                    f"{m.name}: calls {name} RATIFIED without qualification:\n"
+                    f"{sent[:300]}")
+    assert n_checked > 0, ("the guard inspected no unqualified RATIFIED "
+                           "sentence at all -- it would pass vacuously")
+
+
+def test_the_RESTATEMENT_ITSELF_does_not_claim_to_have_been_ratified():
+    """The sentence-scoped guard above cannot catch this one, and that is why it
+    is here: ``poisson_z``'s docstring said "The criterion is nevertheless kept,
+    RATIFIED" without naming any arm, so no name-based scan sees it.  Yet this
+    docstring is what all four ``RESTATED_NOT_RATIFIED`` records point to as
+    their statement -- it IS the restatement decision 8 asked for, and a
+    restatement that calls itself ratified re-fabricates the authority the
+    retraction removed."""
+    doc = FS.poisson_z.__doc__
+    # every |z| arm delegates its definition to this docstring ...
+    for key in RAT.RESTATED_NOT_RATIFIED:
+        assert "poisson_z" in RAT.record(key)["statement"], key
+    # ... so this docstring may not call it ratified
+    assert "kept, RATIFIED" not in doc
+    assert "RATIFIED, with its purpose" not in doc
+    # and it must state the true status positively, not merely omit the claim
+    assert "RESTATED_NOT_RATIFIED" in doc
+    assert "NOT RATIFIED" in doc
+    assert "z_arms_gate_unratified" in doc
+
+
+def test_d1_ladders_closes_note_is_DERIVED_from_the_record_not_asserted():
+    """The hardcoded predecessor said "All three are RATIFIED" of three criteria
+    of which exactly ONE is.  Derived, it cannot drift: change the record and
+    the note changes with it."""
+    from CDDF_analysis.hbi_mcmc import d1_ladder as D1
+    note = D1._closes_criteria_note()
+    assert "All three are RATIFIED" not in note
+    # exactly one of the three is PI-ratified, and the note says which
+    rat = [k for k in D1.CLOSES_CRITERIA if RAT.is_ratified(k)]
+    assert rat == ["chi2_dof_max"], rat
+    assert "PI-RATIFIED: chi2_dof_max." in note
+    # ... and it names the two that gate without authority, with their status
+    for k in ("z_total_max", "z_bin_max"):
+        assert k in note.split("NOT RATIFIED BY ANY DECIDING AUTHORITY")[1], k
+    assert "RESTATED_NOT_RATIFIED" in note
+    assert "z_arms_gate_unratified" in note
+    # DERIVATION, not coincidence: flip the record and the note must follow
+    import unittest.mock as _m
+    with _m.patch.object(RAT, "PI_RATIFIED_ITEMS",
+                         RAT.PI_RATIFIED_ITEMS + ("z_total_max",)):
+        with _m.patch.dict(RAT.RATIFIED,
+                           {"z_total_max": dict(RAT.RATIFIED["chi2_dof_max"])}):
+            note2 = D1._closes_criteria_note()
+    assert "PI-RATIFIED: z_total_max, chi2_dof_max." in note2, note2
+    assert note2 != note
+
+
 def test_the_z_arms_are_RESTATED_NOT_RATIFIED_with_honest_provenance():
     """Decision 8 item 3, verbatim: "restate the malformed |z| <= 5 criterion
     with its exact mathematical definition".  The restatement was delivered
@@ -387,8 +500,14 @@ def test_the_d1_ladder_stamp_names_which_tolerances_decided_closes():
     reader concludes the ladder was gated on an uncalibrated tolerance."""
     from CDDF_analysis.hbi_mcmc import d1_ladder as D
     src = __import__("inspect").getsource(D)
-    assert "closes_criteria=[\"z_total_max\", \"z_bin_max\", \"chi2_dof_max\"]" \
-        in src, "the ladder stamp does not name its closes criteria"
+    # the criteria are asserted as a VALUE, not as a source line.  The earlier
+    # form grepped for the literal ``closes_criteria=["z_total_max", ...]`` and
+    # so broke the moment the list was named ``CLOSES_CRITERIA`` -- a test that
+    # pins formatting instead of behaviour.  The value is the claim.
+    assert list(D.CLOSES_CRITERIA) == ["z_total_max", "z_bin_max",
+                                       "chi2_dof_max"]
+    assert "closes_criteria=list(CLOSES_CRITERIA)" in src, (
+        "the ladder stamp does not name its closes criteria")
     assert "gate_tolerances_unratified=list(_RAT().unratified_names())" in src
     assert "ratification=_RAT().ratification_stamp()" in src
     # and the criteria it names are exactly the ones the code ANDs together

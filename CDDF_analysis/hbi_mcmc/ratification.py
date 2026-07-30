@@ -542,6 +542,17 @@ def ratification_stamp():
         "schema": "gate_ratification/v2",
         "ratification_date": RATIFICATION_DATE,
         "authority": PI_AUTHORITY,
+        # 🔴 v1 put this key at the top of the stamp with NOTHING saying what it
+        # covered, and a reader (including the author of v1) took it to
+        # authorise the whole block.  That is the mechanism by which the |z|
+        # arms acquired PI authority.  The scope is now stated IN the stamp, so
+        # the JSON alone cannot be misread the same way.
+        "authority_scope": (
+            "The `authority` field above applies to `pi_ratified_items` AND TO "
+            "NOTHING ELSE IN THIS STAMP. Entries under `restated_not_ratified` "
+            "and `unratified` are NOT covered by it: each carries its own "
+            "`authority` field naming who actually set it, and for all of them "
+            "that is not the PI. Read those fields, not this one."),
         "pi_ratified_items": list(PI_RATIFIED_ITEMS),
         "ratified": {k: {"status": "RATIFIED",
                          "statement": v["statement"],

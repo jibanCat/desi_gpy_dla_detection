@@ -270,8 +270,15 @@ def poisson_z(mu, obs):
         and it is the exact defect the (unratified) ratio-span arms were
         invented to cover.
 
-        The criterion is nevertheless kept, RATIFIED, with its purpose narrowed
-        to what it can actually do: it is a tripwire against a forward model
+        🔴 The criterion is nevertheless kept ARMED, with its purpose narrowed
+        to what it can actually do.  An earlier draft of this line said "kept,
+        RATIFIED".  IT IS NOT RATIFIED.  Decision 8 item 3 called |z| <= 5
+        MALFORMED AS STATED and sent it back for restatement; this docstring IS
+        the restatement, and a restatement is not a ratification.  Its status is
+        ``ratification.RESTATED_NOT_RATIFIED`` -- it gates, and no deciding
+        authority authorised it to (see ``ratification.OPEN_PI_DECISIONS
+        ['z_arms_gate_unratified']``).  What it can actually do: it is a
+        tripwire against a forward model
         that is wrong by ORDERS OF MAGNITUDE, which is the observed failure
         mode.  Verified against the committed ``rung9_forward_selftest.json``
         (2lpt0, resp_clamp="both", n_pad_bins=0 -- i.e. the UNPADDED pack; the

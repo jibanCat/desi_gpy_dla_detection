@@ -1,5 +1,5 @@
 {
- "schema": "ratio_span_null_calibration/v1",
+ "schema": "ratio_span_null_calibration/v2",
  "null": {
   "n_draws": 20000,
   "seed": 1,
@@ -102,23 +102,752 @@
    ],
    "n_molly_cells": 3
   },
+  "grid_shape": {
+   "n_nhat": 5,
+   "n_zf": 4,
+   "n_snr": 2
+  },
   "total_mu": 2283.953868784964,
   "total_obs": 2274.0
  },
- "verdict": "NO THRESHOLD IS PROPOSED FOR RATIFICATION. This artifact is the prospective-calibration EVIDENCE that the two declined thresholds are indefensible as a pair: their measured false-alarm rates under a null in which the forward model is exactly right differ by orders of magnitude, in the opposite direction to the stated rationale. Procedure, omissions and options: docs/ratio_span_calibration_spec.md.",
+ "geometries": {
+  "calib_5x4x2": {
+   "grid_shape": {
+    "n_nhat": 5,
+    "n_zf": 4,
+    "n_snr": 2
+   },
+   "total_mu": 2289.7538687849637,
+   "arms": {
+    "by_z": {
+     "n_rows": 4,
+     "n_rows_nonempty_median": 4.0,
+     "quantiles": {
+      "0.5": 0.08404381141599704,
+      "0.9": 0.1394311801223084,
+      "0.95": 0.1562813252129195,
+      "0.99": 0.19142500464772622,
+      "0.995": 0.2056879824660463,
+      "0.999": 0.23813072472799032
+     },
+     "mean": 0.08795392285724803,
+     "sd": 0.03826444818059139,
+     "observed": {
+      "span": 0.13074799029424256,
+      "lo": 0.931531340995954,
+      "hi": 1.0622793312901966,
+      "n_rows_used": 4,
+      "vacuous": false
+     },
+     "proposed_threshold": 0.1,
+     "proposed_threshold_name": "ratio_span_by_z_max",
+     "measured_false_alarm_rate": 0.34385,
+     "ratification_status": "UNRATIFIED"
+    },
+    "by_snr": {
+     "n_rows": 2,
+     "n_rows_nonempty_median": 2.0,
+     "quantiles": {
+      "0.5": 0.02864689052605701,
+      "0.9": 0.06926769411479476,
+      "0.95": 0.08249909372857026,
+      "0.99": 0.10873980463312781,
+      "0.995": 0.11757710747342193,
+      "0.999": 0.13811516440428967
+     },
+     "mean": 0.033676301977205614,
+     "sd": 0.025386253728014837,
+     "observed": {
+      "span": 0.023610580306250628,
+      "lo": 0.99484642016288,
+      "hi": 1.0184570004691307,
+      "n_rows_used": 2,
+      "vacuous": false
+     },
+     "proposed_threshold": 0.15,
+     "proposed_threshold_name": "ratio_span_by_snr_max",
+     "measured_false_alarm_rate": 0.00045,
+     "ratification_status": "UNRATIFIED"
+    }
+   }
+  },
+  "prod_17x15x8": {
+   "grid_shape": {
+    "n_nhat": 17,
+    "n_zf": 15,
+    "n_snr": 8
+   },
+   "total_mu": 35024.53135972594,
+   "arms": {
+    "by_z": {
+     "n_rows": 15,
+     "n_rows_nonempty_median": 15.0,
+     "quantiles": {
+      "0.5": 0.07396694939349596,
+      "0.9": 0.09851527539659433,
+      "0.95": 0.1066731976997893,
+      "0.99": 0.123343705410892,
+      "0.995": 0.12923645012059987,
+      "0.999": 0.1403389394674298
+     },
+     "mean": 0.07551162425368593,
+     "sd": 0.017422044360141196,
+     "observed": {
+      "span": 0.09097926108717025,
+      "lo": 0.9483499963302986,
+      "hi": 1.0393292574174688,
+      "n_rows_used": 15,
+      "vacuous": false
+     },
+     "proposed_threshold": 0.1,
+     "proposed_threshold_name": "ratio_span_by_z_max",
+     "measured_false_alarm_rate": 0.08935,
+     "ratification_status": "UNRATIFIED"
+    },
+    "by_snr": {
+     "n_rows": 8,
+     "n_rows_nonempty_median": 8.0,
+     "quantiles": {
+      "0.5": 0.04458407914203949,
+      "0.9": 0.06407524578020991,
+      "0.95": 0.07026254855167234,
+      "0.99": 0.08380938046119006,
+      "0.995": 0.0886464417750089,
+      "0.999": 0.09787962430273336
+     },
+     "mean": 0.04579635109637913,
+     "sd": 0.0138385691766231,
+     "observed": {
+      "span": 0.04491002498371799,
+      "lo": 0.9911673049589067,
+      "hi": 1.0360773299426247,
+      "n_rows_used": 8,
+      "vacuous": false
+     },
+     "proposed_threshold": 0.15,
+     "proposed_threshold_name": "ratio_span_by_snr_max",
+     "measured_false_alarm_rate": 0.0,
+     "ratification_status": "UNRATIFIED"
+    }
+   }
+  },
+  "prod_29x15x8": {
+   "grid_shape": {
+    "n_nhat": 29,
+    "n_zf": 15,
+    "n_snr": 8
+   },
+   "total_mu": 35749.68686487559,
+   "arms": {
+    "by_z": {
+     "n_rows": 15,
+     "n_rows_nonempty_median": 15.0,
+     "quantiles": {
+      "0.5": 0.0734234489629676,
+      "0.9": 0.09751003434250108,
+      "0.95": 0.10541483981158832,
+      "0.99": 0.12130189746452391,
+      "0.995": 0.12886242830528916,
+      "0.999": 0.14046574007073892
+     },
+     "mean": 0.0748325075930184,
+     "sd": 0.017241010444024627,
+     "observed": {
+      "span": 0.1076932859326849,
+      "lo": 0.943626112339724,
+      "hi": 1.051319398272409,
+      "n_rows_used": 15,
+      "vacuous": false
+     },
+     "proposed_threshold": 0.1,
+     "proposed_threshold_name": "ratio_span_by_z_max",
+     "measured_false_alarm_rate": 0.0819,
+     "ratification_status": "UNRATIFIED"
+    },
+    "by_snr": {
+     "n_rows": 8,
+     "n_rows_nonempty_median": 8.0,
+     "quantiles": {
+      "0.5": 0.04416781080016302,
+      "0.9": 0.06303208894558136,
+      "0.95": 0.06960852251093567,
+      "0.99": 0.08167858173653743,
+      "0.995": 0.08575088246388152,
+      "0.999": 0.0965294299004194
+     },
+     "mean": 0.045276996518689064,
+     "sd": 0.013605391655063616,
+     "observed": {
+      "span": 0.04716704762635826,
+      "lo": 0.9751039212962441,
+      "hi": 1.0222709689226024,
+      "n_rows_used": 8,
+      "vacuous": false
+     },
+     "proposed_threshold": 0.15,
+     "proposed_threshold_name": "ratio_span_by_snr_max",
+     "measured_false_alarm_rate": 0.0,
+     "ratification_status": "UNRATIFIED"
+    }
+   }
+  }
+ },
+ "power": {
+  "calib_5x4x2": {
+   "span_threshold": 0.1,
+   "z_threshold": 5.0,
+   "n_rows_by_z": 4,
+   "n_draws": 4000,
+   "seed": 1,
+   "tilts": [
+    0.0,
+    0.02,
+    0.04,
+    0.06,
+    0.08,
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.5
+   ],
+   "curve": [
+    {
+     "tilt_peak_to_peak": 0.0,
+     "p_span_arm_fires": 0.3485,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.08392026536545638,
+     "median_zmax": 1.407718134586969
+    },
+    {
+     "tilt_peak_to_peak": 0.02,
+     "p_span_arm_fires": 0.3635,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.08629014827143422,
+     "median_zmax": 1.4207374592547233
+    },
+    {
+     "tilt_peak_to_peak": 0.04,
+     "p_span_arm_fires": 0.41075,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.09001784467532686,
+     "median_zmax": 1.4695254568220992
+    },
+    {
+     "tilt_peak_to_peak": 0.06,
+     "p_span_arm_fires": 0.508,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.10090982138040694,
+     "median_zmax": 1.6099812578041026
+    },
+    {
+     "tilt_peak_to_peak": 0.08,
+     "p_span_arm_fires": 0.57675,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.10901892854860462,
+     "median_zmax": 1.7326971942455174
+    },
+    {
+     "tilt_peak_to_peak": 0.1,
+     "p_span_arm_fires": 0.68925,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.12484133368991279,
+     "median_zmax": 1.926934156652123
+    },
+    {
+     "tilt_peak_to_peak": 0.15,
+     "p_span_arm_fires": 0.88775,
+     "p_z_arm_fires": 0.0025,
+     "median_span": 0.16185997580546818,
+     "median_zmax": 2.3964974106022408
+    },
+    {
+     "tilt_peak_to_peak": 0.2,
+     "p_span_arm_fires": 0.979,
+     "p_z_arm_fires": 0.016,
+     "median_span": 0.20990378536228366,
+     "median_zmax": 3.00245305950137
+    },
+    {
+     "tilt_peak_to_peak": 0.3,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 0.20125,
+     "median_span": 0.3079807072139894,
+     "median_zmax": 4.2263193972263755
+    },
+    {
+     "tilt_peak_to_peak": 0.5,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 0.96875,
+     "median_span": 0.5346850253208759,
+     "median_zmax": 6.785312648833205
+    }
+   ],
+   "span_arm_d50": 0.0583547557840617,
+   "span_arm_d90": 0.15671232876712327,
+   "z_arm_d50": 0.3778501628664495,
+   "z_arm_d90": 0.4820846905537459,
+   "false_alarm_span_arm": 0.3485,
+   "false_alarm_z_arm": 0.0,
+   "note": "d is the PEAK-TO-PEAK fractional z-tilt of the DATA relative to the forward model. The d=0 row is the false-alarm rate. Same omissions as ratio_span_null (see its docstring), so power is an UPPER bound. The span arm's threshold is the DECLINED ratio_span_by_z_max, which does NOT gate; the z arm's is z_zbin_max, which DOES gate although nobody ratified it (see ratification.py).",
+   "calibrated": {
+    "span_threshold": 0.2056879824660463,
+    "threshold_origin": "this geometry's own null q99.5 = the spec's Bonferroni alpha=0.005 per arm (\u00a73 step 3/4)",
+    "false_alarm_span_arm": 0.00425,
+    "span_arm_d50": 0.19536807278742763,
+    "span_arm_d90": 0.2880994671403197,
+    "curve": [
+     {
+      "tilt_peak_to_peak": 0.0,
+      "p_span_arm_fires": 0.00425,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.08392026536545638,
+      "median_zmax": 1.407718134586969
+     },
+     {
+      "tilt_peak_to_peak": 0.02,
+      "p_span_arm_fires": 0.00625,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.08629014827143422,
+      "median_zmax": 1.4207374592547233
+     },
+     {
+      "tilt_peak_to_peak": 0.04,
+      "p_span_arm_fires": 0.01025,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.09001784467532686,
+      "median_zmax": 1.4695254568220992
+     },
+     {
+      "tilt_peak_to_peak": 0.06,
+      "p_span_arm_fires": 0.02325,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.10090982138040694,
+      "median_zmax": 1.6099812578041026
+     },
+     {
+      "tilt_peak_to_peak": 0.08,
+      "p_span_arm_fires": 0.0335,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.10901892854860462,
+      "median_zmax": 1.7326971942455174
+     },
+     {
+      "tilt_peak_to_peak": 0.1,
+      "p_span_arm_fires": 0.07075,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.12484133368991279,
+      "median_zmax": 1.926934156652123
+     },
+     {
+      "tilt_peak_to_peak": 0.15,
+      "p_span_arm_fires": 0.22575,
+      "p_z_arm_fires": 0.0025,
+      "median_span": 0.16185997580546818,
+      "median_zmax": 2.3964974106022408
+     },
+     {
+      "tilt_peak_to_peak": 0.2,
+      "p_span_arm_fires": 0.528,
+      "p_z_arm_fires": 0.016,
+      "median_span": 0.20990378536228366,
+      "median_zmax": 3.00245305950137
+     },
+     {
+      "tilt_peak_to_peak": 0.3,
+      "p_span_arm_fires": 0.95025,
+      "p_z_arm_fires": 0.20125,
+      "median_span": 0.3079807072139894,
+      "median_zmax": 4.2263193972263755
+     },
+     {
+      "tilt_peak_to_peak": 0.5,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 0.96875,
+      "median_span": 0.5346850253208759,
+      "median_zmax": 6.785312648833205
+     }
+    ],
+    "note": "NOT PROPOSED FOR RATIFICATION -- a synthetic pack, and it inherits every omission in the null (spec \u00a72.1). It exists so option A is a measured option rather than a suggestion."
+   }
+  },
+  "prod_17x15x8": {
+   "span_threshold": 0.1,
+   "z_threshold": 5.0,
+   "n_rows_by_z": 15,
+   "n_draws": 4000,
+   "seed": 1,
+   "tilts": [
+    0.0,
+    0.02,
+    0.04,
+    0.06,
+    0.08,
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.5
+   ],
+   "curve": [
+    {
+     "tilt_peak_to_peak": 0.0,
+     "p_span_arm_fires": 0.0885,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.07317122885596528,
+     "median_zmax": 1.9966763229937003
+    },
+    {
+     "tilt_peak_to_peak": 0.02,
+     "p_span_arm_fires": 0.1235,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.07658944863013711,
+     "median_zmax": 2.0907555185535847
+    },
+    {
+     "tilt_peak_to_peak": 0.04,
+     "p_span_arm_fires": 0.22775,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.08441426085827253,
+     "median_zmax": 2.301741623783452
+    },
+    {
+     "tilt_peak_to_peak": 0.06,
+     "p_span_arm_fires": 0.46325,
+     "p_z_arm_fires": 0.002,
+     "median_span": 0.09800094362945189,
+     "median_zmax": 2.698010970442825
+    },
+    {
+     "tilt_peak_to_peak": 0.08,
+     "p_span_arm_fires": 0.72975,
+     "p_z_arm_fires": 0.00775,
+     "median_span": 0.11255948922843428,
+     "median_zmax": 3.1103747119543206
+    },
+    {
+     "tilt_peak_to_peak": 0.1,
+     "p_span_arm_fires": 0.921,
+     "p_z_arm_fires": 0.03475,
+     "median_span": 0.12898895694985874,
+     "median_zmax": 3.5463838882052787
+    },
+    {
+     "tilt_peak_to_peak": 0.15,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 0.40075,
+     "median_span": 0.1720176237678876,
+     "median_zmax": 4.801008306827711
+    },
+    {
+     "tilt_peak_to_peak": 0.2,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 0.92775,
+     "median_span": 0.219339932441856,
+     "median_zmax": 6.135986742422974
+    },
+    {
+     "tilt_peak_to_peak": 0.3,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 1.0,
+     "median_span": 0.3167371016708228,
+     "median_zmax": 8.938307883488818
+    },
+    {
+     "tilt_peak_to_peak": 0.5,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 1.0,
+     "median_span": 0.5376798559260553,
+     "median_zmax": 14.831848913099943
+    }
+   ],
+   "span_arm_d50": 0.0627579737335835,
+   "span_arm_d90": 0.09780392156862745,
+   "z_arm_d50": 0.15941650853889944,
+   "z_arm_d90": 0.19736717267552184,
+   "false_alarm_span_arm": 0.0885,
+   "false_alarm_z_arm": 0.0,
+   "note": "d is the PEAK-TO-PEAK fractional z-tilt of the DATA relative to the forward model. The d=0 row is the false-alarm rate. Same omissions as ratio_span_null (see its docstring), so power is an UPPER bound. The span arm's threshold is the DECLINED ratio_span_by_z_max, which does NOT gate; the z arm's is z_zbin_max, which DOES gate although nobody ratified it (see ratification.py).",
+   "calibrated": {
+    "span_threshold": 0.12923645012059987,
+    "threshold_origin": "this geometry's own null q99.5 = the spec's Bonferroni alpha=0.005 per arm (\u00a73 step 3/4)",
+    "false_alarm_span_arm": 0.00725,
+    "span_arm_d50": 0.10049712192569336,
+    "span_arm_d90": 0.1423600209314495,
+    "curve": [
+     {
+      "tilt_peak_to_peak": 0.0,
+      "p_span_arm_fires": 0.00725,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.07317122885596528,
+      "median_zmax": 1.9966763229937003
+     },
+     {
+      "tilt_peak_to_peak": 0.02,
+      "p_span_arm_fires": 0.0085,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.07658944863013711,
+      "median_zmax": 2.0907555185535847
+     },
+     {
+      "tilt_peak_to_peak": 0.04,
+      "p_span_arm_fires": 0.02425,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.08441426085827253,
+      "median_zmax": 2.301741623783452
+     },
+     {
+      "tilt_peak_to_peak": 0.06,
+      "p_span_arm_fires": 0.0875,
+      "p_z_arm_fires": 0.002,
+      "median_span": 0.09800094362945189,
+      "median_zmax": 2.698010970442825
+     },
+     {
+      "tilt_peak_to_peak": 0.08,
+      "p_span_arm_fires": 0.23525,
+      "p_z_arm_fires": 0.00775,
+      "median_span": 0.11255948922843428,
+      "median_zmax": 3.1103747119543206
+     },
+     {
+      "tilt_peak_to_peak": 0.1,
+      "p_span_arm_fires": 0.49525,
+      "p_z_arm_fires": 0.03475,
+      "median_span": 0.12898895694985874,
+      "median_zmax": 3.5463838882052787
+     },
+     {
+      "tilt_peak_to_peak": 0.15,
+      "p_span_arm_fires": 0.973,
+      "p_z_arm_fires": 0.40075,
+      "median_span": 0.1720176237678876,
+      "median_zmax": 4.801008306827711
+     },
+     {
+      "tilt_peak_to_peak": 0.2,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 0.92775,
+      "median_span": 0.219339932441856,
+      "median_zmax": 6.135986742422974
+     },
+     {
+      "tilt_peak_to_peak": 0.3,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 1.0,
+      "median_span": 0.3167371016708228,
+      "median_zmax": 8.938307883488818
+     },
+     {
+      "tilt_peak_to_peak": 0.5,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 1.0,
+      "median_span": 0.5376798559260553,
+      "median_zmax": 14.831848913099943
+     }
+    ],
+    "note": "NOT PROPOSED FOR RATIFICATION -- a synthetic pack, and it inherits every omission in the null (spec \u00a72.1). It exists so option A is a measured option rather than a suggestion."
+   }
+  },
+  "prod_29x15x8": {
+   "span_threshold": 0.1,
+   "z_threshold": 5.0,
+   "n_rows_by_z": 15,
+   "n_draws": 4000,
+   "seed": 1,
+   "tilts": [
+    0.0,
+    0.02,
+    0.04,
+    0.06,
+    0.08,
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.5
+   ],
+   "curve": [
+    {
+     "tilt_peak_to_peak": 0.0,
+     "p_span_arm_fires": 0.0825,
+     "p_z_arm_fires": 0.00025,
+     "median_span": 0.07391401976849199,
+     "median_zmax": 2.001241764168776
+    },
+    {
+     "tilt_peak_to_peak": 0.02,
+     "p_span_arm_fires": 0.10875,
+     "p_z_arm_fires": 0.0,
+     "median_span": 0.07641883952930412,
+     "median_zmax": 2.0801332645816855
+    },
+    {
+     "tilt_peak_to_peak": 0.04,
+     "p_span_arm_fires": 0.23525,
+     "p_z_arm_fires": 0.00075,
+     "median_span": 0.08542539910023911,
+     "median_zmax": 2.3555974142729696
+    },
+    {
+     "tilt_peak_to_peak": 0.06,
+     "p_span_arm_fires": 0.4665,
+     "p_z_arm_fires": 0.0015,
+     "median_span": 0.09812475381414498,
+     "median_zmax": 2.7062349304424194
+    },
+    {
+     "tilt_peak_to_peak": 0.08,
+     "p_span_arm_fires": 0.73575,
+     "p_z_arm_fires": 0.01,
+     "median_span": 0.11286325968616195,
+     "median_zmax": 3.1325906626632216
+    },
+    {
+     "tilt_peak_to_peak": 0.1,
+     "p_span_arm_fires": 0.92125,
+     "p_z_arm_fires": 0.032,
+     "median_span": 0.12825260830613344,
+     "median_zmax": 3.551064305463607
+    },
+    {
+     "tilt_peak_to_peak": 0.15,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 0.413,
+     "median_span": 0.17145175682416358,
+     "median_zmax": 4.813611251358006
+    },
+    {
+     "tilt_peak_to_peak": 0.2,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 0.9405,
+     "median_span": 0.21777580413843095,
+     "median_zmax": 6.195913067557416
+    },
+    {
+     "tilt_peak_to_peak": 0.3,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 1.0,
+     "median_span": 0.31670098011934794,
+     "median_zmax": 9.067801295231002
+    },
+    {
+     "tilt_peak_to_peak": 0.5,
+     "p_span_arm_fires": 1.0,
+     "p_z_arm_fires": 1.0,
+     "median_span": 0.5355994129792998,
+     "median_zmax": 14.97854799637315
+    }
+   ],
+   "span_arm_d50": 0.06248839368616527,
+   "span_arm_d90": 0.09770889487870621,
+   "z_arm_d50": 0.15824644549763034,
+   "z_arm_d90": 0.1961611374407583,
+   "false_alarm_span_arm": 0.0825,
+   "false_alarm_z_arm": 0.00025,
+   "note": "d is the PEAK-TO-PEAK fractional z-tilt of the DATA relative to the forward model. The d=0 row is the false-alarm rate. Same omissions as ratio_span_null (see its docstring), so power is an UPPER bound. The span arm's threshold is the DECLINED ratio_span_by_z_max, which does NOT gate; the z arm's is z_zbin_max, which DOES gate although nobody ratified it (see ratification.py).",
+   "calibrated": {
+    "span_threshold": 0.12886242830528916,
+    "threshold_origin": "this geometry's own null q99.5 = the spec's Bonferroni alpha=0.005 per arm (\u00a73 step 3/4)",
+    "false_alarm_span_arm": 0.00575,
+    "span_arm_d50": 0.10100411946446962,
+    "span_arm_d90": 0.1421987641606591,
+    "curve": [
+     {
+      "tilt_peak_to_peak": 0.0,
+      "p_span_arm_fires": 0.00575,
+      "p_z_arm_fires": 0.00025,
+      "median_span": 0.07391401976849199,
+      "median_zmax": 2.001241764168776
+     },
+     {
+      "tilt_peak_to_peak": 0.02,
+      "p_span_arm_fires": 0.008,
+      "p_z_arm_fires": 0.0,
+      "median_span": 0.07641883952930412,
+      "median_zmax": 2.0801332645816855
+     },
+     {
+      "tilt_peak_to_peak": 0.04,
+      "p_span_arm_fires": 0.02425,
+      "p_z_arm_fires": 0.00075,
+      "median_span": 0.08542539910023911,
+      "median_zmax": 2.3555974142729696
+     },
+     {
+      "tilt_peak_to_peak": 0.06,
+      "p_span_arm_fires": 0.09,
+      "p_z_arm_fires": 0.0015,
+      "median_span": 0.09812475381414498,
+      "median_zmax": 2.7062349304424194
+     },
+     {
+      "tilt_peak_to_peak": 0.08,
+      "p_span_arm_fires": 0.24,
+      "p_z_arm_fires": 0.01,
+      "median_span": 0.11286325968616195,
+      "median_zmax": 3.1325906626632216
+     },
+     {
+      "tilt_peak_to_peak": 0.1,
+      "p_span_arm_fires": 0.49025,
+      "p_z_arm_fires": 0.032,
+      "median_span": 0.12825260830613344,
+      "median_zmax": 3.551064305463607
+     },
+     {
+      "tilt_peak_to_peak": 0.15,
+      "p_span_arm_fires": 0.97575,
+      "p_z_arm_fires": 0.413,
+      "median_span": 0.17145175682416358,
+      "median_zmax": 4.813611251358006
+     },
+     {
+      "tilt_peak_to_peak": 0.2,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 0.9405,
+      "median_span": 0.21777580413843095,
+      "median_zmax": 6.195913067557416
+     },
+     {
+      "tilt_peak_to_peak": 0.3,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 1.0,
+      "median_span": 0.31670098011934794,
+      "median_zmax": 9.067801295231002
+     },
+     {
+      "tilt_peak_to_peak": 0.5,
+      "p_span_arm_fires": 1.0,
+      "p_z_arm_fires": 1.0,
+      "median_span": 0.5355994129792998,
+      "median_zmax": 14.97854799637315
+     }
+    ],
+    "note": "NOT PROPOSED FOR RATIFICATION -- a synthetic pack, and it inherits every omission in the null (spec \u00a72.1). It exists so option A is a measured option rather than a suggestion."
+   }
+  }
+ },
+ "geometry_correction": "\ud83d\udd34 CORRECTION to schema v1 and to the two commit messages of dbda6a4 / 88f2ecb: the measured false-alarm rate of ratio_span_by_z_max = 0.10 was quoted as 0.3434 ('refuses 34% of perfectly correct forward models') with NO GEOMETRY ATTACHED. That number is specific to the 5x4x2 calibration pack, whose by_z arm has FOUR rows. On production-scale geometries the SAME measurement gives by_z FAR = calib_5x4x2: 0.3438, prod_17x15x8: 0.0893, prod_29x15x8: 0.0819. Every quote of a span false-alarm rate must name its grid. The spec's own \u00a71.1 item 1 predicted this and the v1 calibration ignored it.",
+ "verdict": "NO THRESHOLD IS PROPOSED FOR RATIFICATION. This artifact is the prospective-calibration EVIDENCE that the two declined thresholds are indefensible as a pair: on EVERY geometry measured here their false-alarm rates under a null in which the forward model is exactly right differ by orders of magnitude, in the opposite direction to the stated rationale (by_snr is inert at 0.0000 on both production geometries while by_z fires at ~0.08). The pair-mismatch conclusion SURVIVES at production scale; the MAGNITUDE quoted for by_z does not -- see geometry_correction. Whether DISARMING the span arms leaves the z-marginal tilt defect unguarded is a PI TRADEOFF, not resolved here: the measured detection curves for the disarmed span arm and the still-armed z_zbin_max arm are in `power`, and the decision is recorded open in ratification.OPEN_PI_DECISIONS['span_arms_disarmed']. Procedure, omissions and options: docs/ratio_span_calibration_spec.md.",
  "metadata": {
   "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
   "entry_point": "ratio_span_null_report / --ratio-span-null",
-  "date": "2026-07-29",
-  "code_commit": "88f2ecb43eff2a8f2baa5df2535988c577a2ff3e",
-  "code_dirty": true,
+  "date": "2026-07-30",
+  "code_commit": "9b5f991aa380016dc5154ac0ecf7055d7739db1e",
+  "code_dirty": false,
   "code_dirty_scope": "uncommitted changes under CDDF_analysis/hbi_mcmc/ ONLY -- this is NOT a whole-tree cleanliness claim",
   "scope": "SYNTHETIC ONLY. No real-survey data or values.",
   "paper_facing": false,
   "ratification": {
-   "schema": "gate_ratification/v1",
+   "schema": "gate_ratification/v2",
    "ratification_date": "2026-07-29",
    "authority": "PI (project decision 8, 2026-07-29)",
+   "pi_ratified_items": [
+    "fail_closed_framework",
+    "matched_configuration_sbc",
+    "chi2_dof_max"
+   ],
    "ratified": {
     "chi2_dof_max": {
      "status": "RATIFIED",
@@ -137,30 +866,58 @@
      "statement": "Simulation-based calibration may certify ONLY the configuration it actually ran. An SBC whose grid, prior, FP mode, response clamp or reported-quantity set differs from the run it is attached to does NOT certify that run, and an artifact carrying an unmatched (or unspecified) SBC is NOT STAMPABLE.",
      "date": "2026-07-29",
      "authority": "PI (project decision 8, 2026-07-29)"
-    },
+    }
+   },
+   "restated_not_ratified": {
     "z_bin_max": {
-     "status": "RATIFIED",
-     "statement": "|z| <= 5 on the reported n-hat bins with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
-     "date": "2026-07-29",
-     "authority": "PI (project decision 8, 2026-07-29)"
+     "status": "RESTATED_NOT_RATIFIED",
+     "statement": "|z| <= 5 on the reported n-hat bins with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE'). RESTATED per decision 8 item 3; NOT RATIFIED.",
+     "authority": "the author of the arm (gate stream), inherited by the production gate; NO deciding authority has ratified it",
+     "pi_disposition": "decision 8, item 3, verbatim: \"Also restate the malformed |z| <= 5 criterion with its exact mathematical definition.\" The PI called the criterion MALFORMED AS STATED and sent it back for restatement. That is NOT a ratification. The restatement has been written; the restated form has NOT been put to the PI. STATUS: RESTATED, NOT RATIFIED.",
+     "contributes_to_pass_fail": true,
+     "introduced_by": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+     "introduced_date": "2026-07-28",
+     "predates_decision_8": true,
+     "introduced_same_hunk_as": []
     },
     "z_snrbin_max": {
-     "status": "RATIFIED",
-     "statement": "|z| <= 5 on the SNR-stratum marginals with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
-     "date": "2026-07-29",
-     "authority": "PI (project decision 8, 2026-07-29)"
+     "status": "RESTATED_NOT_RATIFIED",
+     "statement": "|z| <= 5 on the SNR-stratum marginals with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE'). RESTATED per decision 8 item 3; NOT RATIFIED.",
+     "authority": "the author of the arm (gate stream), inherited by the production gate; NO deciding authority has ratified it",
+     "pi_disposition": "decision 8, item 3, verbatim: \"Also restate the malformed |z| <= 5 criterion with its exact mathematical definition.\" The PI called the criterion MALFORMED AS STATED and sent it back for restatement. That is NOT a ratification. The restatement has been written; the restated form has NOT been put to the PI. STATUS: RESTATED, NOT RATIFIED.",
+     "contributes_to_pass_fail": true,
+     "introduced_by": "0e7fa0bd62d1f177126737fa32d1963e558b18d2",
+     "introduced_date": "2026-07-29",
+     "predates_decision_8": false,
+     "introduced_same_hunk_as": [
+      "ratio_span_by_z_max",
+      "ratio_span_by_snr_max"
+     ]
     },
     "z_total_max": {
-     "status": "RATIFIED",
-     "statement": "|z| <= 5 on the total predicted-vs-observed count, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
-     "date": "2026-07-29",
-     "authority": "PI (project decision 8, 2026-07-29)"
+     "status": "RESTATED_NOT_RATIFIED",
+     "statement": "|z| <= 5 on the total predicted-vs-observed count, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE'). RESTATED per decision 8 item 3; NOT RATIFIED.",
+     "authority": "the author of the arm (gate stream), inherited by the production gate; NO deciding authority has ratified it",
+     "pi_disposition": "decision 8, item 3, verbatim: \"Also restate the malformed |z| <= 5 criterion with its exact mathematical definition.\" The PI called the criterion MALFORMED AS STATED and sent it back for restatement. That is NOT a ratification. The restatement has been written; the restated form has NOT been put to the PI. STATUS: RESTATED, NOT RATIFIED.",
+     "contributes_to_pass_fail": true,
+     "introduced_by": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+     "introduced_date": "2026-07-28",
+     "predates_decision_8": true,
+     "introduced_same_hunk_as": []
     },
     "z_zbin_max": {
-     "status": "RATIFIED",
-     "statement": "|z| <= 5 on the fine-z marginal bins with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE').",
-     "date": "2026-07-29",
-     "authority": "PI (project decision 8, 2026-07-29)"
+     "status": "RESTATED_NOT_RATIFIED",
+     "statement": "|z| <= 5 on the fine-z marginal bins with obs > 0, where z is the Poisson score residual defined EXACTLY in CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z. This is a tripwire against an order-of-magnitude-wrong forward model, NOT a goodness-of-fit test; it is NOT scale-free (see that docstring, 'WHY 5 IS NOT SCALE-FREE'). RESTATED per decision 8 item 3; NOT RATIFIED.",
+     "authority": "the author of the arm (gate stream), inherited by the production gate; NO deciding authority has ratified it",
+     "pi_disposition": "decision 8, item 3, verbatim: \"Also restate the malformed |z| <= 5 criterion with its exact mathematical definition.\" The PI called the criterion MALFORMED AS STATED and sent it back for restatement. That is NOT a ratification. The restatement has been written; the restated form has NOT been put to the PI. STATUS: RESTATED, NOT RATIFIED.",
+     "contributes_to_pass_fail": true,
+     "introduced_by": "0e7fa0bd62d1f177126737fa32d1963e558b18d2",
+     "introduced_date": "2026-07-29",
+     "predates_decision_8": false,
+     "introduced_same_hunk_as": [
+      "ratio_span_by_z_max",
+      "ratio_span_by_snr_max"
+     ]
     }
    },
    "unratified": {
@@ -180,7 +937,30 @@
     }
    },
    "unratified_effect": "REPORT_ONLY_DOES_NOT_GATE",
-   "unratified_note": "UNRATIFIED TOLERANCES: ratio_span_by_snr_max, ratio_span_by_z_max. Their statistics ARE computed and ARE reported on every run; they DO NOT contribute to pass/fail (effect=REPORT_ONLY_DOES_NOT_GATE). A reported value that exceeds the proposed number is an ADVISORY, never a refusal. Do NOT read 'the span arm did not fire' as 'the span arm passed': no threshold was applied. Prospective calibration spec: docs/ratio_span_calibration_spec.md."
+   "unratified_note": "UNRATIFIED TOLERANCES: ratio_span_by_snr_max, ratio_span_by_z_max. Their statistics ARE computed and ARE reported on every run; they DO NOT contribute to pass/fail (effect=REPORT_ONLY_DOES_NOT_GATE). A reported value that exceeds the proposed number is an ADVISORY, never a refusal. Do NOT read 'the span arm did not fire' as 'the span arm passed': no threshold was applied. Prospective calibration spec: docs/ratio_span_calibration_spec.md.",
+   "unratified_but_gating": [
+    "z_bin_max",
+    "z_snrbin_max",
+    "z_total_max",
+    "z_zbin_max"
+   ],
+   "unratified_but_gating_effect": "GATES_WITHOUT_RATIFIED_AUTHORITY",
+   "unratified_but_gating_note": "UNRATIFIED BUT GATING: z_bin_max, z_snrbin_max, z_total_max, z_zbin_max. These numbers DO contribute to pass/fail -- they call fails.append in forward_closure_gate -- and no deciding authority has ratified them. Two of them (z_zbin_max, z_snrbin_max) were introduced on 2026-07-29 in the SAME HUNK as the two tolerances the PI declined that day; the other two are inherited from the pre-decision-8 gate, which is not the same thing as ratified. They are left ARMED deliberately (disarming would be the same unilateral act in the other direction, and would leave the z-marginal tilt defect unguarded once the span arms were disarmed). This is a STANDING PI DECISION, recorded here rather than resolved: see OPEN_PI_DECISIONS.",
+   "open_pi_decisions": {
+    "span_arms_disarmed": {
+     "question": "The two ratio_span arms were ARMED before this stream (a9fe97b) and are now report-only. That follows the PI's instruction that an unratified tolerance must not gate, but it is the only guard that fires on a PHYSICALLY large, statistically quiet z-tilt. Accept report-only, or arm a calibrated pack-specific threshold (spec \u00a73/\u00a76 option A)?",
+     "what_the_code_does_meanwhile": "both span arms REPORT ONLY; z_zbin_max stays armed",
+     "measured_tradeoff": "the 0.10 threshold's 34% false-alarm rate was measured on the 5x4x2 calibration pack (4 z rows) ONLY. At production geometry it is 0.0893 (17x15x8) / 0.0819 (29x15x8). AND THE COST OF DISARMING IS NOW MEASURED, not asserted: exposed to the same injected peak-to-peak z-tilt d on the 17x15x8 grid, the span arm reaches 90% detection at d = 0.098 and the still-armed z_zbin_max only at d = 0.197. Disarming the span arms therefore roughly DOUBLES the smallest z-tilt that any armed gate catches; z_zbin_max does NOT cover what the span arm covered. A threshold calibrated on the production null instead (0.1292, measured false-alarm rate 0.0073) reaches 90% at d = 0.142, i.e. option A recovers most of the lost power at a defensible false-alarm rate -- which is what makes option A a measured option rather than a suggestion. Curves and full table: docs/ratio_span_calibration_spec.md \u00a74.1 and the `power` block of ratio_span_null_calibration.json (n_draws=20000/4000, seed=1). THIS DOES NOT DECIDE THE QUESTION: the null is a lower bound on the true null width (spec \u00a72.1), so every false-alarm rate here is optimistic, and all of it is synthetic."
+    },
+    "z_arms_gate_unratified": {
+     "question": "Four |z| <= 5 arms refuse work with no ratified authority. RATIFY the restated criterion (the restatement is in forward_selftest.poisson_z), DISARM the two 2026-07-29 arms (z_zbin_max, z_snrbin_max) pending calibration, or leave as is and carry it as a stated limitation?",
+     "what_the_code_does_meanwhile": "all four remain ARMED",
+     "why_not_resolved_here": "choosing would be the same unilateral act that produced the defect; and disarming z_zbin_max at the same time as the span arms would leave the standing z-marginal tilt defect with no guard at all"
+    }
+   },
+   "open_pi_decisions_note": "PI DECISION REQUIRED, 2 open: span_arms_disarmed, z_arms_gate_unratified. This artifact does not resolve them and does not claim they are resolved. Details: CDDF_analysis.hbi_mcmc.ratification.OPEN_PI_DECISIONS.",
+   "authority_allow_list_clean": true,
+   "correction_note": "schema v2 CORRECTS v1 (88f2ecb), which recorded the four |z| <= 5 arms as RATIFIED by the PI on grounds that were false: decision 8 called |z| <= 5 MALFORMED AS STATED and asked for a restatement, and two of the four arms were introduced the same day, in the same hunk, as the two tolerances the PI declined. Any artifact carrying gate_ratification/v1 overstates its authority."
   },
   "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python -m CDDF_analysis.hbi_mcmc.forward_selftest --ratio-span-null --null-draws 20000 --null-seed 1 --out CDDF_analysis/hbi_mcmc/ratio_span_null_calibration.json"
  }
