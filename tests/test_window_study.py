@@ -784,6 +784,11 @@ def _drive_selftest(WS, monkeypatch, tmp_path, pack_window=None,
     monkeypatch.setattr(WS, "OUT", str(tmp_path / "study.json"))
     monkeypatch.setattr(WS, "full_sha", lambda: commit)
     monkeypatch.setattr(WS, "dirty", lambda: False)
+    # the metadata block records the branch via git; stub it so the test is
+    # hermetic (it must pass in an exported tree too, e.g. under a mutation
+    # harness that builds from `git archive HEAD`).
+    monkeypatch.setattr(WS.subprocess, "check_output",
+                        lambda *a, **k: "test-branch\n")
     monkeypatch.setattr(WS, "_FS", lambda: _FakeFS)
     monkeypatch.setattr(WS, "load_pilot", lambda: dict(status="NOT RUN"))
     monkeypatch.setattr(WS, "build_verdict",
