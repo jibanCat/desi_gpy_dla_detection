@@ -1,0 +1,58 @@
+{
+  "schema": "hbi-artifact-tombstone",
+  "schema_version": 1,
+  "artifact": {
+    "path": "CDDF_analysis/hbi/subdla_floor_mc_band.json",
+    "sha256": "4b37051ed0c7d65a4fd642ca006085e9e6d6531f767adcab24973514e6e9f5cb",
+    "bytes": 9340,
+    "stamped_code_commit": "d496f42a8de932a58055c4d02523996fdb7d962a-dirty",
+    "stamp_class": "DIRTY",
+    "was_tracked_at_git_head": false,
+    "what_it_was": "Joint-MC error band on the sub-DLA integrated [19.5,20.3) recovery ratios (dN/dX and Omega) and the per-0.1-dex ratios, for the floor-19.5 (headline) and floor-19.0 (rebuild) configurations on the loa0 FP estimator. 2LPT-0 (loa-124) MOCK recovery ratios with an MC band.",
+    "rederive_command_as_stamped": "python CDDF_analysis/diagnostics/subdla/subdla_floor_mc_band.py --force --n-mc 150 --seed 0",
+    "read_from_worktree": "/home/mfho/desi_gpy_dla_detection"
+  },
+  "retirement": {
+    "retired_utc": "2026-07-30T00:03:24Z",
+    "retired_under": "PI decision 7 (2026-07-29): retire with stamped tombstone records",
+    "defects": [
+      {
+        "code": "DIRTY_STAMP_NOT_REDERIVABLE",
+        "detail": "metadata.code_commit ends in '-dirty': the artifact was produced by uncommitted modifications to its own diagnostics script. The working tree that produced it was never committed, so `git cat-file`/`git checkout` cannot recover the producing source. This is not a labelling defect that a re-stamp could fix -- the information is gone. Provenance class: worse than ORPHANED, since even the routine text is unrecoverable."
+      },
+      {
+        "code": "B16_LEAKY_TRUTH",
+        "detail": "B16 leaky truth: the truth f(N) numerator was integrated with NO z-mask while the pathlength denominator Delta X WAS masked. The correct criterion is provenance, not units -- anything built from tr['f_truth'] is biased regardless of what it is called, including ell(X), lambda_mfp anchors and per-bin f_tru. The measured leak is 1.0557-1.0606 integrated but 1.0000-1.1818 per fine bin, i.e. NOT a scalar: RE-DERIVE, never rescale."
+      },
+      {
+        "code": "STALE_FP_RESAMPLE_SEMANTICS",
+        "detail": "The band is the whole product here, and it was built on the pre-fix Loa0FP.resample that manufactured FP in empty cells -- one such band went negative and was masked by recenter_band_on_point. A band-valued artifact built on that resample is unusable end to end."
+      }
+    ],
+    "recoverable_from_git": false,
+    "recovery_note": "NOT recoverable. Same dirty-tree hole as subdla_edge_systematic.json; both were produced in the same uncommitted working tree."
+  },
+  "successor_policy": {
+    "regeneration_is_a_new_measurement": true,
+    "statement": "Regeneration post-B16 is a NEW MEASUREMENT with a NEW ARTIFACT IDENTITY, not a provenance repair. Re-running the retired routine today does not restore this artifact's provenance: (i) the producing source is unrecoverable, so the new run is not the same computation, and (ii) the B16 fix changes the estimand itself (the truth reductions the ratios are taken against), so the new number answers a different question. A successor MUST be written to a different path, stamped afresh against its own clean HEAD, and MUST NOT reuse this identity.",
+    "requirements": [
+      "COMMIT the routine FIRST; stamp clean.",
+      "Rebuild on the fixed Loa0FP.resample; verify the band cannot go negative without recenter_band_on_point hiding it.",
+      "Re-derive truth under the B16 z-mask.",
+      "Report the measured mis-scaling detection curve: truth-containment is monotone in band width and therefore cannot fail an over-wide band.",
+      "Write to a NEW path."
+    ],
+    "must_not_reuse_identity": true,
+    "successor_identity_rule": "A successor MUST be written to a path that is not 'CDDF_analysis/hbi/subdla_floor_mc_band.json'. Committing anything at that path is a resurrection and is caught by tests/test_tombstones.py."
+  },
+  "values_policy": {
+    "carries_science_values": false,
+    "note": "This record deliberately holds no dN/dX, Omega, f(N), ell(X), lambda_mfp, tau_eff_LL or recovery ratio. Every number below is an integer or a hex digest. Enforced by tests/test_tombstones.py::test_tombstones_carry_no_science_values."
+  },
+  "metadata": {
+    "code_commit": "c15887242a77c6425a2cf71fd72fc1fb83b90229",
+    "builder": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
+    "generated_utc": "2026-07-30T00:03:24Z",
+    "paper_facing": false
+  }
+}

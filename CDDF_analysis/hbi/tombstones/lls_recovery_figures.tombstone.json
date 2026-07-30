@@ -1,0 +1,53 @@
+{
+  "schema": "hbi-artifact-tombstone",
+  "schema_version": 1,
+  "artifact": {
+    "path": "CDDF_analysis/hbi/lls_recovery_figures.json",
+    "sha256": "84c0c802b44fa0218c32f7802b070e559507f7a3db5687ead7cc7ca82735928a",
+    "bytes": 6407,
+    "stamped_code_commit": "d496f42a8de932a58055c4d02523996fdb7d962a",
+    "stamp_class": "CLEAN",
+    "was_tracked_at_git_head": false,
+    "what_it_was": "LLS joint-estimator measurement-vs-truth figure set (7 panels: P1 the lambda_mfp / kappa_912 headline, P2 the ell(X) band, P3 the sub-LLS slope probe, P4 the FP swing, P6 the kappa/ell band, P7 the narrow-vs-wide normalisation) on the 2LPT-0 (loa-124) mock. MOCK values.",
+    "rederive_command_as_stamped": "python CDDF_analysis/diagnostics/lls/lls_recovery_figures.py --force",
+    "read_from_worktree": "/home/mfho/desi_gpy_dla_detection"
+  },
+  "retirement": {
+    "retired_utc": "2026-07-30T00:03:24Z",
+    "retired_under": "PI decision 7 (2026-07-29): retire with stamped tombstone records",
+    "defects": [
+      {
+        "code": "LLS_POPULATION_CONTENT",
+        "detail": "The artifact's leaves ARE LLS population measurements (ell(X) over [17.2,19.5) and [17.5,19.5), lambda_mfp, kappa_912 / tau_eff_LL, and the LLS drop chi2). Standing project policy bars LLS population values as results; ell(X) is additionally structurally prior-limited (its two largest errors sit OUTSIDE its band, which is a statistical width only). Committing the leaves would be committing the retired result, so this tombstone records the identity and the defect and nothing else."
+      },
+      {
+        "code": "B16_LEAKY_TRUTH",
+        "detail": "B16 leaky truth: the truth f(N) numerator was integrated with NO z-mask while the pathlength denominator Delta X WAS masked. The correct criterion is provenance, not units -- anything built from tr['f_truth'] is biased regardless of what it is called, including ell(X), lambda_mfp anchors and per-bin f_tru. The measured leak is 1.0557-1.0606 integrated but 1.0000-1.1818 per fine bin, i.e. NOT a scalar: RE-DERIVE, never rescale. This artifact's /truth/ell_* anchors and every r0_* taken against them are f_truth integrals, so they are in the blast radius."
+      }
+    ],
+    "recoverable_from_git": true,
+    "recovery_note": "The stamp is CLEAN (a bare 40-char sha that exists in this repo), so the producing source IS recoverable via `git cat-file`. This artifact is retired for CONTENT (LLS population values + B16 truth contamination), not for a provenance hole."
+  },
+  "successor_policy": {
+    "regeneration_is_a_new_measurement": true,
+    "statement": "Regeneration post-B16 is a NEW MEASUREMENT with a NEW ARTIFACT IDENTITY, not a provenance repair. Re-running the retired routine today does not restore this artifact's provenance: (i) the producing source is unrecoverable, so the new run is not the same computation, and (ii) the B16 fix changes the estimand itself (the truth reductions the ratios are taken against), so the new number answers a different question. A successor MUST be written to a different path, stamped afresh against its own clean HEAD, and MUST NOT reuse this identity.",
+    "requirements": [
+      "Re-derive the truth side with the z-masked truth reductions (B16 fix), never rescale the stored numbers by any leak factor -- the leak is per-bin, not scalar.",
+      "Obtain explicit PI sign-off before any LLS population quantity (ell(X), lambda_mfp, tau_eff_LL, Omega_HI(LLS)) is written to a committed artifact at all.",
+      "Report ell over [17.5,19.5) and state the prior-limitation as a limit, not a band.",
+      "Write to a NEW path; stamp a clean 40-char HEAD; paper_facing stays false."
+    ],
+    "must_not_reuse_identity": true,
+    "successor_identity_rule": "A successor MUST be written to a path that is not 'CDDF_analysis/hbi/lls_recovery_figures.json'. Committing anything at that path is a resurrection and is caught by tests/test_tombstones.py."
+  },
+  "values_policy": {
+    "carries_science_values": false,
+    "note": "This record deliberately holds no dN/dX, Omega, f(N), ell(X), lambda_mfp, tau_eff_LL or recovery ratio. Every number below is an integer or a hex digest. Enforced by tests/test_tombstones.py::test_tombstones_carry_no_science_values."
+  },
+  "metadata": {
+    "code_commit": "c15887242a77c6425a2cf71fd72fc1fb83b90229",
+    "builder": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
+    "generated_utc": "2026-07-30T00:03:24Z",
+    "paper_facing": false
+  }
+}

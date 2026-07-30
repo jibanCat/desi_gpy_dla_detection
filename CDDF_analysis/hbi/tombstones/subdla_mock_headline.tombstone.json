@@ -1,0 +1,105 @@
+{
+  "schema": "hbi-artifact-tombstone",
+  "schema_version": 1,
+  "artifact": {
+    "path": "CDDF_analysis/hbi/subdla_mock_headline.json",
+    "sha256": "b13adddae7099f0fa9b99da3fae3ef460a67bdfacf18410017ff0eee96f79268",
+    "bytes": 59484,
+    "stamped_code_commit": "d496f42a8de932a58055c4d02523996fdb7d962a-dirty",
+    "stamp_class": "DIRTY",
+    "was_tracked_at_git_head": false,
+    "what_it_was": "sub-DLA-band catalog-HBI headline measurement (dN/dX, Omega, and the CDDF f(N|z)) over [19.5,20.3) on the 2LPT-0 (loa-124) MOCK, produced as a config-only override of the DLA loa0 headline recipe (frozen ingredients identical; only report_limits and fp_estimator changed).",
+    "rederive_command_as_stamped": "python CDDF_analysis/diagnostics/subdla/run_subdla_headline_full.py --fp-estimator loa0 --n-mc 2000 --seed 0 --force",
+    "read_from_worktree": "/home/mfho/desi_gpy_dla_detection"
+  },
+  "retirement": {
+    "retired_utc": "2026-07-30T00:03:24Z",
+    "retired_under": "PI decision 7 (2026-07-29): retire with stamped tombstone records",
+    "defects": [
+      {
+        "code": "DIRTY_STAMP_NOT_REDERIVABLE",
+        "detail": "metadata.code_commit ends in '-dirty': the artifact was produced by uncommitted modifications to its own diagnostics script. The working tree that produced it was never committed, so `git cat-file`/`git checkout` cannot recover the producing source. This is not a labelling defect that a re-stamp could fix -- the information is gone. Provenance class: worse than ORPHANED, since even the routine text is unrecoverable."
+      },
+      {
+        "code": "B16_LEAKY_TRUTH",
+        "detail": "B16 leaky truth: the truth f(N) numerator was integrated with NO z-mask while the pathlength denominator Delta X WAS masked. The correct criterion is provenance, not units -- anything built from tr['f_truth'] is biased regardless of what it is called, including ell(X), lambda_mfp anchors and per-bin f_tru. The measured leak is 1.0557-1.0606 integrated but 1.0000-1.1818 per fine bin, i.e. NOT a scalar: RE-DERIVE, never rescale. The measurement side is an estimate, but the artifact is only ever consumed against truth reductions, and its estimand is stamped DIAGNOSTIC_RECENTERED -- a recentred band is not the estimand a headline reports."
+      },
+      {
+        "code": "RETIRED_REPORTING_WINDOW",
+        "detail": "Its window is [19.5,20.3) with a 19.5 fit floor. PI decision 1 restricts the primary reporting window to 19.7 <= log NHI <= 21.6 and PI decision 4 moves the pad floor to 19.0 under the molly172 convention, so this artifact's window is no longer the reported one under any successor."
+      }
+    ],
+    "recoverable_from_git": false,
+    "recovery_note": "NOT recoverable. Uncommitted producing tree, same as the other two sub-DLA artifacts."
+  },
+  "successor_policy": {
+    "regeneration_is_a_new_measurement": true,
+    "statement": "Regeneration post-B16 is a NEW MEASUREMENT with a NEW ARTIFACT IDENTITY, not a provenance repair. Re-running the retired routine today does not restore this artifact's provenance: (i) the producing source is unrecoverable, so the new run is not the same computation, and (ii) the B16 fix changes the estimand itself (the truth reductions the ratios are taken against), so the new number answers a different question. A successor MUST be written to a different path, stamped afresh against its own clean HEAD, and MUST NOT reuse this identity.",
+    "requirements": [
+      "COMMIT the routine FIRST; stamp clean.",
+      "Re-derive under PI decision 1 (report only 19.7 <= log NHI <= 21.6), decision 3 (0.2-dex latent basis; a 0.1-dex plotting grid is NOT independent information resolution) and decision 4 (pad floor 19.0, molly172, pad is a latent nuisance only).",
+      "Carry an estimand that is the reported estimand, not DIAGNOSTIC_RECENTERED.",
+      "Re-run closure and coverage; the successor is gated on the decision-8 framework (fail-closed, matched-configuration SBC, chi2/dof <= 3).",
+      "Write to a NEW path."
+    ],
+    "must_not_reuse_identity": true,
+    "successor_identity_rule": "A successor MUST be written to a path that is not 'CDDF_analysis/hbi/subdla_mock_headline.json'. Committing anything at that path is a resurrection and is caught by tests/test_tombstones.py."
+  },
+  "values_policy": {
+    "carries_science_values": false,
+    "note": "This record deliberately holds no dN/dX, Omega, f(N), ell(X), lambda_mfp, tau_eff_LL or recovery ratio. Every number below is an integer or a hex digest. Enforced by tests/test_tombstones.py::test_tombstones_carry_no_science_values."
+  },
+  "metadata": {
+    "code_commit": "c15887242a77c6425a2cf71fd72fc1fb83b90229",
+    "builder": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
+    "generated_utc": "2026-07-30T00:03:24Z",
+    "paper_facing": false
+  },
+  "tripwire": {
+    "consumer": "tests/test_subdla_forward_headline.py::test_two_independent_forward_derivations_agree_bitforbit (and the secondary cross-check in test_band_is_cumulative_difference_not_direct_integral)",
+    "hazard": "The consumer read this file from the WORKING TREE and did `if head is None or xm is None: pytest.skip(...)`. Deleting the file therefore turned two abs=1e-12 assertions into a silent skip -- it would have disarmed the corroboration instead of retiring the artifact.",
+    "resolution": "The head-side values are replaced by COMMITMENTS: sha256(repr(float)) at the exact JSON pointers the consumer read. A commitment is not a value -- it cannot be quoted, plotted or integrated -- so the no-science-values rule holds. The consumer now hashes crossmock_transfer_loa0.json at the matching pointers and compares against these commitments, so the bit-for-bit head-vs-crossmock agreement is still certified with the retired file gone.",
+    "corroborating_artifact": "CDDF_analysis/hbi/crossmock_transfer_loa0.json",
+    "corroborating_artifact_is_committed": false,
+    "commitment_algorithm": "sha256(repr(float(value)).encode('utf-8')).hexdigest()",
+    "equality_of_digests_certifies_bit_equality": "repr() of an IEEE-754 double is round-trip exact, so equality of the two digests is equivalent to bit-for-bit equality of the two floats. The consumer test asserts digest equality UNCONDITIONALLY -- it needs neither the retired file nor the corroborating file to be present.",
+    "commitments": [
+      {
+        "pointer": "/measurement/19.5/dndx/integrated/MAP",
+        "corroborating_pointer": "/self_recovery_baseline_2lpt0/cumulative_map/dndx/19.5",
+        "sha256_of_repr": "48f5da12770f7ff0c17bf7b013a28d2525251007b09e8038bbd4a6c9b5e92d0c",
+        "corroborating_sha256_of_repr": "48f5da12770f7ff0c17bf7b013a28d2525251007b09e8038bbd4a6c9b5e92d0c"
+      },
+      {
+        "pointer": "/measurement/20.3/dndx/integrated/MAP",
+        "corroborating_pointer": "/self_recovery_baseline_2lpt0/cumulative_map/dndx/20.3",
+        "sha256_of_repr": "f77a20a258dee984ba1cc0b679edb678bdee1128eed9f269726ddb95abbc0b29",
+        "corroborating_sha256_of_repr": "f77a20a258dee984ba1cc0b679edb678bdee1128eed9f269726ddb95abbc0b29"
+      },
+      {
+        "pointer": "/measurement/19.5/omega/integrated/MAP",
+        "corroborating_pointer": "/self_recovery_baseline_2lpt0/cumulative_map/omega/19.5",
+        "sha256_of_repr": "37c2c090f18d8d6bcb17dddbee437f704f3d934249e0551c38329f2310b1ed24",
+        "corroborating_sha256_of_repr": "37c2c090f18d8d6bcb17dddbee437f704f3d934249e0551c38329f2310b1ed24"
+      },
+      {
+        "pointer": "/measurement/20.3/omega/integrated/MAP",
+        "corroborating_pointer": "/self_recovery_baseline_2lpt0/cumulative_map/omega/20.3",
+        "sha256_of_repr": "fb03fb855d87a8cd006dd5b9a3fe90882d1f494529107dd7635a024a81ef20cd",
+        "corroborating_sha256_of_repr": "fb03fb855d87a8cd006dd5b9a3fe90882d1f494529107dd7635a024a81ef20cd"
+      }
+    ],
+    "derived_commitments": [
+      {
+        "note": "Secondary consumer check (test_band_is_cumulative_difference_not_direct_integral, step ii): the sub-DLA band plus the DLA tier must equal the retired headline's cum(19.5) in dN/dX, i.e. the band is cum(19.5)-cum(20.3) and not a mislabelled cumulative. Both summands live in the COMMITTED forward artifact, so committing the digest of their sum re-anchors this check on committed data only.",
+        "from_committed_artifact": "CDDF_analysis/hbi/subdla_mock_validation_forward.json",
+        "sum_of_pointers": [
+          "/integrated/loa0/dndx_est_195_203",
+          "/integrated/loa0/dndx_est_203"
+        ],
+        "equals_pointer_in_retired_artifact": "/measurement/19.5/dndx/integrated/MAP",
+        "sha256_of_repr": "48f5da12770f7ff0c17bf7b013a28d2525251007b09e8038bbd4a6c9b5e92d0c"
+      }
+    ]
+  }
+}

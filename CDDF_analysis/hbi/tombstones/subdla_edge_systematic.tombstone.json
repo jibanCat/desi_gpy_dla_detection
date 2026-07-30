@@ -1,0 +1,58 @@
+{
+  "schema": "hbi-artifact-tombstone",
+  "schema_version": 1,
+  "artifact": {
+    "path": "CDDF_analysis/hbi/subdla_edge_systematic.json",
+    "sha256": "b22c729d75409f7174973a54f67a1bc38afce90bb76f52dacabacdfee28a3742",
+    "bytes": 14192,
+    "stamped_code_commit": "d496f42a8de932a58055c4d02523996fdb7d962a-dirty",
+    "stamp_class": "DIRTY",
+    "was_tracked_at_git_head": false,
+    "what_it_was": "Decoupled basis-padding bracket isolating geometric edge-mass recovery at the 19.5 sub-DLA floor: integrated [19.5,20.3) recovery ratios (dN/dX and Omega) and per-0.1-dex ratios for headline floor-19.5 (no pad) versus basis pads at 19.2 and 19.0, plus the padding-band over-recovery and a 5-criterion gate. 2LPT-0 (loa-124) MOCK recovery ratios with an MC band.",
+    "rederive_command_as_stamped": "python CDDF_analysis/diagnostics/subdla/subdla_basis_pad_bracket.py --force --n-mc 150 --seed 0",
+    "read_from_worktree": "/home/mfho/desi_gpy_dla_detection"
+  },
+  "retirement": {
+    "retired_utc": "2026-07-30T00:03:24Z",
+    "retired_under": "PI decision 7 (2026-07-29): retire with stamped tombstone records",
+    "defects": [
+      {
+        "code": "DIRTY_STAMP_NOT_REDERIVABLE",
+        "detail": "metadata.code_commit ends in '-dirty': the artifact was produced by uncommitted modifications to its own diagnostics script. The working tree that produced it was never committed, so `git cat-file`/`git checkout` cannot recover the producing source. This is not a labelling defect that a re-stamp could fix -- the information is gone. Provenance class: worse than ORPHANED, since even the routine text is unrecoverable."
+      },
+      {
+        "code": "B16_LEAKY_TRUTH",
+        "detail": "B16 leaky truth: the truth f(N) numerator was integrated with NO z-mask while the pathlength denominator Delta X WAS masked. The correct criterion is provenance, not units -- anything built from tr['f_truth'] is biased regardless of what it is called, including ell(X), lambda_mfp anchors and per-bin f_tru. The measured leak is 1.0557-1.0606 integrated but 1.0000-1.1818 per fine bin, i.e. NOT a scalar: RE-DERIVE, never rescale. Every recovery ratio here is est/truth with the truth side an f_truth integral, so every Omega ratio is biased."
+      },
+      {
+        "code": "STALE_FP_RESAMPLE_SEMANTICS",
+        "detail": "Its MC band predates the Loa0FP.resample fix; the pre-fix resample manufactured false positives in empty cells, so FP-resampled BANDS (not points) were not safe."
+      }
+    ],
+    "recoverable_from_git": false,
+    "recovery_note": "NOT recoverable. The routine's producing text was uncommitted; the parked note points at lls-subdla-cddf @1a39493 as the *tree state*, but the modifications on top of it were never committed."
+  },
+  "successor_policy": {
+    "regeneration_is_a_new_measurement": true,
+    "statement": "Regeneration post-B16 is a NEW MEASUREMENT with a NEW ARTIFACT IDENTITY, not a provenance repair. Re-running the retired routine today does not restore this artifact's provenance: (i) the producing source is unrecoverable, so the new run is not the same computation, and (ii) the B16 fix changes the estimand itself (the truth reductions the ratios are taken against), so the new number answers a different question. A successor MUST be written to a different path, stamped afresh against its own clean HEAD, and MUST NOT reuse this identity.",
+    "requirements": [
+      "COMMIT the diagnostics routine FIRST, then run, so the stamp is a clean 40-char sha.",
+      "Re-derive the truth reductions under the B16 z-mask; do not rescale.",
+      "Re-run the MC band on the fixed Loa0FP.resample semantics.",
+      "Re-express the pad question under PI decision 4 (pad floor 19.0, molly172 convention) and propagate the measured convention dependence as a SYSTEMATIC.",
+      "Write to a NEW path; the successor answers PI decision 4, not the retired question."
+    ],
+    "must_not_reuse_identity": true,
+    "successor_identity_rule": "A successor MUST be written to a path that is not 'CDDF_analysis/hbi/subdla_edge_systematic.json'. Committing anything at that path is a resurrection and is caught by tests/test_tombstones.py."
+  },
+  "values_policy": {
+    "carries_science_values": false,
+    "note": "This record deliberately holds no dN/dX, Omega, f(N), ell(X), lambda_mfp, tau_eff_LL or recovery ratio. Every number below is an integer or a hex digest. Enforced by tests/test_tombstones.py::test_tombstones_carry_no_science_values."
+  },
+  "metadata": {
+    "code_commit": "c15887242a77c6425a2cf71fd72fc1fb83b90229",
+    "builder": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
+    "generated_utc": "2026-07-30T00:03:24Z",
+    "paper_facing": false
+  }
+}
