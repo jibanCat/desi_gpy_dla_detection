@@ -202,11 +202,14 @@ Geometry of this table: the **5×4×2** calibration pack — `by_z` has **4 rows
 
 Read that table twice. Under a null in which the forward model is *exactly
 right*, **on this 5×4×2 pack (four fine-z rows)**,
-`ratio_span_by_z_max = 0.10` refuses **34% of runs** while
-`ratio_span_by_snr_max = 0.15` refuses **0.02%** — the two numbers, presented as
+`ratio_span_by_z_max = 0.10` refuses a fraction **0.3434** of runs while
+`ratio_span_by_snr_max = 0.15` refuses **0.0003** — the two numbers, presented as
 a matched pair with the SNR one "wider because the strata are noisier", differ in
 false-alarm rate by three orders of magnitude, and in the *opposite*
-direction to the stated rationale. This is what an uncalibrated tolerance inside
+direction to the stated rationale. (An earlier draft of this sentence rendered
+the second as "0.02%". `0.0003` is 0.03%. Percentages are not used here for
+exactly that reason: the artifact stores fractions, and a hand-converted second
+representation is a number nobody re-derives.) This is what an uncalibrated tolerance inside
 a production fail-closed gate looks like.
 
 **Do not carry the 34% out of this section.** It is the four-row figure; §4.1
