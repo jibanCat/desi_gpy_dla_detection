@@ -623,8 +623,18 @@ def test_the_power_curve_compares_BOTH_guards_on_the_SAME_injected_tilt(
         assert p["z_threshold"] == 5.0
         # the d = 0 row IS the false-alarm rate, so both live on one curve
         assert p["curve"][0]["tilt_peak_to_peak"] == 0.0
-        assert p["false_alarm_z_arm"] == 0.0
+        # NOT ``== 0.0``: this is a Monte-Carlo rate and exact equality was a
+        # coincidence of this fixture's n_draws.  MEASURED: 0.0 at n_draws =
+        # 2000 (the fixture) but 0.00025 at 4000 (the committed artifact's
+        # power block), so the strict form would have failed the moment the
+        # artifact was regenerated at production draw counts.  The claim being
+        # made is "inert at the null", and 2e-3 states it without pinning an
+        # accident; the discrimination against the span arm's ~0.085 below is
+        # a factor >40 either way, so no power is given up.
+        assert p["false_alarm_z_arm"] <= 2e-3, p["false_alarm_z_arm"]
         assert 0.03 < p["false_alarm_span_arm"] < 0.15
+        assert p["false_alarm_span_arm"] > 20 * max(p["false_alarm_z_arm"],
+                                                    1e-4)
         # power rises with the injected tilt for BOTH arms (not a flat curve)
         assert p["curve"][-1]["p_z_arm_fires"] > 0.9
         assert p["curve"][-1]["p_span_arm_fires"] > 0.9

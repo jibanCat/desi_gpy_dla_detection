@@ -662,6 +662,156 @@ RATIO_SPAN_NULL_GRID = dict(
     n_molly_cells=3,
 )
 
+#: 🔴 THE FALSE-ALARM RATE OF A RANGE STATISTIC DOES NOT TRANSFER BETWEEN GRIDS,
+#: which the spec's own §1.1 item 1 predicted and which the first calibration
+#: then ignored: 0.3434 for ``ratio_span_by_z_max = 0.10`` was measured on the
+#: 5x4x2 pack above -- FOUR fine-z rows.  Production is FIFTEEN.  Every quote of
+#: a false-alarm rate must name its geometry, so the calibration now runs on all
+#: three and the artifact reports all three.
+RATIO_SPAN_NULL_GEOMETRIES = {
+    # the pack the spec's §4 table was measured on: C x Kf x S = 5 x 4 x 2
+    "calib_5x4x2": dict(RATIO_SPAN_NULL_GRID),
+    # production fine-z and SNR axes, reporting window [19.9, 21.6): 17 x 15 x 8
+    "prod_17x15x8": dict(
+        nhat_edges=np.round(np.arange(19.9, 21.6 + 1e-9, 0.1), 10),
+        zf_edges=np.round(np.arange(2.0, 3.5 + 1e-9, 0.1), 10),
+        zc_edges=np.array([2.0, 2.5, 3.0, 3.5]),
+        snr_edges=np.array([0., 1., 2., 3., 4., 5., 6., 7., np.inf]),
+        n_molly_cells=6),
+    # the full REAL grid (pack.REAL_* edges): 29 x 15 x 8
+    "prod_29x15x8": dict(
+        nhat_edges=np.round(np.arange(19.5, 22.4 + 1e-9, 0.1), 10),
+        zf_edges=np.round(np.arange(2.0, 3.5 + 1e-9, 0.1), 10),
+        zc_edges=np.array([2.0, 2.5, 3.0, 3.5]),
+        snr_edges=np.array([0., 1., 2., 3., 4., 5., 6., 7., np.inf]),
+        n_molly_cells=6),
+}
+
+#: the injected peak-to-peak fractional z-tilt values of the power curve
+RATIO_SPAN_POWER_TILTS = (0.0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.15, 0.20,
+                          0.30, 0.50)
+
+_SPAN_ARM_AXES = {"by_z": (0, 2), "by_snr": (0, 1)}
+
+
+def _arm_rows_from_obs(mu_m, obs_star, arm):
+    """Marginalised (mu_r, obs*_r) for one arm; ``obs_star`` may carry a leading
+    draw axis.  Marginalises EXACTLY as ``ratio_tables`` does."""
+    ax = _SPAN_ARM_AXES[arm]
+    mu_r = mu_m.sum(axis=ax)
+    o_ax = tuple(a + 1 for a in ax) if obs_star.ndim == mu_m.ndim + 1 else ax
+    return mu_r, obs_star.sum(axis=o_ax)
+
+
+def _span_and_zmax(mu_r, obs_r):
+    """``(span, max|z|)`` per draw, on the rows with ``obs_r > 0``."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(obs_r > 0, mu_r[None, :] / obs_r, np.nan)
+    fin = np.isfinite(ratio)
+    hi = np.max(np.where(fin, ratio, -np.inf), axis=1)
+    lo = np.min(np.where(fin, ratio, np.inf), axis=1)
+    span = np.where(fin.sum(axis=1) >= 2, hi - lo, 0.0)
+    z = np.where(obs_r > 0,
+                 (obs_r - mu_r[None, :]) / np.sqrt(np.maximum(mu_r[None, :],
+                                                              1e-12)),
+                 0.0)
+    return span, np.abs(z).max(axis=1)
+
+
+def ratio_span_power(pack, *, tilts=RATIO_SPAN_POWER_TILTS, n_draws=2000,
+                     seed=0, resp_clamp="both", res=None, span_max=None,
+                     z_max=5.0):
+    """The DETECTION CURVE the spec's §3 step 6 requires -- for BOTH guards.
+
+    This is the measurement the "should the span arm stay disarmed?" question
+    turns on, and it was never made.  The declined ``ratio_span_by_z`` arm and
+    the still-armed ``z_zbin_max`` arm are exposed to the SAME injected
+    systematic, so their sensitivities are directly comparable:
+
+        obs*_{c,k,s} ~ Poisson( mu_{c,k,s} * (1 + d * (z_k - z_bar)/Delta_z) )
+
+    with ``z_k`` the fine-z bin centres and ``Delta_z = z_max - z_min``, so
+    ``d`` is the PEAK-TO-PEAK fractional z-tilt of the data relative to the
+    forward model.  The model prediction stays the UNTILTED ``mu`` -- exactly
+    the situation the arms exist to catch.  ``d = 0`` reproduces the null, so
+    the first row of the curve IS the false-alarm rate and the two are measured
+    in one place.
+
+    Reports, per arm, the fraction of replicates exceeding the threshold at
+    each ``d``, and the smallest ``d`` detected at 50% and at 90% (linear
+    interpolation between the bracketing grid points; ``None`` if the curve
+    never reaches that level on the grid).
+
+    SAME OMISSIONS AS ``ratio_span_null`` (nuisance, response-coefficient and
+    f_truth Monte-Carlo uncertainty; count overdispersion), so these are UPPER
+    bounds on power as well as lower bounds on the null width.
+    """
+    from CDDF_analysis.hbi_mcmc.run_posterior import GATE
+    if span_max is None:
+        span_max = float(GATE["ratio_span_by_z_max"])
+    if res is None:
+        res = selftest(pack, resp_clamp=resp_clamp)
+    mu = np.asarray(res["mu"], float)
+    dxpos = np.asarray(pack.dX, float) > 0
+    mu_m = np.where(np.broadcast_to(dxpos[None, :, :], mu.shape), mu, 0.0)
+
+    zf = np.asarray(pack.zf_edges, float)
+    zk = 0.5 * (zf[:-1] + zf[1:])
+    dz = float(zk[-1] - zk[0]) if len(zk) > 1 else 1.0
+    shape = (zk - zk.mean()) / (dz if dz > 0 else 1.0)          # (Kf,)
+
+    mu_r, _ = _arm_rows_from_obs(mu_m, mu_m, "by_z")
+    rows = {"span_threshold": float(span_max), "z_threshold": float(z_max),
+            "n_rows_by_z": int(mu_r.size), "n_draws": int(n_draws),
+            "seed": int(seed), "tilts": [float(d) for d in tilts],
+            "curve": []}
+    rng = np.random.default_rng(seed)
+    for d in tilts:
+        factor = 1.0 + float(d) * shape                          # (Kf,)
+        mu_tilt = mu_m * factor[None, :, None]
+        obs_star = rng.poisson(
+            np.broadcast_to(mu_tilt, (n_draws,) + mu_tilt.shape))
+        mu_row, obs_row = _arm_rows_from_obs(mu_m, obs_star, "by_z")
+        span, zmax = _span_and_zmax(mu_row, obs_row)
+        rows["curve"].append({
+            "tilt_peak_to_peak": float(d),
+            "p_span_arm_fires": float((span > span_max).mean()),
+            "p_z_arm_fires": float((zmax > z_max).mean()),
+            "median_span": float(np.median(span)),
+            "median_zmax": float(np.median(zmax)),
+        })
+
+    def _d_at(level, key):
+        prev = None
+        for row in rows["curve"]:
+            p, d = row[key], row["tilt_peak_to_peak"]
+            if p >= level:
+                if prev is None or prev[1] == p:
+                    return float(d)
+                d0, p0 = prev
+                return float(d0 + (level - p0) * (d - d0) / (p - p0))
+            prev = (d, p)
+        return None
+
+    rows["span_arm_d50"] = _d_at(0.5, "p_span_arm_fires")
+    rows["span_arm_d90"] = _d_at(0.9, "p_span_arm_fires")
+    rows["z_arm_d50"] = _d_at(0.5, "p_z_arm_fires")
+    rows["z_arm_d90"] = _d_at(0.9, "p_z_arm_fires")
+    rows["false_alarm_span_arm"] = rows["curve"][0]["p_span_arm_fires"] \
+        if rows["curve"] and rows["curve"][0]["tilt_peak_to_peak"] == 0.0 \
+        else None
+    rows["false_alarm_z_arm"] = rows["curve"][0]["p_z_arm_fires"] \
+        if rows["curve"] and rows["curve"][0]["tilt_peak_to_peak"] == 0.0 \
+        else None
+    rows["note"] = (
+        "d is the PEAK-TO-PEAK fractional z-tilt of the DATA relative to the "
+        "forward model. The d=0 row is the false-alarm rate. Same omissions "
+        "as ratio_span_null (see its docstring), so power is an UPPER bound. "
+        "The span arm's threshold is the DECLINED ratio_span_by_z_max, which "
+        "does NOT gate; the z arm's is z_zbin_max, which DOES gate although "
+        "nobody ratified it (see ratification.py).")
+    return rows
+
 
 def ratio_span_null_report(*, n_draws=20000, seed=1, pack=None):
     """The committed routine behind ``ratio_span_null_calibration.json``.
@@ -706,25 +856,117 @@ def ratio_span_null_report(*, n_draws=20000, seed=1, pack=None):
         nul["arms"][arm]["measured_false_alarm_rate"] = float((span > thr).mean())
         nul["arms"][arm]["ratification_status"] = _RAT.record(key)["status"]
 
+    # ------------------------------------------------------------------
+    # 🔴 THE SAME NULL ON PRODUCTION-SCALE GEOMETRIES.
+    # A range statistic's null width depends on the ROW COUNT and the per-row
+    # exposure (spec §1.1 item 1), so a false-alarm rate measured on a 4-row
+    # by_z arm says nothing about the 15-row production arm.  The v1 artifact
+    # quoted 0.3434 with no geometry attached and the spec then said "a third
+    # of perfectly correct forward models" unqualified.  Measured here.
+    # ------------------------------------------------------------------
+    geoms, power = {}, {}
+    for gname, grid in sorted(RATIO_SPAN_NULL_GEOMETRIES.items()):
+        n_kk = int(len(np.asarray(grid["zc_edges"], float)) - 1)
+        gpack = synthetic_pack(0, **grid, fp_frac=0.15,
+                               t_true=np.full(n_kk, 0.0))
+        gres = selftest(gpack, resp_clamp="both")
+        gnul = ratio_span_null(gpack, n_draws=n_draws, seed=seed, res=gres)
+        gmu = np.asarray(gres["mu"], float)
+        gdx = np.asarray(gpack.dX, float) > 0
+        gmu_m = np.where(np.broadcast_to(gdx[None, :, :], gmu.shape), gmu, 0.0)
+        grng = np.random.default_rng(seed)
+        gobs = grng.poisson(np.broadcast_to(gmu_m, (n_draws,) + gmu_m.shape))
+        for arm, key in (("by_z", "ratio_span_by_z_max"),
+                         ("by_snr", "ratio_span_by_snr_max")):
+            mu_r, obs_r = _arm_rows_from_obs(gmu_m, gobs, arm)
+            span, _ = _span_and_zmax(mu_r, obs_r)
+            thr = float(GATE[key])
+            gnul["arms"][arm]["proposed_threshold"] = thr
+            gnul["arms"][arm]["proposed_threshold_name"] = key
+            gnul["arms"][arm]["measured_false_alarm_rate"] = float(
+                (span > thr).mean())
+            gnul["arms"][arm]["ratification_status"] = _RAT.record(key)["status"]
+        geoms[gname] = {
+            "grid_shape": {"n_nhat": int(gpack.n_c), "n_zf": int(gpack.n_k),
+                           "n_snr": int(gpack.n_s)},
+            "total_mu": float(gmu_m.sum()),
+            "arms": {a: {k: v for k, v in gnul["arms"][a].items()
+                         if k != "span_draws_summary"}
+                     for a in ("by_z", "by_snr")},
+        }
+        # the power curve (spec §3 step 6) -- both guards, same injected tilt.
+        # TWICE: at the DECLINED 0.10, and at a CALIBRATED threshold read off
+        # THIS geometry's own null at the spec's Bonferroni alpha = 0.005
+        # (q99.5), which is the only span threshold the spec would let anyone
+        # propose.  Without the second one there is no actionable option A.
+        n_pw = min(n_draws, 4000)
+        power[gname] = ratio_span_power(gpack, n_draws=n_pw, seed=seed,
+                                        res=gres)
+        thr_cal = float(gnul["arms"]["by_z"]["quantiles"]["0.995"])
+        pw_cal = ratio_span_power(gpack, n_draws=n_pw, seed=seed, res=gres,
+                                  span_max=thr_cal)
+        power[gname]["calibrated"] = {
+            "span_threshold": thr_cal,
+            "threshold_origin": ("this geometry's own null q99.5 = the spec's "
+                                 "Bonferroni alpha=0.005 per arm (§3 step 3/4)"),
+            "false_alarm_span_arm": pw_cal["false_alarm_span_arm"],
+            "span_arm_d50": pw_cal["span_arm_d50"],
+            "span_arm_d90": pw_cal["span_arm_d90"],
+            "curve": pw_cal["curve"],
+            "note": ("NOT PROPOSED FOR RATIFICATION -- a synthetic pack, and "
+                     "it inherits every omission in the null (spec §2.1). It "
+                     "exists so option A is a measured option rather than a "
+                     "suggestion."),
+        }
+
+    far = {g: geoms[g]["arms"]["by_z"]["measured_false_alarm_rate"]
+           for g in geoms}
+
     return {
-        "schema": "ratio_span_null_calibration/v1",
+        "schema": "ratio_span_null_calibration/v2",
         "null": nul,
         "pack": {"kind": "synthetic_pack", "seed": 0, "fp_frac": 0.15,
                  "t_true": [0.2, -0.15],
                  "grid": {k: (v.tolist() if isinstance(v, np.ndarray) else v)
                           for k, v in RATIO_SPAN_NULL_GRID.items()},
+                 "grid_shape": {"n_nhat": int(pack.n_c), "n_zf": int(pack.n_k),
+                                "n_snr": int(pack.n_s)},
                  "total_mu": float(mu_m.sum()),
                  "total_obs": float(np.where(
                      np.broadcast_to(dxpos[None, :, :], mu.shape),
                      res["counts"], 0).sum())},
+        "geometries": geoms,
+        "power": power,
+        "geometry_correction": (
+            "🔴 CORRECTION to schema v1 and to the two commit messages of "
+            "dbda6a4 / 88f2ecb: the measured false-alarm rate of "
+            "ratio_span_by_z_max = 0.10 was quoted as 0.3434 ('refuses 34% of "
+            "perfectly correct forward models') with NO GEOMETRY ATTACHED. "
+            "That number is specific to the 5x4x2 calibration pack, whose "
+            "by_z arm has FOUR rows. On production-scale geometries the SAME "
+            "measurement gives by_z FAR = "
+            + ", ".join(f"{g}: {far[g]:.4f}" for g in sorted(far))
+            + ". Every quote of a span false-alarm rate must name its grid. "
+              "The spec's own §1.1 item 1 predicted this and the v1 "
+              "calibration ignored it."),
         "verdict": (
             "NO THRESHOLD IS PROPOSED FOR RATIFICATION. This artifact is the "
             "prospective-calibration EVIDENCE that the two declined "
-            "thresholds are indefensible as a pair: their measured "
-            "false-alarm rates under a null in which the forward model is "
-            "exactly right differ by orders of magnitude, in the opposite "
-            "direction to the stated rationale. Procedure, omissions and "
-            "options: docs/ratio_span_calibration_spec.md."),
+            "thresholds are indefensible as a pair: on EVERY geometry "
+            "measured here their false-alarm rates under a null in which the "
+            "forward model is exactly right differ by orders of magnitude, in "
+            "the opposite direction to the stated rationale (by_snr is inert "
+            "at 0.0000 on both production geometries while by_z fires at "
+            "~0.08). The pair-mismatch conclusion SURVIVES at production "
+            "scale; the MAGNITUDE quoted for by_z does not -- see "
+            "geometry_correction. Whether DISARMING the span arms leaves the "
+            "z-marginal tilt defect unguarded is a PI TRADEOFF, not resolved "
+            "here: the measured detection curves for the disarmed span arm "
+            "and the still-armed z_zbin_max arm are in `power`, and the "
+            "decision is recorded open in "
+            "ratification.OPEN_PI_DECISIONS['span_arms_disarmed']. "
+            "Procedure, omissions and options: "
+            "docs/ratio_span_calibration_spec.md."),
         "metadata": {
             "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",
             "entry_point": "ratio_span_null_report / --ratio-span-null",

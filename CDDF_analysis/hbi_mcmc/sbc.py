@@ -98,7 +98,14 @@ def _reported_from_f(f, pack):
 #
 # WHAT IS AND IS NOT ATTEMPTED HERE.  Making a matched SBC CHEAP is out of
 # scope (O(100) production-scale fits; see ``matched_sbc_kwargs`` for the
-# cost statement).  Making an UNMATCHED one REFUSE TO CERTIFY is what is
+# cost statement).  🔴 But cost was NOT the only blocker and this comment used
+# to imply it was: ``grid.ntrue_edges`` is a MATCH_KEY, ``matched_sbc_kwargs``
+# omitted it, and ``synthetic_pack`` -- which ``sbc_run`` builds its template
+# pack with -- had no ``ntrue_edges`` parameter at all.  For the PADDED basis
+# decisions 3 and 4 adopted (``n_pad_bins > 0``) a matched SBC was therefore
+# IMPOSSIBLE AT ANY PRICE, i.e. the ratified requirement was UNSATISFIABLE for
+# the adopted geometry.  Fixed 2026-07-29 (both halves); what remains is cost.
+# Making an UNMATCHED one REFUSE TO CERTIFY is what is
 # implemented, and it is the half that closes the hole: after this change the
 # existing reduced SBC is still run, still reported and still diagnostic, but
 # ``coverage_sbc.sbc_configuration_matches_run`` is False, so the artifact is
@@ -308,8 +315,23 @@ def matched_sbc_kwargs(pack, cfg, *, n_ranks=None, resp_clamp=None):
     of them.  On the 29 x 15 x 8 pack at 4 x (1500 + 1000) that is O(100) x
     ~16 h = O(1600) CPU-h, which is above this project's 500 CPU-h sign-off
     threshold and is a PI decision, not a script.
+
+    🔴 COST WAS NOT THE ONLY BLOCKER, and this docstring used to say it was.
+    ``grid.ntrue_edges`` is a ``MATCH_KEYS`` entry, this function OMITTED it,
+    and ``synthetic_pack`` -- which ``sbc_run`` builds its template pack with
+    -- had no ``ntrue_edges`` parameter and hardcoded
+    ``ntrue_edges = nhat_edges.copy()``.  For any pack with ``n_pad_bins > 0``,
+    i.e. the padded basis decisions 3 and 4 adopted, a matched SBC was
+    therefore IMPOSSIBLE AT ANY PRICE: a CAPABILITY gap, not a budget one.  The
+    unpadded case hid it, because there ``ntrue_edges == nhat_edges`` is
+    reproduced by accident.  Both halves are fixed (2026-07-29): the latent
+    basis is emitted below and ``synthetic_pack`` accepts it.  What remains is
+    genuinely cost.
     """
     grid = dict(nhat_edges=np.asarray(pack.nhat_edges, float),
+                # the LATENT basis -- a MATCH_KEY, and NOT implied by nhat_edges
+                # once the basis is padded (decisions 3 and 4)
+                ntrue_edges=np.asarray(pack.ntrue_edges, float),
                 zf_edges=np.asarray(pack.zf_edges, float),
                 zc_edges=np.asarray(pack.zc_edges, float),
                 snr_edges=np.asarray(pack.snr_edges, float),

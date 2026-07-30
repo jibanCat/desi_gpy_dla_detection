@@ -630,10 +630,36 @@ def small_test_grid() -> dict:
     )
 
 
+def _validate_basis_pad(nhat_edges, ntrue_edges):
+    """The schema-v1.1 basis-pad rule, enforced at CONSTRUCTION.
+
+    ``ntrue_edges`` may only EXTEND ``nhat_edges`` DOWNWARD on the same uniform
+    step, sharing the top edge; ``nhat_edges`` must be an exact TAIL subset.
+    Identical to the rule ``validate_pack`` enforces -- checked here too so a
+    caller gets the error at the point of the mistake rather than deep inside
+    the generator's array arithmetic.
+    """
+    ne = np.asarray(ntrue_edges, float)
+    ce = np.asarray(nhat_edges, float)
+    if np.array_equal(ne, ce):
+        return
+    _check_edges_uniform("ntrue_edges", ne, _N_STEP)
+    if len(ne) < len(ce):
+        _fail("ntrue_edges: the true-N basis may only EXTEND the observed grid "
+              f"downward, never shrink it (got {len(ne)-1} true bins vs "
+              f"{len(ce)-1} observed bins)")
+    if not np.allclose(ne[len(ne) - len(ce):], ce, atol=1e-8):
+        _fail("ntrue_edges: nhat_edges must be an exact TAIL subset of "
+              "ntrue_edges (same step, same top edge) — the basis pad extends "
+              f"DOWN only. got ntrue tail {ne[len(ne)-len(ce):]}, "
+              f"nhat {ce}")
+
+
 def synthetic_pack(
     seed=0,
     *,
     nhat_edges=None,
+    ntrue_edges=None,
     zf_edges=None,
     zc_edges=None,
     snr_edges=None,
@@ -655,6 +681,15 @@ def synthetic_pack(
     t_sigma=None,
 ) -> ModelAPack:
     """Generate a fully schema-conformant pack from a KNOWN synthetic truth.
+
+    ``ntrue_edges`` (schema v1.1 BASIS PAD, decisions 3 and 4) defaults to
+    ``nhat_edges``, i.e. no pad.  Pass it to build a pack whose LATENT true-N
+    basis extends BELOW the reporting floor: same uniform 0.1-dex step, same
+    top edge, ``nhat_edges`` an exact tail subset, so ``n_pad_bins > 0``.  The
+    molly and the response covariate range follow the padded basis
+    automatically.  Padding is what makes a MATCHED SBC possible for the
+    production geometry -- ``grid.ntrue_edges`` is a ``sbc.MATCH_KEYS`` entry
+    and ``sbc.sbc_run`` builds its template pack here.
 
     Truth pieces (all recorded in ``pack.truth``):
       * f_true(b, k): power law in N (slope ``f_slope`` per dex, curvature
@@ -691,7 +726,22 @@ def synthetic_pack(
     zf_edges = REAL_ZF_EDGES.copy() if zf_edges is None else np.asarray(zf_edges, float)
     zc_edges = REAL_ZC_EDGES.copy() if zc_edges is None else np.asarray(zc_edges, float)
     snr_edges = REAL_SNR_EDGES.copy() if snr_edges is None else np.asarray(snr_edges, float)
-    ntrue_edges = nhat_edges.copy()
+
+    # --- the LATENT basis (schema v1.1 basis pad, decisions 3 and 4) --------
+    # 🔴 This used to be hardcoded ``ntrue_edges = nhat_edges.copy()``, i.e. no
+    # padded pack could be GENERATED at all -- the only padded packs in the
+    # repository were hand-built ``SimpleNamespace``s and the
+    # ``forward_selftest.extend_pack_truth`` diagnostic, which drops
+    # ``truth_counts`` and never validates.  Since ``grid.ntrue_edges`` is a
+    # matched-SBC MATCH_KEY (``sbc.MATCH_KEYS``) and ``sbc.sbc_run`` builds its
+    # template pack through THIS function, the ratified matched-configuration
+    # SBC requirement was UNSATISFIABLE AT ANY PRICE for a padded pack.  It is
+    # constructible now.
+    if ntrue_edges is None:
+        ntrue_edges = nhat_edges.copy()
+    else:
+        ntrue_edges = np.asarray(ntrue_edges, float)
+        _validate_basis_pad(nhat_edges, ntrue_edges)
 
     C = len(nhat_edges) - 1
     B = len(ntrue_edges) - 1

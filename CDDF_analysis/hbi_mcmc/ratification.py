@@ -302,8 +302,12 @@ UNRATIFIED = {
              "and required prospective calibration. 🔴 ITS MEASURED "
              "FALSE-ALARM RATE IS GRID-DEPENDENT AND MUST NEVER BE QUOTED "
              "WITHOUT ITS GRID: 0.3434 on the 5x4x2 calibration pack (4 z "
-             "rows), but 0.0894 on a 17x15x8 and 0.0819 on the 29x15x8 "
-             "production geometry (15 z rows). See "
+             "rows), but 0.0893 on a 17x15x8 and 0.0819 on the 29x15x8 "
+             "production geometry (15 z rows) -- all three at n_draws=20000, "
+             "seed=1, which is the only reason those digits are quotable. "
+             "The AUTHORITATIVE copy of every one of these numbers is "
+             "CDDF_analysis/hbi_mcmc/ratio_span_null_calibration.json; the "
+             "prose here is a pointer and drifts if it is trusted. See "
              "docs/ratio_span_calibration_spec.md §4 and §4.1.",
         spec=_SPEC),
     "ratio_span_by_snr_max": _u(
@@ -376,11 +380,23 @@ OPEN_PI_DECISIONS = {
         "measured_tradeoff": (
             "the 0.10 threshold's 34% false-alarm rate was measured on the "
             "5x4x2 calibration pack (4 z rows) ONLY. At production geometry "
-            "it is 0.0894 (17x15x8) / 0.0819 (29x15x8). Whether the "
-            "still-armed z_zbin_max covers what the disarmed span arm would "
-            "have caught is measured in docs/ratio_span_calibration_spec.md "
-            "§4.1 (detection curves for both arms on the same injected "
-            "z-tilt)."),
+            "it is 0.0893 (17x15x8) / 0.0819 (29x15x8). AND THE COST OF "
+            "DISARMING IS NOW MEASURED, not asserted: exposed to the same "
+            "injected peak-to-peak z-tilt d on the 17x15x8 grid, the span arm "
+            "reaches 90% detection at d = 0.098 and the still-armed "
+            "z_zbin_max only at d = 0.197. Disarming the span arms therefore "
+            "roughly DOUBLES the smallest z-tilt that any armed gate catches; "
+            "z_zbin_max does NOT cover what the span arm covered. A "
+            "threshold calibrated on the production null instead (0.1292, "
+            "measured false-alarm rate 0.0073) reaches 90% at d = 0.142, "
+            "i.e. option A recovers most of the lost power at a defensible "
+            "false-alarm rate -- which is what makes option A a measured "
+            "option rather than a suggestion. Curves and full table: "
+            "docs/ratio_span_calibration_spec.md §4.1 and the `power` block "
+            "of ratio_span_null_calibration.json (n_draws=20000/4000, "
+            "seed=1). THIS DOES NOT DECIDE THE QUESTION: the null is a lower "
+            "bound on the true null width (spec §2.1), so every false-alarm "
+            "rate here is optimistic, and all of it is synthetic."),
     },
 }
 

@@ -779,3 +779,147 @@ def test_a_non_bool_check_survives_assembly_into_the_artifact():
                                        "incomplete": []}})
     assert ev["gate"]["stampable"] is False
     assert ev["gate"]["paper_facing"] is False
+
+
+# ==========================================================================
+# 11. THE SOLE PRODUCTION WIRING OF THE RATIFIED MATCHED-SBC REQUIREMENT
+#
+# Decision 8 ratified matched-configuration SBC.  Its REFUSING half (an
+# unmatched or absent configuration does not certify) was well covered.  Its
+# ENABLING half -- ``run_evidence`` actually BUILDING the run configuration and
+# handing it to ``sbc_block`` -- was pinned by nothing: mutating
+#
+#     run_config = _sbc_cfgmod.run_configuration(pack, cfg)   ->   None
+#
+# in the ``--mode fit`` branch left the whole suite green, which means the
+# ratified requirement could be silently disabled in production while every
+# test still passed and every artifact still claimed the ratification.
+# ==========================================================================
+
+def _cheap_fit_env(monkeypatch, captured):
+    """Stub everything expensive in ``--mode fit`` EXCEPT the wiring under test.
+
+    Deliberately does NOT stub ``sbc.run_configuration``: that is the call the
+    mutation removes, so it must run for real.
+    """
+    from CDDF_analysis.hbi_mcmc import model_a as MA
+    from CDDF_analysis.hbi_mcmc import sbc as _sbc
+
+    monkeypatch.setattr(MA, "run_model_a",
+                        lambda pack, cfg: (object(),
+                                           {"diagnostics": {}, "farr_ratio": 9.9}))
+    monkeypatch.setattr(EV, "posterior_run_from_mcmc",
+                        lambda *a, **k: {"stub_run": True})
+    for name in ("convergence_block", "ppc_block"):
+        monkeypatch.setattr(EV, name,
+                            lambda *a, **k: {"checks": {"x_ok": True},
+                                             "incomplete": []})
+    for name in ("closure_block", "ztilt_block"):
+        monkeypatch.setattr(EV, name,
+                            lambda *a, **k: {"checks": {"x_ok": True},
+                                             "incomplete": []})
+
+    def _spy_sbc_block(n_sims, **kw):
+        captured.append(kw.get("run_config", "__NOT_PASSED__"))
+        return {"checks": {"sbc_uniform_ok": True,
+                           "sbc_configuration_matches_run": True},
+                "incomplete": [],
+                "configuration_match": {"matched": True, "mismatches": []}}
+    monkeypatch.setattr(_sbc, "sbc_block", _spy_sbc_block)
+
+
+def _smoke_pack(seed):
+    """The pack ``run_evidence --synthetic-grid`` builds, rebuilt here."""
+    import numpy as _np
+    from CDDF_analysis.hbi_mcmc.pack import synthetic_pack
+    return synthetic_pack(
+        seed,
+        nhat_edges=_np.round(_np.arange(19.9, 20.4 + 1e-9, 0.1), 10),
+        zf_edges=_np.round(_np.arange(2.0, 2.4 + 1e-9, 0.1), 10),
+        zc_edges=_np.array([2.0, 2.2, 2.4]),
+        snr_edges=_np.array([0.0, 3.0, _np.inf]),
+        n_molly_cells=3, fp_frac=0.15,
+        t_true=_np.array([0.2, -0.15]))
+
+
+def test_run_evidence_fit_HANDS_the_sbc_block_the_real_run_configuration(
+        tmp_path, monkeypatch):
+    """🔴 THE UNPINNED HALF.  ``run_config = ... -> None`` at
+    ``run_evidence.py`` (the ``--mode fit`` branch) left 302 tests passing.
+    This asserts the configuration is (a) passed at all, (b) NOT None, and
+    (c) EQUAL, coordinate for coordinate, to ``sbc.run_configuration`` of the
+    pack and the ModelAConfig the CLI actually built."""
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+    from CDDF_analysis.hbi_mcmc import sbc as SBC
+    from CDDF_analysis.hbi_mcmc.model_a import ModelAConfig
+
+    captured = []
+    _cheap_fit_env(monkeypatch, captured)
+    out = tmp_path / "ev_fit.json"
+    ev = RE.main(["--mode", "fit", "--synthetic-grid", "--out", str(out),
+                  "--warmup", "3", "--samples", "5", "--chains", "2",
+                  "--seed", "0", "--sbc-sims", "2"])
+
+    assert captured, "sbc_block was never called"
+    got = captured[0]
+    assert got != "__NOT_PASSED__", "run_config was not passed to sbc_block"
+    assert got is not None, (
+        "run_evidence handed the SBC block NO run configuration: the ratified "
+        "matched-configuration SBC requirement is disabled in production")
+    assert isinstance(got, dict)
+
+    expect = SBC.run_configuration(
+        _smoke_pack(0),
+        ModelAConfig(num_warmup=3, num_samples=5, num_chains=2, seed=0,
+                     resp_clamp="both", enforce_farr_gate=True))
+    for key in SBC.MATCH_KEYS:
+        assert SBC._flat(got, key) == SBC._flat(expect, key), key
+    # the SAMPLER coordinates come from the CLI, not from a module default
+    assert got["sampler"]["num_warmup"] == 3
+    assert got["sampler"]["num_samples"] == 5
+    assert got["sampler"]["num_chains"] == 2
+    # ... and the artifact records the resulting verdict
+    assert ev["provenance"]["sbc_configuration_match"] is True
+
+
+def test_the_handed_configuration_TRACKS_the_cli_arguments(tmp_path,
+                                                           monkeypatch):
+    """DISCRIMINATION.  A hardcoded blob, or a configuration built from
+    defaults instead of from ``cfg``, would satisfy the test above on one
+    invocation.  Two invocations that differ only in ``--chains`` must produce
+    two DIFFERENT configurations, and each must be the right one."""
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+
+    seen = {}
+    for chains in (1, 4):
+        captured = []
+        _cheap_fit_env(monkeypatch, captured)
+        RE.main(["--mode", "fit", "--synthetic-grid",
+                 "--out", str(tmp_path / f"ev_{chains}.json"),
+                 "--warmup", "3", "--samples", "5", "--chains", str(chains),
+                 "--sbc-sims", "2"])
+        seen[chains] = captured[0]
+    assert seen[1] != seen[4]
+    assert seen[1]["sampler"]["num_chains"] == 1
+    assert seen[4]["sampler"]["num_chains"] == 4
+
+
+def test_mode_artifact_still_hands_None_which_is_the_fail_closed_answer(
+        tmp_path, monkeypatch):
+    """THE CONTROL, so the test above cannot be satisfied by "always pass
+    something".  ``--mode artifact`` genuinely CANNOT reconstruct the prior
+    scales from a saved result, so it must pass None and the block must refuse
+    -- asserting non-None unconditionally would be wrong."""
+    import json as _json
+    import numpy as _np
+    from CDDF_analysis.hbi_mcmc import run_evidence as RE
+
+    captured = []
+    _cheap_fit_env(monkeypatch, captured)
+    monkeypatch.setattr(EV, "posterior_run_from_artifact",
+                        lambda *a, **k: {"stub_run": True})
+    res = tmp_path / "result.json"
+    res.write_text(_json.dumps({"provenance": {"pack": "modelA_pack_2lpt0.npz"}}))
+    RE.main(["--mode", "artifact", "--synthetic-grid", "--result", str(res),
+             "--out", str(tmp_path / "ev_art.json"), "--sbc-sims", "2"])
+    assert captured and captured[0] is None, captured
