@@ -13,7 +13,7 @@
     "read_from_worktree": "/home/mfho/desi_gpy_dla_detection"
   },
   "retirement": {
-    "retired_utc": "2026-07-30T00:03:24Z",
+    "retired_utc": "2026-07-30T00:18:54Z",
     "retired_under": "PI decision 7 (2026-07-29): retire with stamped tombstone records",
     "defects": [
       {
@@ -45,9 +45,11 @@
     "note": "This record deliberately holds no dN/dX, Omega, f(N), ell(X), lambda_mfp, tau_eff_LL or recovery ratio. Every number below is an integer or a hex digest. Enforced by tests/test_tombstones.py::test_tombstones_carry_no_science_values."
   },
   "metadata": {
-    "code_commit": "c15887242a77c6425a2cf71fd72fc1fb83b90229",
+    "code_commit": "6c9aafc6cfef2c8683de01985110cb5fc62fa45f",
+    "routine": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
+    "rederive": "python CDDF_analysis/hbi/tombstones/build_tombstones.py --force --source-worktree /home/mfho/desi_gpy_dla_detection",
     "builder": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
-    "generated_utc": "2026-07-30T00:03:24Z",
+    "generated_utc": "2026-07-30T00:18:54Z",
     "paper_facing": false
   }
 }
