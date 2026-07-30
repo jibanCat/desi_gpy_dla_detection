@@ -1059,3 +1059,142 @@ def test_recommendation_rests_on_the_SCALE_FREE_measure(WS, monkeypatch):
     assert any("SIZE of the chi2/dof gap" in s
                for s in rec["what_this_does_NOT_say"])
     assert any("NOT a gate" in s for s in rec["what_this_does_NOT_say"])
+
+
+# ---------------------------------------------------------------------------
+# (6) build_frozen_calibration -- THE WINDOW THREADING ORCHESTRATOR
+#
+# The referee's second "real defect found and fixed" was the build_fp_block
+# window re-derivation, and `grep -rn build_fp_block tests/` returned NOTHING at
+# the time. `grep -rn build_frozen_calibration tests/` ALSO returned nothing,
+# and that function is the single place where the analysis window is threaded
+# into EVERY window-dependent ingredient (forward response, completeness
+# matrix, sub-floor matrix, loa-0 FP cut, detection bundle). Dropping the
+# `window=window` keyword on any ONE of those calls silently produces exactly
+# the mixed-window calibration the whole guard layer exists to prevent -- and
+# nothing downstream can see it, because `frozen["analysis_window"]` is stamped
+# from the ARGUMENT, not from the ingredients.
+# ---------------------------------------------------------------------------
+def _wire_frozen(EP, monkeypatch, n_nhi=3):
+    """Inject every heavy ingredient of build_frozen_calibration and RECORD the
+    window each one was called with."""
+    seen = {}
+    molly = dict(molly_nhi_edges=np.linspace(19.5, 22.5, n_nhi + 1))
+
+    monkeypatch.setattr(EP, "load_forward_response_pack",
+                        lambda p: (seen.__setitem__("forward_npz", p),
+                                   ("FWD", {}))[1])
+    monkeypatch.setattr(EP, "compute_t_sigma", lambda: ("TSIG", {}))
+
+    def fake_counts(convention="const_extrap", counts172_path=None,
+                    window=None):
+        seen["molly"] = window
+        seen["molly_convention"] = convention
+        return molly, {}, None
+    monkeypatch.setattr(EP, "load_molly_counts_block", fake_counts)
+
+    def fake_fp(window=None, **kw):
+        seen["fp"] = window
+        return np.zeros((29, 8)), None, {}
+    monkeypatch.setattr(EP, "build_fp_block", fake_fp)
+
+    def fake_bundle(mock, out_dir, molly_tsv=None, window=None):
+        seen.setdefault("bundle", []).append((mock, molly_tsv, window))
+        return dict(tag=mock)
+    monkeypatch.setattr(EP, "load_mock_bundle", fake_bundle)
+    monkeypatch.setattr(EP, "build_g_block",
+                        lambda b: (np.ones((n_nhi, EP.N_K)),
+                                   np.zeros((n_nhi, EP.N_K))))
+    return seen
+
+
+def test_build_frozen_calibration_THREADS_the_window_into_EVERY_ingredient(
+        EP, monkeypatch, tmp_path):
+    """Every window-dependent ingredient must be built at the REQUESTED window.
+
+    Each assertion below corresponds to a one-keyword mutant (drop
+    ``window=window`` from that call, so it falls back to DEF_WINDOW =
+    lya_only): the resulting frozen calibration would still stamp
+    ``analysis_window="lya_lyb"`` while carrying a 1025-A ingredient.
+    """
+    seen = _wire_frozen(EP, monkeypatch)
+    w = EP.window_spec("lya_lyb")
+    frozen = EP.build_frozen_calibration(str(tmp_path), window="lya_lyb")
+
+    assert seen["forward_npz"] == w["forward_npz"], (
+        "the forward response was loaded from the wrong window's NPZ")
+    assert seen["molly"] == "lya_lyb", "completeness matrix built at the wrong window"
+    assert seen["fp"] == "lya_lyb", "loa-0 FP background cut at the wrong window"
+    assert seen["bundle"] == [("2lpt0", None, "lya_lyb")], (
+        "the 2LPT-0 detection bundle was cut at the wrong window")
+
+    # ... and the STAMPS must agree with what was actually built
+    assert frozen["analysis_window"] == "lya_lyb"
+    assert frozen["window_spec"]["lam_rf_min"] == 911.0
+    assert frozen["fwd_meta"]["analysis_window"] == "lya_lyb"
+    assert frozen["fwd_meta"]["lam_rf_min"] == 911.0
+    assert frozen["g_available"] is True
+    assert frozen["_bundles"]["2lpt0"]["tag"] == "2lpt0"
+
+
+def test_build_frozen_calibration_DEFAULT_stays_the_nominal_1025A_window(
+        EP, monkeypatch, tmp_path):
+    """The pre-window default path must be unchanged: no argument => lya_only
+    everywhere. Without this leg the test above could be satisfied by a
+    function that hard-codes lya_lyb."""
+    seen = _wire_frozen(EP, monkeypatch)
+    frozen = EP.build_frozen_calibration(str(tmp_path))
+    assert EP.DEF_WINDOW == "lya_only"
+    assert seen["molly"] == "lya_only" and seen["fp"] == "lya_only"
+    assert seen["bundle"] == [("2lpt0", None, "lya_only")]
+    assert frozen["window_spec"]["lam_rf_min"] == 1025.0
+    assert frozen["fwd_meta"]["lam_rf_min"] == 1025.0
+
+
+def test_build_frozen_calibration_molly172_splices_the_SAME_windows_subfloor(
+        EP, monkeypatch, tmp_path):
+    """Under the molly172 convention a SECOND bundle is cut from the floor-17.2
+    matrix. It must be this window's ``molly_tsv_172`` AND this window's
+    lam_rf_min, or the sub-floor rows come from the other window."""
+    seen = _wire_frozen(EP, monkeypatch, n_nhi=3)
+    w = EP.window_spec("lya_lyb")
+
+    def fake_counts(convention="const_extrap", counts172_path=None,
+                    window=None):
+        seen["molly"] = window
+        seen["molly_convention"] = convention
+        return dict(molly_nhi_edges=np.linspace(19.0, 22.5, 6)), {}, "ALT"
+    monkeypatch.setattr(EP, "load_molly_counts_block", fake_counts)
+
+    def fake_g(bundle):
+        # the deeper (17.2) bundle carries 2 extra sub-floor rows
+        n = 5 if bundle.get("molly172") else 3
+        return np.ones((n, EP.N_K)), np.zeros((n, EP.N_K))
+
+    def fake_bundle(mock, out_dir, molly_tsv=None, window=None):
+        seen.setdefault("bundle", []).append((mock, molly_tsv, window))
+        return dict(tag=mock, molly172=molly_tsv is not None)
+    monkeypatch.setattr(EP, "load_mock_bundle", fake_bundle)
+    monkeypatch.setattr(EP, "build_g_block", fake_g)
+
+    frozen = EP.build_frozen_calibration(str(tmp_path), completeness="molly172",
+                                         window="lya_lyb")
+    assert seen["molly_convention"] == "molly172"
+    assert seen["bundle"] == [("2lpt0", None, "lya_lyb"),
+                             ("2lpt0", w["molly_tsv_172"], "lya_lyb")], (
+        "the floor-17.2 splice bundle was not cut from THIS window's "
+        "molly_tsv_172 at THIS window's lam_rf_min")
+    assert frozen["g_grid"].shape[0] == 5
+    assert "2 sub-floor rows" in frozen["molly_prov"]["g_below_floor"]
+
+
+def test_build_frozen_calibration_REFUSES_a_g_grid_that_misses_the_molly_grid(
+        EP, monkeypatch, tmp_path):
+    """The shape guard: g(N,z) must have one row per molly N cell. A mismatch
+    means the splice or the grid moved, and silently broadcasting it would
+    misalign the completeness against the basis."""
+    _wire_frozen(EP, monkeypatch, n_nhi=3)
+    monkeypatch.setattr(EP, "build_g_block",
+                        lambda b: (np.ones((2, EP.N_K)), np.zeros((2, EP.N_K))))
+    with pytest.raises(RuntimeError, match="g_grid has 2 cells"):
+        EP.build_frozen_calibration(str(tmp_path), window="lya_lyb")
