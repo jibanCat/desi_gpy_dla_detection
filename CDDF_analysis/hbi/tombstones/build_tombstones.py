@@ -395,6 +395,16 @@ def build_one(name, spec, source_worktree, head_sha, now):
         },
         "metadata": {
             "code_commit": head_sha,
+            # A tombstone is itself a committed artifact, so it must satisfy the repo-wide
+            # audit (CDDF_analysis/unblind/audit.py): a clean full-sha stamp PLUS an
+            # identifiable generating routine. Its routine is this builder -- NOT the
+            # retired artifact's routine, which is recorded separately (and read-only) at
+            # /artifact/rederive_command_as_stamped.
+            "routine": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
+            "rederive": (
+                "python CDDF_analysis/hbi/tombstones/build_tombstones.py --force "
+                f"--source-worktree {source_worktree}"
+            ),
             "builder": "CDDF_analysis/hbi/tombstones/build_tombstones.py",
             "generated_utc": now,
             "paper_facing": False,
