@@ -149,26 +149,95 @@ MOLLY_TSV_NHI172 = ("/scratch/cavestru_root/cavestru0/mfho/"
                     "molly_matrix.tsv")
 
 
-def basis_pad_edges(pad_floor=None):
-    """(ntrue_edges, n_pad_bins) for a true-N basis padded DOWN to ``pad_floor``.
+def _reporting_module():
+    """Load ``reporting.py`` file-directly (jax-free env; same trick as pack.py)."""
+    global _REPORTING_MOD
+    if _REPORTING_MOD is None:
+        import importlib.util
+        p = os.path.join(_REPO, "CDDF_analysis", "hbi_mcmc", "reporting.py")
+        spec = importlib.util.spec_from_file_location("_modelA_reporting_nojax", p)
+        m = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = m
+        spec.loader.exec_module(m)
+        _REPORTING_MOD = m
+    return _REPORTING_MOD
 
-    ``pad_floor=None`` (or >= the reporting floor) reproduces schema v1
-    EXACTLY: ``ntrue_edges == NHAT_EDGES`` and ``n_pad_bins == 0``. The pad only
-    ever goes DOWN — ``nhat_edges`` (the detection/reporting window) never
-    moves, and stays an exact TAIL subset of ``ntrue_edges``.
+
+_REPORTING_MOD = None
+
+
+def basis_pad_edges(pad_floor=None, basis_width=None):
+    """(ntrue_edges, n_pad_bins) for the LATENT true-N basis.
+
+    ``pad_floor`` (schema v1.1, finding D1): extend the basis DOWN to this log
+    N_HI.  ``pad_floor=None`` (or >= the reporting floor) puts the basis floor at
+    the reporting floor.  The pad only ever goes DOWN — ``nhat_edges`` (the
+    detection/reporting window) never moves.
+
+    ``basis_width`` (PI DECISION 3, 2026-07-29): the LATENT basis bin width in
+    dex.  ``None`` or 0.1 reproduces schema v1.1 EXACTLY (bit-for-bit: the
+    default is unchanged until closure is demonstrated).  A coarser width must be
+    an integer multiple of ``N_STEP`` and merges adjacent 0.1-dex bins with E4's
+    OWN convention — ``reporting.basis_groups`` / "f is constant across the
+    merged bin" — which is the tested convention from
+    ``run_e4_conditioning.py``, not a second implementation.
+
+    THE MERGE IS DONE IN TWO SEGMENTS, split at the reporting floor
+    ``NHAT_EDGES[0]``, so the reporting floor is ALWAYS an exact basis edge.
+    Merging the padded grid in one pass would put a single basis bin astride the
+    floor (e.g. [19.4, 19.6) for pad 19.0 at 0.2 dex), and that bin would mix
+    sub-floor support — whose completeness is a CONVENTION (const_extrap vs
+    molly172) — with in-window observed support, contaminating an in-window bin
+    with the convention systematic.  E4's remainder rule (remainder absorbed by
+    the LAST group of each segment) is applied inside each segment, so at
+    0.2 dex the top basis bin is [22.1, 22.4) (0.3 dex wide) and, under a pad
+    whose depth is not a whole number of basis bins, the topmost PAD bin absorbs
+    the remainder.
+
+    CONSEQUENCE, STATED (it cannot be designed away): 21.6 - 19.7 = 1.9 dex is an
+    ODD multiple of 0.1, so NO uniform 0.2-dex grid can carry both the reporting
+    floor 19.7 and the reporting ceiling 21.6 as edges.  Anchoring at the floor
+    (as here) makes 19.5 and 19.7 exact and leaves the ceiling astride the
+    [21.5, 21.7) basis bin.  Integrated reported quantities handle that exactly
+    under the merging convention via ``reporting.window_overlap_weights``;
+    DIFFERENTIAL per-bin reporting stops at 21.5 (``bins_fully_inside``).
     """
     if pad_floor is None:
-        return NHAT_EDGES.copy(), 0
-    pad_floor = float(pad_floor)
-    n_pad = int(round((NHAT_EDGES[0] - pad_floor) / N_STEP))
-    if n_pad <= 0:
-        return NHAT_EDGES.copy(), 0
-    if abs((NHAT_EDGES[0] - n_pad * N_STEP) - pad_floor) > 1e-8:
+        n_pad_fine = 0
+    else:
+        pad_floor = float(pad_floor)
+        n_pad_fine = int(round((NHAT_EDGES[0] - pad_floor) / N_STEP))
+        if n_pad_fine <= 0:
+            n_pad_fine = 0
+        elif abs((NHAT_EDGES[0] - n_pad_fine * N_STEP) - pad_floor) > 1e-8:
+            raise ValueError(
+                f"--basis-pad-floor {pad_floor} is not on the {N_STEP} dex grid "
+                f"anchored at the reporting floor {NHAT_EDGES[0]}")
+    if n_pad_fine:
+        lo = np.round(NHAT_EDGES[0] - N_STEP * np.arange(n_pad_fine, 0, -1), 3)
+        fine = np.round(np.concatenate([lo, NHAT_EDGES]), 3)
+    else:
+        fine = NHAT_EDGES.copy()
+
+    if basis_width is None or abs(float(basis_width) - N_STEP) < 1e-12:
+        return fine, n_pad_fine
+
+    RP = _reporting_module()
+    bw = float(basis_width)
+    g = int(round(bw / N_STEP))
+    if g < 1 or abs(g * N_STEP - bw) > 1e-8:
         raise ValueError(
-            f"--basis-pad-floor {pad_floor} is not on the {N_STEP} dex grid "
-            f"anchored at the reporting floor {NHAT_EDGES[0]}")
-    lo = np.round(NHAT_EDGES[0] - N_STEP * np.arange(n_pad, 0, -1), 3)
-    return np.round(np.concatenate([lo, NHAT_EDGES]), 3), n_pad
+            f"--basis-width {bw} must be a positive integer multiple of the "
+            f"observed step {N_STEP} dex (the observed and reporting grids never "
+            "move; PI decision 3)")
+    groups = []
+    if n_pad_fine:
+        groups += RP.basis_groups(n_pad_fine, g)
+    obs_groups = RP.basis_groups(N_C, g)
+    groups += [[b + n_pad_fine for b in gr] for gr in obs_groups]
+    edges = RP.merged_edges(fine, groups)
+    n_pad_bins = int(np.sum(edges[:-1] < NHAT_EDGES[0] - 1e-9))
+    return edges, n_pad_bins
 
 # per-mock inputs: the committed drivers' own defaults (read, not retyped where a
 # module constant exists)
@@ -623,7 +692,7 @@ def build_truth_counts(bundle, ntrue_edges=None):
 # pack assembly
 # ---------------------------------------------------------------------------
 def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
-                 tag: str = "") -> dict:
+                 tag: str = "", basis_width=None) -> dict:
     """Build + save one mock's data pack. `frozen` carries the 2LPT-0 calibration
     blocks (forward / molly counts / g / fp / t_sigma) built once.
 
@@ -631,8 +700,13 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
     this log N_HI on the same 0.1 dex step. ``None`` = schema v1, bit-for-bit.
     The observed n-hat grid, ``counts``, ``dX`` and every calibration block are
     UNCHANGED by the pad — only ``ntrue_edges`` and the truth histogram grow.
+
+    ``basis_width`` (PI decision 3): the LATENT true-N basis width in dex.
+    ``None``/0.1 = the shipped default, bit-for-bit. The OBSERVED (n-hat) grid
+    and the REPORTING grid stay 0.1 dex whatever this is.
     """
-    print(f"[pack] extracting {mock} (pad_floor={pad_floor}) ...")
+    print(f"[pack] extracting {mock} (pad_floor={pad_floor}, "
+          f"basis_width={basis_width}) ...")
     t0 = time.time()
     # DETECTION-side bundle cache: identical for every pad floor by
     # construction (the pad touches the truth axis only), so a ladder sweep
@@ -663,8 +737,14 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
     fp_E_alloc[:, nz] = dX[:, nz] / col[nz]
 
     # --- truth histogram, optionally on a DOWNWARD-padded true-N basis (D1) ---
-    ntrue_edges, n_pad_bins = basis_pad_edges(pad_floor)
-    truth_counts, truth_counts_bks, n_truth_in_window = build_truth_counts(bundle)
+    # and optionally on a COARSER latent basis (PI decision 3).
+    ntrue_edges, n_pad_bins = basis_pad_edges(pad_floor, basis_width)
+    # the IN-WINDOW reference grid: the same basis width with NO pad. Identical
+    # to NHAT_EDGES at 0.1 dex, so the unpadded path stays bit-for-bit.
+    ref_edges, _n_ref_pad = basis_pad_edges(None, basis_width)
+    assert _n_ref_pad == 0
+    truth_counts, truth_counts_bks, n_truth_in_window = build_truth_counts(
+        bundle, ref_edges)
     # which bundle the SAVED truth histogram was actually built from (the
     # detection bundle unless a pad re-cuts the truth side at a lower floor)
     truth_src = bundle
@@ -869,9 +949,34 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
             ntrue_edges=[float(x) for x in ntrue_edges],
             nhat_edges_unchanged=True,
             routine="CDDF_analysis/hbi_mcmc/extract_pack.py:basis_pad_edges",
-            rule=("schema v1.1: ntrue_edges extends DOWN only; nhat_edges is an "
-                  "exact TAIL subset (pack.validate_pack enforces it). The "
-                  "reporting/detection window never moves.")),
+            rule=("schema v1.1: ntrue_edges extends DOWN only; the "
+                  "reporting/detection window never moves. At the DEFAULT "
+                  "0.1-dex basis width nhat_edges is an exact TAIL SUBSET of "
+                  "ntrue_edges (pack.validate_pack enforces it); on a coarser "
+                  "basis every ntrue edge still lies on the 0.1-dex grid, the "
+                  "top edge is shared, and the reporting floor is an exact "
+                  "basis edge.")),
+        latent_basis=dict(
+            basis_width_dex=(N_STEP if basis_width is None
+                             else float(basis_width)),
+            is_default=bool(basis_width is None
+                            or abs(float(basis_width) - N_STEP) < 1e-12),
+            n_basis_bins=int(len(ntrue_edges) - 1),
+            n_observed_bins=int(N_C),
+            observed_grid_step_dex=N_STEP,
+            reporting_grid_step_dex=N_STEP,
+            merge_convention=("f is constant across the merged bin "
+                              "(reporting.basis_groups / merge_basis_columns — "
+                              "E4's own tested convention)"),
+            merge_segments=("split at the reporting floor so the floor is an "
+                            "exact basis edge; E4's remainder-in-the-last-group "
+                            "rule applied inside each segment"),
+            pi_decision=("decision 3 (2026-07-29): adopt a 0.2-dex LATENT basis. "
+                         "The observed n-hat grid and the reporting grid stay "
+                         "0.1 dex. A 0.1-dex PLOTTING grid is permitted but is "
+                         "NOT independent 0.1-dex information resolution."),
+            routine="CDDF_analysis/hbi_mcmc/extract_pack.py:basis_pad_edges",
+        ),
         g_available=bool(frozen["g_available"]),
         checks=dict(
             counts_total_equals_op_in_window=True,
@@ -972,6 +1077,12 @@ def main(argv=None):
                         "0 (KNOWN TOO HIGH); 'molly172' = the measured "
                         "sub-floor cells of the same production run's "
                         "floor-17.2 matrix.")
+    p.add_argument("--basis-width", type=float, default=None,
+                   help="PI decision 3: LATENT true-N basis width in dex "
+                        "(integer multiple of 0.1). Default = 0.1 = the shipped "
+                        "basis, bit-for-bit. 0.2 is the ADOPTED width; it is "
+                        "explicit and stamped. The OBSERVED n-hat grid and the "
+                        "REPORTING grid never move.")
     p.add_argument("--tag", default="",
                    help="filename suffix so a ladder of packs can share one "
                         "out-dir (modelA_pack_<mock><tag>.npz)")
@@ -984,7 +1095,8 @@ def main(argv=None):
         results[mock] = {k: v for k, v in
                          extract_pack(mock, args.out_dir, frozen,
                                       pad_floor=args.basis_pad_floor,
-                                      tag=args.tag).items()
+                                      tag=args.tag,
+                                      basis_width=args.basis_width).items()
                          if k != "bundle"}
     print(json.dumps(results, indent=1))
     return results

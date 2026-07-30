@@ -47,6 +47,11 @@ except Exception as _e:  # pragma: no cover - env guard
 
 from .forward import build_consts, fold_mu
 from .pack import ModelAPack
+# The basis-MERGING convention (E4's own, unchanged) now lives in reporting.py so
+# that the jax-free extractor can use the SAME implementation instead of a second
+# copy (PI decision 3 made the 0.2-dex basis a first-class pack option).  These
+# three names stay part of e4_probe's public surface.
+from .reporting import basis_groups, merge_basis_columns, merged_truth  # noqa: F401
 
 # theta value whose exp() underflows to EXACTLY 0.0 in float64, so a one-hot
 # probe carries no leakage from the other basis bins (no subtraction needed).
@@ -214,33 +219,12 @@ def null_directions(M: np.ndarray, centers: np.ndarray, *, n: int = 4) -> list:
 # 3. basis-width sweep (merge adjacent true-N basis bins)
 # --------------------------------------------------------------------------
 
-def basis_groups(B: int, g: int) -> list:
-    """Contiguous groups of ``g`` basis bins, remainder absorbed by the LAST."""
-    if g < 1:
-        raise ValueError("group size must be >= 1")
-    groups, i = [], 0
-    while i + 2 * g <= B:
-        groups.append(list(range(i, i + g)))
-        i += g
-    groups.append(list(range(i, B)))
-    return groups
-
-
-def merge_basis_columns(M: np.ndarray, groups: Sequence[Sequence[int]]) -> np.ndarray:
-    """Merge basis columns by SUMMING within each group.
-
-    Summing columns is exactly the statement "f is constant across the merged
-    bin": the fold weight of bin b already carries its own dN_b, so
-    sum_{b in G} A[:, b] * f_G == sum_{b in G} A[:, b] * f_b when f_b == f_G.
-    """
-    return np.stack([M[:, list(gr)].sum(axis=1) for gr in groups], axis=1)
-
-
-def merged_truth(f_true: np.ndarray, dN: np.ndarray,
-                 groups: Sequence[Sequence[int]]) -> np.ndarray:
-    """dN-weighted mean of f within each group (the coarse-basis truth)."""
-    return np.array([float(np.sum(f_true[list(gr)] * dN[list(gr)])
-                           / np.sum(dN[list(gr)])) for gr in groups])
+# basis_groups / merge_basis_columns / merged_truth are IMPORTED from
+# reporting.py (see the import block at the top of this module).  They were
+# defined here originally; they moved so the jax-free extractor could build a
+# 0.2-dex pack with the SAME merging convention rather than a second copy.  The
+# behaviour is unchanged and `tests/test_e4_probe.py` still exercises them
+# through this module's names.
 
 
 # --------------------------------------------------------------------------

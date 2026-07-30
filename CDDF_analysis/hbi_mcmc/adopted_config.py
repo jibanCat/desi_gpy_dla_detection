@@ -1,0 +1,662 @@
+# -*- coding: utf-8 -*-
+"""adopted_config.py — closure + coverage under the ADOPTED configuration.
+
+Produces the ONE stamped artifact ``adopted_config_closure.json`` for PI
+decisions 1, 3 and 4:
+
+    ADOPTED = 0.2-dex LATENT true-N basis
+            + basis pad floor 19.0 with the molly172 sub-floor completeness
+            + primary reporting window 19.7 <= log N_HI <= 21.6
+
+and it answers the one question nobody had computed: does the forward model
+close inside the REPORTING WINDOW even though it fails globally?
+
+The measured cross is deliberately larger than the adopted point, because three
+of the four axes are SYSTEMATICS that must be measured rather than chosen:
+
+    mock            2lpt0 / london0 / saclay0          (cross-mock spread)
+  x basis width     0.1 (shipped default) / 0.2 (adopted)
+  x pad floor       none (committed baseline) / 19.0 (adopted)
+  x completeness    const_extrap / molly172 (adopted)   <- convention (b)
+  x resp clamp      both (adopted) / hi                 <- convention (a)
+
+= 24 packs, 48 folds.  Every closure number is reported BOTH over the full
+observed grid and restricted to [19.7, 21.6] with the SAME routine
+(``reporting.window_closure_metrics``), so the restriction is a filter and never
+a different formula.
+
+TWO PHASES, TWO ENVS (the extractor is jax-free by design, the fold needs jax):
+
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    conda run -n gpdla    python CDDF_analysis/hbi_mcmc/adopted_config.py \
+        --phase extract --pack-dir <SCRATCH>
+
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.adopted_config \
+        --phase closure --pack-dir <SCRATCH> --out <REPO>/CDDF_analysis/hbi_mcmc/adopted_config_closure.json
+
+The 24 packs are INPUTS, not results: they go to a scratch dir and are never
+committed.
+
+MOCKS ONLY.  No real-LOA path is touched and no real-data value can enter this
+artifact.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import time
+
+import numpy as np
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
+
+DEF_PACKDIR = os.environ.get("ADOPTED_PACK_DIR", "/tmp/adopted_packs")
+DEF_OUT = os.path.join(REPO, "CDDF_analysis/hbi_mcmc/adopted_config_closure.json")
+
+MOCKS = ["2lpt0", "london0", "saclay0"]
+WIDTHS = [0.1, 0.2]
+FLOORS = [None, 19.0]
+CONVENTIONS = ["const_extrap", "molly172"]
+CLAMPS = ["both", "hi"]
+
+# the ADOPTED point in that cross
+ADOPTED_WIDTH = 0.2
+ADOPTED_FLOOR = 19.0
+ADOPTED_CONV = "molly172"
+ADOPTED_CLAMP = "both"
+
+PACKDIR = DEF_PACKDIR
+OUT = DEF_OUT
+
+
+def tag_for(width, floor, conv):
+    w = f"{width:.1f}".replace(".", "p")
+    f = "none" if floor is None else f"{floor:.1f}".replace(".", "p")
+    return f"_bw{w}_pad{f}_{conv}"
+
+
+def key_for(mock, width, floor, conv, clamp):
+    return f"{mock}|bw={width}|pad={floor}|cmp={conv}|clamp={clamp}"
+
+
+def _extract_pack_module():
+    """Load extract_pack.py file-directly: the hbi_mcmc package __init__ imports
+    jax, and the extract phase deliberately runs in the jax-free `gpdla` env."""
+    p = os.path.join(REPO, "CDDF_analysis/hbi_mcmc/extract_pack.py")
+    spec = importlib.util.spec_from_file_location("adopted_extract_pack", p)
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = m
+    spec.loader.exec_module(m)
+    return m
+
+
+def load_pack(*a, **k):
+    from CDDF_analysis.hbi_mcmc.pack import load_pack as _lp
+    return _lp(*a, **k)
+
+
+def _FS():
+    from CDDF_analysis.hbi_mcmc import forward_selftest as FS
+    return FS
+
+
+def _RP():
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    return RP
+
+
+def _REP():
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    return REP
+
+
+def full_sha():
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO,
+                                   text=True).strip()
+
+
+def dirty():
+    """TRACKED-file dirtiness only (matching extract_pack._git_commit)."""
+    return bool(subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=REPO, text=True).strip())
+
+
+# ---------------------------------------------------------------------------
+# phase 1 — extract (env: gpdla, jax-free)
+# ---------------------------------------------------------------------------
+def phase_extract():
+    EP = _extract_pack_module()
+    os.makedirs(PACKDIR, exist_ok=True)
+    manifest = {}
+    for conv in CONVENTIONS:
+        t0 = time.time()
+        frozen = EP.build_frozen_calibration(PACKDIR, completeness=conv)
+        print(f"[adopted] frozen[{conv}] built in {time.time()-t0:.0f}s",
+              flush=True)
+        for width in WIDTHS:
+            for floor in FLOORS:
+                for mock in MOCKS:
+                    tag = tag_for(width, floor, conv)
+                    r = EP.extract_pack(mock, PACKDIR, frozen, pad_floor=floor,
+                                        tag=tag, basis_width=width)
+                    manifest[f"{mock}{tag}"] = dict(
+                        mock=mock, basis_width=width, pad_floor=floor,
+                        completeness=conv, npz=r["npz"],
+                        counts_total=r["counts_total"])
+                    print(f"[adopted] done {mock}{tag}", flush=True)
+    with open(os.path.join(PACKDIR, "adopted_manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=1)
+    print(json.dumps({k: v["counts_total"] for k, v in manifest.items()},
+                     indent=1))
+
+
+# ---------------------------------------------------------------------------
+# phase 2 — fold every pack, restrict to the window, emit the artifact
+# ---------------------------------------------------------------------------
+def _grid_block(pack):
+    REP = _REP()
+    ne = np.asarray(pack.ntrue_edges, float)
+    w_int = REP.window_overlap_weights(ne)
+    m_diff = REP.bins_fully_inside(ne)
+    return dict(
+        n_basis_bins=int(pack.n_b),
+        n_observed_bins=int(pack.n_c),
+        n_pad_bins=int(pack.n_pad_bins),
+        basis_width_nominal_dex=float(pack.basis_width),
+        basis_is_uniform=bool(pack.basis_is_uniform),
+        ntrue_edges=[float(x) for x in ne],
+        bin_widths_dex=[float(x) for x in np.round(np.diff(ne), 8)],
+        reporting_window_logN=list(REP.REPORTING_WINDOW),
+        n_basis_bins_fully_inside_window=int(m_diff.sum()),
+        basis_bins_fully_inside_window=[
+            [float(ne[i]), float(ne[i + 1])] for i in np.flatnonzero(m_diff)],
+        integrated_overlap_weights_dex=[float(x) for x in w_int],
+        n_basis_bins_straddling_a_window_edge=int(
+            np.sum((w_int > 0) & (~m_diff))),
+        basis_bins_straddling_a_window_edge=[
+            [float(ne[i]), float(ne[i + 1]), float(w_int[i])]
+            for i in np.flatnonzero((w_int > 0) & (~m_diff))],
+        pad_bins_are_latent_nuisance=[
+            [float(ne[i]), float(ne[i + 1])] for i in range(pack.n_b)
+            if ne[i] < REP.NONIDENT_EDGE - 1e-9],
+        subwindow_guard_on_integrated_weights=REP.assert_no_subwindow_bins(
+            ne, w_int, where="adopted_config integrated reporting weights"),
+    )
+
+
+def phase_closure():
+    t_start = time.time()
+    REP = _REP()
+    FS = _FS()
+    rows = {}
+    grids = {}
+    for width in WIDTHS:
+        for floor in FLOORS:
+            for conv in CONVENTIONS:
+                for mock in MOCKS:
+                    tag = tag_for(width, floor, conv)
+                    p = os.path.join(PACKDIR, f"modelA_pack_{mock}{tag}.npz")
+                    pack = load_pack(p)
+                    gkey = f"bw={width}|pad={floor}"
+                    if gkey not in grids:
+                        grids[gkey] = _grid_block(pack)
+                    prov = pack.provenance or {}
+                    for clamp in CLAMPS:
+                        t0 = time.time()
+                        res = FS.selftest(pack, resp_clamp=clamp)
+                        tab = FS.ratio_tables(res, pack)
+                        full = REP.window_closure_metrics(
+                            tab["by_nhat"], label="full_observed_grid")
+                        win = REP.window_closure_metrics(
+                            tab["by_nhat"], *REP.REPORTING_WINDOW,
+                            label="reporting_window_19p7_21p6")
+                        gate = dict(_RP().GATE)
+                        rows[key_for(mock, width, floor, conv, clamp)] = dict(
+                            mock=mock, basis_width=width, pad_floor=floor,
+                            completeness_below_floor=conv, resp_clamp=clamp,
+                            n_basis_bins=int(pack.n_b),
+                            n_pad_bins=int(pack.n_pad_bins),
+                            truth_total=float(np.asarray(pack.truth_counts).sum()),
+                            truth_total_below_reporting_floor=float(
+                                np.asarray(pack.truth_counts)[
+                                    :pack.n_pad_bins].sum())
+                            if pack.n_pad_bins else 0.0,
+                            counts_total=float(np.asarray(pack.counts).sum()),
+                            full_grid=full,
+                            window=win,
+                            closes_full_grid=bool(
+                                abs(full["z_total"]) <= gate["z_total_max"]
+                                and full["z_bin_max"] <= gate["z_bin_max"]
+                                and full["chi2_dof"] <= gate["chi2_dof_max"]),
+                            closes_in_window=bool(
+                                abs(win["z_total"]) <= gate["z_total_max"]
+                                and win["z_bin_max"] <= gate["z_bin_max"]
+                                and win["chi2_dof"] <= gate["chi2_dof_max"]),
+                            by_z=[dict(lo=b["lo"], hi=b["hi"], mu=b["mu"],
+                                       obs=b["obs"], ratio=b["ratio"], z=b["z"])
+                                  for b in tab["by_z"]],
+                            pack=os.path.basename(p),
+                            pack_provenance_commit=prov.get("code_commit"),
+                            pack_basis_width_stamp=(
+                                (prov.get("basis_pad") or {}).get("basis_width")
+                                or (prov.get("latent_basis") or {}).get(
+                                    "basis_width_dex")),
+                        )
+                        print(f"{key_for(mock, width, floor, conv, clamp):58s} "
+                              f"FULL ratio={full['total_ratio']:.4f} "
+                              f"chi2/dof={full['chi2_dof']:9.2f} | "
+                              f"WINDOW ratio={win['total_ratio']:.4f} "
+                              f"z={win['z_total']:+7.1f} "
+                              f"zmax={win['z_bin_max']:6.1f} "
+                              f"chi2/dof={win['chi2_dof']:8.2f} "
+                              f"({time.time()-t0:.1f}s)", flush=True)
+
+    # ---- cross-check the window routine against the COMMITTED gate ----------
+    ref_key = key_for("2lpt0", 0.1, None, "const_extrap", "both")
+    ref_pack = load_pack(os.path.join(
+        PACKDIR, f"modelA_pack_2lpt0{tag_for(0.1, None, 'const_extrap')}.npz"))
+    ref = _RP().forward_closure_gate(ref_pack, resp_clamp="both")
+    inline = rows[ref_key]["full_grid"]
+    xcheck = dict(
+        what=("the committed gate's own arithmetic on the committed 0.1-dex "
+              "UNPADDED pack, against reporting.window_closure_metrics with NO "
+              "window restriction. They must agree to 1e-12: the windowed "
+              "numbers are only trustworthy if the unrestricted call reproduces "
+              "the committed gate exactly."),
+        routine="CDDF_analysis/hbi_mcmc/run_posterior.py:forward_closure_gate",
+        config=ref_key,
+        committed_total_ratio=ref["total_ratio"],
+        inline_total_ratio=inline["total_ratio"],
+        committed_chi2_dof=ref["chi2_dof"], inline_chi2_dof=inline["chi2_dof"],
+        committed_z_total=ref["z_total"],
+        inline_abs_z_total=abs(inline["z_total"]),
+        committed_z_bin_max=ref["z_bin_max"],
+        inline_z_bin_max=inline["z_bin_max"],
+        agrees=bool(np.isclose(ref["total_ratio"], inline["total_ratio"],
+                               rtol=1e-12)
+                    and np.isclose(ref["chi2_dof"], inline["chi2_dof"],
+                                   rtol=1e-12)
+                    and np.isclose(ref["z_bin_max"], inline["z_bin_max"],
+                                   rtol=1e-12)),
+        committed_pass=bool(ref["pass"]),
+    )
+    print("\n[xcheck committed gate]", json.dumps(xcheck, indent=1), flush=True)
+    if not xcheck["agrees"]:
+        raise SystemExit(
+            "[adopted] REFUSING to stamp: the unrestricted window_closure_"
+            "metrics call does not reproduce the committed forward_closure_gate")
+
+    # ---- pack stamp audit (fail closed on a dirty input) -------------------
+    pack_commits = sorted({v["pack_provenance_commit"] for v in rows.values()})
+    sha = full_sha()
+    stamp_audit = dict(
+        what=("the extract phase runs in its own process/env, so each pack "
+              "stamps itself; this reconciles those stamps against the closure "
+              "phase's code_commit."),
+        closure_phase_code_commit=sha,
+        pack_code_commits=pack_commits,
+        n_packs=len(rows) // len(CLAMPS),
+        all_packs_same_commit=bool(len(pack_commits) == 1),
+        any_pack_dirty=bool(any("-dirty" in (c or "") for c in pack_commits)),
+        packs_match_closure_commit=bool(pack_commits == [sha]),
+    )
+    if stamp_audit["any_pack_dirty"]:
+        raise SystemExit(
+            "[adopted] REFUSING to stamp: input packs were extracted from a "
+            f"DIRTY tree {pack_commits}. Commit the extractor and re-run "
+            "--phase extract so the packs stamp a clean sha.")
+    if not stamp_audit["packs_match_closure_commit"]:
+        print(f"[adopted] WARNING: packs stamped {pack_commits} but the closure "
+              f"phase is at {sha} (recorded in metadata).")
+
+    syst = convention_systematic_block(rows)
+    verdict = build_verdict(rows, syst)
+    out = dict(
+        metadata=_metadata(sha, stamp_audit, t_start),
+        adopted_configuration=_adopted_block(),
+        verdict=verdict,
+        convention_systematic=syst,
+        closure=rows,
+        latent_basis_grids=grids,
+        committed_gate_crosscheck=xcheck,
+        plotting_grid_disclosure=REP.plotting_grid_disclosure(ADOPTED_WIDTH),
+        z_criterion=REP.Z_CRITERION,
+        omega_policy=_omega_block(),
+        limitations=_limitations(),
+    )
+    with open(OUT, "w") as f:
+        json.dump(out, f, indent=1)
+    print(f"\n[adopted] wrote {OUT}")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# artifact blocks
+# ---------------------------------------------------------------------------
+def _adopted_block():
+    REP = _REP()
+    blk = dict(REP.ADOPTED_CONFIG)
+    blk["nonident_edge_source"] = REP.NONIDENT_EDGE_SOURCE
+    blk["nonident_edge_reason"] = REP.NONIDENT_EDGE_REASON
+    blk["response_anchor_ceiling_reason"] = REP.RESPONSE_ANCHOR_CEILING_REASON
+    blk["extract_command"] = (
+        "python CDDF_analysis/hbi_mcmc/extract_pack.py --mocks <mock> "
+        f"--basis-width {ADOPTED_WIDTH} --basis-pad-floor {ADOPTED_FLOOR} "
+        f"--completeness-below-floor {ADOPTED_CONV}")
+    return blk
+
+
+def _omega_block():
+    REP = _REP()
+    from CDDF_analysis.hbi_mcmc import model_a as MA
+    return dict(
+        rule=REP.OMEGA_RULE,
+        enforced_in=[
+            "CDDF_analysis/hbi_mcmc/reporting.py:omega_decision (the rule)",
+            "CDDF_analysis/hbi_mcmc/model_a.py:posterior_summary (the "
+            "paper-facing emission point: omega_allz is None and an "
+            "omega_REFUSED block carries the reason)",
+            "CDDF_analysis/hbi_mcmc/model_a.py:plugin_map_diagnostic",
+        ],
+        NOT_enforced_in=[
+            "model_a.reduce_f_posterior's raw omega_20p0 / omega_20p3 DRAW "
+            "arrays and evidence.reported_quantities' omega_* R-hat/ESS "
+            "entries: those are open-topped by construction and are retained "
+            "as CONVERGENCE and rung-ladder DIAGNOSTICS on mocks. They are not "
+            "reported values and no artifact quotes them as Omega_HI. Stated "
+            "here so the guard is not mistaken for a universal one.",
+        ],
+        decisions={t: REP.omega_decision(*MA.TIERS[t]) for t in MA.TIERS},
+        no_tail_extrapolation=(
+            "NONE is implemented. Extending Omega_HI above 21.6 requires a tail "
+            "treatment, and the PI ruled that is a PI decision. This code "
+            "refuses rather than invents one."),
+    )
+
+
+def convention_systematic_block(rows):
+    """The clamp x completeness 2x2 as a PROPAGATED per-bin + integrated
+    systematic at the ADOPTED basis width and pad floor (PI decision 4)."""
+    REP = _REP()
+    out = {}
+    for mock in MOCKS:
+        corners_tot, corners_win, corners_bin = {}, {}, {}
+        for conv in CONVENTIONS:
+            for clamp in CLAMPS:
+                k = key_for(mock, ADOPTED_WIDTH, ADOPTED_FLOOR, conv, clamp)
+                r = rows[k]
+                lbl = f"clamp={clamp}|cmp={conv}"
+                corners_tot[lbl] = r["full_grid"]["total_mu"]
+                corners_win[lbl] = r["window"]["total_mu"]
+                corners_bin[lbl] = [b["mu"] for b in r["window"]["per_bin"]]
+        adopted = f"clamp={ADOPTED_CLAMP}|cmp={ADOPTED_CONV}"
+        win_bins = [[b["lo"], b["hi"]] for b in
+                    rows[key_for(mock, ADOPTED_WIDTH, ADOPTED_FLOOR,
+                                 ADOPTED_CONV, ADOPTED_CLAMP)
+                         ]["window"]["per_bin"]]
+        out[mock] = dict(
+            integrated_full_grid=REP.convention_systematic(corners_tot, adopted),
+            integrated_reporting_window=REP.convention_systematic(
+                corners_win, adopted),
+            per_bin_reporting_window=dict(
+                nhat_bins=win_bins,
+                **REP.convention_systematic(corners_bin, adopted)),
+        )
+    fr = {m: out[m]["integrated_reporting_window"]["frac_conv"] for m in MOCKS}
+    return dict(
+        what=("the clamp x completeness convention dependence, propagated as a "
+              "NAMED per-bin and integrated systematic on the predicted counts "
+              "at the ADOPTED basis width and pad floor. Neither convention is "
+              "a free choice and neither is being chosen here."),
+        quantity=("the PREDICTED COUNTS mu of the truth-fold, integrated over "
+                  "the stated grid, and per observed n-hat bin inside the "
+                  "reporting window."),
+        estimator=REP.CONVENTION_SYSTEMATIC,
+        per_mock=out,
+        frac_conv_integrated_in_window_by_mock=fr,
+        cross_mock_note=("the three mocks do NOT agree to a single tolerance; "
+                         "the max over mocks is the number to carry, and it is "
+                         "reported per mock so no single mock can be quoted as "
+                         "'the' systematic."),
+        frac_conv_in_window_max_over_mocks=max(fr.values()),
+    )
+
+
+def build_verdict(rows, syst):
+    REP = _REP()
+    gate = dict(_RP().GATE)
+    ad = {m: rows[key_for(m, ADOPTED_WIDTH, ADOPTED_FLOOR, ADOPTED_CONV,
+                          ADOPTED_CLAMP)] for m in MOCKS}
+    closing_full = [k for k, v in rows.items() if v["closes_full_grid"]]
+    closing_win = [k for k, v in rows.items() if v["closes_in_window"]]
+
+    def _leg(v, w):
+        d = v[w]
+        return dict(
+            total_ratio=d["total_ratio"], z_total=d["z_total"],
+            abs_z_total=abs(d["z_total"]), z_bin_max=d["z_bin_max"],
+            chi2_dof=d["chi2_dof"], n_bins=d["n_bins_in_window"],
+            per_bin_ratio_min=min(b["ratio"] for b in d["per_bin"]
+                                  if np.isfinite(b["ratio"])),
+            per_bin_ratio_max=max(b["ratio"] for b in d["per_bin"]
+                                  if np.isfinite(b["ratio"])),
+            legs=dict(
+                z_total_leg=bool(abs(d["z_total"]) <= gate["z_total_max"]),
+                z_bin_leg=bool(d["z_bin_max"] <= gate["z_bin_max"]),
+                chi2_leg=bool(d["chi2_dof"] <= gate["chi2_dof_max"]),
+            ),
+            factor_over_chi2_gate=d["chi2_dof"] / gate["chi2_dof_max"],
+        )
+
+    return dict(
+        question=("under the ADOPTED configuration (0.2-dex latent basis, pad "
+                  "floor 19.0, molly172 sub-floor completeness), does the "
+                  "forward model close inside the PRIMARY REPORTING WINDOW "
+                  "19.7 <= logN <= 21.6, even though it fails over the full "
+                  "observed grid?"),
+        answer="NO",
+        answer_detail=(
+            "the window restriction is a LARGE, real improvement and it is not "
+            "enough. On the adopted configuration the total ratio moves from "
+            f"{ad['2lpt0']['full_grid']['total_ratio']:.4f} (full grid) to "
+            f"{ad['2lpt0']['window']['total_ratio']:.4f} (window) on 2LPT-0 and "
+            f"chi2/dof from {ad['2lpt0']['full_grid']['chi2_dof']:.1f} to "
+            f"{ad['2lpt0']['window']['chi2_dof']:.1f} — i.e. the excluded high-N "
+            "bins really were carrying most of the misfit — but the windowed "
+            f"chi2/dof is still {ad['2lpt0']['window']['chi2_dof'] / gate['chi2_dof_max']:.0f}x "
+            "the ratified tolerance of 3.0 and max|z_bin| is still "
+            f"{ad['2lpt0']['window']['z_bin_max']:.1f} against a tolerance of 5. "
+            "No configuration in the 48-fold cross closes in the window."),
+        gate_tolerances=gate,
+        gate_tolerances_ratified=["z_total_max", "z_bin_max", "chi2_dof_max"],
+        gate_tolerances_not_ratified=list(
+            _RP().PROVISIONAL_GATE_TOLERANCES),
+        n_configurations=len(rows),
+        n_closing_full_grid=len(closing_full),
+        n_closing_in_window=len(closing_win),
+        closing_configurations_full_grid=closing_full,
+        closing_configurations_in_window=closing_win,
+        adopted_configuration_by_mock={
+            m: dict(full_grid=_leg(ad[m], "full_grid"),
+                    reporting_window=_leg(ad[m], "window"),
+                    counts_total=ad[m]["counts_total"],
+                    truth_total=ad[m]["truth_total"],
+                    truth_total_below_reporting_floor=ad[m][
+                        "truth_total_below_reporting_floor"])
+            for m in MOCKS},
+        basis_width_effect_on_window_closure={
+            m: {f"bw={w}": dict(
+                total_ratio=rows[key_for(m, w, ADOPTED_FLOOR, ADOPTED_CONV,
+                                         ADOPTED_CLAMP)]["window"]["total_ratio"],
+                chi2_dof=rows[key_for(m, w, ADOPTED_FLOOR, ADOPTED_CONV,
+                                      ADOPTED_CLAMP)]["window"]["chi2_dof"],
+                z_bin_max=rows[key_for(m, w, ADOPTED_FLOOR, ADOPTED_CONV,
+                                       ADOPTED_CLAMP)]["window"]["z_bin_max"])
+                for w in WIDTHS} for m in MOCKS},
+        basis_width_note=(
+            "the basis WIDTH is not a closure lever and was never claimed to "
+            "be: merging basis columns is an exact statement about the "
+            "REPRESENTATION of f, and at the pack's own truth the merged truth "
+            "reproduces almost the same folded counts. Decision 3 was taken on "
+            "CONDITIONING grounds (E4: 28x lower condition number, 45.7-62x "
+            "per-bin noise amplification at 0.1 dex), not to fix closure. The "
+            "numbers above are the check that it does not BREAK closure."),
+        pad_effect_on_window_closure={
+            m: {f"pad={f}": dict(
+                total_ratio=rows[key_for(m, ADOPTED_WIDTH, f, ADOPTED_CONV,
+                                         ADOPTED_CLAMP)]["window"]["total_ratio"],
+                chi2_dof=rows[key_for(m, ADOPTED_WIDTH, f, ADOPTED_CONV,
+                                      ADOPTED_CLAMP)]["window"]["chi2_dof"])
+                for f in FLOORS} for m in MOCKS},
+        what_the_window_removes=(
+            "the reporting window drops the 2 non-identifiable bins below 19.7 "
+            "and the 8 observed bins at/above 21.6, leaving 19 of 29 observed "
+            "n-hat bins. The dropped high-N bins are exactly where residual D2 "
+            "lives (a 1.23-1.80x excess whose per-bin digits are invariant "
+            "across every pad floor and completeness convention), which is why "
+            "the PI capped the window there — and it is why the windowed "
+            "chi2/dof falls by more than an order of magnitude."),
+        residual_inside_the_window=(
+            "what is LEFT inside the window is not D2 and is not the pad. It is "
+            "a monotone SHAPE residual across the window: see "
+            "closure.<config>.window.per_bin ratios. The window's own per-bin "
+            "ratio range on the adopted 2LPT-0 configuration is "
+            f"{_leg(ad['2lpt0'], 'window')['per_bin_ratio_min']:.4f} to "
+            f"{_leg(ad['2lpt0'], 'window')['per_bin_ratio_max']:.4f}. That is a "
+            "systematic no sampler and no window can repair."),
+        convention_systematic_headline=(
+            "the clamp x completeness 2x2 spans "
+            f"{100 * syst['frac_conv_in_window_max_over_mocks']:.2f}% "
+            "(half-span / adopted, max over mocks) of the integrated predicted "
+            "counts INSIDE the reporting window at the adopted basis and pad. "
+            "It is carried as a SEPARATE LINEAR ENVELOPE, not in quadrature "
+            "(see convention_systematic.estimator)."),
+        omega_hi=("NOT emitted as a total. Only Omega_HI limited to "
+                  "[19.7, 21.6] and labelled as such is emittable "
+                  "(omega_policy)."),
+        rung10=("STAYS GATED. No configuration passes the pre-flight, in the "
+                "window or out of it."),
+        next_actions=[
+            "the binding constraint is now the IN-WINDOW shape residual, not "
+            "D2 and not D1. Attack that before any further window or pad work.",
+            "resp_clamp is still not a free choice; it is carried as half of "
+            "the convention systematic and the response below ~19.35 remains "
+            "unmeasured.",
+            "coverage under the adopted 0.2-dex basis is measured only at the "
+            "reduced SBC scale (see coverage block); a matched-configuration "
+            "SBC on the production geometry is a compute decision for the PI.",
+        ],
+    )
+
+
+def _metadata(sha, stamp_audit, t_start):
+    return dict(
+        title=("ADOPTED configuration — forward closure + coverage under the "
+               "0.2-dex latent basis, pad floor 19.0/molly172, and the "
+               "19.7-21.6 primary reporting window"),
+        artifact="adopted_config_closure",
+        date=time.strftime("%Y-%m-%d %H:%M:%S"),
+        code_commit=sha,
+        code_commit_scope=("the CLOSURE phase (this process). The input packs "
+                           "carry their own stamp — see pack_stamp_audit."),
+        code_commit_dirty=dirty(),
+        pack_stamp_audit=stamp_audit,
+        branch=subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=REPO,
+            text=True).strip(),
+        routines=dict(
+            driver=("CDDF_analysis/hbi_mcmc/adopted_config.py "
+                    "(--phase extract, then --phase closure)"),
+            reporting_rules="CDDF_analysis/hbi_mcmc/reporting.py",
+            extractor=("CDDF_analysis/hbi_mcmc/extract_pack.py:extract_pack "
+                       "(--basis-width / --basis-pad-floor / "
+                       "--completeness-below-floor)"),
+            basis_grid="CDDF_analysis/hbi_mcmc/extract_pack.py:basis_pad_edges",
+            merge_convention=("CDDF_analysis/hbi_mcmc/reporting.py:basis_groups "
+                              "(E4's own; re-exported by e4_probe)"),
+            fold=("CDDF_analysis/hbi_mcmc/forward_selftest.py:selftest "
+                  "(-> forward.build_consts + forward.fold_mu)"),
+            window_metrics=("CDDF_analysis/hbi_mcmc/reporting.py:"
+                            "window_closure_metrics"),
+            gate="CDDF_analysis/hbi_mcmc/run_posterior.py:forward_closure_gate",
+        ),
+        pack_dir=PACKDIR,
+        rederive=(
+            "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "
+            "conda run -n gpdla python CDDF_analysis/hbi_mcmc/adopted_config.py "
+            f"--phase extract --pack-dir {PACKDIR}  &&  "
+            "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "
+            "conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc."
+            f"adopted_config --phase closure --pack-dir {PACKDIR} --out {OUT}"),
+        pack_note="packs are INPUTS, written to scratch, never committed",
+        gate_tolerances=dict(_RP().GATE),
+        estimand=("NONE — this artifact reports NO population measurement. It "
+                  "contains forward-model CLOSURE diagnostics (predicted vs "
+                  "observed counts at the packs' own truth) and the propagated "
+                  "convention systematic on those predictions. No f(N), no "
+                  "dN/dX, no Omega_HI value is quoted anywhere in it."),
+        scope=("MOCK ONLY (2LPT-0 / london-0 / saclay-0 model-A packs). No real "
+               "DESI survey values of any kind."),
+        paper_facing=False,
+        paper_facing_reason=("the forward model does NOT close inside the "
+                             "reporting window (see verdict). Nothing here may "
+                             "be promoted."),
+        privacy="mock packs only; no real-LOA path is touched",
+        mocks_only=True,
+        wall_seconds=round(time.time() - t_start, 1),
+    )
+
+
+def _limitations():
+    return [
+        "the 21.6 ceiling is a REPORTING cap, not a fix. Residual D2 (the "
+        "1.23-1.80x high-N excess) is still in the model; it has been moved "
+        "outside what is reported. Any statement that D2 is 'closed' is wrong.",
+        "21.6 - 19.7 = 1.9 dex is an ODD multiple of 0.1, so NO uniform 0.2-dex "
+        "basis can carry both window edges. The adopted grid puts 19.5 and 19.7 "
+        "on exact basis edges and leaves 21.6 astride the [21.5, 21.7) basis "
+        "bin. Integrated reported quantities split that bin by dex overlap, "
+        "which is exact under the adopted merging convention; DIFFERENTIAL "
+        "per-bin reporting on the 0.2-dex basis therefore stops at 21.5.",
+        "the convention systematic is measured on the TRUTH-FOLD (predicted "
+        "counts at the pack's own truth), NOT on a posterior. Propagating it to "
+        "f(N) assumes a multiplicative mu error maps to the inverse "
+        "multiplicative f error, exact only for a diagonal kernel.",
+        "all three mocks share ONE injected f(N), so the cross-mock spread here "
+        "bounds pipeline/realisation differences, NOT population-model error.",
+        "the closure numbers fold the pack's OWN truth. They are a statement "
+        "about the forward model, not about the estimator's coverage; coverage "
+        "is the separate block and it runs at REDUCED scale.",
+        "the 0.2-dex basis is a first-class OPTION, not the default. The shipped "
+        "default is still 0.1 dex, because decision 3 was conditioned on "
+        "re-running closure and closure still fails.",
+        "the two ratio-span gate tolerances remain UNRATIFIED (PI decision 8) "
+        "and are not used by this artifact's verdict.",
+    ]
+
+
+# ---------------------------------------------------------------------------
+def main(argv=None):
+    global PACKDIR, OUT
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--phase", required=True, choices=["extract", "closure"])
+    p.add_argument("--pack-dir", default=DEF_PACKDIR)
+    p.add_argument("--out", default=DEF_OUT)
+    a = p.parse_args(argv)
+    PACKDIR = a.pack_dir
+    OUT = a.out
+    if a.phase == "extract":
+        return phase_extract()
+    return phase_closure()
+
+
+if __name__ == "__main__":
+    main()

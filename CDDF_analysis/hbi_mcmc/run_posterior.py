@@ -478,14 +478,24 @@ def _truth_closure(pack, summ):
     for tier, (lo, hi) in TIERS.items():
         if tier not in summ["tiers"]:
             continue
-        sel = (Nc >= lo - 1e-9) & (Nc < hi - 1e-9) & rep
-        dndx_k = (f_true[sel, :] * dN[sel, None]).sum(axis=0)
-        om_k = (f_true[sel, :] * (10.0 ** (Nc[sel] - 21.0))[:, None]
-                * dN[sel, None]).sum(axis=0)
+        # SAME weights as the posterior reduction (PI decision 3: the latent
+        # basis may be coarser than the window, so the truth must be integrated
+        # with the identical overlap weights or the closure compares two
+        # different estimands). Identical to the old centre-selection on any
+        # 0.1-dex pack.
+        from CDDF_analysis.hbi_mcmc import reporting as RP
+        w = np.where(rep, RP.window_overlap_weights(ntrue, lo, min(hi, ntrue[-1])),
+                     0.0)
+        dndx_k = (f_true * w[:, None]).sum(axis=0)
+        om_k = (f_true * (10.0 ** (Nc - 21.0))[:, None] * w[:, None]).sum(axis=0)
         row = {}
         for name, tk in (("dndx_allz", dndx_k), ("omega_allz", om_k)):
             t = float((tk * dX_k).sum() / dX_k.sum())
-            b = summ["tiers"][tier][name]
+            b = summ["tiers"][tier].get(name)
+            if b is None:      # Omega REFUSED outside [19.7, 21.6] (decision 1)
+                row[name] = {"truth": t, "REFUSED": summ["tiers"][tier].get(
+                    "omega_REFUSED", {}).get("reason")}
+                continue
             row[name] = {
                 "truth": t,
                 "point_over_truth": float(b["point_q50"] / t) if t else None,
