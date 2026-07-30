@@ -2,21 +2,21 @@
  "metadata": {
   "title": "ADOPTED configuration \u2014 forward closure + coverage under the 0.2-dex latent basis, pad floor 19.0/molly172, and the 19.7-21.6 primary reporting window",
   "artifact": "adopted_config_closure",
-  "date": "2026-07-29 22:28:31",
-  "code_commit": "d957aef97902b2722fdd0ed20288c4fd938a6a53",
+  "date": "2026-07-30 01:05:54",
+  "code_commit": "92735eb8534c08d596c9162306575b6a335a7437",
   "code_commit_scope": "the CLOSURE phase (this process). The input packs carry their own stamp \u2014 see pack_stamp_audit.",
   "code_commit_dirty": false,
   "pack_stamp_audit": {
    "what": "the extract phase runs in its own process/env, so each pack stamps itself; this reconciles those stamps against the closure phase's code_commit AND decides, from the actual file diff, whether a mismatch could have changed a pack.",
    "routine": "CDDF_analysis/hbi_mcmc/adopted_config.py:pack_stamp_verdict",
-   "closure_phase_code_commit": "d957aef97902b2722fdd0ed20288c4fd938a6a53",
+   "closure_phase_code_commit": "92735eb8534c08d596c9162306575b6a335a7437",
    "pack_code_commits": [
-    "385aa95eec0786c8463283944e2f27c23512c727"
+    "c523cf21a1c282c80f5ff8033a4ec47220f4256f"
    ],
    "n_packs": 24,
    "all_packs_same_commit": true,
    "ok": true,
-   "reason": "packs were extracted at a DIFFERENT commit (['385aa95eec0786c8463283944e2f27c23512c727']) than the closure phase (d957aef97902b2722fdd0ed20288c4fd938a6a53), but the 2 file(s) that changed in between cannot change a pack (none is in PACK_DETERMINING_FILES), so the packs are current in content. Recorded, not waved away.",
+   "reason": "packs were extracted at a DIFFERENT commit (['c523cf21a1c282c80f5ff8033a4ec47220f4256f']) than the closure phase (92735eb8534c08d596c9162306575b6a335a7437), but the 2 file(s) that changed in between cannot change a pack (none is in PACK_DETERMINING_FILES), so the packs are current in content. Recorded, not waved away.",
    "packs_match_closure_commit": false,
    "any_pack_dirty": false,
    "files_changed_between_pack_and_closure_commit": [
@@ -49,8 +49,8 @@
    "window_metrics": "CDDF_analysis/hbi_mcmc/reporting.py:window_closure_metrics",
    "gate": "CDDF_analysis/hbi_mcmc/run_posterior.py:forward_closure_gate"
   },
-  "pack_dir": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs2",
-  "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla python CDDF_analysis/hbi_mcmc/adopted_config.py --phase extract --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs2  &&  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.adopted_config --phase closure --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/5aea285b-c191-44ac-8cc5-383b427907c2/scratchpad/adopted_packs2 --out /home/mfho/wt_cfg/CDDF_analysis/hbi_mcmc/adopted_config_closure.json",
+  "pack_dir": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/9b473359-d68e-413d-a48a-c8803a9b13fa/scratchpad/adopted_packs3",
+  "rederive": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla python CDDF_analysis/hbi_mcmc/adopted_config.py --phase extract --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/9b473359-d68e-413d-a48a-c8803a9b13fa/scratchpad/adopted_packs3  &&  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.adopted_config --phase closure --pack-dir /tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/9b473359-d68e-413d-a48a-c8803a9b13fa/scratchpad/adopted_packs3 --out /home/mfho/wt_cfg/CDDF_analysis/hbi_mcmc/adopted_config_closure.json",
   "pack_note": "packs are INPUTS, written to scratch, never committed",
   "gate_tolerances": {
    "z_total_max": 5.0,
@@ -67,7 +67,17 @@
   "paper_facing_reason": "the forward model does NOT close inside the reporting window (see verdict). Nothing here may be promoted.",
   "privacy": "mock packs only; no real-LOA path is touched",
   "mocks_only": true,
-  "wall_seconds": 16.4
+  "wall_seconds": 15.8,
+  "self_consistency_checks": {
+   "no_contradictory_chi2_claims": true,
+   "routine": "CDDF_analysis/hbi_mcmc/adopted_config.py:assert_no_contradictory_chi2_claims",
+   "measured_window_chi2_gain_by_mock": {
+    "2lpt0": 7.80086652942666,
+    "london0": 5.578969795087795,
+    "saclay0": 6.915887843430138
+   },
+   "what_it_refuses": "any 'order of magnitude' class claim about the window's chi2 gain when the MAX measured full-grid/in-window chi2/dof factor is below 10. This gate exists because commit fd60337 corrected residual_decomposition and left verdict.what_the_window_removes asserting the opposite."
+  }
  },
  "adopted_configuration": {
   "basis_width_dex": 0.2,
@@ -90,7 +100,7 @@
   "default_note": "the SHIPPED default basis width remains 0.1 dex until closure is demonstrated; 0.2 dex is explicit and opt-in (--basis-width 0.2) and is stamped in every pack sidecar and artifact.",
   "nonident_edge_source": "CDDF_analysis/diagnostics/subdla/run_subdla_headline_full.py:NONIDENT_EDGE on branch lls-subdla-cddf (the guard layer; NOT merged into this branch \u2014 that merge is PI-deferred). Same constant, same meaning, pinned by tests/test_adopted_reporting.py::test_nonident_edge_matches_the_subdla_runner_on_the_guard_branch.",
   "nonident_edge_reason": "logN centers below 19.7 are NON-IDENTIFIABLE on a 19.5-floored catalog: the two lowest 0.1-dex bins straddle the fit floor and cannot be separated from edge migration (Track A closed). This is the sub-DLA runner's meaning of NONIDENT_EDGE and it is unchanged here.",
-  "response_anchor_ceiling_reason": "NEW (PI decision 1, 2026-07-29). The frozen forward response's moment polynomials were fitted over true-N anchors spanning ~19.336-21.503 down to 21.05-21.216 dex depending on the response cell (pack.resp_N_fit_range); above the top anchor the degree-2 surfaces are EXTRAPOLATED. The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported.",
+  "response_anchor_ceiling_reason": "NEW (PI decision 1, 2026-07-29). The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported. CORRECTION (referee, 2026-07-29): 21.6 is NOT where the response stops being measured, and an earlier version of this string implied it was. The frozen response's moment polynomials were fitted at true-N anchors whose per-cell LOW end spans 19.336-19.503 and whose per-cell HIGH end spans 21.041-21.216 (pack.resp_N_fit_range; measured, see RESPONSE_ANCHOR_MEASURED). Above the top anchor the degree-2 surfaces are EXTRAPOLATED, so 0.38-0.56 dex of EXTRAPOLATED response lies INSIDE the authorized window [19.7, 21.6] -- see extrapolated_response_inside_window(). The earlier string also quoted a top anchor above 21.5, which appears in no pack: it was the LOW range's 19.503 mistyped with a 21 in front.",
   "extract_command": "python CDDF_analysis/hbi_mcmc/extract_pack.py --mocks <mock> --basis-width 0.2 --basis-pad-floor 19.0 --completeness-below-floor molly172"
  },
  "verdict": {
@@ -304,10 +314,49 @@
     }
    }
   },
-  "what_the_window_removes": "the reporting window drops the 2 non-identifiable bins below 19.7 and the 8 observed bins at/above 21.6, leaving 19 of 29 observed n-hat bins. The dropped high-N bins are exactly where residual D2 lives (a 1.23-1.80x excess whose per-bin digits are invariant across every pad floor and completeness convention), which is why the PI capped the window there \u2014 and it is why the windowed chi2/dof falls by more than an order of magnitude.",
+  "what_the_window_removes": "the reporting window drops the 2 non-identifiable bins below 19.7 and the 8 observed bins at/above 21.6, leaving 19 of 29 observed n-hat bins. MEASURED chi2/dof gain from the restriction: 2lpt0 7.80x / london0 5.58x / saclay0 6.92x (range 5.6-7.8x). \ud83d\udd34 THAT IS NOT AN ORDER OF MAGNITUDE, and an earlier version of this field said it was. It is a factor 5.6-7.8. AND THE GAIN IS NOT THE HIGH-N BINS: see residual_decomposition.correction \u2014 the bins at/above 21.6 carry only 0.2-0.8% of the full-grid chi2 (they are count-starved), while the two NON-IDENTIFIABLE bins below 19.7 carry 87.4-91.4% of it. The window's chi2 improvement is almost entirely the sub-19.7 bins. The 21.6 ceiling is still right, for a reason that is NOT chi2: above it the per-bin mu/obs runs 1.05-1.81x on an EXTRAPOLATED response. Note further that capping at 21.6 does NOT put the whole window on measured response \u2014 see verdict.extrapolated_response_inside_the_omega_window.",
   "residual_inside_the_window": "what is LEFT inside the window is not D2 and is not the pad; it is a FLOOR EFFECT plus a floor of its own. The window's per-bin ratio range on the adopted 2LPT-0 configuration is 0.7579 to 1.1017, and 73-82% of the in-window chi2 sits in the TWO bins immediately above 19.7. Excluding those two bins chi2/dof is 11.0-12.2, so raising the floor further would buy a factor ~4-5 and STILL NOT CLOSE. That is a systematic no sampler and no window can repair.",
   "convention_systematic_headline": "the clamp x completeness 2x2 half-span is 1.89% (max over mocks) of the integrated predicted counts INSIDE the reporting window at the adopted basis and pad \u2014 full bracket width 3.78%, against a full width of 5.33% over the whole observed grid. It is carried as a SEPARATE LINEAR ENVELOPE, not in quadrature (see convention_systematic.estimator).",
-  "omega_hi": "NOT emitted as a total. Only Omega_HI limited to [19.7, 21.6] and labelled as such is emittable (omega_policy).",
+  "extrapolated_response_inside_the_omega_window": {
+   "ceiling": 21.6,
+   "top_anchor_min": 21.040565,
+   "top_anchor_max": 21.216358,
+   "dex_extrapolated_best_cell": 0.3836420000000018,
+   "dex_extrapolated_worst_cell": 0.5594350000000006,
+   "inside_the_authorized_omega_window": true,
+   "statement": "the authorized Omega_HI window [19.7, 21.6] CONTAINS 0.384-0.559 dex over which the forward response is EXTRAPOLATED, not measured: the frozen response's top true-N anchor sits at 21.0406-21.2164 depending on the response cell, BELOW the ceiling 21.6. The ceiling was chosen for a residual-excess reason (finding D2), not because the response is measured up to it. This is a STATED LIMIT of every Omega_HI emitted in this window.",
+   "why_it_matters": "Omega_HI is an N-WEIGHTED mass, so the top of the window dominates it. On the adopted 0.2-dex packs the N-weighted Omega share of [21.2, 21.6) alone is 27.5-29.6% of the in-window total (2LPT-0 / london-0 / saclay-0), and that whole sub-interval is above the best-anchored cell's top anchor. A reader must not take 'window = [19.7, 21.6]' to mean 'measured response throughout'.",
+   "what": "the fraction of the AUTHORIZED Omega window that sits above the response's top measured anchor, and the N-weighted Omega share carried there. MOCK truth-folds only; no population value.",
+   "routine": "CDDF_analysis/hbi_mcmc/adopted_config.py:extrapolated_response_block",
+   "anchor_source": {
+    "source": "/scratch/.../track_c/stage0/forward_response_2lpt0.npz -> pack.resp_fit_range_from_forward_npz -> emp_N_anchors",
+    "n_response_cells": 9,
+    "n_anchors_per_cell": 7,
+    "bottom_anchor_min": 19.33602,
+    "bottom_anchor_max": 19.502988,
+    "top_anchor_min": 21.040565,
+    "top_anchor_max": 21.216358,
+    "measured_2026_07_29": true
+   },
+   "subinterval_logN": [
+    21.2,
+    21.6
+   ],
+   "subinterval_note": "[21.2, 21.6) is the part of the window that lies above the BEST-anchored response cell's top anchor (21.2164), snapped down to the observed 0.1-dex grid so it is a union of whole reported bins. For the WORST-anchored cell the extrapolated part starts lower still, at 21.0406.",
+   "omega_share_of_subinterval_by_mock_truth_counts": {
+    "2lpt0": 0.28738731610309337,
+    "london0": 0.29631740406954926,
+    "saclay0": 0.27457950484056604
+   },
+   "omega_share_of_subinterval_by_mock_predicted_counts": {
+    "2lpt0": 0.29127815968037485,
+    "london0": 0.29735432796561423,
+    "saclay0": 0.2944355331427074
+   },
+   "omega_share_definition": "sum over n-hat bins in the sub-interval of counts * 10^(Nc - 21), divided by the same sum over ALL bins inside [19.7, 21.6]. N-weighted, because Omega_HI is an N-weighted mass.",
+   "headline": "27.5-29.6% of the in-window N-weighted Omega comes from [21.2, 21.6), which is entirely above the top measured response anchor. THE PI MUST NOT LEARN THIS LATER."
+  },
+  "omega_hi": "NOT emitted as a total. Only Omega_HI limited to [19.7, 21.6] and labelled as such is emittable (omega_policy). \ud83d\udd34 AND EVEN THAT WINDOW IS NOT ALL MEASURED RESPONSE \u2014 see extrapolated_response_inside_the_omega_window: the top ~0.4 dex of it is EXTRAPOLATED and carries ~28% of the N-weighted Omega.",
   "rung10": "STAYS GATED. No configuration passes the pre-flight, in the window or out of it.",
   "next_actions": [
    "the binding constraint is now the IN-WINDOW residual, and it decomposes: ~3/4 of it is the two 0.1-dex bins immediately above the 19.7 floor (an edge effect one bin higher than the one NONIDENT_EDGE was created for), and the rest is a ~4x-over-gate floor that survives removing them. Attack both, in that order, before any further window or pad work.",
@@ -2061,7 +2110,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=None|cmp=const_extrap|clamp=hi": {
@@ -2646,7 +2695,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=const_extrap|clamp=both": {
@@ -3231,7 +3280,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=const_extrap|clamp=hi": {
@@ -3816,7 +3865,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=const_extrap|clamp=both": {
@@ -4401,7 +4450,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=const_extrap|clamp=hi": {
@@ -4986,7 +5035,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=None|cmp=molly172|clamp=both": {
@@ -5571,7 +5620,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=None|cmp=molly172|clamp=hi": {
@@ -6156,7 +6205,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=molly172|clamp=both": {
@@ -6741,7 +6790,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=None|cmp=molly172|clamp=hi": {
@@ -7326,7 +7375,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=molly172|clamp=both": {
@@ -7911,7 +7960,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=None|cmp=molly172|clamp=hi": {
@@ -8496,7 +8545,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -9081,7 +9130,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -9666,7 +9715,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -10251,7 +10300,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -10836,7 +10885,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -11421,7 +11470,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -12006,7 +12055,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=molly172|clamp=both": {
@@ -12591,7 +12640,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.1|pad=19.0|cmp=molly172|clamp=hi": {
@@ -13176,7 +13225,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=molly172|clamp=both": {
@@ -13761,7 +13810,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "london0|bw=0.1|pad=19.0|cmp=molly172|clamp=hi": {
@@ -14346,7 +14395,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=molly172|clamp=both": {
@@ -14931,7 +14980,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "saclay0|bw=0.1|pad=19.0|cmp=molly172|clamp=hi": {
@@ -15516,7 +15565,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p1_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.1
   },
   "2lpt0|bw=0.2|pad=None|cmp=const_extrap|clamp=both": {
@@ -16101,7 +16150,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=None|cmp=const_extrap|clamp=hi": {
@@ -16686,7 +16735,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=const_extrap|clamp=both": {
@@ -17271,7 +17320,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=const_extrap|clamp=hi": {
@@ -17856,7 +17905,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=const_extrap|clamp=both": {
@@ -18441,7 +18490,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=const_extrap|clamp=hi": {
@@ -19026,7 +19075,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=None|cmp=molly172|clamp=both": {
@@ -19611,7 +19660,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=None|cmp=molly172|clamp=hi": {
@@ -20196,7 +20245,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=molly172|clamp=both": {
@@ -20781,7 +20830,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=None|cmp=molly172|clamp=hi": {
@@ -21366,7 +21415,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=molly172|clamp=both": {
@@ -21951,7 +22000,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=None|cmp=molly172|clamp=hi": {
@@ -22536,7 +22585,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_padnone_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -23121,7 +23170,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -23706,7 +23755,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -24291,7 +24340,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -24876,7 +24925,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=both": {
@@ -25461,7 +25510,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=const_extrap|clamp=hi": {
@@ -26046,7 +26095,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_const_extrap.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=molly172|clamp=both": {
@@ -26631,7 +26680,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "2lpt0|bw=0.2|pad=19.0|cmp=molly172|clamp=hi": {
@@ -27216,7 +27265,7 @@
     }
    ],
    "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=molly172|clamp=both": {
@@ -27801,7 +27850,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "london0|bw=0.2|pad=19.0|cmp=molly172|clamp=hi": {
@@ -28386,7 +28435,7 @@
     }
    ],
    "pack": "modelA_pack_london0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=molly172|clamp=both": {
@@ -28971,7 +29020,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   },
   "saclay0|bw=0.2|pad=19.0|cmp=molly172|clamp=hi": {
@@ -29556,7 +29605,7 @@
     }
    ],
    "pack": "modelA_pack_saclay0_bw0p2_pad19p0_molly172.npz",
-   "pack_provenance_commit": "385aa95eec0786c8463283944e2f27c23512c727",
+   "pack_provenance_commit": "c523cf21a1c282c80f5ff8033a4ec47220f4256f",
    "pack_basis_width_stamp": 0.2
   }
  },
@@ -30300,7 +30349,7 @@
      20.0,
      Infinity
     ],
-    "reason": "REFUSED: upper edge inf > 21.6 (OPEN-TOPPED: this is the unqualified total Omega the PI did NOT authorize); NEW (PI decision 1, 2026-07-29). The frozen forward response's moment polynomials were fitted over true-N anchors spanning ~19.336-21.503 down to 21.05-21.216 dex depending on the response cell (pack.resp_N_fit_range); above the top anchor the degree-2 surfaces are EXTRAPOLATED. The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported.",
+    "reason": "REFUSED: upper edge inf > 21.6 (OPEN-TOPPED: this is the unqualified total Omega the PI did NOT authorize); NEW (PI decision 1, 2026-07-29). The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported. CORRECTION (referee, 2026-07-29): 21.6 is NOT where the response stops being measured, and an earlier version of this string implied it was. The frozen response's moment polynomials were fitted at true-N anchors whose per-cell LOW end spans 19.336-19.503 and whose per-cell HIGH end spans 21.041-21.216 (pack.resp_N_fit_range; measured, see RESPONSE_ANCHOR_MEASURED). Above the top anchor the degree-2 surfaces are EXTRAPOLATED, so 0.38-0.56 dex of EXTRAPOLATED response lies INSIDE the authorized window [19.7, 21.6] -- see extrapolated_response_inside_window(). The earlier string also quoted a top anchor above 21.5, which appears in no pack: it was the LOW range's 19.503 mistyped with a 21 in front.",
     "rule": "Omega_HI is emitted ONLY when its N window is CONTAINED in the primary reporting window [19.7, 21.6] and is LABELLED with that interval. An unqualified / total / open-topped Omega_HI is REFUSED: the PI ruled that restricting the reporting window does NOT automatically authorize a total Omega_HI headline, and that a defensible tail treatment must come back to the PI. No tail extrapolation is invented here."
    },
    "dla_20p3": {
@@ -30310,7 +30359,7 @@
      20.3,
      Infinity
     ],
-    "reason": "REFUSED: upper edge inf > 21.6 (OPEN-TOPPED: this is the unqualified total Omega the PI did NOT authorize); NEW (PI decision 1, 2026-07-29). The frozen forward response's moment polynomials were fitted over true-N anchors spanning ~19.336-21.503 down to 21.05-21.216 dex depending on the response cell (pack.resp_N_fit_range); above the top anchor the degree-2 surfaces are EXTRAPOLATED. The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported.",
+    "reason": "REFUSED: upper edge inf > 21.6 (OPEN-TOPPED: this is the unqualified total Omega the PI did NOT authorize); NEW (PI decision 1, 2026-07-29). The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported. CORRECTION (referee, 2026-07-29): 21.6 is NOT where the response stops being measured, and an earlier version of this string implied it was. The frozen response's moment polynomials were fitted at true-N anchors whose per-cell LOW end spans 19.336-19.503 and whose per-cell HIGH end spans 21.041-21.216 (pack.resp_N_fit_range; measured, see RESPONSE_ANCHOR_MEASURED). Above the top anchor the degree-2 surfaces are EXTRAPOLATED, so 0.38-0.56 dex of EXTRAPOLATED response lies INSIDE the authorized window [19.7, 21.6] -- see extrapolated_response_inside_window(). The earlier string also quoted a top anchor above 21.5, which appears in no pack: it was the LOW range's 19.503 mistyped with a 21 in front.",
     "rule": "Omega_HI is emitted ONLY when its N window is CONTAINED in the primary reporting window [19.7, 21.6] and is LABELLED with that interval. An unqualified / total / open-topped Omega_HI is REFUSED: the PI ruled that restricting the reporting window does NOT automatically authorize a total Omega_HI headline, and that a defensible tail treatment must come back to the PI. No tail extrapolation is invented here."
    },
    "all_195_up": {
@@ -30320,7 +30369,7 @@
      19.5,
      Infinity
     ],
-    "reason": "REFUSED: lower edge 19.5 < 19.7 (non-identifiable; logN centers below 19.7 are NON-IDENTIFIABLE on a 19.5-floored catalog: the two lowest 0.1-dex bins straddle the fit floor and cannot be separated from edge migration (Track A closed). This is the sub-DLA runner's meaning of NONIDENT_EDGE and it is unchanged here.) AND upper edge inf > 21.6 (OPEN-TOPPED: this is the unqualified total Omega the PI did NOT authorize); NEW (PI decision 1, 2026-07-29). The frozen forward response's moment polynomials were fitted over true-N anchors spanning ~19.336-21.503 down to 21.05-21.216 dex depending on the response cell (pack.resp_N_fit_range); above the top anchor the degree-2 surfaces are EXTRAPOLATED. The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported.",
+    "reason": "REFUSED: lower edge 19.5 < 19.7 (non-identifiable; logN centers below 19.7 are NON-IDENTIFIABLE on a 19.5-floored catalog: the two lowest 0.1-dex bins straddle the fit floor and cannot be separated from edge migration (Track A closed). This is the sub-DLA runner's meaning of NONIDENT_EDGE and it is unchanged here.) AND upper edge inf > 21.6 (OPEN-TOPPED: this is the unqualified total Omega the PI did NOT authorize); NEW (PI decision 1, 2026-07-29). The measured residual excess of finding D2 (1.23x on 2LPT-0 to 1.80x on london-0) sits ABOVE logN ~ 21.6 and its per-bin digits are INVARIANT across every pad floor and both completeness conventions of the 60-config D1 ladder. The PI capped the primary reporting window at 21.6 rather than refit the poorly anchored high-N response. This is a REPORTING cap, not a fix: the excess is still there, it is just outside what is reported. CORRECTION (referee, 2026-07-29): 21.6 is NOT where the response stops being measured, and an earlier version of this string implied it was. The frozen response's moment polynomials were fitted at true-N anchors whose per-cell LOW end spans 19.336-19.503 and whose per-cell HIGH end spans 21.041-21.216 (pack.resp_N_fit_range; measured, see RESPONSE_ANCHOR_MEASURED). Above the top anchor the degree-2 surfaces are EXTRAPOLATED, so 0.38-0.56 dex of EXTRAPOLATED response lies INSIDE the authorized window [19.7, 21.6] -- see extrapolated_response_inside_window(). The earlier string also quoted a top anchor above 21.5, which appears in no pack: it was the LOW range's 19.503 mistyped with a 21 in front.",
     "rule": "Omega_HI is emitted ONLY when its N window is CONTAINED in the primary reporting window [19.7, 21.6] and is LABELLED with that interval. An unqualified / total / open-topped Omega_HI is REFUSED: the PI ruled that restricting the reporting window does NOT automatically authorize a total Omega_HI headline, and that a defensible tail treatment must come back to the PI. No tail extrapolation is invented here."
    },
    "report_197_216": {
@@ -31625,13 +31674,13 @@
    }
   },
   "conclusion_scope": "MOCK/SYNTHETIC only, REDUCED scale. This is not a coverage statement about the production 29x15x8 fit, whose forward model does not close (see verdict) -- a coverage statement about a non-closing model would be meaningless anyway.",
-  "wall_seconds": 430.7,
+  "wall_seconds": 423.4,
   "meta": {
    "n_sims_requested": 64,
    "n_sims_used": 64,
    "n_ranks_L": 50,
    "seed": 0,
-   "wallclock_s": 427.6004822254181,
+   "wallclock_s": 420.3340656757355,
    "reductions": {
     "R1_grid": {
      "nhat_edges": [
@@ -36805,7 +36854,9 @@
   }
  },
  "limitations": [
+  "\ud83d\udd34 THE AUTHORIZED Omega_HI WINDOW STILL CONTAINS EXTRAPOLATED RESPONSE. Capping the window at 21.6 does NOT put it on measured response: the frozen response's top true-N anchor is at 21.0406-21.2164 depending on the response cell, so 0.38-0.56 dex of EXTRAPOLATED response sits INSIDE [19.7, 21.6] \u2014 the one window where Omega_HI is authorized. On the adopted packs the N-weighted Omega share of [21.2, 21.6) alone is 27.5-29.6% of the in-window total, and that whole sub-interval is above the BEST-anchored cell's top anchor. 21.6 was chosen for a residual-excess reason (finding D2), not because the response is measured up to it. See verdict.extrapolated_response_inside_the_omega_window.",
   "the 21.6 ceiling is a REPORTING cap, not a fix. Residual D2 (the 1.23-1.80x high-N excess) is still in the model; it has been moved outside what is reported. Any statement that D2 is 'closed' is wrong.",
+  "the decision-4 sub-window guard is armed on every PAPER-FACING tier, which is NOT every tier: subdla_195_203 and all_195_up have windows that START below 19.7 and are therefore REFUSED as paper-facing rather than guarded (their dN/dX draws w = 0.20 dex on the non-identifiable [19.5, 19.7) basis bin). Read reporting.SUBWINDOW_GUARD_SCOPE before quoting the guard; an earlier version of that prose over-claimed.",
   "21.6 - 19.7 = 1.9 dex is an ODD multiple of 0.1, so NO uniform 0.2-dex basis can carry both window edges. The adopted grid puts 19.5 and 19.7 on exact basis edges and leaves 21.6 astride the [21.5, 21.7) basis bin. Integrated reported quantities split that bin by dex overlap, which is exact under the adopted merging convention; DIFFERENTIAL per-bin reporting on the 0.2-dex basis therefore stops at 21.5.",
   "the convention systematic is measured on the TRUTH-FOLD (predicted counts at the pack's own truth), NOT on a posterior. Propagating it to f(N) assumes a multiplicative mu error maps to the inverse multiplicative f error, exact only for a diagonal kernel.",
   "all three mocks share ONE injected f(N), so the cross-mock spread here bounds pipeline/realisation differences, NOT population-model error.",
