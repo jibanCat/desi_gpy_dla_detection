@@ -699,12 +699,13 @@ def coverage_block(n_sims=64, seed=0):
         largest_DETECTED_under_dispersion=(max(det_under) if det_under else None),
         smallest_UNDETECTED_under_dispersion=(min(und_under) if und_under
                                               else None),
-        monotone_in_s=bool(all(
-            flagged[f"{s:g}"] for s in over
-            if det_over and s >= min(det_over))),
-        note=("the detection curve is NOT monotone in s at this power: a scale "
-              "can sit between a detected and an undetected one. The numbers "
-              "above are the measured envelope, not an interpolation."),
+        over_dispersion_detection_is_monotone=bool(
+            not und_over or not det_over or max(und_over) < min(det_over)),
+        note=("these are MEASURED envelope values on the scales actually run "
+              "(dispersion_scales), not an interpolation: nothing here says the "
+              "test's power is monotone BETWEEN two adjacent scales, and an "
+              "undetected scale ABOVE a detected one would show up as "
+              "over_dispersion_detection_is_monotone = false."),
     )
     return dict(
         what=("simulation-based calibration of the SAME estimator on the ADOPTED "
