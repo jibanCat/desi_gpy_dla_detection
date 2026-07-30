@@ -87,6 +87,19 @@ def _RP():
     return RP
 
 
+def _RAT():
+    """The gate-ratification record (decision 8, 2026-07-29).
+
+    The ladder's ``closes`` verdict uses ONLY the three RATIFIED criteria; the
+    two ratio-span tolerances that also live in ``run_posterior.GATE`` have
+    never taken part in it.  The artifact says which is which so that a reader
+    of ``metadata.gate_tolerances`` cannot assume the whole dict was
+    load-bearing.
+    """
+    from CDDF_analysis.hbi_mcmc import ratification as RAT
+    return RAT
+
+
 # ---------------------------------------------------------------------------
 # shared helpers + the phase-2 evidence/verdict blocks
 # ---------------------------------------------------------------------------
@@ -684,6 +697,27 @@ def phase_selftest():
                 f"d1_ladder --phase selftest --pack-dir {PACKDIR} --out {OUT}"),
             pack_note="packs are INPUTS, written to scratch, never committed",
             gate_tolerances=dict(_RP().GATE),
+            # WHICH of those tolerances actually decided ``closes``, and which
+            # a deciding authority has NOT ratified.  Dumping all of GATE
+            # without this distinction implies the whole dict was
+            # load-bearing; it was not.  ``closes`` is z_total_max AND
+            # z_bin_max AND chi2_dof_max -- all three RATIFIED (decision 8,
+            # 2026-07-29) -- and the two ratio-span tolerances that appear in
+            # ``gate_tolerances`` above played NO part in it, before or after
+            # the ratification.
+            closes_criteria=["z_total_max", "z_bin_max", "chi2_dof_max"],
+            closes_criteria_note=(
+                "closes = (|z_total| <= z_total_max) AND (max|z_bin| <= "
+                "z_bin_max) AND (chi2/dof <= chi2_dof_max), over the reported "
+                "n-hat bins with obs > 0. All three are RATIFIED. The exact "
+                "definition of z is the docstring of "
+                "CDDF_analysis.hbi_mcmc.forward_selftest.poisson_z; it is an "
+                "order-of-magnitude tripwire, NOT a 5-sigma significance and "
+                "NOT multiplicity-corrected."),
+            gate_tolerances_ratified=list(_RAT().ratified_names()),
+            gate_tolerances_unratified=list(_RAT().unratified_names()),
+            gate_tolerances_unratified_note=_RAT().UNRATIFIED_NOTE,
+            ratification=_RAT().ratification_stamp(),
             mocks_only=True,
             privacy="mock packs only; no real-LOA path is touched",
             wall_seconds=round(time.time() - t_start, 1),

@@ -220,6 +220,29 @@ def test_the_evidence_verdict_and_artifact_carry_the_ratification_state():
     assert ev["ratification"]["authority"] == RAT.RATIFYING_AUTHORITY
 
 
+def test_the_d1_ladder_stamp_names_which_tolerances_decided_closes():
+    """The 60-config ladder artifact dumps the WHOLE of GATE into
+    ``metadata.gate_tolerances``, which implies every number in it was
+    load-bearing.  Only three were.  The stamp must distinguish them, or a
+    reader concludes the ladder was gated on an uncalibrated tolerance."""
+    from CDDF_analysis.hbi_mcmc import d1_ladder as D
+    src = __import__("inspect").getsource(D)
+    assert "closes_criteria=[\"z_total_max\", \"z_bin_max\", \"chi2_dof_max\"]" \
+        in src, "the ladder stamp does not name its closes criteria"
+    assert "gate_tolerances_unratified=list(_RAT().unratified_names())" in src
+    assert "ratification=_RAT().ratification_stamp()" in src
+    # and the criteria it names are exactly the ones the code ANDs together
+    closes_src = src[src.index("closes=bool("):]
+    closes_src = closes_src[:closes_src.index(")," + "\n")]
+    for k in ("z_total_max", "z_bin_max", "chi2_dof_max"):
+        assert k in closes_src, k
+    for k in _SPAN_TOLERANCES:
+        assert k not in closes_src, (
+            f"{k} is UNRATIFIED and must not decide the ladder's `closes`")
+    # the ratified/unratified split it stamps must be the real one
+    assert set(D._RAT().unratified_names()) == set(_SPAN_TOLERANCES)
+
+
 # ==========================================================================
 # 3. THE SPAN STATISTIC AND ITS PROSPECTIVE CALIBRATION
 # ==========================================================================
