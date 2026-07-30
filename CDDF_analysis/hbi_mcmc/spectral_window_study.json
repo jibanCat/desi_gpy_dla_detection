@@ -1,14 +1,14 @@
 {
  "metadata": {
   "title": "Matched spectral-window study \u2014 the ANALYSIS window (lya_only 1025 A vs lya_lyb 911 A) at the PI-adopted pad/completeness/reporting configuration, plus a bounded FINDER-FITTING-window pilot",
-  "date": "2026-07-29 20:47:12",
-  "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+  "date": "2026-07-29 20:57:32",
+  "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
   "code_commit_scope": "the SELFTEST phase (this process). Input packs carry their own stamp \u2014 see pack_stamp_audit.",
   "code_commit_dirty": false,
   "pack_stamp_audit": {
-   "selftest_phase_code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "selftest_phase_code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "pack_code_commits": [
-    "5b9325b75aede43b19eb45d96c600fc79a79f952"
+    "89233244acf1dd1013440016fc63ab34804a9a90"
    ],
    "n_packs": 6,
    "all_packs_same_commit": true,
@@ -71,7 +71,7 @@
   },
   "mocks_only": true,
   "privacy": "mock packs only; no real-LOA path is touched",
-  "wall_seconds": 7.4
+  "wall_seconds": 6.2
  },
  "protocol": {
   "fixed_before_outcome": true,
@@ -372,6 +372,40 @@
     "reporting_ratio": 0.9771585574366917,
     "high_n_ratio": 1.2449218328309,
     "still_over_gate_by": 9.868520505171581
+   },
+   "arm2_fitting_window": {
+    "status": "PILOT COMPLETE (POINTER ONLY)",
+    "rests_on": "ARM 2 (PILOT \u2014 a POINTER, NOT A MEASUREMENT)",
+    "pointer": "NULL. On the 9 paired large DLAs recovered by BOTH fitting windows, moving the finder's blue edge from 911.75 A to 1025.0 A changes the recovered log NHI by a mean of -0.0021 dex (median +0.0000, sd 0.0676, sem 0.0225, paired t-like -0.09 on 8 dof). That is ~32x smaller than the scatter and is indistinguishable from zero.",
+    "accuracy_pointer": "neither window is measurably biased on these large DLAs: |bias| changes by +0.0113 dex (t-like +0.51), i.e. the blue-end cut neither helps nor hurts large-DLA N recovery here.",
+    "structure": "4 of 9 sightlines returned a BIT-IDENTICAL log NHI in both windows; the non-zero shifts are small and mostly negative except one +0.16 dex outlier at SNR 2.8. So the null is not an averaging artefact \u2014 for half the sample the blue edge changed nothing at all.",
+    "interpretation": "This is the FIRST DIRECT evidence on the PI's stated mechanism, and it does NOT support it: at n=9 there is no detectable blue-end effect on recovered large-DLA N_HI in either direction. It is a POINTER. With sd = 0.068 dex the pilot can only exclude a mean shift larger than about 0.045 dex at 2 sigma, so a real effect of ~0.02-0.04 dex would be invisible here \u2014 and an effect that small could still matter to the high-N residual. The ANALYSIS-window arm found a REAL blue-end effect on the high-N residual (-0.11 to -0.14 at fixed response), so 'no effect in the fitting window' and 'a real effect in the selection' are both on the table and are NOT the same claim.",
+    "cost": {
+     "seconds_per_spectrum_measured": 56.25791666666667,
+     "measured_on": "LARGE-DLA sightlines (truth log NHI >= 21.0), which are SLOWER than a random sightline: every one of them escalates the multi-DLA model ladder (MAX_DLAS=4, 100k PW samples). This makes the figure an UPPER BOUND on the per-spectrum mean, and the campaign numbers below UPPER BOUNDS with it.",
+     "spectra_per_mock_measured": 361167,
+     "spectra_per_mock_source": "unique TARGETIDs in the committed 2LPT-0 V1 production catalog combined_catalog/dlacat-v2.8.5-mockcat.fits",
+     "cpu_hours_per_mock_one_window": 5644.028607986111,
+     "cpu_hours_three_mocks_one_window": 16932.085823958332,
+     "note": "a fitting-window campaign needs only ONE new window per mock: production already ran at min_lambda = 911.75, so the 911.75 arm is FREE and only the cut arm is new.",
+     "budget_context": "the project compute cap is ~5,000 CPU-h and any job above ~500 CPU-h needs explicit PI sign-off. No sign-off has been given, and none was sought."
+    },
+    "not_recovered_by_either_arm": "3 of the 12 requested sightlines produced no op-cut detection in EITHER window \u2014 symmetric, so the pilot loses no sightline to the window choice."
+   },
+   "which_part_rests_on_what": {
+    "arm1_complete": [
+     "the recommendation to keep lya_only PRIMARY and lya_lyb as a reported SENSITIVITY",
+     "every closure / chi2 / high-N / marginal number quoted",
+     "the selection-vs-response attribution of the high-N move"
+    ],
+    "arm2_pilot_only": [
+     "the statement that the FITTING window shows no detectable effect on recovered large-DLA N_HI",
+     "the per-spectrum finder cost and the campaign cost estimate"
+    ],
+    "neither": [
+     "any claim that either window CLOSES \u2014 none does",
+     "any absolute number under the PI-adopted 0.2-dex basis (decision 3 is not implemented here)"
+    ]
    }
   }
  },
@@ -1131,7 +1165,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 6.3
+   "wall_seconds": 5.33
   },
   "2lpt0|lya_only|clamp=hi": {
    "mock": "2lpt0",
@@ -1888,7 +1922,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.1
+   "wall_seconds": 0.09
   },
   "london0|lya_only|clamp=both": {
    "mock": "london0",
@@ -2645,7 +2679,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.09
+   "wall_seconds": 0.08
   },
   "london0|lya_only|clamp=hi": {
    "mock": "london0",
@@ -3402,7 +3436,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.06
   },
   "saclay0|lya_only|clamp=both": {
    "mock": "saclay0",
@@ -4916,7 +4950,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.04
+   "wall_seconds": 0.07
   },
   "2lpt0|lya_lyb|clamp=both": {
    "mock": "2lpt0",
@@ -5673,7 +5707,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.06
+   "wall_seconds": 0.04
   },
   "2lpt0|lya_lyb|clamp=hi": {
    "mock": "2lpt0",
@@ -6430,7 +6464,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.05
+   "wall_seconds": 0.07
   },
   "london0|lya_lyb|clamp=both": {
    "mock": "london0",
@@ -7187,7 +7221,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.06
+   "wall_seconds": 0.05
   },
   "london0|lya_lyb|clamp=hi": {
    "mock": "london0",
@@ -7944,7 +7978,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.05
+   "wall_seconds": 0.08
   },
   "saclay0|lya_lyb|clamp=both": {
    "mock": "saclay0",
@@ -8701,7 +8735,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.06
   },
   "saclay0|lya_lyb|clamp=hi": {
    "mock": "saclay0",
@@ -9609,7 +9643,7 @@
  "pack_metadata": {
   "2lpt0|lya_only": {
    "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz",
-   "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "analysis_window": {
     "name": "lya_only",
     "lam_rf_min": 1025.0,
@@ -9676,7 +9710,7 @@
   },
   "london0|lya_only": {
    "pack": "modelA_pack_london0_winlya_only_pad19p0_molly172.npz",
-   "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "analysis_window": {
     "name": "lya_only",
     "lam_rf_min": 1025.0,
@@ -9743,7 +9777,7 @@
   },
   "saclay0|lya_only": {
    "pack": "modelA_pack_saclay0_winlya_only_pad19p0_molly172.npz",
-   "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "analysis_window": {
     "name": "lya_only",
     "lam_rf_min": 1025.0,
@@ -9810,7 +9844,7 @@
   },
   "2lpt0|lya_lyb": {
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "analysis_window": {
     "name": "lya_lyb",
     "lam_rf_min": 911.0,
@@ -9877,7 +9911,7 @@
   },
   "london0|lya_lyb": {
    "pack": "modelA_pack_london0_winlya_lyb_pad19p0_molly172.npz",
-   "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "analysis_window": {
     "name": "lya_lyb",
     "lam_rf_min": 911.0,
@@ -9944,7 +9978,7 @@
   },
   "saclay0|lya_lyb": {
    "pack": "modelA_pack_saclay0_winlya_lyb_pad19p0_molly172.npz",
-   "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+   "code_commit": "89233244acf1dd1013440016fc63ab34804a9a90",
    "analysis_window": {
     "name": "lya_lyb",
     "lam_rf_min": 911.0,
@@ -10094,7 +10128,210 @@
   }
  ],
  "arm2_fitting_window_pilot": {
-  "status": "NOT RUN",
-  "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/window_study/arm2/arm2_pilot.json"
+  "status": "PILOT COMPLETE (POINTER ONLY)",
+  "what": "the FINDER run twice on the SAME spectra at min_lambda = 911.75 (production) and 1025.0 (the controlled blue-end cut), everything else byte-identical. This is the ONLY arm that can test the PI's mechanism (blue-edge truncation INSIDE the GP fit); the analysis-window arm is a post-hoc selection and cannot.",
+  "routine": "CDDF_analysis/hbi_mcmc/window_study.py:analyze_pilot; runner slurm/greatlakes/production/arm2_fitting_window_pilot.sh",
+  "design": {
+   "mock": "2lpt0",
+   "spectra_file": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/spectra-16/0/39/spectra-16-39.fits",
+   "level2_index": 18,
+   "selection": "the 12 sightlines with the LARGEST truth log NHI in one spectra-16 file, one DLA per sightline, chosen from TRUTH (NHI >= 21.0) and therefore independent of either arm's output",
+   "n_requested": 12,
+   "truth_NHI_range": [
+    21.31465493061691,
+    21.893929806765083
+   ],
+   "detection_matching": "per TARGETID, the op-cut detection CLOSEST IN Z_DLA to the truth DLA \u2014 NOT the highest-N one, which would bias the measured quantity",
+   "op_cut": {
+    "p_dla_min": 0.99,
+    "dlaflag": 0,
+    "snr_redside_min": 2.0
+   },
+   "arms": {
+    "lam911p75": 911.75,
+    "lam1025p0": 1025.0
+   },
+   "what_else_changed": "NOTHING \u2014 only --min_lambda differs"
+  },
+  "per_spectrum": [
+   {
+    "TARGETID": 15166,
+    "NHI_true": 21.611923612235465,
+    "Z_true": 3.32752868173135,
+    "SNR": 3.148074710123078,
+    "NHI_min_lambda_911p75": 21.238114111922656,
+    "NHI_min_lambda_1025p0": 21.204479087364465,
+    "delta_NHI_bluecut_minus_full": -0.03363502455819045,
+    "bias_911p75": -0.37380950031280946,
+    "bias_1025p0": -0.4074445248709999,
+    "delta_abs_bias": 0.03363502455819045
+   },
+   {
+    "TARGETID": 28464,
+    "NHI_true": 21.633584014161904,
+    "Z_true": 3.3619976945880645,
+    "SNR": 9.930444104164646,
+    "NHI_min_lambda_911p75": 21.762135629570654,
+    "NHI_min_lambda_1025p0": 21.686633640543516,
+    "delta_NHI_bluecut_minus_full": -0.07550198902713845,
+    "bias_911p75": 0.1285516154087496,
+    "bias_1025p0": 0.05304962638161115,
+    "delta_abs_bias": -0.07550198902713845
+   },
+   {
+    "TARGETID": 33313,
+    "NHI_true": 21.830384653312038,
+    "Z_true": 2.76904289575714,
+    "SNR": 3.7638154472627856,
+    "NHI_min_lambda_911p75": 21.768010424721194,
+    "NHI_min_lambda_1025p0": 21.741324877469555,
+    "delta_NHI_bluecut_minus_full": -0.026685547251638297,
+    "bias_911p75": -0.06237422859084418,
+    "bias_1025p0": -0.08905977584248248,
+    "delta_abs_bias": 0.026685547251638297
+   },
+   {
+    "TARGETID": 46944,
+    "NHI_true": 21.64451238886525,
+    "Z_true": 2.1497340596130976,
+    "SNR": 14.463655311431815,
+    "NHI_min_lambda_911p75": 21.69737187820567,
+    "NHI_min_lambda_1025p0": 21.69737187820567,
+    "delta_NHI_bluecut_minus_full": 0.0,
+    "bias_911p75": 0.05285948934041684,
+    "bias_1025p0": 0.05285948934041684,
+    "delta_abs_bias": 0.0
+   },
+   {
+    "TARGETID": 52280,
+    "NHI_true": 21.555170090460688,
+    "Z_true": 2.052945562361101,
+    "SNR": 5.680852274692878,
+    "NHI_min_lambda_911p75": 21.590156803550997,
+    "NHI_min_lambda_1025p0": 21.590156803550997,
+    "delta_NHI_bluecut_minus_full": 0.0,
+    "bias_911p75": 0.03498671309030854,
+    "bias_1025p0": 0.03498671309030854,
+    "delta_abs_bias": 0.0
+   },
+   {
+    "TARGETID": 57485,
+    "NHI_true": 21.31465493061691,
+    "Z_true": 2.135134695492534,
+    "SNR": 2.0915183155850885,
+    "NHI_min_lambda_911p75": 21.374912435831575,
+    "NHI_min_lambda_1025p0": 21.328197427575617,
+    "delta_NHI_bluecut_minus_full": -0.04671500825595842,
+    "bias_911p75": 0.060257505214664775,
+    "bias_1025p0": 0.013542496958706352,
+    "delta_abs_bias": -0.04671500825595842
+   },
+   {
+    "TARGETID": 95196,
+    "NHI_true": 21.465031055031226,
+    "Z_true": 2.0278301444407214,
+    "SNR": 2.7868670319685536,
+    "NHI_min_lambda_911p75": 21.508843324276185,
+    "NHI_min_lambda_1025p0": 21.67263063977323,
+    "delta_NHI_bluecut_minus_full": 0.1637873154970464,
+    "bias_911p75": 0.04381226924495962,
+    "bias_1025p0": 0.20759958474200602,
+    "delta_abs_bias": 0.1637873154970464
+   },
+   {
+    "TARGETID": 99093,
+    "NHI_true": 21.45113963129131,
+    "Z_true": 2.120122208432603,
+    "SNR": 10.881663068720899,
+    "NHI_min_lambda_911p75": 21.573725729400085,
+    "NHI_min_lambda_1025p0": 21.573725729400085,
+    "delta_NHI_bluecut_minus_full": 0.0,
+    "bias_911p75": 0.1225860981087763,
+    "bias_1025p0": 0.1225860981087763,
+    "delta_abs_bias": 0.0
+   },
+   {
+    "TARGETID": 106577,
+    "NHI_true": 21.893929806765083,
+    "Z_true": 2.259105051316613,
+    "SNR": 2.949271862303763,
+    "NHI_min_lambda_911p75": 21.833478852330064,
+    "NHI_min_lambda_1025p0": 21.833478852330064,
+    "delta_NHI_bluecut_minus_full": 0.0,
+    "bias_911p75": -0.060450954435019355,
+    "bias_1025p0": -0.060450954435019355,
+    "delta_abs_bias": 0.0
+   }
+  ],
+  "n_paired": 9,
+  "not_recovered_by_arm": {
+   "lam911p75": [
+    81359,
+    102309,
+    107319
+   ],
+   "lam1025p0": [
+    81359,
+    102309,
+    107319
+   ]
+  },
+  "delta_NHI_bluecut_minus_full": {
+   "n": 9,
+   "mean": -0.0020833615106532477,
+   "median": 0.0,
+   "sd": 0.06755876776336128,
+   "sem": 0.02251958925445376,
+   "t_like": -0.09251329973708182,
+   "n_positive": 1,
+   "n_negative": 4,
+   "min": -0.07550198902713845,
+   "max": 0.1637873154970464
+  },
+  "delta_abs_bias_bluecut_minus_full": {
+   "n": 9,
+   "mean": 0.01132121000264203,
+   "median": 0.0,
+   "sd": 0.06651976417480335,
+   "sem": 0.02217325472493445,
+   "t_like": 0.5105795312003073,
+   "n_positive": 3,
+   "n_negative": 2,
+   "min": -0.07550198902713845,
+   "max": 0.1637873154970464
+  },
+  "cost": {
+   "lam911p75": {
+    "n_spectra": 12,
+    "inference_seconds": 747.84,
+    "seconds_per_spectrum": 62.32,
+    "log": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/window_study/arm2/run_lam911p75/logs/pilot_lam911p75.log"
+   },
+   "lam1025p0": {
+    "n_spectra": 12,
+    "inference_seconds": 602.35,
+    "seconds_per_spectrum": 50.19583333333333,
+    "log": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/window_study/arm2/run_lam1025p0/logs/pilot_lam1025p0.log"
+   }
+  },
+  "campaign_cost_estimate": {
+   "seconds_per_spectrum_measured": 56.25791666666667,
+   "measured_on": "LARGE-DLA sightlines (truth log NHI >= 21.0), which are SLOWER than a random sightline: every one of them escalates the multi-DLA model ladder (MAX_DLAS=4, 100k PW samples). This makes the figure an UPPER BOUND on the per-spectrum mean, and the campaign numbers below UPPER BOUNDS with it.",
+   "spectra_per_mock_measured": 361167,
+   "spectra_per_mock_source": "unique TARGETIDs in the committed 2LPT-0 V1 production catalog combined_catalog/dlacat-v2.8.5-mockcat.fits",
+   "cpu_hours_per_mock_one_window": 5644.028607986111,
+   "cpu_hours_three_mocks_one_window": 16932.085823958332,
+   "note": "a fitting-window campaign needs only ONE new window per mock: production already ran at min_lambda = 911.75, so the 911.75 arm is FREE and only the cut arm is new.",
+   "budget_context": "the project compute cap is ~5,000 CPU-h and any job above ~500 CPU-h needs explicit PI sign-off. No sign-off has been given, and none was sought."
+  },
+  "uncertainty": {
+   "headline": "A PILOT OF TWELVE SPECTRA IS A POINTER, NOT A MEASUREMENT.",
+   "what_n_12_can_resolve": "with n = 12 paired differences the standard error on the mean delta log NHI is sd/sqrt(12) = sd/3.46, so an effect smaller than about 0.6 sd is indistinguishable from zero at 2 sigma. The measured sd and sem are reported above; read t_like as a rough paired-t statistic on 11 dof (|t| >~ 2.2 is 2-sided p < 0.05) and NOT as a calibrated test \u2014 the 12 sightlines were chosen as the LARGEST truth NHI in one healpix, so they are neither a random sample of DLAs nor independent of each other's sky region.",
+   "what_it_cannot_do": "it cannot estimate the CDDF, cannot say anything about completeness or purity, cannot generalise to the other two mocks, and cannot be turned into a forward-closure statement. Any closure claim about the fitting window requires the full campaign costed above.",
+   "selection_caveat": "the sample is deliberately restricted to LARGE DLAs (NHI >= 21.0) because that is the population the PI's hypothesis is about. It therefore says nothing about the low-N end, and its per-spectrum cost is an upper bound."
+  },
+  "code_commit": "5b9325b75aede43b19eb45d96c600fc79a79f952",
+  "code_commit_dirty": false,
+  "date": "2026-07-29 20:48:53"
  }
 }
