@@ -1090,8 +1090,16 @@ def main(argv=None):
                          "spends sampler time may run on one.")
     ap.add_argument("--min-pad-bins", type=int, default=1)
     ap.add_argument("--max-abs-z-total", type=float, default=5.0)
-    ap.add_argument("--max-abs-z-bin", type=float, default=5.0)
-    ap.add_argument("--max-chi2-dof", type=float, default=3.0)
+    ap.add_argument("--max-abs-z-bin", type=float, default=5.0,
+                    help="max |z| allowed in EVERY per-bin marginal -- by_nhat, "
+                         "by_z AND by_snr. One knob for three arms because "
+                         "run_posterior.GATE sets z_bin_max == z_zbin_max == "
+                         "z_snrbin_max == 5.0. RESTATED_NOT_RATIFIED: these "
+                         "arms refuse work and nobody ratified them.")
+    ap.add_argument("--max-chi2-dof", type=float, default=3.0,
+                    help="chi2/dof over the reported n-hat bins with obs > 0. "
+                         "The ONE ratified numerical closure tolerance "
+                         "(PI decision 8): 3.0.")
     ap.add_argument("--ratio-span-null", action="store_true",
                     help="prospective calibration of the two UNRATIFIED "
                          "ratio-span tolerances on a SYNTHETIC pack: null "
@@ -1213,24 +1221,66 @@ def main(argv=None):
     return out
 
 
-def _closure_verdict(tab, max_abs_z_total, max_abs_z_bin, max_chi2_dof):
+def _closure_verdict(tab, max_abs_z_total, max_abs_z_bin, max_chi2_dof,
+                     max_abs_z_snrbin=None):
     """PASS/FAIL on the truth-fold, from the same table the report prints.
 
-    Deliberately reads 'by_z' as well as 'by_nhat': ratio_tables already computes
-    the z-marginal and the production gate discarded it, so a pack carrying the
-    full ~+22% z-marginal swing would otherwise sail through a check that only
-    looked at the total and the N-marginal.
+    THIS IS WHAT PRODUCTION RUNS AS ITS PRE-FLIGHT.  ``--require-closure`` is
+    invoked by ``slurm/greatlakes/hbi_mcmc/posterior_production.sbatch`` and by
+    ``rung9v3_2lpt0.sbatch``, which calls it "LOAD-BEARING"; both take this
+    verdict, not ``run_posterior.forward_closure_gate``, as the thing standing
+    between a broken forward model and ~36 h of sampler time.
+
+    ALL THREE marginal arms are read -- 'by_nhat', 'by_z' AND 'by_snr'.
+    ``ratio_tables`` computes all three; until 2026-08-05 this verdict looped
+    over only the first two while ``forward_closure_gate`` gated all three, so
+    the PRE-FLIGHT WAS THE WEAKER OF THE TWO CHECKS.  Demonstrated on a
+    constructed table: by_snr max|z| = 30.0 against GATE['z_snrbin_max'] = 5.0
+    returned {'closes': True, 'reasons': []}.  A forward model that closes in
+    total, in N and in z while mis-predicting one SNR stratum 4:1 is exactly
+    the completeness/response defect the SNR marginal exists to catch.
+
+    ``max_abs_z_snrbin`` defaults to ``max_abs_z_bin``, matching
+    ``run_posterior.GATE`` where z_bin_max == z_zbin_max == z_snrbin_max == 5.0.
+    It is a separate parameter so a future split of those tolerances does not
+    silently re-couple the arms.
+
+    🔴 AUTHORITY.  The four |z| arms are RESTATED_NOT_RATIFIED: they refuse
+    work and no deciding authority ratified them (``ratification.py``).  Only
+    chi2/dof <= 3 is a ratified number.  Adding the by_snr arm ARMS one more
+    unratified tolerance in the pre-flight; it does so to make the pre-flight
+    equal the committed gate, not because the number acquired authority.
+
+    RESIDUAL, KNOWN ASYMMETRY vs ``forward_closure_gate``: that function
+    restricts each marginal to rows with ``obs > 0``; this one does not, so on a
+    table with an EMPTY aggregate row carrying mu > 0 (|z| = sqrt(mu)) this
+    verdict is STRICTER.  Left stricter deliberately -- relaxing a fail-closed
+    pre-flight is not a refactor.  Measured inert on all 18 committed mock
+    packs: the only obs == 0 rows are the two structurally-empty SNR<=2 op-mask
+    strata, which carry mu == 0 and therefore z == 0.0 exactly.
     """
     tot = tab.get("total", {})
+    if max_abs_z_snrbin is None:
+        max_abs_z_snrbin = max_abs_z_bin
     reasons = []
     zt = abs(float(tot.get("z", 0.0)))
     if zt > max_abs_z_total:
         reasons.append(f"|z_total| {zt:.2f} > {max_abs_z_total}")
-    # chi2/dof is COMPUTED here from the n-hat rows.  It used to be read as
-    # ``tot.get("chi2_dof", 0.0)`` -- but ``ratio_tables``'s ``total`` has only
-    # mu/obs/ratio/z and has NEVER carried a ``chi2_dof`` key, so this arm read
-    # 0.0 unconditionally and could not fire.  A table of many mildly-off bins,
-    # each individually under the per-bin |z| limit, therefore "closed".
+    # chi2/dof is COMPUTED here from the n-hat rows rather than read from
+    # ``tot``.  🔴 CORRECTION (2026-08-05): until this date this comment stated,
+    # in the present tense, that ``ratio_tables``'s ``total`` carries only
+    # mu/obs/ratio/z and has at no point emitted a ``chi2_dof`` key.  That was
+    # true when written and is FALSE now -- ``ratio_tables`` (see its own
+    # comment above ``out["total"]["chi2_dof"]``) emits both ``chi2_dof`` and
+    # ``n_gate_bins``, and on ``synthetic_pack(0, **small_test_grid())`` the key
+    # reads 0.6479548471525799 over 10 bins, identical to the value computed
+    # here.  The retracted sentence is not reproduced verbatim so that a grep
+    # for it cannot land on this correction -- read it in git instead.
+    # What survives is the RULE, not the claim about the key: this arm computes
+    # its own number so it cannot depend on a producer remembering to supply
+    # one.  The original defect was real -- ``tot.get("chi2_dof", 0.0)`` read
+    # 0.0 unconditionally, so a table of many mildly-off bins, each
+    # individually under the per-bin |z| limit, "closed".
     _rows = [r for r in (tab.get("by_nhat") or [])
              if isinstance(r, dict) and r.get("obs", 0) > 0
              and r.get("z") is not None and np.isfinite(float(r["z"]))]
@@ -1239,17 +1289,22 @@ def _closure_verdict(tab, max_abs_z_total, max_abs_z_bin, max_chi2_dof):
     if np.isfinite(c2) and c2 > max_chi2_dof:
         reasons.append(f"chi2/dof {c2:.2f} > {max_chi2_dof} "
                        f"over {len(_z)} n-hat bins")
-    for key in ("by_nhat", "by_z"):
+    arm_tol = {"by_nhat": max_abs_z_bin, "by_z": max_abs_z_bin,
+               "by_snr": max_abs_z_snrbin}
+    for key in ("by_nhat", "by_z", "by_snr"):
+        tol = arm_tol[key]
         rows = tab.get(key) or {}
         zs = [abs(float(r.get("z", 0.0)))
               for r in (rows.values() if isinstance(rows, dict) else rows)
               if isinstance(r, dict) and r.get("z") is not None]
-        if zs and max(zs) > max_abs_z_bin:
-            reasons.append(f"max|z| in {key} = {max(zs):.2f} > {max_abs_z_bin}")
+        if zs and max(zs) > tol:
+            reasons.append(f"max|z| in {key} = {max(zs):.2f} > {tol}")
     return dict(closes=not reasons, reasons=reasons,
                 chi2_dof=c2, n_bins=int(len(_z)),
+                arms_gated=["total", "chi2_dof", "by_nhat", "by_z", "by_snr"],
                 tolerances=dict(max_abs_z_total=max_abs_z_total,
                                 max_abs_z_bin=max_abs_z_bin,
+                                max_abs_z_snrbin=max_abs_z_snrbin,
                                 max_chi2_dof=max_chi2_dof))
 
 

@@ -697,3 +697,144 @@ def test_the_chi2_row_set_excludes_empty_observed_bins(fixture_pack):
     assert v["chi2_dof"] == wcm["chi2_dof"] == wm["chi2_dof"]
     assert tab["total"]["n_gate_bins"] == n_occ
     assert tab["total"]["chi2_dof"] == wcm["chi2_dof"]
+
+
+# ---------------------------------------------------------------------------
+# A2 (2026-08-05) — the pre-flight must EQUAL the production gate: by_snr
+# ---------------------------------------------------------------------------
+def _closing_tab_with_a_broken_snr_stratum():
+    """A table that closes on total, by_nhat and by_z and is 4:1 wrong in one
+    SNR stratum. THE demonstration case for A2: before the fix
+    ``_closure_verdict`` returned {'closes': True, 'reasons': []} on this."""
+    return {
+        "total": {"mu": 100.0, "obs": 100.0, "ratio": 1.0, "z": 0.0,
+                  "chi2_dof": 0.0, "n_gate_bins": 2},
+        "by_nhat": [dict(lo=19.5, hi=19.6, mu=50.0, obs=50.0, ratio=1.0, z=0.0),
+                    dict(lo=19.6, hi=19.7, mu=50.0, obs=50.0, ratio=1.0, z=0.0)],
+        "by_z": [dict(lo=2.0, hi=2.1, mu=50.0, obs=50.0, ratio=1.0, z=0.0),
+                 dict(lo=2.1, hi=2.2, mu=50.0, obs=50.0, ratio=1.0, z=0.0)],
+        "by_snr": [dict(s=0, mu=100.0, obs=400.0, ratio=0.25, z=30.0),
+                   dict(s=1, mu=100.0, obs=100.0, ratio=1.0, z=0.0)],
+    }
+
+
+def test_closure_verdict_now_gates_the_snr_marginal():
+    """BEHAVIOUR CHANGE (A2). The pre-flight `--require-closure` runs
+    ``_closure_verdict``; it looped ('by_nhat', 'by_z') only, while the
+    committed ``forward_closure_gate`` also gates ``by_snr`` against
+    ``GATE['z_snrbin_max'] = 5.0``. This table has by_snr max|z| = 30.0 and used
+    to CLOSE."""
+    from CDDF_analysis.hbi_mcmc.run_posterior import GATE
+
+    tab = _closing_tab_with_a_broken_snr_stratum()
+    assert GATE["z_snrbin_max"] == 5.0
+    assert max(abs(r["z"]) for r in tab["by_snr"]) == 30.0
+
+    v = FS._closure_verdict(tab, GATE["z_total_max"], GATE["z_bin_max"],
+                            GATE["chi2_dof_max"])
+    assert v["closes"] is False, v
+    assert any("by_snr" in r for r in v["reasons"]), v["reasons"]
+    assert "by_snr" in v["arms_gated"]
+    # ...and the OTHER arms are demonstrably innocent, so the by_snr arm is
+    # what did the refusing (otherwise this test would pass for free).
+    assert not any("by_nhat" in r or "by_z" in r or "z_total" in r
+                   or "chi2/dof" in r for r in v["reasons"]), v["reasons"]
+
+    # dropping the offending stratum to a legal |z| restores closure -> the
+    # refusal tracks the stratum, not the table's shape
+    tab_ok = _closing_tab_with_a_broken_snr_stratum()
+    tab_ok["by_snr"][0].update(mu=100.0, obs=100.0, ratio=1.0, z=0.0)
+    assert FS._closure_verdict(tab_ok, 5.0, 5.0, 3.0)["closes"] is True
+
+
+def test_the_snr_arm_has_its_own_tolerance_defaulting_to_the_bin_tolerance():
+    """``max_abs_z_snrbin`` defaults to ``max_abs_z_bin`` (GATE sets both 5.0)
+    but is separately settable, so a future split of the two cannot silently
+    re-couple them."""
+    tab = _closing_tab_with_a_broken_snr_stratum()
+    assert FS._closure_verdict(tab, 5.0, 5.0, 3.0)["closes"] is False
+    v = FS._closure_verdict(tab, 5.0, 5.0, 3.0, max_abs_z_snrbin=50.0)
+    assert v["closes"] is True, v
+    assert v["tolerances"]["max_abs_z_snrbin"] == 50.0
+    assert FS._closure_verdict(tab, 5.0, 5.0, 3.0
+                               )["tolerances"]["max_abs_z_snrbin"] == 5.0
+    # the default must TRACK max_abs_z_bin, not be a second hardcoded 5.0 --
+    # so move max_abs_z_bin off 5.0 and check the snr arm moved with it
+    for zbin, closes in ((50.0, True), (2.0, False)):
+        w = FS._closure_verdict(tab, 1e9, zbin, 1e9)
+        assert w["tolerances"]["max_abs_z_snrbin"] == zbin, w["tolerances"]
+        assert w["closes"] is closes, (zbin, w["reasons"])
+    # ...and with by_nhat/by_z opened wide the SNR arm is the ONLY thing that
+    # can fire at zbin = 2.0, since every other row in the fixture has z == 0
+    assert FS._closure_verdict(tab, 1e9, 2.0, 1e9)["reasons"] == [
+        "max|z| in by_snr = 30.00 > 2.0"]
+
+
+def test_a_table_with_no_by_snr_key_still_works():
+    """Backward compatibility: the older hand-built doubles carry no 'by_snr'
+    key at all. The new arm must be silent, not a KeyError."""
+    tab = {"total": {"z": 0.1}, "by_nhat": [{"z": 0.1, "obs": 100.0}],
+           "by_z": [{"z": 0.1}]}
+    assert FS._closure_verdict(tab, 5.0, 5.0, 3.0)["closes"] is True
+    tab["by_snr"] = []
+    assert FS._closure_verdict(tab, 5.0, 5.0, 3.0)["closes"] is True
+
+
+_REAL_PACK_DIRS = (
+    "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs",
+    "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/window_study/packs",
+)
+
+
+def _real_pack_paths():
+    import glob
+    out = []
+    for d in _REAL_PACK_DIRS:
+        out += sorted(glob.glob(os.path.join(d, "modelA_pack_*.npz")))
+    return out
+
+
+@pytest.mark.parametrize("path", _real_pack_paths()[:6] or ["__none__"])
+def test_preflight_verdict_equals_the_production_gate_on_real_packs(path):
+    """A2's point: `--require-closure` and ``forward_closure_gate`` must render
+    the SAME verdict on a real pack. Runs on the first six committed mock packs
+    (>= the three the task requires)."""
+    if path == "__none__":
+        pytest.skip("no committed mock packs on this filesystem")
+    from CDDF_analysis.hbi_mcmc.run_posterior import GATE, forward_closure_gate
+
+    pack = load_pack(path)
+    if pack.truth_counts is None:
+        pytest.skip("pack carries no truth_counts")
+    clamp = "both" if pack.resp_N_fit_range is not None else "off"
+    tab = FS.ratio_tables(FS.selftest(pack, resp_clamp=clamp), pack)
+    v = FS._closure_verdict(tab, GATE["z_total_max"], GATE["z_bin_max"],
+                            GATE["chi2_dof_max"])
+    g = forward_closure_gate(pack, resp_clamp=clamp)
+    assert v["closes"] == g["pass"], (path, v["reasons"], g["failures"])
+    # and the SNR arm is not vacuous on these packs: it really does exceed the
+    # tolerance, so the equality above is not "both trivially fine"
+    zsnr = max(abs(float(r["z"])) for r in tab["by_snr"])
+    assert zsnr > GATE["z_snrbin_max"], (path, zsnr)
+    assert any("by_snr" in r for r in v["reasons"]), v["reasons"]
+
+
+def test_the_stale_ratio_tables_has_no_chi2_dof_claim_is_gone(fixture_tab):
+    """``_closure_verdict``'s comment asserted, in the present tense, that
+    ``ratio_tables``'s ``total`` has at no point emitted a ``chi2_dof`` key. It
+    does. Pinned as a FACT about the producer, plus a source check that the
+    retracted sentence has not come back."""
+    import inspect
+    src = inspect.getsource(FS._closure_verdict)
+    assert "has NEVER carried" not in src, (
+        "the retracted claim is back in the source")
+    assert "CORRECTION (2026-08-05)" in src
+    # the fact the retracted sentence denied
+    assert "chi2_dof" in fixture_tab["total"]
+    assert fixture_tab["total"]["chi2_dof"] == _CHI2_FIXTURE
+    assert fixture_tab["total"]["n_gate_bins"] == _N_FIXTURE
+    # ...and it is the SAME number this function computes for itself, which is
+    # why computing it rather than reading it is a discipline and not a
+    # disagreement
+    v = FS._closure_verdict(fixture_tab, 5.0, 5.0, 3.0)
+    assert v["chi2_dof"] == fixture_tab["total"]["chi2_dof"]
