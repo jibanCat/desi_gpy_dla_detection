@@ -5,7 +5,28 @@ The expected-count fold (spec section 2, per calibration context):
     mu[c,k,s] = dX[k,s] * sum_b K[c<-b](psi_k_delta; s, kz_to_K[k])
                           * C[b->cell,s](psi_c) * g[b,k]
                           * exp(theta_pop[b,k]) * dN_b
-              + w * exp(t[kz_to_K[k]]) * lam_fp[c,s] * E[k,s]
+              + w * ell_eff * exp(t[kz_to_K[k]]) * lam_fp[c,s] * E[k,s]
+
+The ``ell_eff`` factor in the FP term is NOT decoration (repaired 2026-08-05).
+``lam_fp`` is defined by the loa-0 calibration likelihood
+
+    fp_counts[c,s] ~ Poisson(fp_ell_eff * lam_fp[c,s])        (model_a.py)
+
+so ``lam_fp`` is an intensity PER UNIT of the loa-0 exposure ``fp_ell_eff``,
+not a count.  The production-volume FP expectation the loa-0 product defines
+(build_loa0_fp_product.py:34-39) is
+
+    mu_FP = (N_prod / N_sl_loa0) * N_FP_loa0 * (1 - eta_bar)
+          = fp_w * fp_ell_eff * lam_fp        (since lam_fp = N_FP_loa0/ell_eff)
+
+and ``fp_w * fp_ell_eff == N_sl_loa0`` exactly, because the extractor builds
+``fp_w = N_prod/N_sl_loa0`` and ``fp_ell_eff = N_sl_loa0^2/N_prod``.  Until
+2026-08-05 the fold omitted ``fp_ell_eff`` here and in ``fold_mu_reference``,
+under-normalising the whole FP term by exactly that factor (MEASURED on the
+adopted 2LPT-0 pack: 1086.6871844096897 folded against 14767.961419068737
+required, ratio 13.589891949531907 == fp_ell_eff).  ``fp_ell_eff`` is inert in
+the loa-0 SOURCE route -- Gamma(a, 1/ell)*ell is Gamma(a, 1) -- which is why
+it survived; it does not cancel here, where it is a live Poisson exposure.
 
 Two implementations of the SAME expression:
 
@@ -460,8 +481,10 @@ def fold_mu(theta_pop, psi_c, psi_k_delta, log_t, lam_fp, consts: ModelAConsts):
         * consts.dN_b[:, None, None]                       # (B, Kf, S)
     mu_sig = jnp.einsum("skcb,bks->cks", K_full, contrib) * consts.dX[None, :, :]
     exp_t_k = jnp.exp(log_t)[consts.kz_to_K]               # (Kf,)
-    mu_fp = consts.fp_w * exp_t_k[None, :, None] * lam_fp[:, None, :] \
-        * consts.fp_E[None, :, :]                          # (C, Kf, S)
+    # fp_w * fp_ell_eff == N_sl_loa0 exactly; see the module docstring for why
+    # fp_ell_eff must be here (lam_fp is per unit loa-0 exposure, not a count).
+    mu_fp = consts.fp_w * consts.fp_ell_eff * exp_t_k[None, :, None] \
+        * lam_fp[:, None, :] * consts.fp_E[None, :, :]     # (C, Kf, S)
     return mu_sig + mu_fp
 
 
@@ -554,6 +577,9 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
     dX = np.asarray(pack.dX, float)
     E = np.asarray(pack.fp_E_alloc, float)
     w = float(pack.fp_w_sightline_ratio)
+    # the loa-0 exposure lam_fp is defined per (see the module docstring); the
+    # FP term is under-normalised by exactly this factor without it
+    ell = float(pack.fp_ell_eff)
     sig_floor = float(pack.resp_sig_floor)
     ramp_c, ramp_w = [float(v) for v in np.asarray(pack.resp_skew_ramp, float)]
 
@@ -615,5 +641,5 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
                     acc += (mass * C_cells[s, b2cell[b]] * g[b2cell[b], k]
                             * f[b, k] * dN[b])
                 mu[c, k, s] = dX[k, s] * acc \
-                    + w * np.exp(log_t[Kc]) * lam_fp[c, s] * E[k, s]
+                    + w * ell * np.exp(log_t[Kc]) * lam_fp[c, s] * E[k, s]
     return mu

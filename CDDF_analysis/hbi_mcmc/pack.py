@@ -873,6 +873,11 @@ def synthetic_pack(
         counts are ``fp_frac`` of the expected signal counts; loa-0 counts
         ~ Poisson(ell_eff * lam); per-coarse-z transfer t_true applied in the
         data-side term. fp_frac=0 -> exact zero-FP pack.
+        The data-side normalisation carries ``fp_w * fp_ell_eff`` (2026-08-05
+        repair), matching ``forward.fold_mu``: ``lam`` is an intensity per unit
+        loa-0 exposure, so at fixed ``fp_frac`` a larger ``fp_ell_eff`` means a
+        SMALLER lam_fp_true and correspondingly fewer loa-0 ``fp_counts`` --
+        which is the production regime (89 loa-0 counts carrying mu_FP ~ 1.5e4).
 
     Counts are drawn Poisson(mu_true) with mu_true from the EXACT forward
     expression, evaluated by the independent numpy oracle
@@ -1052,7 +1057,15 @@ def synthetic_pack(
     if fp_frac > 0:
         shape_cs = np.exp(-2.5 * (Nhat_c[:, None] - Nhat_c[0])) / (1.0 + 0.3 * np.arange(S))
         exp_t_alloc = (np.exp(t_true)[kz_to_K][:, None] * E_alloc).sum(axis=0)  # (S,)
-        fp_data_per_unit = fp_w * (shape_cs * exp_t_alloc[None, :]).sum()
+        # 🔴 fp_ell_eff belongs here.  The generator must invert the SAME fold
+        # the model uses: data-side mu_FP = fp_w * fp_ell_eff * lam * exp(t) * E
+        # while the loa-0 side is fp_counts ~ Poisson(fp_ell_eff * lam).  Until
+        # 2026-08-05 this line omitted fp_ell_eff -- the identical omission as
+        # forward.fold_mu -- so every synthetic pack, every rung and every SBC
+        # replica was generated under the SAME convention as the defect and
+        # could not possibly detect it.  Whatever the fold does, this line must
+        # do; ``fp_frac`` is defined as a share of the DATA-side counts.
+        fp_data_per_unit = fp_w * fp_ell_eff * (shape_cs * exp_t_alloc[None, :]).sum()
         L0 = fp_frac * mu_signal.sum() / fp_data_per_unit
         lam_fp_true = L0 * shape_cs
     else:

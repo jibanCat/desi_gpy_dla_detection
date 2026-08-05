@@ -32,6 +32,12 @@ Sampled sites (spec section 2 "Posterior"):
           driven to ~0 by the multinomial part of the likelihood — the DLA
           tier inherits FP only through the smooth shape, expected ~ 0.
       loa-0 likelihood: fp_counts[c, s] ~ Poisson(ell_eff * lam_fp[c, s]).
+          ``lam_fp`` is therefore an intensity PER UNIT of the loa-0 exposure
+          ``fp_ell_eff``, not a count, and the data-side fold must carry the
+          exposure explicitly: forward.fold_mu uses
+          mu_FP = fp_w * fp_ell_eff * exp(t) * lam_fp * E, with
+          fp_w * fp_ell_eff == N_sl_loa0 exactly.  (Repaired 2026-08-05; the
+          fold had omitted fp_ell_eff, under-normalising mu_FP by that factor.)
   Likelihood: counts[c,k,s] ~ Poisson(mu) with mu from forward.fold_mu,
       evaluated inside the jitted model on every draw (differentiable).
 

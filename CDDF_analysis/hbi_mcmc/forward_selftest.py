@@ -164,9 +164,12 @@ def selftest(pack, f=None, *, use_fp=True, psi_c=None, resp_clamp="both"):
                             jnp.zeros((2, consts.n_sr, consts.n_zr)),
                             jnp.zeros(consts.n_kk), jnp.asarray(lam_fp),
                             consts))
+    # must match forward.fold_mu's FP term exactly (the fold's log_t is zero
+    # here, so exp(log_t) == 1 and is not re-typed); fp_ell_eff is REQUIRED --
+    # lam_fp is an intensity per unit loa-0 exposure, not a count.
     mu_fp = np.asarray(
-        float(pack.fp_w_sightline_ratio) * lam_fp[:, None, :]
-        * np.asarray(pack.fp_E_alloc, float)[None, :, :])
+        float(pack.fp_w_sightline_ratio) * float(pack.fp_ell_eff)
+        * lam_fp[:, None, :] * np.asarray(pack.fp_E_alloc, float)[None, :, :])
     return dict(mu=mu, mu_fp=mu_fp, mu_sig=mu - mu_fp,
                 counts=np.asarray(pack.counts, float), consts=consts, f=f)
 

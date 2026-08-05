@@ -190,15 +190,30 @@ def test_D1_padded_basis_feeds_the_lowest_observed_bins(spack):
 # ---------------------------------------------------------------------------
 @pytest.mark.skipif(not os.path.exists(_PACK_V1), reason="2LPT-0 pack absent")
 def test_rung9_forward_failure_signature_is_reproduced_without_sampling():
-    """The reported rung-9 signature, from the pure forward fold: 0.165x at
-    n-hat [19.5,19.6) and 1.5-3.5x above 21.7. Zero MCMC involved."""
+    """The reported rung-9 signature, from the pure forward fold: a bottom-bin
+    DEFICIT at n-hat [19.5,19.6) and 1.5-3.5x above 21.7. Zero MCMC involved.
+
+    🔴 RE-MEASURED 2026-08-05, FP NORMALISATION REPAIR.  The archived signature
+    was ``0.1655`` at the bottom bin and ``0.7307`` overall.  Both were folded
+    with ``mu_FP`` under-normalised by ``fp_ell_eff`` (13.5899 on this pack:
+    1086.687 folded where the loa-0 product defines 14767.961).  With the
+    exposure carried, the SAME pack, the SAME clamp mode and the SAME routine
+    give 0.7042 and 0.8860.
+
+    So most of the reported bottom-bin deficit was the FP normalisation, NOT
+    the basis truncation: the deficit at [19.5,19.6) shrinks from 6.0x to 1.4x.
+    The HIGH-N half of the signature is untouched (min 1.4955, max 3.4753) --
+    the loa-0 FP has no counts above n-hat 20.2, so it cannot reach there --
+    and the D1 counting impossibility (73610 truth < 88071 detections) is a
+    property of the pack, not of the fold, and is unchanged.
+    """
     pack = load_pack(_PACK_V1)
     res = FS.selftest(pack, resp_clamp="off")
     tab = FS.ratio_tables(res, pack)
     rows = tab["by_nhat"]
     assert rows[0]["lo"] == pytest.approx(19.5)
-    assert rows[0]["ratio"] == pytest.approx(0.1655, abs=2e-3)
-    assert tab["total"]["ratio"] == pytest.approx(0.7307, abs=2e-3)
+    assert rows[0]["ratio"] == pytest.approx(0.7042, abs=2e-3)   # was 0.1655
+    assert tab["total"]["ratio"] == pytest.approx(0.8860, abs=2e-3)  # was 0.7307
     hi = [r["ratio"] for r in rows if r["lo"] > 21.65]
     assert min(hi) > 1.45 and max(hi) > 3.0
     # the arithmetic impossibility that proves D1 on its own
@@ -563,7 +578,12 @@ def test_closure_verdict_is_fail_closed_end_to_end(spack):
 # ---------------------------------------------------------------------------
 # A1 (2026-08-05) — ONE closure metric, pinned bit-for-bit across all six sites
 # ---------------------------------------------------------------------------
-_CHI2_FIXTURE = 0.6479548471525799   # synthetic_pack(0, **small_test_grid())
+# synthetic_pack(0, **small_test_grid()).  RE-MEASURED 2026-08-05 after the FP
+# normalisation repair: was 0.6479548471525799 while forward.fold_mu and
+# pack.synthetic_pack BOTH omitted fp_ell_eff.  The six-site agreement this
+# constant guards is unaffected — all six still return the identical float —
+# only its VALUE moved, because the fold's FP term did.
+_CHI2_FIXTURE = 0.8545869296752476
 _N_FIXTURE = 10
 
 
@@ -659,7 +679,7 @@ def test_a_real_window_restriction_does_move_the_number(fixture_tab):
     full = REP.window_closure_metrics(fixture_tab["by_nhat"])
     win = REP.window_closure_metrics(fixture_tab["by_nhat"], 19.7, None)
     assert full["chi2_dof"] == _CHI2_FIXTURE and full["n_bins_in_z_set"] == 10
-    assert win["chi2_dof"] == 0.8066535048313024
+    assert win["chi2_dof"] == 1.0557996274105041   # was 0.8066535048313024
     assert win["n_bins_in_z_set"] == 8
     assert win["chi2_dof"] != full["chi2_dof"]
 

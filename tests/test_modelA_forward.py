@@ -14,6 +14,8 @@ Fast, sampler-free tests:
 Run: conda run -n gpdla-hbi python -m pytest tests/test_modelA_forward.py -v
 """
 import dataclasses
+import glob
+import os
 
 import numpy as np
 import pytest
@@ -209,6 +211,120 @@ def test_fold_jits_and_differentiates(small_pack):
     g = np.asarray(jax.grad(total_mu)(jnp.asarray(tr["theta_true"])))
     assert g.shape == tr["theta_true"].shape and np.all(np.isfinite(g))
     assert np.all(g >= 0)  # d(total mu)/d(log f) >= 0 everywhere
+
+
+def _fp_only_total(pk):
+    """Total folded FP: the fold at f == 0 (theta = -inf), log_t = 0, and the
+    loa-0 point intensity lam_fp = fp_counts / fp_ell_eff."""
+    consts = fwd.build_consts(
+        pk, allow_unclamped_response=(pk.resp_N_fit_range is None))
+    theta = jnp.full((pk.n_b, pk.n_k), -jnp.inf)
+    lam = jnp.asarray(np.asarray(pk.fp_counts, float) / float(pk.fp_ell_eff))
+    mu = np.asarray(fwd.fold_mu(
+        theta, jnp.zeros((pk.n_s, pk.n_molly)),
+        jnp.zeros((2, consts.n_sr, consts.n_zr)),
+        jnp.zeros(consts.n_kk), lam, consts))
+    assert np.all(np.isfinite(mu))
+    return float(mu.sum())
+
+
+@pytest.mark.parametrize("mkpack", [
+    pytest.param(lambda: synthetic_pack(5, **small_test_grid()), id="small"),
+    pytest.param(lambda: synthetic_pack(5), id="real_grid"),
+])
+def test_folded_fp_total_equals_the_loa0_product_definition(mkpack):
+    """The folded FP total must equal the loa-0 product's OWN mu_FP definition.
+
+    ``build_loa0_fp_product.py:34-39`` defines
+        mu_FP = (N_prod / N_sl_loa0) * N_FP_loa0 * (1 - eta_bar)
+    i.e. in pack scalars ``fp_w * fp_counts.sum()`` (eta_DLA is forced to 0, so
+    (1 - eta_bar) == 1 on this grid).  The fold reaches it through
+    ``fp_w * fp_ell_eff * lam_fp`` with ``lam_fp = fp_counts / fp_ell_eff``,
+    and the loa-0 exposure cancels EXACTLY -- which is the whole content of the
+    2026-08-05 repair.  Summing over k uses ``sum_k fp_E_alloc[k,s] == 1`` per
+    populated stratum (schema), so empty strata must carry no loa-0 counts.
+
+    MUTATION: drop ``consts.fp_ell_eff`` from ``forward.fold_mu``'s mu_fp
+    expression (the pre-2026-08-05 code).  MEASURED baseline on the adopted
+    2LPT-0 pack: the folded total goes 14767.961419068737 -> 1086.6871844096897,
+    i.e. short by exactly fp_ell_eff = 13.589891949531907, and this test goes
+    red with a ratio of 1/13.59.
+    """
+    pk = mkpack()
+    E = np.asarray(pk.fp_E_alloc, float)
+    fp = np.asarray(pk.fp_counts, float)
+    populated = E.sum(axis=0) > 0
+    assert fp[:, ~populated].sum() == 0.0, \
+        "loa-0 counts in a stratum with no exposure allocation"
+    np.testing.assert_allclose(E[:, populated].sum(axis=0), 1.0, rtol=1e-12)
+
+    got = _fp_only_total(pk)
+    want = float(pk.fp_w_sightline_ratio) * float(fp.sum())
+    assert want > 0.0
+    np.testing.assert_allclose(got, want, rtol=1e-12)
+
+
+@pytest.mark.parametrize("fp_frac", [0.15, 0.4])
+@pytest.mark.parametrize("fp_ell_eff", [4.0, 13.589891949531907])
+def test_synthetic_generator_uses_the_same_fp_normalisation_as_the_fold(
+        fp_frac, fp_ell_eff):
+    """``pack.synthetic_pack`` must invert the SAME fold the model uses.
+
+    ``fp_frac`` is documented as the share of the expected DATA counts that is
+    false positive, so by construction
+
+        (mu_true.sum() - mu_signal.sum()) / mu_signal.sum() == fp_frac
+
+    exactly.  That identity holds only if the generator's ``fp_data_per_unit``
+    carries every factor the fold's FP term carries -- including
+    ``fp_ell_eff``.  Until 2026-08-05 it did NOT, with the identical omission
+    as ``forward.fold_mu``, which is precisely why no synthetic rung and no SBC
+    replica could ever detect the defect: generator and fold were wrong the
+    same way.  ``fp_ell_eff`` is varied here so the test cannot pass by the two
+    errors cancelling at one particular exposure.
+
+    MUTATION: drop ``fp_ell_eff`` from ``fp_data_per_unit`` in
+    ``pack.synthetic_pack`` (the pre-fix line).  MEASURED: the FP share becomes
+    fp_frac * fp_ell_eff -- 0.60 instead of 0.15 at ell_eff = 4, and 2.038
+    instead of 0.15 at the production ell_eff -- and this goes red.
+    """
+    pk = synthetic_pack(9, fp_frac=fp_frac, fp_ell_eff=fp_ell_eff,
+                        **small_test_grid())
+    tr = pk.truth
+    sig = float(np.asarray(tr["mu_signal"]).sum())
+    fp = float(np.asarray(tr["mu_true"]).sum()) - sig
+    assert sig > 0
+    np.testing.assert_allclose(fp / sig, fp_frac, rtol=1e-12)
+
+
+_REAL_PACK_DIR = os.environ.get(
+    "MODELA_PACK_DIR",
+    "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs")
+_REAL_PACKS = sorted(glob.glob(os.path.join(_REAL_PACK_DIR,
+                                            "modelA_pack_*.npz")))
+
+
+@pytest.mark.skipif(not _REAL_PACKS, reason=f"no packs under {_REAL_PACK_DIR}")
+@pytest.mark.parametrize("path", _REAL_PACKS,
+                         ids=[os.path.basename(p) for p in _REAL_PACKS])
+def test_folded_fp_total_on_extracted_packs(path):
+    """Same identity as above, on the EXTRACTED packs (real scalars, real grid).
+
+    MEASURED 2026-08-05, adopted 2LPT-0 pack (fp_w = 165.9321507761,
+    fp_ell_eff = 13.5898919495, 89 loa-0 counts): folded FP total
+    14767.961419068737 == fp_w * 89.
+
+    MUTATION: as above -- drop ``consts.fp_ell_eff`` from ``fold_mu``; the
+    folded total collapses to 1086.6871844096897 and this goes red.
+    """
+    pk = load_pack(path)
+    E = np.asarray(pk.fp_E_alloc, float)
+    fp = np.asarray(pk.fp_counts, float)
+    populated = E.sum(axis=0) > 0
+    assert fp[:, ~populated].sum() == 0.0
+    got = _fp_only_total(pk)
+    want = float(pk.fp_w_sightline_ratio) * float(fp.sum())
+    np.testing.assert_allclose(got, want, rtol=1e-12)
 
 
 def test_kernel_columns_are_probability_masses(small_pack):

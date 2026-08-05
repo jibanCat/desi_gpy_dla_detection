@@ -742,6 +742,40 @@ def test_fp_block(path):
 
 @needs_pack
 @pytest.mark.parametrize("path", packs, ids=[os.path.basename(p) for p in packs])
+def test_fp_w_times_ell_eff_is_exactly_n_sl_loa0(path):
+    """``fp_w * fp_ell_eff == N_sl_loa0`` EXACTLY -- the invariant the fold now
+    depends on.
+
+    ``forward.fold_mu`` folds ``mu_FP = fp_w * fp_ell_eff * exp(t) * lam_fp * E``
+    (repaired 2026-08-05), so the FP normalisation is carried by the PRODUCT of
+    the two pack scalars, not by either alone.  The extractor builds
+    ``fp_w = N_prod/N_sl_loa0`` and ``fp_ell_eff = N_sl_loa0^2/N_prod``, whose
+    product telescopes to ``N_sl_loa0`` -- a per-mock-INDEPENDENT constant.  Any
+    future re-definition of either scalar that does not preserve the product
+    silently rescales every folded false positive.
+
+    MEASURED 2026-08-05 on all six extracted packs: the product is 2255.0 to
+    the last bit (exact float equality, not a tolerance).
+
+    MUTATION (RUN 2026-08-05, re-extracted 2LPT-0): in
+    ``extract_pack.extract_pack`` change ``fp_ell = ns0*(ns0/nsm)`` to
+    ``fp_ell = ns0``.  MEASURED on the re-extracted pack: the product becomes
+    ``nsm`` = 374177.0 instead of 2255.0 and this test goes red.
+    """
+    d, prov = _load(path)
+    ns0 = float(prov["fp"]["n_sl_loa0"])
+    w = float(d["fp_w_sightline_ratio"])
+    ell = float(d["fp_ell_eff"])
+    assert w * ell == ns0, f"fp_w*fp_ell_eff = {w * ell!r} != N_sl_loa0 {ns0!r}"
+    # and the FP normalisation the fold must reproduce: mu_FP = w * N_FP_loa0
+    # (build_loa0_fp_product.py:34-39 with eta_DLA forced to 0 on this grid)
+    n_fp = float(np.asarray(d["fp_counts"], float).sum())
+    lam_total = n_fp / ell
+    assert np.isclose(w * ell * lam_total, w * n_fp, rtol=1e-12)
+
+
+@needs_pack
+@pytest.mark.parametrize("path", packs, ids=[os.path.basename(p) for p in packs])
 def test_t_sigma_floor_and_value(path):
     d, _ = _load(path)
     t = np.asarray(d["t_sigma"], float)
