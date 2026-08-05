@@ -779,13 +779,257 @@ def test_pilot_cost_parses_the_runners_own_log_line(WS, tmp_path, monkeypatch):
     assert WS._pilot_cost("tagY") is None
 
 
-def test_basis_resolution_status_is_explicit_about_decision_3(WS):
-    """The study must SAY it did not implement the 0.2-dex basis rather than
-    let a reader assume the PI-adopted configuration was fully realised."""
+def test_basis_resolution_status_says_decision_3_is_now_IMPLEMENTED(WS):
+    """CORRECTED 2026-08-05. This assertion used to be the OPPOSITE: it pinned
+    the claim that the 0.2-dex latent basis "is NOT implemented in this study"
+    and that a 0.2-dex ntrue grid would violate ``pack.py:validate_pack``. Both
+    halves are now FALSE — ``validate_pack`` carries an explicit "coarser (or
+    mixed-width) LATENT basis" branch and ``--basis-width`` threads the width
+    into ``extract_pack``. A stale status line is a false statement about the
+    study's own scope, which is exactly what a referee reads first.
+
+    MUTATION: revert BASIS_RESOLUTION_STATUS to the "NOT implemented" text ->
+    RED on the first assertion. Verified.
+    """
     s = WS.BASIS_RESOLUTION_STATUS
-    assert WS.BASIS_DEX == 0.1
-    assert "NOT implemented" in s and "0.2-dex" in s
-    assert "validate_pack" in s          # names the concrete blocker
+    # the module DEFAULT is still the shipped 0.1-dex basis, so an existing
+    # invocation is unchanged; the width of a run is BASIS_DEX.
+    assert WS.BASIS_DEX_DEFAULT == 0.1
+    assert "is NOT implemented in this " not in s      # the retracted claim
+    assert "IS IMPLEMENTED" in s
+    # it must name the mechanism, and say the synthetic re-gridder is NOT it
+    assert "basis_width" in s and "coarsen_basis is NOT used" in s
+    # the blocker the old text named must be recorded as GONE, not silently
+    # dropped
+    assert "validate_pack" in s and "THE EARLIER BLOCKER IS GONE" in s
+    # ... and the historical note must survive: the earlier study was a valid
+    # MATCHED comparison at fixed 0.1-dex basis
+    assert "HISTORICAL NOTE" in s and "VALID MATCHED comparison" in s
+
+
+def test_basis_tag_keeps_the_default_pack_names_and_separates_the_others(WS):
+    """The 0.1-dex packs already on disk must keep their names (so the 0.1-dex
+    arm is REUSED, not re-extracted and not OVERWRITTEN), and any other width
+    must be unable to collide with them.
+
+    MUTATION A: ``basis_tag`` returns "_bw0p1" at the default -> RED (the six
+    committed pack names change, so the default invocation would re-extract
+    over a different filename).
+    MUTATION B: ``basis_tag`` returns "" for every width -> RED (0.2-dex packs
+    would silently OVERWRITE the 0.1-dex ones).
+    """
+    assert WS.basis_tag(0.1) == ""
+    assert WS.basis_tag(0.2) == "_bw0p2"
+    n01 = WS.pack_name("2lpt0", "lya_only", 0.1)
+    n02 = WS.pack_name("2lpt0", "lya_only", 0.2)
+    assert n01 == "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz"
+    assert n01 != n02 and n02.endswith("_bw0p2.npz")
+    # manifest and artifact are scoped the same way, for the same reason
+    assert WS.manifest_name(0.1) == "window_manifest.json"
+    assert WS.manifest_name(0.2) == "window_manifest_bw0p2.json"
+    assert os.path.basename(WS.default_out(0.1)) == "spectral_window_study.json"
+    assert os.path.basename(WS.default_out(0.2)) == \
+        "spectral_window_study_bw0p2.json"
+
+
+def test_pack_name_defaults_to_the_RUNS_basis_width(WS, monkeypatch):
+    """Call sites that do not pass a width (the gate cross-check reference pack
+    and the response-attribution cross-fold) must follow the RUN's width.
+
+    MUTATION: make ``pack_name``'s default ``BASIS_DEX_DEFAULT`` instead of
+    ``BASIS_DEX`` -> RED (a 0.2-dex run would cross-check against a 0.1-dex
+    pack and cross-fold 0.1-dex responses).
+    """
+    monkeypatch.setattr(WS, "BASIS_DEX", 0.2)
+    assert WS.pack_name("2lpt0", "lya_only").endswith("_bw0p2.npz")
+    assert WS.manifest_name() == "window_manifest_bw0p2.json"
+
+
+def test_phase_extract_THREADS_the_basis_width_into_extract_pack(WS, monkeypatch,
+                                                                 tmp_path):
+    """The whole point of step C: ``basis_width`` must reach ``extract_pack``.
+
+    MUTATION: drop ``basis_width=BASIS_DEX`` from the extract_pack call -> RED.
+    The pack would silently be built on the shipped 0.1-dex latent basis and
+    SAVED UNDER A 0.2-dex FILENAME, which is the one failure the filename tag
+    cannot catch.
+    """
+    calls = []
+
+    class _EP:
+        @staticmethod
+        def build_frozen_calibration(out_dir, completeness=None, window=None):
+            return dict(analysis_window=window,
+                        molly=dict(molly_nhi_edges=np.zeros(4)),
+                        g_grid=np.zeros((3, 2)), fp_counts=np.zeros((3, 2)))
+
+        @staticmethod
+        def extract_pack(mock, out_dir, frozen, pad_floor=None, tag="",
+                         basis_width=None):
+            calls.append(dict(mock=mock, tag=tag, pad_floor=pad_floor,
+                              basis_width=basis_width,
+                              window=frozen["analysis_window"]))
+            return dict(npz=os.path.join(out_dir, f"{mock}{tag}.npz"),
+                        counts_total=1, dx_gap=0.0)
+
+    monkeypatch.setattr(WS, "_extract_pack_module", lambda: _EP)
+    monkeypatch.setattr(WS, "assert_window_matched",
+                        lambda w: dict(window=w, ingredients={}))
+    monkeypatch.setattr(WS, "MOCKS", ["2lpt0"])
+    monkeypatch.setattr(WS, "WINDOWS", ["lya_only", "lya_lyb"])
+    monkeypatch.setattr(WS, "PACKDIR", str(tmp_path))
+    monkeypatch.setattr(WS, "BASIS_DEX", 0.2)
+
+    man = WS.phase_extract()
+
+    assert [c["basis_width"] for c in calls] == [0.2, 0.2], (
+        "extract_pack was not given this run's latent basis width")
+    assert [c["window"] for c in calls] == ["lya_only", "lya_lyb"]
+    # ... the width is in the TAG, so the two bases cannot share a file ...
+    assert all(c["tag"].endswith("_bw0p2") for c in calls), calls
+    # ... in the manifest ...
+    assert all(v["basis_width"] == 0.2 for v in man.values())
+    # ... and the manifest itself is width-scoped
+    assert os.path.exists(tmp_path / "window_manifest_bw0p2.json")
+    assert not os.path.exists(tmp_path / "window_manifest.json")
+
+
+def test_phase_selftest_REFUSES_a_pack_on_a_DIFFERENT_LATENT_BASIS(
+        WS, monkeypatch, tmp_path):
+    """The filename carries the basis width; a filename is not evidence.
+
+    MUTATION: ``if abs(bw - float(BASIS_DEX)) > 1e-9:`` -> ``if False:`` -> RED.
+    Without this guard a 0.2-dex run that found a stale or mis-tagged pack
+    would fold a 0.1-dex LATENT grid and publish it as the PI-adopted
+    configuration's closure.
+    """
+    with pytest.raises(SystemExit, match="latent basis"):
+        _drive_selftest(WS, monkeypatch, tmp_path, basis_dex=0.2,
+                        pack_ntrue_edges=[19.5, 19.6])
+
+
+def test_phase_selftest_ACCEPTS_a_pack_whose_basis_MATCHES(WS, monkeypatch,
+                                                           tmp_path):
+    """POSITIVE leg for the guard above — without it, a guard that refused
+    unconditionally would 'kill' the mutant too. Also pins that the phase reads
+    the WIDTH-SCOPED pack names and records the pack's own grid.
+
+    MUTATION: ``pack_name(mock, window, BASIS_DEX)`` -> ``pack_name(mock,
+    window)`` with a hard-coded 0.1 default -> RED on the filename assertion.
+    """
+    seen = []
+    out = _drive_selftest(WS, monkeypatch, tmp_path, basis_dex=0.2,
+                          pack_ntrue_edges=[19.5, 19.7], seen_paths=seen)
+    assert all(p.endswith("_bw0p2.npz") for p in seen), seen
+    pm = out["pack_metadata"]["2lpt0|lya_only"]
+    assert pm["basis_width_dex"] == 0.2
+    assert pm["basis_is_uniform"] is True
+    assert out["metadata"]["configuration"]["basis_dex"] == 0.2
+    assert out["metadata"]["configuration"][
+        "basis_dex_is_the_shipped_default"] is False
+    assert "YES" in out["metadata"]["configuration"][
+        "pi_decisions_implemented"]["d3_basis_0p2dex"]
+
+
+def test_selftest_pack_metadata_n_pad_bins_is_the_PACK_PROPERTY(WS, monkeypatch,
+                                                                tmp_path):
+    """``n_pad_bins`` used to be spelled ``n_b - n_c`` inline. That is the same
+    number on a 0.1-dex basis and GOES NEGATIVE on a coarser one (18 basis bins
+    against 29 observed bins = -11), so the artifact would publish a negative
+    pad count for the adopted configuration.
+
+    MUTATION: ``int(pack.n_pad_bins)`` -> ``int(pack.n_b - pack.n_c)`` -> RED.
+    """
+    # 0.2-dex basis padded to 19.0: bins [19.0,19.2) [19.2,19.5) below the
+    # observed floor 19.5, then [19.5,19.7) in window. n_b=3, n_c=29.
+    out = _drive_selftest(WS, monkeypatch, tmp_path, basis_dex=0.2,
+                          pack_ntrue_edges=[19.0, 19.2, 19.5, 19.7])
+    pm = out["pack_metadata"]["2lpt0|lya_only"]
+    assert pm["n_pad_bins"] == 2, "the pad count must COUNT sub-floor bins"
+    assert pm["n_basis_bins"] == 3
+    assert pm["basis_is_uniform"] is False   # the [19.2,19.5) remainder bin
+    assert pm["basis_width_dex"] == 0.2      # ... modal width is still 0.2
+
+
+def test_main_REFUSES_to_write_a_coarse_basis_over_the_0p1dex_artifact(
+        WS, monkeypatch, tmp_path):
+    """Every reader — and five committed tests in this file — treat
+    ``spectral_window_study.json`` as the 0.1-dex object.
+
+    MUTATION: drop the collision check in ``main`` -> RED. A 0.2-dex result
+    would silently retitle the 0.1-dex artifact.
+    """
+    with pytest.raises(SystemExit, match="REFUSING"):
+        WS.main(["--phase", "check-windows", "--basis-width", "0.2",
+                 "--out", WS.DEF_OUT])
+    # ... and the default path for a coarse basis is the scoped one
+    monkeypatch.setattr(WS, "assert_window_matched",
+                        lambda w: dict(window=w))
+    WS.main(["--phase", "check-windows", "--basis-width", "0.2"])
+    assert WS.OUT == WS.default_out(0.2) and WS.BASIS_DEX == 0.2
+    # ... and the DEFAULT invocation is unchanged
+    WS.main(["--phase", "check-windows"])
+    assert WS.OUT == WS.DEF_OUT and WS.BASIS_DEX == 0.1
+
+
+def _synthetic_rows(WS, chi2_only=41.25, chi2_lyb=77.75,
+                    rms_only=0.0777, rms_lyb=0.0888):
+    """A ``rows`` + ``per_clamp`` pair shaped exactly like phase_selftest's /
+    build_verdict's, with values chosen NOT to collide with any 0.1-dex literal
+    the committed narrative quotes."""
+    gate = WS.restated_gate_criteria()["gate_arms"]
+    rows = {}
+    for mock in WS.MOCKS:
+        for win, c2, rd, hn in (("lya_only", chi2_only, rms_only, 1.44),
+                                ("lya_lyb", chi2_lyb, rms_lyb, 1.33)):
+            for clamp in WS.CLAMPS:
+                rep = dict(n_bins=19, n_bins_occupied=19, z_total=88.0,
+                           z_bin_max=88.0, chi2_dof=c2, ratio=0.9444,
+                           rms_frac_dev=rd, obs=55555.0)
+                rows[f"{mock}|{win}|clamp={clamp}"] = dict(
+                    primary_reporting_window=rep,
+                    primary_closes=WS.closes(rep, gate),
+                    high_n_above_21p6=dict(ratio=hn),
+                    full_grid=dict(chi2_dof=c2, ratio=0.99),
+                    by_z=dict(ratio_span=0.15), by_snr=dict(ratio_span=0.18))
+    per_clamp = {c: dict(
+        A2_delta_rms_frac_dev_reporting_window=WS.direction_verdict(
+            {m: rms_lyb - rms_only for m in WS.MOCKS}))
+        for c in WS.CLAMPS}
+    return rows, per_clamp
+
+
+def test_recommendation_for_a_COARSE_basis_hard_codes_NO_measurement(
+        WS, monkeypatch):
+    """The 0.1-dex narrative quotes measured numbers INLINE (0.1193 -> 0.1366,
+    63.7 vs 106.6, chi2/dof 29.6, best config london0|lya_only|clamp=hi).
+    Emitting it inside a 0.2-dex artifact would publish numbers that were never
+    measured for that configuration — the project's hardest rule.
+
+    MUTATION: make ``recommendation`` ignore the basis and always return the
+    0.1-dex narrative -> RED (every 0.1-dex literal reappears).
+    """
+    import json as _json
+    rows, per_clamp = _synthetic_rows(WS)
+    ref = WS.recommendation(rows, per_clamp)          # the 0.1-dex branch
+    assert "0.1193" in _json.dumps(ref), (
+        "the default branch must still be the committed 0.1-dex narrative")
+
+    monkeypatch.setattr(WS, "BASIS_DEX", 0.2)
+    got = WS.recommendation(rows, per_clamp)
+    blob = _json.dumps(got)
+    for literal in ("0.1193", "0.1366", "63.7", "106.6", "29.6",
+                    "london0|lya_only|clamp=hi", "67086"):
+        assert literal not in blob, (
+            f"the coarse-basis recommendation carries the 0.1-dex literal "
+            f"{literal!r}")
+    assert got["basis_dex"] == 0.2
+    # ... and it still answers the deliverable's question, from THESE rows
+    assert "NOTHING CLOSES" in got["answer"]
+    assert got["best_measured"]["config"] in rows
+    assert got["best_measured"]["reporting_chi2_dof"] == 41.25
+    # ... including the pre-registered P5 unanimity test, unchanged
+    assert "P5" in " ".join(got["reasoning"])
 
 
 # ---------------------------------------------------------------------------
@@ -1122,18 +1366,42 @@ _FAKE_FULL = dict(total_ratio=1.0, chi2_dof=0.01, z_total=0.0, n_bins=2)
 
 
 class _FakePack:
-    def __init__(self, window, commit):
+    """ModelAPack stand-in. ``basis_width`` / ``basis_is_uniform`` /
+    ``n_pad_bins`` mirror the real properties (modal ntrue bin width; every bin
+    the same width; basis bins strictly below the observed floor) so the
+    selftest phase's latent-basis guard is exercised against the same
+    arithmetic the committed pack exposes."""
+
+    def __init__(self, window, commit, ntrue_edges=None):
         self.provenance = dict(
             code_commit=commit,
             analysis_window=dict(name=window),
             molly_counts=dict(path="<synthetic>"), fp=dict(product="<synthetic>"))
-        self.n_b = 29
-        self.n_c = 29
-        self.ntrue_edges = np.array([19.5, 19.6])
         self.nhat_edges = np.array([19.5, 19.6])
+        self.ntrue_edges = (np.array([19.5, 19.6]) if ntrue_edges is None
+                            else np.asarray(ntrue_edges, float))
+        self.n_b = len(self.ntrue_edges) - 1
+        self.n_c = 29
         self.counts = np.array([1.0])
         self.truth_counts = np.array([1.0])
         self.dX = np.array([1.0])
+
+    @property
+    def basis_width(self):
+        d = np.round(np.diff(np.asarray(self.ntrue_edges, float)), 8)
+        vals, cnt = np.unique(d, return_counts=True)
+        return float(vals[int(np.argmax(cnt))])
+
+    @property
+    def basis_is_uniform(self):
+        d = np.diff(np.asarray(self.ntrue_edges, float))
+        return bool(np.allclose(d, d[0], atol=1e-8))
+
+    @property
+    def n_pad_bins(self):
+        ne = np.asarray(self.ntrue_edges, float)
+        floor = float(np.asarray(self.nhat_edges, float)[0])
+        return int(np.sum(ne[:-1] < floor - 1e-9))
 
 
 class _FakeFS:
@@ -1154,15 +1422,20 @@ class _FakeFS:
 
 def _drive_selftest(WS, monkeypatch, tmp_path, pack_window=None,
                     commit="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-                    gate_result=None):
+                    gate_result=None, basis_dex=None, pack_ntrue_edges=None,
+                    seen_paths=None):
     """Run the REAL ``phase_selftest`` against injected packs / fold / gate.
 
     ``pack_window=None`` means "each pack honestly carries the window it is
     filed under"; a fixed string makes every pack claim that window (the
     mixed-window failure). ``gate_result`` overrides the committed
     forward_closure_gate's return so the cross-check can be made to disagree.
+    ``basis_dex`` sets the REQUESTED latent basis and ``pack_ntrue_edges`` the
+    grid the injected packs actually carry, so the two can be made to disagree.
     """
     import types
+    if basis_dex is not None:
+        monkeypatch.setattr(WS, "BASIS_DEX", float(basis_dex))
     monkeypatch.setattr(WS, "MOCKS", ["2lpt0"])
     monkeypatch.setattr(WS, "WINDOWS", ["lya_only", "lya_lyb"])
     monkeypatch.setattr(WS, "CLAMPS", ["both"])
@@ -1184,9 +1457,12 @@ def _drive_selftest(WS, monkeypatch, tmp_path, pack_window=None,
                         lambda w: dict(window=w, lam_rf_min=0.0))
 
     def fake_load_pack(path):
+        if seen_paths is not None:
+            seen_paths.append(os.path.basename(path))
         base = os.path.basename(path)
         win = "lya_lyb" if "winlya_lyb" in base else "lya_only"
-        return _FakePack(pack_window or win, commit)
+        return _FakePack(pack_window or win, commit,
+                         ntrue_edges=pack_ntrue_edges)
 
     monkeypatch.setattr(WS, "load_pack", fake_load_pack)
 

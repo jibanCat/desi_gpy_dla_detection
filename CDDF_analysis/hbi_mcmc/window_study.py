@@ -94,15 +94,29 @@ and called them "THE THREE RATIFIED ARMS (PI decision 8)". That was a
 fabricated authority claim; see ``AUTHORITY_CORRECTION_NOTE`` and the sibling
 retraction in commit 6f9f998.
 
+THE SECOND AXIS — the LATENT basis width (PI decision 3)
+--------------------------------------------------------
+``--basis-width`` is the LATENT true-N grid, and it is INDEPENDENT of the
+analysis window: the window decides which calibration blocks ``frozen``
+carries, the basis width decides the grid the truth histogram is built on.
+They compose, which is why the ``lya_lyb x 0.2-dex`` cell needed the
+adopted-basis stream and the spectral-window stream to coexist and could not be
+run before they did. The default is the shipped 0.1 dex, bit-for-bit; each
+other width writes its OWN packs (``_bw0p2`` tag), manifest and artifact, and
+``phase_selftest`` re-reads every pack's actual grid and refuses a mismatch.
+``pack.coarsen_basis`` is NOT used — it is a synthetic/test re-gridder, and
+re-gridding an existing pack would be a component substitution, not a
+measurement.
+
 USAGE (two envs — the extractor is jax-free by design, the fold needs jax)
 -------------------------------------------------------------------------
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
     conda run -n gpdla python CDDF_analysis/hbi_mcmc/window_study.py \
-        --phase extract --pack-dir <SCRATCH>
+        --phase extract --pack-dir <SCRATCH> [--basis-width 0.2]
 
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
     conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc.window_study \
-        --phase selftest --pack-dir <SCRATCH> \
+        --phase selftest --pack-dir <SCRATCH> [--basis-width 0.2] \
         --out CDDF_analysis/hbi_mcmc/spectral_window_study.json
 
 MOCKS ONLY. No real-LOA path is touched; no real-data value can enter this
@@ -140,24 +154,46 @@ CLAMPS = ["both", "hi"]             # the D2 covariate-clamp bracket (undecided)
 REPORT_LO, REPORT_HI = 19.7, 21.6
 # decision 1 / finding D2: the excluded high-N tail, reported SEPARATELY
 HIGHN_LO = 21.6
-# decision 3: 0.2-dex latent basis. NOT IMPLEMENTED HERE -- see
-# BASIS_RESOLUTION_STATUS.
-BASIS_DEX = 0.1
+# decision 3: the 0.2-dex LATENT true-N basis. IMPLEMENTED as of the
+# 2026-08-05 integration -- see BASIS_RESOLUTION_STATUS. ``BASIS_DEX`` is the
+# width of THIS run and is rebound by main() from --basis-width; the DEFAULT is
+# unchanged at 0.1 dex so every pre-existing invocation reproduces bit-for-bit.
+BASIS_DEX_DEFAULT = 0.1
+BASIS_DEX = BASIS_DEX_DEFAULT
 BASIS_RESOLUTION_STATUS = (
-    "PI decision 3 (a 0.2-dex latent true-N basis) is NOT implemented in this "
-    "study. It is owned by a sibling stream on another branch and was not "
-    "available. Reason it was not implemented locally: a 0.2-dex ntrue grid "
-    "violates TWO committed schema rules in "
-    "CDDF_analysis/hbi_mcmc/pack.py:validate_pack -- "
-    "_check_edges_uniform('ntrue_edges', ..., _N_STEP=0.1) and the rule that "
-    "nhat_edges be an exact TAIL SUBSET of ntrue_edges -- and relaxing them "
-    "would change the shared pack schema the sibling stream is editing. "
-    "CONSEQUENCE FOR THIS STUDY: the window contrast is measured at FIXED "
-    "0.1-dex basis on BOTH arms, so it is a valid matched comparison and the "
-    "DIRECTION of the window effect is unaffected by basis resolution. The "
-    "ABSOLUTE closure numbers WILL move when the 0.2-dex basis lands, so no "
-    "absolute closure figure here may be quoted as the PI-adopted "
-    "configuration's closure.")
+    "PI decision 3 (a 0.2-dex LATENT true-N basis) IS IMPLEMENTED in this "
+    "study as of the 2026-08-05 integration. `--basis-width` selects the "
+    "latent grid and is threaded straight into "
+    "extract_pack.extract_pack(..., basis_width=), which builds the pack on "
+    "the coarse basis DIRECTLY FROM THE CATALOGUE. "
+    "pack.py:coarsen_basis is NOT used: its own docstring calls it a "
+    "SYNTHETIC / TEST re-gridder, and re-gridding an existing 0.1-dex pack "
+    "would be a component substitution, not a measurement. "
+    "THE TWO AXES ARE INDEPENDENT AND COMPOSE: the ANALYSIS window decides "
+    "which calibration blocks `frozen` carries (and is therefore read from "
+    "`frozen`, never passed per pack), the basis width decides the latent "
+    "grid. That is why the lya_lyb x 0.2-dex cell needed BOTH streams and "
+    "could not be run before they coexisted. "
+    "SCOPING: each width writes its OWN packs (tag suffix `_bw0p2`), its own "
+    "manifest and its own artifact, so two widths can never overwrite one "
+    "another; the width of this run is stamped at "
+    "metadata.configuration.basis_dex and re-read from every pack's own "
+    "grid by the selftest phase. "
+    "THE EARLIER BLOCKER IS GONE: CDDF_analysis/hbi_mcmc/pack.py:validate_pack "
+    "now carries an explicit 'coarser (or mixed-width) LATENT basis' branch "
+    "(every ntrue edge on the observed 0.1-dex grid, the TOP edge shared with "
+    "nhat_edges, the reporting floor itself an exact basis edge so no basis "
+    "bin straddles the pad/report boundary). The old uniform-0.1 and exact-"
+    "TAIL-SUBSET rules still apply UNCHANGED whenever the basis is on the "
+    "0.1-dex step, so every v1 / v1.1 pack validates bit-identically. "
+    "HISTORICAL NOTE: revisions of this study before 2026-08-05 ran at 0.1 dex "
+    "on BOTH arms and recorded the 0.2-dex basis as UNAVAILABLE. That "
+    "earlier window contrast stays a VALID MATCHED comparison -- it was taken "
+    "at FIXED basis on both arms, so the DIRECTION of the window effect is "
+    "unaffected by basis resolution -- but its ABSOLUTE closure numbers are "
+    "0.1-dex numbers and are not the PI-adopted configuration's closure. The "
+    "0.2-dex arm is measured separately, in its own artifact, and neither "
+    "artifact may be quoted for the other's basis.")
 
 # module-level, rebound by main()
 PACKDIR = DEF_PACKDIR
@@ -974,9 +1010,79 @@ def dirty():
         cwd=REPO, text=True).strip())
 
 
-def pack_name(mock, window):
+def _is_default_basis(basis_width=None):
+    """Is this run on the SHIPPED 0.1-dex latent basis?"""
+    w = BASIS_DEX if basis_width is None else float(basis_width)
+    return abs(w - BASIS_DEX_DEFAULT) < 1e-12
+
+
+def _d3_disposition():
+    """PI decision 3's disposition FOR THIS RUN — measured from BASIS_DEX."""
+    if _is_default_basis():
+        return ("NO for this run — it is on the SHIPPED 0.1-dex latent basis. "
+                "Decision 3 is now IMPLEMENTED (--basis-width) and the "
+                "0.2-dex arm is measured in its OWN artifact "
+                f"({os.path.basename(default_out(0.2))}); this artifact's "
+                "absolute closure numbers are 0.1-dex numbers and are not the "
+                "PI-adopted configuration's closure. See "
+                "basis_resolution_status.")
+    return (f"YES — every pack folded here was EXTRACTED on a {BASIS_DEX}-dex "
+            "LATENT true-N basis directly from the catalogue "
+            "(extract_pack.extract_pack(..., basis_width=), NOT the synthetic "
+            "pack.coarsen_basis re-gridder), and each pack's own ntrue grid is "
+            "re-read and verified against that width before it is folded. The "
+            "OBSERVED n-hat grid and the REPORTING grid stay 0.1 dex. See "
+            "basis_resolution_status.")
+
+
+def basis_tag(basis_width=None):
+    """Filename suffix for the LATENT basis width — EMPTY at the 0.1-dex default.
+
+    The default stays un-suffixed on purpose: the six 0.1-dex packs already on
+    disk (and the invocation that made them) keep working untouched, so the
+    0.1-dex arm is REUSED rather than re-extracted and its artifact can be
+    leaf-diffed against the committed one. Any other width gets an explicit
+    ``_bw0p2``-style suffix, so a coarse-basis pack can neither collide with nor
+    overwrite a 0.1-dex one. ``phase_selftest`` additionally re-reads each
+    loaded pack's ACTUAL grid and refuses a width that disagrees, so the
+    filename is a convenience, never the evidence.
+    """
+    w = BASIS_DEX if basis_width is None else float(basis_width)
+    if abs(w - BASIS_DEX_DEFAULT) < 1e-12:
+        return ""
+    return "_bw" + f"{w:g}".replace(".", "p")
+
+
+def pack_tag(window, basis_width=None):
+    """The full ``extract_pack`` tag for one (window, basis width) cell."""
     f = f"{PAD_FLOOR:.1f}".replace(".", "p")
-    return f"modelA_pack_{mock}_win{window}_pad{f}_{COMPLETENESS}.npz"
+    return f"_win{window}_pad{f}_{COMPLETENESS}{basis_tag(basis_width)}"
+
+
+def pack_name(mock, window, basis_width=None):
+    return f"modelA_pack_{mock}{pack_tag(window, basis_width)}.npz"
+
+
+def manifest_name(basis_width=None):
+    return f"window_manifest{basis_tag(basis_width)}.json"
+
+
+def default_out(basis_width=None):
+    """The artifact path for a given basis width (the 0.1-dex name is unchanged)."""
+    base, ext = os.path.splitext(DEF_OUT)
+    return f"{base}{basis_tag(basis_width)}{ext}"
+
+
+def pack_basis_width(pack):
+    """The pack's OWN latent basis width, read from its grid — not its filename.
+
+    ``pack.basis_width`` is the MODAL bin width of ``ntrue_edges``; E4's merging
+    convention leaves a wider remainder bin at the top of each segment, so the
+    modal width is the nominal one. Reading the grid (rather than the
+    provenance sidecar) also works for packs extracted before the
+    ``latent_basis`` provenance block existed.
+    """
+    return float(pack.basis_width)
 
 
 # ---------------------------------------------------------------------------
@@ -999,15 +1105,23 @@ def phase_extract():
               f"g_grid={frozen['g_grid'].shape} "
               f"fp_total={int(frozen['fp_counts'].sum())}", flush=True)
         for mock in MOCKS:
-            tag = f"_win{window}_pad{f'{PAD_FLOOR:.1f}'.replace('.', 'p')}_{COMPLETENESS}"
+            tag = pack_tag(window, BASIS_DEX)
+            # THE TWO AXES MEET HERE. `window` reaches extract_pack ONLY through
+            # `frozen` (every window-dependent calibration block lives there, so
+            # a per-pack window override could only ever build a MIXED-window
+            # pack); `basis_width` is the LATENT true-N grid and is orthogonal
+            # to it. Dropping the keyword silently rebuilds the 0.1-dex default
+            # under a 0.2-dex filename, which is exactly the collision the tag
+            # exists to prevent — tested.
             r = EP.extract_pack(mock, PACKDIR, frozen, pad_floor=PAD_FLOOR,
-                                tag=tag)
+                                tag=tag, basis_width=BASIS_DEX)
             manifest[f"{mock}|{window}"] = dict(
                 mock=mock, window=window, pad_floor=PAD_FLOOR,
-                completeness=COMPLETENESS, npz=r["npz"],
+                completeness=COMPLETENESS, basis_width=BASIS_DEX,
+                npz=r["npz"],
                 counts_total=r["counts_total"], dx_gap=r["dx_gap"])
-            print(f"[window] done {mock}|{window}", flush=True)
-    with open(os.path.join(PACKDIR, "window_manifest.json"), "w") as f:
+            print(f"[window] done {mock}|{window}|bw={BASIS_DEX}", flush=True)
+    with open(os.path.join(PACKDIR, manifest_name(BASIS_DEX)), "w") as f:
         json.dump(manifest, f, indent=1)
     print(json.dumps({k: v["counts_total"] for k, v in manifest.items()},
                      indent=1))
@@ -1023,7 +1137,7 @@ def phase_selftest():
     rows, packmeta = {}, {}
     for window in WINDOWS:
         for mock in MOCKS:
-            p = os.path.join(PACKDIR, pack_name(mock, window))
+            p = os.path.join(PACKDIR, pack_name(mock, window, BASIS_DEX))
             pack = load_pack(p)
             prov = pack.provenance or {}
             aw = prov.get("analysis_window", {})
@@ -1032,11 +1146,35 @@ def phase_selftest():
                 raise SystemExit(
                     f"{p}: provenance analysis_window.name={aw.get('name')!r} "
                     f"!= {window!r}. Refusing to compare mixed-window packs.")
+            # FAIL CLOSED on the OTHER axis too. The basis width lives in the
+            # FILENAME, and a filename is not evidence: a 0.2-dex run that found
+            # a stale/mis-tagged pack would silently fold a 0.1-dex latent grid
+            # and report it as the adopted configuration. The pack's ACTUAL
+            # ntrue grid is re-read here and must agree with the requested
+            # width. (Read from the grid, not the provenance sidecar, so packs
+            # extracted before the `latent_basis` block existed are still
+            # checkable.)
+            bw = pack_basis_width(pack)
+            if abs(bw - float(BASIS_DEX)) > 1e-9:
+                raise SystemExit(
+                    f"{p}: the pack's own latent basis is {bw} dex but this run "
+                    f"requested {BASIS_DEX} dex. Refusing to fold a pack on a "
+                    "different LATENT basis than the one being reported.")
             packmeta[f"{mock}|{window}"] = dict(
                 pack=os.path.basename(p),
                 code_commit=prov.get("code_commit"),
                 analysis_window=aw,
-                n_pad_bins=int(pack.n_b - pack.n_c),
+                basis_width_dex=bw,
+                basis_is_uniform=bool(pack.basis_is_uniform),
+                n_basis_bins=int(pack.n_b),
+                # `pack.n_pad_bins` COUNTS the basis bins below the observed
+                # floor. It used to be spelled `n_b - n_c` inline here, which is
+                # the same number on a 0.1-dex basis (pinned by pack.py's test)
+                # and GOES NEGATIVE on a coarser one -- 0.2 dex with pad 19.0
+                # has n_b=18 basis bins against n_c=29 observed bins, i.e. -11.
+                # Reading the property keeps the 0.1-dex leaf bit-identical and
+                # makes the 0.2-dex leaf correct.
+                n_pad_bins=int(pack.n_pad_bins),
                 ntrue_lo=float(np.asarray(pack.ntrue_edges, float)[0]),
                 nhat_lo=float(np.asarray(pack.nhat_edges, float)[0]),
                 counts_total=float(np.asarray(pack.counts).sum()),
@@ -1153,11 +1291,12 @@ def phase_selftest():
             rederive=(
                 "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "
                 "conda run -n gpdla python CDDF_analysis/hbi_mcmc/"
-                f"window_study.py --phase extract --pack-dir {PACKDIR}  &&  "
+                f"window_study.py --phase extract --pack-dir {PACKDIR} "
+                f"--basis-width {BASIS_DEX}  &&  "
                 "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "
                 "conda run -n gpdla-hbi python -m CDDF_analysis.hbi_mcmc."
                 f"window_study --phase selftest --pack-dir {PACKDIR} "
-                f"--out {OUT}"),
+                f"--basis-width {BASIS_DEX} --out {OUT}"),
             pack_note="packs are INPUTS, written to scratch, never committed",
             configuration=dict(
                 pad_floor=PAD_FLOOR, completeness_below_floor=COMPLETENESS,
@@ -1165,6 +1304,10 @@ def phase_selftest():
                 high_n_residual_floor=HIGHN_LO,
                 resp_clamps=CLAMPS,
                 basis_dex=BASIS_DEX,
+                basis_dex_is_the_shipped_default=bool(_is_default_basis()),
+                basis_dex_pack_tag=(basis_tag(BASIS_DEX) or "<none — the "
+                                    "0.1-dex default keeps the original pack "
+                                    "names>"),
                 basis_resolution_status=BASIS_RESOLUTION_STATUS,
                 pi_decisions_implemented=dict(
                     d1_reporting_window=(f"YES — every gate metric is computed "
@@ -1172,7 +1315,7 @@ def phase_selftest():
                                          "fully-contained bins; the >= "
                                          f"{HIGHN_LO} tail is reported "
                                          "SEPARATELY and gates nothing."),
-                    d3_basis_0p2dex="NO — see basis_resolution_status",
+                    d3_basis_0p2dex=_d3_disposition(),
                     d4_pad_19p0_molly172=("YES — pad floor 19.0 with the "
                                           "molly172 convention on BOTH arms; "
                                           "the lya_lyb sub-floor matrix was "
@@ -1536,8 +1679,210 @@ def arm2_pointer(pilot):
     )
 
 
+def _recommendation_measured(rows, per_clamp, pilot=None):
+    """P1-P6 applied MECHANICALLY, with EVERY number formatted out of ``rows``.
+
+    Used for any basis width other than the shipped 0.1 dex. Nothing here is a
+    hard-coded measurement, so this block cannot carry a number from a
+    different configuration; and nothing here is a new criterion, so it cannot
+    smuggle in a discriminator P6 forbids. The direction tests are exactly the
+    pre-registered ones already computed in ``per_clamp``.
+    """
+    def g(mock, window, clamp, field, sub):
+        return rows[f"{mock}|{window}|clamp={clamp}"][field][sub]
+
+    def legs(field, sub, fmt="{:.4f}"):
+        return {c: "; ".join(
+            f"{m} " + fmt.format(g(m, 'lya_only', c, field, sub)) + " -> "
+            + fmt.format(g(m, 'lya_lyb', c, field, sub)) for m in MOCKS)
+            for c in CLAMPS}
+
+    a2 = {c: per_clamp[c]["A2_delta_rms_frac_dev_reporting_window"]
+          for c in CLAMPS}
+    a2_unanimous = bool(all(v["unanimous"] for v in a2.values()))
+    a2_signs = {v["sign"] for v in a2.values()}
+    lya_only_closer = bool(a2_unanimous and a2_signs == {1})
+    lya_lyb_closer = bool(a2_unanimous and a2_signs == {-1})
+
+    closing = sorted(k for k, v in rows.items() if v["primary_closes"]["closes"])
+    best = min(rows.items(),
+               key=lambda kv: kv[1]["primary_reporting_window"]["chi2_dof"])
+    best_chi2 = best[1]["primary_reporting_window"]["chi2_dof"]
+
+    if lya_only_closer:
+        answer = ("KEEP lya_only (1025 A) AS THE PRIMARY REPORTING "
+                  "CONFIGURATION; KEEP lya_lyb (911 A) AS A REPORTED "
+                  "SENSITIVITY. On the scale-free reporting-window statistic "
+                  "the nominal window is closer to its own prediction on "
+                  f"every mock at every clamp ({len(MOCKS) * len(CLAMPS)} of "
+                  f"{len(MOCKS) * len(CLAMPS)} legs).")
+    elif lya_lyb_closer:
+        answer = ("MEASURED REVERSAL, NOT SELF-RATIFIED: on the scale-free "
+                  "reporting-window statistic the WIDER lya_lyb (911 A) window "
+                  "is closer to its own prediction on every mock at every "
+                  f"clamp ({len(MOCKS) * len(CLAMPS)} legs). P1 makes lya_only "
+                  "the standard reference and this routine does not overturn "
+                  "a PI decision on its own: BOTH arms are reported in full "
+                  "and the choice of primary configuration is referred to the "
+                  "PI.")
+    else:
+        answer = ("NO WINDOW EFFECT UNDER P5 on the scale-free statistic: the "
+                  "direction is NOT unanimous across the three mocks at every "
+                  "clamp, and P5 reports a split as no effect. lya_only "
+                  "remains the standard reference by P1.")
+    if closing:
+        answer += (f" {len(closing)} of {len(rows)} configurations CLOSE the "
+                   f"RATIFIED chi2/dof <= {_CHI2_GATE} arm over "
+                   f"[{REPORT_LO}, {REPORT_HI}]: {closing}.")
+    else:
+        answer += (f" NOTHING CLOSES: 0 of {len(rows)} configurations satisfy "
+                   f"the RATIFIED chi2/dof <= {_CHI2_GATE} arm over "
+                   f"[{REPORT_LO}, {REPORT_HI}]; the best measured is "
+                   f"{best[0]} at chi2/dof {best_chi2:.4g}, "
+                   f"{best_chi2 / _CHI2_GATE:.4g}x the gate. So this is a "
+                   "PREFERENCE BETWEEN NON-CLOSING CONFIGURATIONS, not a "
+                   "closure result.")
+
+    return dict(
+        answer=answer,
+        rests_on="ARM 1 (COMPLETE)",
+        basis_dex=BASIS_DEX,
+        basis_note=("EVERY number in this block was formatted from this run's "
+                    f"own rows at a {BASIS_DEX}-dex LATENT basis. The inline "
+                    "narrative used for the 0.1-dex arm is NOT reused here: it "
+                    "quotes 0.1-dex measurements, and repeating them under "
+                    "another basis would be quoting a number that was never "
+                    "measured for this configuration."),
+        decided_on=("the SCALE-FREE reporting-window statistic "
+                    "primary_reporting_window.rms_frac_dev (amendment A2), NOT "
+                    "on the chi2/dof MAGNITUDE, which is confounded with "
+                    "sample size (amendment A1)."),
+        reasoning=[
+            ("A2 (PRIMARY as restated, decides the recommendation): "
+             "counts-weighted RMS fractional deviation of mu/obs over "
+             f"[{REPORT_LO}, {REPORT_HI}], lya_only -> lya_lyb. "
+             + " | ".join(f"clamp={c}: {s}"
+                          for c, s in legs("primary_reporting_window",
+                                           "rms_frac_dev").items())
+             + f". Unanimous across all three mocks at both clamps: "
+               f"{a2_unanimous}."),
+            ("P2 (as PRE-REGISTERED — direction only, MAGNITUDE DISCOUNTED): "
+             "chi2/dof over the reporting window, lya_only -> lya_lyb. "
+             + " | ".join(f"clamp={c}: {s}"
+                          for c, s in legs("primary_reporting_window",
+                                           "chi2_dof", "{:.4g}").items())
+             + ". CONFOUNDED WITH SAMPLE SIZE (amendment A1): see "
+               "verdict.p2_power_confound for the per-mock decomposition into "
+               "statistical power and model adequacy. Direction only."),
+            ("P3 (SECONDARY): the EXCLUDED high-N residual mu/obs over log NHI "
+             f">= {HIGHN_LO}, lya_only -> lya_lyb. "
+             + " | ".join(f"clamp={c}: {s}"
+                          for c, s in legs("high_n_above_21p6",
+                                           "ratio").items())
+             + ". A window is preferred on this axis ONLY if it moves the "
+               "residual TOWARD 1; the signed test is "
+               "protocol_outcomes[clamp].P3_delta_abs_highn_residual_from_1."),
+            ("P4: the total is NOT used to prefer a window. For the record, "
+             "reporting-window mu/obs lya_only -> lya_lyb. "
+             + " | ".join(f"clamp={c}: {s}"
+                          for c, s in legs("primary_reporting_window",
+                                           "ratio").items())),
+            ("P5: unanimity across all three mocks is required. A2 unanimous "
+             f"at every clamp: {a2_unanimous}. Per-clamp signs: "
+             + json.dumps({c: v["signs"] for c, v in a2.items()},
+                          sort_keys=True)
+             + ". A 2-of-3 split is reported as NO EFFECT."),
+            ("MARGINALS (measured, gating nothing — PI decision 8 declined to "
+             "ratify the span tolerances): see verdict.by_z_ratio_span and "
+             "verdict.by_snr_ratio_span. Their max|z| is subject to the SAME "
+             "counts confound as P2 (amendment A1)."),
+        ],
+        what_this_does_NOT_say=[
+            "It does NOT rest on the SIZE of the chi2/dof gap: chi2/dof scales "
+            "linearly with counts at fixed fractional residual shape and the "
+            "two arms are NOT matched in counts (amendment A1). The "
+            "recommendation rests on the scale-free rms_frac_dev direction "
+            "(A2).",
+            "The scale-free measure is NOT a gate. chi2/dof <= 3 is the ONLY "
+            "ratified numerical closure tolerance (PI decision 8; PI direction "
+            "2026-08-05); no tolerance on rms_frac_dev has been defined or "
+            "calibrated, so it is reported as a measurement.",
+            (f"It does NOT say either window is ROBUST: {len(closing)} of "
+             f"{len(rows)} configurations close the ratified arm; the best "
+             f"measured is {best[0]} at chi2/dof {best_chi2:.6g}, "
+             f"{best_chi2 / _CHI2_GATE:.6g}x the gate of {_CHI2_GATE}."),
+            "It does NOT test the PI's stated MECHANISM. The analysis window "
+            "is a post-hoc SELECTION; blue-edge truncation inside the GP fit "
+            "is the FITTING window, which only ARM 2 touches and which ARM 2 "
+            "only pilots.",
+            (f"It does NOT transfer to another LATENT basis. This artifact is "
+             f"the {BASIS_DEX}-dex basis; the 0.1-dex arm is a SEPARATE "
+             f"artifact ({os.path.basename(default_out(0.1))}) built from "
+             "SEPARATE packs, and neither may be quoted for the other."),
+            "It is NOT a statement about real DESI data: mocks only.",
+        ],
+        follow_ups_for_the_PI=[
+            ("The window contrast and the basis width are INDEPENDENT axes and "
+             "this artifact fixes the basis. The matched four-cell comparison "
+             "{lya_only, lya_lyb} x {0.1, 0.2} dex is read by putting this "
+             "artifact beside "
+             f"{os.path.basename(default_out(0.1))}; chi2/dof must be compared "
+             "WITHIN a window (the counts confound of A1 is a window effect, "
+             "not a basis effect — the OBSERVED n-hat grid and therefore `obs` "
+             "do not move with the basis)."),
+            ("ARM 2's costed decision is in arm2_fitting_window_pilot."
+             "campaign_cost_estimate. It is far above the ~500 CPU-h sign-off "
+             "threshold and was not requested."),
+        ],
+        best_measured=dict(
+            config=best[0],
+            reporting_chi2_dof=best_chi2,
+            reporting_ratio=best[1]["primary_reporting_window"]["ratio"],
+            reporting_rms_frac_dev=best[1]["primary_reporting_window"][
+                "rms_frac_dev"],
+            high_n_ratio=best[1]["high_n_above_21p6"]["ratio"],
+            still_over_gate_by=best_chi2 / _CHI2_GATE,
+            gate_max=_CHI2_GATE,
+            gate_max_arm="chi2_dof_max",
+            gate_max_authority_state=GATE_ARMS["chi2_dof_max"][
+                "authority_state"],
+        ),
+        arm2_fitting_window=arm2_pointer(pilot),
+        which_part_rests_on_what=dict(
+            arm1_complete=[
+                "every closure / chi2 / high-N / marginal number quoted",
+                "the preference between the two ANALYSIS windows at this "
+                "latent basis",
+                "the selection-vs-response attribution of the high-N move",
+            ],
+            arm2_pilot_only=[
+                "the statement that the FITTING window shows no detectable "
+                "effect on recovered large-DLA N_HI",
+                "the per-spectrum finder cost and the campaign cost estimate",
+            ],
+            neither=[
+                (f"any claim that a configuration CLOSES beyond the "
+                 f"{len(closing)} listed"),
+                "any number at a latent basis other than this artifact's",
+            ],
+        ),
+    )
+
+
 def recommendation(rows, per_clamp, pilot=None):
-    """The answer to the deliverable's question, decided by P1-P6 ONLY."""
+    """The answer to the deliverable's question, decided by P1-P6 ONLY.
+
+    TWO BRANCHES, ON PURPOSE. The 0.1-dex narrative below quotes MEASURED
+    numbers inline (0.1193 -> 0.1366, 63.7 vs 106.6, ...). Those are 0.1-dex
+    measurements. Emitting them unchanged inside a 0.2-dex artifact would be
+    quoting numbers that were never measured for that configuration — the
+    project's hardest rule. So a non-default basis takes
+    ``_recommendation_measured``, which FORMATS every number out of ``rows``
+    and hard-codes none.
+    """
+    if not _is_default_basis():
+        return _recommendation_measured(rows, per_clamp, pilot)
+
     def g(mock, window, clamp, field, sub):
         return rows[f"{mock}|{window}|clamp={clamp}"][field][sub]
 
@@ -1890,16 +2235,42 @@ def analyze_pilot(spectra_per_mock=361167, n_mocks=3):
 
 
 def main(argv=None):
-    global PACKDIR, OUT
+    global PACKDIR, OUT, BASIS_DEX
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--phase", required=True,
                    choices=["extract", "selftest", "check-windows",
                             "pilot-analyze"])
     p.add_argument("--pack-dir", default=DEF_PACKDIR)
-    p.add_argument("--out", default=DEF_OUT)
+    p.add_argument("--out", default=None,
+                   help="artifact path. Default: the basis-width-scoped name "
+                        "(spectral_window_study.json at 0.1 dex, "
+                        "spectral_window_study_bw0p2.json at 0.2 dex).")
+    p.add_argument("--basis-width", type=float, default=BASIS_DEX_DEFAULT,
+                   help="PI decision 3: the LATENT true-N basis width in dex "
+                        "(an integer multiple of the 0.1-dex observed step). "
+                        "Default 0.1 = the shipped basis, so every existing "
+                        "invocation is unchanged and reuses the 0.1-dex packs "
+                        "already on disk. 0.2 is the ADOPTED width; it writes "
+                        "its own `_bw0p2` packs, manifest and artifact. The "
+                        "OBSERVED n-hat grid and the REPORTING grid never "
+                        "move. This is ORTHOGONAL to the ANALYSIS window, "
+                        "which is selected by building the right frozen "
+                        "calibration.")
     a = p.parse_args(argv)
     PACKDIR = a.pack_dir
-    OUT = a.out
+    BASIS_DEX = float(a.basis_width)
+    OUT = default_out(BASIS_DEX) if a.out is None else a.out
+    # FAIL CLOSED on a basis/artifact-path collision. Writing a 0.2-dex result
+    # over the 0.1-dex artifact's name would silently retitle the whole study:
+    # every reader (and every committed test) treats
+    # spectral_window_study.json as the 0.1-dex object.
+    if not _is_default_basis() and os.path.abspath(OUT) == os.path.abspath(
+            default_out(BASIS_DEX_DEFAULT)):
+        raise SystemExit(
+            f"REFUSING: --basis-width {BASIS_DEX} would write over "
+            f"{default_out(BASIS_DEX_DEFAULT)}, which is the "
+            f"{BASIS_DEX_DEFAULT}-dex artifact. Each latent basis gets its own "
+            f"artifact; drop --out to get {default_out(BASIS_DEX)}.")
     if a.phase == "check-windows":
         for w in WINDOWS:
             print(json.dumps(assert_window_matched(w), indent=1))
