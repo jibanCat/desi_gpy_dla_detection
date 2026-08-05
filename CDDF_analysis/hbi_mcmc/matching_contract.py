@@ -42,10 +42,29 @@ population are collected in ``PI_CHECKPOINT_ITEMS`` and are NOT decided here.
 PRIVACY: mock-derived only (2LPT-0 / London-0 / Saclay-0 / loa-0).  This module
 opens no real-DESI path and every number it can emit is mock-derived.
 
-ENV: importable in the jax-free `gpdla` data-plane env (load it file-directly;
-the ``hbi_mcmc`` package ``__init__`` imports jax).  Only
-``check_accounting_identity``'s default row-mass path needs jax, and it imports
-it lazily; inject ``row_mass=`` to run the ledger without jax at all.
+A GUARD THAT FIRES ON THE FIXED STATE (corrected 2026-08-05, second pass)
+-------------------------------------------------------------------------
+``assert_forward_fp_normalisation`` used to compare the contract against a
+HARD-CODED reading of ``forward.py``'s FP expression.  When the fold was
+repaired (7707c8e, 2b436df) the reading went stale in silence and the guard
+raised on correct code, permanently.  It now obtains the folded total by
+CALLING ``forward.fold_mu_fp``, so it tracks the code by construction and
+fails only if the omission comes back.  The contradiction record itself is not
+deleted — it moves to ``RESOLVED_CONTRADICTIONS`` with its fixing commits and
+its measured before/after.  A description of the code is a claim like any
+other and rots like any other; prefer measuring the code.
+
+ENV: jax is REQUIRED.  ``check_accounting_identity`` and (since this commit)
+``fp_normalisation_audit`` both reach the committed fold, importing it lazily;
+injecting ``row_mass=`` now avoids only ``build_K``, not jax.
+
+🔴 An earlier version of this paragraph said the module was "importable in the
+jax-free `gpdla` data-plane env (load it file-directly)".  That was FALSE, and
+was false before this commit: the top-level ``from CDDF_analysis.hbi_mcmc
+import reporting`` executes the package ``__init__``, which imports jax, so a
+file-direct ``importlib`` load raises ``ModuleNotFoundError: No module named
+'jax'`` under ``gpdla`` — MEASURED 2026-08-05 against BOTH this revision and
+its parent.  Use ``gpdla-hbi``.
 """
 from __future__ import annotations
 
@@ -63,6 +82,7 @@ __all__ = [
     "Axis", "Population", "Quantity",
     "AXES", "MATCHING", "POPULATIONS", "POPULATION_BY_ID", "QUANTITIES",
     "KNOWN_CONTRADICTIONS", "CONTRADICTION_BY_ID", "PI_CHECKPOINT_ITEMS",
+    "RESOLVED_CONTRADICTIONS", "RESOLVED_BY_ID",
     "RETRACTIONS", "FP_CEILING_MEASURED", "TRUTH_OUT_OF_BASIS_SUPPORT",
     "contract_dict", "basis_partition", "classify_candidate", "classify_truth",
     "assert_adopted_constants_agree_with_reporting", "ADOPTED_BASIS_TOP",
@@ -73,7 +93,11 @@ __all__ = [
 
 #: 1.1 — C3 retraction (no feasibility verdict), fail-closed classifiers, NaN
 #: guards, per-slot value guards, FP ceiling check, BAL magnitude retracted.
-CONTRACT_VERSION = "1.1"
+#: 1.2 — FP_ELL_EFF_OMITTED moved to RESOLVED_CONTRADICTIONS (fixed in code by
+#: 7707c8e / 2b436df); the FP normalisation guard now MEASURES the committed
+#: fold instead of describing it, and fails on a re-introduced omission; FP
+#: ceiling measured on all three mocks; FP z-shape one-sided support recorded.
+CONTRACT_VERSION = "1.2"
 
 
 class ContractViolation(ValueError):
@@ -713,11 +737,21 @@ QUANTITIES = {q.key: q for q in (
              "the calibrated covariate range; outside it the fold CLAMPS."),
     Quantity("fp_ell_eff", ParameterClass.FIXED_CALIBRATION_PRODUCT,
              SupportClass.MEASURED, "pack.fp_ell_eff (scalar)",
-             "N_sl_loa0 * (N_sl_loa0 / N_prod); the loa-0 Poisson exposure."),
+             "N_sl_loa0 * (N_sl_loa0 / N_prod); the loa-0 Poisson exposure. "
+             "It IS carried by the fold (forward.fold_mu_fp); the omission "
+             "recorded here until 2026-08-05 is RESOLVED — see "
+             "RESOLVED_BY_ID['FP_ELL_EFF_OMITTED']."),
     Quantity("fp_w_sightline_ratio", ParameterClass.FIXED_CALIBRATION_PRODUCT,
              SupportClass.MEASURED, "pack.fp_w_sightline_ratio (scalar)",
              "N_prod / N_sl_loa0. One-sided BAL veto — see "
              "KNOWN_CONTRADICTIONS."),
+    Quantity("fp_E_alloc", ParameterClass.FIXED_CALIBRATION_PRODUCT,
+             SupportClass.WEAKLY_MEASURED, "pack.fp_E_alloc (Kf, S)",
+             "the FP's z-allocation, set to the PATHLENGTH shape "
+             "dX[k,s]/sum_k dX[k,s]. It carries no FP z-information and the "
+             "measured loa-0 FP z-shape differs across the observed floor — "
+             "see KNOWN_CONTRADICTIONS["
+             "'FP_Z_SHAPE_DIFFERS_ACROSS_THE_OBSERVED_FLOOR']."),
     Quantity("t_sigma", ParameterClass.FIXED_CALIBRATION_PRODUCT,
              SupportClass.WEAKLY_MEASURED, "pack.t_sigma (KK,)",
              "prior WIDTH of the transfer factor; not window-matched."),
@@ -890,55 +924,153 @@ FP_NORMALISATION = dict(
              "three adopted packs).",
     eta="eta_DLA is FORCED to 0 (build_loa0_fp_product.py:DLA_ETA), so the "
         "(1 - eta_bar) factor is 1 on the pack's N >= 19.5 grid.",
+    implemented_at=(
+        "CDDF_analysis/hbi_mcmc/forward.py:fold_mu_fp — ONE definition, "
+        "`consts.fp_w * consts.fp_ell_eff * exp_t_k * lam_fp * fp_E`. "
+        "``fold_mu`` calls it; ``forward_selftest.selftest`` calls it; "
+        "``fold_mu_reference`` re-implements the same expression "
+        "INDEPENDENTLY on purpose (it is the numpy oracle and must not share "
+        "a helper); ``pack.synthetic_pack`` inverts it to place its FP mass. "
+        "The contract AGREES with the code here — the disagreement recorded "
+        "until 2026-08-05 is RESOLVED, see "
+        "RESOLVED_BY_ID['FP_ELL_EFF_OMITTED']."),
+    z_allocation=(
+        "E[k,s] = pack.fp_E_alloc, which the pack schema constrains to "
+        "sum_k E[k,s] == 1 on every POPULATED stratum (pack.py:545; MEASURED "
+        "2026-08-05 on all three adopted packs the column sums are "
+        "[0, 0, 1, 1, 1, 1, 1, 1] — the two zeros are the structurally empty "
+        "SNR<=2 op-mask strata, which carry fp_counts == 0). The total "
+        "therefore does NOT depend on the z-allocation, only on fp_w, "
+        "fp_ell_eff and lam_fp — and neither does the ratified gate. See "
+        "CONTRADICTION_BY_ID['FP_Z_SHAPE_DIFFERS_ACROSS_THE_OBSERVED_FLOOR']."),
 )
 
 
-def fp_normalisation_audit(pack) -> dict:
-    """Compare the CONTRACT's FP normalisation with what ``forward.py`` folds.
+def _fp_fold_total_through_forward(pack) -> float:
+    """The FP total the COMMITTED fold actually produces on this pack.
 
-    Pure arithmetic on pack scalars — no jax, no fold.  Returns both totals and
-    their ratio.  ``check_accounting_identity`` reports the candidate ledger
-    under BOTH so the finding is quantified rather than argued.
+    Calls ``forward.fold_mu_fp`` — the single site the FP term is defined at —
+    with the pack's own scalars, ``log_t = 0`` and the pack's own
+    ``fp_E_alloc``.  Nothing here re-types the expression: if the fold's
+    expression changes, this number changes with it.  That is the whole point,
+    and it is why the audit no longer hard-codes a reading of the source.
+    """
+    from CDDF_analysis.hbi_mcmc.forward import fold_mu_fp   # lazy: needs jax
+
+    ell = float(pack.fp_ell_eff)
+    fp_counts = np.asarray(pack.fp_counts, float)              # (C, S)
+    kz = np.asarray(pack.kz_to_K, int)                         # (Kf,)
+    E = np.asarray(pack.fp_E_alloc, float)                     # (Kf, S)
+    if E.shape != (len(kz), fp_counts.shape[1]):
+        raise ContractViolation(
+            f"fp_E_alloc has shape {E.shape}, expected "
+            f"{(len(kz), fp_counts.shape[1])} == (Kf, S).")
+    # the exposure allocation must be a PROBABILITY over z on every stratum
+    # that carries FP counts, or the fold's total is not fp_w.fp_ell_eff.lam_fp
+    # and the comparison below would be testing the allocation, not the factor.
+    col = E.sum(axis=0)
+    populated = fp_counts.sum(axis=0) > 0
+    bad = populated & (np.abs(col - 1.0) > 1e-9)
+    if np.any(bad):
+        raise ContractViolation(
+            "fp_E_alloc: sum_k E[k,s] != 1 on stratum(s) "
+            f"{np.flatnonzero(bad).tolist()} that carry loa-0 FP counts "
+            f"(column sums {col[bad].tolist()}). The schema requires it "
+            "(pack.py:545) and the FP normalisation is not checkable without "
+            "it.")
+    consts = _FoldFPConsts(kz_to_K=kz, fp_w=float(pack.fp_w_sightline_ratio),
+                           fp_ell_eff=ell, fp_E=E)
+    log_t = np.zeros(int(kz.max()) + 1 if kz.size else 1)
+    mu_fp = np.asarray(fold_mu_fp(log_t, fp_counts / ell, consts))
+    return float(mu_fp.sum())
+
+
+@dataclasses.dataclass(frozen=True)
+class _FoldFPConsts:
+    """The four fields ``forward.fold_mu_fp`` touches, and nothing else.
+
+    Deliberately NOT ``forward.build_consts``: building the full consts needs
+    the response fits and would make this guard depend on machinery it is not
+    testing.  A duck-typed carrier keeps the guard about the FP expression.
+    """
+    kz_to_K: np.ndarray
+    fp_w: float
+    fp_ell_eff: float
+    fp_E: np.ndarray
+
+
+def fp_normalisation_audit(pack) -> dict:
+    """Compare the CONTRACT's FP normalisation with the one the fold APPLIES.
+
+    🔴 2026-08-05, second correction.  Until this date the "implemented" total
+    was hard-coded as ``fp_w * lam_tot`` from a READING of ``forward.py``'s
+    source.  The reading was right when it was written and went silently STALE
+    the moment the fold was repaired (7707c8e, 2b436df): the audit kept
+    reporting a 13.59x disagreement against code that no longer had one, and
+    ``assert_forward_fp_normalisation`` raised on correct code.  A number taken
+    from a source reading goes stale without saying so; a number obtained by
+    CALLING the code cannot.  ``mu_fp_total_as_folded`` is therefore measured
+    through ``forward.fold_mu_fp``.
+
+    ``mu_fp_total_if_ell_eff_omitted`` is kept as an explicitly labelled
+    COUNTERFACTUAL — it is what the fold produced before the repair, and it is
+    what the ledger's retracted "as implemented" column reported.  It is NOT a
+    description of the committed code.
+
+    Needs jax (through ``forward``); ``check_accounting_identity`` already does.
     """
     w = float(pack.fp_w_sightline_ratio)
     ell = float(pack.fp_ell_eff)
     n_fp = float(np.asarray(pack.fp_counts, float).sum())
     lam_tot = n_fp / ell
-    implemented = w * lam_tot                    # forward.py:452
     contract = w * ell * lam_tot                 # == w * n_fp
+    folded = _fp_fold_total_through_forward(pack)
     return dict(
         n_fp_loa0=n_fp, fp_w_sightline_ratio=w, fp_ell_eff=ell,
         lam_total_plugin=lam_tot,
-        mu_fp_total_as_implemented=implemented,
+        mu_fp_total_as_folded=folded,
         mu_fp_total_per_contract=contract,
-        ratio_contract_over_implemented=(contract / implemented
-                                         if implemented > 0 else np.inf),
+        ratio_contract_over_folded=(contract / folded if folded > 0 else np.inf),
+        mu_fp_total_if_ell_eff_omitted=w * lam_tot,
         n_sl_loa0_implied=w * ell,
-        site="CDDF_analysis/hbi_mcmc/forward.py:452 (mu_fp = consts.fp_w * "
-             "exp_t_k * lam_fp * fp_E) — fp_ell_eff is absent from the "
-             "expression although build_consts carries it.",
+        fold_site="CDDF_analysis/hbi_mcmc/forward.py:fold_mu_fp — mu_fp = "
+                  "consts.fp_w * consts.fp_ell_eff * exp_t_k * lam_fp * fp_E. "
+                  "MEASURED by calling it, not by reading it.",
     )
 
 
 def assert_forward_fp_normalisation(pack, *, rtol=1e-9):
-    """FAIL LOUDLY if the committed fold's FP term is not the contract's.
+    """FAIL LOUDLY if the COMMITTED fold's FP term is not the contract's.
 
-    This is deliberately a check against the CODE, not against the pack: the
-    pack's scalars are correct and the fold's use of them is not.
+    A check against the CODE, not against the pack: the pack's scalars are
+    pushed through ``forward.fold_mu_fp`` and the total compared with
+    ``fp_w . fp_ell_eff . lam_fp``.  It PASSES on the repaired fold and it is
+    the standing regression guard for
+    ``RESOLVED_BY_ID['FP_ELL_EFF_OMITTED']``: dropping ``consts.fp_ell_eff``
+    from the fold again makes the ratio equal ``fp_ell_eff`` exactly (13.59 on
+    the adopted packs) and this raises.
+
+    It was a PERMANENT FALSE ALARM between 7707c8e and this commit: it compared
+    the contract against a hard-coded description of the pre-repair fold, so it
+    raised on correct code.  A guard that fires on the fixed state is worse
+    than no guard — it teaches its readers to skip it.
     """
     a = fp_normalisation_audit(pack)
-    if abs(a["ratio_contract_over_implemented"] - 1.0) > rtol:
+    r = a["ratio_contract_over_folded"]
+    if abs(r - 1.0) > rtol:
+        regressed = abs(r - a["fp_ell_eff"]) <= 1e-6 * max(a["fp_ell_eff"], 1.0)
         raise ContractViolation(
             "FP NORMALISATION VIOLATION: the contract requires "
-            "mu_FP = fp_w * fp_ell_eff * lam_fp * exp(t) * E, but "
-            "forward.py:452 folds mu_FP = fp_w * lam_fp * exp(t) * E. On this "
-            f"pack the contract total is {a['mu_fp_total_per_contract']:.4f} "
-            f"and the implemented total is "
-            f"{a['mu_fp_total_as_implemented']:.4f}: under-normalised by "
-            f"exactly fp_ell_eff = {a['fp_ell_eff']:.6f} "
-            f"(measured ratio {a['ratio_contract_over_implemented']:.9f}). "
-            "See FP_NORMALISATION and "
-            "CONTRADICTION_BY_ID['FP_ELL_EFF_OMITTED'].")
+            "mu_FP = fp_w * fp_ell_eff * lam_fp * exp(t) * E. On this pack the "
+            f"contract total is {a['mu_fp_total_per_contract']:.4f} and the "
+            f"total the COMMITTED forward.fold_mu_fp produces is "
+            f"{a['mu_fp_total_as_folded']:.4f} (measured ratio {r:.9f}). "
+            + ("The ratio EQUALS fp_ell_eff = "
+               f"{a['fp_ell_eff']:.6f}: the 2026-08-05 omission has been "
+               "RE-INTRODUCED — see RESOLVED_BY_ID['FP_ELL_EFF_OMITTED'], "
+               "fixed by 7707c8e and 2b436df. "
+               if regressed else "")
+            + "See FP_NORMALISATION.implemented_at.")
     return a
 
 
@@ -1458,26 +1590,56 @@ def _FITCOV_PROVENANCE(pack) -> dict:
 #: MEASURED per-candidate reference partition of the on-grid detections.  This
 #: is what the FP ceiling check compares against: mu_FP cannot exceed the
 #: number of on-grid candidates that have no genuine absorber at all.
+_FP_CEILING_BUNDLE = ("truth floor 17.2, lya_only, op mask, on the pack grid "
+                      "(N_hat in [19.5,22.4), z in [2.0,3.5))")
+_FP_CEILING_MEASURED_ON = (
+    "2026-08-05, load_and_cut_catalog(truth_nhi_floor=17.2, "
+    "host_truth_floor=17.2) + _snap_off_molly_edges, 11 s per mock")
+_FP_CEILING_NOTE = (
+    "the four is_TP slots plus `unmatched` sum to the on-grid total EXACTLY. "
+    "`unmatched` is the ONLY slot a forest FP can come from, and it is an "
+    "OVER-count of the FP: it also holds blends, second candidates on an "
+    "already-claimed truth row, and matches beyond dz_rel (P6 sub-slot (c)). "
+    "So the ceiling is a LOWER BOUND on the excess, not an estimate of it. "
+    "The 19.5-floor DETECTION bundle the pack itself uses has (on 2LPT-0) "
+    "88071 on-grid rows with 24181 unmatched, but 4070+ of those are genuine "
+    "absorbers the 19.5-floored truth table hid — see "
+    "TRUTH_FLOOR_ASYMMETRY_IN_is_TP. The 17.2-floor `unmatched` is the "
+    "defensible ceiling.")
+
+#: 🔴 RE-MEASURED 2026-08-05 on ALL THREE mocks.  The earlier table carried
+#: 2lpt0 only and ``fp_ceiling_audit`` returned "NOT MEASURED" for the other
+#: two, i.e. the check was UNAVAILABLE exactly where the violation is largest.
 FP_CEILING_MEASURED = {
     "2lpt0": dict(
-        bundle="truth floor 17.2, lya_only, op mask, on the pack grid "
-                "(N_hat in [19.5,22.4), z in [2.0,3.5))",
-        measured="2026-08-05, load_and_cut_catalog(truth_nhi_floor=17.2), 11 s",
+        bundle=_FP_CEILING_BUNDLE, measured=_FP_CEILING_MEASURED_ON,
         n_on_grid=88053,
-        P1_true_19p0_to_19p7=15438,
-        P2_true_19p7_to_21p6=55058,
-        P6_true_above_21p6=497,
-        P6_true_below_19p0=3200,
+        P1_true_19p0_to_19p7=15438, P2_true_19p7_to_21p6=55058,
+        P6_true_above_21p6=497, P6_true_below_19p0=3200,
         unmatched=13860,
-        note="the four is_TP slots plus `unmatched` sum to 88053 exactly. "
-             "`unmatched` is the ONLY slot a forest FP can come from, and it "
-             "is an OVER-count of the FP: it also holds blends, second "
-             "candidates on an already-claimed truth row, and matches beyond "
-             "dz_rel (P6 sub-slot (c)). The 19.5-floor DETECTION bundle the "
-             "pack itself uses has 88071 on-grid rows with 24181 unmatched, "
-             "but 4070+ of those are genuine absorbers the 19.5-floored truth "
-             "table hid — see TRUTH_FLOOR_ASYMMETRY_IN_is_TP. 13860 is the "
-             "defensible ceiling.",
+        mu_fp_per_contract=14767.961419068737,
+        excess=907.9614190687371, excess_frac=0.06551,
+        note=_FP_CEILING_NOTE,
+    ),
+    "london0": dict(
+        bundle=_FP_CEILING_BUNDLE, measured=_FP_CEILING_MEASURED_ON,
+        n_on_grid=87831,
+        P1_true_19p0_to_19p7=15834, P2_true_19p7_to_21p6=59186,
+        P6_true_above_21p6=602, P6_true_below_19p0=2611,
+        unmatched=9598,
+        mu_fp_per_contract=14716.376940133037,
+        excess=5118.376940133037, excess_frac=0.53328,
+        note=_FP_CEILING_NOTE,
+    ),
+    "saclay0": dict(
+        bundle=_FP_CEILING_BUNDLE, measured=_FP_CEILING_MEASURED_ON,
+        n_on_grid=86745,
+        P1_true_19p0_to_19p7=15733, P2_true_19p7_to_21p6=57213,
+        P6_true_above_21p6=539, P6_true_below_19p0=2668,
+        unmatched=10592,
+        mu_fp_per_contract=14707.062527716187,
+        excess=4115.062527716187, excess_frac=0.38851,
+        note=_FP_CEILING_NOTE,
     ),
 }
 
@@ -1491,9 +1653,18 @@ def fp_ceiling_audit(pack, *, mu_fp_per_contract, n_unmatched_on_grid=None,
     of UNMATCHED on-grid candidates — and even that is an over-count, since
     blends and second candidates on a claimed truth row also land there.
 
-    MEASURED 2026-08-05 on 2LPT-0: the contract's own recommended
-    ``mu_FP_per_contract = 14767.96`` EXCEEDS the mock's 13860 unmatched
-    on-grid candidates by 907.96.  No partition of the mock can supply it.
+    🔴 RE-MEASURED 2026-08-05 on ALL THREE mocks.  The ceiling is VIOLATED on
+    every one of them, and by far more than on the calibration mock:
+
+        mock      on-grid   unmatched     mu_FP     excess    excess/ceiling
+        2lpt0       88053       13860   14767.96    +907.96      +6.55%
+        london0     87831        9598   14716.38   +5118.38     +53.33%
+        saclay0     86745       10592   14707.06   +4115.06     +38.85%
+
+    An earlier version of this table held 2LPT-0 alone, so the check returned
+    "NOT MEASURED" on london0 and saclay0 — i.e. it was UNAVAILABLE exactly
+    where the violation is 5x larger.  Every partition sums to its on-grid
+    total exactly; see FP_CEILING_MEASURED for the four is_TP slots.
     """
     if mock is None:
         prov = getattr(pack, "provenance", None)
@@ -1660,8 +1831,11 @@ def check_accounting_identity(pack, *, resp_clamp="both",
                     residual=pred - n_obs,
                     rel_residual=(pred - n_obs) / n_obs if n_obs else np.nan)
 
-    led_impl = _ledger(fpa["mu_fp_total_as_implemented"])
+    led_folded = _ledger(fpa["mu_fp_total_as_folded"])
     led_contract = _ledger(fpa["mu_fp_total_per_contract"])
+    # the pre-repair counterfactual, kept ONLY so the measured before/after in
+    # RESOLVED_BY_ID['FP_ELL_EFF_OMITTED'] stays reproducible from this routine
+    led_if_omitted = _ledger(fpa["mu_fp_total_if_ell_eff_omitted"])
 
     t_tot = float(T.sum())
     p6_unsup = n_obs - led_contract["predicted_total"]
@@ -1749,8 +1923,16 @@ def check_accounting_identity(pack, *, resp_clamp="both",
             n_obs=n_obs,
             P1_scatter_in=p1, P2_in_window=p2, P6_above_ceiling=p6hi,
             signal_subtotal=sig,
-            as_implemented=led_impl,
+            as_folded=led_folded,
             per_contract=led_contract,
+            folded_equals_contract=bool(
+                abs(fpa["ratio_contract_over_folded"] - 1.0) <= 1e-9),
+            if_ell_eff_omitted=dict(
+                led_if_omitted,
+                note="COUNTERFACTUAL, not the committed code: what the fold "
+                     "produced before 7707c8e. The key used to be called "
+                     "`as_implemented` and it described the fold; it no "
+                     "longer does. See RESOLVED_BY_ID['FP_ELL_EFF_OMITTED']."),
             residual_per_contract=led_contract["residual"],
             P6_unsupported_implied_per_contract=p6_unsup,
             P6_unsupported_implied_is_negative=bool(p6_unsup < 0),
@@ -1761,17 +1943,22 @@ def check_accounting_identity(pack, *, resp_clamp="both",
         feasibility=dict(
             max_attainable_signal=t_tot,
             required_signal_per_contract=n_obs - fpa["mu_fp_total_per_contract"],
-            required_signal_as_implemented=n_obs - fpa["mu_fp_total_as_implemented"],
+            required_signal_as_folded=n_obs - fpa["mu_fp_total_as_folded"],
             efficiency_required_per_contract=(
                 (n_obs - fpa["mu_fp_total_per_contract"]) / t_tot),
-            efficiency_required_as_implemented=(
-                (n_obs - fpa["mu_fp_total_as_implemented"]) / t_tot),
+            efficiency_required_as_folded=(
+                (n_obs - fpa["mu_fp_total_as_folded"]) / t_tot),
+            # the pre-repair counterfactual; NOT the committed code
+            efficiency_required_if_ell_eff_omitted=(
+                (n_obs - fpa["mu_fp_total_if_ell_eff_omitted"]) / t_tot),
             # THE ONLY BOUND: C <= 1 and rho <= 1.
             trivial_bound_efficiency=1.0,
             feasible_per_contract=bool(
                 (n_obs - fpa["mu_fp_total_per_contract"]) <= t_tot),
-            feasible_as_implemented=bool(
-                (n_obs - fpa["mu_fp_total_as_implemented"]) <= t_tot),
+            feasible_as_folded=bool(
+                (n_obs - fpa["mu_fp_total_as_folded"]) <= t_tot),
+            feasible_if_ell_eff_omitted=bool(
+                (n_obs - fpa["mu_fp_total_if_ell_eff_omitted"]) <= t_tot),
             # a POINT in an unbounded nuisance space — NOT a bound. Kept under
             # its honest name; the old key `efficiency_attainable_at_calibration`
             # and the two `feasible_at_calibration_*` booleans are RETRACTED.
@@ -1793,20 +1980,83 @@ def check_accounting_identity(pack, *, resp_clamp="both",
 # ---------------------------------------------------------------------------
 KNOWN_CONTRADICTIONS = (
     dict(
-        id="FP_ELL_EFF_OMITTED",
-        site="CDDF_analysis/hbi_mcmc/forward.py:452 (and the same expression in "
-             "forward.py:607 fold_mu_reference and "
-             "forward_selftest.py:163)",
-        contract="mu_FP = fp_w . fp_ell_eff . lam_fp . exp(t) . E",
-        code="mu_FP = fp_w . lam_fp . exp(t) . E",
-        measured="under-normalised by exactly fp_ell_eff; MEASURED on the "
-                 "adopted 2LPT-0 pack 1086.687 vs 14767.961, ratio "
-                 "13.589891949531909 == fp_ell_eff. fp_w . fp_ell_eff == "
-                 "2255.0 == N_sl_loa0 exactly on all three packs.",
-        effect="P4 is ~13.6x too small; the fold's FP term is a rate the "
-               "loa-0 likelihood does not define.",
-        status="REPORTED, NOT FIXED — changing it changes model behaviour and "
-               "is out of this contract's scope.",
+        id="FP_Z_SHAPE_DIFFERS_ACROSS_THE_OBSERVED_FLOOR",
+        site="CDDF_analysis/hbi_mcmc/extract_pack.py:910-914 (fp_E_alloc[k,s] "
+             "= dX[k,s] / sum_k dX[k,s]; empty strata -> 0), consumed by "
+             "forward.fold_mu_fp; the loa-0 FP block is "
+             "extract_pack.build_fp_block:594.",
+        contract="P4's z-shape must be estimated on the SAME support the P4 "
+                 "rate is estimated on. The fold spreads the loa-0 FP total "
+                 "over coarse z by the PATHLENGTH allocation E[k,s], which is "
+                 "a statement about where sightlines are, not about where "
+                 "forest false positives are.",
+        code="E[k,s] is dX-proportional and carries no FP z-information at "
+             "all; the only FP z-information in the pack (which 0.1-dex n-hat "
+             "bin each of the 89 on-grid loa-0 FPs sits in) is marginalised "
+             "away before it reaches the fold.",
+        measured=(
+            "MEASURED 2026-08-05 on the committed loa-0 FP catalogue "
+            "(gl_loa0_fp_v1_20260615/outputs, 3255 raw rows; op = "
+            "SNR_REDSIDE>2 & P_DLA>0.99; lya = lam_rest >= 1025 A -> 2378 "
+            "rows; z_DLA in [2.0,3.5) -> 2318):\n"
+            "    on the pack grid N_hat in [19.5,22.4) :   89  (3.8%)\n"
+            "    BELOW the observed floor N_hat < 19.5 : 2229  (96.2%)\n"
+            "    at or above 22.4                     :    0\n"
+            "so 96.2% of the op-passing loa-0 FP population is OFF the grid "
+            "the FP rate is estimated on. The two halves do not share a "
+            "z-shape. Coarse-z ([2.0,2.5) / [2.5,3.0) / [3.0,3.5)):\n"
+            "    in-support (n=  89)  43 / 36 /  10  = 0.4831 / 0.4045 / 0.1124\n"
+            "    below-floor (n=2229) 1497 / 588 / 144 = 0.6716 / 0.2638 / "
+            "0.0646\n"
+            "    2x3 homogeneity chi2(2) = 13.8066, p = 0.0010045 "
+            "(scipy.stats.chi2_contingency, correction=False)\n"
+            "The shape the FOLD imposes is neither: MEASURED on the adopted "
+            "packs (fp_E_alloc, shipped dX allocation) 0.5985/0.2968/0.1048 "
+            "(2lpt0), 0.5999/0.2962/0.1039 (london0), 0.6167/0.3019/0.0814 "
+            "(saclay0)."),
+        invisible_to_the_gate=(
+            "🔴 The z-allocation CANCELS EXACTLY out of the statistic that "
+            "decides closure. ``sum_k fp_E[k,s] == 1`` on every populated "
+            "stratum (pack schema, pack.py:545; MEASURED column sums "
+            "[0,0,1,1,1,1,1,1] on all three adopted packs, the zeros being "
+            "the structurally empty SNR<=2 op-mask strata, which carry "
+            "fp_counts == 0), so the FP term's n-hat marginal is "
+            "fp_w.fp_ell_eff.lam_fp[c,s] whatever E is. MEASURED 2026-08-05 "
+            "by re-folding each adopted pack with E replaced by the two "
+            "shapes above (dX-proportional WITHIN each coarse block, so only "
+            "the coarse masses move):\n"
+            "    window [19.7,21.6) chi2/dof   2lpt0 22.2236  london0 28.3934 "
+            " saclay0 25.7723\n"
+            "    ... under BOTH alternatives, agreeing with the shipped "
+            "allocation to <= 9.65e-16 RELATIVE (max |d mu| 1.8e-12 counts on "
+            "per-bin mu of order 1e4 — float summation order, not signal). "
+            "NOT bit-identical, and the distinction is only that.\n"
+            "    by_nhat max|z|, by_snr max|z| and the total z are unchanged "
+            "to every printed digit.\n"
+            "    the ONLY arm that moves is by_z max|z|: on 2lpt0 7.6404 "
+            "(shipped) -> 3.7459 (in-support shape) -> 10.2587 (below-floor "
+            "shape).\n"
+            "The leg that decides closure is chi2/dof <= 3 over the reported "
+            "n-hat bins (run_posterior.GATE['chi2_dof_max']) — the only "
+            "tolerance in that gate with a recorded deciding-authority "
+            "decision behind it. The four |z| arms, by_z included, are marked "
+            "restated-but-not-decided in forward_selftest._closure_verdict and "
+            "ratification.py. So the one statistic that could separate "
+            "sub-floor migration from genuine forest FP does not enter the leg "
+            "that decides closure, and the leg it does enter has no deciding "
+            "authority behind it. Closure FAILS on all three mocks under every "
+            "allocation tried, so nothing here changes a verdict."),
+        effect="This is occurrence #12 of the one-sided-support class "
+               "(numerator/basis and denominator/target on different "
+               "supports): the FP RATE is estimated on N_hat >= 19.5 while "
+               "96.2% of the FP population — and a demonstrably different "
+               "z-shape — lives below it. It bears directly on the FP ceiling "
+               "violation: if the sub-floor FPs migrate up, the excess over "
+               "`unmatched` is a mis-attribution of scatter, not a supply "
+               "problem; the pack cannot tell the two apart.",
+        status="MEASURED AND RECORDED, NO CHANGE PROPOSED. Re-allocating P4 in "
+               "z would change the physical definition of the FP background "
+               "and is a PI_CHECKPOINT item, not a contract decision.",
     ),
     dict(
         id="FOUND_SPLICED_AT_19.5",
@@ -1970,6 +2220,94 @@ CONTRADICTION_BY_ID = {d["id"]: d for d in KNOWN_CONTRADICTIONS}
 
 
 # ---------------------------------------------------------------------------
+# 9a. contradictions this contract recorded that the CODE has since fixed
+# ---------------------------------------------------------------------------
+# Kept, in full, on purpose.  A defect that was real, was measured and was
+# repaired is the most useful kind of record there is; deleting it would leave
+# the repair looking like an unexplained behaviour change.  What must NOT
+# survive is the claim that it is LIVE — that belongs nowhere near
+# KNOWN_CONTRADICTIONS, and the guard that enforced it must now enforce the
+# repair instead (``assert_forward_fp_normalisation``).
+RESOLVED_CONTRADICTIONS = (
+    dict(
+        id="FP_ELL_EFF_OMITTED",
+        recorded="2026-08-05 (as a live KNOWN_CONTRADICTION)",
+        resolved="2026-08-05, in the CODE",
+        fixed_by=("7707c8e — C1 (BEHAVIOUR CHANGE): the FP fold must carry "
+                  "fp_ell_eff, at every site, generator included",
+                  "2b436df — C2 (behaviour-preserving): one FP term, "
+                  "forward.fold_mu_fp; the re-typed copy had already drifted"),
+        contract="mu_FP = fp_w . fp_ell_eff . lam_fp . exp(t) . E",
+        was="mu_FP = fp_w . lam_fp . exp(t) . E — fp_ell_eff absent, although "
+            "build_consts carried it.",
+        now="mu_FP = consts.fp_w * consts.fp_ell_eff * exp_t_k * lam_fp * "
+            "fp_E, defined ONCE in forward.fold_mu_fp.",
+        sites=("forward.fold_mu (now delegates to fold_mu_fp)",
+               "forward.fold_mu_reference (the independent numpy oracle; it "
+               "does NOT call the helper, by design)",
+               "forward_selftest.selftest (the re-typed mu_fp behind the "
+               "mu_sig split — the copy had also dropped exp(log_t), inert "
+               "only because that caller passes log_t = 0)",
+               "pack.synthetic_pack (THE GENERATOR — it inverted the DEFECTIVE "
+               "fold, so generator and model agreed while both were wrong and "
+               "no synthetic rung or SBC replica could have caught this)"),
+        why_it_survived=(
+            "fp_ell_eff is INERT in the loa-0 SOURCE route — Gamma(a, 1/ell) "
+            "scaled by ell is Gamma(a, 1) — so it cancels there. It does not "
+            "cancel on the data side, where it is a live Poisson exposure: "
+            "fp_counts ~ Poisson(fp_ell_eff . lam_fp) makes lam_fp an "
+            "intensity PER UNIT loa-0 exposure, not a count."),
+        measured_before_after=(
+            "RE-MEASURED 2026-08-05 on this branch, adopted packs "
+            "(bw 0.2 / pad 19.0 / molly172 / lya_only / resp_clamp both). The "
+            "'before' column is reproduced WITHOUT reverting the code, by "
+            "folding a pack whose fp_counts are divided by fp_ell_eff — "
+            "algebraically identical to the omission:\n"
+            "    folded mu_FP total (2LPT-0)  1086.6872  ->  14767.9614\n"
+            "    ratio                        13.589891949531905 == "
+            "fp_ell_eff, exactly\n"
+            "    fp_w . fp_ell_eff == 2255.0 == N_sl_loa0 on all three packs\n"
+            "    zero-sampling closure, window [19.7,21.6) chi2/dof:\n"
+            "        2lpt0    56.5846 -> 22.2236\n"
+            "        london0  40.1578 -> 28.3934\n"
+            "        saclay0  44.2126 -> 25.7723\n"
+            "    full observed grid chi2/dof:\n"
+            "        2lpt0   441.4088 -> 19.0713\n"
+            "        london0 224.0390 -> 29.0421\n"
+            "        saclay0 305.7693 -> 20.3300\n"
+            "    total mu/obs (full grid):\n"
+            "        2lpt0   0.846207 -> 1.001551\n"
+            "        london0 0.894839 -> 1.050090\n"
+            "        saclay0 0.871053 -> 1.028140\n"
+            "    truth-pinned candidate-ledger residual (adopted 2LPT-0): "
+            "-14563.572 -> -882.298."),
+        what_it_did_NOT_fix=(
+            "CLOSURE STILL FAILS on all three mocks: the ratified leg is "
+            "chi2/dof <= 3 and the repaired values are 22.2 / 28.4 / 25.8. "
+            "This is a repair, not a pass. It also CREATED the ceiling "
+            "violation on all three mocks (FP_CEILING_MEASURED): the "
+            "correctly-normalised mu_FP now exceeds the mock's entire supply "
+            "of unmatched on-grid candidates by +6.55% / +53.33% / +38.85%. "
+            "The normalisation is forced by two committed definitions and was "
+            "not chosen against the data; the ceiling violation is a FINDING "
+            "about the FP model, not an argument for putting the factor back."),
+        regression_guard=(
+            "assert_forward_fp_normalisation(pack) — it CALLS "
+            "forward.fold_mu_fp and compares the folded total with "
+            "fp_w . fp_ell_eff . lam_fp. Re-introducing the omission makes the "
+            "ratio equal fp_ell_eff exactly and it raises, naming this record. "
+            "Pinned from the source side by "
+            "tests/test_matching_contract.py::"
+            "test_the_forward_fp_fold_carries_ell_eff_at_every_named_site."),
+        status="RESOLVED IN CODE. NOT a live contradiction. The record is "
+               "retained; the claim is withdrawn.",
+    ),
+)
+
+RESOLVED_BY_ID = {d["id"]: d for d in RESOLVED_CONTRADICTIONS}
+
+
+# ---------------------------------------------------------------------------
 # 9b. what this module USED to claim and no longer does
 # ---------------------------------------------------------------------------
 RETRACTIONS = (
@@ -2064,12 +2402,26 @@ RETRACTIONS = (
 
 
 PI_CHECKPOINT_ITEMS = (
-    "Fixing FP_ELL_EFF_OMITTED changes the PHYSICAL size of P4 by ~13.6x and "
-    "therefore the physical definition of what the DLA counts contain. "
-    "Collected, not raised. NOTE the hard ceiling: the resulting mu_FP = "
-    "14767.96 EXCEEDS the mock's own 13860 unmatched on-grid candidates "
-    "(MEASURED 2026-08-05), so the contract's recommended normalisation is "
-    "itself refuted by a counting argument and cannot simply be adopted.",
+    "FP_ELL_EFF_OMITTED IS FIXED IN CODE (7707c8e, 2b436df) and the PHYSICAL "
+    "size of P4 changed by exactly fp_ell_eff ~ 13.6x. The item is no longer "
+    "'should we fix it' — it is 'the FP background the corrected fold implies "
+    "is larger than the mock can supply'. MEASURED 2026-08-05 on ALL THREE "
+    "mocks, on-grid op-passing candidates against mu_FP_per_contract: "
+    "2lpt0 13860 unmatched vs 14767.96 (+907.96, +6.55%); london0 9598 vs "
+    "14716.38 (+5118.38, +53.33%); saclay0 10592 vs 14707.06 (+4115.06, "
+    "+38.85%). `unmatched` over-counts true forest FP (it also holds blends "
+    "and second candidates), so these are LOWER BOUNDS on the excess. Either "
+    "the loa-0 rate does not transfer to the mocks at this normalisation, or "
+    "the excess is sub-floor scatter mis-labelled as forest FP. Collected, "
+    "not decided.",
+    "The FP z-shape is a physical assumption the fold currently makes by "
+    "accident: P4 is spread over z by the PATHLENGTH allocation, and the "
+    "measured loa-0 FP z-shape differs significantly across the observed "
+    "floor (chi2(2) = 13.81, p = 0.0010; 96.2% of op-passing loa-0 FPs sit "
+    "below the grid). Re-allocating P4 in z changes what the FP background IS. "
+    "Note before spending effort on it: the ratified chi2/dof leg of the "
+    "closure gate is EXACTLY invariant to the allocation, so no measurement of "
+    "the allocation can move the closure verdict. Collected.",
     "The one-sided BAL veto in fp_w is a SUPPORT-MATCHING observation with no "
     "measured effect: on 2378 op+lya loa-0 FPs the BAL/nonBAL rate ratio is "
     "1.0027 (z = +0.05). NO change to 70/1904 is proposed and the earlier "
@@ -2124,6 +2476,7 @@ def contract_dict() -> dict:
         fp_normalisation=FP_NORMALISATION,
         fp_ceiling_measured=FP_CEILING_MEASURED,
         known_contradictions=list(KNOWN_CONTRADICTIONS),
+        resolved_contradictions=list(RESOLVED_CONTRADICTIONS),
         retractions=list(RETRACTIONS),
         pi_checkpoint_items=list(PI_CHECKPOINT_ITEMS),
     )

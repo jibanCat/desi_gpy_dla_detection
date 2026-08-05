@@ -52,7 +52,7 @@ def _fake_pack(*, ntrue=None, nhat=None, molly=None, n_b=None, n_k=3, n_s=2,
                truth_bks=True, counts=None, fp_counts=None,
                fp_ell_eff=13.589891949531905, fp_w=165.93215077605322,
                molly_n_det=None, molly_n_tot=None, kz=None, t_sigma=None,
-               mock=None):
+               mock=None, fp_E_alloc=None):
     """A minimal duck-typed pack.
 
     ``validate_pack_against_contract`` / ``fp_normalisation_audit`` /
@@ -74,6 +74,9 @@ def _fake_pack(*, ntrue=None, nhat=None, molly=None, n_b=None, n_k=3, n_s=2,
         fp_counts=(np.zeros((len(nhat) - 1, n_s), dtype=np.int64)
                    if fp_counts is None else np.asarray(fp_counts)),
         fp_ell_eff=fp_ell_eff, fp_w_sightline_ratio=fp_w,
+        # (Kf, S); the schema requires sum_k E[k,s] == 1 on populated strata
+        fp_E_alloc=(np.full((n_k, n_s), 1.0 / n_k) if fp_E_alloc is None
+                    else np.asarray(fp_E_alloc, float)),
         molly_n_det=nd, molly_n_tot=nt,
         t_sigma=(np.array([0.1, 0.1, 0.1]) if t_sigma is None
                  else np.asarray(t_sigma, float)),
@@ -359,56 +362,177 @@ def test_validate_refuses_a_missing_truth_bks_and_negative_counts():
 
 
 # ===========================================================================
-# 4. the FP normalisation contradiction, pinned with its measured factor
+# 4. the FP normalisation, pinned against the CODE (not against prose)
 # ===========================================================================
+def _fp_only_pack(n_fp=89):
+    fp = np.zeros((len(REAL_NHAT) - 1, 2), dtype=np.int64)
+    fp[0, 0] = n_fp
+    return _fake_pack(fp_counts=fp)
+
+
 def test_fp_normalisation_audit_reproduces_the_pack_scalars():
     """MEASURED on all three ADOPTED packs: fp_w * fp_ell_eff == 2255.0 exactly
     (== N_sl_loa0), and the contract total is fp_w * N_FP.
 
+    ``mu_fp_total_as_folded`` is obtained by CALLING ``forward.fold_mu_fp``,
+    which is the whole point: the previous version hard-coded a reading of the
+    fold's source and went stale the moment the fold was repaired.
+
     MUTATION: change ``contract = w * ell * lam_tot`` to ``w * lam_tot`` in
-    ``fp_normalisation_audit``. MEASURED baseline: the ratio then reads 1.0
-    instead of 13.589891949531907 and the contradiction disappears from the
-    record."""
-    fp = np.zeros((len(REAL_NHAT) - 1, 2), dtype=np.int64)
-    fp[0, 0] = 89
-    a = MC.fp_normalisation_audit(_fake_pack(fp_counts=fp))
+    ``fp_normalisation_audit``. MEASURED baseline: the contract total drops
+    14767.961419068737 -> 1086.6871844096897, the ratio goes 1.0 ->
+    0.07358272..., and ``assert_forward_fp_normalisation`` starts raising on
+    the CORRECT fold."""
+    a = MC.fp_normalisation_audit(_fp_only_pack())
     assert a["n_sl_loa0_implied"] == pytest.approx(2255.0, abs=1e-9)
     assert a["mu_fp_total_per_contract"] == pytest.approx(
         165.93215077605322 * 89.0, rel=1e-12)
-    assert a["mu_fp_total_as_implemented"] == pytest.approx(
+    # the COMMITTED fold agrees with the contract, to float round-off
+    assert a["mu_fp_total_as_folded"] == pytest.approx(
+        14767.961419068737, rel=1e-12)
+    assert a["ratio_contract_over_folded"] == pytest.approx(1.0, abs=1e-9)
+    # the pre-repair value survives ONLY as a labelled counterfactual
+    assert a["mu_fp_total_if_ell_eff_omitted"] == pytest.approx(
         1086.6871844096897, rel=1e-9)
-    assert a["ratio_contract_over_implemented"] == pytest.approx(
+    assert (a["mu_fp_total_per_contract"]
+            / a["mu_fp_total_if_ell_eff_omitted"]) == pytest.approx(
         13.589891949531905, rel=1e-9)
 
 
-def test_assert_forward_fp_normalisation_raises_on_the_committed_fold():
-    """The committed ``forward.py:452`` omits ``fp_ell_eff``, so this assertion
-    MUST currently fail — that is the point: the contract fails loudly on the
-    code as it stands.
+def test_assert_forward_fp_normalisation_passes_on_the_repaired_fold():
+    """A guard that fires on the FIXED state is worse than no guard.
 
-    MUTATION (the FIX, deliberately not applied here): multiply the mu_fp term
-    in forward.py by ``consts.fp_ell_eff``. MEASURED baseline: the total FP on
-    the ADOPTED 2LPT-0 pack goes 1086.687 -> 14767.961 and the truth-pinned
-    candidate-ledger residual goes -14563.57 (-16.54%) -> -882.30 (-1.00%).
-    If this test ever goes green, forward.py changed and the two numbers above
-    must be re-measured."""
-    fp = np.zeros((len(REAL_NHAT) - 1, 2), dtype=np.int64)
-    fp[0, 0] = 89
-    with pytest.raises(MC.ContractViolation, match="under-normalised"):
-        MC.assert_forward_fp_normalisation(_fake_pack(fp_counts=fp))
+    Between 7707c8e and this commit ``assert_forward_fp_normalisation``
+    compared the contract against a hard-coded description of the PRE-repair
+    fold, so it raised ``ContractViolation`` on correct code, permanently. It
+    now measures the committed ``forward.fold_mu_fp``.
+
+    MUTATION: restore the hard-coded ``implemented = w * lam_tot``. MEASURED
+    baseline: this call raises again on the repaired fold, with ratio
+    13.589891949531905."""
+    a = MC.assert_forward_fp_normalisation(_fp_only_pack())
+    assert a["ratio_contract_over_folded"] == pytest.approx(1.0, abs=1e-9)
+    assert a["mu_fp_total_as_folded"] == pytest.approx(
+        a["mu_fp_total_per_contract"], rel=1e-12)
+    assert "fold_mu_fp" in a["fold_site"]
 
 
-def test_the_forward_module_still_omits_ell_eff_at_the_named_site():
-    """Pins the FP_ELL_EFF_OMITTED contradiction to the SOURCE, not to prose.
+def test_assert_forward_fp_normalisation_raises_if_the_omission_RETURNS():
+    """THE regression guard. It has teeth only if re-introducing the defect
+    turns it red, so re-introduce the defect.
 
-    MUTATION: rename ``fp_w`` in the fold. MEASURED baseline: forward.py's
-    mu_fp expression mentions ``consts.fp_w`` and does NOT mention
-    ``fp_ell_eff`` anywhere in ``fold_mu``."""
-    src = open(os.path.join(REPO, "CDDF_analysis/hbi_mcmc/forward.py")).read()
-    body = src.split("def fold_mu(", 1)[1].split("def fold_mu_reference", 1)[0]
-    assert "consts.fp_w" in body
-    assert "fp_ell_eff" not in body
-    assert "FP_ELL_EFF_OMITTED" in MC.CONTRADICTION_BY_ID
+    ``fp_ell_eff`` is dropped from the fold's expression by patching
+    ``forward.fold_mu_fp`` — the single site the FP term is defined at since
+    2b436df, and the site ``matching_contract`` imports lazily at call time.
+    MEASURED baseline on this fake pack: the folded total falls
+    14767.961419068737 -> 1086.6871844096897, the ratio comes back exactly
+    fp_ell_eff = 13.589891949531905, and the message names the resolved
+    record.
+
+    MUTATION: widen ``rtol`` to 1e2, or drop the ``ratio != 1`` test. MEASURED
+    baseline: a 13.6x under-normalisation stops being reported. MUTATION:
+    hard-code ``folded_equals_contract=True`` in ``check_accounting_identity``.
+    MEASURED baseline: the ledger's own agreement flag stops responding to a
+    13.6x disagreement."""
+    from CDDF_analysis.hbi_mcmc import forward as FW
+    good = FW.fold_mu_fp
+
+    def omitted(log_t, lam_fp, consts):          # the PRE-7707c8e expression
+        return good(log_t, lam_fp, consts) / consts.fp_ell_eff
+
+    pk = _fp_only_pack()
+    toy, _T, rho = _toy()
+    toy.fp_counts = np.zeros((len(REAL_NHAT) - 1, 2), dtype=np.int64)
+    toy.fp_counts[0, 0] = 1
+
+    def _agrees():
+        return MC.check_accounting_identity(
+            toy, row_mass=rho)["candidate_ledger"]["folded_equals_contract"]
+
+    assert _agrees() is True                     # the committed fold
+    FW.fold_mu_fp = omitted
+    try:
+        with pytest.raises(MC.ContractViolation) as e:
+            MC.assert_forward_fp_normalisation(pk)
+        msg = str(e.value)
+        assert "RE-INTRODUCED" in msg
+        assert "FP_ELL_EFF_OMITTED" in msg
+        assert "1086.687" in msg and "14767.961" in msg
+        a = MC.fp_normalisation_audit(pk)
+        assert a["ratio_contract_over_folded"] == pytest.approx(
+            13.589891949531905, rel=1e-9)
+        # and the ledger's own agreement flag notices
+        assert _agrees() is False
+    finally:
+        FW.fold_mu_fp = good
+    # the guard is quiet again once the fold is back
+    MC.assert_forward_fp_normalisation(pk)
+    assert _agrees() is True
+
+
+def test_the_forward_fp_fold_carries_ell_eff_at_every_named_site():
+    """Pins the REPAIR to the source, at all four sites 7707c8e touched.
+
+    The predecessor of this test asserted that ``fold_mu`` does NOT mention
+    ``fp_ell_eff``. That was true when written and RED BY CONSTRUCTION after
+    the repair; inverting it is the regression test the repair deserves.
+
+    MUTATION: delete ``consts.fp_ell_eff`` from ``forward.fold_mu_fp``.
+    MEASURED baseline: the first assertion below fails, and so do
+    ``test_assert_forward_fp_normalisation_passes_on_the_repaired_fold`` and
+    every integration test that reads the folded FP total."""
+    def _read(rel):
+        with open(os.path.join(REPO, rel)) as fh:
+            return fh.read()
+
+    fwd = _read("CDDF_analysis/hbi_mcmc/forward.py")
+
+    # 1. THE definition
+    body = fwd.split("def fold_mu_fp(", 1)[1].split("def fold_mu(", 1)[0]
+    assert "consts.fp_ell_eff" in body and "consts.fp_w" in body
+    # 2. the jitted fold delegates rather than re-typing the expression
+    fold = fwd.split("def fold_mu(", 1)[1].split("def fold_mu_reference", 1)[0]
+    assert "fold_mu_fp(" in fold
+    # 3. the INDEPENDENT numpy oracle carries the factor in its own code
+    ref = fwd.split("def fold_mu_reference(", 1)[1]
+    assert "fp_ell_eff" in ref
+    assert "fold_mu_fp(" not in ref, "the oracle must stay independent"
+    # 4. the selftest split and 5. THE GENERATOR
+    assert "fold_mu_fp(" in _read("CDDF_analysis/hbi_mcmc/forward_selftest.py")
+    assert "fp_ell_eff" in _read("CDDF_analysis/hbi_mcmc/pack.py")
+
+    # the record moved: RESOLVED, not live
+    assert "FP_ELL_EFF_OMITTED" in MC.RESOLVED_BY_ID
+    assert "FP_ELL_EFF_OMITTED" not in MC.CONTRADICTION_BY_ID
+    r = MC.RESOLVED_BY_ID["FP_ELL_EFF_OMITTED"]
+    assert any("7707c8e" in s for s in r["fixed_by"])
+    assert any("2b436df" in s for s in r["fixed_by"])
+    # the before/after is kept, and so is what the repair did NOT buy
+    assert "1086.6872" in r["measured_before_after"]
+    assert "14767.9614" in r["measured_before_after"]
+    assert "22.2236" in r["measured_before_after"]
+    assert "CLOSURE STILL FAILS" in r["what_it_did_NOT_fix"]
+
+
+def test_the_live_contradiction_list_describes_only_live_defects():
+    """The list a reader trusts to be CURRENT must not carry a fixed bug.
+
+    MUTATION: put the ``FP_ELL_EFF_OMITTED`` dict back into
+    ``KNOWN_CONTRADICTIONS``. MEASURED baseline: the id reappears in
+    ``CONTRADICTION_BY_ID`` and this test fails on the second assertion."""
+    live = {d["id"] for d in MC.KNOWN_CONTRADICTIONS}
+    resolved = {d["id"] for d in MC.RESOLVED_CONTRADICTIONS}
+    assert not (live & resolved), "a defect cannot be live AND resolved"
+    assert "FP_ELL_EFF_OMITTED" not in live
+    # nothing in the live list may advertise itself as fixed
+    for d in MC.KNOWN_CONTRADICTIONS:
+        assert "RESOLVED" not in d["status"].upper(), d["id"]
+    # and the serialized contract carries the history
+    ser = MC.contract_dict()
+    assert [d["id"] for d in ser["resolved_contradictions"]] == \
+        ["FP_ELL_EFF_OMITTED"]
+    assert "FP_ELL_EFF_OMITTED" not in [d["id"]
+                                        for d in ser["known_contradictions"]]
 
 
 # ===========================================================================
@@ -785,9 +909,109 @@ def test_fp_ceiling_audit_refuses_a_mu_fp_above_the_mock_supply():
     assert a["exceeds_ceiling"] is True
     assert a["excess"] == pytest.approx(907.961419, abs=1e-4)
     assert "VIOLATED" in a["status"]
-    # an unmeasured mock reports UNAVAILABLE, never a silent pass
-    b = MC.fp_ceiling_audit(_fake_pack(mock="london0"), mu_fp_per_contract=1e9)
+    # a mock with no measured census reports UNAVAILABLE, never a silent pass
+    b = MC.fp_ceiling_audit(_fake_pack(mock="not_a_mock"),
+                            mu_fp_per_contract=1e9)
     assert b["exceeds_ceiling"] is None and "NOT MEASURED" in b["status"]
+
+
+def test_the_fp_ceiling_is_measured_and_VIOLATED_on_all_three_mocks():
+    """The census used to exist for 2LPT-0 only, so ``fp_ceiling_audit``
+    returned "NOT MEASURED" on london0 and saclay0 — UNAVAILABLE exactly where
+    the violation is largest.
+
+    RE-MEASURED 2026-08-05, 17.2-truth-floor bundle
+    (load_and_cut_catalog(truth_nhi_floor=17.2, host_truth_floor=17.2) +
+    _snap_off_molly_edges, ~11 s per mock), op mask, on the pack grid
+    (N_hat in [19.5,22.4), z in [2.0,3.5)). Every partition sums EXACTLY to its
+    on-grid total:
+
+        mock     on-grid  P1[19.0,19.7) P2[19.7,21.6)  >=21.6  <19.0  unmatched
+        2lpt0      88053      15438        55058         497    3200     13860
+        london0    87831      15834        59186         602    2611      9598
+        saclay0    86745      15733        57213         539    2668     10592
+
+        mock      mu_FP_per_contract     excess        excess/ceiling
+        2lpt0        14767.961419        + 907.961         + 6.55%
+        london0      14716.376940        +5118.377         +53.33%
+        saclay0      14707.062528        +4115.063         +38.85%
+
+    ``unmatched`` also holds blends and second candidates, so every excess is a
+    LOWER BOUND.
+
+    MUTATION: delete the london0 and saclay0 entries from
+    ``FP_CEILING_MEASURED``. MEASURED baseline: both come back "NOT MEASURED"
+    and the two largest violations (+53% and +39%) stop being reported."""
+    want = {"2lpt0": (88053, 15438, 55058, 497, 3200, 13860, 14767.961419068737),
+            "london0": (87831, 15834, 59186, 602, 2611, 9598, 14716.376940133037),
+            "saclay0": (86745, 15733, 57213, 539, 2668, 10592, 14707.062527716187)}
+    assert set(MC.FP_CEILING_MEASURED) == set(want)
+    for m, (tot, p1, p2, hi, lo, unm, mu) in want.items():
+        r = MC.FP_CEILING_MEASURED[m]
+        assert (r["n_on_grid"], r["P1_true_19p0_to_19p7"],
+                r["P2_true_19p7_to_21p6"], r["P6_true_above_21p6"],
+                r["P6_true_below_19p0"], r["unmatched"]) == \
+            (tot, p1, p2, hi, lo, unm), m
+        assert p1 + p2 + hi + lo + unm == tot, m
+        a = MC.fp_ceiling_audit(_fake_pack(mock=m), mu_fp_per_contract=mu)
+        assert a["ceiling"] == float(unm), m
+        assert a["exceeds_ceiling"] is True, m
+        assert a["excess"] == pytest.approx(mu - unm, rel=1e-9), m
+        assert "VIOLATED" in a["status"], m
+    # the two transfer mocks are the WORSE violations, which is the finding
+    assert MC.fp_ceiling_audit(
+        _fake_pack(mock="london0"),
+        mu_fp_per_contract=14716.376940133037)["ratio"] == pytest.approx(
+        1.53328, abs=1e-5)
+    assert MC.fp_ceiling_audit(
+        _fake_pack(mock="saclay0"),
+        mu_fp_per_contract=14707.062527716187)["ratio"] == pytest.approx(
+        1.38851, abs=1e-5)
+
+
+def test_the_fp_z_shape_one_sided_support_is_recorded():
+    """Occurrence #12 of the one-sided-support class, MEASURED 2026-08-05 on
+    the committed loa-0 FP catalogue (3255 raw rows; op = SNR_REDSIDE > 2 &
+    P_DLA > 0.99 -> 2704; + lam_rest >= 1025 A -> 2378; + z_DLA in [2.0,3.5)
+    -> 2318):
+
+        on the pack grid [19.5,22.4) :   89   ( 3.8%)
+        BELOW the observed floor     : 2229   (96.2%)
+        at or above 22.4             :    0
+
+        coarse z            [2.0,2.5)  [2.5,3.0)  [3.0,3.5)
+        in-support  n=  89     43         36         10    = .4831/.4045/.1124
+        below-floor n=2229   1497        588        144    = .6716/.2638/.0646
+        2x3 homogeneity chi2(2) = 13.8066, p = 0.0010045
+
+    The fold imposes neither shape: the dX allocation gives
+    .5985/.2968/.1048 on the adopted 2LPT-0 pack.
+
+    AND the allocation is invisible to the ratified gate: sum_k fp_E[k,s] == 1
+    on every populated stratum, so the window chi2/dof (22.2236 / 28.3934 /
+    25.7723) is unchanged to <= 9.65e-16 RELATIVE under both measured
+    alternatives, while the (unratified) by_z |z| arm moves 7.6404 -> 3.7459 /
+    10.2587 on 2lpt0.
+
+    MUTATION: delete the ``invisible_to_the_gate`` field. MEASURED baseline:
+    the record still names a real support mismatch but stops saying that no
+    measurement of it can move the closure verdict, which is the part that
+    decides whether the work is worth doing."""
+    c = MC.CONTRADICTION_BY_ID["FP_Z_SHAPE_DIFFERS_ACROSS_THE_OBSERVED_FLOOR"]
+    m = c["measured"]
+    for s in ("2318", "2229", "96.2%", "0.4831 / 0.4045 / 0.1124",
+              "0.6716 / 0.2638 / 0.0646", "13.8066", "0.0010045"):
+        assert s in m, s
+    g = c["invisible_to_the_gate"]
+    for s in ("22.2236", "28.3934", "25.7723", "9.65e-16", "7.6404",
+              "3.7459", "10.2587", "restated-but-not-decided"):
+        assert s in g, s
+    # it is NOT claimed to be bit-identical, because it is not
+    assert "NOT bit-identical" in g
+    assert "one-sided-support" in c["effect"] and "#12" in c["effect"]
+    assert "NO CHANGE PROPOSED" in c["status"]
+    # and the fold's z-allocation is a named quantity, not an unlisted default
+    assert "fp_E_alloc" in MC.QUANTITIES
 
 
 def test_a_negative_implied_unsupported_population_is_flagged():
@@ -934,10 +1158,12 @@ def test_identity_on_the_adopted_2lpt0_pack():
         P1 scatter-in            18033.092
         P2 in-window             53847.300
         P6 above ceiling           540.349
-        P4 as implemented         1086.687
+        P4 as FOLDED             14767.961   <- measured through fold_mu_fp
         P4 per contract          14767.961
-        candidate residual  (impl)  -14563.572   (-16.536%)
+        P4 if ell_eff omitted     1086.687   <- COUNTERFACTUAL, pre-7707c8e
+        candidate residual (folded)   -882.298   ( -1.002%)
         candidate residual (contr)    -882.298   ( -1.002%)
+        candidate residual (ctf)   -14563.572   (-16.536%)
         efficiency AT CALIBRATION    0.7103624   <- a POINT, not a bound
         efficiency required (contr)  0.7190167
 
@@ -958,8 +1184,15 @@ def test_identity_on_the_adopted_2lpt0_pack():
     assert c["P1_scatter_in"] == pytest.approx(18033.092, abs=1e-2)
     assert c["P2_in_window"] == pytest.approx(53847.300, abs=1e-2)
     assert c["P6_above_ceiling"] == pytest.approx(540.349, abs=1e-2)
-    assert c["as_implemented"]["residual"] == pytest.approx(-14563.572, abs=1e-2)
+    # the fold and the contract now AGREE; the pre-repair number survives only
+    # as an explicitly labelled counterfactual
+    assert c["as_folded"]["P4_forest_fp"] == pytest.approx(14767.961, abs=1e-2)
+    assert c["as_folded"]["residual"] == pytest.approx(-882.298, abs=1e-2)
+    assert c["folded_equals_contract"] is True
     assert c["per_contract"]["residual"] == pytest.approx(-882.298, abs=1e-2)
+    assert c["if_ell_eff_omitted"]["residual"] == pytest.approx(-14563.572,
+                                                               abs=1e-2)
+    assert "COUNTERFACTUAL" in c["if_ell_eff_omitted"]["note"]
     assert f["efficiency_at_calibration"] == pytest.approx(0.7103624, abs=1e-6)
     assert f["efficiency_required_per_contract"] == pytest.approx(0.7190167,
                                                                   abs=1e-6)
@@ -1049,9 +1282,10 @@ def test_the_counting_argument_on_the_unpadded_pack():
     on modelA_pack_2lpt0_v11.npz (0.1-dex basis, NO pad):
 
         N_obs 88071 > truth on basis 73610
-        efficiency required, FP as implemented : 1.18168   <- IMPOSSIBLE
-                                                              (trivial bound)
-        efficiency required, FP per contract   : 0.99583
+        efficiency required, FP if ell_eff omitted : 1.18168  <- IMPOSSIBLE
+                                                       (the trivial bound;
+                                                        a COUNTERFACTUAL now)
+        efficiency required, FP per contract       : 0.99583
         sup over psi_c alone (C -> 1)          : 0.99384   <- BELOW the
                                                               requirement
         min prior chi2 in psi_c                : infinity
@@ -1071,10 +1305,13 @@ def test_the_counting_argument_on_the_unpadded_pack():
     assert r["truth_ledger"]["residual"] == pytest.approx(0.0, abs=1e-6)
     assert r["truth_ledger"]["n_truth_on_basis"] == 73610.0
     assert r["candidate_ledger"]["n_obs"] == 88071.0
-    assert f["efficiency_required_as_implemented"] == pytest.approx(1.18168, abs=1e-4)
+    assert f["efficiency_required_if_ell_eff_omitted"] == pytest.approx(
+        1.18168, abs=1e-4)
     assert f["efficiency_required_per_contract"] == pytest.approx(0.99583, abs=1e-4)
-    assert f["feasible_as_implemented"] is False       # the trivial bound
+    assert f["efficiency_required_as_folded"] == pytest.approx(0.99583, abs=1e-4)
+    assert f["feasible_if_ell_eff_omitted"] is False   # the trivial bound
     assert f["feasible_per_contract"] is True
+    assert f["feasible_as_folded"] is True
     # the supremum argument, which is what actually refutes it
     assert p["sup_efficiency_psi_c_only"] == pytest.approx(0.9938370, abs=1e-6)
     assert p["efficiency_required"] > p["sup_efficiency_psi_c_only"]
