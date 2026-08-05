@@ -627,8 +627,8 @@ def test_z_criterion_no_longer_calls_the_five_sigma_tolerances_ratified():
     """
     import json
     blob = json.dumps(RP.Z_CRITERION)
-    assert "ratified, PI decision 8" not in blob
-    assert "5.0 / 5.0 / 3.0 — ratified" not in blob
+    for needle in ("ratified, PI decision 8", "5.0 / 5.0 / 3.0 — ratified"):
+        assert blob.count(needle) == 0, f"retracted wording present: {needle!r}"
     crit = RP.Z_CRITERION["criterion"]
     assert "chi2_dof_max = 3.0 is RATIFIED" in crit
     assert "RESTATED_NOT_RATIFIED" in crit
@@ -1377,13 +1377,23 @@ def test_committed_artifact_contains_no_fabricated_ratification_prose():
 
     MUTATION: restore "— ratified, PI decision 8" in
     ``reporting.Z_CRITERION["criterion"]`` and regenerate -> RED.
+
+    🔴 The needle checks below reduce to BOOLEANS before asserting, and report
+    an occurrence COUNT rather than the haystack.  ``assert needle not in
+    blob`` on a ~740 kB string makes pytest's assertion rewriter attempt a
+    full text diff of the artifact on failure, which does not terminate in any
+    useful time -- a failing test that hangs is worse than no test.
     """
     import json
     blob = json.dumps(_committed_artifact(), ensure_ascii=False)
-    assert "ratified, PI decision 8" not in blob
-    assert "5.0 / 5.0 / 3.0 — ratified" not in blob
+    for needle in ("ratified, PI decision 8", "5.0 / 5.0 / 3.0 — ratified"):
+        n = blob.count(needle)
+        assert n == 0, (
+            f"the retracted wording {needle!r} appears {n} time(s) in the "
+            f"committed artifact")
     # the CORRECT claim must still be there: chi2/dof <= 3 IS ratified
-    assert "the RATIFIED tolerance of 3.0" in blob
+    assert blob.count("the RATIFIED tolerance of 3.0") >= 1, (
+        "the artifact no longer states the one claim that IS true")
 
 
 def test_the_relabelling_is_not_verdict_bearing_and_the_artifact_proves_it():
