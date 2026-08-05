@@ -406,15 +406,27 @@ UNRATIFIED = {
         spec=_SPEC),
 }
 
+#: MERGE NOTE (adopted-basis x gate, 2026-08-05). The last three sentences come
+#: from the adopted-basis stream, which found that the DANGEROUS reading of this
+#: note is not "the span arm passed" but the COMPLEMENT INFERENCE: a reader sees
+#: a short list of unratified numbers and concludes everything else in GATE is
+#: ratified. That inference is exactly how four |z| arms ended up in a committed
+#: artifact as PI-ratified. Forbidding it in the note itself is cheap and the
+#: sentence is pinned by a test, so keep it here rather than in a second table.
 UNRATIFIED_NOTE = (
     "UNRATIFIED TOLERANCES: {names}. Their statistics ARE computed and ARE "
     "reported on every run; they DO NOT contribute to pass/fail "
     "(effect={effect}). A reported value that exceeds the proposed number is "
     "an ADVISORY, never a refusal. Do NOT read 'the span arm did not fire' as "
     "'the span arm passed': no threshold was applied. Prospective calibration "
-    "spec: {spec}."
+    "spec: {spec}. "
+    "\U0001F534 DO NOT READ THIS LIST AS 'everything else is ratified'. "
+    "Exactly ONE tolerance in GATE is ratified (chi2_dof_max, chi2/dof <= 3, "
+    "PI decision 8). The four |z| arms ({restated}) are RESTATED_NOT_RATIFIED: "
+    "they refuse work and no deciding authority ratified them -- decision 8 "
+    "called |z| <= 5 MALFORMED and sent it back for restatement."
 ).format(names=", ".join(sorted(UNRATIFIED)), effect=UNRATIFIED_EFFECT,
-         spec=_SPEC)
+         spec=_SPEC, restated=", ".join(sorted(RESTATED_NOT_RATIFIED)))
 
 UNRATIFIED_BUT_GATING_NOTE = (
     "UNRATIFIED BUT GATING: {names}. These numbers DO contribute to pass/fail "

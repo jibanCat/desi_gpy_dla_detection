@@ -133,11 +133,47 @@ GATE = {
 # procedure, false-alarm rate -- is
 # ``docs/ratio_span_calibration_spec.md``.
 #
+# 🔴 HISTORICAL CORRECTION, kept because it is the sentence that caused the
+# defect.  This comment used to end:
+#     "The z-score arms (z_total_max, z_bin_max, chi2_dof_max, z_zbin_max,
+#      z_snrbin_max) are NOT in this set: they are conventional 5-sigma /
+#      chi2-per-dof thresholds and pre-date this change."
+# and the NOTE used to end "Every other tolerance in GATE is a conventional
+# z-score/chi2 threshold and pre-dates this change."  BOTH WERE FALSE, and that
+# sentence is how four |z| arms came to be written into a committed artifact as
+# PI-ratified:
+#   * z_zbin_max and z_snrbin_max were added BY THAT CHANGE (0e7fa0b,
+#     2026-07-29 10:21), on four consecutive added lines of the SAME HUNK that
+#     added the two ratio_span numbers the PI declined the same day.  They
+#     pre-date nothing.  MEASURED, and re-measured independently twice since:
+#       git log --format=%H -Sz_zbin_max -- CDDF_analysis/hbi_mcmc/run_posterior.py | tail -1
+#   * z_total_max and z_bin_max DO pre-date it (f23961e, 2026-07-28), but
+#     pre-dating a decision is not being ratified by it.
+#
+# "PROVISIONAL" here means ONLY "declined by the PI on 2026-07-29".  It is NOT
+# the complement of "ratified": FOUR MORE tolerances are unratified.
+#
 # THE SINGLE SOURCE OF TRUTH IS ``ratification.py``.  The names below are
-# derived from it, not maintained in parallel.
+# derived from it, not maintained in parallel -- a literal list of names typed
+# next to the thing it describes is exactly how the fabricated claim survived.
 PROVISIONAL_GATE_TOLERANCES = RAT.unratified_names()
 
 PROVISIONAL_GATE_TOLERANCES_NOTE = RAT.UNRATIFIED_NOTE
+
+
+def ratified_gate_tolerances():
+    """The ratified items that are actually GATE TOLERANCES.
+
+    🔴 NOT the same set as ``RAT.ratified_names()``. Decision 8 ratified THREE
+    things and only ONE of them is a number in ``GATE``: ``chi2_dof_max``. The
+    other two -- ``fail_closed_framework`` and ``matched_configuration_sbc`` --
+    are ratified COMMITMENTS, not thresholds, and a field named
+    ``gate_tolerances_ratified`` that listed them would overstate how much of
+    the gate carries ratified authority, which is the family of error this whole
+    correction exists to undo. Intersecting with ``GATE`` keeps the two
+    vocabularies from being conflated again.
+    """
+    return [n for n in RAT.ratified_names() if n in GATE]
 
 _REAL_TOKENS = ("main_dark", "loa_main_dark", "matterhorn", "dr3")
 
@@ -166,6 +202,30 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     z_bin_max = float(np.abs(z).max()) if len(z) else float("nan")
     z_total = float(abs(tab["total"]["z"]))
 
+    # 🔴 A refusal must name the AUTHORITY of the number it refused on.  Six of
+    # the seven tolerances in GATE are not ratified; before 2026-08-05 only the
+    # two DECLINED span numbers were labelled, so a reader of a refusal
+    # reasonably concluded the |z| arms were authorised.  Read from the ONE
+    # table, never typed here.
+    # MERGE NOTE: this helper came from the adopted-basis stream reading
+    # ``reporting.GATE_AUTHORITY``. That was a COMPLETE PARALLEL authority table
+    # -- its own PI_RATIFIED_ITEMS, its own guard, its own stamp -- and two
+    # tables sharing one vocabulary is exactly how the claim drifts back out of
+    # sync. Repointed at the single source, ``ratification.py``. ``RAT.record``
+    # fails closed: an unknown name returns status "UNKNOWN" with
+    # contributes_to_pass_fail=False rather than raising or defaulting to
+    # ratified.
+    def _tag(name):
+        st = RAT.record(name).get("status")
+        if st == "RATIFIED":
+            return ""
+        if st == "UNRATIFIED":
+            return " [UNRATIFIED tolerance -- the PI was asked and DECLINED]"
+        if st == "RESTATED_NOT_RATIFIED":
+            return (" [NOT RATIFIED -- this arm gates; no deciding authority "
+                    "ratified it]")
+        return " [NO GATE-AUTHORITY RECORD -- treat as unratified]"
+
     fails = []
     # ``advisories`` are computed, reported, and DO NOT contribute to
     # ``pass``.  They exist because decision 8 declined to ratify the two
@@ -173,11 +233,14 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     # is not worth refusing work on.  See ratification.py.
     advisories = []
     if not (z_total <= gate["z_total_max"]):
-        fails.append(f"|z_total|={z_total:.2f} > {gate['z_total_max']}")
+        fails.append(f"|z_total|={z_total:.2f} > {gate['z_total_max']}"
+                     + _tag("z_total_max"))
     if not (z_bin_max <= gate["z_bin_max"]):
-        fails.append(f"max|z_bin|={z_bin_max:.2f} > {gate['z_bin_max']}")
+        fails.append(f"max|z_bin|={z_bin_max:.2f} > {gate['z_bin_max']}"
+                     + _tag("z_bin_max"))
     if not (chi2_dof <= gate["chi2_dof_max"]):
-        fails.append(f"chi2/dof={chi2_dof:.2f} > {gate['chi2_dof_max']}")
+        fails.append(f"chi2/dof={chi2_dof:.2f} > {gate['chi2_dof_max']}"
+                     + _tag("chi2_dof_max"))
 
     # --- the z- and SNR-marginal arms -------------------------------------
     # ``ratio_tables`` already computed these; the gate used to throw them
@@ -196,7 +259,8 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         span = sp["span"]
         marg[key] = dict(rows=mrows, zmax=zmax, span=span, span_detail=sp)
         if len(zs) and not (zmax <= gate[zkey]):
-            fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}")
+            fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}"
+                         + _tag(zkey))
         if not (span <= gate[spankey]):
             msg = (f"ratio span in {key} = {span:.4f} "
                    f"(mu/obs {sp['lo']:.4f}..{sp['hi']:.4f}, "
@@ -207,9 +271,14 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
             # four |z| arms gate WITHOUT being ratified, and conflating the two
             # is exactly the defect that fabricated a PI authority for them.
             if RAT.gates(spankey):
-                fails.append(msg)
+                # MERGE NOTE: _tag() comes from the adopted-basis stream -- every
+                # refusal names the authority of the number it refused on. Kept
+                # on this branch too, so a span arm that DOES gate cannot refuse
+                # work anonymously.
+                fails.append(msg + _tag(spankey))
             else:
-                # UNRATIFIED (decision 8): report, do not gate.
+                # UNRATIFIED (decision 8, and the PI direction of 2026-08-05):
+                # report, do not gate.
                 advisories.append(
                     msg + " [UNRATIFIED tolerance -- ADVISORY ONLY, this does "
                           "NOT block the run; the threshold has no calibrated "
@@ -236,11 +305,21 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         # reported, never gating -- see ratification.py
         "advisories": advisories,
         "gate": gate,
-        # which of the numbers above a deciding authority has NOT ratified
+        # 🔴 which of the numbers above a PI DECLINED.  This is NOT the
+        # complement of "ratified" -- see the four |z| arms below.
         "gate_tolerances_provisional": list(PROVISIONAL_GATE_TOLERANCES),
         "gate_tolerances_provisional_note": PROVISIONAL_GATE_TOLERANCES_NOTE,
         "gate_tolerances_unratified": list(RAT.unratified_names()),
-        "gate_tolerances_ratified": list(RAT.ratified_names()),
+        "gate_tolerances_ratified":
+            [n for n in RAT.ratified_names() if n in GATE],
+        # MERGE NOTE: the adopted-basis stream emitted this same picture from
+        # reporting.GATE_AUTHORITY. Both streams built a table with the same
+        # vocabulary; two tables is how the claim drifts back out of sync, so
+        # every key here is derived from the ONE source, ratification.py.
+        # ``restated_not_ratified`` is the adopted-basis stream's key name, kept
+        # because its tests and artifacts read it.
+        "gate_tolerances_restated_not_ratified":
+            list(RAT.restated_not_ratified_names()),
         # 🔴 the numbers that REFUSE WORK with no ratified authority.  A reader
         # of the JSON alone must be able to see this without opening the source.
         "gate_tolerances_unratified_but_gating":
@@ -327,7 +406,12 @@ def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
         "forward_gate": gate_report,
         # hoisted to the TOP of the stamp, not left buried in forward_gate: a
         # reader of the artifact alone must see which gate numbers are not
-        # ratified without opening the nested report.
+        # ratified without opening the nested report.  🔴 the PROVISIONAL list
+        # alone is NOT that picture -- it names only the two the PI DECLINED,
+        # and reading it as "everything else is ratified" is precisely the
+        # error that put z_total_max and z_bin_max into a committed artifact
+        # under `gate_tolerances_ratified`.  All four lists are read from
+        # reporting.GATE_AUTHORITY.
         "gate_tolerances_provisional": list(
             gate_report.get("gate_tolerances_provisional")
             or PROVISIONAL_GATE_TOLERANCES),
@@ -338,6 +422,15 @@ def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
         # were authorised to refuse this run, by whom, and on what date.
         "ratification": RAT.ratification_stamp(),
         "gate_advisories": list(gate_report.get("advisories") or []),
+        # MERGE NOTE: the adopted-basis stream hoisted these three lists into
+        # every stamp so a reader of the JSON alone sees the authority picture
+        # without opening the source. Kept, derived from the ONE source.
+        "gate_tolerances_ratified":
+            [n for n in RAT.ratified_names() if n in GATE],
+        "gate_tolerances_restated_not_ratified":
+            list(RAT.restated_not_ratified_names()),
+        "gate_tolerances_unratified_but_gating":
+            list(RAT.unratified_but_gating_names()),
         "date": time.strftime("%Y-%m-%d"),
         "pack_provenance": pack_provenance,
         "scope": "MOCK / SYNTHETIC ONLY",
@@ -531,14 +624,23 @@ def _truth_closure(pack, summ):
     for tier, (lo, hi) in TIERS.items():
         if tier not in summ["tiers"]:
             continue
-        sel = (Nc >= lo - 1e-9) & (Nc < hi - 1e-9) & rep
-        dndx_k = (f_true[sel, :] * dN[sel, None]).sum(axis=0)
-        om_k = (f_true[sel, :] * (10.0 ** (Nc[sel] - 21.0))[:, None]
-                * dN[sel, None]).sum(axis=0)
+        # SAME weights as the posterior reduction (PI decision 3: the latent
+        # basis may be coarser than the window, so the truth must be integrated
+        # with the identical overlap weights or the closure compares two
+        # different estimands). Identical to the old centre-selection on any
+        # 0.1-dex pack.
+        from CDDF_analysis.hbi_mcmc import reporting as RP
+        w = np.where(rep, RP.window_overlap_weights(ntrue, lo, hi), 0.0)
+        dndx_k = (f_true * w[:, None]).sum(axis=0)
+        om_k = (f_true * (10.0 ** (Nc - 21.0))[:, None] * w[:, None]).sum(axis=0)
         row = {}
         for name, tk in (("dndx_allz", dndx_k), ("omega_allz", om_k)):
             t = float((tk * dX_k).sum() / dX_k.sum())
-            b = summ["tiers"][tier][name]
+            b = summ["tiers"][tier].get(name)
+            if b is None:      # Omega REFUSED outside [19.7, 21.6] (decision 1)
+                row[name] = {"truth": t, "REFUSED": summ["tiers"][tier].get(
+                    "omega_REFUSED", {}).get("reason")}
+                continue
             row[name] = {
                 "truth": t,
                 "point_over_truth": float(b["point_q50"] / t) if t else None,

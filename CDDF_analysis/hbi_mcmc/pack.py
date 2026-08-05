@@ -61,6 +61,7 @@ __all__ = [
     "synthetic_pack",
     "small_test_grid",
     "upgrade_pack_v11",
+    "coarsen_basis",
     "resp_fit_range_from_forward_npz",
     "REAL_NHAT_EDGES",
     "REAL_ZF_EDGES",
@@ -187,8 +188,37 @@ class ModelAPack:
         the reporting floor and the fold is arithmetically incapable of
         reproducing the lowest observed bins.  Exposed as a first-class number
         so a pre-flight can REFUSE an unpadded pack instead of re-deriving the
-        edge arithmetic at every call site."""
-        return int(len(self.ntrue_edges) - len(self.nhat_edges))
+        edge arithmetic at every call site.
+
+        COUNTED FROM THE EDGES, not from the array lengths (fixed 2026-07-29
+        with PI decision 3).  ``len(ntrue) - len(nhat)`` was only ever right
+        while the basis shared the observed 0.1-dex step; on the adopted 0.2-dex
+        basis it goes NEGATIVE (18 - 30 = -12) and every downstream
+        ``truth[:n_pad]`` slice silently means the wrong thing.  The definition
+        below is identical on every 0.1-dex pack (pinned by test)."""
+        ne = np.asarray(self.ntrue_edges, float)
+        floor = float(np.asarray(self.nhat_edges, float)[0])
+        return int(np.sum(ne[:-1] < floor - 1e-9))
+
+    @property
+    def basis_width(self):
+        """NOMINAL latent true-N basis width in dex (PI decision 3): the MODAL
+        bin width.  A non-uniform basis is legal and expected -- E4's merging
+        convention absorbs the remainder into the last group of each segment, so
+        the adopted 0.2-dex basis has a 0.3-dex top bin ([22.1, 22.4)) and, under
+        pad 19.0, a 0.3-dex topmost PAD bin ([19.2, 19.5)).  Use
+        ``basis_is_uniform`` to ask whether every bin has this width, and
+        ``np.diff(ntrue_edges)`` when the exact widths matter (the fold always
+        does)."""
+        d = np.round(np.diff(np.asarray(self.ntrue_edges, float)), 8)
+        vals, cnt = np.unique(d, return_counts=True)
+        return float(vals[int(np.argmax(cnt))])
+
+    @property
+    def basis_is_uniform(self):
+        """True iff every latent basis bin has the same width."""
+        d = np.diff(np.asarray(self.ntrue_edges, float))
+        return bool(np.allclose(d, d[0], atol=1e-8))
 
 
 # --- validation ----------------------------------------------------------------
@@ -258,18 +288,73 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
     # nhat_edges on the SAME uniform step, sharing the top edge; nhat_edges must
     # be an exact tail-subset of ntrue_edges.  Padding only ever goes DOWN --
     # the reporting window never grows.
+    # --- PI DECISION 3 (2026-07-29): a COARSER latent basis is legal ---------
+    # The LATENT true-N basis may be coarser than the observed grid (adopted:
+    # 0.2 dex) because the 0.1-dex basis is unidentifiable -- E4 measured up to
+    # 45.7-62x noise amplification per bin and 17-19 of 27-29 basis directions
+    # already prior-dominated.  What must NOT move is the OBSERVED / REPORTING
+    # grid, so the rules are:
+    #   * every ntrue edge lies on the observed 0.1-dex grid (no new sub-grid);
+    #   * the TOP edge is shared with nhat_edges (the basis never extends UP);
+    #   * the basis covers the observed grid from below (bottom <= nhat bottom);
+    #   * the observed/reporting FLOOR is itself an ntrue edge, so no single
+    #     basis bin straddles the pad/report boundary (a bin that did would mix
+    #     convention-dependent sub-floor support into an in-window bin);
+    #   * the basis need NOT be uniform: E4's merging convention absorbs the
+    #     remainder into the last group of a segment (0.3-dex top bin at
+    #     0.2 dex), and forward.build_consts uses diff(ntrue_edges) throughout.
+    # When the basis IS on the 0.1-dex step the OLD, stricter tail-subset rule
+    # is applied unchanged, so every v1 / v1.1 pack validates bit-identically.
     _ne = np.asarray(pack.ntrue_edges, float)
     _ce = np.asarray(pack.nhat_edges, float)
     if not np.array_equal(_ne, _ce):
-        _check_edges_uniform("ntrue_edges", _ne, _N_STEP)
-        if len(_ne) < len(_ce):
-            _fail("ntrue_edges: the true-N basis may only EXTEND the observed "
-                  f"grid downward, never shrink it (got {len(_ne)-1} true bins "
-                  f"vs {len(_ce)-1} observed bins)")
-        if not np.allclose(_ne[len(_ne) - len(_ce):], _ce, atol=1e-8):
-            _fail("ntrue_edges: nhat_edges must be an exact TAIL subset of "
-                  "ntrue_edges (same step, same top edge) — the basis pad "
-                  f"extends DOWN only. got ntrue tail {_ne[len(_ne)-len(_ce):]}")
+        _check_finite("ntrue_edges", _ne)
+        if _ne.ndim != 1 or len(_ne) < 2:
+            _fail(f"ntrue_edges: expected 1-D with >= 2 entries, got {_ne.shape}")
+        if np.any(np.diff(_ne) <= 0):
+            _fail("ntrue_edges: edges must be strictly increasing")
+        _uniform_fine = np.allclose(np.diff(_ne), _N_STEP, atol=1e-8)
+        if _uniform_fine:
+            _check_edges_uniform("ntrue_edges", _ne, _N_STEP)
+            if len(_ne) < len(_ce):
+                _fail("ntrue_edges: the true-N basis may only EXTEND the "
+                      f"observed grid downward, never shrink it (got "
+                      f"{len(_ne)-1} true bins vs {len(_ce)-1} observed bins)")
+            if not np.allclose(_ne[len(_ne) - len(_ce):], _ce, atol=1e-8):
+                _fail("ntrue_edges: nhat_edges must be an exact TAIL subset of "
+                      "ntrue_edges (same step, same top edge) — the basis pad "
+                      f"extends DOWN only. got ntrue tail "
+                      f"{_ne[len(_ne)-len(_ce):]}")
+        else:
+            # coarser (or mixed-width) LATENT basis
+            off = (_ne - _ce[0]) / _N_STEP
+            if not np.allclose(off, np.round(off), atol=1e-6):
+                _fail("ntrue_edges: every latent-basis edge must lie on the "
+                      f"observed {_N_STEP} dex grid anchored at the reporting "
+                      f"floor {_ce[0]}; got {_ne}")
+            if not np.isclose(_ne[-1], _ce[-1], atol=1e-8):
+                _fail("ntrue_edges: the latent basis must share the observed "
+                      f"grid's TOP edge {_ce[-1]} (it never extends UP); got "
+                      f"{_ne[-1]}")
+            if _ne[0] > _ce[0] + 1e-8:
+                _fail("ntrue_edges: the latent basis must cover the observed "
+                      f"grid from below (basis floor {_ne[0]} > observed floor "
+                      f"{_ce[0]})")
+            if not np.any(np.isclose(_ne, _ce[0], atol=1e-8)):
+                _fail("ntrue_edges: the observed/reporting FLOOR "
+                      f"{_ce[0]} must itself be a latent-basis edge — otherwise "
+                      "one basis bin straddles the pad/report boundary and "
+                      "mixes convention-dependent sub-floor support into an "
+                      f"in-window bin. got {_ne}")
+            # NOTE (2026-07-29, found by mutation testing): there is NO
+            # separate "finer than the observed grid" check, because it would be
+            # DEAD CODE.  The on-grid rule above already forbids it: every ntrue
+            # edge must sit on the observed 0.1-dex grid, and edges must be
+            # strictly increasing, so the narrowest representable basis bin IS
+            # 0.1 dex.  A 0.05-dex basis is refused by the on-grid rule, with
+            # that rule's message.  An earlier version of this function carried
+            # an extra max(diff) < _N_STEP check; it could never fire and a test
+            # that "verified" it was in fact exercising the on-grid rule.
     if not allow_nonstandard_grid:
         for name, got, want in (("nhat_edges", pack.nhat_edges, REAL_NHAT_EDGES),
                                 ("zf_edges", pack.zf_edges, REAL_ZF_EDGES),
@@ -572,6 +657,80 @@ def resp_fit_range_from_forward_npz(forward_npz) -> np.ndarray:
     if a.ndim != 3:
         _fail(f"emp_N_anchors: expected (SR, ZR, n_anchor), got {a.shape}")
     return np.stack([a.min(axis=-1), a.max(axis=-1)], axis=-1)
+
+
+def coarsen_basis(pack: ModelAPack, basis_width, pad_floor=None) -> ModelAPack:
+    """Re-grid a pack's LATENT true-N basis to ``basis_width`` (PI decision 3).
+
+    SYNTHETIC / TEST utility.  ``extract_pack`` builds real packs on the coarse
+    basis directly from the catalogue; this exists so a SYNTHETIC pack can be put
+    on the ADOPTED geometry (coarse basis, optional downward pad) for coverage
+    work, using EXACTLY the adopted convention: ``reporting.basis_groups`` in two
+    segments split at the reporting floor, truth COUNTS summed within a group,
+    truth ``f`` dN-weighted-averaged (``reporting.merged_truth``).
+
+    The observed axis (``nhat_edges``, ``counts``, ``dX``, every calibration
+    block) is untouched.  New pad bins carry ZERO truth counts -- the pad's role
+    here is to supply latent nuisance SUPPORT, and a synthetic study draws its own
+    truth on that support from the prior.
+    """
+    from CDDF_analysis.hbi_mcmc import reporting as _RP
+    fine = np.asarray(pack.ntrue_edges, float)
+    if not np.allclose(np.diff(fine), _N_STEP, atol=1e-8):
+        _fail("coarsen_basis: the input pack's basis must be on the observed "
+              f"{_N_STEP} dex step (got widths {np.diff(fine)})")
+    obs_lo = float(np.asarray(pack.nhat_edges, float)[0])
+    n_pad_fine = 0
+    if pad_floor is not None:
+        n_pad_fine = int(round((fine[0] - float(pad_floor)) / _N_STEP))
+        if n_pad_fine < 0:
+            n_pad_fine = 0
+        elif n_pad_fine and abs(fine[0] - n_pad_fine * _N_STEP
+                                - float(pad_floor)) > 1e-8:
+            _fail(f"coarsen_basis: pad_floor {pad_floor} is off the "
+                  f"{_N_STEP} dex grid")
+        if n_pad_fine:
+            fine = np.round(np.concatenate(
+                [fine[0] - _N_STEP * np.arange(n_pad_fine, 0, -1), fine]), 10)
+    n_below = int(np.sum(fine[:-1] < obs_lo - 1e-9))
+    n_above = len(fine) - 1 - n_below
+    g = int(round(float(basis_width) / _N_STEP))
+    if g < 1 or abs(g * _N_STEP - float(basis_width)) > 1e-8:
+        _fail(f"coarsen_basis: basis_width {basis_width} must be a positive "
+              f"integer multiple of {_N_STEP}")
+    groups = []
+    if n_below:
+        groups += _RP.basis_groups(n_below, g)
+    groups += [[b + n_below for b in gr] for gr in _RP.basis_groups(n_above, g)]
+    edges = _RP.merged_edges(fine, groups)
+
+    def _pad_sum(a):
+        if a is None:
+            return None
+        a = np.asarray(a, float)
+        if n_pad_fine:
+            a = np.concatenate([np.zeros((n_pad_fine,) + a.shape[1:]), a], 0)
+        return np.stack([a[gr].sum(axis=0) for gr in groups])
+
+    truth = None
+    if pack.truth is not None:
+        truth = dict(pack.truth)
+        if "f_true" in truth:
+            f = np.asarray(truth["f_true"], float)
+            if n_pad_fine:
+                f = np.concatenate([np.zeros((n_pad_fine,) + f.shape[1:]), f], 0)
+            dNf = np.diff(fine)
+            truth["f_true"] = np.stack(
+                [_RP.merged_truth(f[:, k], dNf, groups) for k in range(f.shape[1])],
+                axis=1)
+            truth["basis_coarsened_to_dex"] = float(basis_width)
+    out = dataclasses.replace(
+        pack, ntrue_edges=edges,
+        truth_counts=_pad_sum(pack.truth_counts),
+        truth_counts_bks=_pad_sum(pack.truth_counts_bks),
+        truth=truth)
+    validate_pack(out, allow_nonstandard_grid=True)
+    return out
 
 
 def upgrade_pack_v11(npz_in, npz_out, *, forward_npz=None,

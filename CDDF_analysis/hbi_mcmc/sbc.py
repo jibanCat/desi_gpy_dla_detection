@@ -50,7 +50,8 @@ import numpy as np
 __all__ = ["SBC_GRID", "SBC_PRIOR", "SBC_SAMPLER", "sbc_run", "rank_histogram",
            "uniformity_test", "sbc_block", "MATCH_KEYS", "REPORTED_ONLY_KEYS",
            "sbc_configuration", "run_configuration", "configuration_match",
-           "matched_sbc_kwargs"]
+           "matched_sbc_kwargs", "SBC_GRID_ADOPTED",
+           "SBC_ADOPTED_BASIS", "DISPERSION_SCALES", "rescale_dispersion"]
 
 # --- R1: the reduced grid ---------------------------------------------------
 SBC_GRID = dict(
@@ -70,12 +71,83 @@ SBC_PRIOR = dict(level_scale=0.6, slope_scale=0.4,
 SBC_SAMPLER = dict(num_warmup=150, num_samples=150, num_chains=1,
                    max_tree_depth=8, target_accept=0.9, n_ranks=50)
 
+# --- MATCHED-CONFIGURATION grid (PI decision 8 requires the SBC configuration
+# to MATCH the one being reported; PI decisions 3 and 4 changed it) -----------
+# Wider in N than SBC_GRID on purpose: the ADOPTED 0.2-dex latent basis needs an
+# even number of 0.1-dex observed bins above the reporting floor to come out
+# uniform, and the primary reporting window [19.7, 21.6] must contain at least a
+# few basis bins or the reported functional is a single number.
+#   observed : 19.5 .. 20.5, 10 bins of 0.1 dex   (UNCHANGED step -- decision 3)
+#   latent   : pad 19.0 -> 19.0 19.2 19.5 | 19.5 19.7 19.9 20.1 20.3 20.5
+#              = 2 pad bins + 5 in-window-capable bins
+SBC_GRID_ADOPTED = dict(
+    nhat_edges=np.round(np.arange(19.5, 20.5 + 1e-9, 0.1), 10),   # 10 bins
+    zf_edges=np.round(np.arange(2.0, 2.2 + 1e-9, 0.1), 10),       # 2 fine z
+    zc_edges=np.array([2.0, 2.2]),                                # 1 coarse z
+    snr_edges=np.array([0.0, np.inf]),                            # 1 stratum
+    n_molly_cells=2,
+)
+SBC_ADOPTED_BASIS = dict(basis_width=0.2, pad_floor=19.0)
+
+# --- the MEASURED POWER check (project rule, feedback_coverage_tests_need_power
+# _checks) --------------------------------------------------------------------
+# Truth-containment is MONOTONE in band width and therefore cannot fail an
+# over-wide band; a 2x over-dispersed posterior once passed 24/24 tests and 8/8
+# containment.  So every coverage claim here is accompanied by a DETECTION CURVE:
+# the SAME posterior draws are re-scaled in log f about their own per-bin median
+# by a factor s,
+#       f_s(l) = median_l(f) * ( f(l) / median_l(f) ) ** s ,
+# the ranks are recomputed, and the uniformity test is re-run.  s = 1 is the
+# actual posterior; s > 1 is deliberately OVER-dispersed and s < 1 deliberately
+# UNDER-dispersed.  This costs NO extra sampling.  If the test cannot flag
+# s = 2.0, then it cannot certify the s = 1 result either, and the artifact must
+# say so instead of claiming coverage.
+DISPERSION_SCALES = (0.5, 0.75, 1.0, 1.5, 2.0)
+
+
+def rescale_dispersion(f_draws, s):
+    """Re-scale posterior DISPERSION by ``s`` about the per-bin median, in log f.
+
+        f_s(l) = exp( log_med + s * (log f(l) - log_med) ),
+        log_med = median over draws of log f, per (b, k) bin.
+
+    THREE properties, each pinned by a test (they are what make this a power
+    check rather than an arbitrary perturbation):
+      1. ``s == 1`` returns the input OBJECT unchanged (bit-identical), so the
+         detection curve's own baseline IS the result being certified;
+      2. the per-bin MEDIAN over draws is invariant for every s -- the transform
+         moves the WIDTH and not the location, so a flag at s != 1 cannot be a
+         location bias in disguise;
+      3. the per-bin SD of log f is multiplied by exactly s.
+    """
+    f_draws = np.asarray(f_draws, float)
+    if float(s) == 1.0:
+        return f_draws
+    with np.errstate(divide="ignore"):
+        log_post = np.log(np.clip(f_draws, 1e-300, None))
+    log_med = np.median(log_post, axis=0)
+    return np.exp(log_med[None, ...] + float(s) * (log_post - log_med[None, ...]))
+
 
 def _reported_from_f(f, pack):
-    """Single f(B, Kf) -> the reported scalars (same names as evidence.py)."""
+    """Single f(B, Kf) -> the reported scalars (same names as evidence.py).
+
+    EXTENDED 2026-07-29 (PI decision 1): the primary reporting-window
+    functionals ``dndx_report_197_216_allz`` / ``omega_report_197_216_allz`` are
+    added, because after decision 1 those -- not the open-topped 20.0/20.3
+    thresholds -- are what would actually be reported, and an SBC that ranks only
+    the old functionals says nothing about the calibration of the new ones.
+    """
     from CDDF_analysis.hbi_mcmc.evidence import reported_quantities
+    from CDDF_analysis.hbi_mcmc.model_a import reduce_f_posterior
     rep = reported_quantities(np.asarray(f)[None, None], pack)
-    return {k: float(np.asarray(v).reshape(-1)[0]) for k, v in rep.items()}
+    out = {k: float(np.asarray(v).reshape(-1)[0]) for k, v in rep.items()}
+    red = reduce_f_posterior(np.asarray(f)[None], pack)
+    for nm in ("dndx", "omega"):
+        key = f"{nm}_report_197_216_allz"
+        if key in red:
+            out[key] = float(np.asarray(red[key]).reshape(-1)[0])
+    return out
 
 
 # ===========================================================================
@@ -218,10 +290,23 @@ def _configuration(pack, *, prior, sampler, resp_clamp, reported_names):
 
 
 def _reported_names(pack):
-    """The reported-functional NAME SET for a pack (values are irrelevant)."""
-    from CDDF_analysis.hbi_mcmc.evidence import reported_quantities
-    f = np.ones((1, 1, pack.n_b, pack.n_k), float)
-    return sorted(reported_quantities(f, pack))
+    """The reported-functional NAME SET for a pack (values are irrelevant).
+
+    🔴 MERGE DEFECT FOUND AND FIXED (2026-08-05, gate x adopted-basis).  This
+    used to call ``evidence.reported_quantities`` directly, while the ranks are
+    computed by ``_reported_from_f``, which the adopted-basis stream EXTENDED
+    with the two primary reporting-window functionals
+    (``dndx_report_197_216_allz`` / ``omega_report_197_216_allz``, PI decision
+    1).  After the merge the SBC therefore RANKED 11 quantities and DECLARED 9,
+    and ``configuration_match`` reported the mismatch -- which is precisely what
+    matched-configuration SBC exists to catch: an SBC whose reported-quantity
+    set differs from the run it is attached to certifies nothing.
+
+    Derived from ``_reported_from_f`` so the declared set is the ranked set BY
+    CONSTRUCTION.  Two independent name lists is how they drifted apart.
+    """
+    f = np.ones((pack.n_b, pack.n_k), float)
+    return sorted(_reported_from_f(f, pack))
 
 
 def run_configuration(pack, cfg=None, *, resp_clamp=None,
@@ -347,10 +432,22 @@ def matched_sbc_kwargs(pack, cfg, *, n_ranks=None, resp_clamp=None):
 
 
 def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
-            pack_seed=0, verbose=False, resp_clamp="both"):
+            pack_seed=0, verbose=False, resp_clamp="both",
+            basis_width=None, pad_floor=None, dispersion_scales=None):
     """Run the reduced SBC.  Returns (ranks dict, meta dict).
 
     ``ranks[name]`` is a list of ``n_sims`` integers in ``{0, ..., L}``.
+
+    ``basis_width`` / ``pad_floor`` (PI decisions 3 / 4): put the template pack's
+    LATENT basis on the adopted geometry via ``pack.coarsen_basis`` before the
+    prior is drawn, so the SBC is a MATCHED-configuration SBC (decision 8) rather
+    than a calibration statement about a basis nobody reports on.  ``None``
+    leaves the shipped geometry untouched, bit-for-bit.
+
+    ``dispersion_scales``: the MEASURED POWER check.  For each s, the same
+    posterior draws are re-scaled in log f about their per-bin median by s and the
+    ranks recomputed, at NO extra sampling cost.  ``meta["ranks_by_scale"]``
+    carries them.  s = 1.0 is always included.
     """
     import jax
     import jax.numpy as jnp
@@ -362,14 +459,24 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
     from CDDF_analysis.hbi_mcmc.forward import build_consts
     from CDDF_analysis.hbi_mcmc.pack import synthetic_pack
 
+    from CDDF_analysis.hbi_mcmc.pack import coarsen_basis
+
     grid = dict(SBC_GRID if grid is None else grid)
     prior = dict(SBC_PRIOR if prior is None else prior)
     samp = dict(SBC_SAMPLER if sampler is None else sampler)
+    scales = tuple(sorted(set(
+        (1.0,) if dispersion_scales is None else tuple(dispersion_scales) + (1.0,))))
     L = int(samp["n_ranks"])
 
     # a template pack fixes the GEOMETRY (dX, molly, response, edges); only the
     # population parameters and the counts are re-drawn per replica.
     pack = synthetic_pack(pack_seed, **grid, fp_frac=0.0)
+    # MERGE NOTE: both streams edited this. The adopted-basis stream added the
+    # coarsen_basis step and hard-coded resp_clamp="both"; the gate stream made
+    # resp_clamp a parameter (default "both"). Keeping BOTH is behaviour-preserving
+    # for each: every existing caller of either uses "both".
+    if basis_width is not None or pad_floor is not None:
+        pack = coarsen_basis(pack, basis_width or 0.1, pad_floor=pad_floor)
     consts = build_consts(pack, resp_clamp=resp_clamp,
                           allow_unclamped_response=(resp_clamp == "off"))
     model = partial(ma.model_a, **prior)
@@ -387,6 +494,7 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
 
     names = None
     ranks, truths, meds, t0 = {}, {}, {}, time.time()
+    ranks_by_scale = {f"{s:g}": {} for s in scales}
     n_used = 0
     for i in range(n_sims):
         f_true = pri["f"][i]
@@ -410,20 +518,40 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
         f_post = f_post[thin]
 
         q_true = _reported_from_f(f_true, pack)
-        q_post = {k: [] for k in q_true}
-        for l in range(L):
-            for k, v in _reported_from_f(f_post[l], pack).items():
-                q_post[k].append(v)
         if names is None:
             names = sorted(q_true)
             ranks = {k: [] for k in names}
             truths = {k: [] for k in names}
             meds = {k: [] for k in names}
+            for s in scales:
+                ranks_by_scale[f"{s:g}"] = {k: [] for k in names}
+
+        def _q_post(fd):
+            acc = {k: [] for k in names}
+            for l in range(L):
+                for k, v in _reported_from_f(fd[l], pack).items():
+                    acc[k].append(v)
+            return {k: np.asarray(v, float) for k, v in acc.items()}
+
+        # THE headline ranks, computed from the UNSCALED draws on their own code
+        # path.  Deliberately NOT read out of the s == 1.0 iteration of the loop
+        # below: if both came from the same evaluation, "ranks_by_scale['1'] ==
+        # ranks" would be a tautology instead of a check that the power curve's
+        # baseline really is the reported result (mutation testing caught exactly
+        # that -- doubling every scale left the assertion green).
+        q0 = _q_post(f_post)
         for k in names:
-            arr = np.asarray(q_post[k], float)
-            ranks[k].append(int((arr < q_true[k]).sum()))
+            ranks[k].append(int((q0[k] < q_true[k]).sum()))
             truths[k].append(float(q_true[k]))
-            meds[k].append(float(np.median(arr)))
+            meds[k].append(float(np.median(q0[k])))
+        for s in scales:
+            # NOT short-circuited at s == 1.0 on purpose: the s == 1 entry must
+            # travel the SAME rescale_dispersion call path as every other scale,
+            # or a bug in that path would be invisible exactly at the baseline.
+            qs = _q_post(rescale_dispersion(f_post, s))
+            for k in names:
+                ranks_by_scale[f"{s:g}"][k].append(
+                    int((qs[k] < q_true[k]).sum()))
         n_used += 1
         if verbose:
             print(f"  [sbc] {i+1}/{n_sims} used={n_used} "
@@ -451,8 +579,30 @@ def sbc_run(n_sims=48, *, seed=0, grid=None, prior=None, sampler=None,
             "Gamma(1/2, 1e-6) FP-total prior has mean 5e5 and is not "
             "prior-predictively simulable). NOT reduced: the forward fold, "
             "the completeness surface, the response kernel, the reported "
-            "functionals (both 20.0 and 20.3 thresholds are on the grid)."),
+            "functionals (both 20.0 and 20.3 thresholds are on the grid). "
+            "R5 REPORTING WINDOW (2026-07-29): the synthetic grid stops at "
+            f"logN = {float(np.asarray(grid['nhat_edges'])[-1]):g}, so the "
+            "'report_197_216' tier here integrates [19.7, "
+            f"{float(np.asarray(grid['nhat_edges'])[-1]):g}) rather than "
+            "[19.7, 21.6]. It is the same FUNCTIONAL FORM on the same latent "
+            "basis width, over a shorter N range; it is NOT the production "
+            "window and its value must not be compared to one."),
         "truths": truths, "post_medians": meds,
+        "basis_width": (None if basis_width is None else float(basis_width)),
+        "pad_floor": (None if pad_floor is None else float(pad_floor)),
+        "matched_configuration": bool(basis_width is not None),
+        "n_basis_bins": int(pack.n_b),
+        "n_observed_bins": int(pack.n_c),
+        "n_pad_bins": int(pack.n_pad_bins),
+        "ntrue_edges": [float(x) for x in np.asarray(pack.ntrue_edges, float)],
+        "dispersion_scales": [float(s) for s in scales],
+        "ranks_by_scale": ranks_by_scale,
+        "dispersion_scale_definition": (
+            "f_s(l) = exp( log_med + s * (log f(l) - log_med) ) with log_med the "
+            "PER-BIN median over draws of log f. s = 1 is the actual posterior; "
+            "s > 1 is deliberately OVER-dispersed, s < 1 UNDER-dispersed. Costs "
+            "no extra sampling. This is the MEASURED POWER check: a coverage "
+            "claim at s = 1 is only meaningful if the test FLAGS s = 2."),
     }
     # THE object this SBC certifies, read off the pack it actually built and
     # the prior/sampler it actually used.  Recorded unconditionally: an SBC

@@ -79,6 +79,7 @@ from numpyro.infer.initialization import init_to_value
 from CDDF_analysis.hbi_mcmc.diagnostics import summarize_mcmc
 from CDDF_analysis.hbi_mcmc.forward import ModelAConsts, build_consts, fold_mu
 from CDDF_analysis.hbi_mcmc.pack import ModelAPack
+from CDDF_analysis.hbi_mcmc import reporting as RP
 
 __all__ = ["ModelAConfig", "model_a", "run_model_a", "reduce_f_posterior",
            "summarize", "POLICY", "TIERS", "posterior_summary",
@@ -123,6 +124,13 @@ TIERS = {
     "dla_20p0": (20.0, np.inf),       # DLA tier, >= 20.0
     "dla_20p3": (20.3, np.inf),       # DLA tier, >= 20.3 (the headline)
     "all_195_up": (19.5, np.inf),     # both tiers together (coupling check)
+    # --- PI DECISION 1 (2026-07-29): the PRIMARY reporting window ------------
+    # The only window in which an Omega_HI may be emitted at all. Its floor is
+    # the sub-DLA runner's NONIDENT_EDGE and its ceiling exists because the
+    # forward response is EXTRAPOLATED above ~21.6 (finding D2). Every other
+    # tier above is retained for continuity with the rung ladder and the
+    # coupling checks; none of them may carry an Omega (see omega_decision).
+    "report_197_216": (RP.NONIDENT_EDGE, RP.RESPONSE_ANCHOR_CEILING),
 }
 
 # metadata['estimand'] vocabulary values this module can legitimately produce.
@@ -310,31 +318,84 @@ def reduce_f_posterior(f_draws, pack: ModelAPack):
         "integrated_total": (f_draws[:, reported, :]
                              * dN[None, reported, None]).sum(axis=(1, 2)),
     }
+    # --- window weights (PI decision 3 made the basis coarser than the grid) --
+    # Every integrated reduction below weights basis bin b by the DEX OF b THAT
+    # LIES INSIDE THE WINDOW, not by dN_b under a centre-in-window test.  On any
+    # basis whose edges align with the window edges -- i.e. every 0.1-dex pack
+    # ever extracted -- the two are IDENTICAL (pinned by
+    # tests/test_adopted_reporting.py::test_overlap_weights_are_bit_identical_
+    # to_centre_selection_on_the_0p1dex_basis).  On the adopted 0.2-dex basis the
+    # overlap weight is the only correct choice: 21.6 cannot be a 0.2-dex basis
+    # edge if 19.7 is (their separation, 1.9 dex, is an ODD multiple of 0.1), so
+    # the top window bin is straddled and a centre test would silently drop or
+    # silently include a whole 0.2-dex bin.  Splitting it by overlap is EXACT
+    # under the adopted merging convention ("f is constant across the merged
+    # bin") -- it introduces no new assumption.
+    def _wts(lo, hi):
+        # hi is NOT clamped to ntrue[-1]: window_overlap_weights already takes
+        # min(bin_hi, hi) per bin, so an open-topped (inf) window integrates to
+        # the top basis edge and no further.  (An earlier version clamped it
+        # here; mutation testing showed the clamp could not change any value.)
+        return np.where(reported, RP.window_overlap_weights(ntrue, lo, hi), 0.0)
+
     # legacy threshold keys (analyze_rung9 and the rung ladder consume these)
     for thr in _THRESHOLDS:
-        sel = (Nc >= thr - 1e-9) & reported
+        w = _wts(thr, np.inf)
         tag = f"{thr:.1f}".replace(".", "p")
-        dndx = (f_draws[:, sel, :] * dN[None, sel, None]).sum(axis=1)  # (n, Kf)
-        omega = (f_draws[:, sel, :] * (10.0 ** (Nc[sel] - 21.0))[None, :, None]
-                 * dN[None, sel, None]).sum(axis=1)
+        dndx = (f_draws * w[None, :, None]).sum(axis=1)                # (n, Kf)
+        omega = (f_draws * (10.0 ** (Nc - 21.0))[None, :, None]
+                 * w[None, :, None]).sum(axis=1)
         out[f"dndx_{tag}"] = dndx
         out[f"dndx_{tag}_coarse"] = _coarse(dndx)
+        # NOTE these omega_* keys are OPEN-TOPPED and are therefore NOT
+        # emittable as reported values (PI decision 1).  They remain here
+        # because analyze_rung9 / evidence.reported_quantities consume them as
+        # CONVERGENCE + rung-ladder diagnostics on mocks.  The refusal is
+        # enforced where values are reported: posterior_summary.
         out[f"omega_{tag}"] = omega
     # the coupled DLA + sub-DLA tier windows, all off the same draws
+    omega_decisions = {}
+    tier_decisions = {}
     for tier, (lo, hi) in TIERS.items():
-        sel = (Nc >= lo - 1e-9) & (Nc < hi - 1e-9) & reported
-        if not sel.any():
+        w = _wts(lo, hi)
+        if not np.any(w > 0):
             continue
-        dndx = (f_draws[:, sel, :] * dN[None, sel, None]).sum(axis=1)
-        omega = (f_draws[:, sel, :] * (10.0 ** (Nc[sel] - 21.0))[None, :, None]
-                 * dN[None, sel, None]).sum(axis=1)
+        dndx = (f_draws * w[None, :, None]).sum(axis=1)
+        omega = (f_draws * (10.0 ** (Nc - 21.0))[None, :, None]
+                 * w[None, :, None]).sum(axis=1)
         out[f"dndx_{tier}"] = dndx
         out[f"dndx_{tier}_coarse"] = _coarse(dndx)
         out[f"dndx_{tier}_allz"] = _allz(dndx)
         out[f"omega_{tier}"] = omega
         out[f"omega_{tier}_coarse"] = _coarse(omega)
         out[f"omega_{tier}_allz"] = _allz(omega)
-        out[f"n_bins_{tier}"] = int(sel.sum())
+        out[f"n_bins_{tier}"] = int(np.sum(w > 0))
+        out[f"window_weights_{tier}"] = w
+        omega_decisions[tier] = RP.omega_decision(lo, hi)
+        tier_decisions[tier] = RP.reported_tier_decision(lo, hi)
+        # which basis bins BELOW the reporting floor this tier's weights touch --
+        # recorded for EVERY tier, so a refusal can NAME them instead of gesturing.
+        out[f"subwindow_bins_{tier}"] = [
+            [float(ntrue[b]), float(ntrue[b + 1]), float(w[b])]
+            for b in np.flatnonzero((ntrue[:-1] < RP.NONIDENT_EDGE - 1e-9)
+                                    & (np.abs(w) > 0))]
+        # DECISION-4 GUARD, fail-closed.  ARMED ON EVERY PAPER-FACING TIER
+        # (2026-07-29 correction).  It previously ran under
+        # ``omega_decisions[tier]["emit"]`` -- a two-sided test that is true ONLY
+        # for report_197_216, whose weights are zero below 19.7 by construction,
+        # so the guard was wired where it could not fire (referee defect 5) while
+        # subdla_195_203 and all_195_up quietly carried w = 0.20 dex on the
+        # [19.5, 19.7) basis bin.  The correct predicate is the ONE-SIDED
+        # reported_tier_decision: dN/dX is a line density, so an open top is
+        # fine and a floor below 19.7 is not.  Tiers that are NOT paper-facing
+        # are not guarded (they cannot be made legitimate) -- they are REFUSED
+        # at the emission point, see posterior_summary.
+        if tier_decisions[tier]["paper_facing"]:
+            RP.assert_no_subwindow_bins(
+                ntrue, w, where=f"reduce_f_posterior tier {tier!r}")
+    out["omega_decisions"] = omega_decisions
+    out["tier_decisions"] = tier_decisions
+    out["subwindow_guard_scope"] = RP.SUBWINDOW_GUARD_SCOPE
     return out
 
 
@@ -368,20 +429,61 @@ def posterior_summary(red, pack=None):
     ``recenter_band_on_point`` machinery in CDDF_analysis/hbi/ slid an MC cloud
     onto a plug-in optimum; nothing of that kind exists here.)
     """
-    out = {"estimand": ESTIMAND_POSTERIOR, "tiers": {}}
+    out = {"estimand": ESTIMAND_POSTERIOR, "tiers": {},
+           "reporting_window_logN": list(RP.REPORTING_WINDOW),
+           "reporting_window_label": RP.REPORTING_WINDOW_LABEL,
+           "omega_rule": RP.OMEGA_RULE,
+           "subwindow_guard_scope": RP.SUBWINDOW_GUARD_SCOPE,
+           "extrapolated_response_inside_the_omega_window":
+               RP.extrapolated_response_inside_window(),
+           "primary_reporting_tier": "report_197_216"}
     for tier in TIERS:
         if f"dndx_{tier}_allz" not in red:
             continue
+        lo, hi = float(TIERS[tier][0]), float(TIERS[tier][1])
+        dec = (red.get("omega_decisions") or {}).get(tier) or RP.omega_decision(lo, hi)
+        tdec = ((red.get("tier_decisions") or {}).get(tier)
+                or RP.reported_tier_decision(lo, hi))
         blk = {
-            "window_logN": [float(TIERS[tier][0]), float(TIERS[tier][1])],
+            "window_logN": [lo, hi],
             "n_bins": int(red[f"n_bins_{tier}"]),
+            "in_primary_reporting_window": bool(dec["emit"]),
+            "paper_facing": bool(tdec["paper_facing"]),
             "dndx_allz": _q(red[f"dndx_{tier}_allz"]),
-            "omega_allz": _q(red[f"omega_{tier}_allz"]),
             "dndx_coarse_z": [_q(red[f"dndx_{tier}_coarse"][:, q])
                               for q in range(red[f"dndx_{tier}_coarse"].shape[1])],
-            "omega_coarse_z": [_q(red[f"omega_{tier}_coarse"][:, q])
-                               for q in range(red[f"omega_{tier}_coarse"].shape[1])],
         }
+        # --- DECISION 4 at the dN/dX emission point --------------------------
+        # dN/dX is not refused by decision 1 (it is a line density, so an open
+        # top is harmless), but decision 4 still applies: Paper 1 reports only
+        # >= 19.7, and a tier whose floor is below that integrates the
+        # non-identifiable [19.5, 19.7) edge and/or the schema-v1.1 pad.  Such a
+        # tier is kept as a DIAGNOSTIC and marked, with the offending basis bins
+        # NAMED, so a downstream reader cannot mistake it for a measurement.
+        if not tdec["paper_facing"]:
+            blk["dndx_paper_facing_REFUSED"] = {
+                "reason": tdec["reason"],
+                "subwindow_bins": red.get(f"subwindow_bins_{tier}", []),
+                "reporting_floor": RP.NONIDENT_EDGE,
+                "guard_scope": RP.SUBWINDOW_GUARD_SCOPE["what_is_NOT_guarded"],
+            }
+        # --- PI DECISION 1: Omega_HI is emitted ONLY inside [19.7, 21.6] -----
+        # dN/dX is a LINE DENSITY and is unaffected by this ruling; Omega_HI is
+        # an N-WEIGHTED MASS whose integral is dominated by the top of the
+        # window, which is exactly where the response is extrapolated. An
+        # unqualified/open-topped Omega is REFUSED with its reason attached, in
+        # the schema — there is no tail extrapolation here, by design.
+        if dec["emit"]:
+            blk["omega_allz"] = _q(red[f"omega_{tier}_allz"])
+            blk["omega_coarse_z"] = [
+                _q(red[f"omega_{tier}_coarse"][:, q])
+                for q in range(red[f"omega_{tier}_coarse"].shape[1])]
+            blk["omega_label"] = dec["label"]
+            blk["omega_window_logN"] = dec["window_logN"]
+        else:
+            blk["omega_allz"] = None
+            blk["omega_coarse_z"] = None
+            blk["omega_REFUSED"] = dec
         out["tiers"][tier] = blk
     # the tier RATIO, formed PER DRAW (the whole point of one coupled posterior)
     if "dndx_subdla_195_203_allz" in red and "dndx_dla_20p3_allz" in red:
@@ -430,9 +532,14 @@ def plugin_map_diagnostic(pack, cfg=None, *, num_steps=2000, lr=0.05, seed=0):
     for tier in TIERS:
         if f"dndx_{tier}_allz" not in red:
             continue
+        dec = (red.get("omega_decisions") or {}).get(tier, {})
         point["tiers"][tier] = {
             "dndx_allz": float(red[f"dndx_{tier}_allz"][0]),
-            "omega_allz": float(red[f"omega_{tier}_allz"][0]),
+            # PI decision 1: no unqualified Omega, diagnostic or not
+            "omega_allz": (float(red[f"omega_{tier}_allz"][0])
+                           if dec.get("emit") else None),
+            "omega_label": dec.get("label"),
+            "omega_REFUSED": (None if dec.get("emit") else dec.get("reason")),
         }
     point["svi_final_loss"] = float(np.asarray(res.losses)[-1])
     point["svi_num_steps"] = int(num_steps)

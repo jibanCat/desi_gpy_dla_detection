@@ -448,9 +448,27 @@ def test_plugin_map_is_labelled_and_carries_no_band(spack):
     m = MA.plugin_map_diagnostic(spack, cfg, num_steps=200)
     assert m["estimand"] == "PLUGIN_MAP"
     assert m["band"] is None, "a plug-in MAP must never carry a band"
+    n_refused = 0
     for tier, blk in m["tiers"].items():
-        assert set(blk) == {"dndx_allz", "omega_allz"}
+        # PI DECISION 1 (2026-07-29) added the Omega refusal to this diagnostic
+        # too: an unqualified/open-topped Omega is NEVER emitted, not even
+        # without a band, and the refusal carries its reason IN THE SCHEMA.
+        assert set(blk) == {"dndx_allz", "omega_allz",
+                            "omega_label", "omega_REFUSED"}, (tier, sorted(blk))
         assert np.isfinite(blk["dndx_allz"]) and blk["dndx_allz"] > 0
+        # exactly one of {emitted, refused} -- never both, never neither
+        emitted = blk["omega_allz"] is not None
+        refused = blk["omega_REFUSED"] is not None
+        assert emitted != refused, (tier, blk["omega_allz"], blk["omega_REFUSED"])
+        if emitted:
+            assert blk["omega_label"] == "OMEGA_HI_LIMITED_19.7_21.6", tier
+            assert np.isfinite(blk["omega_allz"]) and blk["omega_allz"] > 0
+        else:
+            n_refused += 1
+            assert blk["omega_label"] is None, tier
+            assert blk["omega_REFUSED"].startswith("REFUSED"), tier
+    # the open-topped tiers MUST be among the refused, or the guard is inert
+    assert n_refused >= 2, m["tiers"]
 
 
 # ==========================================================================
@@ -634,13 +652,25 @@ def test_the_two_invented_tolerances_are_declared_provisional():
         assert k in RP.GATE, k
 
 
-def test_the_ratified_tolerances_are_not_marked_provisional():
-    """The flag must DISCRIMINATE: the pre-existing z/chi2 tolerances are not
-    provisional, so a blanket 'everything is provisional' passes nothing."""
+def test_the_other_tolerances_are_not_marked_provisional():
+    """The flag must DISCRIMINATE: only the two the PI DECLINED are on it, so
+    a blanket 'everything is provisional' passes nothing.
+
+    🔴 RENAMED 2026-08-05.  This test used to be called
+    ``test_the_ratified_tolerances_are_not_marked_provisional``, which asserted
+    in its own name that all five of these are ratified.  ONE of them is
+    (chi2_dof_max).  "not on the PROVISIONAL list" and "ratified" are
+    different properties and conflating them is the defect itself; the
+    authority of each is pinned separately against ``reporting.GATE_AUTHORITY``.
+    """
     from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    from CDDF_analysis.hbi_mcmc import reporting as REP
     for k in ("z_total_max", "z_bin_max", "chi2_dof_max",
               "z_zbin_max", "z_snrbin_max"):
         assert k not in RP.PROVISIONAL_GATE_TOLERANCES, k
+    assert REP.gate_tolerance_is_ratified("chi2_dof_max")
+    for k in ("z_total_max", "z_bin_max", "z_zbin_max", "z_snrbin_max"):
+        assert not REP.gate_tolerance_is_ratified(k), k
 
 
 def test_the_gate_report_carries_the_provisional_flag(spack):
@@ -679,9 +709,124 @@ def test_an_unratified_arm_reports_an_advisory_and_says_it_does_not_block(
     from CDDF_analysis.hbi_mcmc import run_posterior as RP
     fake_fold(_flat_tab(ratio_by_z=(1.22, 0.78)))    # span 0.44, |z| tiny
     g = RP.forward_closure_gate(spack)
+    # MERGE NOTE (gate x adopted-basis): the span arms are DISARMED on the
+    # integrated tree per the PI direction of 2026-08-05 (advisory diagnostics,
+    # not gates), so the exceedance is an ADVISORY, not a failure. The
+    # adopted-basis branch asserted the pre-disarm behaviour here; that side is
+    # superseded. Its authority-table tests below are kept in full.
     assert g["pass"] is True, g["failures"]
     adv = [a for a in g["advisories"] if "ratio_span_by_z" in a]
     assert adv, g["advisories"]
     assert "UNRATIFIED" in adv[0].upper()
     assert "does not block" in adv[0].lower()
     assert not any("ratio_span" in f for f in g["failures"]), g["failures"]
+
+
+# ==========================================================================
+# GATE AUTHORITY (2026-08-05)
+#
+# ``adopted_config`` wrote gate_tolerances_ratified=["z_total_max",
+# "z_bin_max","chi2_dof_max"] into a committed artifact.  Decision 8 ratified
+# chi2/dof <= 3 and called |z| <= 5 MALFORMED, sending it back for
+# restatement.  The authority table now lives in ``reporting.GATE_AUTHORITY``;
+# these tests pin what the GATE actually does against what that table CLAIMS
+# it does -- in BOTH directions, because a record that under-states gating is
+# as false as one that over-states authority.
+# ==========================================================================
+
+_ALL_Z_ARMS = ("z_total_max", "z_bin_max", "z_zbin_max", "z_snrbin_max")
+
+
+def _gate_probe(pack, name):
+    """Does ``name`` contribute to pass/fail?  MEASURED, by making that one
+    tolerance impossible on an otherwise-perfect fold."""
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    g = dict(RP.GATE)
+    g[name] = -1.0
+    return not RP.forward_closure_gate(pack, gate=g)["pass"]
+
+
+def test_declared_gating_matches_what_the_gate_MEASURABLY_does(spack, fake_fold):
+    """🔴 The honesty pin, run in both directions on all seven tolerances.
+
+    ``contributes_to_pass_fail`` in ``reporting.GATE_AUTHORITY`` is a claim
+    about behaviour, so it is checked BEHAVIOURALLY rather than read from a
+    docstring.  On this branch all seven arms gate, including the two
+    ratio-span arms the PI declined -- which is recorded honestly rather than
+    asserted away.  When a sibling stream makes the span arms report-only,
+    THIS TEST GOES RED until the record is updated to match.  That is the
+    intended failure mode.
+
+    MUTATION: set any record's ``contributes_to_pass_fail`` to False while the
+    arm still calls fails.append -> RED.
+    """
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    fake_fold(_flat_tab())                      # a perfect fold: baseline PASS
+    assert RP.forward_closure_gate(spack)["pass"] is True
+    for name in RP.GATE:
+        measured = _gate_probe(spack, name)
+        declared = REP.gate_tolerance_gates(name)
+        verb = "does" if measured else "does NOT"
+        assert measured == declared, (
+            f"{name}: GATE_AUTHORITY declares contributes_to_pass_fail="
+            f"{declared} but the gate measurably {verb} refuse on it")
+
+
+def test_a_refusal_on_an_unratified_z_arm_says_it_is_not_ratified(
+        spack, fake_fold):
+    """Until 2026-08-05 only the two DECLINED span arms were labelled in a
+    refusal, so a reader of a |z| refusal reasonably concluded the arm was
+    authorised.  Every unratified arm must now name its own status.
+
+    MUTATION: drop the ``_tag(...)`` call from the |z| branches of
+    ``forward_closure_gate`` -> RED.
+    """
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    fake_fold(_flat_tab())
+    for name, needle in (("z_total_max", "|z_total|"),
+                         ("z_bin_max", "max|z_bin|"),
+                         ("z_zbin_max", "max|z| in by_z"),
+                         ("z_snrbin_max", "max|z| in by_snr")):
+        g = dict(RP.GATE)
+        g[name] = -1.0
+        r = RP.forward_closure_gate(spack, gate=g)
+        bad = [f for f in r["failures"] if needle in f]
+        assert bad, (name, r["failures"])
+        assert all("NOT RATIFIED" in f.upper() for f in bad), (name, bad)
+    # and the RATIFIED arm must NOT be tagged -- the label has to discriminate
+    g = dict(RP.GATE)
+    g["chi2_dof_max"] = -1.0
+    r = RP.forward_closure_gate(spack, gate=g)
+    chi2 = [f for f in r["failures"] if f.startswith("chi2/dof=")]
+    assert chi2, r["failures"]
+    assert all("RATIFIED" not in f.upper() for f in chi2), chi2
+
+
+def test_the_gate_report_and_stamp_carry_the_full_authority_picture(spack):
+    """A reader of the artifact alone must not be able to infer "everything
+    not on the PROVISIONAL list is ratified" -- that inference is what put two
+    |z| arms into a committed artifact as PI-ratified.
+
+    MUTATION: restore ``gate_tolerances_ratified=["z_total_max","z_bin_max",
+    "chi2_dof_max"]`` anywhere -> RED.
+    """
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    from CDDF_analysis.hbi_mcmc import model_a as _MA
+    g = RP.forward_closure_gate(spack)
+    assert g["gate_tolerances_ratified"] == ["chi2_dof_max"]
+    assert set(g["gate_tolerances_ratified"]) <= set(REP.PI_RATIFIED_ITEMS)
+    assert set(g["gate_tolerances_restated_not_ratified"]) == set(_ALL_Z_ARMS)
+    assert set(g["gate_tolerances_unratified_but_gating"]) >= set(_ALL_Z_ARMS)
+    md = RP.stamp_metadata(
+        code_commit="0" * 40, code_dirty=False,
+        cfg=_MA.ModelAConfig(num_warmup=1, num_samples=1, num_chains=1),
+        args={"rederive": "x"}, gate_report=g,
+        estimand="POSTERIOR_MEDIAN_CI", paper_facing=False)
+    assert md["gate_tolerances_ratified"] == ["chi2_dof_max"]
+    assert set(md["gate_tolerances_restated_not_ratified"]) == set(_ALL_Z_ARMS)
+    # the note must forbid the fatal inference in so many words
+    note = md["gate_tolerances_provisional_note"]
+    assert "DO NOT READ THIS LIST AS 'everything else is ratified'" in note
+    assert "Exactly ONE tolerance in GATE is ratified" in note

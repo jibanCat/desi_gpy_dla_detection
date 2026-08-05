@@ -47,6 +47,17 @@ _Z_ARMS = ("z_total_max", "z_bin_max", "z_zbin_max", "z_snrbin_max")
 _PI_RATIFIED = ("chi2_dof_max", "fail_closed_framework",
                 "matched_configuration_sbc")
 
+#: ... and the subset of those that are actually GATE TOLERANCES.
+#: 🔴 MERGE (2026-08-05, gate x adopted-basis). Only ONE of the three ratified
+#: items is a number in ``run_posterior.GATE``. ``fail_closed_framework`` and
+#: ``matched_configuration_sbc`` are ratified COMMITMENTS, not thresholds. A
+#: field named ``gate_tolerances_ratified`` that listed all three would say
+#: three of the seven gate arms carry ratified authority, when exactly one
+#: does -- an overstatement of ratified authority, which is the family of error
+#: this whole correction exists to undo. The adopted-basis stream's test caught
+#: the conflation; this constant records the distinction.
+_PI_RATIFIED_GATE_TOLERANCES = ("chi2_dof_max",)
+
 #: the introduction commit of each |z| arm, as `git log -S<name>` reports it.
 #: ``z_zbin_max`` / ``z_snrbin_max`` were added on 2026-07-29 in the SAME HUNK
 #: as the two span numbers the PI declined -- they pre-date nothing.
@@ -195,8 +206,44 @@ def test_no_docstring_or_stamp_string_calls_an_UNRATIFIED_criterion_RATIFIED():
     for m in mods:
         if m.name == "ratification.py":
             continue                       # the record itself; tested above
-        txt = re.sub(r"\s+", " ", m.read_text())
-        for sent in re.split(r"(?<=[.!?])\s", txt):
+        # MERGE FIX (2026-08-05): scan PROSE, not raw source.
+        #
+        # This guard is about what the module SAYS -- its name is "no docstring
+        # or stamp string calls ...". It used to flatten the whole file and
+        # split on `[.!?]\s`, but CODE has almost no sentence terminators, so
+        # unrelated statements ran together into one pseudo-sentence: e.g.
+        # `_DECLINED_PAIR = ("ratio_span_by_z_max", "ratio_span_by_snr_max")`
+        # followed by the `_ratified()` factory (which legitimately contains
+        # `"status": RATIFIED`) was read as calling the span arms RATIFIED. The
+        # merge surfaced this by adding code to reporting.py; it is a defect in
+        # the guard, not in the module.
+        #
+        # Prose = docstrings + string literals (via ast) + comments (via regex,
+        # since comments are absent from the AST). That is strictly what the
+        # test claims to check, and it keeps full power: an unqualified claim
+        # written in a docstring, a stamp string OR a comment is still caught.
+        import ast as _ast
+        src = m.read_text()
+        prose = []
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:                # pragma: no cover - not expected
+            tree = None
+        if tree is not None:
+            for node in _ast.walk(tree):
+                if isinstance(node, _ast.Constant) and isinstance(
+                        node.value, str):
+                    prose.append(node.value)
+        prose.extend(re.findall(r"#(.*)", src))
+        # Each prose chunk is its OWN unit -- joining them manufactured
+        # adjacency between unrelated literals (dict KEYS like "status" and
+        # the bare enum value "RATIFIED" landed beside the pi_disposition text
+        # and read as one sentence). Cross-literal adjacency is not prose.
+        sentences = []
+        for chunk in prose:
+            flat = re.sub(r"\s+", " ", chunk)
+            sentences.extend(re.split(r"(?<=[.!?])[\s\"'\)\]]", flat))
+        for sent in sentences:
             if "RATIFIED" not in sent:
                 continue
             # the qualified forms are the CORRECT way to mention these names
@@ -515,7 +562,8 @@ def test_the_z_marginal_arms_still_gate(spack, fake_fold):
 def test_the_gate_report_and_the_stamp_carry_the_ratification_state(spack):
     g = RP.forward_closure_gate(spack)
     assert set(g["gate_tolerances_unratified"]) == set(_SPAN_TOLERANCES)
-    assert set(g["gate_tolerances_ratified"]) == set(_PI_RATIFIED)
+    # gate TOLERANCES, not all ratified ITEMS -- see _PI_RATIFIED_GATE_TOLERANCES
+    assert set(g["gate_tolerances_ratified"]) == set(_PI_RATIFIED_GATE_TOLERANCES)
     assert set(g["gate_tolerances_unratified_but_gating"]) == set(_Z_ARMS)
     assert g["unratified_effect"] == "REPORT_ONLY_DOES_NOT_GATE"
     assert g["ratification"]["ratification_date"] == "2026-07-29"

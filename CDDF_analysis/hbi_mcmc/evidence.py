@@ -56,6 +56,7 @@ import warnings
 
 import numpy as np
 
+from CDDF_analysis.hbi_mcmc import reporting as RP
 from CDDF_analysis.hbi_mcmc.model_a import (
     POLICY, _MASK_LO, _MASK_HI, _THRESHOLDS, reduce_f_posterior)
 from CDDF_analysis.hbi_mcmc import ratification as _RAT
@@ -549,12 +550,29 @@ def ppc_block(run, pack, consts, *, n_rep_draws=300, seed=0):
 # ============================================================================
 
 def _truth_reported(pack):
-    """The truth counterpart of every name in ``reported_quantities``."""
+    """The truth counterpart of every name in ``reported_quantities``.
+
+    🔴 SUPPORT MATCHING IS THE WHOLE POINT OF THIS ROUTINE.  ``reduce_f_posterior``
+    integrates a tier with DEX-OVERLAP weights (``reporting.window_overlap_weights``),
+    because on the adopted 0.2-dex latent basis a threshold like 20.0 is NOT a
+    basis edge.  This function must therefore weight truth COUNTS by the same
+    overlap, expressed as a FRACTION of the bin (``reporting.truth_overlap_fractions``).
+
+    It did NOT, until 2026-07-29: it selected basis bins by CENTRE and weighted
+    whole bins.  On a 0.2-dex basis the posterior then integrated half of
+    [19.9, 20.1) while the truth integrated all of it, and ``closure_block`` /
+    ``analyze_rung9`` compared two different estimands -- a ~20% spurious deficit
+    on ``dndx_20p0_integrated`` (measured 0.787 at f = f_true) that was PURE
+    BOOKKEEPING.  That is [[one-sided support]], the class that has now bitten
+    this project five times.  The regression test is
+    ``test_truth_side_uses_the_same_window_convention_as_the_posterior`` and it
+    runs on a COARSE pack, because the 0.1-dex equivalence test is green under
+    both conventions and could never have caught it.
+    """
     if pack.truth_counts is None:
         raise ValueError("closure needs a mock pack (truth_counts)")
     ntrue = np.asarray(pack.ntrue_edges, float)
     Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
-    dN = np.diff(ntrue)
     kz = np.asarray(pack.kz_to_K)
     dX_k = np.asarray(pack.dX, float).sum(axis=1)
     tc = np.asarray(pack.truth_counts, float)                   # (B, Kf)
@@ -564,22 +582,31 @@ def _truth_reported(pack):
     # integrated_total is reduce_f_posterior's sum_{b reported, k} f dN -- a
     # PLAIN sum over fine-z (not a pathlength-weighted mean), so its truth
     # counterpart is sum_k (counts in that z slice) / dX_k of that slice.
+    # No window is involved: the reported support is a whole-bin selection on
+    # both sides (the observed floor is always an exact basis edge, enforced by
+    # validate_pack), so no overlap fraction is needed here.
     out["integrated_total"] = float(
         (tc[reported, :].sum(axis=0) / dX_k).sum())
     n_out["integrated_total"] = float(tc[reported].sum())
+    w_omega = 10.0 ** (Nc - 21.0)
     for thr in _THRESHOLDS:
-        tg, sel = _tag(thr), Nc >= thr - 1e-9
-        w = 10.0 ** (Nc - 21.0)
-        for stat, wt in (("dndx", np.ones_like(Nc)), ("omega", w)):
-            num_k = (tc[sel, :] * wt[sel, None]).sum(axis=0)     # (Kf,)
-            n_k = tc[sel, :].sum(axis=0)
+        tg = _tag(thr)
+        # THE SAME SUPPORT the posterior integrates: overlap of [thr, inf) with
+        # each basis bin, as a fraction of that bin, zeroed off the reported
+        # support exactly as reduce_f_posterior's ``_wts`` does.
+        frac = np.where(reported,
+                        RP.truth_overlap_fractions(ntrue, thr, np.inf), 0.0)
+        # 10^(Nc - 21) uses the FULL basis-bin centre on both sides -- matching
+        # the estimand is the requirement, not re-centring the sub-interval.
+        for stat, wt in (("dndx", np.ones_like(Nc)), ("omega", w_omega)):
+            num_k = (tc * (wt * frac)[:, None]).sum(axis=0)      # (Kf,)
+            n_k = (tc * frac[:, None]).sum(axis=0)
             out[f"{stat}_{tg}_integrated"] = float(num_k.sum() / dX_k.sum())
             n_out[f"{stat}_{tg}_integrated"] = float(n_k.sum())
             for K in range(pack.n_kk):
                 m = kz == K
                 out[f"{stat}_{tg}_z{K}"] = float(num_k[m].sum() / dX_k[m].sum())
                 n_out[f"{stat}_{tg}_z{K}"] = float(n_k[m].sum())
-    _ = dN
     return out, n_out
 
 

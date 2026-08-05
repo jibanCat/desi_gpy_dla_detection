@@ -32,6 +32,7 @@ import time
 
 import numpy as np
 
+from CDDF_analysis.hbi_mcmc import reporting as RP
 from CDDF_analysis.hbi_mcmc.pack import load_pack
 from CDDF_analysis.hbi_mcmc.model_a import _THRESHOLDS, _MASK_LO, _MASK_HI
 
@@ -59,20 +60,31 @@ def truth_tier_table(pack):
       n_truth / dndx_truth / omega_truth : (KK,) per coarse-z bin,
     plus f_truth_coarse (B, KK) and n_truth_coarse_cells (B, KK) for the
     per-cell CDDF closure, and dX_coarse (KK,).
+
+    🔴 The threshold selection uses the SAME dex-overlap convention as
+    ``reduce_f_posterior`` (``reporting.truth_overlap_fractions``).  It used to
+    select by bin CENTRE and weight whole bins, which on the adopted 0.2-dex
+    latent basis (where 20.0 is not a basis edge) made this table a DIFFERENT
+    estimand from the posterior it is compared against -- a ~20% spurious deficit
+    on the 20.0 tier that was pure bookkeeping ([[one-sided support]], referee
+    defect 2, 2026-07-29).
     """
     if pack.truth_counts is None:
         raise ValueError("pack has no truth_counts (mock packs only)")
     Nc, dN, dX_k, kz, dX_K = _grids(pack)
     KK = pack.n_kk
     tc = np.asarray(pack.truth_counts, float)
+    ntrue = np.asarray(pack.ntrue_edges, float)
+    reported = Nc >= float(np.asarray(pack.nhat_edges, float)[0]) - 1e-9
 
     out = {"dX_coarse": dX_K}
     for thr in _THRESHOLDS:
-        sel = Nc >= thr - 1e-9
-        n_K = np.array([tc[np.ix_(sel, kz == K)].sum() for K in range(KK)])
-        om_K = np.array([
-            (tc[np.ix_(sel, kz == K)].sum(axis=1)
-             * 10.0 ** (Nc[sel] - 21.0)).sum() for K in range(KK)])
+        frac = np.where(reported,
+                        RP.truth_overlap_fractions(ntrue, thr, np.inf), 0.0)
+        n_bk = tc * frac[:, None]                                 # (B, Kf)
+        om_bk = n_bk * (10.0 ** (Nc - 21.0))[:, None]
+        n_K = np.array([n_bk[:, kz == K].sum() for K in range(KK)])
+        om_K = np.array([om_bk[:, kz == K].sum() for K in range(KK)])
         out[_tag(thr)] = {"n_truth": n_K, "dndx_truth": n_K / dX_K,
                           "omega_truth": om_K / dX_K}
     n_cells = np.stack([tc[:, kz == K].sum(axis=1) for K in range(KK)], axis=1)
