@@ -24,6 +24,7 @@ loa-124) and this module holds no values at all, mock or otherwise.
 from __future__ import annotations
 
 import copy
+import glob
 import hashlib
 import importlib.util
 import json
@@ -311,6 +312,81 @@ def test_tombstones_carry_no_science_values(name):
 
 
 # ===========================================================================
+# REGISTRY CLOSURE -- the guards above are parametrised over TOMBSTONED, so a
+# tombstone that is not IN TOMBSTONED is never examined by any of them.
+# ===========================================================================
+def _tombstones_on_disk():
+    """Every ``*.tombstone.json`` physically in the tombstone directory."""
+    return sorted(os.path.basename(p) for p in
+                  glob.glob(os.path.join(TOMB_DIR, "*.tombstone.json")))
+
+
+def test_the_tombstone_directory_holds_EXACTLY_the_registered_set():
+    """Close the registry against the filesystem.
+
+    Every other guard in this module is ``@parametrize("name", sorted(TOMBSTONED))``:
+    it iterates a WHITELIST, not the directory. So the hard rules -- no float leaves, no
+    ``paper_facing``, an allow-listed defect code, ``must_not_reuse_identity`` -- are
+    enforced only on files that someone remembered to register. A ``*.tombstone.json``
+    added to the directory and NOT added to ``TOMBSTONED`` is examined by nothing.
+
+    That is this project's signature defect class, in the guard layer itself: the
+    enumerated set (``TOMBSTONED``) and the real population (the directory) live on
+    DIFFERENT SUPPORTS, and the guards run on the smaller one. Measured by an independent
+    referee: a fifth, clean-stamped ``rogue.tombstone.json`` carrying a float science value
+    ``retirement.smuggled_R0 = 0.9137``, ``defects[0].code = "NOT_A_REAL_CODE"`` and
+    ``metadata.paper_facing = true`` was committed to the directory and the suite reported
+    63 passed, 1 skipped, 0 failed.
+
+    This test is the decisive missing check. With the two sets pinned equal, every
+    parametrised guard above becomes TOTAL over what is actually on disk: an unregistered
+    tombstone can no longer exist silently, and a registered-but-absent one is caught too.
+    """
+    on_disk = set(_tombstones_on_disk())
+    registered = set(TOMBSTONED)
+    unregistered = sorted(on_disk - registered)
+    missing = sorted(registered - on_disk)
+    assert not unregistered, (
+        f"{unregistered} sit in {TOMB_DIR_REL} but are NOT in TOMBSTONED, so NONE of the "
+        "hard-rule guards in this module inspect them -- a tombstone can smuggle a float "
+        "science value, paper_facing=true or an unknown defect code past a green suite. "
+        "Register them in TOMBSTONED (and give each a retired artifact path), or remove "
+        "them.")
+    assert not missing, (
+        f"{missing} are registered in TOMBSTONED but absent from {TOMB_DIR_REL}. Their "
+        "guards would be collected against a file that does not exist.")
+
+
+@pytest.mark.parametrize("name", _tombstones_on_disk())
+def test_every_tombstone_ON_DISK_obeys_the_hard_rules(name):
+    """Defence in depth: apply the content rules to what is DISCOVERED, not to the registry.
+
+    The closure test above is the primary guard. This one is deliberately redundant with
+    it, and parametrised over the DIRECTORY rather than ``TOMBSTONED``, so that the hard
+    rules still bite during the window in which someone adds a file and widens the registry
+    in the same change without looking at its contents. Redundancy is the point: the two
+    tests fail for different reasons.
+    """
+    with open(os.path.join(TOMB_DIR, name), "rb") as fh:
+        tomb = json.loads(fh.read().decode("utf-8"))
+    floats = [p for p, v in _walk(tomb)
+              if isinstance(v, float) and not isinstance(v, bool)]
+    assert floats == [], (
+        f"{name} carries float leaves at {floats} -- a tombstone must hold no retired "
+        "science value (SCHEMA.md hard rule 1).")
+    assert tomb.get("metadata", {}).get("paper_facing") is False, (
+        f"{name} does not declare metadata.paper_facing = false.")
+    assert tomb.get("values_policy", {}).get("carries_science_values") is False, (
+        f"{name} does not declare values_policy.carries_science_values = false.")
+    codes = [d.get("code") for d in tomb.get("retirement", {}).get("defects", [])]
+    assert codes, f"{name} declares no defect codes."
+    bad = sorted(set(codes) - ALLOWED_DEFECT_CODES)
+    assert not bad, (
+        f"{name} declares defect codes {bad} outside ALLOWED_DEFECT_CODES "
+        f"{sorted(ALLOWED_DEFECT_CODES)}.")
+
+
+# ===========================================================================
 # schema integrity
 # ===========================================================================
 @pytest.mark.parametrize("name", sorted(TOMBSTONED))
@@ -348,6 +424,39 @@ def test_tombstone_schema_required_fields(name):
         assert ret["recoverable_from_git"] is False, (
             f"{name} claims a DIRTY stamp yet recoverable_from_git=True. The working tree "
             "that produced it was never committed, so git cannot supply it.")
+    else:
+        # The CLEAN side had NO constraint, so `recoverable_from_git` and its
+        # `recovery_note` were verified by nothing on exactly the record that asserts
+        # recoverability -- an independent referee flipped both on the CLEAN record and
+        # measured 57 passed / 7 skipped / 0 failed off-host. The DIRTY rule above cannot
+        # cover it (it fires only on the dirty code), so the claim is checked against git
+        # HERE, rather than trusted.
+        assert ret["recoverable_from_git"] is True, (
+            f"{name} carries no DIRTY_STAMP_NOT_REDERIVABLE defect, so its stamp is a "
+            "clean commit and the producing source IS in git. recoverable_from_git=False "
+            "understates what git holds; if the source is genuinely gone, say why with a "
+            "defect code.")
+        stamp = tomb["artifact"]["stamped_code_commit"]
+        assert not stamp.endswith("-dirty") and len(stamp) == 40, (
+            f"{name} claims recoverability from stamp {stamp!r}, which is not a clean "
+            "40-char sha.")
+        assert _git("cat-file", "-e", stamp).returncode == 0, (
+            f"{name} claims recoverability from {stamp}, which is not in this repository.")
+        # ...and the PRODUCING routine must actually be retrievable AT that commit. This is
+        # the part a flipped boolean cannot fake. Note the producer is the script named in
+        # `rederive_command_as_stamped` -- NOT `metadata.routine`, which is the tombstone
+        # BUILDER and postdates the retired artifact entirely.
+        cmd = tomb["artifact"]["rederive_command_as_stamped"]
+        producers = [t for t in cmd.split() if t.endswith(".py")]
+        assert len(producers) == 1, (
+            f"{name}: could not identify a unique producing script in "
+            f"rederive_command_as_stamped={cmd!r} (found {producers}). The recoverability "
+            "claim is only checkable if the record names what to recover.")
+        producer = producers[0]
+        assert _git("cat-file", "-e", f"{stamp}:{producer}").returncode == 0, (
+            f"{name} claims recoverable_from_git=True, but {producer!r} does not exist at "
+            f"the stamped commit {stamp[:12]}. Either the claim is false or the record "
+            "names the wrong producing routine.")
 
     # the tombstone's own stamp must be a clean 40-char sha
     mc = tomb["metadata"]["code_commit"]
