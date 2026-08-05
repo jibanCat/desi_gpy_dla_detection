@@ -318,14 +318,17 @@ this geometry's own null recovers most of that (`d ≈ 0.14`) at a false-alarm
 rate of 0.007 rather than 0.089. The calibrated value is **not** proposed for
 ratification: it is synthetic, and by §2.1 its false-alarm rate is optimistic.
 
-### 🔴 PI DECISION REQUESTED — not resolved here
+### 🔴 PI DECISION REQUESTED — ANSWERED 2026-08-05
 
 Recorded in code as
-`CDDF_analysis.hbi_mcmc.ratification.OPEN_PI_DECISIONS['span_arms_disarmed']`.
-The instruction this stream was given was that an *unratified* tolerance must not
-gate, and the span arms were accordingly moved to report-only. The measurement
-above shows that this is not cost-free, so the tradeoff goes back rather than
-being settled by whoever happened to be editing the file:
+`CDDF_analysis.hbi_mcmc.ratification.pi_decision('span_arms_disarmed')`. It was
+carried as `OPEN_PI_DECISIONS['span_arms_disarmed']` until 2026-08-05, when the
+PI answered it; `pi_decision` reads both the open and the resolved view, so a
+pointer written before that date still lands. The instruction this stream was
+given was that an *unratified* tolerance must not gate, and the span arms were
+accordingly moved to report-only. The measurement above shows that this is not
+cost-free, so the tradeoff went back rather than being settled by whoever
+happened to be editing the file:
 
 * **Option 1 — leave both span arms report-only (current state).** Cost: no
   armed guard fires on a z-tilt below `d ≈ 0.20`; the standing z-marginal tilt
@@ -341,10 +344,32 @@ being settled by whoever happened to be editing the file:
   down to `d ≈ 0.14` at a defensible, *measured* false-alarm rate.
   Compute cost is negligible (~1.5 min, one core, no MCMC; §4).
 
-Neither option is adopted here. Note also that `ratio_span_by_snr` is inert at
+Neither option was adopted here. Note also that `ratio_span_by_snr` is inert at
 `0.15` on every production geometry measured, so nothing in this decision turns
 on it; if the by_snr arm is ever to mean anything it needs its own threshold,
 which is §5 bullet 3.
+
+#### THE ANSWER (PI direction, 2026-08-05)
+
+**Option 1.** Verbatim: *"Keep span-by-z and span-by-SNR active as advisory
+diagnostics, not ratified hard gates."* Both halves bind — deleting the arms
+would disobey *active*, arming them would disobey *not ratified hard gates* —
+and the code already does exactly that, so no arm, threshold or code path
+changes. **Option 2 is CLOSED**: the same direction says any span-based or
+z-based threshold must be *"precisely defined; calibrated under production
+geometry; tested for false-alarm behavior; proposed prospectively at a PI
+checkpoint"*, so `0.1292` is available only as a future prospective proposal
+meeting all four conditions, not as something this document can adopt.
+
+The measured cost does **not** go away with the decision; it becomes a stated
+limitation. The last column of the §4.1 table is the limitation: no armed guard
+fires on a z-tilt below `d ≈ 0.20`.
+
+The direction also says *"The only currently ratified numerical closure gate is
+chi2/dof ≤ 3"*, which **relabels** the four `|z| ≤ 5` arms without disarming
+them. That decision — ratify the restated criterion, disarm the two 2026-07-29
+arms, or carry it as a stated limitation — stays open as
+`pi_decision('z_arms_gate_unratified')`, and all four arms stay armed.
 
 ---
 

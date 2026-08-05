@@ -831,19 +831,99 @@ def test_ratio_span_power_null_row_reproduces_the_null_false_alarm_rate(spack):
     assert 0.25 < pw["false_alarm_span_arm"] < 0.45, pw
 
 
-def test_the_disarm_decision_is_recorded_as_an_OPEN_PI_TRADEOFF(geom_report):
+def test_the_disarm_decision_was_HANDED_BACK_and_has_since_been_ANSWERED(
+        geom_report):
     """My instruction was that an unratified tolerance must not gate -- and
     that if disarming removes the only guard against the standing z-marginal
-    defect, that must be said plainly and handed back, not resolved here."""
-    d = RAT.OPEN_PI_DECISIONS["span_arms_disarmed"]
-    assert "PI" in RAT.OPEN_PI_DECISIONS_NOTE
+    defect, that must be said plainly and handed back, not resolved here.
+
+    It was handed back, and on 2026-08-05 the PI answered it: "Keep span-by-z
+    and span-by-SNR active as advisory diagnostics, not ratified hard gates."
+    The entry therefore moves OPEN -> RESOLVED, and the MEASURED COST does not
+    disappear with it -- it becomes a stated limitation."""
+    d = RAT.RESOLVED_PI_DECISIONS["span_arms_disarmed"]
+    assert d["status"] == "RESOLVED"
+    assert d["resolved_date"] == "2026-08-05"
+    assert "2026-08-05" in d["resolved_by"]
+    # the ANSWER is quoted, not paraphrased, and it is the PI's own words
+    assert "advisory diagnostics" in d["resolution"]
+    assert "not ratified hard gates" in d["resolution"]
+    # the cost survives the resolution
     assert "5x4x2" in d["measured_tradeoff"]
     assert "0.0894" in d["measured_tradeoff"] or "0.08" in d["measured_tradeoff"]
-    assert d["what_the_code_does_meanwhile"]
-    # the artifact must point at the tradeoff rather than settle it
+    assert "DOES NOT MAKE THIS COST GO AWAY" in d["measured_tradeoff"].upper()
+    # ... and it is no longer open, in EITHER direction
+    assert "span_arms_disarmed" not in RAT.OPEN_PI_DECISIONS
+    assert "PI" in RAT.OPEN_PI_DECISIONS_NOTE
+    # the artifact must still point at the tradeoff rather than settle it
     assert "PI TRADEOFF" in geom_report["verdict"]
-    assert "not resolved here" in geom_report["verdict"]
-    assert "OPEN_PI_DECISIONS" in geom_report["verdict"]
+    assert "not resolved by this routine" in geom_report["verdict"]
+    assert "pi_decision('span_arms_disarmed')" in geom_report["verdict"]
+
+
+def test_the_z_arms_decision_was_RELABELLED_by_the_PI_and_is_STILL_OPEN():
+    """🔴 THE ASYMMETRY THAT MATTERS.  The 2026-08-05 direction says the only
+    ratified numerical closure gate is chi2/dof <= 3 and lists four conditions
+    a z-based threshold would have to meet.  That RELABELS the |z| arms; it
+    does not disarm them and does not ratify them.  Reading a relabelling as a
+    disarm order would be the same unilateral act as the fabrication, in the
+    other direction, so the decision stays OPEN and all four stay ARMED."""
+    assert "z_arms_gate_unratified" in RAT.OPEN_PI_DECISIONS
+    d = RAT.PI_DECISIONS["z_arms_gate_unratified"]
+    assert d["status"] == "OPEN"
+    assert "RELABELLED, NOT RESOLVED" in d["pi_direction_2026_08_05"]
+    assert "resolution" not in d and "resolved_date" not in d
+    # behaviour, not prose: all four still gate
+    for key in _Z_ARMS:
+        assert RAT.gates(key) is True, key
+        assert RAT.is_ratified(key) is False, key
+    # the direction is recorded VERBATIM, dated and sourced
+    direction = RAT.PI_DIRECTIONS["2026-08-05"]
+    assert direction["date"] == "2026-08-05"
+    assert direction["source"].strip()
+    joined = " ".join(direction["quotes"])
+    assert "chi2/dof <= 3" in joined
+    assert "advisory diagnostics" in joined
+    assert "claiming PI ratification where none exists" in joined
+    assert direction["resolves"] == ["span_arms_disarmed"]
+    assert direction["does_not_resolve"] == ["z_arms_gate_unratified"]
+    # a direction is NOT a ratification: the allow-list is untouched
+    assert set(RAT.PI_RATIFIED_ITEMS) == set(_PI_RATIFIED)
+    assert "NONE" in direction["effect_on_PI_RATIFIED_ITEMS"]
+    # the four prospective conditions are recorded as conditions, not prose
+    for cond in ("precisely defined", "calibrated under production geometry",
+                 "tested for false-alarm behavior",
+                 "proposed prospectively at a PI checkpoint"):
+        assert cond in RAT.PROSPECTIVE_THRESHOLD_CONDITIONS, cond
+        assert cond in joined, cond
+
+
+def test_the_open_and_resolved_views_are_DERIVED_and_cannot_both_miss_an_entry():
+    """A decision that fell out of both views would silently stop being
+    anybody's problem.  The two dicts are derived from one master list, so
+    that cannot happen, and ``pi_decision`` resolves a name from either --
+    which is what keeps a pre-resolution artifact's pointer landing."""
+    assert set(RAT.OPEN_PI_DECISIONS) | set(RAT.RESOLVED_PI_DECISIONS) == \
+        set(RAT.PI_DECISIONS)
+    assert not (set(RAT.OPEN_PI_DECISIONS) & set(RAT.RESOLVED_PI_DECISIONS))
+    assert RAT.OPEN_PI_DECISIONS and RAT.RESOLVED_PI_DECISIONS   # not vacuous
+    for name, rec in RAT.PI_DECISIONS.items():
+        assert rec["status"] in ("OPEN", "RESOLVED"), (name, rec["status"])
+        assert RAT.pi_decision(name)["status"] == rec["status"]
+    # the STALE POINTER still lands: artifacts written before 2026-08-05 name
+    # OPEN_PI_DECISIONS['span_arms_disarmed'], which no longer exists there
+    assert "span_arms_disarmed" not in RAT.OPEN_PI_DECISIONS
+    assert RAT.pi_decision("span_arms_disarmed")["status"] == "RESOLVED"
+    assert "superseded_pointers" in RAT.pi_decision("span_arms_disarmed")
+    # ... and an unknown decision must NOT look resolved
+    with pytest.raises(KeyError):
+        RAT.pi_decision("a_decision_nobody_recorded")
+    # the note's count is DERIVED, so it cannot drift from the data
+    assert f"{len(RAT.OPEN_PI_DECISIONS)} open" in RAT.OPEN_PI_DECISIONS_NOTE
+    assert "span_arms_disarmed" in RAT.OPEN_PI_DECISIONS_NOTE  # as RESOLVED
+    st = RAT.ratification_stamp()
+    assert set(st["resolved_pi_decisions"]) == set(RAT.RESOLVED_PI_DECISIONS)
+    assert set(st["open_pi_decisions"]) == set(RAT.OPEN_PI_DECISIONS)
 
 
 # ==========================================================================

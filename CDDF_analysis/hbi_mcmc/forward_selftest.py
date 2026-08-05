@@ -968,11 +968,17 @@ def ratio_span_null_report(*, n_draws=20000, seed=1, pack=None):
             "scale; the MAGNITUDE quoted for by_z does not -- see "
             "geometry_correction. Whether DISARMING the span arms leaves the "
             "z-marginal tilt defect unguarded is a PI TRADEOFF, not resolved "
-            "here: the measured detection curves for the disarmed span arm "
-            "and the still-armed z_zbin_max arm are in `power`, and the "
-            "decision is recorded open in "
-            "ratification.OPEN_PI_DECISIONS['span_arms_disarmed']. "
-            "Procedure, omissions and options: "
+            "by this routine: the measured detection curves for the disarmed "
+            "span arm and the still-armed z_zbin_max arm are in `power`, and "
+            "the decision is recorded in "
+            "ratification.pi_decision('span_arms_disarmed') -- OPEN when this "
+            "routine was written, ANSWERED by the PI direction of 2026-08-05 "
+            "(\"keep span-by-z and span-by-SNR active as advisory "
+            "diagnostics, not ratified hard gates\"), which changes no arm "
+            "and no number here and closes the option of arming a calibrated "
+            "threshold. Artifacts generated before that date point at "
+            "ratification.OPEN_PI_DECISIONS['span_arms_disarmed'] and are "
+            "correct as dated evidence. Procedure, omissions and options: "
             "docs/ratio_span_calibration_spec.md."),
         "metadata": {
             "routine": "CDDF_analysis/hbi_mcmc/forward_selftest.py",

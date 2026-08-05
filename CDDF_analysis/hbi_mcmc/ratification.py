@@ -92,10 +92,28 @@ The three candidate behaviours for a DECLINED tolerance were:
 An UNRATIFIED entry is NOT a weaker gate.  It is an explicitly absent gate,
 and the artifact says so, so that no downstream reader can mistake "the span
 arm did not fire" for "the span arm passed".  🔴 The COST of (c) is not
-rhetorical and is stated in ``OPEN_PI_DECISIONS['span_arms_disarmed']``: see
+rhetorical and is stated in ``pi_decision('span_arms_disarmed')``: see
 ``docs/ratio_span_calibration_spec.md`` §4.1 for the measured comparison of
 what the disarmed span arm and the still-armed ``z_zbin_max`` each detect at
-production geometry.
+production geometry.  (That entry was OPEN when this paragraph was written
+and is RESOLVED as of 2026-08-05; ``pi_decision`` reads both views, which is
+why the pointer here is to it and not to ``OPEN_PI_DECISIONS``.)
+
+PI DIRECTION OF 2026-08-05 (verbatim, recorded in ``PI_DIRECTIONS``)
+--------------------------------------------------------------------
+"The only currently ratified numerical closure gate is chi2/dof <= 3.  Any
+z-based or span-based threshold must be: precisely defined; calibrated under
+production geometry; tested for false-alarm behavior; proposed prospectively
+at a PI checkpoint."  And: "Keep span-by-z and span-by-SNR active as advisory
+diagnostics, not ratified hard gates."  And: "Do not write artifacts or code
+claiming PI ratification where none exists."
+
+That RESOLVES ``pi_decision('span_arms_disarmed')`` (option "accept
+report-only", now with the word "advisory" from the PI) and does NOT resolve
+``OPEN_PI_DECISIONS['z_arms_gate_unratified']``: the PI RELABELLED the |z|
+arms (they must be defined, calibrated and proposed prospectively before they
+can be ratified) and did not disarm them.  They still gate.  See
+``RESOLVED_PI_DECISIONS``.
 """
 from __future__ import annotations
 
@@ -107,7 +125,8 @@ __all__ = [
     "unratified_names", "ratified_names", "restated_not_ratified_names",
     "unratified_but_gating_names", "ratification_stamp", "UNRATIFIED_EFFECT",
     "audit_authority_claims", "enforce_authority_allow_list",
-    "OPEN_PI_DECISIONS",
+    "OPEN_PI_DECISIONS", "RESOLVED_PI_DECISIONS", "PI_DECISIONS",
+    "PI_DIRECTIONS", "pi_decision", "PROSPECTIVE_THRESHOLD_CONDITIONS",
 ]
 
 RATIFICATION_DATE = "2026-07-29"
@@ -361,10 +380,56 @@ UNRATIFIED_BUT_GATING_NOTE = (
 
 
 # ---------------------------------------------------------------------------
-# OPEN PI DECISIONS -- what this stream refused to resolve for itself
+# PI DIRECTIONS -- quoted, dated, sourced.  NOT a ratification list.
 # ---------------------------------------------------------------------------
-OPEN_PI_DECISIONS = {
+#: 🔴 A direction is not a ratification.  ``PI_RATIFIED_ITEMS`` is unchanged by
+#: everything below and the 2026-08-05 direction CONFIRMS it: of the numerical
+#: closure gates, exactly ``chi2_dof_max`` is ratified.
+PI_DIRECTIONS = {
+    "2026-08-05": {
+        "date": "2026-08-05",
+        "source": "PI direction, quoted verbatim in the task brief that "
+                  "produced this commit",
+        "quotes": [
+            "The only currently ratified numerical closure gate is "
+            "chi2/dof <= 3. Any z-based or span-based threshold must be: "
+            "precisely defined; calibrated under production geometry; tested "
+            "for false-alarm behavior; proposed prospectively at a PI "
+            "checkpoint.",
+            "Keep span-by-z and span-by-SNR active as advisory diagnostics, "
+            "not ratified hard gates.",
+            "Do not write artifacts or code claiming PI ratification where "
+            "none exists.",
+        ],
+        "effect_on_PI_RATIFIED_ITEMS": "NONE -- it confirms the allow-list",
+        "resolves": ["span_arms_disarmed"],
+        "does_not_resolve": ["z_arms_gate_unratified"],
+    },
+}
+
+#: the FOUR conditions the PI attached to any future z-based or span-based
+#: threshold.  A proposal that does not meet all four is not proposable.
+PROSPECTIVE_THRESHOLD_CONDITIONS = (
+    "precisely defined",
+    "calibrated under production geometry",
+    "tested for false-alarm behavior",
+    "proposed prospectively at a PI checkpoint",
+)
+
+
+# ---------------------------------------------------------------------------
+# PI DECISIONS -- the master list.  ``OPEN_PI_DECISIONS`` and
+# ``RESOLVED_PI_DECISIONS`` are DERIVED VIEWS of it, so an entry cannot be in
+# neither (or in both) and the "n open" count cannot drift from the data.
+#
+# 🔴 A decision leaves this list only by being ANSWERED BY A DECIDING
+# AUTHORITY, with the answer, the date and the source recorded.  It is never
+# deleted, so an artifact that pointed at it while it was open still resolves
+# -- use ``pi_decision(name)``, which reads BOTH views and reports the status.
+# ---------------------------------------------------------------------------
+PI_DECISIONS = {
     "z_arms_gate_unratified": {
+        "status": "OPEN",
         "question": (
             "Four |z| <= 5 arms refuse work with no ratified authority. "
             "RATIFY the restated criterion (the restatement is in "
@@ -377,8 +442,25 @@ OPEN_PI_DECISIONS = {
             "defect; and disarming z_zbin_max at the same time as the span "
             "arms would leave the standing z-marginal tilt defect with no "
             "guard at all"),
+        # 🔴 the 2026-08-05 direction touched this entry WITHOUT closing it.
+        "pi_direction_2026_08_05": (
+            "RELABELLED, NOT RESOLVED, and the distinction is the whole point. "
+            "The PI said \"The only currently ratified numerical closure gate "
+            "is chi2/dof <= 3\" and that any z-based threshold must be "
+            "\"precisely defined; calibrated under production geometry; tested "
+            "for false-alarm behavior; proposed prospectively at a PI "
+            "checkpoint\". That CONFIRMS the four |z| arms are unratified and "
+            "states what would be needed to ratify them. It does NOT say to "
+            "disarm them and it does not say to keep them armed, so the "
+            "question -- ratify / disarm / carry as a stated limitation -- is "
+            "still open and all four are still ARMED. Reading a relabelling "
+            "as a disarm order would be the same unilateral act in the other "
+            "direction. Contrast span_arms_disarmed, where the PI DID say "
+            "what the arms should do (\"keep ... active as advisory "
+            "diagnostics, not ratified hard gates\")."),
     },
     "span_arms_disarmed": {
+        "status": "RESOLVED",
         "question": (
             "The two ratio_span arms were ARMED before this stream (a9fe97b) "
             "and are now report-only. That follows the PI's instruction that "
@@ -386,7 +468,28 @@ OPEN_PI_DECISIONS = {
             "that fires on a PHYSICALLY large, statistically quiet z-tilt. "
             "Accept report-only, or arm a calibrated pack-specific threshold "
             "(spec §3/§6 option A)?"),
-        "what_the_code_does_meanwhile": (
+        "resolution": (
+            "ACCEPT REPORT-ONLY. The reported statistic stays ACTIVE as an "
+            "ADVISORY DIAGNOSTIC and gates nothing. The PI's words, verbatim: "
+            "\"Keep span-by-z and span-by-SNR active as advisory diagnostics, "
+            "not ratified hard gates.\" BOTH halves bind: deleting the arms "
+            "would disobey \"active\", arming them would disobey \"not "
+            "ratified hard gates\". The code already does exactly this "
+            "(contributes_to_pass_fail=False, effect=" + UNRATIFIED_EFFECT
+            + "), so no tolerance and no code path changes; what changes is "
+            "that the choice is no longer this stream's to make."),
+        "resolved_date": "2026-08-05",
+        "resolved_by": "PI direction 2026-08-05 -- see PI_DIRECTIONS['2026-08-05']",
+        "option_a_status": (
+            "CLOSED. Arming a null-calibrated span threshold (spec §3/§6 "
+            "option A, 0.1292 at a measured false-alarm rate of 0.0073) is "
+            "not available unless it is proposed PROSPECTIVELY at a PI "
+            "checkpoint meeting all four of PROSPECTIVE_THRESHOLD_CONDITIONS. "
+            "The measurement stands; the option does not."),
+        "status_of_the_tolerances": (
+            "UNCHANGED: ratio_span_by_z_max and ratio_span_by_snr_max remain "
+            "UNRATIFIED, report-only, and are stamped into every artifact."),
+        "what_the_code_does": (
             "both span arms REPORT ONLY; z_zbin_max stays armed"),
         "measured_tradeoff": (
             "the 0.10 threshold's 34% false-alarm rate was measured on the "
@@ -405,17 +508,50 @@ OPEN_PI_DECISIONS = {
             "option rather than a suggestion. Curves and full table: "
             "docs/ratio_span_calibration_spec.md §4.1 and the `power` block "
             "of ratio_span_null_calibration.json (n_draws=20000/4000, "
-            "seed=1). THIS DOES NOT DECIDE THE QUESTION: the null is a lower "
-            "bound on the true null width (spec §2.1), so every false-alarm "
-            "rate here is optimistic, and all of it is synthetic."),
+            "seed=1). THE RESOLUTION DOES NOT MAKE THIS COST GO AWAY: it "
+            "becomes a STATED LIMITATION rather than an open option, and the "
+            "null is a lower bound on the true null width (spec §2.1), so "
+            "every false-alarm rate here is optimistic and all of it is "
+            "synthetic."),
+        "superseded_pointers": (
+            "artifacts and prose generated BEFORE 2026-08-05 point at "
+            "\"ratification.OPEN_PI_DECISIONS['span_arms_disarmed']\" -- e.g. "
+            "the committed CDDF_analysis/hbi_mcmc/ratio_span_null_calibration"
+            ".json verdict. Those are correct as DATED EVIDENCE of the state "
+            "at their generation date. The entry has not been deleted: "
+            "pi_decision('span_arms_disarmed') resolves it from either view "
+            "and reports status=RESOLVED."),
     },
 }
+
+#: DERIVED.  What still needs a deciding authority.
+OPEN_PI_DECISIONS = {k: v for k, v in PI_DECISIONS.items()
+                     if v["status"] == "OPEN"}
+#: DERIVED.  Closed out, each with its answer, date and source.
+RESOLVED_PI_DECISIONS = {k: v for k, v in PI_DECISIONS.items()
+                         if v["status"] == "RESOLVED"}
 
 OPEN_PI_DECISIONS_NOTE = (
     "PI DECISION REQUIRED, {n} open: {names}. This artifact does not resolve "
     "them and does not claim they are resolved. Details: "
-    "CDDF_analysis.hbi_mcmc.ratification.OPEN_PI_DECISIONS."
-).format(n=len(OPEN_PI_DECISIONS), names=", ".join(sorted(OPEN_PI_DECISIONS)))
+    "CDDF_analysis.hbi_mcmc.ratification.OPEN_PI_DECISIONS. "
+    "{nr} previously-open decision(s) have since been answered and are in "
+    "RESOLVED_PI_DECISIONS: {rnames}."
+).format(n=len(OPEN_PI_DECISIONS), names=", ".join(sorted(OPEN_PI_DECISIONS)),
+         nr=len(RESOLVED_PI_DECISIONS),
+         rnames=", ".join(sorted(RESOLVED_PI_DECISIONS)) or "none")
+
+
+def pi_decision(name):
+    """A PI decision by name, from EITHER view, with its status.
+
+    The redirect for stale pointers: an artifact written while a decision was
+    open names it as ``OPEN_PI_DECISIONS[name]``, and that string is still in
+    the artifact after the decision closes.  This resolves it either way.
+    ``KeyError`` for an unknown name -- a decision that was never recorded
+    must not silently look resolved.
+    """
+    return dict(PI_DECISIONS[name])
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +730,15 @@ def ratification_stamp():
         "open_pi_decisions": {k: dict(v)
                               for k, v in sorted(OPEN_PI_DECISIONS.items())},
         "open_pi_decisions_note": OPEN_PI_DECISIONS_NOTE,
+        # 🔴 a decision that closed is NOT deleted: an artifact written while
+        # it was open points at OPEN_PI_DECISIONS[name], and that pointer must
+        # still land somewhere.  ``pi_decision(name)`` reads both views.
+        "resolved_pi_decisions": {
+            k: dict(v) for k, v in sorted(RESOLVED_PI_DECISIONS.items())},
+        "pi_directions": {k: dict(v)
+                          for k, v in sorted(PI_DIRECTIONS.items())},
+        "prospective_threshold_conditions": list(
+            PROSPECTIVE_THRESHOLD_CONDITIONS),
         "authority_allow_list_clean": (audit_authority_claims() == []),
         "correction_note": (
             "schema v2 CORRECTS v1 (88f2ecb), which recorded the four "
