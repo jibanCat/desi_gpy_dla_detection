@@ -408,8 +408,20 @@ def load_forward_response_pack(path: str = TF._DEF_FORWARD):
                 f"forward-kernel assert FAILED: kappa-derived key {key!r} in {path}")
     if os.path.basename(path).startswith("posterior_kernel"):
         raise RuntimeError(f"forward-kernel assert FAILED: posterior kernel {path}")
-    # skew ramp: ForwardResponseModel.skew ramps gamma->0 linearly over a 0.5-dex
-    # window above N_skew_collapse (znz_kernel.py:1362 `clip((N-collapse)/0.5,0,1)`)
+    # skew ramp: ForwardResponseModel.skew ramps gamma->0 linearly over an
+    # N_skew_ramp_width-dex window above N_skew_collapse, and forward.build_K
+    # divides by resp_skew_ramp[1]. Until 2026-08-05 the width was a literal 0.5
+    # in znz_kernel.skew AND a SECOND literal 0.5 typed here, with nothing tying
+    # them together: a producer that widened its ramp would have had the change
+    # silently DISCARDED by every pack extracted from its NPZ. The envelope now
+    # carries the width; a legacy envelope (no key) falls back to 0.5, which is
+    # the value that literal held, so every pre-existing NPZ extracts to the
+    # same [collapse, 0.5] as before. Which of the two happened is STAMPED in
+    # ramp_width_source -- a fallback must be visible in the artifact, not
+    # inferred from the file's age.
+    _ramp_key = "N_skew_ramp_width"
+    _have_width = _ramp_key in getattr(d, "files", [])
+    ramp_width = float(d[_ramp_key]) if _have_width else 0.5
     fwd = dict(
         resp_mu_coef=np.asarray(d["mu_coef"], float),
         resp_sig_coef=np.asarray(d["sig_coef"], float),
@@ -417,9 +429,15 @@ def load_forward_response_pack(path: str = TF._DEF_FORWARD):
         resp_snr_edges=np.asarray(d["snr_edges"], float),
         resp_z_edges=np.asarray(d["z_edges"], float),
         resp_sig_floor=np.float64(d["sig_floor"]),
-        resp_skew_ramp=np.array([float(d["N_skew_collapse"]), 0.5]),
+        resp_skew_ramp=np.array([float(d["N_skew_collapse"]), ramp_width]),
         resp_N_ref=np.float64(d["N_ref"]),      # required to evaluate the coef polys
     )
+    ramp_width_source = (
+        f"forward-response NPZ key '{_ramp_key}' = {ramp_width!r}" if _have_width
+        else (f"FALLBACK 0.5 — the envelope carries no '{_ramp_key}' key "
+              "(written before 2026-08-05, when znz_kernel.skew hardcoded the "
+              "width). The producer's ramp window is NOT recoverable from this "
+              "file; 0.5 is the value that hardcoded literal held."))
     # schema v1.1 (finding D2): the CALIBRATED covariate range of the per-cell
     # moment polynomials = the per-cell min/max of the empirical true-N anchors
     # they were weighted-least-squares fit at. Emitted NATIVELY here so padded
@@ -434,6 +452,11 @@ def load_forward_response_pack(path: str = TF._DEF_FORWARD):
     meta = dict(
         fwd_response_kind=kind,
         deg_N=int(d["deg_N"]),
+        # the ramp WINDOW, and whether it was read or defaulted. Stamped in the
+        # provenance (not the pack arrays) because ``resp_skew_ramp`` alone
+        # cannot tell a producer's 0.5 from a fallback 0.5.
+        resp_skew_ramp_width=float(ramp_width),
+        resp_skew_ramp_width_source=ramp_width_source,
         resp_N_fit_range=(np.asarray(fit_range, float).tolist()
                           if fit_range is not None else None),
         resp_N_fit_range_source=("emp_N_anchors min/max per response cell "
@@ -1084,9 +1107,13 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
             g=("CDDF_analysis/hbi/cddf_catalog_hbi.py:build_cnz_resolved (:3869) + "
                "znz_kernel.py:measure_c_nz (:836) occupancy — frozen on 2LPT-0"),
             forward=("track_c_tf_loa.py:_DEF_FORWARD (:99); envelope "
-                     "znz_kernel.py:save_forward_response (:2073); skew ramp = "
-                     "linear over 0.5 dex above N_skew_collapse "
-                     "(znz_kernel.py:1362) -> resp_skew_ramp=[collapse, 0.5]"),
+                     "znz_kernel.py:save_forward_response; skew ramp = linear "
+                     "over N_skew_ramp_width dex above N_skew_collapse "
+                     "(znz_kernel.ForwardResponseModel.skew) -> "
+                     "resp_skew_ramp=[collapse, width]. The width is READ from "
+                     "the envelope since 2026-08-05 and falls back to 0.5 for "
+                     "an envelope written before that; which of the two "
+                     "happened is in forward.resp_skew_ramp_width_source"),
             fp=("cddf_catalog_hbi.py:Loa0FP.from_product (:1059) scalars + "
                 "build_loa0_fp_product.py:load_loa0_fp_catalog/:build_product op "
                 "cut (:195-241) re-binned to (c=29,s=8); EXACT n_fp_molly guard"),

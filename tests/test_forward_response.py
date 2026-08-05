@@ -599,3 +599,161 @@ def test_refit_forward_response_noncircular_signature():
     names = " ".join(sig.parameters).lower()
     assert "boot_mult" in names
     assert "dndx" not in names and "omega" not in names and "f_b" not in names
+
+
+# ---------------------------------------------------------------------------
+# B1 (2026-08-05) — the skew-ramp WIDTH is serialized, not a pair of literals
+# ---------------------------------------------------------------------------
+_FWD_NPZ_DIRS = (
+    "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0",
+)
+
+
+def _committed_forward_npzs():
+    import glob
+    import os
+    out = []
+    for d in _FWD_NPZ_DIRS:
+        out += sorted(glob.glob(os.path.join(d, "forward_response_*.npz")))
+    return out
+
+
+def test_the_ramp_width_is_a_field_and_skew_actually_uses_it():
+    """WHY this is not cosmetic: while the width was the literal 0.5 inside
+    ``skew()``, changing a producer's ramp window did nothing at all. Pin that
+    the field is read, by moving it and measuring the surface move."""
+    meas = _synthetic_forward_meas(seed=11)
+    frm = fit_forward_response(meas, N_skew_collapse=20.0)
+    assert frm.N_skew_ramp_width == 0.5           # the historical default
+
+    import dataclasses
+    wide = dataclasses.replace(frm, N_skew_ramp_width=2.0)
+    N = np.array([20.25]); s = np.array([5.0]); z = np.array([2.75])
+    g_half = frm.skew(N, s, z)[0]                 # ramp = 0.5  -> gamma * 0.5
+    g_wide = wide.skew(N, s, z)[0]                # ramp = 0.125-> gamma * 0.875
+    assert g_half != g_wide
+    # the exact ramp arithmetic: the two share ONE unramped gamma at this N, so
+    # their RATIO is (1 - 0.25/0.5) / (1 - 0.25/2.0) with gamma cancelling.
+    assert g_half / g_wide == pytest.approx(
+        (1.0 - 0.25 / 0.5) / (1.0 - 0.25 / 2.0), rel=1e-9)
+    # below the collapse and far above it, the width cannot matter
+    lo = np.array([19.5])
+    assert frm.skew(lo, s, z)[0] == wide.skew(lo, s, z)[0]
+    assert frm.skew(np.array([25.0]), s, z)[0] == 0.0
+    assert wide.skew(np.array([25.0]), s, z)[0] == 0.0
+
+
+def test_the_ramp_width_round_trips_through_the_npz_envelope(tmp_path):
+    """A non-default width must SURVIVE save/load. Before B1 it was not written
+    at all, so a widened producer reloaded as 0.5 with nothing to notice."""
+    import dataclasses
+    meas = _synthetic_forward_meas(seed=13)
+    frm = dataclasses.replace(fit_forward_response(meas),
+                              N_skew_ramp_width=1.25)
+    p = str(tmp_path / "fwd_wide.npz")
+    save_forward_response(p, frm)
+    d = np.load(p, allow_pickle=True)
+    assert "N_skew_ramp_width" in d.files
+    assert float(d["N_skew_ramp_width"]) == 1.25
+    back = load_forward_response(p)
+    assert back.N_skew_ramp_width == 1.25
+    Ne = np.array([20.9, 21.2, 21.6]); se = np.array([2.5, 5.0, 20.0])
+    ze = np.array([2.2, 2.75, 3.4])
+    np.testing.assert_array_equal(back.skew(Ne, se, ze), frm.skew(Ne, se, ze))
+
+
+def test_a_legacy_envelope_without_the_width_key_reloads_at_0p5(tmp_path):
+    """Backward compatibility, POWERED: strip the key from a written envelope
+    and the loader must restore 0.5 — the value the old literal held — so every
+    NPZ written before 2026-08-05 behaves exactly as it always did."""
+    meas = _synthetic_forward_meas(seed=17)
+    frm = fit_forward_response(meas)
+    p = str(tmp_path / "fwd.npz")
+    save_forward_response(p, frm)
+    d = np.load(p, allow_pickle=True)
+    legacy = str(tmp_path / "fwd_legacy.npz")
+    np.savez(legacy, **{k: d[k] for k in d.files if k != "N_skew_ramp_width"})
+    assert "N_skew_ramp_width" not in np.load(legacy, allow_pickle=True).files
+    back = load_forward_response(legacy)
+    assert back.N_skew_ramp_width == 0.5
+    Ne = np.array([20.9, 21.2, 21.6]); se = np.array([2.5, 5.0, 20.0])
+    ze = np.array([2.2, 2.75, 3.4])
+    np.testing.assert_array_equal(back.skew(Ne, se, ze), frm.skew(Ne, se, ze))
+
+
+def test_a_refit_from_a_resample_reproduces_the_point_models_ramp_window():
+    """The width must ride the resample record too, or a bootstrap refit
+    silently reverts a widened producer to 0.5."""
+    import dataclasses
+    from CDDF_analysis.hbi.znz_kernel import (
+        build_forward_response_fit_resample, refit_forward_response_from_resample)
+    meas = _synthetic_forward_meas(seed=19)
+    n = len(np.asarray(meas["N_true"]))
+    det_tids = np.arange(n, dtype=np.int64)
+    uniq = np.unique(det_tids)
+    point = dataclasses.replace(fit_forward_response(meas),
+                                N_skew_ramp_width=1.75)
+    rfr = build_forward_response_fit_resample(meas, det_tids, uniq, point)
+    assert rfr.N_skew_ramp_width == 1.75
+    refit = refit_forward_response_from_resample(rfr, np.ones(len(uniq)))
+    assert refit.N_skew_ramp_width == 1.75
+
+
+@pytest.mark.parametrize("path", _committed_forward_npzs() or ["__none__"])
+def test_every_committed_forward_npz_extracts_to_collapse_and_0p5(path):
+    """THE regression the task asks for: reloading every committed
+    forward-response NPZ must still yield ``resp_skew_ramp == [N_skew_collapse,
+    0.5]`` BIT-FOR-BIT. These envelopes pre-date the width key, so this is the
+    statement that B1 changed no committed pack."""
+    if path == "__none__":
+        pytest.skip("no committed forward-response NPZ on this filesystem")
+    import importlib.util
+    import os
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "b1_extract_pack",
+        os.path.join(repo, "CDDF_analysis/hbi_mcmc/extract_pack.py"))
+    ep = importlib.util.module_from_spec(spec)
+    import sys
+    sys.modules[spec.name] = ep
+    spec.loader.exec_module(ep)
+
+    fwd, meta = ep.load_forward_response_pack(path)
+    d = np.load(path, allow_pickle=True)
+    collapse = float(d["N_skew_collapse"])
+    assert "N_skew_ramp_width" not in d.files          # legacy envelope
+    np.testing.assert_array_equal(fwd["resp_skew_ramp"],
+                                  np.array([collapse, 0.5]))
+    assert meta["resp_skew_ramp_width"] == 0.5
+    assert "FALLBACK 0.5" in meta["resp_skew_ramp_width_source"]
+    # the loader agrees with the extractor about the width
+    assert load_forward_response(path).N_skew_ramp_width == 0.5
+
+
+def test_extract_pack_reads_a_width_the_envelope_carries(tmp_path):
+    """The other half: when the envelope DOES carry a width, extract_pack must
+    use it and stamp that it did — not silently re-type 0.5."""
+    import dataclasses
+    import importlib.util
+    import os
+    import sys
+    meas = _synthetic_forward_meas(seed=23)
+    frm = dataclasses.replace(fit_forward_response(meas),
+                              N_skew_ramp_width=0.8)
+    p = str(tmp_path / "forward_response_synthetic.npz")
+    save_forward_response(p, frm)
+
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "b1_extract_pack2",
+        os.path.join(repo, "CDDF_analysis/hbi_mcmc/extract_pack.py"))
+    ep = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = ep
+    spec.loader.exec_module(ep)
+
+    fwd, meta = ep.load_forward_response_pack(p)
+    np.testing.assert_array_equal(
+        fwd["resp_skew_ramp"], np.array([frm.N_skew_collapse, 0.8]))
+    assert meta["resp_skew_ramp_width"] == 0.8
+    assert "FALLBACK" not in meta["resp_skew_ramp_width_source"]
+    assert "N_skew_ramp_width" in meta["resp_skew_ramp_width_source"]

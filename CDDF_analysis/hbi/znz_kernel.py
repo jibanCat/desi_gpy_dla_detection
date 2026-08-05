@@ -1270,6 +1270,18 @@ class ForwardResponseModel:
     N_skew_collapse : float
         N_true above which the fitted skew is ramped toward 0 (the prior-ceiling
         collapse — no spurious right-skew extrapolated past N≈21).
+    N_skew_ramp_width : float
+        WIDTH in dex of that ramp: skew is multiplied by
+        ``1 - clip((N - N_skew_collapse) / N_skew_ramp_width, 0, 1)``.
+        Default 0.5, which is the value this was hardcoded at until 2026-08-05.
+        It is a FIELD, not a literal, because the consumer side carries it too:
+        the Model A pack's ``resp_skew_ramp`` is ``[N_skew_collapse, width]``
+        and ``forward.build_K`` divides by ``resp_skew_ramp[1]``. While the
+        width lived only as a literal here it was NOT serialized by
+        ``save_forward_response`` and was re-typed as a literal 0.5 in
+        ``extract_pack``, so a producer that changed its ramp window would have
+        had the change silently DISCARDED by every pack extracted from it —
+        the two sides would have disagreed with nothing to detect it.
     sig_floor : float
         Lower clip on σ (keeps the skew-normal well-defined; default 1e-3 dex).
     z_covariate : str
@@ -1294,6 +1306,9 @@ class ForwardResponseModel:
     N_ref: float
     deg_N: int = 2
     N_skew_collapse: float = 21.0
+    # 0.5 dex — the value ``skew()`` hardcoded until 2026-08-05. Defaulting to it
+    # keeps every existing build and every legacy NPZ byte-identical.
+    N_skew_ramp_width: float = 0.5
     sig_floor: float = 1e-3
     emp: Optional["EmpiricalForwardDensity"] = None
     z_covariate: str = "zqso"   # which redshift the (SNR, z) cell axis is binned on:
@@ -1344,12 +1359,18 @@ class ForwardResponseModel:
     def skew(self, N, snr, zqso):
         """Skewness surface γ(N,SNR,z), with the high-N (prior-ceiling) collapse applied.
 
-        Above ``N_skew_collapse`` the skew is linearly ramped to 0 over a 0.5-dex window
-        so no spurious right-skew is extrapolated into the saturated high-N regime.
+        Above ``N_skew_collapse`` the skew is linearly ramped to 0 over an
+        ``N_skew_ramp_width``-dex window (default 0.5) so no spurious right-skew is
+        extrapolated into the saturated high-N regime.
+
+        The width is a FIELD, not a literal (2026-08-05): ``save_forward_response``
+        serializes it and ``extract_pack`` reads it into the pack's ``resp_skew_ramp``
+        pair, so a change here reaches the fold instead of being silently discarded.
 
         NOTE (C1 kink at N = N_skew_collapse, default 21.0): the ``np.clip((N−21)/0.5,0,1)``
         ramp is CONTINUOUS but only C0 — its derivative is discontinuous at N=21.0 and at
-        N=21.5 (the ramp endpoints). The kernel-build segment integration is over ΔN_seg
+        N=21.5 (the ramp endpoints, i.e. collapse and collapse + width). The kernel-build
+        segment integration is over ΔN_seg
         regions and the response is sampled at segment midpoints, so this kink is harmless
         for the forward A-build (no derivative of γ is taken); it only means the recovered
         f(N) has a (tiny) slope feature at 21.0 where the right-skew correction switches off.
@@ -1358,8 +1379,8 @@ class ForwardResponseModel:
         N = np.asarray(N, float).ravel()
         g = self._eval_surface(self.skew_coef, N, self._i_snr(snr), self._i_z(zqso))
         g = np.clip(g, -0.995 * _SN_SKEW_MAX, 0.995 * _SN_SKEW_MAX)
-        # prior-ceiling collapse: ramp skew → 0 across [N_collapse, N_collapse+0.5]
-        ramp = np.clip((N - self.N_skew_collapse) / 0.5, 0.0, 1.0)
+        # prior-ceiling collapse: ramp skew → 0 across [N_collapse, N_collapse+width]
+        ramp = np.clip((N - self.N_skew_collapse) / self.N_skew_ramp_width, 0.0, 1.0)
         return g * (1.0 - ramp)
 
     def response_skewnormal(self, N, snr, zqso):
@@ -1804,6 +1825,7 @@ def fit_forward_response(meas: dict,
                          n_N_cells: int = 7,
                          min_count: int = 60,
                          N_skew_collapse: float = 21.0,
+                         N_skew_ramp_width: float = 0.5,
                          N_ref: Optional[float] = None,
                          build_empirical: bool = True,
                          weights=None) -> ForwardResponseModel:
@@ -1956,7 +1978,8 @@ def fit_forward_response(meas: dict,
     return ForwardResponseModel(
         mu_coef=mu_coef, sig_coef=sig_coef, skew_coef=skew_coef,
         snr_edges=snr_edges, z_edges=z_edges, N_ref=N_ref, deg_N=int(deg_N),
-        N_skew_collapse=float(N_skew_collapse), emp=emp, z_covariate=z_cov,
+        N_skew_collapse=float(N_skew_collapse),
+        N_skew_ramp_width=float(N_skew_ramp_width), emp=emp, z_covariate=z_cov,
     )
 
 
@@ -1995,6 +2018,10 @@ class ForwardResponseFitResample:
     min_count: int
     build_empirical: bool
     z_covariate: str = "zqso"    # the redshift the ``zqso`` array carries (point-model label)
+    # 2026-08-05: carried so ``refit_forward_response_from_resample`` reproduces
+    # the point model's ramp WINDOW as well as its centre. Defaulted, so records
+    # pickled/constructed before today rebuild identically.
+    N_skew_ramp_width: float = 0.5
 
 
 def build_forward_response_fit_resample(
@@ -2041,6 +2068,7 @@ def build_forward_response_fit_resample(
         z_edges=np.asarray(frm_point.z_edges, float),
         deg_N=int(frm_point.deg_N), N_ref=float(frm_point.N_ref),
         N_skew_collapse=float(frm_point.N_skew_collapse),
+        N_skew_ramp_width=float(getattr(frm_point, "N_skew_ramp_width", 0.5)),
         n_N_cells=int(n_N_cells), min_count=int(min_count),
         build_empirical=bool(build_empirical),
         z_covariate=str(getattr(frm_point, "z_covariate", "zqso")))
@@ -2067,6 +2095,7 @@ def refit_forward_response_from_resample(
         meas, snr_edges=rfr.snr_edges, z_edges=rfr.z_edges,
         deg_N=rfr.deg_N, n_N_cells=rfr.n_N_cells, min_count=rfr.min_count,
         N_skew_collapse=rfr.N_skew_collapse, N_ref=rfr.N_ref,
+        N_skew_ramp_width=float(getattr(rfr, "N_skew_ramp_width", 0.5)),
         build_empirical=rfr.build_empirical, weights=w)
 
 
@@ -2087,6 +2116,13 @@ def save_forward_response(path: str, frm: ForwardResponseModel) -> None:
         N_ref=np.array(frm.N_ref),
         deg_N=np.array(frm.deg_N),
         N_skew_collapse=np.array(frm.N_skew_collapse),
+        # 2026-08-05: the ramp WIDTH is now in the envelope. It was a literal
+        # 0.5 inside ``skew()`` and a second literal 0.5 in
+        # ``extract_pack._forward_block``, with nothing tying them together —
+        # change the producer's window and every pack would keep folding at 0.5.
+        # Legacy NPZs have no key; ``load_forward_response`` restores 0.5, so
+        # this is byte-identical for every envelope written before today.
+        N_skew_ramp_width=np.array(getattr(frm, "N_skew_ramp_width", 0.5)),
         sig_floor=np.array(frm.sig_floor),
         z_covariate=np.array(getattr(frm, "z_covariate", "zqso")),
     )
@@ -2130,6 +2166,10 @@ def load_forward_response(path: str) -> ForwardResponseModel:
         N_ref=float(d["N_ref"]),
         deg_N=int(d["deg_N"]),
         N_skew_collapse=float(d["N_skew_collapse"]) if "N_skew_collapse" in d else 21.0,
+        # legacy NPZs (written before 2026-08-05) carry no width key -> 0.5, the
+        # literal ``skew()`` used, so they reload byte-identical.
+        N_skew_ramp_width=(float(d["N_skew_ramp_width"])
+                           if "N_skew_ramp_width" in d else 0.5),
         sig_floor=float(d["sig_floor"]) if "sig_floor" in d else 1e-3,
         emp=emp,
         # legacy NPZs (no z_covariate key) load as "zqso" → byte-identical behaviour.
