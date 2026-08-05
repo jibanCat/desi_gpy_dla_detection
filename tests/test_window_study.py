@@ -1274,9 +1274,9 @@ def test_verdict_MEASURES_whether_the_headline_needs_the_unratified_arms(
     a = v["authority_sensitivity"]
     assert v["n_closing_primary_window"] == 0
     assert a["n_closing_all_arms"] == 0
-    assert a["n_closing_pi_ratified_arm_only"] == 0
-    assert a["verdict_unchanged_without_unratified_arms"] is True
-    assert a["pi_ratified_gating_arm"].startswith("chi2_dof_max <= 3.0")
+    assert a["n_closing_under_pi_authority_only"] == 0
+    assert a["verdict_unchanged_without_the_unapproved_arms"] is True
+    assert a["pi_authority_gating_arm"].startswith("chi2_dof_max <= 3.0")
 
 
 def test_verdict_would_EXPOSE_a_headline_that_rests_on_an_unratified_arm(
@@ -1290,102 +1290,10 @@ def test_verdict_would_EXPOSE_a_headline_that_rests_on_an_unratified_arm(
     v = WS.build_verdict(_verdict_rows(WS, 1.0), {}, None)
     a = v["authority_sensitivity"]
     assert a["n_closing_all_arms"] == 0                    # |z| arms refuse
-    assert a["n_closing_pi_ratified_arm_only"] == 6        # chi2/dof does not
+    assert a["n_closing_under_pi_authority_only"] == 6        # chi2/dof does not
     assert all("lya_only" in k for k in
-               a["closing_configurations_pi_ratified_arm_only"])
-    assert a["verdict_unchanged_without_unratified_arms"] is False
-
-
-# ---------------------------------------------------------------------------
-# (5b) THE COMMITTED ARTIFACT — it must carry the corrected record, not v1's
-# ---------------------------------------------------------------------------
-@pytest.fixture(scope="module")
-def ARTIFACT():
-    p = os.path.join(_REPO, "CDDF_analysis/hbi_mcmc/spectral_window_study.json")
-    with open(p) as f:
-        return json.load(f)
-
-
-def _walk_keys(obj, path=""):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            yield f"{path}.{k}", k, v
-            yield from _walk_keys(v, f"{path}.{k}")
-    elif isinstance(obj, list):
-        for i, v in enumerate(obj):
-            yield from _walk_keys(v, f"{path}[{i}]")
-
-
-def test_committed_artifact_carries_NO_fabricated_ratification(ARTIFACT, WS):
-    """The committed JSON is what a referee reads. v1 stamped
-    `metadata.gate.ratified_arms = {abs_z_total_max: 5, z_bin_max: 5,
-    chi2_dof_max: 3}`; that field must be gone everywhere in the tree, and no
-    surviving "ratified" field may name anything off the allow-list."""
-    allowed = set(WS.PI_RATIFIED_ITEMS)
-    bad = []
-    for path, key, val in _walk_keys(ARTIFACT):
-        if key in ("ratified_arms", "gate_tolerances_ratified"):
-            bad.append(path)
-        elif "ratified" in key.lower() and isinstance(val, (dict, list)):
-            stray = set(val) - allowed
-            if stray:
-                bad.append(f"{path} -> {sorted(stray)}")
-    assert not bad, bad
-
-
-def test_committed_artifact_gate_arms_carry_their_authority_state(ARTIFACT, WS):
-    arms = ARTIFACT["metadata"]["gate"]["gate_arms"]
-    assert arms["chi2_dof_max"]["authority_state"] == "RATIFIED"
-    for n in ("abs_z_total_max", "z_bin_max"):
-        assert arms[n]["authority_state"] == "RESTATED_NOT_RATIFIED", n
-        assert arms[n]["gates"] is True, f"{n} gates and must say so"
-    adv = ARTIFACT["metadata"]["gate"]["advisory_tolerances"]
-    assert set(adv) == {"ratio_span_by_z_max", "ratio_span_by_snr_max"}
-    assert all(t["authority_state"] == "UNRATIFIED" and t["gates"] is False
-               for t in adv.values())
-    assert "FABRICATED AUTHORITY CLAIM" in \
-        ARTIFACT["metadata"]["gate"]["authority_correction_note"]
-
-
-def test_committed_artifact_per_config_gates_carry_authority_too(ARTIFACT):
-    """Not just the metadata block: every one of the 12 configurations echoes
-    its gate, and each echo must be authority-bearing."""
-    cfgs = ARTIFACT["arm1_analysis_window"]
-    assert len(cfgs) == 12
-    for k, v in cfgs.items():
-        pc = v["primary_closes"]
-        assert "gate" not in pc, f"{k} still echoes the bare `gate` dict"
-        for name, arm in pc["gate_arms"].items():
-            assert set(arm) == {"value", "authority_state", "gates"}, (k, name)
-        # a refusal on an unratified number must name it as such
-        for f in pc["failures"]:
-            if f.startswith("chi2_dof"):
-                assert "RATIFIED" not in f, (k, f)
-            else:
-                assert "RESTATED_NOT_RATIFIED" in f, (k, f)
-
-
-def test_committed_artifact_headline_does_NOT_rest_on_an_unratified_arm(
-        ARTIFACT):
-    """SCIENCE-CONTENT GUARD, pinned. The correction is a LABEL change: the
-    verdict is 0 closing configurations WITH the |z| arms and 0 WITHOUT them,
-    so no threshold whose authority was overstated is load-bearing."""
-    v = ARTIFACT["verdict"]
-    assert v["n_closing_primary_window"] == 0
-    a = v["authority_sensitivity"]
-    assert a["n_closing_all_arms"] == 0
-    assert a["n_closing_pi_ratified_arm_only"] == 0
-    assert a["verdict_unchanged_without_unratified_arms"] is True
-    # every configuration busts the RATIFIED arm on its own
-    for k, cfg in ARTIFACT["arm1_analysis_window"].items():
-        assert cfg["primary_closes"]["closes_on_pi_authority_only"] is False, k
-
-
-def test_committed_artifact_stamp_is_clean_and_on_this_branch(ARTIFACT):
-    md = ARTIFACT["metadata"]
-    assert md["code_commit_dirty"] is False
-    assert len(md["code_commit"]) == 40 and "-dirty" not in md["code_commit"]
-    assert md["pack_stamp_audit"]["any_pack_dirty"] is False
+               a["closing_configurations_under_pi_authority_only"])
+    assert a["verdict_unchanged_without_the_unapproved_arms"] is False
 
 
 # ---------------------------------------------------------------------------

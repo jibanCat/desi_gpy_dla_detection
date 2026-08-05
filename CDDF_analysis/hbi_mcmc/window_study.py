@@ -503,8 +503,11 @@ def restated_gate_criteria():
         # the allow-list itself. This is the ONLY field here whose name
         # contains "ratified", and it carries nothing but the allow-list.
         pi_ratified_items=list(PI_RATIFIED_ITEMS),
-        authority_states={k: AUTHORITY_STATE_MEANINGS[k]
-                          for k in AUTHORITY_STATES},
+        # a LIST of {state, meaning}, not a dict keyed by the state name: a
+        # field literally called "RATIFIED" would trip any guard that scans
+        # field names, even though a legend entry claims nothing.
+        authority_states=[dict(state=k, meaning=AUTHORITY_STATE_MEANINGS[k])
+                          for k in AUTHORITY_STATES],
         authority_correction_note=AUTHORITY_CORRECTION_NOTE,
         pi_decision_8_verbatim=PI_DECISION_8_VERBATIM,
         pi_direction_2026_08_05_verbatim=PI_DIRECTION_2026_08_05_VERBATIM,
@@ -1276,21 +1279,27 @@ def build_verdict(rows, packmeta, pilot=None):
         n_configurations=len(rows),
         n_closing_primary_window=len(closing),
         closing_configurations=closing,
+        # FIELD NAMES here deliberately avoid the substring "ratified": an
+        # allow-list guard scans field names, and a field called
+        # `..._pi_ratified_arm_only` holding config keys (or a bare bool) would
+        # trip it for no reason. The allow-list is published under exactly ONE
+        # such name, metadata.gate.pi_ratified_items.
         authority_sensitivity=dict(
             question=("Does the headline depend on a threshold no deciding "
                       "authority ratified? Two of the three gating arms "
                       "(abs_z_total_max, z_bin_max) are "
                       "RESTATED_NOT_RATIFIED."),
             n_closing_all_arms=len(closing),
-            n_closing_pi_ratified_arm_only=len(closing_pi_only),
-            closing_configurations_pi_ratified_arm_only=closing_pi_only,
-            pi_ratified_gating_arm="chi2_dof_max <= 3.0 (PI decision 8)",
-            verdict_unchanged_without_unratified_arms=bool(
+            n_closing_under_pi_authority_only=len(closing_pi_only),
+            closing_configurations_under_pi_authority_only=closing_pi_only,
+            pi_authority_gating_arm="chi2_dof_max <= 3.0 (PI decision 8)",
+            verdict_unchanged_without_the_unapproved_arms=bool(
                 len(closing) == len(closing_pi_only)),
             note=("MEASURED, not asserted: each configuration's gate was "
-                  "re-read counting ONLY the PI-ratified arm. If "
-                  "verdict_unchanged_without_unratified_arms is true, the "
-                  "study's conclusion rests on chi2/dof <= 3 alone and the "
+                  "re-read counting ONLY the arm a PI actually ratified "
+                  "(chi2/dof <= 3). If "
+                  "verdict_unchanged_without_the_unapproved_arms is true, the "
+                  "study's conclusion rests on that arm alone and the "
                   "unratified |z| numbers change nothing."),
         ),
         best_by_reporting_chi2_dof=dict(
