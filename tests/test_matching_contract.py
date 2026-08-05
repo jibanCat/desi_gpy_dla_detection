@@ -8,6 +8,14 @@ a reader can apply the mutation and check.
 MOCK-DERIVED ONLY.  The pure-function tests read nothing; the integration tests
 read the ADOPTED mock packs under the window-study scratch dir and SKIP when
 they are absent.  No real-DESI path is opened.
+
+2026-08-05: rewritten after an independent statistical referee.  The section-9
+tests cover C3 (the retracted feasibility verdict), M-A (the tautological truth
+residual), M-B (the FP ceiling and the negative implied population), M-C (_p3's
+declared predicate), M-D (fail-open validation), M-E (the retracted BAL
+magnitude) and M-F (the uncalibrated fitcov fallback).  Several of those
+mutants die ONLY when the window-study packs are present; each such test says
+so and there is a pack-free companion.
 """
 import json
 import os
@@ -36,14 +44,15 @@ PACKDIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
            "window_study/packs")
 ADOPTED_PACK = os.path.join(
     PACKDIR, "modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz")
-UNPADDED_PACK = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-                 "modelA_packs/modelA_pack_2lpt0_v11.npz")
+V11DIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/modelA_packs")
+UNPADDED_PACK = os.path.join(V11DIR, "modelA_pack_2lpt0_v11.npz")
 
 
 def _fake_pack(*, ntrue=None, nhat=None, molly=None, n_b=None, n_k=3, n_s=2,
                truth_bks=True, counts=None, fp_counts=None,
                fp_ell_eff=13.589891949531905, fp_w=165.93215077605322,
-               molly_n_det=None, molly_n_tot=None, kz=None):
+               molly_n_det=None, molly_n_tot=None, kz=None, t_sigma=None,
+               mock=None):
     """A minimal duck-typed pack.
 
     ``validate_pack_against_contract`` / ``fp_normalisation_audit`` /
@@ -66,6 +75,10 @@ def _fake_pack(*, ntrue=None, nhat=None, molly=None, n_b=None, n_k=3, n_s=2,
                    if fp_counts is None else np.asarray(fp_counts)),
         fp_ell_eff=fp_ell_eff, fp_w_sightline_ratio=fp_w,
         molly_n_det=nd, molly_n_tot=nt,
+        t_sigma=(np.array([0.1, 0.1, 0.1]) if t_sigma is None
+                 else np.asarray(t_sigma, float)),
+        provenance=(dict(mock=mock) if mock else dict()),
+        resp_fitcov_diag=None,
         truth_counts_bks=(np.zeros((B, n_k, n_s)) if truth_bks else None),
     )
 
@@ -91,14 +104,20 @@ def test_basis_partition_splits_the_straddling_ceiling_bin_by_overlap():
     the reporting floor can carry both edges.
 
     MUTATION: use ``bins_fully_inside`` instead of ``truth_overlap_fractions``.
-    MEASURED baseline: the straddling bin's in-window fraction is exactly 0.5
-    and its above-ceiling fraction is exactly 0.5; ``bins_fully_inside`` gives
-    0.0 and would silently move a whole 0.2-dex bin out of P2."""
+    MEASURED baseline: the straddling bin's in-window fraction is
+    0.5000000000000089 and its above-ceiling fraction 0.4999999999999911 —
+    8.9e-15 off the analytic 0.5, NOT exact (the docstring used to overstate
+    this; referee minor 2026-08-05). ``bins_fully_inside`` gives 0.0 and would
+    silently move a whole 0.2-dex bin out of P2."""
     p = MC.basis_partition(ADOPTED_NTRUE)
     j = int(np.flatnonzero(np.isclose(ADOPTED_NTRUE[:-1], 21.5))[0])
     assert p["in_window"][j] == pytest.approx(0.5, abs=1e-12)
     assert p["above_ceiling"][j] == pytest.approx(0.5, abs=1e-12)
     assert p["below_floor"][j] == 0.0
+    # the deviation is real and bounded; pin it so "exactly 0.5" is never
+    # re-asserted in the docstring.
+    assert p["in_window"][j] != 0.5
+    assert abs(p["in_window"][j] - 0.5) < 1e-13
 
 
 def test_basis_partition_gives_the_pad_entirely_to_P1():
@@ -170,6 +189,32 @@ def test_classify_candidate_fails_closed_on_an_ambiguous_record():
         dict(is_TP=True, nhi_true=20.5, forest_attributable=True)) == "P2_IN_WINDOW"
 
 
+def test_classify_candidate_refuses_an_undeclared_or_coerced_record():
+    """REFEREE MINOR (2026-08-05), fixed. The docstring promised fail-closed
+    and the code was not.
+
+    MEASURED before the fix: ``classify_candidate({})`` returned
+    ``'P6_RESIDUAL'`` — a real answer, and specifically the slot with NO
+    forward term, for a record that declares nothing; and
+    ``classify_candidate(dict(is_TP=True, nhi_true='20.5',
+    forest_attributable=False))`` returned ``'P2_IN_WINDOW'``, silently
+    coercing a string through ``float()``.
+
+    MUTATION: delete the ``_require_keys`` call in ``classify_candidate`` (or
+    restore ``_is_num``'s old ``np.isfinite(float(x))`` body). MEASURED
+    baseline: both calls below stop raising and return P6_RESIDUAL / P2."""
+    with pytest.raises(MC.ContractViolation, match="missing required key"):
+        MC.classify_candidate({})
+    with pytest.raises(MC.ContractViolation, match="missing required key"):
+        MC.classify_candidate(dict(is_TP=False, nhi_true=np.nan))
+    with pytest.raises(MC.ContractViolation):
+        MC.classify_candidate(
+            dict(is_TP=True, nhi_true="20.5", forest_attributable=False))
+    with pytest.raises(MC.ContractViolation, match="not a real finite number"):
+        MC.classify_candidate(
+            dict(is_TP=True, nhi_true=np.nan, forest_attributable=False))
+
+
 def test_classify_truth_counts_a_matched_row_zero_times():
     """A matched truth row is already on the CANDIDATE ledger and must not be
     added to P3.
@@ -177,8 +222,57 @@ def test_classify_truth_counts_a_matched_row_zero_times():
     MUTATION: make ``classify_truth`` return 'P3_INCOMPLETENESS' unconditionally.
     MEASURED baseline: a matched row then appears on both ledgers and the truth
     ledger residual (test below) goes from 0.0 to -sum(found)."""
-    assert MC.classify_truth(dict(matched=True)) is None
-    assert MC.classify_truth(dict(matched=False)) == "P3_INCOMPLETENESS"
+    assert MC.classify_truth(dict(matched=True, nhi_true=20.5)) is None
+    assert MC.classify_truth(
+        dict(matched=False, nhi_true=20.5)) == "P3_INCOMPLETENESS"
+
+
+def test_p3_executes_the_basis_support_test_its_predicate_declares():
+    """REFEREE M-C (2026-08-05), fixed. ``P3_INCOMPLETENESS.predicate_text``
+    says 'a truth row ... INSIDE THE BASIS SUPPORT ... that NO candidate
+    claims', but ``_p3`` was a bare ``not rec.get('matched')``.
+
+    MEASURED before the fix: ``classify_truth(dict(matched=False,
+    nhi_true=18.0))`` returned ``'P3_INCOMPLETENESS'`` — for a truth row a full
+    dex BELOW the 19.0 basis floor, which has no basis bin, hence no C[b,s] and
+    no (1 - C) complement for the fold to carry. And
+    ``classify_truth(dict(matched=False))`` — a row with no nhi_true at all —
+    also returned P3.
+
+    MUTATION: restore ``_p3 = lambda rec: not bool(rec.get('matched'))``.
+    MEASURED baseline: the 18.0 row and the 22.9 row come back as P3 instead of
+    OUT_OF_BASIS_SUPPORT, and the missing-key row stops raising."""
+    assert MC.classify_truth(
+        dict(matched=False, nhi_true=18.0)) == MC.TRUTH_OUT_OF_BASIS_SUPPORT
+    assert MC.classify_truth(
+        dict(matched=False, nhi_true=22.9)) == MC.TRUTH_OUT_OF_BASIS_SUPPORT
+    # the boundaries the predicate now names, both closed-below / open-above
+    assert MC.classify_truth(
+        dict(matched=False, nhi_true=MC.ADOPTED_PAD_FLOOR)) == "P3_INCOMPLETENESS"
+    assert MC.classify_truth(
+        dict(matched=False, nhi_true=MC.ADOPTED_BASIS_TOP)
+    ) == MC.TRUTH_OUT_OF_BASIS_SUPPORT
+    # fail-closed on a row that cannot be tested
+    with pytest.raises(MC.ContractViolation, match="missing required key"):
+        MC.classify_truth(dict(matched=False))
+    with pytest.raises(MC.ContractViolation, match="non-numeric nhi_true"):
+        MC.classify_truth(dict(matched=False, nhi_true=np.nan))
+    # and the DECLARED text names the executed bounds
+    txt = MC.POPULATION_BY_ID["P3_INCOMPLETENESS"].predicate_text
+    assert f"{MC.ADOPTED_PAD_FLOOR} <= NHI_TRUE < {MC.ADOPTED_BASIS_TOP}" in txt
+
+
+def test_population_declaration_order_is_pinned():
+    """REFEREE MINOR: ``classify_candidate`` returns ``hits[0]``, so tuple
+    order would decide the answer if two slots ever claimed one record. The
+    ``len(hits) != 1`` guard makes that unreachable; the order is pinned so a
+    reorder is a visible diff, and the guard itself is exercised above.
+
+    MUTATION: swap P1 and P2 in ``POPULATIONS``. MEASURED baseline: the module
+    raises ContractViolation AT IMPORT."""
+    assert tuple(p.pid for p in MC.POPULATIONS) == MC.POPULATION_ORDER
+    assert MC.POPULATION_ORDER[0] == "P1_SCATTER_IN"
+    assert MC.POPULATION_ORDER[-1] == "P6_RESIDUAL"
 
 
 # ===========================================================================
@@ -305,7 +399,7 @@ def test_assert_forward_fp_normalisation_raises_on_the_committed_fold():
 
 
 def test_the_forward_module_still_omits_ell_eff_at_the_named_site():
-    """Pins KNOWN_CONTRADICTIONS[0] to the SOURCE, not to prose.
+    """Pins the FP_ELL_EFF_OMITTED contradiction to the SOURCE, not to prose.
 
     MUTATION: rename ``fp_w`` in the fold. MEASURED baseline: forward.py's
     mu_fp expression mentions ``consts.fp_w`` and does NOT mention
@@ -314,13 +408,13 @@ def test_the_forward_module_still_omits_ell_eff_at_the_named_site():
     body = src.split("def fold_mu(", 1)[1].split("def fold_mu_reference", 1)[0]
     assert "consts.fp_w" in body
     assert "fp_ell_eff" not in body
-    assert MC.KNOWN_CONTRADICTIONS[0]["id"] == "FP_ELL_EFF_OMITTED"
+    assert "FP_ELL_EFF_OMITTED" in MC.CONTRADICTION_BY_ID
 
 
 # ===========================================================================
 # 5. the accounting identity, on an injected row mass (no jax, no scratch)
 # ===========================================================================
-def _toy():
+def _toy(rho_val=0.8, n_det=50.0, n_obs_total=0):
     """A 3-bin latent basis on the adopted geometry's TOP three bins is not
     enough to satisfy the geometry rules, so the toy uses the FULL adopted
     edges with hand-set truth, completeness and row mass."""
@@ -328,16 +422,22 @@ def _toy():
     M = len(MOLLY172) - 1
     T = np.zeros((B, Kf, S))
     T[:, :, :] = 10.0                       # 16 * 3 * 2 * 10 = 960 truth systems
-    nd = np.full((S, M), 50.0)              # C = (50+.5)/(100+1) ~ 0.5 exactly
+    nd = np.full((S, M), float(n_det))      # C = (n+.5)/(100+1)
     nt = np.full((S, M), 100.0)
-    pk = _fake_pack(n_k=Kf, n_s=S, molly_n_det=nd, molly_n_tot=nt)
+    counts = np.zeros((len(REAL_NHAT) - 1, Kf, S), dtype=np.int64)
+    if n_obs_total:
+        counts[0, 0, 0] = int(n_obs_total)
+    pk = _fake_pack(n_k=Kf, n_s=S, molly_n_det=nd, molly_n_tot=nt, counts=counts)
     pk.truth_counts_bks = T
-    rho = np.full((S, 1, B), 0.8)           # KK = 1 (kz all zero)
+    rho = np.full((S, 1, B), float(rho_val))   # KK = 1 (kz all zero)
     return pk, T, rho
 
 
 def test_truth_ledger_closes_exactly():
     """found_on + found_off + missed == the truth total, to floating point.
+
+    THIS IS A TAUTOLOGY (referee M-A) — see the dedicated test below. It is
+    kept because it is still the cheapest detector of a shape/axis crash.
 
     MUTATION: in ``check_accounting_identity`` change ``missed = T * (1 - C)``
     to ``missed = T``. MEASURED baseline: the residual goes from 0.0 to
@@ -352,6 +452,102 @@ def test_truth_ledger_closes_exactly():
     assert t["found_on_grid"] == pytest.approx(960 * 0.5 * 0.8, rel=1e-12)
     assert t["found_off_grid"] == pytest.approx(960 * 0.5 * 0.2, rel=1e-12)
     assert t["missed_P3"] == pytest.approx(960 * 0.5, rel=1e-12)
+    assert t["residual_is_a_tautology"] is True
+
+
+@pytest.mark.parametrize("rho_val", [0.0, 0.8, 1.0])
+@pytest.mark.parametrize("n_det", [0.0, 1.0, 99.0])
+def test_the_truth_ledger_residual_is_an_algebraic_tautology(rho_val, n_det):
+    """REFEREE M-A. ``T.C.rho + T.C.(1-rho) + T.(1-C) == T`` for ANY C, rho, T.
+
+    The residual was advertised in ``ACCOUNTING_IDENTITY.checkable_residuals``
+    as 'a nonzero value means the implementation is broken' and as the FIRST of
+    'the two numbers a referee should read'. It is neither: it detects a
+    shape / broadcast / dtype crash and nothing else.
+
+    MEASURED 2026-08-05: every combination of rho in {0.0, 0.8, 1.0, U(0,1)}
+    and molly_n_det in {0, 1, 99} leaves the residual at 0.0 to +-2.3e-13,
+    while found_on ranges over 0.000 .. 945.743 and missed over
+    14.257 .. 955.248 on the same toy. Nine of those twelve are pinned here.
+
+    MUTATION: none can turn this red by construction — that IS the finding.
+    The mutation-tested content lives in
+    ``test_the_truth_ledger_value_guards_have_teeth``, and the CLAIM this
+    replaces is pinned by ``test_the_tautology_is_declared_in_the_contract``."""
+    pk, T, rho = _toy(rho_val=rho_val, n_det=n_det)
+    r = MC.check_accounting_identity(pk, row_mass=rho)
+    assert abs(r["truth_ledger"]["residual"]) < 1e-9
+    # ... while the slots themselves move a lot
+    c = (n_det + 0.5) / 101.0
+    assert r["truth_ledger"]["found_on_grid"] == pytest.approx(
+        960.0 * c * rho_val, rel=1e-9, abs=1e-9)
+    assert r["truth_ledger"]["missed_P3"] == pytest.approx(
+        960.0 * (1.0 - c), rel=1e-9)
+
+
+def test_the_tautology_is_declared_in_the_contract():
+    """MUTATION: restore 'ZERO by construction; a nonzero value means the
+    implementation is broken.' as ``truth_ledger_residual``. MEASURED
+    baseline: the contract must SAY the residual is a tautology, must name what
+    it does detect, and must point at the guards that carry the content."""
+    ci = MC.ACCOUNTING_IDENTITY["checkable_residuals"]
+    assert "TAUTOLOGY" in ci["truth_ledger_residual"]
+    assert "shape" in ci["truth_ledger_residual"]
+    assert "truth_ledger_value_guards" in ci
+    assert "TRUTH_LEDGER_RESIDUAL_ADVERTISED_AS_A_TEST" in {
+        d["id"] for d in MC.RETRACTIONS}
+
+
+def test_the_truth_ledger_value_guards_have_teeth():
+    """The NON-tautological half of M-A: guards on the VALUES of found_on /
+    found_off / missed, not on their sum.
+
+    MUTATION: delete the ``_truth_ledger_value_guards`` call in
+    ``check_accounting_identity``. MEASURED baseline: each of the three inputs
+    below then sails through — a completeness of 2.0 gives found_on = 1536.0 on
+    a truth total of 960.0 with residual 0.0; a transposed rho gives a
+    DIFFERENT per-bin split with residual 0.0; an all-NaN rho gives
+    found_on = nan with residual = nan."""
+    pk, T, rho = _toy()
+    guards = MC.check_accounting_identity(
+        pk, row_mass=rho)["truth_ledger"]["value_guards"]
+    assert guards["n_cells_checked"] == T.size
+    assert guards["found_on_le_T_times_C"] is True
+
+    # 1. an impossible completeness (n_det > n_tot) is refused at validation
+    with pytest.raises(MC.ContractViolation, match="IMPOSSIBLE COMPLETENESS"):
+        MC.check_accounting_identity(
+            _toy(n_det=200.0)[0], row_mass=rho)
+    # 2. a row mass above 1 is refused
+    with pytest.raises(MC.ContractViolation, match="row mass outside"):
+        MC.check_accounting_identity(pk, row_mass=np.full_like(rho, 1.5))
+    # 3. NaN is refused BEFORE the range test (NaN comparisons are all False)
+    with pytest.raises(MC.ContractViolation, match="non-finite"):
+        MC.check_accounting_identity(pk, row_mass=np.full_like(rho, np.nan))
+
+
+def test_the_rho_transpose_is_pinned_by_an_index_round_trip():
+    """The one real failure mode the additive residual CAN see: an axis error
+    in ``rho[:, kz, :] -> (B, Kf, S)``.
+
+    MUTATION: change the transpose in ``check_accounting_identity`` to
+    ``(2, 1, 0)`` -> ``(0, 1, 2)`` (or delete the round-trip guard and feed a
+    non-square rho). MEASURED baseline: with B = 16, Kf = 3, S = 2 the wrong
+    permutation raises on shape; with a square-in-B-and-S toy it would NOT,
+    which is why the guard compares element by element."""
+    B, Kf, S = len(ADOPTED_NTRUE) - 1, 3, 2
+    pk, T, _ = _toy()
+    # a rho whose per-bin values differ, so a permutation is detectable
+    rho = np.linspace(0.05, 0.95, S * 1 * B).reshape(S, 1, B)
+    r = MC.check_accounting_identity(pk, row_mass=rho)
+    g = r["truth_ledger"]["value_guards"]
+    assert g["rho_min"] == pytest.approx(0.05)
+    assert g["rho_max"] == pytest.approx(0.95)
+    # the ledger used rho[s, kz[k], b] for cell (b, k, s)
+    on = r["truth_ledger"]["found_on_grid"]
+    c = 0.5
+    assert on == pytest.approx(float((10.0 * c * rho[:, 0, :]).sum() * Kf),
+                               rel=1e-12)
 
 
 def test_candidate_ledger_partitions_the_on_grid_signal_without_gap_or_overlap():
@@ -372,12 +568,12 @@ def test_candidate_ledger_partitions_the_on_grid_signal_without_gap_or_overlap()
 
 
 def test_row_mass_outside_zero_one_is_refused():
-    """The feasibility bound rests on rho <= 1.
+    """The trivial efficiency bound rests on rho <= 1.
 
     MUTATION: delete the row-mass guard. MEASURED baseline: with rho = 1.5 the
     reported found_on_grid (1440.0) EXCEEDS the truth total (960.0) and
-    ``efficiency_attainable_at_calibration`` reads 1.5 — a nonsense the
-    counting argument would then be built on."""
+    ``efficiency_at_calibration`` reads 1.5 — a nonsense the counting argument
+    would then be built on."""
     pk, T, rho = _toy()
     with pytest.raises(MC.ContractViolation, match="row mass"):
         MC.check_accounting_identity(pk, row_mass=np.full_like(rho, 1.5))
@@ -388,8 +584,8 @@ def test_row_mass_outside_zero_one_is_refused():
 # ===========================================================================
 def test_contract_dict_is_json_serializable_and_complete():
     """MUTATION: drop ``accounting_identity`` from ``contract_dict``. MEASURED
-    baseline: the contract carries 6 populations, 7 support regions and 5
-    recorded contradictions."""
+    baseline: the contract carries 6 populations, 7 support regions, 6 recorded
+    contradictions and 3 recorded retractions."""
     d = MC.contract_dict()
     json.dumps(d, default=str)
     assert len(d["populations"]) == 6
@@ -397,7 +593,8 @@ def test_contract_dict_is_json_serializable_and_complete():
         "P1_SCATTER_IN", "P2_IN_WINDOW", "P3_INCOMPLETENESS", "P4_FOREST_FP",
         "P5_TRANSFER", "P6_RESIDUAL"}
     assert len(d["support_map"]) == 7
-    assert len(d["known_contradictions"]) == 5
+    assert len(d["known_contradictions"]) == 6
+    assert len(d["retractions"]) == 3
     assert "statement" in d["accounting_identity"]
     for p in d["populations"]:
         assert p["support_class"] in MC.SupportClass.ALL
@@ -444,8 +641,283 @@ def test_the_reporting_window_is_reused_never_redeclared():
     assert MC.REPORT_CEILING == RP.RESPONSE_ANCHOR_CEILING == 21.6
 
 
+def test_the_adopted_baseline_constants_are_reused_from_reporting():
+    """REFEREE MINOR (2026-08-05), fixed. ``ADOPTED_BASIS_WIDTH``,
+    ``ADOPTED_PAD_FLOOR`` and ``ADOPTED_COMPLETENESS_CONVENTION`` were
+    hard-coded literals while the module docstring claimed reuse, and
+    ``ADOPTED_PAD_FLOOR`` is LOAD-BEARING as the P1/P6 boundary in ``_p1`` and
+    the basis-support test in ``_p3``.
+
+    The fourth, ``ADOPTED_ANALYSIS_WINDOW``, is NOT in reporting.py — reporting
+    carries the logN REPORTING_WINDOW, not the spectral window — so it is
+    declared here with its real source named, and the docstring no longer
+    claims otherwise.
+
+    MUTATION: set ``ADOPTED_PAD_FLOOR = 19.5`` as a literal. MEASURED baseline:
+    ``assert_adopted_constants_agree_with_reporting`` raises, and the P1/P6
+    boundary silently moves by half a dex without it."""
+    ac = RP.ADOPTED_CONFIG
+    assert MC.ADOPTED_BASIS_WIDTH is ac["basis_width_dex"]
+    assert MC.ADOPTED_PAD_FLOOR is ac["basis_pad_floor"]
+    assert MC.ADOPTED_COMPLETENESS_CONVENTION is ac["completeness_below_floor"]
+    assert MC.assert_adopted_constants_agree_with_reporting() is True
+    assert MC.ADOPTED_ANALYSIS_WINDOW["source"].startswith("extract_pack")
+    assert "reporting" not in MC.ADOPTED_ANALYSIS_WINDOW["source"].split("—")[0]
+
+
 # ===========================================================================
-# 7. integration on the REAL adopted mock packs
+# 7. C3: prior COST, never a feasibility verdict
+# ===========================================================================
+def test_the_calibration_point_verdict_is_retracted():
+    """REFEREE C3 (BLOCKING). The contract used to compute the efficiency at
+    ``psi_c = 0, psi_k_delta = 0``, call it 'the SHARPER bound', and emit
+    ``feasible_at_calibration_per_contract``. ``psi_c ~ Normal(0, sigma_hat)``
+    and ``psi_k_delta ~ Normal(0, fitcov_sd)`` are sample sites with UNBOUNDED
+    support (model_a.py:206-209): a point value there is not an upper bound.
+
+    MUTATION: re-add ``feasible_at_calibration_per_contract`` to the
+    ``feasibility`` dict. MEASURED baseline: the three retracted keys are
+    ABSENT and the retraction is recorded with its measurements."""
+    pk, T, rho = _toy(n_obs_total=100)
+    f = MC.check_accounting_identity(pk, row_mass=rho)["feasibility"]
+    for k in ("feasible_at_calibration_per_contract",
+              "feasible_at_calibration_as_implemented",
+              "efficiency_attainable_at_calibration"):
+        assert k not in f, f"{k} is RETRACTED and must not be emitted"
+    assert f["trivial_bound_efficiency"] == 1.0
+    assert "efficiency_at_calibration" in f
+    assert "POINT" in f["note"] and "bounds nothing" in f["note"]
+    r = {d["id"]: d for d in MC.RETRACTIONS}["C3_CALIBRATION_POINT_IS_NOT_A_BOUND"]
+    assert "SHARPER bound" in r["withdrawn"]
+    assert "UNBOUNDED support" in r["why"]
+    assert "0.7190167" in r["measured"] and "0.8572838" in r["measured"]
+    assert "infinity" in r["what_survives"] and "2lpt0_v11" in r["what_survives"]
+
+
+def test_prior_cost_reports_a_cost_and_labels_what_is_a_bound():
+    """The replacement quantity. MUTATION: set
+    ``efficiency_at_calibration_is_a_bound=True`` in ``prior_cost_audit``, or
+    drop ``trivial_bound_is_the_only_bound``. MEASURED baseline on the toy:
+    the trivial bound is 1.0, the calibration point is explicitly NOT a bound,
+    and both one-block suprema are reported."""
+    pk, T, rho = _toy(n_obs_total=100)
+    pc = MC.check_accounting_identity(pk, row_mass=rho)["prior_cost"]
+    assert pc["trivial_bound_efficiency"] == 1.0
+    assert pc["trivial_bound_is_the_only_bound"] is True
+    assert pc["efficiency_at_calibration_is_a_bound"] is False
+    # C = 0.5, rho = 0.8 on the toy: sup over psi_c alone is rho, over psi_k C
+    assert pc["sup_efficiency_psi_c_only"] == pytest.approx(0.8, rel=1e-9)
+    assert pc["sup_efficiency_psi_k_only"] == pytest.approx(0.5, rel=1e-9)
+    assert pc["efficiency_at_calibration"] == pytest.approx(0.4, rel=1e-9)
+    assert "COST, not a verdict" in pc["reading"]
+
+
+def test_min_prior_chi2_psi_c_agrees_with_its_own_dual_bound():
+    """The prior-cost solver reports a primal WITNESS (upper bound) and a
+    Lagrangian DUAL (lower bound); when they meet, the value is the minimum.
+
+    MUTATION: return only ``upper_bound`` from the last swept lambda without
+    checking ``s >= target`` (i.e. drop the ``if s >= target`` branch).
+    MEASURED baseline on this hand-built two-cell problem: upper and lower
+    agree to < 1e-6 in relative terms, and the achieved signal equals the
+    target; the mutant returns a witness that does NOT reach the target."""
+    w = np.array([1000.0, 500.0])
+    eta = np.array([0.0, -1.0])
+    sigma = np.array([0.10, 0.20])
+    s0 = float((w / (1.0 + np.exp(-eta))).sum())
+    target = s0 + 80.0
+    r = MC.min_prior_chi2_psi_c(w, eta, sigma, target)
+    assert r["upper_bound"] == pytest.approx(r["lower_bound"], rel=1e-5)
+    assert r["achieved"] >= target - 1e-6
+    assert r["upper_bound"] > 0.0
+    # below the calibration point it costs nothing
+    assert MC.min_prior_chi2_psi_c(w, eta, sigma, s0 - 1.0)["upper_bound"] == 0.0
+    # above the supremum it costs infinity — this IS a bound argument
+    inf = MC.min_prior_chi2_psi_c(w, eta, sigma, float(w.sum()) + 1.0)
+    assert inf["upper_bound"] == np.inf and inf["lower_bound"] == np.inf
+    assert "EXCEEDS the supremum" in inf["note"]
+
+
+def test_fitcov_provenance_travels_with_every_psi_k_cost():
+    """REFEREE M-F. ``pack.resp_fitcov_diag`` is absent from all six extracted
+    packs, so ``build_consts`` falls back to
+    ``_DEFAULT_FITCOV_DIAG = (0.02^2, 0.10^2)`` (forward.py:218) — and the
+    psi_k prior cost that closes the adopted geometry scales as 1/fitcov_sd^2.
+
+    MUTATION: delete the ``prior_cost['fitcov_sd_provenance']`` assignment in
+    ``check_accounting_identity``. MEASURED baseline: the flag reads False on
+    every adopted pack and the status string says UNCALIBRATED."""
+    pk, T, rho = _toy(n_obs_total=100)
+    p = MC.check_accounting_identity(pk, row_mass=rho)["prior_cost"]
+    prov = p["fitcov_sd_provenance"]
+    assert prov["pack_carries_resp_fitcov_diag"] is False
+    assert "UNCALIBRATED" in prov["status"]
+    assert "0.02^2, 0.10^2" in prov["fallback"]
+    c = MC.CONTRADICTION_BY_ID["FITCOV_SD_IS_AN_UNCALIBRATED_FALLBACK"]
+    assert "all six extracted packs" in c["measured"]
+
+
+# ===========================================================================
+# 8. M-B: the FP ceiling and the negative implied population
+# ===========================================================================
+def test_fp_ceiling_audit_refuses_a_mu_fp_above_the_mock_supply():
+    """REFEREE M-B. A forest FP is an on-grid candidate with NO genuine
+    absorber, so mu_FP cannot exceed the mock's own unmatched on-grid count.
+
+    MEASURED 2026-08-05 on the 2LPT-0 17.2-floor bundle
+    (load_and_cut_catalog(truth_nhi_floor=17.2), 11 s): the 88053 on-grid
+    op-passing candidates split 15438 / 55058 / 497 / 3200 / 13860 into
+    (true N in [19.0,19.7)) / ([19.7,21.6)) / (>= 21.6) / (< 19.0) /
+    (unmatched), summing to 88053 exactly. The contract's own recommended
+    mu_FP_per_contract = 14767.96 EXCEEDS the 13860 by 907.96 — and 13860 is
+    already an OVER-count, since blends and second candidates on a claimed
+    truth row also land there.
+
+    MUTATION: change ``exceeds_ceiling`` to ``mu >= 2 * ceil_``. MEASURED
+    baseline: the audit stops reporting VIOLATED on 14767.96 vs 13860."""
+    ref = MC.FP_CEILING_MEASURED["2lpt0"]
+    assert (ref["P1_true_19p0_to_19p7"] + ref["P2_true_19p7_to_21p6"]
+            + ref["P6_true_above_21p6"] + ref["P6_true_below_19p0"]
+            + ref["unmatched"]) == ref["n_on_grid"] == 88053
+    a = MC.fp_ceiling_audit(_fake_pack(mock="2lpt0"),
+                            mu_fp_per_contract=14767.961419068737)
+    assert a["ceiling"] == 13860.0
+    assert a["exceeds_ceiling"] is True
+    assert a["excess"] == pytest.approx(907.961419, abs=1e-4)
+    assert "VIOLATED" in a["status"]
+    # an unmeasured mock reports UNAVAILABLE, never a silent pass
+    b = MC.fp_ceiling_audit(_fake_pack(mock="london0"), mu_fp_per_contract=1e9)
+    assert b["exceeds_ceiling"] is None and "NOT MEASURED" in b["status"]
+
+
+def test_a_negative_implied_unsupported_population_is_flagged():
+    """REFEREE M-B. ``P6_unsupported_implied_per_contract`` is a COUNT of
+    on-grid candidates left over for P6's unsupported sub-slots. It came out
+    NEGATIVE on two of the three adopted packs (MEASURED 2026-08-05: london0
+    -3287.42, saclay0 -2079.08; 2lpt0 is +882.30) and was emitted with no
+    comment at all.
+
+    MUTATION: delete the ``NEGATIVE_IMPLIED_P6_UNSUPPORTED`` block in
+    ``check_accounting_identity``. MEASURED baseline: on this toy the modelled
+    slots predict 384.0 + 165.93 = 549.93 against n_obs = 100, so the implied
+    population is -449.93 and the flag must fire; ``strict=True`` must raise."""
+    pk, T, rho = _toy(n_obs_total=100)
+    pk.fp_counts = np.zeros((len(REAL_NHAT) - 1, 2), dtype=np.int64)
+    pk.fp_counts[0, 0] = 1
+    r = MC.check_accounting_identity(pk, row_mass=rho)
+    c = r["candidate_ledger"]
+    assert c["P6_unsupported_implied_per_contract"] < 0
+    assert c["P6_unsupported_implied_is_negative"] is True
+    ids = [f["id"] for f in r["flags"]]
+    assert "NEGATIVE_IMPLIED_P6_UNSUPPORTED" in ids
+    with pytest.raises(MC.ContractViolation,
+                       match="NEGATIVE_IMPLIED_P6_UNSUPPORTED"):
+        MC.check_accounting_identity(pk, row_mass=rho, strict=True)
+    # ... and a healthy pack raises no flag
+    ok, _, rho_ok = _toy(n_obs_total=100000)
+    assert MC.check_accounting_identity(ok, row_mass=rho_ok)["flags"] == []
+
+
+# ===========================================================================
+# 9. M-D: fail CLOSED, not open
+# ===========================================================================
+def test_validate_fails_closed_on_nan_counts():
+    """REFEREE M-D. MEASURED before the fix: a pack whose ``counts`` are all
+    NaN passed validation, produced ``n_obs = nan``, and yielded
+    ``feasible = bool(nan <= t_tot) = False`` — a NaN pack silently licensed
+    the very 'INFEASIBLE' verdict this module exists to support.
+
+    MUTATION: delete the ``_assert_finite(c, 'pack.counts')`` call (rule 6a).
+    MEASURED baseline: the call below stops raising and n_obs comes back nan."""
+    pk = _fake_pack()
+    pk.counts = np.full((len(REAL_NHAT) - 1, 3, 2), np.nan)
+    with pytest.raises(MC.ContractViolation, match="pack.counts contains"):
+        MC.validate_pack_against_contract(pk)
+    # NaN really does slip past a bare range test — this is the mechanism
+    assert not (np.nan < 0) and not (np.nan > 1)
+
+
+def test_validate_fails_closed_on_impossible_completeness():
+    """REFEREE M-D. MEASURED before the fix: ``molly_n_det = 200`` against
+    ``molly_n_tot = 100`` had NO guard at all and gave
+    ``eta_hat = log(200.5 / -99.5) = nan``, silently NaN-ing every downstream
+    completeness.
+
+    MUTATION: delete rule 8. MEASURED baseline: the call below stops raising
+    and ``_eta_hat`` returns nan for every cell."""
+    with pytest.raises(MC.ContractViolation, match="IMPOSSIBLE COMPLETENESS"):
+        MC.validate_pack_against_contract(
+            _fake_pack(molly_n_det=np.full((2, 12), 200.0),
+                       molly_n_tot=np.full((2, 12), 100.0)))
+    with pytest.raises(MC.ContractViolation, match="non-finite"):
+        MC.validate_pack_against_contract(
+            _fake_pack(molly_n_det=np.full((2, 12), np.nan)))
+    with pytest.raises(MC.ContractViolation, match="n_det >= 0"):
+        MC.validate_pack_against_contract(
+            _fake_pack(molly_n_det=np.full((2, 12), -1.0)))
+
+
+def test_validate_fails_closed_on_nan_row_mass_and_truth():
+    """REFEREE M-D. MEASURED before the fix: an all-NaN ``row_mass`` passed the
+    ``rho < -1e-12 or rho > 1+1e-9`` guard, because every comparison with NaN
+    is False, and produced ``found_on = nan``, ``residual = nan``.
+
+    MUTATION: move ``_assert_finite(rho, ...)`` AFTER the range test in
+    ``_truth_ledger_value_guards``. MEASURED baseline: the first call below
+    stops raising."""
+    pk, T, rho = _toy()
+    with pytest.raises(MC.ContractViolation, match="row mass"):
+        MC.check_accounting_identity(pk, row_mass=np.full_like(rho, np.nan))
+    bad = _fake_pack()
+    bad.truth_counts_bks = np.full((16, 3, 2), np.nan)
+    with pytest.raises(MC.ContractViolation, match="truth_counts_bks contains"):
+        MC.validate_pack_against_contract(bad)
+
+
+# ===========================================================================
+# 10. M-E: the BAL magnitude is RETRACTED
+# ===========================================================================
+def test_the_bal_magnitude_is_retracted_and_the_null_is_recorded():
+    """REFEREE M-E. The contract declared the comment at
+    ``build_loa0_fp_product.py:231`` ('loa-0 is BAL-free') FALSE, booked a PI
+    item to move P4 to 70/1904, and claimed a '7.35% HIGH' effect.
+
+    The premise was tested on the FULL op+lya loa-0 FP catalogue. MEASURED
+    2026-08-05 (3255 raw FP rows; op = SNR_REDSIDE>2 & P_DLA>0.99;
+    lya = lam_rest >= 1025 A; BAL set = loa-124 bal_cat.fits, 193737 unique
+    TARGETIDs; 351 BAL / 1904 non-BAL loa-0 sightlines with SNR>2):
+
+        op      : N=2704  FP/sightline BAL 1.1880  nonBAL 1.2012  ratio 0.98908  z = -0.21
+        op+lya  : N=2378  FP/sightline BAL 1.0570  nonBAL 1.0541  ratio 1.00274  z = +0.05
+        the 89  : BAL 19 vs expected 13.853 (sd 3.420)                           z = +1.50
+
+    There is no BAL signal in loa-0. The 19-of-89 excess is a 1.50-sigma
+    fluctuation; adopting 70/1904 would discard 351 valid sightlines and 19
+    valid FPs, inflating the FP Poisson variance ~18%, to chase it.
+
+    MUTATION: restore ``effect='P4 is 7.35% HIGH ...'`` and the old PI item.
+    MEASURED baseline: the entry must carry a ``retracted`` block naming the
+    2378-event test, must NOT claim the site comment is FALSE, and the PI item
+    must say no change is proposed."""
+    c = MC.CONTRADICTION_BY_ID["BAL_VETO_ONE_SIDED_IN_FP_W"]
+    assert "retracted" in c
+    assert "2378" in c["retracted"]["why"]
+    assert "1.00274" in c["retracted"]["why"]
+    assert "1.50-sigma" in c["retracted"]["why"]
+    assert "7.35" not in c["effect"]
+    assert "NO measured effect" in c["effect"]
+    assert "NO CHANGE PROPOSED" in c["status"]
+    # the support-matching OBSERVATION survives, with its counts
+    assert "351" in c["measured"] and "1904" in c["measured"]
+    assert c["contract"].startswith("P4's rate scale")
+    # the PI item no longer proposes 70/1904
+    pi = "\n".join(MC.PI_CHECKPOINT_ITEMS)
+    assert "RETRACTED" in pi and "NO change to 70/1904 is proposed" in pi
+    assert "BAL_VETO_MAGNITUDE" in {d["id"] for d in MC.RETRACTIONS}
+
+
+# ===========================================================================
+# 11. integration on the REAL adopted mock packs
 # ===========================================================================
 @pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
                     reason="adopted window-study pack not on this filesystem")
@@ -458,7 +930,7 @@ def test_identity_on_the_adopted_2lpt0_pack():
         found_on_grid            72420.741
         found_off_grid            9895.303
         missed (P3)              19632.956
-        truth-ledger residual        0.000     <- MUST be zero
+        truth-ledger residual        0.000     <- a TAUTOLOGY, not a test
         P1 scatter-in            18033.092
         P2 in-window             53847.300
         P6 above ceiling           540.349
@@ -466,8 +938,8 @@ def test_identity_on_the_adopted_2lpt0_pack():
         P4 per contract          14767.961
         candidate residual  (impl)  -14563.572   (-16.536%)
         candidate residual (contr)    -882.298   ( -1.002%)
-        efficiency attainable        0.71036
-        efficiency required (contr)  0.71902     <- EXCEEDS attainable
+        efficiency AT CALIBRATION    0.7103624   <- a POINT, not a bound
+        efficiency required (contr)  0.7190167
 
     MUTATION: set ``rho_bks`` to 1 everywhere. MEASURED baseline: found_off
     collapses 9895.303 -> 0.0 and the candidate residual (contract) moves
@@ -488,11 +960,86 @@ def test_identity_on_the_adopted_2lpt0_pack():
     assert c["P6_above_ceiling"] == pytest.approx(540.349, abs=1e-2)
     assert c["as_implemented"]["residual"] == pytest.approx(-14563.572, abs=1e-2)
     assert c["per_contract"]["residual"] == pytest.approx(-882.298, abs=1e-2)
-    assert f["efficiency_attainable_at_calibration"] == pytest.approx(
-        0.710363, abs=1e-5)
-    # the sharp bound: what the frozen calibration delivers is LESS than what
-    # closing the counts requires, even with the contract's FP normalisation.
-    assert f["feasible_at_calibration_per_contract"] is False
+    assert f["efficiency_at_calibration"] == pytest.approx(0.7103624, abs=1e-6)
+    assert f["efficiency_required_per_contract"] == pytest.approx(0.7190167,
+                                                                  abs=1e-6)
+
+
+@pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
+                    reason="adopted window-study pack not on this filesystem")
+def test_the_adopted_geometry_closes_inside_one_sigma_of_prior_cost():
+    """REFEREE C3, the positive half. On the ADOPTED geometry the counts are
+    reached at a SMALL prior cost, so no infeasibility follows.
+
+    MEASURED 2026-08-05 on the adopted 2LPT-0 pack (gap = 882.298 counts):
+
+        efficiency at calibration        0.7103624   (a POINT)
+        efficiency REQUIRED per contract 0.7190167
+        sup over psi_c alone (C -> 1)    0.8572838
+        sup over psi_k alone (rho -> 1)  0.8074237
+        min prior chi2 in psi_c          107.8667  (10.386 sigma, 96 free)
+        psi_k_delta[1] uniform witness   -0.7056356 prior-sd
+                                         chi2 4.4813  ->  2.117 sigma
+        loa-0 FP Poisson 1 sd            1565.401 counts -> gap = 0.5636 sigma
+        uniform transfer shift           delta -0.0616031, chi2 0.75467
+                                                          ->  0.8687 sigma
+        cheapest declared direction      0.5636 sigma
+
+    The required efficiency sits FAR BELOW both one-block suprema and three
+    separate declared directions close it inside ~1 sigma. The retracted
+    verdict said INFEASIBLE.
+
+    MUTATION: in ``prior_cost_audit`` compute ``sup_c`` as ``(T*C*rho).sum()``
+    (i.e. forget to send C -> 1). MEASURED baseline: sup_efficiency_psi_c_only
+    collapses 0.8572838 -> 0.7103624 and this test fails on the first
+    assertion."""
+    from CDDF_analysis.hbi_mcmc.pack import load_pack
+    pk = load_pack(ADOPTED_PACK, allow_nonstandard_grid=True)
+    p = MC.check_accounting_identity(pk)["prior_cost"]
+    assert p["sup_efficiency_psi_c_only"] == pytest.approx(0.8572838, abs=1e-6)
+    assert p["sup_efficiency_psi_k_only"] == pytest.approx(0.8074237, abs=1e-6)
+    assert p["efficiency_required"] < p["sup_efficiency_psi_c_only"]
+    assert p["efficiency_required"] < p["sup_efficiency_psi_k_only"]
+    assert p["gap_counts"] == pytest.approx(882.298, abs=1e-2)
+    assert p["psi_c"]["min_prior_chi2_upper_bound"] == pytest.approx(107.8667,
+                                                                     abs=1e-3)
+    assert p["psi_c"]["min_prior_chi2_lower_bound"] == pytest.approx(107.8667,
+                                                                     abs=1e-3)
+    k = p["psi_k_delta"]
+    assert k["witness_alpha_in_prior_sd"] == pytest.approx(-0.7056356, abs=1e-5)
+    assert k["witness_prior_chi2"] == pytest.approx(4.4813, abs=1e-3)
+    assert k["witness_mahalanobis_sigma"] == pytest.approx(2.1169, abs=1e-3)
+    assert k["is_a_witness_not_the_minimum"] is True
+    assert k["fitcov_sd_provenance"]["pack_carries_resp_fitcov_diag"] is False
+    assert p["fp_total_poisson"]["one_sd_counts"] == pytest.approx(1565.401,
+                                                                   abs=1e-2)
+    assert p["fp_total_poisson"]["gap_in_sd"] == pytest.approx(0.5636, abs=1e-3)
+    assert p["transfer_t"]["witness_mahalanobis_sigma"] == pytest.approx(
+        0.8687, abs=1e-3)
+    assert p["cheapest_declared_direction_sigma"] == pytest.approx(0.5636,
+                                                                   abs=1e-3)
+    assert p["cheapest_declared_direction_sigma"] < 1.0
+
+
+@pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
+                    reason="adopted window-study pack not on this filesystem")
+def test_the_fp_ceiling_is_violated_on_the_adopted_2lpt0_pack():
+    """REFEREE M-B, on the real pack. MEASURED 2026-08-05:
+    mu_FP_per_contract = 14767.961 vs the mock's 13860 unmatched on-grid
+    candidates -> excess 907.961, ratio 1.06551, and the flag fires.
+
+    MUTATION: drop the ``MU_FP_EXCEEDS_THE_MOCK_FP_SUPPLY`` flag block.
+    MEASURED baseline: ``flags`` goes from one entry to zero on this pack."""
+    from CDDF_analysis.hbi_mcmc.pack import load_pack
+    pk = load_pack(ADOPTED_PACK, allow_nonstandard_grid=True)
+    r = MC.check_accounting_identity(pk)
+    a = r["fp_ceiling"]
+    assert a["mock"] == "2lpt0"
+    assert a["ceiling"] == 13860.0
+    assert a["mu_fp_per_contract"] == pytest.approx(14767.9614, abs=1e-3)
+    assert a["excess"] == pytest.approx(907.9614, abs=1e-3)
+    assert a["exceeds_ceiling"] is True
+    assert [f["id"] for f in r["flags"]] == ["MU_FP_EXCEEDS_THE_MOCK_FP_SUPPLY"]
 
 
 @pytest.mark.skipif(not os.path.exists(UNPADDED_PACK),
@@ -503,28 +1050,111 @@ def test_the_counting_argument_on_the_unpadded_pack():
 
         N_obs 88071 > truth on basis 73610
         efficiency required, FP as implemented : 1.18168   <- IMPOSSIBLE
-        efficiency required, FP per contract   : 0.99583   <- possible in
-                                                              principle, but
-        efficiency attainable at calibration   : 0.85003   <- not in practice
+                                                              (trivial bound)
+        efficiency required, FP per contract   : 0.99583
+        sup over psi_c alone (C -> 1)          : 0.99384   <- BELOW the
+                                                              requirement
+        min prior chi2 in psi_c                : infinity
 
-    So the classic '88071 > 73610 therefore no parameter closes it' is exact
-    ONLY with the under-normalised FP; with the contract's FP the refutation
-    still holds, but through the ATTAINABLE efficiency, not the trivial bound.
+    So with the under-normalised FP the classic '88071 > 73610 therefore no
+    parameter closes it' is exact against the TRIVIAL bound; with the
+    contract's FP the refutation still holds, but as a SUPREMUM argument —
+    even C == 1 at infinite prior cost falls short.
+
     MUTATION: pass ``require_pad=True``. MEASURED baseline: the pack is refused
     before any number is produced."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
     pk = load_pack(UNPADDED_PACK, allow_nonstandard_grid=True)
     r = MC.check_accounting_identity(
         pk, require_pad=False, require_measured_sub_floor_completeness=False)
-    f = r["feasibility"]
+    f, p = r["feasibility"], r["prior_cost"]
     assert r["truth_ledger"]["residual"] == pytest.approx(0.0, abs=1e-6)
     assert r["truth_ledger"]["n_truth_on_basis"] == 73610.0
     assert r["candidate_ledger"]["n_obs"] == 88071.0
     assert f["efficiency_required_as_implemented"] == pytest.approx(1.18168, abs=1e-4)
     assert f["efficiency_required_per_contract"] == pytest.approx(0.99583, abs=1e-4)
-    assert f["efficiency_attainable_at_calibration"] == pytest.approx(0.85003, abs=1e-4)
-    assert f["feasible_at_calibration_as_implemented"] is False
-    assert f["feasible_at_calibration_per_contract"] is False
+    assert f["feasible_as_implemented"] is False       # the trivial bound
+    assert f["feasible_per_contract"] is True
+    # the supremum argument, which is what actually refutes it
+    assert p["sup_efficiency_psi_c_only"] == pytest.approx(0.9938370, abs=1e-6)
+    assert p["efficiency_required"] > p["sup_efficiency_psi_c_only"]
+    assert p["psi_c"]["min_prior_chi2_upper_bound"] == np.inf
+    assert p["psi_c"]["min_prior_chi2_lower_bound"] == np.inf
+    assert "EXCEEDS the supremum" in p["psi_c"]["detail"]["note"]
+
+
+@pytest.mark.skipif(
+    not all(os.path.exists(os.path.join(V11DIR, f"modelA_pack_{m}_v11.npz"))
+            for m in ("2lpt0", "london0", "saclay0")),
+    reason="unpadded v1.1 packs not on this filesystem")
+def test_the_unpadded_refutation_is_a_prior_cost_argument_on_all_three_mocks():
+    """REFEREE C3, what SURVIVES. On the UNPADDED v1.1 packs the refutation is
+    materially stronger than the adopted-geometry one — and it is a PRIOR-COST
+    argument (chi2 ~ 1e4), not a bound argument, on two of the three.
+
+    MEASURED 2026-08-05:
+
+        pack          eff req (contract FP)  sup psi_c alone   min prior chi2 psi_c
+        2lpt0_v11        0.9958299            0.9938370 (< req)   infinity
+        london0_v11      0.9385533            0.9939876           10757.4 (103.7 s)
+        saclay0_v11      0.9559406            0.9937649           20085.8 (141.7 s)
+
+    MUTATION: return ``upper_bound=0.0`` whenever the bisection finds no
+    feasible lambda. MEASURED baseline: the two finite costs collapse to 0 and
+    the 1e4-scale statement disappears."""
+    from CDDF_analysis.hbi_mcmc.pack import load_pack
+    want = {
+        "2lpt0": (0.9958299, 0.9938370, np.inf, None),
+        "london0": (0.9385533, 0.9939876, 10757.4, 103.72),
+        "saclay0": (0.9559406, 0.9937649, 20085.8, 141.72),
+    }
+    for m, (req, sup, chi2, mah) in want.items():
+        pk = load_pack(os.path.join(V11DIR, f"modelA_pack_{m}_v11.npz"),
+                       allow_nonstandard_grid=True)
+        p = MC.check_accounting_identity(
+            pk, require_pad=False,
+            require_measured_sub_floor_completeness=False)["prior_cost"]
+        assert p["efficiency_required"] == pytest.approx(req, abs=1e-6), m
+        assert p["sup_efficiency_psi_c_only"] == pytest.approx(sup, abs=1e-6), m
+        if np.isinf(chi2):
+            assert p["psi_c"]["min_prior_chi2_upper_bound"] == np.inf, m
+            assert p["efficiency_required"] > p["sup_efficiency_psi_c_only"], m
+        else:
+            assert p["psi_c"]["min_prior_chi2_upper_bound"] == pytest.approx(
+                chi2, rel=1e-4), m
+            assert p["psi_c"]["min_prior_chi2_lower_bound"] == pytest.approx(
+                chi2, rel=1e-4), m
+            assert p["psi_c"]["min_mahalanobis_sigma"] == pytest.approx(
+                mah, abs=1e-2), m
+            assert p["psi_c"]["min_prior_chi2_upper_bound"] > 1e4, m
+
+
+@pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
+                    reason="adopted window-study packs not on this filesystem")
+def test_the_negative_implied_population_shows_up_on_the_real_packs():
+    """REFEREE M-B, on the real packs. MEASURED 2026-08-05 on the adopted
+    0.2-dex/pad-19.0 packs: P6_unsupported_implied_per_contract is
+    2lpt0 +882.30, london0 -3287.42, saclay0 -2079.08. Two of the three imply a
+    NEGATIVE number of candidates and were emitted with no comment.
+
+    MUTATION: delete the negative-flag block. MEASURED baseline: london0 and
+    saclay0 report zero flags."""
+    from CDDF_analysis.hbi_mcmc.pack import load_pack
+    want = {"2lpt0": 882.298, "london0": -3287.42, "saclay0": -2079.08}
+    seen_negative = 0
+    for m, v in want.items():
+        p = os.path.join(
+            PACKDIR, f"modelA_pack_{m}_winlya_only_pad19p0_molly172_bw0p2.npz")
+        if not os.path.exists(p):
+            pytest.skip(f"{m} adopted pack absent")
+        r = MC.check_accounting_identity(load_pack(p, allow_nonstandard_grid=True))
+        got = r["candidate_ledger"]["P6_unsupported_implied_per_contract"]
+        assert got == pytest.approx(v, abs=1e-2), m
+        if got < 0:
+            seen_negative += 1
+            assert "NEGATIVE_IMPLIED_P6_UNSUPPORTED" in [
+                f["id"] for f in r["flags"]], m
+    assert seen_negative == 2
 
 
 @pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
