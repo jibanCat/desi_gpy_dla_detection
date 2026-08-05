@@ -1170,10 +1170,13 @@ def phase_selftest():
                 # `pack.n_pad_bins` COUNTS the basis bins below the observed
                 # floor. It used to be spelled `n_b - n_c` inline here, which is
                 # the same number on a 0.1-dex basis (pinned by pack.py's test)
-                # and GOES NEGATIVE on a coarser one -- 0.2 dex with pad 19.0
-                # has n_b=18 basis bins against n_c=29 observed bins, i.e. -11.
-                # Reading the property keeps the 0.1-dex leaf bit-identical and
-                # makes the 0.2-dex leaf correct.
+                # and GOES NEGATIVE on a coarser one. MEASURED on this study's
+                # own 0.2-dex packs (pad 19.0, molly172): n_b = 16 basis bins
+                # against n_c = 29 observed bins, so the old spelling would
+                # publish -13 where the true pad count is 2 ([19.0, 19.2) and
+                # the 0.3-dex remainder bin [19.2, 19.5)). Reading the property
+                # keeps the 0.1-dex leaf bit-identical and makes the 0.2-dex
+                # leaf correct.
                 n_pad_bins=int(pack.n_pad_bins),
                 ntrue_lo=float(np.asarray(pack.ntrue_edges, float)[0]),
                 nhat_lo=float(np.asarray(pack.nhat_edges, float)[0]),

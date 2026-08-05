@@ -934,9 +934,10 @@ def test_phase_selftest_ACCEPTS_a_pack_whose_basis_MATCHES(WS, monkeypatch,
 def test_selftest_pack_metadata_n_pad_bins_is_the_PACK_PROPERTY(WS, monkeypatch,
                                                                 tmp_path):
     """``n_pad_bins`` used to be spelled ``n_b - n_c`` inline. That is the same
-    number on a 0.1-dex basis and GOES NEGATIVE on a coarser one (18 basis bins
-    against 29 observed bins = -11), so the artifact would publish a negative
-    pad count for the adopted configuration.
+    number on a 0.1-dex basis and GOES NEGATIVE on a coarser one: MEASURED on
+    this study's own 0.2-dex packs (pad 19.0, molly172) the basis has 16 bins
+    against 29 observed bins, so the old spelling publishes -13 where the true
+    pad count is 2.
 
     MUTATION: ``int(pack.n_pad_bins)`` -> ``int(pack.n_b - pack.n_c)`` -> RED.
     """
