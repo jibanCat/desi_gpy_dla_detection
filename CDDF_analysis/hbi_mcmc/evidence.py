@@ -58,13 +58,15 @@ import numpy as np
 
 from CDDF_analysis.hbi_mcmc.model_a import (
     POLICY, _MASK_LO, _MASK_HI, _THRESHOLDS, reduce_f_posterior)
+from CDDF_analysis.hbi_mcmc import ratification as _RAT
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", FutureWarning)
     import arviz as az
 
 __all__ = [
-    "REQUIRED_BLOCKS", "EBFMI_MIN", "TREEDEPTH_SAT_MAX", "PPC_PVAL_MIN",
+    "REQUIRED_BLOCKS", "REQUIRED_CHECKS",
+    "EBFMI_MIN", "TREEDEPTH_SAT_MAX", "PPC_PVAL_MIN",
     "SBC_UNIFORM_P_MIN", "convergence_block", "ppc_block", "closure_block",
     "ztilt_block", "assemble_evidence", "gate", "reported_quantities",
     "posterior_run_from_mcmc", "posterior_run_from_artifact",
@@ -80,6 +82,23 @@ SBC_UNIFORM_P_MIN = 0.01   # chi2 uniformity p-value of the rank histogram
 CLOSURE_COVER95_MIN = 1.0  # every reported quantity's 95% CI must hold truth
 
 REQUIRED_BLOCKS = ("convergence", "ppc", "closure", "coverage_sbc", "ztilt")
+
+#: STRUCTURALLY REQUIRED CHECKS: ``block -> (check name, ...)`` that a required
+#: block MUST volunteer.  A block that simply omits one of these does not get
+#: the benefit of the doubt -- the gate synthesises the check as False.
+#:
+#: WHY THIS EXISTS.  ``gate`` is otherwise entirely at the mercy of whatever
+#: keys a block chooses to put in ``checks``: an older ``coverage_sbc`` block,
+#: a hand-written one, or a block from a module version predating the
+#: matched-configuration ratification, all pass by SILENCE.  The RATIFIED
+#: statement (2026-07-29, decision 8) is that an artifact carrying an unmatched
+#: *or unspecified* SBC is not stampable, and "unspecified" can only be
+#: enforced here, not in the block that failed to specify it.
+#:
+#: Like ``required``, this may only ever GROW.
+REQUIRED_CHECKS = {
+    "coverage_sbc": ("sbc_configuration_matches_run",),
+}
 
 _SCHEMA = "inference_evidence/v1"
 
@@ -761,7 +780,13 @@ def _usable_checks(blk):
 def gate(blocks, *, required=REQUIRED_BLOCKS, bypasses=None):
     """FAIL-CLOSED.  Missing block == failure.  Any False check == failure.
 
-    FOUR fail-open holes closed 2026-07-29.  Each is stated as a CODE PATH,
+    RATIFIED 2026-07-29 by the PI (decision 8): the fail-closed framework
+    itself, matched-configuration SBC, and chi2/dof <= 3 as the closure
+    requirement.  The authoritative record, including the two tolerances the PI
+    DECLINED to ratify, is ``CDDF_analysis.hbi_mcmc.ratification`` and is
+    stamped into the verdict as ``ratification``.
+
+    FIVE fail-open holes closed 2026-07-29.  Each is stated as a CODE PATH,
     because that is what was observed; no claim is made here about any
     particular file having been found on disk.
 
@@ -797,6 +822,15 @@ def gate(blocks, *, required=REQUIRED_BLOCKS, bypasses=None):
        mapping, and ``incomplete`` must be a genuine sequence (a ``str`` is
        NOT accepted: it would explode into per-character entries).  Anything
        else is a MALFORMED-EVIDENCE failure, recorded as a False check.
+
+    5. A required block could pass by SILENCE.  ``gate`` only ever inspected
+       the checks a block volunteered, so a ``coverage_sbc`` block that simply
+       did not mention whether its configuration matched the run's was
+       indistinguishable from one that matched.  ``REQUIRED_CHECKS`` now names
+       the checks a required block MUST report, and an absent one is
+       synthesised as False.  This is what makes the ratified
+       matched-configuration-SBC statement enforceable rather than advisory:
+       "unspecified" cannot be enforced by the block that failed to specify.
     """
     reasons, checks = [], {}
     # (1) required may only GROW -- narrowing it is how the SBC-only artifact
@@ -867,6 +901,25 @@ def gate(blocks, *, required=REQUIRED_BLOCKS, bypasses=None):
         blk = blocks.get(b)
         if isinstance(blk, dict) and not _usable_checks(blk):
             checks[f"{b}.__present__"] = False
+    # (5) STRUCTURALLY REQUIRED CHECKS -- a required block may not pass by
+    #     SILENCE.  Closed 2026-07-29 with the matched-configuration-SBC
+    #     ratification: before this, a coverage_sbc block that simply did not
+    #     mention its configuration was indistinguishable from one whose
+    #     configuration matched the run.
+    for b, need in REQUIRED_CHECKS.items():
+        if b not in required:
+            continue
+        blk = blocks.get(b)
+        if not isinstance(blk, dict):
+            continue                 # already recorded as missing/invalid
+        have = _usable_checks(blk)
+        for k in need:
+            if k not in have:
+                checks[f"{b}.{k}"] = False
+                reasons.append(
+                    f"required check {b}.{k} is ABSENT -- the block did not "
+                    f"report it, and a required check may not pass by "
+                    f"silence (see evidence.REQUIRED_CHECKS)")
     for b in sorted(bypasses):
         reasons.append(f"gate bypass in force: {b} ({bypasses[b]!r}) -- the "
                        f"artifact can never be paper-facing")
@@ -886,6 +939,11 @@ def gate(blocks, *, required=REQUIRED_BLOCKS, bypasses=None):
     return {
         "checks": checks,
         "required_blocks": list(required),
+        "required_checks": {k: list(v) for k, v in REQUIRED_CHECKS.items()},
+        # WHICH criteria a deciding authority authorised to refuse this work,
+        # and which are report-only because they were NOT ratified.  Carried in
+        # the verdict itself so a reader of the JSON never has to guess.
+        "ratification": _RAT.ratification_stamp(),
         "invalid_blocks": invalid,
         "bypasses": bypasses,
         "stampable_integrated_only": stampable_integrated_only,
@@ -934,5 +992,8 @@ def assemble_evidence(blocks, *, provenance=None, required=REQUIRED_BLOCKS,
     prov.setdefault("code_commit", _git())
     prov.setdefault("date", time.strftime("%Y-%m-%d"))
     return {"schema": _SCHEMA, "blocks": blocks, "gate": g,
+            # top level, not buried in the gate: the ratification state is the
+            # first thing a reader of this artifact needs.
+            "ratification": _RAT.ratification_stamp(),
             "provenance": prov,
             "scope": prov.get("scope", "MOCK ONLY")}

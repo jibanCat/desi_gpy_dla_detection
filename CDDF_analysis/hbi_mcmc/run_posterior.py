@@ -65,7 +65,10 @@ import time
 
 import numpy as np
 
-__all__ = ["forward_closure_gate", "GATE", "stamp_metadata", "main"]
+from CDDF_analysis.hbi_mcmc import ratification as RAT
+
+__all__ = ["forward_closure_gate", "GATE", "stamp_metadata", "main",
+           "PROVISIONAL_GATE_TOLERANCES"]
 
 # --- the forward-model closure gate -------------------------------------------
 # Tolerances are on Poisson z-scores of the pure truth-fold (no sampling).
@@ -74,9 +77,19 @@ __all__ = ["forward_closure_gate", "GATE", "stamp_metadata", "main"]
 #
 # EVERY tolerance is a named constant here so it can be ratified as a number
 # rather than discovered inside the gate body.
+#
+# 🔴 RATIFICATION STATUS PER NUMBER -- decision 8 ratified EXACTLY THREE things
+# and NONE of them is a |z| number.  ``|z| <= 5`` was called MALFORMED AS
+# STATED and sent back for restatement; the restated form has not been
+# ratified.  The four |z| arms below therefore GATE WITHOUT RATIFIED AUTHORITY
+# (status RESTATED_NOT_RATIFIED in ratification.py) and that is stamped into
+# every artifact as ``gate_tolerances_unratified_but_gating``.  Do NOT read
+# "it is in GATE" as "somebody authorised it".
 GATE = {
+    # RESTATED_NOT_RATIFIED (inherited, f23961e 2026-07-28)
     "z_total_max": 5.0,      # |z| on the total predicted-vs-observed counts
     "z_bin_max": 5.0,        # max |z| over reported n-hat bins with obs > 0
+    # RATIFIED by the PI (decision 8) -- the only ratified number in this dict
     "chi2_dof_max": 3.0,     # chi2/dof over those bins
     # --- the z- and SNR-marginal arms (added 2026-07-29) --------------------
     # ``ratio_tables`` has ALWAYS computed ``by_z`` and ``by_snr``; the gate
@@ -91,41 +104,40 @@ GATE = {
     #     but small in z because the marginal is count-starved.  A ~22%
     #     max-to-min spread in mu/obs across z is a systematic no sampler can
     #     repair, whatever its z-score.
+    # 🔴 RESTATED_NOT_RATIFIED.  These two were added in the SAME HUNK as the
+    # two span numbers below, which the PI declined the same day (0e7fa0b,
+    # 2026-07-29 10:21).  They ARE armed; nobody ratified them.
     "z_zbin_max": 5.0,           # max |z| over fine-z bins with obs > 0
     "z_snrbin_max": 5.0,         # max |z| over SNR strata with obs > 0
-    # 🔴 PROVISIONAL / UNRATIFIED -- see PROVISIONAL_GATE_TOLERANCES below.
+    # 🔴 UNRATIFIED as of 2026-07-29 (decision 8) -- REPORTED, DOES NOT GATE.
     "ratio_span_by_z_max": 0.10,     # max(mu/obs) - min(mu/obs) across z
     "ratio_span_by_snr_max": 0.15,   # ... across SNR strata (fewer, noisier)
 }
 
-# 🔴 PROVISIONAL / UNRATIFIED GATE TOLERANCES.
+# 🔴 UNRATIFIED GATE TOLERANCES -- decision 8 (PI, 2026-07-29).
 #
-# The two RATIO-SPAN numbers were chosen by the author when the by_z / by_snr
-# arms were added on 2026-07-29.  They were not requested, and project
-# convention is that a tolerance inside a production fail-closed gate is
-# ratified before it can refuse work.  The ARMS stay armed -- a forward model
-# that closes in total and in the N-marginal while carrying a large z-marginal
-# tilt is a real defect and must not sail through -- but the two THRESHOLDS
-# are flagged here, in the gate report, and in every stamp, so a PI can ratify
-# or move them without archaeology.
+# The two RATIO-SPAN numbers were chosen by eye by the author when the by_z /
+# by_snr arms were added on 2026-07-29.  The PI DECLINED to ratify them and
+# required that the statistics be defined and calibrated prospectively.
 #
-# What they are NOT: they are not measured, not calibrated against any
-# reference forward model, and carry no coverage statement.  0.10 / 0.15 were
-# picked as "a swing a sampler cannot repair"; the wider SNR value only
-# reflects that the SNR marginal has fewer, noisier strata.
+# WHAT THAT NOW MEANS IN CODE (changed 2026-07-29, this branch):
+#   the two span statistics are still COMPUTED and REPORTED on every run, and
+#   are stamped into every artifact, but they NO LONGER CONTRIBUTE TO
+#   PASS/FAIL.  Exceeding the proposed number produces an entry in
+#   ``advisories``, never in ``failures``.  Previously they were armed and
+#   could refuse work on an uncalibrated number.
 #
-# The z-score arms (z_total_max, z_bin_max, chi2_dof_max, z_zbin_max,
-# z_snrbin_max) are NOT in this set: they are conventional 5-sigma / chi2-per-
-# dof thresholds and pre-date this change.
-PROVISIONAL_GATE_TOLERANCES = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+# The rationale for report-but-do-not-gate (rather than deleting the arms) is
+# in ``ratification.py``: the reported values ARE the calibration data.  The
+# prospective calibration -- exact definitions, null distribution, sampling
+# procedure, false-alarm rate -- is
+# ``docs/ratio_span_calibration_spec.md``.
+#
+# THE SINGLE SOURCE OF TRUTH IS ``ratification.py``.  The names below are
+# derived from it, not maintained in parallel.
+PROVISIONAL_GATE_TOLERANCES = RAT.unratified_names()
 
-PROVISIONAL_GATE_TOLERANCES_NOTE = (
-    "PROVISIONAL / UNRATIFIED: ratio_span_by_z_max and ratio_span_by_snr_max "
-    "were set by the author on 2026-07-29 and have NOT been ratified. They are "
-    "not measured or calibrated and carry no coverage statement. The gate arms "
-    "they threshold are load-bearing and stay armed; the NUMBERS are open for "
-    "PI ratification. Every other tolerance in GATE is a conventional "
-    "z-score/chi2 threshold and pre-dates this change.")
+PROVISIONAL_GATE_TOLERANCES_NOTE = RAT.UNRATIFIED_NOTE
 
 _REAL_TOKENS = ("main_dark", "loa_main_dark", "matterhorn", "dr3")
 
@@ -155,6 +167,11 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     z_total = float(abs(tab["total"]["z"]))
 
     fails = []
+    # ``advisories`` are computed, reported, and DO NOT contribute to
+    # ``pass``.  They exist because decision 8 declined to ratify the two
+    # ratio-span thresholds: the statistic is worth accumulating, the number
+    # is not worth refusing work on.  See ratification.py.
+    advisories = []
     if not (z_total <= gate["z_total_max"]):
         fails.append(f"|z_total|={z_total:.2f} > {gate['z_total_max']}")
     if not (z_bin_max <= gate["z_bin_max"]):
@@ -172,21 +189,32 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
                                 "ratio_span_by_snr_max")):
         mrows = [r for r in (tab.get(key) or []) if r.get("obs", 0) > 0]
         zs = np.array([r["z"] for r in mrows], float)
-        ratios = np.array([r["ratio"] for r in mrows], float)
-        ratios = ratios[np.isfinite(ratios)]
         zmax = float(np.abs(zs).max()) if len(zs) else float("nan")
-        span = (float(ratios.max() - ratios.min()) if len(ratios) >= 2
-                else 0.0)
-        marg[key] = dict(rows=mrows, zmax=zmax, span=span)
+        # ONE definition of the span, in FS.ratio_span, with the exact
+        # mathematical statement in its docstring (decision 8 asked for it).
+        sp = FS.ratio_span(mrows)
+        span = sp["span"]
+        marg[key] = dict(rows=mrows, zmax=zmax, span=span, span_detail=sp)
         if len(zs) and not (zmax <= gate[zkey]):
             fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}")
         if not (span <= gate[spankey]):
-            prov = (" [PROVISIONAL/UNRATIFIED tolerance]"
-                    if spankey in PROVISIONAL_GATE_TOLERANCES else "")
-            fails.append(
-                f"ratio span in {key} = {span:.4f} "
-                f"(mu/obs {ratios.min():.4f}..{ratios.max():.4f}) "
-                f"> ratio_span_{key}_max = {gate[spankey]}{prov}")
+            msg = (f"ratio span in {key} = {span:.4f} "
+                   f"(mu/obs {sp['lo']:.4f}..{sp['hi']:.4f}, "
+                   f"n_rows_used={sp['n_rows_used']}) "
+                   f"> {spankey} = {gate[spankey]}")
+            # ``gates()``, not ``is_ratified()``: authority and gating are
+            # SEPARATE facts (see ratification.py, "THE THREE STATES").  The
+            # four |z| arms gate WITHOUT being ratified, and conflating the two
+            # is exactly the defect that fabricated a PI authority for them.
+            if RAT.gates(spankey):
+                fails.append(msg)
+            else:
+                # UNRATIFIED (decision 8): report, do not gate.
+                advisories.append(
+                    msg + " [UNRATIFIED tolerance -- ADVISORY ONLY, this does "
+                          "NOT block the run; the threshold has no calibrated "
+                          "false-alarm rate. See "
+                          "docs/ratio_span_calibration_spec.md]")
 
     worst = sorted(rows, key=lambda b: -abs(b["z"]))[:5]
     return {
@@ -194,14 +222,33 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         "by_snr": marg["by_snr"]["rows"],
         "z_zbin_max": marg["by_z"]["zmax"],
         "z_snrbin_max": marg["by_snr"]["zmax"],
+        "ratio_span_by_z_detail": marg["by_z"]["span_detail"],
+        "ratio_span_by_snr_detail": marg["by_snr"]["span_detail"],
+        "ratio_span_definition": (
+            "max_r(mu_r/obs_r) - min_r(mu_r/obs_r) over the arm's rows with "
+            "obs_r > 0; 0 (VACUOUS) when fewer than 2 such rows. Exact "
+            "statement: CDDF_analysis.hbi_mcmc.forward_selftest.ratio_span. "
+            "UNRATIFIED statistic -- reported, does not gate."),
         "ratio_span_by_z": marg["by_z"]["span"],
         "ratio_span_by_snr": marg["by_snr"]["span"],
         "pass": not fails,
         "failures": fails,
+        # reported, never gating -- see ratification.py
+        "advisories": advisories,
         "gate": gate,
-        # which of the numbers above a PI has NOT ratified
+        # which of the numbers above a deciding authority has NOT ratified
         "gate_tolerances_provisional": list(PROVISIONAL_GATE_TOLERANCES),
         "gate_tolerances_provisional_note": PROVISIONAL_GATE_TOLERANCES_NOTE,
+        "gate_tolerances_unratified": list(RAT.unratified_names()),
+        "gate_tolerances_ratified": list(RAT.ratified_names()),
+        # 🔴 the numbers that REFUSE WORK with no ratified authority.  A reader
+        # of the JSON alone must be able to see this without opening the source.
+        "gate_tolerances_unratified_but_gating":
+            list(RAT.unratified_but_gating_names()),
+        "gate_tolerances_unratified_but_gating_note":
+            RAT.UNRATIFIED_BUT_GATING_NOTE,
+        "unratified_effect": RAT.UNRATIFIED_EFFECT,
+        "ratification": RAT.ratification_stamp(),
         "total_mu": float(tab["total"]["mu"]),
         "total_obs": float(tab["total"]["obs"]),
         "total_ratio": float(tab["total"]["ratio"]),
@@ -287,6 +334,10 @@ def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
         "gate_tolerances_provisional_note": (
             gate_report.get("gate_tolerances_provisional_note")
             or PROVISIONAL_GATE_TOLERANCES_NOTE),
+        # the FULL ratification state, at the top of the stamp: which criteria
+        # were authorised to refuse this run, by whom, and on what date.
+        "ratification": RAT.ratification_stamp(),
+        "gate_advisories": list(gate_report.get("advisories") or []),
         "date": time.strftime("%Y-%m-%d"),
         "pack_provenance": pack_provenance,
         "scope": "MOCK / SYNTHETIC ONLY",
@@ -370,6 +421,8 @@ def main(argv=None):
     for b in gate["worst_bins"]:
         print(f"        [{b['lo']:.1f},{b['hi']:.1f})  ratio={b['ratio']:.4f}  "
               f"z={b['z']:+.1f}")
+    for adv in gate.get("advisories") or []:
+        print(f"[gate] ADVISORY (does NOT block): {adv}")
     if not gate["pass"]:
         msg = ("FORWARD-MODEL CLOSURE GATE FAILED: " + "; ".join(gate["failures"])
                + ".\nThe posterior would be a faithful sample of a WRONG model. "
