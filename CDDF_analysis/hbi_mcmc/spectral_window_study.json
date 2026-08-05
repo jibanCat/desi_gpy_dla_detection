@@ -1,12 +1,12 @@
 {
  "metadata": {
   "title": "Matched spectral-window study \u2014 the ANALYSIS window (lya_only 1025 A vs lya_lyb 911 A) at the PI-adopted pad/completeness/reporting configuration, plus a bounded FINDER-FITTING-window pilot",
-  "date": "2026-07-30 00:12:18",
-  "code_commit": "6fc183fa38e6866c821671a90a3a5ba86967c8f0",
+  "date": "2026-08-05 02:28:17",
+  "code_commit": "4a33d24bd04363997fdd2ce0afec0b5332365e0c",
   "code_commit_scope": "the SELFTEST phase (this process). Input packs carry their own stamp \u2014 see pack_stamp_audit.",
   "code_commit_dirty": false,
   "pack_stamp_audit": {
-   "selftest_phase_code_commit": "6fc183fa38e6866c821671a90a3a5ba86967c8f0",
+   "selftest_phase_code_commit": "4a33d24bd04363997fdd2ce0afec0b5332365e0c",
    "pack_code_commits": [
     "89233244acf1dd1013440016fc63ab34804a9a90"
    ],
@@ -46,7 +46,7 @@
     "d1_reporting_window": "YES \u2014 every gate metric is computed over [19.7, 21.6] on fully-contained bins; the >= 21.6 tail is reported SEPARATELY and gates nothing.",
     "d3_basis_0p2dex": "NO \u2014 see basis_resolution_status",
     "d4_pad_19p0_molly172": "YES \u2014 pad floor 19.0 with the molly172 convention on BOTH arms; the lya_lyb sub-floor matrix was BUILT for this study (it did not exist).",
-    "d8_gates": "PARTIAL \u2014 the fail-closed framework and the chi2/dof <= 3 arm are used; the |z| <= 5 criterion is restated exactly in restated_gate_criteria(); the two unratified ratio-span tolerances are MEASURED and gate nothing. Matched-configuration SBC is NOT run here (no sampling in this study)."
+    "d8_gates": "PARTIAL \u2014 the fail-closed framework and the RATIFIED chi2/dof <= 3 arm are used; the |z| <= 5 criterion is restated exactly in restated_gate_criteria(); the two UNRATIFIED ratio-span tolerances are MEASURED and gate nothing. Matched-configuration SBC is NOT run here (no sampling in this study). AUTHORITY: the two restated |z| arms are RESTATED_NOT_RATIFIED and they DO still gate \u2014 decision 8 called |z| <= 5 MALFORMED and asked only for a restatement, so no deciding authority stands behind the number 5. See metadata.gate.authority_correction_note; and verdict.authority_sensitivity, which shows the conclusion does not depend on them."
    }
   },
   "gate": {
@@ -57,21 +57,74 @@
    "z_total": "(sum_B n_c - sum_B mu_c) / sqrt(max(sum_B mu_c, 1e-12)) -- over ALL of B(W), empty bins included",
    "z_bin_max": "max over B+(W) of |z_c|",
    "chi2_dof": "sum over B+(W) of z_c^2, divided by |B+(W)|",
-   "ratified_arms": {
-    "abs_z_total_max": 5.0,
-    "z_bin_max": 5.0,
-    "chi2_dof_max": 3.0
+   "gate_arms": {
+    "abs_z_total_max": {
+     "value": 5.0,
+     "canonical_name": "z_total_max",
+     "metric": "z_total",
+     "authority_state": "RESTATED_NOT_RATIFIED",
+     "gates": true,
+     "introduced_commit": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+     "introduced_date": "2026-07-28",
+     "predates_decision_8": true,
+     "pi_disposition": "PI decision 8 (2026-07-29): '|z| <= 5' MALFORMED as stated, restated here. NOT ratified. PI direction 2026-08-05: 'The only currently ratified numerical closure gate is chi2/dof <= 3.' Pre-dating decision 8 is not ratification."
+    },
+    "z_bin_max": {
+     "value": 5.0,
+     "canonical_name": "z_bin_max",
+     "metric": "z_bin_max",
+     "authority_state": "RESTATED_NOT_RATIFIED",
+     "gates": true,
+     "introduced_commit": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+     "introduced_date": "2026-07-28",
+     "predates_decision_8": true,
+     "pi_disposition": "PI decision 8 (2026-07-29): '|z| <= 5' MALFORMED as stated, restated here. NOT ratified. PI direction 2026-08-05: 'The only currently ratified numerical closure gate is chi2/dof <= 3.' Pre-dating decision 8 is not ratification."
+    },
+    "chi2_dof_max": {
+     "value": 3.0,
+     "canonical_name": "chi2_dof_max",
+     "metric": "chi2_dof",
+     "authority_state": "RATIFIED",
+     "gates": true,
+     "introduced_commit": "f23961ec1e2cf47748a5a1b660205966a8d793f0",
+     "introduced_date": "2026-07-28",
+     "predates_decision_8": true,
+     "pi_disposition": "PI decision 8 (2026-07-29) RATIFIED the 'chi2/dof <= 3 closure requirement' in writing, and the PI direction of 2026-08-05 restates it as 'the only currently ratified numerical closure gate'."
+    }
    },
-   "not_ratified": {
-    "ratio_span_by_z_max": 0.1,
-    "ratio_span_by_snr_max": 0.15
+   "advisory_tolerances": {
+    "ratio_span_by_z_max": {
+     "value": 0.1,
+     "authority_state": "UNRATIFIED",
+     "gates": false,
+     "measured_as": "by_z_ratio_span"
+    },
+    "ratio_span_by_snr_max": {
+     "value": 0.15,
+     "authority_state": "UNRATIFIED",
+     "gates": false,
+     "measured_as": "by_snr_ratio_span"
+    }
    },
-   "not_ratified_note": "PI decision 8 declined to ratify these two; they are reported as measurements here and decide nothing. They must be defined and calibrated prospectively.",
+   "advisory_tolerances_note": "PI decision 8 declined to ratify these two; the PI direction of 2026-08-05 keeps them 'active as advisory diagnostics, not ratified hard gates'. They are reported as MEASUREMENTS here (by_z_ratio_span / by_snr_ratio_span) and decide nothing. They must be precisely defined, calibrated under production geometry, tested for false-alarm behaviour and proposed prospectively at a PI checkpoint before they may gate.",
+   "pi_ratified_items": [
+    "fail_closed_framework",
+    "matched_configuration_sbc",
+    "chi2_dof_max"
+   ],
+   "authority_states": {
+    "RATIFIED": "A deciding authority (the PI) ratified this IN WRITING. Only the items in PI_RATIFIED_ITEMS may carry this state.",
+    "RESTATED_NOT_RATIFIED": "PI decision 8 called the criterion MALFORMED AS STATED and asked for an exact restatement. The restatement was delivered; the NUMBER was never ratified. It DOES still gate \u2014 that is recorded honestly rather than quietly disarmed.",
+    "UNRATIFIED": "Set by the author, never ratified, and explicitly declined by PI decision 8. MEASURED and REPORTED; gates nothing."
+   },
+   "authority_correction_note": "CORRECTED 2026-08-05. Earlier revisions of this artifact returned these thresholds under the key `ratified_arms` and described them as 'THE THREE RATIFIED ARMS (PI decision 8)'. That was a FABRICATED AUTHORITY CLAIM for abs_z_total_max and z_bin_max: decision 8 called |z| <= 5 MALFORMED and sent it back for restatement, which is the opposite of ratifying it. Only chi2_dof_max <= 3 is PI-ratified. The two |z| arms are RESTATED_NOT_RATIFIED: the restatement is real and stays, the number has no deciding authority behind it, and it still gates. Any artifact carrying `metadata.gate.ratified_arms` overstates its authority.",
+   "pi_decision_8_verbatim": "Ratify the fail-closed framework, matched-configuration SBC and chi2/dof <= 3 closure requirement. Do not yet ratify ratio_span_by_z_max=0.10 or ratio_span_by_snr_max=0.15. ... Also restate the malformed |z| <= 5 criterion with its exact mathematical definition.",
+   "pi_direction_2026_08_05_verbatim": "The only currently ratified numerical closure gate is chi2/dof <= 3. Any z-based or span-based threshold must be: precisely defined; calibrated under production geometry; tested for false-alarm behavior; proposed prospectively at a PI checkpoint. Do not write artifacts or code claiming PI ratification where none exists.",
    "asymmetry_note": "n_c > 0 restricts z_bin_max and chi2_dof but NOT z_total. This is the committed run_posterior.forward_closure_gate behaviour, stated rather than changed."
   },
   "mocks_only": true,
   "privacy": "mock packs only; no real-LOA path is touched",
-  "wall_seconds": 7.3
+  "wall_seconds": 7.1
  },
  "protocol": {
   "fixed_before_outcome": true,
@@ -110,7 +163,7 @@
    {
     "id": "A2",
     "date": "2026-07-30",
-    "amendment": "A SCALE-FREE primary discriminator is added and the recommendation is restated on it: `rms_frac_dev`, the counts-weighted RMS fractional deviation of mu/obs over the occupied bins of the reporting window, which is invariant under a common rescaling of mu and obs. It is reported as a MEASUREMENT (PI decision 8 ratified chi2/dof <= 3 and nothing else; no tolerance on this statistic has been calibrated). The CONCLUSION SURVIVES: D rises from lya_only to lya_lyb in all three mocks at BOTH clamps (clamp=both 0.1193->0.1366, 0.0993->0.1142, 0.1063->0.1211; clamp=hi 0.0997->0.1160, 0.0844->0.0959, 0.0886->0.1016) \u2014 unanimous 6/6. So the DIRECTION of P2 holds on a measure that cannot be produced by sample size; only the MAGNITUDE was inflated."
+    "amendment": "A SCALE-FREE primary discriminator is added and the recommendation is restated on it: `rms_frac_dev`, the counts-weighted RMS fractional deviation of mu/obs over the occupied bins of the reporting window, which is invariant under a common rescaling of mu and obs. It is reported as a MEASUREMENT (chi2/dof <= 3 is the ONLY ratified numerical closure tolerance; no tolerance on this statistic has been calibrated). The CONCLUSION SURVIVES: D rises from lya_only to lya_lyb in all three mocks at BOTH clamps (clamp=both 0.1193->0.1366, 0.0993->0.1142, 0.1063->0.1211; clamp=hi 0.0997->0.1160, 0.0844->0.0959, 0.0886->0.1016) \u2014 unanimous 6/6. So the DIRECTION of P2 holds on a measure that cannot be produced by sample size; only the MAGNITUDE was inflated."
    }
   ],
   "post_hoc_amendments_note": "These were added AFTER the outcome was seen, in response to a referee finding, and are kept OUT of `rules` for that reason (P6). They add a disclosure and a scale-free discriminator; they drop, re-run and re-tune nothing, and no configuration was removed.",
@@ -121,6 +174,15 @@
   "n_configurations": 12,
   "n_closing_primary_window": 0,
   "closing_configurations": [],
+  "authority_sensitivity": {
+   "question": "Does the headline depend on a threshold no deciding authority ratified? Two of the three gating arms (abs_z_total_max, z_bin_max) are RESTATED_NOT_RATIFIED.",
+   "n_closing_all_arms": 0,
+   "n_closing_pi_ratified_arm_only": 0,
+   "closing_configurations_pi_ratified_arm_only": [],
+   "pi_ratified_gating_arm": "chi2_dof_max <= 3.0 (PI decision 8)",
+   "verdict_unchanged_without_unratified_arms": true,
+   "note": "MEASURED, not asserted: each configuration's gate was re-read counting ONLY the PI-ratified arm. If verdict_unchanged_without_unratified_arms is true, the study's conclusion rests on chi2/dof <= 3 alone and the unratified |z| numbers change nothing."
+  },
   "best_by_reporting_chi2_dof": {
    "config": "london0|lya_only|clamp=hi",
    "chi2_dof": 29.605561515514744,
@@ -526,8 +588,8 @@
    ],
    "what_this_does_NOT_say": [
     "It does NOT rest on the SIZE of the chi2/dof gap. About a third of the quoted +30 to +43 is the 20-22% count difference between the two arms, not model inadequacy (amendment A1). The recommendation rests on the scale-free rms_frac_dev direction (A2).",
-    "The scale-free measure is NOT a gate. PI decision 8 ratified chi2/dof <= 3 and nothing else; no tolerance on rms_frac_dev has been defined or calibrated, so it is reported as a measurement.",
-    "It does NOT say the Lya-only window is ROBUST. Neither window closes: the best configuration measured here is london0 | lya_only | clamp=hi at chi2/dof 29.6 over 19.7-21.6, still ~10x the ratified tolerance of 3.",
+    "The scale-free measure is NOT a gate. chi2/dof <= 3 is the ONLY ratified numerical closure tolerance (PI decision 8; PI direction 2026-08-05); no tolerance on rms_frac_dev has been defined or calibrated, so it is reported as a measurement.",
+    "It does NOT say the Lya-only window is ROBUST. Neither window closes: the best configuration measured here is london0 | lya_only | clamp=hi at chi2/dof 29.6 over 19.7-21.6, still ~10x the PI-RATIFIED tolerance of 3.",
     "It does NOT test the PI's stated MECHANISM. The analysis window is a post-hoc SELECTION; blue-edge truncation inside the GP fit is the FITTING window, which only ARM 2 touches and which ARM 2 only pilots.",
     "It does NOT carry the PI-adopted 0.2-dex latent basis (decision 3, sibling stream). The window CONTRAST is at fixed basis on both arms and its DIRECTION is unaffected, but no ABSOLUTE closure number here is the PI-adopted configuration's closure.",
     "It is NOT a statement about real DESI data: mocks only."
@@ -1008,14 +1070,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=16.59 > 5.0",
-     "z_bin_max=26.88 > 5.0",
+     "|z_total|=16.59 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=26.88 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=63.65 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=63.65 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -1340,7 +1418,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 4.86
+   "wall_seconds": 4.59
   },
   "2lpt0|lya_only|clamp=hi": {
    "mock": "2lpt0",
@@ -1769,14 +1847,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=10.96 > 5.0",
-     "z_bin_max=20.98 > 5.0",
+     "|z_total|=10.96 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=20.98 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=41.46 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=41.46 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -2530,14 +2624,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=11.60 > 5.0",
-     "z_bin_max=23.53 > 5.0",
+     "|z_total|=11.60 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=23.53 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=44.24 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=44.24 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -3291,14 +3401,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=6.10 > 5.0",
-     "z_bin_max=17.70 > 5.0",
+     "|z_total|=6.10 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=17.70 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=29.61 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=29.61 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -4052,14 +4178,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=14.33 > 5.0",
-     "z_bin_max=24.38 > 5.0",
+     "|z_total|=14.33 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=24.38 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=49.74 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=49.74 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -4813,14 +4955,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=8.64 > 5.0",
-     "z_bin_max=18.43 > 5.0",
+     "|z_total|=8.64 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=18.43 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=32.13 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=32.13 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -5145,7 +5303,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_only_pad19p0_molly172.npz",
-   "wall_seconds": 0.06
+   "wall_seconds": 0.04
   },
   "2lpt0|lya_lyb|clamp=both": {
    "mock": "2lpt0",
@@ -5574,14 +5732,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=26.37 > 5.0",
-     "z_bin_max=34.49 > 5.0",
+     "|z_total|=26.37 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=34.49 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=106.59 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=106.59 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -5906,7 +6080,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.08
+   "wall_seconds": 0.05
   },
   "2lpt0|lya_lyb|clamp=hi": {
    "mock": "2lpt0",
@@ -6335,14 +6509,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=20.28 > 5.0",
-     "z_bin_max=28.16 > 5.0",
+     "|z_total|=20.28 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=28.16 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=72.62 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=72.62 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -6667,7 +6857,7 @@
     ]
    },
    "pack": "modelA_pack_2lpt0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.08
+   "wall_seconds": 0.06
   },
   "london0|lya_lyb|clamp=both": {
    "mock": "london0",
@@ -7096,14 +7286,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=21.67 > 5.0",
-     "z_bin_max=29.43 > 5.0",
+     "|z_total|=21.67 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=29.43 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=74.23 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=74.23 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -7857,14 +8063,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=15.69 > 5.0",
-     "z_bin_max=23.22 > 5.0",
+     "|z_total|=15.69 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=23.22 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=49.46 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=49.46 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -8189,7 +8411,7 @@
     ]
    },
    "pack": "modelA_pack_london0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.04
   },
   "saclay0|lya_lyb|clamp=both": {
    "mock": "saclay0",
@@ -8618,14 +8840,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=22.82 > 5.0",
-     "z_bin_max=30.76 > 5.0",
+     "|z_total|=22.82 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=30.76 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=80.71 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=80.71 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -8950,7 +9188,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.06
   },
   "saclay0|lya_lyb|clamp=hi": {
    "mock": "saclay0",
@@ -9379,14 +9617,30 @@
    "primary_closes": {
     "closes": false,
     "failures": [
-     "|z_total|=16.77 > 5.0",
-     "z_bin_max=24.49 > 5.0",
+     "|z_total|=16.77 > 5.0 [RESTATED_NOT_RATIFIED]",
+     "z_bin_max=24.49 > 5.0 [RESTATED_NOT_RATIFIED]",
      "chi2_dof=53.64 > 3.0"
     ],
-    "gate": {
-     "abs_z_total_max": 5.0,
-     "z_bin_max": 5.0,
-     "chi2_dof_max": 3.0
+    "closes_on_pi_authority_only": false,
+    "failures_on_pi_authority_only": [
+     "chi2_dof=53.64 > 3.0"
+    ],
+    "gate_arms": {
+     "abs_z_total_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "z_bin_max": {
+      "value": 5.0,
+      "authority_state": "RESTATED_NOT_RATIFIED",
+      "gates": true
+     },
+     "chi2_dof_max": {
+      "value": 3.0,
+      "authority_state": "RATIFIED",
+      "gates": true
+     }
     }
    },
    "high_n_above_21p6": {
@@ -9711,7 +9965,7 @@
     ]
    },
    "pack": "modelA_pack_saclay0_winlya_lyb_pad19p0_molly172.npz",
-   "wall_seconds": 0.07
+   "wall_seconds": 0.05
   }
  },
  "arm1_response_attribution": {
