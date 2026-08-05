@@ -43,8 +43,15 @@ DECISION 4 — pad floor 19.0 with the ``molly172`` sub-floor completeness.  The
     per-bin + integrated systematic (``convention_systematic``), not as prose.
 
 DECISION 8 — the malformed "|z| <= 5" criterion is restated with its exact
-    mathematical definition in ``Z_CRITERION``.  The two ratio-span tolerances
-    remain UNRATIFIED and are not ratified here.
+    mathematical definition in ``Z_CRITERION``, and WHO AUTHORISED WHAT is
+    recorded ONCE, as data, in ``GATE_AUTHORITY``.  Read that table before
+    writing the word "ratified" anywhere.  Decision 8 ratified THREE things and
+    not one of them is a |z| number: the |z| <= 5 criterion was called
+    MALFORMED AS STATED and sent back for restatement, which is the OPPOSITE of
+    a ratification.  ``chi2_dof_max`` is the ONLY ratified numerical closure
+    gate.  The four |z| arms are RESTATED_NOT_RATIFIED: they still GATE and no
+    deciding authority ratified them — both halves are recorded.  The two
+    ratio-span tolerances are UNRATIFIED (the PI was asked and declined).
 
 MOCKS ONLY: nothing in this module reads data of any kind.
 """
@@ -72,6 +79,17 @@ __all__ = [
     "CONVENTION_SYSTEMATIC", "convention_systematic",
     # decision 8
     "Z_CRITERION", "window_closure_metrics",
+    # decision 8 — authority (the ONE table; see GATE_AUTHORITY)
+    "FabricatedAuthorityError", "PI_AUTHORITY", "PI_RATIFIED_ITEMS",
+    "DECISION_8_VERBATIM", "PI_DIRECTION_2026_08_05",
+    "GATE_AUTHORITY", "RATIFIED", "RESTATED_NOT_RATIFIED", "UNRATIFIED",
+    "gate_authority_record", "gate_tolerance_is_ratified",
+    "gate_tolerance_gates",
+    "ratified_gate_tolerances", "restated_not_ratified_gate_tolerances",
+    "unratified_gate_tolerances", "not_ratified_gate_tolerances",
+    "unratified_but_gating_gate_tolerances",
+    "audit_gate_authority_claims", "enforce_gate_authority_allow_list",
+    "gate_authority_stamp", "GATE_AUTHORITY_NOTE",
 ]
 
 
@@ -635,6 +653,367 @@ def convention_systematic(corners: dict, adopted_key: str):
 
 
 # ===========================================================================
+# DECISION 8 — GATE AUTHORITY.  ONE TABLE.  DATA, NOT PROSE.
+#
+# 🔴 WHY THIS EXISTS.  ``adopted_config.build_verdict`` used to write the
+# literal ``gate_tolerances_ratified=["z_total_max", "z_bin_max",
+# "chi2_dof_max"]`` into the committed artifact, and ``Z_CRITERION`` used to
+# say the three tolerances "5.0 / 5.0 / 3.0" were "ratified, PI decision 8".
+# Both were FABRICATED PI AUTHORITY.  Decision 8 ratified three things and one
+# of those three is a number: chi2/dof <= 3.  The |z| <= 5 criterion it called
+# MALFORMED and sent back for RESTATEMENT — the opposite of ratifying it.
+#
+# The mechanism of the defect was a LITERAL AT A CALL SITE: a list of names
+# typed next to the thing it described, where nothing could check it.  So the
+# claim now lives here, once, as data; every emitter reads it; and
+# ``enforce_gate_authority_allow_list()`` runs AT IMPORT, so this module cannot
+# be loaded in the state the defect left it in.
+#
+# A sibling stream owns ``CDDF_analysis/hbi_mcmc/ratification.py`` (branch
+# `wip/gate-ratification`), which is the intended long-term home of this table
+# and uses the SAME vocabulary — statuses RATIFIED / RESTATED_NOT_RATIFIED /
+# UNRATIFIED, allow-list ``PI_RATIFIED_ITEMS``, per-record
+# ``contributes_to_pass_fail`` — so the two collapse into one at merge.  It is
+# deliberately NOT copied here: two copies of a module is how the claim gets
+# out of sync again.
+# ===========================================================================
+
+
+class FabricatedAuthorityError(RuntimeError):
+    """A gate-authority record claims an authority it does not have."""
+
+
+#: the ONE authority string a genuinely PI-ratified entry may carry
+PI_AUTHORITY = "PI (project decision 8, 2026-07-29)"
+
+#: 🔴 THE ALLOW-LIST.  Three items.  Growing it requires a new PI decision
+#: quoted verbatim next to it.  ``chi2_dof_max`` is the only one of the three
+#: that is a GATE TOLERANCE NAME; the other two are framework-level.
+PI_RATIFIED_ITEMS = ("fail_closed_framework", "matched_configuration_sbc",
+                     "chi2_dof_max")
+
+DECISION_8_VERBATIM = (
+    "Ratify the fail-closed framework, matched-configuration SBC and "
+    "chi2/dof <= 3 closure requirement. Do not yet ratify "
+    "ratio_span_by_z_max=0.10 or ratio_span_by_snr_max=0.15. ... Also restate "
+    "the malformed |z| <= 5 criterion with its exact mathematical definition.")
+
+PI_DIRECTION_2026_08_05 = (
+    "The only currently ratified numerical closure gate is chi2/dof <= 3. Any "
+    "z-based or span-based threshold must be: precisely defined; calibrated "
+    "under production geometry; tested for false-alarm behavior; proposed "
+    "prospectively at a PI checkpoint. Do not write artifacts or code claiming "
+    "PI ratification where none exists.")
+
+#: what each status is permitted to mean, in one line each
+RATIFIED = "RATIFIED"
+RESTATED_NOT_RATIFIED = "RESTATED_NOT_RATIFIED"
+UNRATIFIED = "UNRATIFIED"
+
+_Z_STATEMENT = (
+    "|z| <= 5 on {what}. The z is the Poisson Pearson residual defined EXACTLY "
+    "in Z_CRITERION (model in the denominator). RESTATED per decision 8 item "
+    "3; NOT RATIFIED — the restated form has never been put to the PI.")
+
+_Z_DISPOSITION = (
+    "decision 8, item 3, verbatim: \"Also restate the malformed |z| <= 5 "
+    "criterion with its exact mathematical definition.\" The PI called the "
+    "criterion MALFORMED AS STATED and sent it back for restatement. That is "
+    "NOT a ratification. Reinforced 2026-08-05: \"The only currently ratified "
+    "numerical closure gate is chi2/dof <= 3.\" STATUS: RESTATED, NOT "
+    "RATIFIED.")
+
+#: full 40-char SHAs.  MEASURED, not copied from a docstring:
+#:   git log --format=%H -S<name> -- CDDF_analysis/hbi_mcmc/run_posterior.py | tail -1
+#: f23961e = 2026-07-28 (pre-decision-8); 0e7fa0b = 2026-07-29 10:21, the SAME
+#: HUNK that added the two ratio_span numbers the PI declined that same day.
+_SHA_PRE = "f23961ec1e2cf47748a5a1b660205966a8d793f0"
+_SHA_SAMEHUNK = "0e7fa0bd62d1f177126737fa32d1963e558b18d2"
+_DECLINED_PAIR = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
+_PROVENANCE_CHECK = ("git log --format=%H -S<name> -- "
+                     "CDDF_analysis/hbi_mcmc/run_posterior.py | tail -1")
+
+
+def _ratified(statement, *, note=""):
+    return {"status": RATIFIED, "statement": statement,
+            "authority": PI_AUTHORITY, "date": "2026-07-29",
+            "contributes_to_pass_fail": True, "note": note}
+
+
+def _restated(what, *, introduced_by, introduced_date, predates_decision_8,
+              introduced_same_hunk_as=(), note=""):
+    """A tolerance that GATES and that NO deciding authority ratified."""
+    return {
+        "status": RESTATED_NOT_RATIFIED,
+        "statement": _Z_STATEMENT.format(what=what),
+        # 🔴 NOT the PI.  Whoever wrote the arm.
+        "authority": ("the author of the arm, inherited by the production "
+                      "gate; NO deciding authority has ratified it"),
+        "pi_disposition": _Z_DISPOSITION,
+        # honestly True: reporting False would be as false as the PI claim,
+        # in the other direction.  Pinned behaviourally against
+        # run_posterior.forward_closure_gate by a test.
+        "contributes_to_pass_fail": True,
+        "effect": "GATES_WITHOUT_RATIFIED_AUTHORITY",
+        "introduced_by": introduced_by,
+        "introduced_date": introduced_date,
+        "predates_decision_8": bool(predates_decision_8),
+        "introduced_same_hunk_as": list(introduced_same_hunk_as),
+        "provenance_check": _PROVENANCE_CHECK,
+        "note": note,
+    }
+
+
+def _unratified(statement, *, contributes_to_pass_fail, note=""):
+    return {
+        "status": UNRATIFIED,
+        "statement": statement,
+        "authority": "NONE -- the PI was asked and DECLINED",
+        "declined_by": PI_AUTHORITY,
+        "pi_disposition": (
+            "decision 8, verbatim: \"Do not yet ratify "
+            "ratio_span_by_z_max=0.10 or ratio_span_by_snr_max=0.15.\" "
+            "Reinforced 2026-08-05: \"Keep span-by-z and span-by-SNR active "
+            "as advisory diagnostics, not ratified hard gates.\""),
+        "contributes_to_pass_fail": bool(contributes_to_pass_fail),
+        "effect": ("GATES_WITHOUT_RATIFIED_AUTHORITY"
+                   if contributes_to_pass_fail else
+                   "REPORT_ONLY_DOES_NOT_GATE"),
+        "calibration_spec": ("prospective: define, calibrate under PRODUCTION "
+                             "geometry, measure the false-alarm rate, then "
+                             "propose at a PI checkpoint"),
+        "note": note,
+    }
+
+
+#: 🔴 THE TABLE.  Keys are exactly the keys of ``run_posterior.GATE`` — pinned
+#: by a test, so a tolerance added tomorrow without a record here is caught.
+GATE_AUTHORITY = {
+    "chi2_dof_max": _ratified(
+        "Forward-model closure requires chi2/dof <= 3 over the reported n-hat "
+        "bins with obs > 0, chi2 = sum of squared Poisson Pearson residuals "
+        "(Z_CRITERION), dof = the number of such bins (the truth fold "
+        "estimates no parameters).",
+        note="the ONLY ratified NUMERICAL closure gate. The other two "
+             "PI_RATIFIED_ITEMS (fail_closed_framework, "
+             "matched_configuration_sbc) are framework-level and are not "
+             "keys of run_posterior.GATE."),
+    "z_total_max": _restated(
+        "the total predicted-vs-observed count",
+        introduced_by=_SHA_PRE, introduced_date="2026-07-28",
+        predates_decision_8=True,
+        note="Inherited from the pre-decision-8 gate. Pre-dating decision 8 "
+             "is NOT ratification and this record does not imply it."),
+    "z_bin_max": _restated(
+        "the reported n-hat bins with obs > 0",
+        introduced_by=_SHA_PRE, introduced_date="2026-07-28",
+        predates_decision_8=True,
+        note="Inherited from the pre-decision-8 gate. Pre-dating decision 8 "
+             "is NOT ratification and this record does not imply it."),
+    "z_zbin_max": _restated(
+        "the fine-z marginal bins with obs > 0",
+        introduced_by=_SHA_SAMEHUNK, introduced_date="2026-07-29",
+        predates_decision_8=False, introduced_same_hunk_as=_DECLINED_PAIR,
+        note="🔴 Introduced 2026-07-29 10:21 in the SAME HUNK as the two "
+             "ratio_span numbers the PI declined the same day — four "
+             "consecutive added lines of one hunk of 0e7fa0b. It PRE-DATES "
+             "NOTHING. `git show 0e7fa0b -- "
+             "CDDF_analysis/hbi_mcmc/run_posterior.py`."),
+    "z_snrbin_max": _restated(
+        "the SNR-stratum marginals with obs > 0",
+        introduced_by=_SHA_SAMEHUNK, introduced_date="2026-07-29",
+        predates_decision_8=False, introduced_same_hunk_as=_DECLINED_PAIR,
+        note="🔴 Same hunk, same commit, same day as the declined pair — see "
+             "z_zbin_max. Additionally: on a single-SNR-stratum grid this arm "
+             "cannot fire (one row), so its apparent passes are vacuous."),
+    "ratio_span_by_z_max": _unratified(
+        "PROPOSED (NOT ratified): ratio_span_by_z <= 0.10.",
+        contributes_to_pass_fail=True,
+        note="0.10 was chosen by eye on 2026-07-29 as 'a swing a sampler "
+             "cannot repair'. Not measured, not calibrated, no false-alarm "
+             "rate. 🔴 ON THIS BRANCH THE ARM STILL GATES — see "
+             "GATE_AUTHORITY_NOTE. That contradicts the PI's 2026-08-05 "
+             "direction and is recorded, not silently asserted away; "
+             "disarming it is a gate BEHAVIOUR change owned by the "
+             "`wip/gate-ratification` stream, not a labelling correction."),
+    "ratio_span_by_snr_max": _unratified(
+        "PROPOSED (NOT ratified): ratio_span_by_snr <= 0.15.",
+        contributes_to_pass_fail=True,
+        note="Same provenance as ratio_span_by_z_max; the wider value only "
+             "reflects that the SNR marginal has fewer, noisier strata — an "
+             "argument about the NULL DISTRIBUTION, which is exactly what the "
+             "prospective calibration is for. 🔴 Also still GATING on this "
+             "branch; see ratio_span_by_z_max."),
+}
+
+
+def gate_authority_record(name):
+    """The authority record for ``name``, or an explicit UNKNOWN record.
+
+    UNKNOWN is NOT ratified and does NOT gate: a tolerance somebody adds
+    tomorrow without a record here inherits no authority from its neighbours
+    in ``GATE``.  (That inheritance-by-adjacency is exactly how the |z| arms
+    acquired a PI stamp.)
+    """
+    if name in GATE_AUTHORITY:
+        return dict(GATE_AUTHORITY[name])
+    return {"status": "UNKNOWN", "contributes_to_pass_fail": False,
+            "authority": "NONE -- no gate-authority record",
+            "note": f"{name!r} has no record in GATE_AUTHORITY; treated as "
+                    f"UNRATIFIED and non-gating."}
+
+
+def gate_tolerance_is_ratified(name):
+    """Answers the AUTHORITY question ONLY.  Not "does this gate"."""
+    return gate_authority_record(name).get("status") == RATIFIED
+
+
+def gate_tolerance_gates(name):
+    """Answers the GATING question ONLY.  Not "is this authorised"."""
+    return bool(gate_authority_record(name).get("contributes_to_pass_fail"))
+
+
+def _names_with_status(status):
+    return tuple(sorted(k for k, v in GATE_AUTHORITY.items()
+                        if v.get("status") == status))
+
+
+def ratified_gate_tolerances():
+    """Gate tolerance names a deciding authority ratified.  Currently one."""
+    return _names_with_status(RATIFIED)
+
+
+def restated_not_ratified_gate_tolerances():
+    """Gate tolerance names that GATE with no ratified authority (the |z| arms)."""
+    return _names_with_status(RESTATED_NOT_RATIFIED)
+
+
+def unratified_gate_tolerances():
+    """Gate tolerance names the PI was asked about and DECLINED."""
+    return _names_with_status(UNRATIFIED)
+
+
+def not_ratified_gate_tolerances():
+    """EVERY name that is not ratified.  Derived, so it cannot drift."""
+    return tuple(sorted(k for k in GATE_AUTHORITY
+                        if not gate_tolerance_is_ratified(k)))
+
+
+def unratified_but_gating_gate_tolerances():
+    """Every name that refuses work without ratified authority.
+
+    DERIVED from the records rather than maintained in parallel, so a future
+    entry cannot escape it.  This is the single most decision-relevant field
+    in the whole table: it is the list of numbers that can fail a run and that
+    nobody authorised to do so.
+    """
+    return tuple(sorted(k for k, v in GATE_AUTHORITY.items()
+                        if v.get("contributes_to_pass_fail")
+                        and v.get("status") != RATIFIED))
+
+
+def audit_gate_authority_claims(records=None):
+    """Names claiming PI authority without being allow-listed.  [] means clean.
+
+    ``declined_by`` is exempt — declining is not authorising — as is the
+    literal "NONE -- the PI was asked and DECLINED" non-claim.
+    """
+    recs = GATE_AUTHORITY if records is None else records
+    bad = []
+    for name, rec in sorted(recs.items()):
+        if not isinstance(rec, dict):
+            bad.append(f"{name}: gate-authority record is not a dict")
+            continue
+        auth = str(rec.get("authority") or "")
+        claims_pi = ("PI" in auth) and ("DECLINED" not in auth.upper())
+        if claims_pi and name not in PI_RATIFIED_ITEMS:
+            bad.append(
+                f"{name}: claims authority={auth!r} but is NOT on "
+                f"PI_RATIFIED_ITEMS={PI_RATIFIED_ITEMS}. Decision 8 ratified "
+                f"exactly three things; everything else must record its real "
+                f"provenance.")
+        if rec.get("status") == RATIFIED and name not in PI_RATIFIED_ITEMS:
+            bad.append(
+                f"{name}: status=RATIFIED but is not on PI_RATIFIED_ITEMS")
+    return bad
+
+
+def enforce_gate_authority_allow_list(records=None):
+    """Raise ``FabricatedAuthorityError`` on any off-allow-list PI claim.
+
+    Called AT IMPORT (bottom of this module), so the module cannot be loaded
+    in the state the 2026-07-30 defect left it in.
+    """
+    bad = audit_gate_authority_claims(records)
+    if bad:
+        raise FabricatedAuthorityError(
+            "fabricated gate ratification authority:\n  " + "\n  ".join(bad))
+    return True
+
+
+GATE_AUTHORITY_NOTE = (
+    "AUTHORITY, NOT GATING — the two are separate and this table keeps them "
+    "separate. RATIFIED (by the PI, decision 8): {rat}. RESTATED_NOT_RATIFIED "
+    "(they DO refuse work; nobody ratified them): {res}. UNRATIFIED (the PI "
+    "was asked and DECLINED): {unr}. 🔴 UNRATIFIED-BUT-GATING, i.e. numbers "
+    "that can fail a run with no ratified authority: {gating}. Do NOT read "
+    "'the arm did not fire' as 'the arm passed' for anything outside the "
+    "RATIFIED list.")
+
+
+def gate_authority_stamp():
+    """The block an artifact carries so the JSON alone cannot be misread.
+
+    Deliberately states its own SCOPE: schema v1 of the sibling module put a
+    bare ``authority`` string at the top of the stamp with nothing saying what
+    it covered, and a reader took it to authorise the whole block.  That is
+    the mechanism by which the |z| arms acquired PI authority.
+    """
+    return {
+        "schema": "gate_authority/v1",
+        "authority": PI_AUTHORITY,
+        "authority_scope": (
+            "The `authority` field above applies to `pi_ratified_items` AND TO "
+            "NOTHING ELSE IN THIS STAMP. Entries under "
+            "`restated_not_ratified` and `unratified` are NOT covered by it: "
+            "each carries its own `authority` field naming who actually set "
+            "it, and for all of them that is not the PI. Read those fields, "
+            "not this one."),
+        "pi_ratified_items": list(PI_RATIFIED_ITEMS),
+        "decision_8_verbatim": DECISION_8_VERBATIM,
+        "pi_direction_2026_08_05": PI_DIRECTION_2026_08_05,
+        "ratified": list(ratified_gate_tolerances()),
+        "restated_not_ratified": list(restated_not_ratified_gate_tolerances()),
+        "unratified": list(unratified_gate_tolerances()),
+        "unratified_but_gating": list(unratified_but_gating_gate_tolerances()),
+        "records": {k: dict(v) for k, v in sorted(GATE_AUTHORITY.items())},
+        "note": GATE_AUTHORITY_NOTE.format(
+            rat=", ".join(ratified_gate_tolerances()) or "(none)",
+            res=", ".join(restated_not_ratified_gate_tolerances()) or "(none)",
+            unr=", ".join(unratified_gate_tolerances()) or "(none)",
+            gating=", ".join(unratified_but_gating_gate_tolerances())
+                   or "(none)"),
+        "authority_allow_list_clean": (audit_gate_authority_claims() == []),
+        "correction_note": (
+            "CORRECTS the record that adopted_config_closure.json carried "
+            "before 2026-08-05, which listed z_total_max and z_bin_max under "
+            "`gate_tolerances_ratified`, and whose z_criterion asserted that "
+            "all three of the tolerances 5.0 / 5.0 / 3.0 carried PI decision "
+            "8's ratification. Both were fabricated PI authority. The exact "
+            "retracted wording is not reproduced anywhere in this artifact, "
+            "so that a search for it cannot land on a correction and be "
+            "mistaken for a live claim; it is in git. Any artifact without a "
+            "`gate_authority` block of schema gate_authority/v1 or later "
+            "overstates its authority."),
+    }
+
+
+# 🔴 fail at IMPORT, not at review time.
+enforce_gate_authority_allow_list()
+
+
+# ===========================================================================
 # DECISION 8 — the |z| criterion, restated exactly
 # ===========================================================================
 
@@ -661,12 +1040,34 @@ Z_CRITERION = dict(
     chi2_dof="chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
     criterion=("PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol "
                "AND chi2_dof <= chi2_dof_max, with the three tolerances read "
-               "from run_posterior.GATE (5.0 / 5.0 / 3.0 — ratified, PI "
-               "decision 8)."),
-    not_ratified=("ratio_span_by_z_max (0.10) and ratio_span_by_snr_max (0.15) "
-                  "are explicitly NOT ratified (PI decision 8) and are not "
-                  "ratified here. They are to be defined and calibrated "
-                  "prospectively; this module does not use them."),
+               "from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT "
+               "UNIFORM ACROSS THOSE THREE and must not be read as such: "
+               "chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max "
+               "and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED — they refuse "
+               "work and no deciding authority ratified them. Per-tolerance "
+               "records: GATE_AUTHORITY."),
+    authority=("🔴 CORRECTION (2026-08-05). Until this date the `criterion` "
+               "field appended, to the three tolerances 5.0 / 5.0 / 3.0, a "
+               "parenthetical asserting that all three were RATIFIED under PI "
+               "decision 8. That was FABRICATED PI AUTHORITY, and the exact "
+               "retracted wording is deliberately NOT reproduced here so that "
+               "a grep for it cannot land on this correction — read it in git "
+               "instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and "
+               "sent it back for restatement, which is the opposite of "
+               "ratifying it. The restatement is this dict; the restated form "
+               "has never been put to the PI. The ONE ratified numerical "
+               "closure gate is chi2/dof <= 3. See GATE_AUTHORITY and "
+               "GATE_AUTHORITY_NOTE — that table, not this prose, is the "
+               "source of truth."),
+    not_ratified=("SIX of the seven run_posterior.GATE tolerances are NOT "
+                  "ratified. FOUR |z| arms (z_total_max, z_bin_max, "
+                  "z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they "
+                  "GATE, and nobody with deciding authority ratified them. "
+                  "TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, "
+                  "ratio_span_by_snr_max = 0.15) are UNRATIFIED — the PI was "
+                  "asked and explicitly declined (decision 8); they are to be "
+                  "defined and calibrated prospectively, and this module does "
+                  "not use them. Only chi2_dof_max is ratified."),
     absolute_value=("the criterion is on |z|, two-sided. A large NEGATIVE z "
                     "(over-prediction) fails identically to a large positive "
                     "one."),

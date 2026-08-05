@@ -114,18 +114,52 @@ GATE = {
 # picked as "a swing a sampler cannot repair"; the wider SNR value only
 # reflects that the SNR marginal has fewer, noisier strata.
 #
-# The z-score arms (z_total_max, z_bin_max, chi2_dof_max, z_zbin_max,
-# z_snrbin_max) are NOT in this set: they are conventional 5-sigma / chi2-per-
-# dof thresholds and pre-date this change.
-PROVISIONAL_GATE_TOLERANCES = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+# 🔴 CORRECTION (2026-08-05).  This comment used to end:
+#     "The z-score arms (z_total_max, z_bin_max, chi2_dof_max, z_zbin_max,
+#      z_snrbin_max) are NOT in this set: they are conventional 5-sigma /
+#      chi2-per-dof thresholds and pre-date this change."
+# and the NOTE below used to end "Every other tolerance in GATE is a
+# conventional z-score/chi2 threshold and pre-dates this change."  BOTH WERE
+# FALSE, and they are the sentence that let four |z| arms be written into a
+# committed artifact as PI-ratified:
+#   * z_zbin_max and z_snrbin_max were added BY THIS CHANGE (0e7fa0b,
+#     2026-07-29 10:21), on four consecutive added lines of the SAME HUNK that
+#     added the two ratio_span numbers the PI declined the same day.  They
+#     pre-date nothing.  MEASURED:
+#       git log --format=%H -Sz_zbin_max -- CDDF_analysis/hbi_mcmc/run_posterior.py | tail -1
+#   * z_total_max and z_bin_max DO pre-date it (f23961e, 2026-07-28), but
+#     pre-dating a decision is not the same thing as being ratified by it.
+# "PROVISIONAL" here means ONLY "declined by the PI on 2026-07-29".  It is NOT
+# the complement of "ratified": FOUR MORE tolerances are unratified and are not
+# in this tuple.  For the authority of any tolerance, read the ONE table:
+# reporting.GATE_AUTHORITY (accessors ratified_gate_tolerances(),
+# restated_not_ratified_gate_tolerances(), unratified_gate_tolerances(),
+# unratified_but_gating_gate_tolerances()).
+#
+# Derived from that table, not re-typed here: a literal list of names typed
+# next to the thing it describes is exactly how the fabricated claim survived.
+def _gate_authority():
+    from CDDF_analysis.hbi_mcmc import reporting as _REP
+    return _REP
+
+
+PROVISIONAL_GATE_TOLERANCES = _gate_authority().unratified_gate_tolerances()
 
 PROVISIONAL_GATE_TOLERANCES_NOTE = (
-    "PROVISIONAL / UNRATIFIED: ratio_span_by_z_max and ratio_span_by_snr_max "
-    "were set by the author on 2026-07-29 and have NOT been ratified. They are "
-    "not measured or calibrated and carry no coverage statement. The gate arms "
+    "PROVISIONAL / UNRATIFIED: {names} were set by the author on 2026-07-29, "
+    "the PI was asked, and the PI DECLINED to ratify them. They are not "
+    "measured or calibrated and carry no coverage statement. The gate arms "
     "they threshold are load-bearing and stay armed; the NUMBERS are open for "
-    "PI ratification. Every other tolerance in GATE is a conventional "
-    "z-score/chi2 threshold and pre-dates this change.")
+    "PI ratification. 🔴 DO NOT READ THIS LIST AS 'everything else is "
+    "ratified'. Exactly ONE tolerance in GATE is ratified (chi2_dof_max, "
+    "chi2/dof <= 3, PI decision 8). The four |z| arms ({restated}) are "
+    "RESTATED_NOT_RATIFIED: they refuse work and no deciding authority "
+    "ratified them -- decision 8 called |z| <= 5 MALFORMED and sent it back "
+    "for restatement. Per-tolerance records: reporting.GATE_AUTHORITY."
+).format(
+    names=" and ".join(_gate_authority().unratified_gate_tolerances()),
+    restated=", ".join(
+        _gate_authority().restated_not_ratified_gate_tolerances()))
 
 _REAL_TOKENS = ("main_dark", "loa_main_dark", "matterhorn", "dr3")
 
@@ -154,13 +188,35 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     z_bin_max = float(np.abs(z).max()) if len(z) else float("nan")
     z_total = float(abs(tab["total"]["z"]))
 
+    # 🔴 A refusal must name the AUTHORITY of the number it refused on.  Six of
+    # the seven tolerances in GATE are not ratified; before 2026-08-05 only the
+    # two DECLINED span numbers were labelled, so a reader of a refusal
+    # reasonably concluded the |z| arms were authorised.  Read from the ONE
+    # table, never typed here.
+    _AUTH = _gate_authority()
+
+    def _tag(name):
+        rec = _AUTH.gate_authority_record(name)
+        st = rec.get("status")
+        if st == _AUTH.RATIFIED:
+            return ""
+        if st == _AUTH.UNRATIFIED:
+            return " [UNRATIFIED tolerance -- the PI was asked and DECLINED]"
+        if st == _AUTH.RESTATED_NOT_RATIFIED:
+            return (" [NOT RATIFIED -- this arm gates; no deciding authority "
+                    "ratified it]")
+        return " [NO GATE-AUTHORITY RECORD -- treat as unratified]"
+
     fails = []
     if not (z_total <= gate["z_total_max"]):
-        fails.append(f"|z_total|={z_total:.2f} > {gate['z_total_max']}")
+        fails.append(f"|z_total|={z_total:.2f} > {gate['z_total_max']}"
+                     + _tag("z_total_max"))
     if not (z_bin_max <= gate["z_bin_max"]):
-        fails.append(f"max|z_bin|={z_bin_max:.2f} > {gate['z_bin_max']}")
+        fails.append(f"max|z_bin|={z_bin_max:.2f} > {gate['z_bin_max']}"
+                     + _tag("z_bin_max"))
     if not (chi2_dof <= gate["chi2_dof_max"]):
-        fails.append(f"chi2/dof={chi2_dof:.2f} > {gate['chi2_dof_max']}")
+        fails.append(f"chi2/dof={chi2_dof:.2f} > {gate['chi2_dof_max']}"
+                     + _tag("chi2_dof_max"))
 
     # --- the z- and SNR-marginal arms -------------------------------------
     # ``ratio_tables`` already computed these; the gate used to throw them
@@ -179,14 +235,13 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
                 else 0.0)
         marg[key] = dict(rows=mrows, zmax=zmax, span=span)
         if len(zs) and not (zmax <= gate[zkey]):
-            fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}")
+            fails.append(f"max|z| in {key} = {zmax:.2f} > {gate[zkey]}"
+                         + _tag(zkey))
         if not (span <= gate[spankey]):
-            prov = (" [PROVISIONAL/UNRATIFIED tolerance]"
-                    if spankey in PROVISIONAL_GATE_TOLERANCES else "")
             fails.append(
                 f"ratio span in {key} = {span:.4f} "
                 f"(mu/obs {ratios.min():.4f}..{ratios.max():.4f}) "
-                f"> ratio_span_{key}_max = {gate[spankey]}{prov}")
+                f"> ratio_span_{key}_max = {gate[spankey]}" + _tag(spankey))
 
     worst = sorted(rows, key=lambda b: -abs(b["z"]))[:5]
     return {
@@ -199,9 +254,16 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         "pass": not fails,
         "failures": fails,
         "gate": gate,
-        # which of the numbers above a PI has NOT ratified
+        # 🔴 which of the numbers above a PI DECLINED.  This is NOT the
+        # complement of "ratified" -- see the four |z| arms below.
         "gate_tolerances_provisional": list(PROVISIONAL_GATE_TOLERANCES),
         "gate_tolerances_provisional_note": PROVISIONAL_GATE_TOLERANCES_NOTE,
+        # ... and the full authority picture, read from reporting.GATE_AUTHORITY
+        "gate_tolerances_ratified": list(_AUTH.ratified_gate_tolerances()),
+        "gate_tolerances_restated_not_ratified": list(
+            _AUTH.restated_not_ratified_gate_tolerances()),
+        "gate_tolerances_unratified_but_gating": list(
+            _AUTH.unratified_but_gating_gate_tolerances()),
         "total_mu": float(tab["total"]["mu"]),
         "total_obs": float(tab["total"]["obs"]),
         "total_ratio": float(tab["total"]["ratio"]),
@@ -280,13 +342,24 @@ def stamp_metadata(*, code_commit, code_dirty, cfg, args, gate_report,
         "forward_gate": gate_report,
         # hoisted to the TOP of the stamp, not left buried in forward_gate: a
         # reader of the artifact alone must see which gate numbers are not
-        # ratified without opening the nested report.
+        # ratified without opening the nested report.  🔴 the PROVISIONAL list
+        # alone is NOT that picture -- it names only the two the PI DECLINED,
+        # and reading it as "everything else is ratified" is precisely the
+        # error that put z_total_max and z_bin_max into a committed artifact
+        # under `gate_tolerances_ratified`.  All four lists are read from
+        # reporting.GATE_AUTHORITY.
         "gate_tolerances_provisional": list(
             gate_report.get("gate_tolerances_provisional")
             or PROVISIONAL_GATE_TOLERANCES),
         "gate_tolerances_provisional_note": (
             gate_report.get("gate_tolerances_provisional_note")
             or PROVISIONAL_GATE_TOLERANCES_NOTE),
+        "gate_tolerances_ratified": list(
+            _gate_authority().ratified_gate_tolerances()),
+        "gate_tolerances_restated_not_ratified": list(
+            _gate_authority().restated_not_ratified_gate_tolerances()),
+        "gate_tolerances_unratified_but_gating": list(
+            _gate_authority().unratified_but_gating_gate_tolerances()),
         "date": time.strftime("%Y-%m-%d"),
         "pack_provenance": pack_provenance,
         "scope": "MOCK / SYNTHETIC ONLY",

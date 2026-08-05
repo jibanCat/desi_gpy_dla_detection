@@ -401,6 +401,244 @@ def test_convention_systematic_works_per_bin():
 
 
 # ===========================================================================
+# DECISION 8 — GATE AUTHORITY
+#
+# 🔴 THE DEFECT THESE PIN.  ``adopted_config.build_verdict`` wrote the literal
+#     gate_tolerances_ratified=["z_total_max", "z_bin_max", "chi2_dof_max"]
+# into the committed artifact, and ``Z_CRITERION["criterion"]`` said the three
+# tolerances "5.0 / 5.0 / 3.0" were "ratified, PI decision 8".  Both were
+# FABRICATED PI AUTHORITY.  Decision 8, verbatim: "Ratify the fail-closed
+# framework, matched-configuration SBC and chi2/dof <= 3 closure requirement.
+# Do not yet ratify ratio_span_by_z_max=0.10 or ratio_span_by_snr_max=0.15.
+# ... Also restate the malformed |z| <= 5 criterion with its exact
+# mathematical definition."  Calling a criterion MALFORMED and sending it back
+# for restatement is the OPPOSITE of ratifying it.
+#
+# THE STANDING MUTANT for this whole section: restore that literal at
+# ``adopted_config.py`` and the "— ratified, PI decision 8" wording in
+# ``reporting.Z_CRITERION``, regenerate nothing, and re-run.
+# ===========================================================================
+
+_Z_ARMS = ("z_total_max", "z_bin_max", "z_zbin_max", "z_snrbin_max")
+_SPAN_ARMS = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
+
+def test_the_pi_allow_list_is_exactly_the_three_items_decision_8_named():
+    """MUTATION: append "z_total_max" to ``RP.PI_RATIFIED_ITEMS`` -> RED
+    (here, and in the allow-list guard test below)."""
+    assert RP.PI_RATIFIED_ITEMS == ("fail_closed_framework",
+                                    "matched_configuration_sbc",
+                                    "chi2_dof_max")
+    # the allow-list must be checkable against the words it came from
+    v = RP.DECISION_8_VERBATIM
+    assert "fail-closed framework" in v
+    assert "matched-configuration SBC" in v
+    assert "chi2/dof <= 3" in v
+    assert "Do not yet ratify ratio_span_by_z_max=0.10" in v
+    assert "malformed |z| <= 5" in v
+
+
+def test_the_only_ratified_gate_tolerance_is_chi2_dof_max():
+    """🔴 THE HEADLINE PIN.  z_total_max and z_bin_max were listed as ratified
+    in a committed artifact; they are not, and never were.
+
+    MUTATION: restore the fabricated
+    ``gate_tolerances_ratified=["z_total_max","z_bin_max","chi2_dof_max"]``
+    (as a literal, or by moving those two into ``GATE_AUTHORITY`` with
+    status=RATIFIED) -> RED.
+    """
+    assert RP.ratified_gate_tolerances() == ("chi2_dof_max",)
+    for name in _Z_ARMS + _SPAN_ARMS:
+        assert not RP.gate_tolerance_is_ratified(name), name
+        assert name not in RP.PI_RATIFIED_ITEMS, name
+    assert RP.gate_tolerance_is_ratified("chi2_dof_max")
+
+
+def test_the_four_z_arms_are_restated_not_ratified_AND_still_gate():
+    """Both halves, because reporting either one alone is a false record.
+
+    Saying they do NOT gate would be as false as the PI claim, in the other
+    direction: they call ``fails.append`` in ``forward_closure_gate`` today.
+
+    MUTATION: flip any of the four to status=RATIFIED -> RED; flip any
+    ``contributes_to_pass_fail`` to False -> RED.
+    """
+    assert set(RP.restated_not_ratified_gate_tolerances()) == set(_Z_ARMS)
+    for name in _Z_ARMS:
+        rec = RP.gate_authority_record(name)
+        assert rec["status"] == "RESTATED_NOT_RATIFIED", name
+        assert rec["contributes_to_pass_fail"] is True, name
+        assert rec["effect"] == "GATES_WITHOUT_RATIFIED_AUTHORITY", name
+        # the authority field must name a NON-PI author
+        assert "PI" not in rec["authority"], (name, rec["authority"])
+        # and the PI's actual disposition must be quoted, not paraphrased
+        assert "MALFORMED AS STATED" in rec["pi_disposition"], name
+        assert RP.gate_tolerance_gates(name) is True, name
+
+
+def test_every_z_arm_carries_its_REAL_introducing_commit_verified_against_git():
+    """The retracted record justified itself with "these arms pre-date decision
+    8".  Two of the four do not: they were added on 2026-07-29 in the SAME HUNK
+    as the two tolerances the PI declined that same day.  The recorded SHA is
+    therefore verified against ``git log -S`` rather than trusted.
+
+    MUTATION: relabel z_zbin_max's ``introduced_by`` as the pre-decision-8
+    f23961e (or set ``predates_decision_8=True``) -> RED.
+    """
+    for name in _Z_ARMS:
+        rec = RP.gate_authority_record(name)
+        sha = rec["introduced_by"]
+        assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha), (
+            name, sha)
+        out = subprocess.check_output(
+            ["git", "log", "--format=%H", "-S" + name, "--",
+             "CDDF_analysis/hbi_mcmc/run_posterior.py"],
+            cwd=REPO, text=True).strip().splitlines()
+        assert out, f"git log -S{name} found nothing"
+        assert out[-1] == sha, (name, "recorded", sha, "measured", out[-1])
+    # and the two that do NOT pre-date decision 8 must say so, naming the
+    # declined pair they shipped alongside
+    for name in ("z_zbin_max", "z_snrbin_max"):
+        rec = RP.gate_authority_record(name)
+        assert rec["predates_decision_8"] is False, name
+        assert set(rec["introduced_same_hunk_as"]) == set(_SPAN_ARMS), name
+    for name in ("z_total_max", "z_bin_max"):
+        rec = RP.gate_authority_record(name)
+        assert rec["predates_decision_8"] is True, name
+        # ... and pre-dating must be explicitly disclaimed as ratification
+        assert "not ratification" in rec["note"].lower(), name
+
+
+def test_the_two_span_tolerances_are_unratified_and_say_the_pi_declined():
+    """MUTATION: move either span name into RATIFIED, or drop ``declined_by``
+    -> RED."""
+    assert set(RP.unratified_gate_tolerances()) == set(_SPAN_ARMS)
+    for name in _SPAN_ARMS:
+        rec = RP.gate_authority_record(name)
+        assert rec["status"] == "UNRATIFIED", name
+        assert "DECLINED" in rec["authority"].upper(), name
+        assert rec["declined_by"] == RP.PI_AUTHORITY, name
+        assert "Do not yet ratify" in rec["pi_disposition"], name
+
+
+def test_unratified_but_gating_is_DERIVED_and_names_every_such_number():
+    """The single most decision-relevant field: numbers that can fail a run
+    with no ratified authority.  It is derived from the records, so a future
+    entry cannot escape it.
+
+    MUTATION: hard-code it as ``list(_Z_ARMS)`` and add a gating entry -> RED.
+    """
+    got = set(RP.unratified_but_gating_gate_tolerances())
+    expect = {n for n, r in RP.GATE_AUTHORITY.items()
+              if r.get("contributes_to_pass_fail") and r["status"] != "RATIFIED"}
+    assert got == expect
+    assert "chi2_dof_max" not in got
+    # DERIVATION, not a copy: a synthetic gating+unratified entry must appear
+    extra = dict(RP.GATE_AUTHORITY)
+    extra["invented_max"] = {"status": "UNRATIFIED",
+                             "contributes_to_pass_fail": True,
+                             "authority": "NONE -- the PI was asked and DECLINED"}
+    saved = RP.GATE_AUTHORITY
+    try:
+        RP.GATE_AUTHORITY = extra
+        assert "invented_max" in RP.unratified_but_gating_gate_tolerances()
+    finally:
+        RP.GATE_AUTHORITY = saved
+
+
+def test_the_authority_allow_list_guard_refuses_a_fabricated_pi_claim():
+    """The guard runs AT IMPORT, so the module cannot be loaded in the state
+    the defect left it in.  Here it is exercised on an injected mutant.
+
+    MUTATION: delete the ``enforce_gate_authority_allow_list()`` call at the
+    bottom of reporting.py -> the shipped-table assertion still passes but the
+    injected-mutant assertion is what carries this test; delete the guard body
+    -> RED.
+    """
+    # shipped table is clean
+    assert RP.audit_gate_authority_claims() == []
+    assert RP.enforce_gate_authority_allow_list() is True
+    # ... and the exact fabricated record the retraction was about is refused
+    mutant = dict(RP.GATE_AUTHORITY)
+    mutant["z_total_max"] = dict(mutant["z_total_max"])
+    mutant["z_total_max"]["status"] = "RATIFIED"
+    mutant["z_total_max"]["authority"] = RP.PI_AUTHORITY
+    bad = RP.audit_gate_authority_claims(mutant)
+    assert len(bad) == 2, bad          # claims-PI violation AND status violation
+    assert all("z_total_max" in b for b in bad)
+    with pytest.raises(RP.FabricatedAuthorityError, match="fabricated"):
+        RP.enforce_gate_authority_allow_list(mutant)
+
+
+def test_an_unknown_tolerance_inherits_no_authority_from_its_neighbours():
+    """Inheritance-by-adjacency is exactly how the |z| arms acquired a PI
+    stamp: they lived in the same dict as the conventional ones.
+
+    MUTATION: make ``gate_authority_record`` fall back to the chi2 record (or
+    default ``contributes_to_pass_fail`` True) -> RED.
+    """
+    rec = RP.gate_authority_record("some_tolerance_added_tomorrow_max")
+    assert rec["status"] == "UNKNOWN"
+    assert rec["contributes_to_pass_fail"] is False
+    assert RP.gate_tolerance_is_ratified("some_tolerance_added_tomorrow_max") is False
+    assert RP.gate_tolerance_gates("some_tolerance_added_tomorrow_max") is False
+
+
+def test_gate_authority_covers_every_gate_tolerance_and_nothing_else():
+    """A tolerance added to GATE without an authority record must be caught.
+
+    MUTATION: add a key to ``run_posterior.GATE`` without a GATE_AUTHORITY
+    entry -> RED.
+    """
+    from CDDF_analysis.hbi_mcmc import run_posterior as RPST
+    assert set(RP.GATE_AUTHORITY) == set(RPST.GATE), (
+        set(RP.GATE_AUTHORITY) ^ set(RPST.GATE))
+
+
+def test_the_gate_authority_stamp_passes_a_ratified_field_allow_list_scan():
+    """SHAPE CONTRACT for the merge: a sibling stream ships an import-time
+    guard that scans for the field names ``gate_tolerances_ratified`` and
+    ``ratified_arms`` and requires their contents to be allow-listed.  Every
+    "ratified"-named field this branch emits must already satisfy it.
+
+    MUTATION: restore the fabricated literal at ``adopted_config.py`` -> RED
+    (via the committed-artifact test below); put a z arm into
+    ``PI_RATIFIED_ITEMS`` -> RED here.
+    """
+    s = RP.gate_authority_stamp()
+    assert set(s["ratified"]) <= set(RP.PI_RATIFIED_ITEMS)
+    assert s["ratified"] == ["chi2_dof_max"]
+    assert set(s["pi_ratified_items"]) == set(RP.PI_RATIFIED_ITEMS)
+    assert set(s["restated_not_ratified"]) == set(_Z_ARMS)
+    assert set(s["unratified"]) == set(_SPAN_ARMS)
+    assert s["authority_allow_list_clean"] is True
+    # the stamp must state the SCOPE of its own `authority` string: an
+    # unscoped one at the top of a block is how the |z| arms got a PI stamp
+    assert "NOTHING ELSE IN THIS STAMP" in s["authority_scope"]
+    assert s["authority"] == RP.PI_AUTHORITY
+
+
+def test_z_criterion_no_longer_calls_the_five_sigma_tolerances_ratified():
+    """🔴 THE SECOND FABRICATION SITE, in prose.  ``Z_CRITERION["criterion"]``
+    said "(5.0 / 5.0 / 3.0 — ratified, PI decision 8)"; two of those three
+    numbers are the unratified |z| arms.
+
+    MUTATION: restore that parenthetical -> RED.
+    """
+    import json
+    blob = json.dumps(RP.Z_CRITERION)
+    assert "ratified, PI decision 8" not in blob
+    assert "5.0 / 5.0 / 3.0 — ratified" not in blob
+    crit = RP.Z_CRITERION["criterion"]
+    assert "chi2_dof_max = 3.0 is RATIFIED" in crit
+    assert "RESTATED_NOT_RATIFIED" in crit
+    nr = RP.Z_CRITERION["not_ratified"]
+    assert "z_total_max" in nr and "z_bin_max" in nr
+    assert "z_zbin_max" in nr and "z_snrbin_max" in nr
+    assert "Only chi2_dof_max is ratified." in nr
+
+
+# ===========================================================================
 # DECISION 8 — the |z| criterion
 # ===========================================================================
 
@@ -1058,6 +1296,116 @@ def test_a_basis_that_straddles_the_reporting_floor_refuses_the_window_tier():
     f = np.asarray(p.truth["f_true"], float)[None, ...]
     with pytest.raises(RP.ReportingGuardError, match="REPORTING GUARD"):
         MA.reduce_f_posterior(f, p)
+
+
+# ===========================================================================
+# THE COMMITTED ARTIFACT'S AUTHORITY RECORD
+#
+# The stamped JSON is what a referee reads.  It carried
+# /verdict/gate_tolerances_ratified = ["z_total_max","z_bin_max",
+# "chi2_dof_max"] and 97 copies of "ratified, PI decision 8".  These tests
+# read the file in git, not the code that made it.
+# ===========================================================================
+
+def _committed_artifact():
+    import json
+    p = os.path.join(REPO, "CDDF_analysis/hbi_mcmc/adopted_config_closure.json")
+    with open(p) as fh:
+        return json.load(fh)
+
+
+def _walk(o, path=""):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            yield path + "/" + k, k, v
+            yield from _walk(v, path + "/" + k)
+    elif isinstance(o, list):
+        for i, v in enumerate(o):
+            yield from _walk(v, path + f"/{i}")
+
+
+def test_committed_artifact_ratified_fields_contain_only_allow_listed_items():
+    """🔴 THE PIN ON THE FILE IN GIT.  Any field whose NAME asserts
+    ratification must contain only items on ``PI_RATIFIED_ITEMS``.  This is
+    the shape the sibling stream's widened import-time guard will scan for
+    (``gate_tolerances_ratified`` / ``ratified_arms``), checked here on the
+    committed artifact so the merge cannot surface a violation.
+
+    MUTATION: restore ``gate_tolerances_ratified=["z_total_max","z_bin_max",
+    "chi2_dof_max"]`` in ``adopted_config.build_verdict`` and regenerate (or
+    hand-edit the JSON) -> RED.
+    """
+    art = _committed_artifact()
+    allow = set(RP.PI_RATIFIED_ITEMS)
+    seen = 0
+    for path, key, val in _walk(art):
+        if key in ("gate_tolerances_ratified", "ratified_arms", "ratified",
+                   "pi_ratified_items"):
+            assert isinstance(val, list), (path, val)
+            assert set(val) <= allow, (path, sorted(set(val) - allow))
+            seen += 1
+    assert seen >= 2, f"no ratified-named field found in the artifact ({seen})"
+    v = art["verdict"]
+    assert v["gate_tolerances_ratified"] == ["chi2_dof_max"]
+
+
+def test_committed_artifact_records_the_z_arms_as_gating_but_not_ratified():
+    """Both halves in the file itself: a referee must be able to see, from the
+    JSON alone, which numbers refuse work without authority.
+
+    MUTATION: drop ``gate_tolerances_restated_not_ratified`` from the verdict,
+    or set any of the four records' ``contributes_to_pass_fail`` to False
+    -> RED.
+    """
+    art = _committed_artifact()
+    v = art["verdict"]
+    assert set(v["gate_tolerances_restated_not_ratified"]) == set(_Z_ARMS)
+    assert set(v["gate_tolerances_unratified"]) == set(_SPAN_ARMS)
+    # the name means what it says: EVERY unratified tolerance, all six
+    assert set(v["gate_tolerances_not_ratified"]) == set(_Z_ARMS) | set(_SPAN_ARMS)
+    assert set(v["gate_tolerances_unratified_but_gating"]) == (
+        set(_Z_ARMS) | set(_SPAN_ARMS))
+    recs = v["gate_authority"]["records"]
+    for name in _Z_ARMS:
+        assert recs[name]["status"] == "RESTATED_NOT_RATIFIED", name
+        assert recs[name]["contributes_to_pass_fail"] is True, name
+        assert len(recs[name]["introduced_by"]) == 40, name
+
+
+def test_committed_artifact_contains_no_fabricated_ratification_prose():
+    """The false claim was in PROSE 97 times, not only in the data field.
+
+    MUTATION: restore "— ratified, PI decision 8" in
+    ``reporting.Z_CRITERION["criterion"]`` and regenerate -> RED.
+    """
+    import json
+    blob = json.dumps(_committed_artifact(), ensure_ascii=False)
+    assert "ratified, PI decision 8" not in blob
+    assert "5.0 / 5.0 / 3.0 — ratified" not in blob
+    # the CORRECT claim must still be there: chi2/dof <= 3 IS ratified
+    assert "the RATIFIED tolerance of 3.0" in blob
+
+
+def test_the_relabelling_is_not_verdict_bearing_and_the_artifact_proves_it():
+    """A labelling correction must be shown NOT to move the answer.  If the
+    "NO" had depended on an unratified arm, that would be a finding, not a
+    relabelling — so the artifact measures it instead of asserting it.
+
+    MUTATION: delete ``verdict_rests_on_the_ratified_arm_alone`` -> RED;
+    weaken ``_chi2_only`` to count ``>= 1.0`` on a passing config -> RED via
+    the answer string.
+    """
+    art = _committed_artifact()
+    r = art["verdict"]["verdict_rests_on_the_ratified_arm_alone"]
+    assert r["answer"].startswith("YES"), r["answer"]
+    for win in ("full_grid", "window"):
+        b = r[win]
+        assert b["n_failing_ratified_chi2_arm_alone"] == b["n_configurations"]
+        assert b["min_factor_over_ratified_chi2_gate"] > 1.0, (win, b)
+    # and the verdict itself is unchanged: nothing closes, in or out of window
+    assert art["verdict"]["answer"] == "NO"
+    assert art["verdict"]["n_closing_in_window"] == 0
+    assert art["verdict"]["n_closing_full_grid"] == 0
 
 
 def test_reporting_module_states_exactly_what_the_subwindow_guard_covers():

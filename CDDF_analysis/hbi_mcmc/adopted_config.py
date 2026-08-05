@@ -785,6 +785,39 @@ def build_verdict(rows, syst, resid=None):
             factor_over_chi2_gate=d["chi2_dof"] / gate["chi2_dof_max"],
         )
 
+    # 🔴 MEASURED, not asserted: does the verdict survive if the ONLY arm
+    # allowed to speak is the one the PI actually ratified?  Relabelling the
+    # |z| arms as unratified would be an empty gesture if the "NO" depended on
+    # them.  This counts, per window, the configurations that fail the
+    # RATIFIED chi2/dof <= 3 arm on its own.
+    def _chi2_only(win):
+        fac = sorted(rows[k][win]["chi2_dof"] / gate["chi2_dof_max"]
+                     for k in rows)
+        return dict(
+            n_configurations=len(rows),
+            n_failing_ratified_chi2_arm_alone=sum(1 for f in fac if f > 1.0),
+            min_factor_over_ratified_chi2_gate=fac[0],
+            max_factor_over_ratified_chi2_gate=fac[-1])
+
+    rests = dict(
+        what=("the RATIFIED arm is chi2/dof <= 3 (PI decision 8) and it is the "
+              "ONLY ratified numerical closure gate. The four |z| arms are "
+              "RESTATED_NOT_RATIFIED and the two ratio-span arms are "
+              "UNRATIFIED. This block answers: is the answer 'NO' still 'NO' "
+              "with only the ratified arm armed?"),
+        full_grid=_chi2_only("full_grid"),
+        window=_chi2_only("window"),
+    )
+    rests["answer"] = (
+        "YES -- the verdict rests on the ratified arm alone"
+        if (rests["window"]["n_failing_ratified_chi2_arm_alone"]
+            == rests["window"]["n_configurations"]
+            and rests["full_grid"]["n_failing_ratified_chi2_arm_alone"]
+            == rests["full_grid"]["n_configurations"])
+        else "NO -- at least one configuration passes the ratified chi2 arm "
+             "and is failed only by an UNRATIFIED arm. The relabelling is "
+             "then verdict-bearing and a PI must see this line.")
+
     return dict(
         question=("under the ADOPTED configuration (0.2-dex latent basis, pad "
                   "floor 19.0, molly172 sub-floor completeness), does the "
@@ -800,17 +833,39 @@ def build_verdict(rows, syst, resid=None):
             f"chi2/dof from {ad['2lpt0']['full_grid']['chi2_dof']:.1f} to "
             f"{ad['2lpt0']['window']['chi2_dof']:.1f}, but the windowed chi2/dof "
             f"is still {ad['2lpt0']['window']['chi2_dof'] / gate['chi2_dof_max']:.0f}x "
-            "the ratified tolerance of 3.0 and max|z_bin| is still "
-            f"{ad['2lpt0']['window']['z_bin_max']:.1f} against a tolerance of 5. "
+            "the RATIFIED tolerance of 3.0 (chi2/dof <= 3, PI decision 8 -- "
+            "the only ratified numerical closure gate) and max|z_bin| is still "
+            f"{ad['2lpt0']['window']['z_bin_max']:.1f} against a tolerance of 5 "
+            "(z_bin_max: RESTATED_NOT_RATIFIED -- it gates, nobody ratified "
+            "it; see verdict.gate_authority and "
+            "verdict.verdict_rests_on_the_ratified_arm_alone). "
             "No configuration in the 48-fold cross closes in the window. "
             "WHERE THE IMPROVEMENT COMES FROM is NOT what it looks like -- see "
             "residual_decomposition.correction: the bins at/above 21.6 carry "
             "under 1% of the full-grid chi2 (they are count-starved), and it is "
             "the two NON-IDENTIFIABLE bins below 19.7 that carried ~90% of it."),
         gate_tolerances=gate,
-        gate_tolerances_ratified=["z_total_max", "z_bin_max", "chi2_dof_max"],
-        gate_tolerances_not_ratified=list(
-            _RP().PROVISIONAL_GATE_TOLERANCES),
+        # 🔴 EVERY ONE OF THESE IS READ FROM reporting.GATE_AUTHORITY, THE ONE
+        # TABLE.  Until 2026-08-05 this site wrote the LITERAL
+        #     gate_tolerances_ratified=["z_total_max","z_bin_max","chi2_dof_max"]
+        # into the committed artifact.  That was FABRICATED PI AUTHORITY:
+        # decision 8 ratified three things, of which exactly one is a gate
+        # tolerance (chi2/dof <= 3), and it called |z| <= 5 MALFORMED AS
+        # STATED and sent it back for RESTATEMENT -- the opposite of ratifying
+        # it.  A literal typed at a call site is unfalsifiable; a read from a
+        # guarded table is not.
+        gate_tolerances_ratified=list(REP.ratified_gate_tolerances()),
+        gate_tolerances_restated_not_ratified=list(
+            REP.restated_not_ratified_gate_tolerances()),
+        gate_tolerances_unratified=list(REP.unratified_gate_tolerances()),
+        # name means what it says: EVERY tolerance that is not ratified.  The
+        # old field carried only the two declined ratio-span numbers, which
+        # invited the reading "so the other five are ratified".
+        gate_tolerances_not_ratified=list(REP.not_ratified_gate_tolerances()),
+        gate_tolerances_unratified_but_gating=list(
+            REP.unratified_but_gating_gate_tolerances()),
+        gate_authority=REP.gate_authority_stamp(),
+        verdict_rests_on_the_ratified_arm_alone=rests,
         n_configurations=len(rows),
         n_closing_full_grid=len(closing_full),
         n_closing_in_window=len(closing_win),
@@ -1252,8 +1307,17 @@ def _limitations(omega_extrap=None):
         "the 0.2-dex basis is a first-class OPTION, not the default. The shipped "
         "default is still 0.1 dex, because decision 3 was conditioned on "
         "re-running closure and closure still fails.",
-        "the two ratio-span gate tolerances remain UNRATIFIED (PI decision 8) "
-        "and are not used by this artifact's verdict.",
+        "🔴 GATE AUTHORITY IS NOT UNIFORM. Exactly ONE of the seven "
+        "run_posterior.GATE tolerances is ratified: chi2_dof_max (chi2/dof "
+        "<= 3, PI decision 8). The two ratio-span tolerances are UNRATIFIED -- "
+        "the PI was asked and DECLINED -- and are not used by this artifact's "
+        "verdict. The four |z| arms are RESTATED_NOT_RATIFIED: they DO refuse "
+        "work and no deciding authority ratified them (decision 8 called "
+        "|z| <= 5 MALFORMED AS STATED and sent it back for restatement, which "
+        "is not a ratification). Read verdict.gate_authority before quoting "
+        "any tolerance as authorised, and "
+        "verdict.verdict_rests_on_the_ratified_arm_alone before treating this "
+        "artifact's 'NO' as authority-dependent.",
         "the coverage block's SBC is matched on the LATENT BASIS WIDTH and the "
         "PAD only. It is reduced in grid extent, sampler scale, prior width and "
         "response realisation (R1-R5), and its measured power has a stated blind "
