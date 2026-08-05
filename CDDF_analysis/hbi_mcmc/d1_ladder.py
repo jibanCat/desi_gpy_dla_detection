@@ -152,17 +152,30 @@ def tag_for(floor, conv):
     return f"_pad{f}_{conv}"
 
 
+def _REP():
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    return REP
+
+
 def gate_metrics(tab, pack):
     """EXACTLY run_posterior.forward_closure_gate's arithmetic (the committed
-    gate): z over reported n-hat bins with obs > 0, chi2/dof over those bins."""
-    floor = float(np.asarray(pack.nhat_edges, float)[0])
-    rows = [b for b in tab["by_nhat"] if b["obs"] > 0 and b["lo"] >= floor - 1e-9]
-    z = np.array([b["z"] for b in rows], float)
+    gate): z over reported n-hat bins with obs > 0, chi2/dof over those bins.
+
+    "EXACTLY" is now STRUCTURAL, not a promise in a docstring: both this
+    function and ``forward_closure_gate`` delegate to the single implementation
+    in ``reporting.window_closure_metrics``, called UNRESTRICTED (A1,
+    2026-08-05).  ``pack`` is retained in the signature — every caller passes it
+    and it documents which pack the table came from — but the metrics no longer
+    read it: the old ``b["lo"] >= pack.nhat_edges[0] - 1e-9`` clause was
+    provably inert (``ratio_tables`` emits one row per OBSERVED bin, so the row
+    set IS ``nhat_edges[:-1]``) and dropping it changes no number.
+    """
+    m = _REP().window_closure_metrics(tab["by_nhat"])
     return dict(
         z_total=float(abs(tab["total"]["z"])),
-        z_bin_max=float(np.abs(z).max()) if len(z) else float("nan"),
-        chi2_dof=float((z ** 2).sum() / max(len(z), 1)),
-        n_bins=int(len(z)),
+        z_bin_max=m["z_bin_max"],
+        chi2_dof=m["chi2_dof"],
+        n_bins=int(m["n_bins_in_z_set"]),
     )
 
 

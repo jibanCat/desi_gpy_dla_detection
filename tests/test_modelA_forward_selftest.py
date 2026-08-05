@@ -558,3 +558,142 @@ def test_closure_verdict_is_fail_closed_end_to_end(spack):
     # assertion above is about chi2 and not about some unrelated leg
     v_ok = FS._closure_verdict(tab, huge, huge, chi2 * 2.0)
     assert v_ok["closes"] is True
+
+
+# ---------------------------------------------------------------------------
+# A1 (2026-08-05) — ONE closure metric, pinned bit-for-bit across all six sites
+# ---------------------------------------------------------------------------
+_CHI2_FIXTURE = 0.6479548471525799   # synthetic_pack(0, **small_test_grid())
+_N_FIXTURE = 10
+
+
+@pytest.fixture(scope="module")
+def fixture_pack():
+    """THE fixture the A1 pin is stated on: seed 0, the committed small grid."""
+    return synthetic_pack(0, **small_test_grid())
+
+
+@pytest.fixture(scope="module")
+def fixture_tab(fixture_pack):
+    return FS.ratio_tables(FS.selftest(fixture_pack, resp_clamp="both"),
+                           fixture_pack)
+
+
+def test_all_six_chi2_dof_sites_agree_bit_for_bit(fixture_pack, fixture_tab):
+    """chi2/dof is implemented at SIX call sites. They must return the SAME
+    float — ``==``, not ``approx`` — and that float is pinned.
+
+    The six, as of 2026-08-05:
+      1. forward_selftest.ratio_tables         -> total["chi2_dof"]
+      2. run_posterior.forward_closure_gate    -> ["chi2_dof"]   (A1: delegates)
+      3. forward_selftest._closure_verdict     -> ["chi2_dof"]
+      4. reporting.window_closure_metrics      -> ["chi2_dof"]   (THE routine)
+      5. window_study.window_metrics           -> ["chi2_dof"]
+      6. d1_ladder.gate_metrics                -> ["chi2_dof"]   (A1: delegates)
+
+    Before A1, sites 2 and 6 inlined the arithmetic with an extra
+    ``lo >= nhat_edges[0] - 1e-9`` filter. That filter is PROVABLY INERT (see
+    the companion test) so the six agreed by luck of a dead clause, not by
+    construction. They now agree by construction for 2/4/6, and by test for
+    1/3/5.
+    """
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    from CDDF_analysis.hbi_mcmc import run_posterior as RP
+    from CDDF_analysis.hbi_mcmc import d1_ladder as D1
+    from CDDF_analysis.hbi_mcmc import window_study as WS
+
+    gate = RP.forward_closure_gate(fixture_pack, resp_clamp="both")
+    verdict = FS._closure_verdict(fixture_tab, 5.0, 5.0, 3.0)
+    wcm = REP.window_closure_metrics(fixture_tab["by_nhat"])
+    wm = WS.window_metrics(fixture_tab["by_nhat"])
+    gm = D1.gate_metrics(fixture_tab, fixture_pack)
+
+    sites = {
+        "ratio_tables.total": (fixture_tab["total"]["chi2_dof"],
+                               fixture_tab["total"]["n_gate_bins"]),
+        "run_posterior.forward_closure_gate": (gate["chi2_dof"],
+                                               gate["n_bins"]),
+        "forward_selftest._closure_verdict": (verdict["chi2_dof"],
+                                              verdict["n_bins"]),
+        "reporting.window_closure_metrics": (wcm["chi2_dof"],
+                                             wcm["n_bins_in_z_set"]),
+        "window_study.window_metrics": (wm["chi2_dof"], wm["n_bins_occupied"]),
+        "d1_ladder.gate_metrics": (gm["chi2_dof"], gm["n_bins"]),
+    }
+    for name, (c2, n) in sites.items():
+        assert c2 == _CHI2_FIXTURE, (name, repr(c2), repr(_CHI2_FIXTURE))
+        assert n == _N_FIXTURE, (name, n)
+    # bit-for-bit ACROSS the sites, stated as its own assertion so a future
+    # change that moves ALL six together still trips the pin above.
+    assert len({c2 for c2, _ in sites.values()}) == 1, sites
+
+    # max|z_bin| is the same story: one number, four emitters.
+    assert gate["z_bin_max"] == wcm["z_bin_max"] == wm["z_bin_max"] \
+        == gm["z_bin_max"]
+
+
+def test_the_removed_nhat_floor_filter_was_provably_inert(fixture_pack,
+                                                          fixture_tab):
+    """WHY dropping ``lo >= nhat_edges[0] - 1e-9`` from sites 2 and 6 is
+    behaviour-preserving, not a relaxation.
+
+    ``ratio_tables`` emits one ``by_nhat`` row per OBSERVED bin, with
+    ``lo = pack.nhat_edges[c]``. The row set therefore IS ``nhat_edges[:-1]``
+    and no row can sit below ``nhat_edges[0]``: the filter could never drop
+    anything. A filter that reads like a reporting-window restriction and is
+    not one is the trap this pins.
+    """
+    los = np.array([r["lo"] for r in fixture_tab["by_nhat"]], float)
+    edges = np.asarray(fixture_pack.nhat_edges, float)[:-1]
+    assert los.shape == edges.shape
+    assert np.array_equal(los, edges)
+    floor = float(np.asarray(fixture_pack.nhat_edges, float)[0])
+    assert sum(1 for lo in los if not (lo >= floor - 1e-9)) == 0
+
+
+def test_a_real_window_restriction_does_move_the_number(fixture_tab):
+    """The contrast case: the lo/hi ARGUMENT of ``window_closure_metrics`` is a
+    real restriction and moves chi2/dof. Pinned so the inert-filter claim above
+    cannot be read as "windowing does nothing"."""
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    full = REP.window_closure_metrics(fixture_tab["by_nhat"])
+    win = REP.window_closure_metrics(fixture_tab["by_nhat"], 19.7, None)
+    assert full["chi2_dof"] == _CHI2_FIXTURE and full["n_bins_in_z_set"] == 10
+    assert win["chi2_dof"] == 0.8066535048313024
+    assert win["n_bins_in_z_set"] == 8
+    assert win["chi2_dof"] != full["chi2_dof"]
+
+
+def test_the_chi2_row_set_excludes_empty_observed_bins(fixture_pack):
+    """The obs > 0 filter on the chi2 row set, POWERED.
+
+    Every committed pack (18 measured, plus the synthetic fixture) happens to
+    have counts in every observed n-hat bin, so the filter is silent there and
+    a test built only on those packs cannot fail if it is removed. This builds
+    a pack with the TOP observed bin emptied — mu > 0, obs == 0, so z is a
+    large negative number — and pins that all three table-consuming sites drop
+    that row from chi2/dof and from the bin count.
+    """
+    from CDDF_analysis.hbi_mcmc import reporting as REP
+    from CDDF_analysis.hbi_mcmc import window_study as WS
+
+    counts = np.array(fixture_pack.counts, float)
+    assert counts[-1].sum() > 0, "fixture already had an empty top bin"
+    counts[-1] = 0.0
+    holed = dataclasses.replace(fixture_pack, counts=counts)
+    tab = FS.ratio_tables(FS.selftest(holed, resp_clamp="both"), holed)
+
+    top = tab["by_nhat"][-1]
+    assert top["obs"] == 0.0 and top["mu"] > 0.0
+    assert abs(top["z"]) > 1.0, top          # the row would move chi2 if kept
+
+    n_occ = sum(1 for r in tab["by_nhat"] if r["obs"] > 0)
+    assert n_occ == len(tab["by_nhat"]) - 1 == _N_FIXTURE - 1
+
+    v = FS._closure_verdict(tab, 1e9, 1e9, 1e9)
+    wcm = REP.window_closure_metrics(tab["by_nhat"])
+    wm = WS.window_metrics(tab["by_nhat"])
+    assert v["n_bins"] == wcm["n_bins_in_z_set"] == wm["n_bins_occupied"] == n_occ
+    assert v["chi2_dof"] == wcm["chi2_dof"] == wm["chi2_dof"]
+    assert tab["total"]["n_gate_bins"] == n_occ
+    assert tab["total"]["chi2_dof"] == wcm["chi2_dof"]

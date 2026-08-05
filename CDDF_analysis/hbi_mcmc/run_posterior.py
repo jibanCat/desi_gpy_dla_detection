@@ -186,6 +186,7 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     is run BEFORE the sampler is constructed.
     """
     from CDDF_analysis.hbi_mcmc import forward_selftest as FS
+    from CDDF_analysis.hbi_mcmc import reporting as REP
 
     gate = dict(GATE if gate is None else gate)
     if getattr(pack, "truth_counts", None) is None:
@@ -194,12 +195,25 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
     res = FS.selftest(pack, resp_clamp=resp_clamp)
     tab = FS.ratio_tables(res, pack)
 
-    floor = float(np.asarray(pack.nhat_edges, float)[0])
-    rows = [b for b in tab["by_nhat"]
-            if b["obs"] > 0 and b["lo"] >= floor - 1e-9]
-    z = np.array([b["z"] for b in rows], float)
-    chi2_dof = float((z ** 2).sum() / max(len(z), 1))
-    z_bin_max = float(np.abs(z).max()) if len(z) else float("nan")
+    # ONE closure metric.  chi2/dof, max|z_bin| and the bin count come from
+    # ``reporting.window_closure_metrics`` called UNRESTRICTED (no lo/hi), which
+    # is by construction the same arithmetic this function used to inline.
+    #
+    # The removed ``b["lo"] >= nhat_edges[0] - 1e-9`` clause was PROVABLY INERT,
+    # not merely inert in practice: ``ratio_tables`` builds one ``by_nhat`` row
+    # per OBSERVED bin with ``lo = pack.nhat_edges[c]`` for c in range(C), so the
+    # row set IS ``nhat_edges[:-1]`` and no row can ever sit below
+    # ``nhat_edges[0]``.  (Measured on all 18 committed mock packs +
+    # ``synthetic_pack``: rows dropped = 0.)  It read as a reporting-window
+    # restriction and was not one; a real window restriction is the lo/hi
+    # argument of ``window_closure_metrics`` and MOVES the number (measured:
+    # lo=19.7 on the synthetic pack gives 0.8066535048313024 over 8 bins vs
+    # 0.6479548471525799 over 10).
+    m = REP.window_closure_metrics(tab["by_nhat"])
+    rows = [b for b in tab["by_nhat"] if b["obs"] > 0]
+    chi2_dof = m["chi2_dof"]
+    z_bin_max = m["z_bin_max"]
+    n_gate_bins = m["n_bins_in_z_set"]
     z_total = float(abs(tab["total"]["z"]))
 
     # 🔴 A refusal must name the AUTHORITY of the number it refused on.  Six of
@@ -334,7 +348,11 @@ def forward_closure_gate(pack, *, resp_clamp="both", gate=None):
         "z_total": z_total,
         "z_bin_max": z_bin_max,
         "chi2_dof": chi2_dof,
-        "n_bins": int(len(z)),
+        "n_bins": int(n_gate_bins),
+        # the ONE routine the three numbers above came from (A1, 2026-08-05)
+        "closure_metric_routine":
+            "CDDF_analysis/hbi_mcmc/reporting.py:window_closure_metrics "
+            "(called UNRESTRICTED — full observed grid)",
         "worst_bins": [{"lo": b["lo"], "hi": b["hi"], "ratio": b["ratio"],
                         "z": b["z"]} for b in worst],
         "resp_clamp": resp_clamp,

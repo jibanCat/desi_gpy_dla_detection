@@ -1089,17 +1089,65 @@ def test_chi2_dof_is_sum_z_squared_over_kept_bins_with_no_parameter_penalty(
 
 
 def test_chi2_dof_above_3_refuses_the_run(spack, fake_fold):
+    """A1 NOTE (2026-08-05). This double used to plant ``b["z"] = 4.0`` on rows
+    whose ``mu == obs == 500`` — a table no producer can emit, since
+    ``ratio_tables`` sets every row's ``z`` to ``poisson_z(mu, obs)``.
+    ``forward_closure_gate`` now delegates chi2/dof and max|z_bin| to
+    ``reporting.window_closure_metrics``, which RECOMPUTES z from (mu, obs)
+    precisely so a table cannot smuggle in a different normalisation (its
+    docstring says so). On every ``ratio_tables`` table the two are bit-for-bit
+    identical — ``poisson_z`` is ``(obs - mu)/sqrt(max(mu, 1e-12))`` and so is
+    the recomputation — so production behaviour is unchanged; only an
+    INCONSISTENT hand-built double behaves differently.
+
+    The double is therefore made self-consistent rather than the delegation
+    reverted: obs - mu = 4*sqrt(mu) gives z = 4.0 exactly, which is what the
+    test always meant to say."""
     tab = _flat_tab()
     tab["total"]["chi2_dof"] = 99.0
     for b in tab["by_nhat"]:              # chi2/dof is recomputed from by_nhat
+        b["obs"] = b["mu"] + 4.0 * np.sqrt(b["mu"])   # z = +4 by construction
+        b["ratio"] = b["mu"] / b["obs"]
         b["z"] = 4.0                      # 4^2 = 16 > 3, |z| = 4 < 5
     fake_fold(tab)
     g = RP.forward_closure_gate(spack)
+    # the double really does say z = 4 under BOTH readings (planted and
+    # recomputed) -- otherwise this test would pass for the wrong reason
+    assert g["z_bin_max"] == pytest.approx(4.0)
+    assert g["chi2_dof"] == pytest.approx(16.0)
     assert g["pass"] is False
     assert any("chi2/dof" in f for f in g["failures"]), g["failures"]
     assert not any("max|z_bin|" in f for f in g["failures"]), (
         "the chi2 arm must be able to fire ALONE -- otherwise chi2/dof <= 3 "
         "adds nothing to |z| <= 5")
+
+
+def test_the_gate_reads_z_from_mu_and_obs_not_from_a_planted_row(spack,
+                                                                 fake_fold):
+    """A1 CONTROL. ``forward_closure_gate`` must not inherit a row's ``z`` when
+    that ``z`` contradicts the row's own (mu, obs) -- a table is DATA, and its
+    normalisation is fixed by ``poisson_z``, not by whoever wrote the dict.
+
+    Pinned in both directions: a planted-huge z on a clean row must NOT fail the
+    gate, and a planted-zero z on a genuinely bad row must NOT rescue it."""
+    tab = _flat_tab()                      # mu == obs == 500 per by_nhat row
+    for b in tab["by_nhat"]:
+        b["z"] = 99.0                      # contradicts mu == obs
+    fake_fold(tab)
+    g = RP.forward_closure_gate(spack)
+    assert g["chi2_dof"] == pytest.approx(0.0)
+    assert g["z_bin_max"] == pytest.approx(0.0)
+    assert g["pass"] is True, g["failures"]
+
+    tab2 = _flat_tab()
+    for b in tab2["by_nhat"]:
+        b["obs"] = b["mu"] + 9.0 * np.sqrt(b["mu"])   # genuinely z = +9
+        b["z"] = 0.0                                  # planted clean
+    fake_fold(tab2)
+    g2 = RP.forward_closure_gate(spack)
+    assert g2["z_bin_max"] == pytest.approx(9.0)
+    assert g2["pass"] is False
+    assert any("max|z_bin|" in f for f in g2["failures"]), g2["failures"]
 
 
 # ==========================================================================
