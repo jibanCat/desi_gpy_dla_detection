@@ -101,9 +101,9 @@ import jax.numpy as jnp
 
 from CDDF_analysis.hbi_mcmc.pack import ModelAPack
 
-__all__ = ["ModelAConsts", "build_consts", "fold_mu", "fold_mu_reference",
-           "owens_t_jnp", "skewnorm_cdf_jnp", "moment_to_skewnormal_jnp",
-           "eta_hat_sigma_hat"]
+__all__ = ["ModelAConsts", "build_consts", "fold_mu", "fold_mu_fp",
+           "fold_mu_reference", "owens_t_jnp", "skewnorm_cdf_jnp",
+           "moment_to_skewnormal_jnp", "eta_hat_sigma_hat"]
 
 _SQRT2 = float(np.sqrt(2.0))
 # fixed Gauss-Legendre rule for Owen's T (module-level constants; static in jit)
@@ -452,6 +452,42 @@ def build_K(psi_k_delta, consts: ModelAConsts):
     return K  # (S, KK, C, B)
 
 
+def fold_mu_fp(log_t, lam_fp, consts: ModelAConsts):
+    """THE false-positive term of the fold. One definition, one call site each.
+
+        mu_FP[c,k,s] = fp_w * fp_ell_eff * exp(t[kz_to_K[k]])
+                       * lam_fp[c,s] * fp_E[k,s]
+
+    Extracted 2026-08-05 (behaviour-preserving; ``fold_mu`` calls it and the
+    expression is byte-for-byte the one it used to inline).  It exists because
+    the term was RE-TYPED in ``forward_selftest.selftest`` to form the
+    ``mu_sig = mu - mu_fp`` split, and the copy had already drifted: it dropped
+    the ``exp(log_t)`` factor -- harmless there only because that caller always
+    passes ``log_t = 0``, and silently wrong the moment the fold changes.  The
+    2026-08-05 fp_ell_eff repair had to be applied at BOTH copies by hand,
+    which is the argument for there being one.
+
+    The numpy oracle ``fold_mu_reference`` deliberately does NOT call this: it
+    is an independent re-implementation of the whole expression and sharing a
+    helper would defeat its purpose.
+
+    Parameters
+    ----------
+    log_t   : (KK,)   per-coarse-z log transfer factors
+    lam_fp  : (C, S)  FP intensity per unit loa-0 exposure
+    consts  : ModelAConsts
+
+    Returns
+    -------
+    mu_fp : (C, Kf, S)
+    """
+    exp_t_k = jnp.exp(jnp.asarray(log_t))[consts.kz_to_K]  # (Kf,)
+    # fp_w * fp_ell_eff == N_sl_loa0 exactly; see the module docstring for why
+    # fp_ell_eff must be here (lam_fp is per unit loa-0 exposure, not a count).
+    return consts.fp_w * consts.fp_ell_eff * exp_t_k[None, :, None] \
+        * jnp.asarray(lam_fp)[:, None, :] * consts.fp_E[None, :, :]
+
+
 def fold_mu(theta_pop, psi_c, psi_k_delta, log_t, lam_fp, consts: ModelAConsts):
     """The Model A forward fold, pure jnp, no python loops over data cells.
 
@@ -480,12 +516,7 @@ def fold_mu(theta_pop, psi_c, psi_k_delta, log_t, lam_fp, consts: ModelAConsts):
     contrib = C_bs.T[:, None, :] * consts.g_bk[:, :, None] * f[:, :, None] \
         * consts.dN_b[:, None, None]                       # (B, Kf, S)
     mu_sig = jnp.einsum("skcb,bks->cks", K_full, contrib) * consts.dX[None, :, :]
-    exp_t_k = jnp.exp(log_t)[consts.kz_to_K]               # (Kf,)
-    # fp_w * fp_ell_eff == N_sl_loa0 exactly; see the module docstring for why
-    # fp_ell_eff must be here (lam_fp is per unit loa-0 exposure, not a count).
-    mu_fp = consts.fp_w * consts.fp_ell_eff * exp_t_k[None, :, None] \
-        * lam_fp[:, None, :] * consts.fp_E[None, :, :]     # (C, Kf, S)
-    return mu_sig + mu_fp
+    return mu_sig + fold_mu_fp(log_t, lam_fp, consts)      # (C, Kf, S)
 
 
 # --- the INDEPENDENT numpy oracle ---------------------------------------------------

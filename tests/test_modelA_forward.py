@@ -228,6 +228,47 @@ def _fp_only_total(pk):
     return float(mu.sum())
 
 
+def test_fold_mu_fp_is_exactly_the_folds_own_FP_term(small_pack):
+    """``fold_mu_fp`` IS the fold's FP term, at a NON-zero log_t.
+
+    The extraction exists because ``forward_selftest.selftest`` used to re-type
+    this expression and its copy had dropped ``exp(log_t)`` -- inert there only
+    because that caller passes log_t = 0.  So the pin has to be stated where
+    the dropped factor is alive: a random log_t, and bit-for-bit equality
+    against ``fold_mu(lam) - fold_mu(0)``.
+
+    MUTATION A: drop ``exp_t_k`` from ``fold_mu_fp`` (i.e. reproduce the copy
+    forward_selftest used to carry).  MEASURED: the identity below breaks by up
+    to a factor exp(max|log_t|) and both assertions go red.
+    MUTATION B: drop ``consts.fp_ell_eff`` from ``fold_mu_fp``.  Both terms
+    move together so the difference identity SURVIVES -- which is why the
+    separate loa-0-product total test is the one that pins the normalisation,
+    and this one pins only that there is a single expression.
+    """
+    consts = fwd.build_consts(small_pack)
+    tr = small_pack.truth
+    rng = np.random.default_rng(23)
+    log_t = 0.4 * rng.standard_normal(small_pack.n_kk)
+    assert np.max(np.abs(log_t)) > 0.05           # the factor must be alive
+    lam = np.abs(rng.standard_normal((small_pack.n_c, small_pack.n_s))) * 2.0
+    args = (jnp.asarray(tr["theta_true"]), jnp.asarray(tr["psi_c_true"]),
+            jnp.zeros((2, consts.n_sr, consts.n_zr)), jnp.asarray(log_t))
+    on = np.asarray(fwd.fold_mu(*args, jnp.asarray(lam), consts))
+    off = np.asarray(fwd.fold_mu(
+        *args, jnp.zeros((small_pack.n_c, small_pack.n_s)), consts))
+    direct = np.asarray(fwd.fold_mu_fp(jnp.asarray(log_t), jnp.asarray(lam),
+                                       consts))
+    np.testing.assert_allclose(direct, on - off, rtol=1e-13,
+                               atol=1e-13 * direct.max())
+    # and it really does carry exp(log_t): the k-profile ratio against log_t=0
+    flat = np.asarray(fwd.fold_mu_fp(jnp.zeros(small_pack.n_kk),
+                                     jnp.asarray(lam), consts))
+    live = flat.sum(axis=(0, 2)) > 0
+    ratio = direct.sum(axis=(0, 2))[live] / flat.sum(axis=(0, 2))[live]
+    want = np.exp(log_t)[np.asarray(consts.kz_to_K)][live]
+    np.testing.assert_allclose(ratio, want, rtol=1e-12)
+
+
 @pytest.mark.parametrize("mkpack", [
     pytest.param(lambda: synthetic_pack(5, **small_test_grid()), id="small"),
     pytest.param(lambda: synthetic_pack(5), id="real_grid"),
