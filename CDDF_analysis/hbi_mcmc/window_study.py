@@ -78,6 +78,22 @@ recovered NHI for large DLAs. A pilot of tens of spectra CANNOT settle the
 misfit hypothesis; it can only point, and the artifact says so with a
 quantified uncertainty.
 
+GATE AUTHORITY — read before quoting any threshold from this module
+--------------------------------------------------------------------
+Exactly ONE of the three gating thresholds is PI-ratified. ``chi2_dof_max <=
+3`` was ratified in writing (decision 8; restated 2026-08-05 as "the only
+currently ratified numerical closure gate"). The two |z| arms are
+``RESTATED_NOT_RATIFIED``: decision 8 called ``|z| <= 5`` MALFORMED AS STATED
+and asked for an exact restatement, which is what ``restated_gate_criteria()``
+delivers — the restatement is legitimate, the NUMBER 5 has no deciding
+authority behind it, and the arms nevertheless still GATE. The two ratio-span
+tolerances are ``UNRATIFIED`` and gate nothing.
+
+Revisions before 2026-08-05 returned all three under the key ``ratified_arms``
+and called them "THE THREE RATIFIED ARMS (PI decision 8)". That was a
+fabricated authority claim; see ``AUTHORITY_CORRECTION_NOTE`` and the sibling
+retraction in commit 6f9f998.
+
 USAGE (two envs — the extractor is jax-free by design, the fold needs jax)
 -------------------------------------------------------------------------
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
@@ -201,8 +217,9 @@ POST_HOC_AMENDMENTS = [
      "restated on it: `rms_frac_dev`, the counts-weighted RMS fractional "
      "deviation of mu/obs over the occupied bins of the reporting window, "
      "which is invariant under a common rescaling of mu and obs. It is "
-     "reported as a MEASUREMENT (PI decision 8 ratified chi2/dof <= 3 and "
-     "nothing else; no tolerance on this statistic has been calibrated). The "
+     "reported as a MEASUREMENT (chi2/dof <= 3 is the ONLY ratified numerical "
+     "closure tolerance; no tolerance on this statistic has been calibrated). "
+     "The "
      "CONCLUSION SURVIVES: D rises from lya_only to lya_lyb in all three mocks "
      "at BOTH clamps (clamp=both 0.1193->0.1366, 0.0993->0.1142, "
      "0.1063->0.1211; clamp=hi 0.0997->0.1160, 0.0844->0.0959, "
@@ -210,6 +227,202 @@ POST_HOC_AMENDMENTS = [
      "measure that cannot be produced by sample size; only the MAGNITUDE was "
      "inflated."),
 ]
+
+
+# ---------------------------------------------------------------------------
+# AUTHORITY vs GATING — two different bits, and this module used to conflate
+# them into one
+# ---------------------------------------------------------------------------
+# 🔴 RETRACTION (2026-08-05). ``restated_gate_criteria()`` used to return the
+# three closure thresholds under the key ``ratified_arms``, and its docstring
+# said "THE THREE RATIFIED ARMS (PI decision 8)". Both were FALSE for two of
+# the three. Decision 8, verbatim:
+#
+#   "Ratify the fail-closed framework, matched-configuration SBC and chi2/dof
+#    <= 3 closure requirement. Do not yet ratify ratio_span_by_z_max=0.10 or
+#    ratio_span_by_snr_max=0.15. ... Also restate the malformed |z| <= 5
+#    criterion with its exact mathematical definition."
+#
+# Calling |z| <= 5 MALFORMED and sending it back for RESTATEMENT is the
+# OPPOSITE of ratifying it. Three things were ratified and none of them is a
+# |z| number. The RESTATEMENT below is the legitimate work decision 8 asked
+# for and it stays; only the authority label attached to it was false.
+#
+# A sibling site was retracted the same way in commit 6f9f998 ("the |z| arms
+# were NOT ratified -- I fabricated the PI's authority"), and this module
+# repeats that failure: a tolerance acquiring the authority of a ratified
+# criterion because it lived in the same dict as the ratified one.
+#
+# The fix is the one 6f9f998 established: AUTHORITY and GATING are separate.
+# An arm may gate without being ratified, and saying so is not a demotion --
+# reporting ``gates=False`` for an arm that really does refuse work would be
+# just as false as the PI claim, in the other direction.
+RATIFIED = "RATIFIED"
+RESTATED_NOT_RATIFIED = "RESTATED_NOT_RATIFIED"
+UNRATIFIED = "UNRATIFIED"
+AUTHORITY_STATES = (RATIFIED, RESTATED_NOT_RATIFIED, UNRATIFIED)
+
+AUTHORITY_STATE_MEANINGS = {
+    RATIFIED: ("A deciding authority (the PI) ratified this IN WRITING. Only "
+               "the items in PI_RATIFIED_ITEMS may carry this state."),
+    RESTATED_NOT_RATIFIED: ("PI decision 8 called the criterion MALFORMED AS "
+                            "STATED and asked for an exact restatement. The "
+                            "restatement was delivered; the NUMBER was never "
+                            "ratified. It DOES still gate — that is recorded "
+                            "honestly rather than quietly disarmed."),
+    UNRATIFIED: ("Set by the author, never ratified, and explicitly declined "
+                 "by PI decision 8. MEASURED and REPORTED; gates nothing."),
+}
+
+# THE ALLOW-LIST — exactly the three items PI decision 8 ratified. Nothing else
+# may ever be recorded as RATIFIED, and no field name containing "ratified"
+# may carry anything outside this tuple (see ``audit_gate_authority``).
+PI_RATIFIED_ITEMS = ("fail_closed_framework",
+                     "matched_configuration_sbc",
+                     "chi2_dof_max")
+
+PI_DECISION_8_VERBATIM = (
+    "Ratify the fail-closed framework, matched-configuration SBC and chi2/dof "
+    "<= 3 closure requirement. Do not yet ratify ratio_span_by_z_max=0.10 or "
+    "ratio_span_by_snr_max=0.15. ... Also restate the malformed |z| <= 5 "
+    "criterion with its exact mathematical definition.")
+
+PI_DIRECTION_2026_08_05_VERBATIM = (
+    "The only currently ratified numerical closure gate is chi2/dof <= 3. Any "
+    "z-based or span-based threshold must be: precisely defined; calibrated "
+    "under production geometry; tested for false-alarm behavior; proposed "
+    "prospectively at a PI checkpoint. Do not write artifacts or code claiming "
+    "PI ratification where none exists.")
+
+AUTHORITY_CORRECTION_NOTE = (
+    "CORRECTED 2026-08-05. Earlier revisions of this artifact returned these "
+    "thresholds under the key `ratified_arms` and described them as 'THE THREE "
+    "RATIFIED ARMS (PI decision 8)'. That was a FABRICATED AUTHORITY CLAIM for "
+    "abs_z_total_max and z_bin_max: decision 8 called |z| <= 5 MALFORMED and "
+    "sent it back for restatement, which is the opposite of ratifying it. Only "
+    "chi2_dof_max <= 3 is PI-ratified. The two |z| arms are "
+    "RESTATED_NOT_RATIFIED: the restatement is real and stays, the number has "
+    "no deciding authority behind it, and it still gates. Any artifact "
+    "carrying `metadata.gate.ratified_arms` overstates its authority.")
+
+# Each arm's `value` is the number; `authority_state` is who stands behind it;
+# `gates` is whether it can refuse work. A caller cannot read a threshold out
+# of this structure without also seeing its authority state.
+GATE_ARMS = {
+    "abs_z_total_max": dict(
+        value=5.0,
+        canonical_name="z_total_max",          # the cross-module/merge name
+        metric="z_total",
+        authority_state=RESTATED_NOT_RATIFIED,
+        gates=True,
+        introduced_commit="f23961ec1e2cf47748a5a1b660205966a8d793f0",
+        introduced_date="2026-07-28",
+        predates_decision_8=True,
+        pi_disposition=("PI decision 8 (2026-07-29): '|z| <= 5' MALFORMED as "
+                        "stated, restated here. NOT ratified. PI direction "
+                        "2026-08-05: 'The only currently ratified numerical "
+                        "closure gate is chi2/dof <= 3.' Pre-dating decision 8 "
+                        "is not ratification."),
+    ),
+    "z_bin_max": dict(
+        value=5.0,
+        canonical_name="z_bin_max",
+        metric="z_bin_max",
+        authority_state=RESTATED_NOT_RATIFIED,
+        gates=True,
+        introduced_commit="f23961ec1e2cf47748a5a1b660205966a8d793f0",
+        introduced_date="2026-07-28",
+        predates_decision_8=True,
+        pi_disposition=("PI decision 8 (2026-07-29): '|z| <= 5' MALFORMED as "
+                        "stated, restated here. NOT ratified. PI direction "
+                        "2026-08-05: 'The only currently ratified numerical "
+                        "closure gate is chi2/dof <= 3.' Pre-dating decision 8 "
+                        "is not ratification."),
+    ),
+    "chi2_dof_max": dict(
+        value=3.0,
+        canonical_name="chi2_dof_max",
+        metric="chi2_dof",
+        authority_state=RATIFIED,
+        gates=True,
+        introduced_commit="f23961ec1e2cf47748a5a1b660205966a8d793f0",
+        introduced_date="2026-07-28",
+        predates_decision_8=True,
+        pi_disposition=("PI decision 8 (2026-07-29) RATIFIED the 'chi2/dof <= "
+                        "3 closure requirement' in writing, and the PI "
+                        "direction of 2026-08-05 restates it as 'the only "
+                        "currently ratified numerical closure gate'."),
+    ),
+}
+
+# The two numbers PI decision 8 explicitly DECLINED. Measured and reported;
+# they gate nothing. (Field deliberately NOT named `*ratified*` so an
+# allow-list guard scanning field names cannot mistake it for a claim.)
+ADVISORY_TOLERANCES = {
+    "ratio_span_by_z_max": dict(
+        value=0.10, authority_state=UNRATIFIED, gates=False,
+        measured_as="by_z_ratio_span"),
+    "ratio_span_by_snr_max": dict(
+        value=0.15, authority_state=UNRATIFIED, gates=False,
+        measured_as="by_snr_ratio_span"),
+}
+
+ADVISORY_TOLERANCES_NOTE = (
+    "PI decision 8 declined to ratify these two; the PI direction of "
+    "2026-08-05 keeps them 'active as advisory diagnostics, not ratified hard "
+    "gates'. They are reported as MEASUREMENTS here (by_z_ratio_span / "
+    "by_snr_ratio_span) and decide nothing. They must be precisely defined, "
+    "calibrated under production geometry, tested for false-alarm behaviour "
+    "and proposed prospectively at a PI checkpoint before they may gate.")
+
+
+def audit_gate_authority(record):
+    """FAIL CLOSED on a fabricated authority claim. Returns ``record``.
+
+    This is the local analogue of ``ratification.enforce_authority_allow_list``
+    (that module lives on the integration target and is NOT duplicated here).
+    It refuses to hand back a record in which
+
+      * an entry claims ``RATIFIED`` while not being in ``PI_RATIFIED_ITEMS``;
+      * any field whose NAME contains "ratified" carries anything outside
+        ``PI_RATIFIED_ITEMS`` — this is exactly the shape the retracted
+        ``ratified_arms`` key had, and it must not be reintroducible;
+      * an ``authority_state`` is not one of ``AUTHORITY_STATES``;
+      * an advisory (UNRATIFIED) tolerance claims ``gates=True``.
+
+    It deliberately does NOT refuse ``gates=True`` on a
+    ``RESTATED_NOT_RATIFIED`` arm: those arms really do refuse work and
+    recording otherwise would be a false claim in the opposite direction.
+    """
+    allowed = set(PI_RATIFIED_ITEMS)
+    for field, val in record.items():
+        if "ratified" in field.lower():
+            names = set(val) if isinstance(val, (dict, list, tuple, set)) \
+                else {val}
+            stray = {n for n in names if n not in allowed}
+            if stray:
+                raise SystemExit(
+                    f"AUTHORITY GUARD: field {field!r} names {sorted(stray)}, "
+                    f"which PI_RATIFIED_ITEMS does not allow-list. Only "
+                    f"{sorted(allowed)} were ratified (PI decision 8). This is "
+                    "the fabricated-authority shape retracted in 6f9f998.")
+    for group in ("gate_arms", "advisory_tolerances"):
+        for name, arm in record.get(group, {}).items():
+            st = arm.get("authority_state")
+            if st not in AUTHORITY_STATES:
+                raise SystemExit(
+                    f"AUTHORITY GUARD: {group}[{name!r}] has authority_state="
+                    f"{st!r}, not one of {list(AUTHORITY_STATES)}.")
+            if st == RATIFIED and name not in allowed:
+                raise SystemExit(
+                    f"AUTHORITY GUARD: {group}[{name!r}] claims RATIFIED but "
+                    f"is not in PI_RATIFIED_ITEMS {sorted(allowed)}.")
+            if st == UNRATIFIED and arm.get("gates"):
+                raise SystemExit(
+                    f"AUTHORITY GUARD: {group}[{name!r}] is UNRATIFIED yet "
+                    "claims gates=True. PI decision 8 declined it; it may be "
+                    "measured and reported, not used to refuse work.")
+    return record
 
 
 def restated_gate_criteria():
@@ -246,9 +459,17 @@ def restated_gate_criteria():
         z_bin_max(W)= max_{c in B+(W)} |z_c|
         chi2_dof(W) = ( sum_{c in B+(W)} z_c^2 ) / |B+(W)|
 
-    THE THREE RATIFIED ARMS (PI decision 8) are
+    THE THREE GATING ARMS — one ratified, two restated but NOT ratified — are
 
-        |z_total(W)| <= 5      z_bin_max(W) <= 5      chi2_dof(W) <= 3
+        |z_total(W)| <= 5    RESTATED_NOT_RATIFIED   (decision 8: MALFORMED)
+        z_bin_max(W) <= 5    RESTATED_NOT_RATIFIED   (decision 8: MALFORMED)
+        chi2_dof(W)  <= 3    RATIFIED  (decision 8, in writing)
+
+    The RESTATEMENT above is exactly what decision 8 asked for and is the
+    legitimate content of this function. What decision 8 did NOT do is ratify
+    the number 5: it called ``|z| <= 5`` MALFORMED AS STATED and sent it back.
+    All three arms nevertheless GATE (``gates=True``), which is recorded
+    honestly — see ``GATE_ARMS`` and ``AUTHORITY_CORRECTION_NOTE``.
 
     NOTE the exclusion ``n_c > 0`` applies to z_bin_max and chi2_dof but NOT to
     z_total: an empty bin contributes to the summed totals but has no
@@ -256,12 +477,12 @@ def restated_gate_criteria():
     ``run_posterior.forward_closure_gate`` behaviour and is stated, not fixed,
     here.
 
-    NOT RATIFIED (PI decision 8, explicit): ``ratio_span_by_z_max = 0.10`` and
+    UNRATIFIED (PI decision 8, explicit): ``ratio_span_by_z_max = 0.10`` and
     ``ratio_span_by_snr_max = 0.15``. They are reported as MEASUREMENTS in this
     artifact (``ratio_span_by_z`` / ``ratio_span_by_snr``) and are NOT used to
     decide anything.
     """
-    return dict(
+    return audit_gate_authority(dict(
         z_c=("z_c = (n_c - mu_c) / sqrt(max(mu_c, 1e-12)); signed, observed "
              "MINUS expected, denominator sqrt(EXPECTED)"),
         occupied_cells=("(k, s) with dX[k, s] > 0 only; SNR strata 0 and 1 "
@@ -274,19 +495,24 @@ def restated_gate_criteria():
                  "over ALL of B(W), empty bins included"),
         z_bin_max="max over B+(W) of |z_c|",
         chi2_dof="sum over B+(W) of z_c^2, divided by |B+(W)|",
-        ratified_arms={"abs_z_total_max": 5.0, "z_bin_max": 5.0,
-                       "chi2_dof_max": 3.0},
-        not_ratified={"ratio_span_by_z_max": 0.10,
-                      "ratio_span_by_snr_max": 0.15},
-        not_ratified_note=("PI decision 8 declined to ratify these two; they "
-                           "are reported as measurements here and decide "
-                           "nothing. They must be defined and calibrated "
-                           "prospectively."),
+        # the thresholds, each inseparable from its authority state
+        gate_arms={k: dict(v) for k, v in GATE_ARMS.items()},
+        advisory_tolerances={k: dict(v) for k, v in
+                             ADVISORY_TOLERANCES.items()},
+        advisory_tolerances_note=ADVISORY_TOLERANCES_NOTE,
+        # the allow-list itself. This is the ONLY field here whose name
+        # contains "ratified", and it carries nothing but the allow-list.
+        pi_ratified_items=list(PI_RATIFIED_ITEMS),
+        authority_states={k: AUTHORITY_STATE_MEANINGS[k]
+                          for k in AUTHORITY_STATES},
+        authority_correction_note=AUTHORITY_CORRECTION_NOTE,
+        pi_decision_8_verbatim=PI_DECISION_8_VERBATIM,
+        pi_direction_2026_08_05_verbatim=PI_DIRECTION_2026_08_05_VERBATIM,
         asymmetry_note=("n_c > 0 restricts z_bin_max and chi2_dof but NOT "
                         "z_total. This is the committed "
                         "run_posterior.forward_closure_gate behaviour, stated "
                         "rather than changed."),
-    )
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -325,8 +551,8 @@ def rms_frac_dev(rows):
     1025-A arm, so PART of its higher chi2/dof is statistical POWER, not model
     inadequacy. ``D`` is invariant under that common scaling (f_c is invariant
     and w_c cancels), so it compares the residual SHAPE at two different sample
-    sizes. It is a MEASUREMENT, not a gate: PI decision 8 ratified chi2/dof <= 3
-    and nothing else, and no tolerance on D has been calibrated.
+    sizes. It is a MEASUREMENT, not a gate: chi2/dof <= 3 is the ONLY ratified
+    numerical closure tolerance, and no tolerance on D has been calibrated.
     """
     occ = [r for r in rows if float(r["obs"]) > 0]
     if not occ:
@@ -373,8 +599,40 @@ def window_metrics(by_nhat, lo=None, hi=None):
     )
 
 
-def closes(metrics, gate):
-    """The three RATIFIED arms, on one ``window_metrics`` dict.
+def _arm(gate_arms, name):
+    """One arm's ``(value, authority_state, gates)``, or REFUSE.
+
+    A bare ``{name: float}`` mapping is rejected on purpose: a threshold must
+    not be readable without its authority state. That separation is the whole
+    point of the 2026-08-05 correction — the retracted ``ratified_arms`` dict
+    was a bare mapping, and being bare is exactly what let it borrow the
+    authority of the one arm in it that really was ratified.
+    """
+    try:
+        arm = gate_arms[name]
+    except (KeyError, TypeError):
+        raise KeyError(
+            f"gate arm {name!r} is missing from the gate record") from None
+    if not isinstance(arm, dict) or "value" not in arm \
+            or "authority_state" not in arm:
+        raise TypeError(
+            f"gate arm {name!r} = {arm!r} is a BARE THRESHOLD. closes() "
+            "requires the authority-bearing shape "
+            "{'value': ..., 'authority_state': ..., 'gates': ...} so a "
+            "threshold cannot be read without its authority state. See "
+            "GATE_ARMS / AUTHORITY_CORRECTION_NOTE.")
+    return (float(arm["value"]), arm["authority_state"], bool(arm.get("gates")))
+
+
+def closes(metrics, gate_arms):
+    """The three GATING arms, on one ``window_metrics`` dict.
+
+    ONE of the three is PI-ratified (``chi2_dof_max <= 3``). The two |z| arms
+    are ``RESTATED_NOT_RATIFIED``: decision 8 called ``|z| <= 5`` MALFORMED and
+    asked only for a restatement, so no deciding authority stands behind the
+    number 5 — yet they DO refuse work, and every refusal message says which
+    authority state it was refused under. That is the moment a PI needs to know
+    a number is unratified.
 
     FAIL CLOSED ON A VACUOUS SELECTION. An earlier version skipped any arm that
     came out non-finite, which made an EMPTY (or wholly unoccupied) reporting
@@ -396,18 +654,41 @@ def closes(metrics, gate):
             f"n_bins_occupied=0 of {n_bins}: no bin carries an observed count, "
             "so z_bin_max and chi2_dof are undefined and |z_total| alone is a "
             "level, not a closure test — REFUSING")
+    pi_authority_fails = []
     for name, key, lim in (("z_total", "z_total", "abs_z_total_max"),
                            ("z_bin_max", "z_bin_max", "z_bin_max"),
                            ("chi2_dof", "chi2_dof", "chi2_dof_max")):
+        thresh, state, gating = _arm(gate_arms, lim)
+        if not gating:
+            continue
         v = float(metrics[key])
         av = abs(v) if name == "z_total" else v
         if not np.isfinite(av):
             fails.append(f"{name} is not finite ({v!r}) — REFUSING rather than "
                          "skipping the arm")
-        elif not (av <= gate[lim]):
+        elif not (av <= thresh):
             label = "|z_total|" if name == "z_total" else name
-            fails.append(f"{label}={av:.2f} > {gate[lim]}")
-    return dict(closes=not fails, failures=fails, gate=dict(gate))
+            # NAME THE AUTHORITY STATE IN THE REFUSAL. A gate that refuses on
+            # a number nobody ratified must say so where the refusal is read.
+            tag = "" if state == RATIFIED else f" [{state}]"
+            msg = f"{label}={av:.2f} > {thresh}{tag}"
+            fails.append(msg)
+            if state == RATIFIED:
+                pi_authority_fails.append(msg)
+    return dict(
+        closes=not fails, failures=fails,
+        # Would the verdict be the same if ONLY the arms a PI actually ratified
+        # were allowed to gate? If this is False, the conclusion rests on an
+        # unratified number and a reader must be told so without re-deriving
+        # anything. (Named without "ratified" so an allow-list guard scanning
+        # field names cannot read a boolean as a ratification claim.)
+        closes_on_pi_authority_only=not pi_authority_fails,
+        failures_on_pi_authority_only=pi_authority_fails,
+        gate_arms={k: dict(value=v["value"],
+                           authority_state=v["authority_state"],
+                           gates=bool(v.get("gates")))
+                   for k, v in gate_arms.items()},
+    )
 
 
 def marginal_block(rows):
@@ -602,7 +883,7 @@ def phase_extract():
 # ---------------------------------------------------------------------------
 def phase_selftest():
     t_start = time.time()
-    gate = restated_gate_criteria()["ratified_arms"]
+    gate = restated_gate_criteria()["gate_arms"]
     rows, packmeta = {}, {}
     for window in WINDOWS:
         for mock in MOCKS:
@@ -762,12 +1043,20 @@ def phase_selftest():
                                           "BUILT for this study (it did not "
                                           "exist)."),
                     d8_gates=("PARTIAL — the fail-closed framework and the "
-                              "chi2/dof <= 3 arm are used; the |z| <= 5 "
-                              "criterion is restated exactly in "
-                              "restated_gate_criteria(); the two unratified "
+                              "RATIFIED chi2/dof <= 3 arm are used; the |z| <= "
+                              "5 criterion is restated exactly in "
+                              "restated_gate_criteria(); the two UNRATIFIED "
                               "ratio-span tolerances are MEASURED and gate "
                               "nothing. Matched-configuration SBC is NOT run "
-                              "here (no sampling in this study)."),
+                              "here (no sampling in this study). AUTHORITY: "
+                              "the two restated |z| arms are "
+                              "RESTATED_NOT_RATIFIED and they DO still gate — "
+                              "decision 8 called |z| <= 5 MALFORMED and asked "
+                              "only for a restatement, so no deciding "
+                              "authority stands behind the number 5. See "
+                              "metadata.gate.authority_correction_note; and "
+                              "verdict.authority_sensitivity, which shows the "
+                              "conclusion does not depend on them."),
                 ),
             ),
             gate=restated_gate_criteria(),
@@ -964,6 +1253,12 @@ def build_verdict(rows, packmeta, pilot=None):
         )
 
     closing = [k for k, v in rows.items() if v["primary_closes"]["closes"]]
+    # Two of the three gating arms are RESTATED_NOT_RATIFIED. A reader is
+    # entitled to know whether the headline "nothing closes" survives dropping
+    # them, WITHOUT re-deriving anything -- so it is measured here from the
+    # same per-config gate evaluations, not asserted.
+    closing_pi_only = [k for k, v in rows.items()
+                       if v["primary_closes"]["closes_on_pi_authority_only"]]
     best = min(rows.items(),
                key=lambda kv: kv[1]["primary_reporting_window"]["chi2_dof"])
 
@@ -981,6 +1276,23 @@ def build_verdict(rows, packmeta, pilot=None):
         n_configurations=len(rows),
         n_closing_primary_window=len(closing),
         closing_configurations=closing,
+        authority_sensitivity=dict(
+            question=("Does the headline depend on a threshold no deciding "
+                      "authority ratified? Two of the three gating arms "
+                      "(abs_z_total_max, z_bin_max) are "
+                      "RESTATED_NOT_RATIFIED."),
+            n_closing_all_arms=len(closing),
+            n_closing_pi_ratified_arm_only=len(closing_pi_only),
+            closing_configurations_pi_ratified_arm_only=closing_pi_only,
+            pi_ratified_gating_arm="chi2_dof_max <= 3.0 (PI decision 8)",
+            verdict_unchanged_without_unratified_arms=bool(
+                len(closing) == len(closing_pi_only)),
+            note=("MEASURED, not asserted: each configuration's gate was "
+                  "re-read counting ONLY the PI-ratified arm. If "
+                  "verdict_unchanged_without_unratified_arms is true, the "
+                  "study's conclusion rests on chi2/dof <= 3 alone and the "
+                  "unratified |z| numbers change nothing."),
+        ),
         best_by_reporting_chi2_dof=dict(
             config=best[0],
             chi2_dof=best[1]["primary_reporting_window"]["chi2_dof"],
@@ -1145,13 +1457,14 @@ def recommendation(rows, per_clamp, pilot=None):
             "the quoted +30 to +43 is the 20-22% count difference between the "
             "two arms, not model inadequacy (amendment A1). The recommendation "
             "rests on the scale-free rms_frac_dev direction (A2).",
-            "The scale-free measure is NOT a gate. PI decision 8 ratified "
-            "chi2/dof <= 3 and nothing else; no tolerance on rms_frac_dev has "
-            "been defined or calibrated, so it is reported as a measurement.",
+            "The scale-free measure is NOT a gate. chi2/dof <= 3 is the ONLY "
+            "ratified numerical closure tolerance (PI decision 8; PI direction "
+            "2026-08-05); no tolerance on rms_frac_dev has been defined or "
+            "calibrated, so it is reported as a measurement.",
             "It does NOT say the Lya-only window is ROBUST. Neither window "
             "closes: the best configuration measured here is london0 | "
             "lya_only | clamp=hi at chi2/dof 29.6 over 19.7-21.6, still ~10x "
-            "the ratified tolerance of 3.",
+            "the PI-RATIFIED tolerance of 3.",
             "It does NOT test the PI's stated MECHANISM. The analysis window "
             "is a post-hoc SELECTION; blue-edge truncation inside the GP fit is "
             "the FITTING window, which only ARM 2 touches and which ARM 2 only "

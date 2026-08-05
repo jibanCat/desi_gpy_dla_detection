@@ -260,8 +260,8 @@ def test_window_metrics_empty_selection_is_nan_not_a_crash(WS, by_nhat):
     assert math.isnan(m["ratio"])
 
 
-def test_closes_uses_only_the_three_ratified_arms(WS, by_nhat):
-    gate = WS.restated_gate_criteria()["ratified_arms"]
+def test_closes_uses_only_the_three_gate_arms(WS, by_nhat):
+    gate = WS.restated_gate_criteria()["gate_arms"]
     assert set(gate) == {"abs_z_total_max", "z_bin_max", "chi2_dof_max"}
     m = WS.window_metrics(by_nhat, 19.7, 21.6)
     v = WS.closes(m, gate)
@@ -275,7 +275,7 @@ def test_closes_uses_only_the_three_ratified_arms(WS, by_nhat):
 
 def test_closes_REFUSES_an_EMPTY_reporting_window(WS):
     """FAIL-CLOSED, not fail-open. A selection that contains NO fully-contained
-    bin cannot be gated, and the three ratified arms all evaluate vacuously on
+    bin cannot be gated, and the three gating arms all evaluate vacuously on
     it: z_bin_max / chi2_dof are non-finite (so both arms are SKIPPED) and
     z_total is 0/sqrt(1e-12) = 0.0 (so the |z_total| arm passes on a
     manufactured zero). ``closes`` must REFUSE.
@@ -288,7 +288,7 @@ def test_closes_REFUSES_an_EMPTY_reporting_window(WS):
     assert m["n_bins"] == 0                     # the reproduction
     assert m["z_total"] == 0.0                  # the manufactured pass
     assert math.isnan(m["z_bin_max"]) and math.isnan(m["chi2_dof"])
-    v = WS.closes(m, WS.restated_gate_criteria()["ratified_arms"])
+    v = WS.closes(m, WS.restated_gate_criteria()["gate_arms"])
     assert v["closes"] is False, (
         "closes() passed an EMPTY reporting window — every informative arm was "
         "skipped as non-finite and |z_total| passed on 0/sqrt(1e-12)")
@@ -309,7 +309,7 @@ def test_closes_REFUSES_when_NO_bin_is_occupied(WS):
                           WS.REPORT_LO, WS.REPORT_HI)
     assert m["n_bins"] == 2 and m["n_bins_occupied"] == 0
     assert abs(m["z_total"]) < 5.0              # would have passed vacuously
-    v = WS.closes(m, WS.restated_gate_criteria()["ratified_arms"])
+    v = WS.closes(m, WS.restated_gate_criteria()["gate_arms"])
     assert v["closes"] is False, (
         "closes() passed a window in which not one bin carries an observed "
         "count")
@@ -320,7 +320,7 @@ def test_closes_REFUSES_a_NON_FINITE_gate_arm(WS):
     """Belt and braces: a non-finite arm is a refusal, never a skip. Built by
     hand rather than through window_metrics so the arms are non-finite
     INDEPENDENTLY of how many bins were selected."""
-    gate = WS.restated_gate_criteria()["ratified_arms"]
+    gate = WS.restated_gate_criteria()["gate_arms"]
     base = dict(n_bins=4, n_bins_occupied=3, z_total=0.5, z_bin_max=1.0,
                 chi2_dof=1.0)
     assert WS.closes(base, gate)["closes"] is True
@@ -336,9 +336,190 @@ def test_ratio_span_tolerances_are_declared_UNRATIFIED(WS):
     """PI decision 8 explicitly declined to ratify these two, so they must be
     reported as measurements and must not appear among the gating arms."""
     g = WS.restated_gate_criteria()
-    assert set(g["not_ratified"]) == {"ratio_span_by_z_max",
-                                      "ratio_span_by_snr_max"}
-    assert not (set(g["not_ratified"]) & set(g["ratified_arms"]))
+    adv = g["advisory_tolerances"]
+    assert set(adv) == {"ratio_span_by_z_max", "ratio_span_by_snr_max"}
+    assert not (set(adv) & set(g["gate_arms"]))
+    # advisory means advisory: UNRATIFIED and gating NOTHING
+    for name, t in adv.items():
+        assert t["authority_state"] == WS.UNRATIFIED, (name, t)
+        assert t["gates"] is False, (name, t)
+
+
+# ---------------------------------------------------------------------------
+# (2b) GATE AUTHORITY — the 2026-08-05 retraction
+#
+# `restated_gate_criteria()` used to return the three closure thresholds under
+# the key `ratified_arms`, with the docstring "THE THREE RATIFIED ARMS (PI
+# decision 8)". PI decision 8, verbatim: "Ratify the fail-closed framework,
+# matched-configuration SBC and chi2/dof <= 3 closure requirement. ... Also
+# restate the MALFORMED |z| <= 5 criterion with its exact mathematical
+# definition."  Calling a criterion MALFORMED and sending it back for
+# restatement is the OPPOSITE of ratifying it. The sibling site was retracted
+# in 6f9f998; these tests pin the corrected record HERE so it cannot come back.
+#
+# The correction is a LABEL, not a disarmament: the |z| arms still gate, and a
+# test that let them be recorded as `gates=False` would be a false claim in the
+# other direction.
+# ---------------------------------------------------------------------------
+def test_the_two_z_arms_are_NOT_recorded_as_RATIFIED(WS):
+    """THE defect. Only chi2_dof_max was ratified; |z| <= 5 was called
+    MALFORMED and sent back for restatement."""
+    arms = WS.restated_gate_criteria()["gate_arms"]
+    assert arms["chi2_dof_max"]["authority_state"] == WS.RATIFIED
+    assert arms["chi2_dof_max"]["value"] == 3.0
+    for name in ("abs_z_total_max", "z_bin_max"):
+        assert arms[name]["authority_state"] == WS.RESTATED_NOT_RATIFIED, (
+            f"{name} claims {arms[name]['authority_state']!r} — decision 8 "
+            "called |z| <= 5 MALFORMED, which is not a ratification")
+        assert arms[name]["value"] == 5.0
+        # the PI's own word must be quoted where the claim used to be
+        assert "MALFORMED" in arms[name]["pi_disposition"]
+
+
+def test_the_retracted_ratified_arms_KEY_is_GONE(WS):
+    """No key or value may assert ratification of the |z| arms. The retracted
+    shape was a BARE `{name: float}` dict under the key `ratified_arms`."""
+    g = WS.restated_gate_criteria()
+    assert "ratified_arms" not in g
+    assert "gate_tolerances_ratified" not in g
+    # and no field may return a bare threshold under ANY name: every gating
+    # number must arrive with its authority state attached
+    for name, arm in g["gate_arms"].items():
+        assert isinstance(arm, dict) and "authority_state" in arm, (name, arm)
+
+
+def test_only_the_PI_ALLOW_LIST_may_carry_RATIFIED(WS):
+    """The allow-list is exactly the three things decision 8 ratified, and
+    nothing outside it may be recorded as RATIFIED."""
+    assert set(WS.PI_RATIFIED_ITEMS) == {"fail_closed_framework",
+                                         "matched_configuration_sbc",
+                                         "chi2_dof_max"}
+    g = WS.restated_gate_criteria()
+    assert g["pi_ratified_items"] == list(WS.PI_RATIFIED_ITEMS)
+    for group in ("gate_arms", "advisory_tolerances"):
+        for name, arm in g[group].items():
+            if arm["authority_state"] == WS.RATIFIED:
+                assert name in WS.PI_RATIFIED_ITEMS, (group, name)
+
+
+def test_no_field_named_RATIFIED_carries_anything_off_the_allow_list(WS):
+    """The shape the widened import-time guard scans for: any field whose NAME
+    contains "ratified" must contain ONLY allow-listed items. The retracted
+    `ratified_arms` held two |z| thresholds that are not on the list."""
+    g = WS.restated_gate_criteria()
+    allowed = set(WS.PI_RATIFIED_ITEMS)
+    hits = [f for f in g if "ratified" in f.lower()]
+    assert hits, "the allow-list itself must be published for the guard to check"
+    for f in hits:
+        assert set(g[f]) <= allowed, (f, sorted(set(g[f]) - allowed))
+
+
+def test_audit_gate_authority_REFUSES_the_retracted_ratified_arms_SHAPE(WS):
+    """BEHAVIOURAL: the guard must refuse the exact record v1 emitted, not just
+    be absent from the current one."""
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(dict(
+            ratified_arms={"abs_z_total_max": 5.0, "z_bin_max": 5.0,
+                           "chi2_dof_max": 3.0}))
+    assert "abs_z_total_max" in str(e.value) and "z_bin_max" in str(e.value)
+    # ... and it must ACCEPT the allow-list published under the same word
+    WS.audit_gate_authority(dict(pi_ratified_items=list(WS.PI_RATIFIED_ITEMS)))
+
+
+def test_audit_gate_authority_REFUSES_an_arm_claiming_RATIFIED_off_the_list(WS):
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(dict(gate_arms={
+            "z_bin_max": dict(value=5.0, authority_state=WS.RATIFIED,
+                              gates=True)}))
+    assert "PI_RATIFIED_ITEMS" in str(e.value)
+
+
+def test_audit_gate_authority_REFUSES_an_UNRATIFIED_tolerance_that_GATES(WS):
+    """The other direction: a number decision 8 DECLINED may not refuse work."""
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(dict(advisory_tolerances={
+            "ratio_span_by_z_max": dict(value=0.10,
+                                        authority_state=WS.UNRATIFIED,
+                                        gates=True)}))
+    assert "gates=True" in str(e.value)
+
+
+def test_audit_gate_authority_REFUSES_an_UNKNOWN_authority_state(WS):
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(dict(gate_arms={
+            "z_bin_max": dict(value=5.0, authority_state="APPROVED",
+                              gates=True)}))
+    assert "authority_state" in str(e.value)
+
+
+def test_the_unratified_z_arms_STILL_GATE_and_the_record_says_so(WS):
+    """NOT a disarmament. Recording `gates=False` for an arm that really does
+    refuse work would be as false as the PI claim, in the other direction."""
+    g = WS.restated_gate_criteria()
+    for name in ("abs_z_total_max", "z_bin_max", "chi2_dof_max"):
+        assert g["gate_arms"][name]["gates"] is True, name
+    # ... behaviourally: a metrics dict that busts ONLY the |z| arms must fail
+    m = dict(n_bins=4, n_bins_occupied=3, z_total=99.0, z_bin_max=99.0,
+             chi2_dof=1.0)
+    v = WS.closes(m, g["gate_arms"])
+    assert v["closes"] is False
+    assert len(v["failures"]) == 2
+
+
+def test_a_refusal_on_an_UNRATIFIED_arm_NAMES_it_as_unratified(WS):
+    """That is the moment a PI needs to know a number has no authority behind
+    it. The RATIFIED arm's message must NOT carry the tag."""
+    g = WS.restated_gate_criteria()["gate_arms"]
+    m = dict(n_bins=4, n_bins_occupied=3, z_total=99.0, z_bin_max=99.0,
+             chi2_dof=99.0)
+    f = WS.closes(m, g)["failures"]
+    ztot = [s for s in f if s.startswith("|z_total|")][0]
+    zbin = [s for s in f if s.startswith("z_bin_max")][0]
+    chi2 = [s for s in f if s.startswith("chi2_dof")][0]
+    assert "RESTATED_NOT_RATIFIED" in ztot and "RESTATED_NOT_RATIFIED" in zbin
+    assert "RATIFIED" not in chi2, (
+        "chi2/dof <= 3 IS ratified; tagging it would understate its authority")
+
+
+def test_closes_REFUSES_a_BARE_threshold_with_no_authority_state(WS):
+    """A caller must not be able to read a threshold without its authority
+    state — that separability is what let `ratified_arms` launder the |z|
+    numbers through the one arm in the dict that really was ratified."""
+    m = dict(n_bins=4, n_bins_occupied=3, z_total=0.5, z_bin_max=1.0,
+             chi2_dof=1.0)
+    with pytest.raises(TypeError) as e:
+        WS.closes(m, {"abs_z_total_max": 5.0, "z_bin_max": 5.0,
+                      "chi2_dof_max": 3.0})
+    assert "BARE THRESHOLD" in str(e.value)
+
+
+def test_the_local_arm_name_MAPS_to_the_canonical_merge_name(WS):
+    """This module calls the arm `abs_z_total_max`; the sibling streams call it
+    `z_total_max`. The mapping must be explicit or the merged guard and the
+    artifact will disagree about which arm is which."""
+    arms = WS.restated_gate_criteria()["gate_arms"]
+    assert arms["abs_z_total_max"]["canonical_name"] == "z_total_max"
+    assert arms["z_bin_max"]["canonical_name"] == "z_bin_max"
+    assert arms["chi2_dof_max"]["canonical_name"] == "chi2_dof_max"
+
+
+def test_closes_reports_whether_the_verdict_needs_the_unratified_arms(WS):
+    """Once two of three gating arms are unratified, "it does not close" is
+    only load-bearing if it survives dropping them. Measured, not asserted."""
+    g = WS.restated_gate_criteria()["gate_arms"]
+    # busts every arm -> the RATIFIED arm alone still refuses
+    hard = WS.closes(dict(n_bins=4, n_bins_occupied=3, z_total=99.0,
+                          z_bin_max=99.0, chi2_dof=99.0), g)
+    assert hard["closes"] is False
+    assert hard["closes_on_pi_authority_only"] is False
+    assert hard["failures_on_pi_authority_only"] == [
+        s for s in hard["failures"] if s.startswith("chi2_dof")]
+    # busts ONLY the unratified arms -> the conclusion WOULD depend on them
+    soft = WS.closes(dict(n_bins=4, n_bins_occupied=3, z_total=99.0,
+                          z_bin_max=99.0, chi2_dof=1.0), g)
+    assert soft["closes"] is False
+    assert soft["closes_on_pi_authority_only"] is True
+    assert soft["failures_on_pi_authority_only"] == []
 
 
 def test_marginal_block_measures_span_without_gating(WS):
@@ -976,9 +1157,9 @@ def test_rms_frac_dev_is_NOT_a_gate_arm(WS, by_nhat):
     """PI decision 8 ratified chi2/dof <= 3 and nothing else. No tolerance on
     this statistic has been calibrated, so it must not gate."""
     g = WS.restated_gate_criteria()
-    assert "rms_frac_dev" not in g["ratified_arms"]
+    assert "rms_frac_dev" not in g["gate_arms"]
     m = WS.window_metrics(by_nhat, WS.REPORT_LO, WS.REPORT_HI)
-    v = WS.closes(m, g["ratified_arms"])
+    v = WS.closes(m, g["gate_arms"])
     assert not any("rms_frac_dev" in f for f in v["failures"])
 
 
@@ -1059,6 +1240,60 @@ def test_recommendation_rests_on_the_SCALE_FREE_measure(WS, monkeypatch):
     assert any("SIZE of the chi2/dof gap" in s
                for s in rec["what_this_does_NOT_say"])
     assert any("NOT a gate" in s for s in rec["what_this_does_NOT_say"])
+
+
+def _verdict_rows(WS, chi2, z_total=99.0, z_bin=99.0):
+    """A full `rows` table for build_verdict, with primary_closes computed by
+    the REAL ``closes`` against the REAL gate record."""
+    gate = WS.restated_gate_criteria()["gate_arms"]
+    out = {}
+    for mock in ("2lpt0", "london0", "saclay0"):
+        for win, c2 in (("lya_only", chi2), ("lya_lyb", chi2 + 40.0)):
+            for clamp in ("both", "hi"):
+                rep = dict(n_bins=19, n_bins_occupied=19, z_total=z_total,
+                           z_bin_max=z_bin, chi2_dof=c2, ratio=0.98,
+                           rms_frac_dev=0.12, obs=70000.0)
+                out[f"{mock}|{win}|clamp={clamp}"] = dict(
+                    primary_reporting_window=rep,
+                    primary_closes=WS.closes(rep, gate),
+                    high_n_above_21p6=dict(ratio=1.2),
+                    full_grid=dict(chi2_dof=c2, ratio=0.99),
+                    by_z=dict(ratio_span=0.15), by_snr=dict(ratio_span=0.18),
+                )
+    return out
+
+
+def test_verdict_MEASURES_whether_the_headline_needs_the_unratified_arms(
+        WS, monkeypatch):
+    """Two of the three gating arms are RESTATED_NOT_RATIFIED, so the artifact
+    must SHOW — not assert — that "nothing closes" survives dropping them."""
+    monkeypatch.setattr(WS, "CLAMPS", ["both"])
+    monkeypatch.setattr(WS, "MOCKS", ["2lpt0", "london0", "saclay0"])
+    # every configuration busts chi2/dof <= 3, which is the real situation
+    v = WS.build_verdict(_verdict_rows(WS, 63.0), {}, None)
+    a = v["authority_sensitivity"]
+    assert v["n_closing_primary_window"] == 0
+    assert a["n_closing_all_arms"] == 0
+    assert a["n_closing_pi_ratified_arm_only"] == 0
+    assert a["verdict_unchanged_without_unratified_arms"] is True
+    assert a["pi_ratified_gating_arm"].startswith("chi2_dof_max <= 3.0")
+
+
+def test_verdict_would_EXPOSE_a_headline_that_rests_on_an_unratified_arm(
+        WS, monkeypatch):
+    """POWER: the field must be able to come out FALSE. Here the six lya_only
+    configurations pass chi2/dof <= 3 and are refused ONLY by the two |z| arms
+    nobody ratified — so "nothing closes" would rest on unratified numbers, and
+    the artifact must say so rather than report a flat True."""
+    monkeypatch.setattr(WS, "CLAMPS", ["both"])
+    monkeypatch.setattr(WS, "MOCKS", ["2lpt0", "london0", "saclay0"])
+    v = WS.build_verdict(_verdict_rows(WS, 1.0), {}, None)
+    a = v["authority_sensitivity"]
+    assert a["n_closing_all_arms"] == 0                    # |z| arms refuse
+    assert a["n_closing_pi_ratified_arm_only"] == 6        # chi2/dof does not
+    assert all("lya_only" in k for k in
+               a["closing_configurations_pi_ratified_arm_only"])
+    assert a["verdict_unchanged_without_unratified_arms"] is False
 
 
 # ---------------------------------------------------------------------------
