@@ -480,6 +480,45 @@ def test_fingerprint_guard_host_dependence_is_declared():
             "independent and always runs.")
 
 
+def test_recording_host_still_holds_the_retired_artifacts():
+    """The one omission the guard above CANNOT see: deletion on the recording host itself.
+
+    ``test_fingerprint_guard_host_dependence_is_declared`` branches on
+    ``_source_artifacts_present()``, so removing the four untracked artifacts makes it take
+    the ``pytest.skip`` arm -- the same arm a genuinely different host takes. Deleting them
+    therefore DISARMS the byte-level fingerprint comparison while CI stays green. Measured
+    2026-08-05: deleting the four took this selection from 65 passed / 0 skipped to
+    59 passed / 6 skipped, every one of the six a documented skip rather than a failure.
+
+    The tombstones already record which tree is supposed to hold them
+    (``artifact.read_from_worktree``, pinned as ``RECORDING_WORKTREE``), so the two cases
+    ARE distinguishable and the ambiguity is not inherent:
+
+      * that directory does not exist  -> a different host. Skipping is correct.
+      * that directory exists but the artifacts are gone -> somebody deleted them HERE.
+        That is a defect, not host dependence, and it fails.
+
+    If a retirement ever legitimately removes the local copies, this is the deliberate
+    step: re-stamp the records so ``read_from_worktree`` no longer points at a tree that is
+    expected to hold them. Silent deletion is what this refuses.
+    """
+    if not os.path.isdir(RECORDING_WORKTREE):
+        pytest.skip(
+            f"{RECORDING_WORKTREE} does not exist on this host, so the retired artifacts "
+            "were never here to delete. The byte-level guard is inert by design.")
+
+    missing = sorted(rel for rel in TOMBSTONED.values()
+                     if not os.path.exists(os.path.join(RECORDING_WORKTREE, rel)))
+    assert not missing, (
+        f"the recording worktree {RECORDING_WORKTREE} exists but no longer holds "
+        f"{len(missing)} of the {len(TOMBSTONED)} retired artifacts: {missing}. These are "
+        "untracked ON PURPOSE and load-bearing -- they are the only physical copies the "
+        "tombstone fingerprint guard can compare its pinned sha256/bytes against, and "
+        "they are listed with this reasoning in .gitignore. Deleting them disarms that "
+        "guard silently (it degrades to a skip, not a failure). Restore them, or re-stamp "
+        "the tombstones so read_from_worktree no longer claims this tree holds them.")
+
+
 # ===========================================================================
 # the TRIPWIRE -- kept armed, with no file dependency and no skip
 # ===========================================================================

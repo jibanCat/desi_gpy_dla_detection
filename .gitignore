@@ -127,3 +127,26 @@ CDDF_analysis/hbi/figures/lls_recovery/
 notebooks/*probe*.ipynb
 notebooks/*.exec.ipynb
 notebooks/*.executed.ipynb
+
+# --- Retired / superseded HBI artifacts: PRESENT LOCALLY, NEVER COMMITTED -------------
+# These six files are untracked ON PURPOSE and are LOAD-BEARING. Do not "tidy them up".
+# Measured 2026-08-05 (env gpdla, tests/test_tombstones.py + test_subdla_forward_headline.py
+# + test_unblind_audit.py, baseline 65 passed / 0 skipped):
+#
+#   * deleting the four retired identities  -> 59 passed, 6 SKIPPED: the byte-level half of
+#     the tombstone fingerprint guard goes inert (it compares the record's sha256/bytes
+#     against the physical file, which only this worktree holds).
+#   * deleting the two crossmock JSONs      -> HARD FAILURE: build_tombstones.py --check
+#     refuses to write a half-armed tombstone without both sides of the tripwire.
+#
+# They must also never be COMMITTED: each retired identity carries
+# successor_policy.must_not_reuse_identity=true, and committing at these paths is the
+# "resurrection" that tests/test_tombstones.py::test_tombstoned_identity_is_not_resurrected
+# exists to catch. Ignoring is not tracking, so that guard still holds.
+# A successor measurement goes to a NEW path -- see CDDF_analysis/hbi/tombstones/SCHEMA.md.
+CDDF_analysis/hbi/lls_recovery_figures.json
+CDDF_analysis/hbi/subdla_edge_systematic.json
+CDDF_analysis/hbi/subdla_floor_mc_band.json
+CDDF_analysis/hbi/subdla_mock_headline.json
+CDDF_analysis/hbi/crossmock_transfer.json
+CDDF_analysis/hbi/crossmock_transfer_loa0.json
