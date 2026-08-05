@@ -221,3 +221,50 @@ def test_kernel_columns_are_probability_masses(small_pack):
     colsum = K.sum(axis=2)  # mass of each true bin landing anywhere observed
     assert np.all(colsum <= 1.0 + 1e-12)
     assert np.all(colsum > 0.05)  # nothing pathologically lost on this grid
+
+
+# ---------------------------------------------------------------------------
+# B2 (2026-08-05) — the two _SN_SKEW_MAX copies, pinned rather than commented
+# ---------------------------------------------------------------------------
+def test_SN_SKEW_MAX_equals_the_znz_kernel_constant():
+    """``forward._SN_SKEW_MAX`` re-types ``znz_kernel._SN_SKEW_MAX``. Until
+    2026-08-05 the only thing asserting they agreed was a comment.
+
+    An ASSERTION, not an import, because ``forward.py`` must stay importable
+    without the heavy ``CDDF_analysis.hbi`` chain — see the companion test."""
+    from CDDF_analysis.hbi import znz_kernel as ZK
+    from CDDF_analysis.hbi_mcmc import forward as _F
+    assert _F._SN_SKEW_MAX == ZK._SN_SKEW_MAX
+    # both are the attainable moment-skewness ceiling of the skew-normal
+    # family, i.e. the a -> inf limit; stated numerically so a change to EITHER
+    # copy has to argue with a number
+    import numpy as _np
+    closed_form = 0.5 * (4.0 - _np.pi) * (_np.sqrt(2.0 / _np.pi) ** 3) \
+        / (1.0 - 2.0 / _np.pi) ** 1.5
+    assert _F._SN_SKEW_MAX == closed_form
+    assert repr(float(_F._SN_SKEW_MAX)) == "0.9952717464311566"
+    # and the clamp both modules apply is the same fraction of it
+    assert 0.995 * _F._SN_SKEW_MAX == 0.995 * ZK._SN_SKEW_MAX
+
+
+def test_forward_imports_without_the_hbi_chain():
+    """THE constraint that makes the duplication the right call: importing
+    ``CDDF_analysis.hbi_mcmc.forward`` must not drag in ``CDDF_analysis.hbi``
+    (or ``znz_kernel``). Run in a FRESH interpreter, since this test process has
+    almost certainly imported them already."""
+    import os
+    import subprocess
+    import sys
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    code = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "import CDDF_analysis.hbi_mcmc.forward as F\n"
+        "bad = [m for m in ('CDDF_analysis.hbi', 'CDDF_analysis.hbi.znz_kernel')\n"
+        "       if m in sys.modules]\n"
+        "print('LEAKED=' + ','.join(bad))\n"
+        "print('VALUE=' + repr(float(F._SN_SKEW_MAX)))\n" % repo)
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, cwd=repo)
+    assert out.returncode == 0, out.stderr
+    assert "LEAKED=\n" in out.stdout or "LEAKED=" + "\n" in out.stdout, out.stdout
+    assert "VALUE=0.9952717464311566" in out.stdout, out.stdout

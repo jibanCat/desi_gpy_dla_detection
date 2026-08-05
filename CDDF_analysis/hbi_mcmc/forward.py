@@ -90,7 +90,18 @@ _GL_X, _GL_W = np.polynomial.legendre.leggauss(64)
 _GL_X = jnp.asarray(_GL_X)
 _GL_W = jnp.asarray(_GL_W)
 
-# attainable skew-normal moment-skewness ceiling (== znz_kernel._SN_SKEW_MAX)
+# Attainable skew-normal moment-skewness ceiling.  DUPLICATED, deliberately:
+# the same expression is `znz_kernel._SN_SKEW_MAX`, and it is re-typed here
+# rather than imported because this module MUST stay importable without the
+# heavy `CDDF_analysis.hbi` chain (verified: importing this module leaves both
+# `CDDF_analysis.hbi` and `CDDF_analysis.hbi.znz_kernel` out of sys.modules,
+# and `znz_kernel` pulls a much larger surface).
+#
+# 🔴 The pin is a TEST, not this comment.  Until 2026-08-05 the only thing
+# asserting the two agreed was a parenthetical "(== znz_kernel._SN_SKEW_MAX)"
+# -- prose cannot fail.  `tests/test_modelA_forward.py`
+# ::test_SN_SKEW_MAX_equals_the_znz_kernel_constant asserts bit-for-bit
+# equality and is what actually holds the two copies together.
 _SN_SKEW_MAX = 0.5 * (4.0 - np.pi) * (np.sqrt(2.0 / np.pi) ** 3) / \
     (1.0 - 2.0 / np.pi) ** 1.5
 
