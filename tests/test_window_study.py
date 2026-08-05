@@ -361,6 +361,13 @@ def test_ratio_span_tolerances_are_declared_UNRATIFIED(WS):
 # test that let them be recorded as `gates=False` would be a false claim in the
 # other direction.
 # ---------------------------------------------------------------------------
+#: restated here INDEPENDENTLY of the module, so a parametrize that needs the
+#: allow-list at COLLECTION time (before any fixture exists) cannot silently
+#: track a mutated constant.
+_PI_ITEMS = ("fail_closed_framework", "matched_configuration_sbc",
+             "chi2_dof_max")
+
+
 def test_the_two_z_arms_are_NOT_recorded_as_RATIFIED(WS):
     """THE defect. Only chi2_dof_max was ratified; |z| <= 5 was called
     MALFORMED and sent back for restatement."""
@@ -405,32 +412,104 @@ def test_only_the_PI_ALLOW_LIST_may_carry_RATIFIED(WS):
 def test_no_field_named_RATIFIED_carries_anything_off_the_allow_list(WS):
     """The shape the widened import-time guard scans for: any field whose NAME
     contains "ratified" must contain ONLY allow-listed items. The retracted
-    `ratified_arms` held two |z| thresholds that are not on the list."""
+    `ratified_arms` held two |z| thresholds that are not on the list.
+
+    SCANNED AT EVERY DEPTH. This test used to be ``for f in g`` — depth 1, the
+    same blind spot as the guard it mirrors — so a `ratified_arms` emitted one
+    level down (inside a `gate_arms` entry, or under any wrapper key) was
+    invisible to it."""
     g = WS.restated_gate_criteria()
     allowed = set(WS.PI_RATIFIED_ITEMS)
-    hits = [f for f in g if "ratified" in f.lower()]
+    hits = [(p, k, v) for p, k, v in _walk_keys(g) if "ratified" in k.lower()]
     assert hits, "the allow-list itself must be published for the guard to check"
-    for f in hits:
-        assert set(g[f]) <= allowed, (f, sorted(set(g[f]) - allowed))
+    for path, _k, val in hits:
+        assert isinstance(val, (dict, list, tuple, set)), (path, val)
+        assert set(val) <= allowed, (path, sorted(set(val) - allowed))
+    # exactly ONE such field, and it is the published allow-list itself
+    assert [p for p, _k, _v in hits] == [".pi_ratified_items"], hits
+
+
+# --- F4: the recorded provenance is CHECKED AGAINST GIT, not trusted ---------
+def _git(*args):
+    import subprocess
+    return subprocess.run(["git", *args], cwd=_REPO, capture_output=True,
+                          text=True, check=True).stdout
+
+
+def test_the_recorded_introduction_commits_are_the_ones_git_reports(WS):
+    """``introduced_commit`` / ``introduced_date`` / ``predates_decision_8``
+    carry authority weight — they are quoted verbatim inside ``pi_disposition``
+    — and NOTHING checked them. Measured 2026-08-05: replacing both |z| arms'
+    SHA with "deadbeef"*5 and their date with 2026-01-01 left the suite GREEN.
+
+    This is not a hypothetical defect class. The sibling module
+    ``run_posterior.py`` carried a comment asserting its |z| arms "pre-date
+    this change"; that was FALSE for two of the five arms it named, and the
+    retraction 6f9f998 fixed it by verifying the SHA with ``git log -S``.
+    Same check here, on the arm's CANONICAL name (the cross-module symbol that
+    actually appears in the gate source), newest-first so the LAST entry is the
+    commit that introduced the string."""
+    arms = WS.restated_gate_criteria()["gate_arms"]
+    assert set(arms) == {"abs_z_total_max", "z_bin_max", "chi2_dof_max"}
+    for name, arm in arms.items():
+        sym = arm["canonical_name"]
+        out = _git("log", "--format=%H %ad", "--date=short", f"-S{sym}", "--",
+                   WS.GATE_ARM_PROVENANCE_FILE)
+        lines = [ln for ln in out.splitlines() if ln.strip()]
+        assert lines, f"git found no commit introducing {sym!r}"
+        sha, date = lines[-1].split()
+        assert arm["introduced_commit"] == sha, (
+            f"{name}: the record claims {arm['introduced_commit']}, git says "
+            f"the string {sym!r} entered {WS.GATE_ARM_PROVENANCE_FILE} in "
+            f"{sha}")
+        assert arm["introduced_date"] == date, (name, arm["introduced_date"],
+                                                date)
+        # DERIVED from the verified date, never asserted on its own
+        assert arm["predates_decision_8"] is (date < WS.PI_DECISION_8_DATE), (
+            name, date, WS.PI_DECISION_8_DATE)
+        # and it must actually be in this branch's history
+        import subprocess
+        assert subprocess.run(["git", "merge-base", "--is-ancestor", sha,
+                               "HEAD"], cwd=_REPO).returncode == 0, (name, sha)
+        assert arm["provenance_check"] == WS.GATE_ARM_PROVENANCE_CHECK
+
+
+def test_predating_decision_8_is_recorded_but_NOT_read_as_ratification(WS):
+    """The pre-dating fact is true for all three arms and is exactly the
+    reasoning 6f9f998 retracted ("the conventional 5-sigma z-score arms
+    pre-date decision 8" was offered as GROUNDS for authority=PI). It may be
+    recorded; it may not be load-bearing."""
+    arms = WS.restated_gate_criteria()["gate_arms"]
+    for name in ("abs_z_total_max", "z_bin_max"):
+        assert arms[name]["predates_decision_8"] is True
+        assert arms[name]["authority_state"] == WS.RESTATED_NOT_RATIFIED
+        assert "Pre-dating decision 8 is not ratification" in \
+            arms[name]["pi_disposition"]
 
 
 def test_audit_gate_authority_REFUSES_the_retracted_ratified_arms_SHAPE(WS):
     """BEHAVIOURAL: the guard must refuse the exact record v1 emitted, not just
-    be absent from the current one."""
+    be absent from the current one.
+
+    ``require_complete=False`` is the FRAGMENT mode: these four tests audit a
+    single arm or the retracted shape on its own, not a whole gate record. The
+    DEFAULT is fail-closed on an incomplete record — see
+    ``test_audit_gate_authority_REFUSES_an_ABSENT_or_EMPTY_record``."""
     with pytest.raises(SystemExit) as e:
         WS.audit_gate_authority(dict(
             ratified_arms={"abs_z_total_max": 5.0, "z_bin_max": 5.0,
-                           "chi2_dof_max": 3.0}))
+                           "chi2_dof_max": 3.0}), require_complete=False)
     assert "abs_z_total_max" in str(e.value) and "z_bin_max" in str(e.value)
     # ... and it must ACCEPT the allow-list published under the same word
-    WS.audit_gate_authority(dict(pi_ratified_items=list(WS.PI_RATIFIED_ITEMS)))
+    WS.audit_gate_authority(dict(pi_ratified_items=list(WS.PI_RATIFIED_ITEMS)),
+                            require_complete=False)
 
 
 def test_audit_gate_authority_REFUSES_an_arm_claiming_RATIFIED_off_the_list(WS):
     with pytest.raises(SystemExit) as e:
         WS.audit_gate_authority(dict(gate_arms={
             "z_bin_max": dict(value=5.0, authority_state=WS.RATIFIED,
-                              gates=True)}))
+                              gates=True)}), require_complete=False)
     assert "PI_RATIFIED_ITEMS" in str(e.value)
 
 
@@ -440,7 +519,7 @@ def test_audit_gate_authority_REFUSES_an_UNRATIFIED_tolerance_that_GATES(WS):
         WS.audit_gate_authority(dict(advisory_tolerances={
             "ratio_span_by_z_max": dict(value=0.10,
                                         authority_state=WS.UNRATIFIED,
-                                        gates=True)}))
+                                        gates=True)}), require_complete=False)
     assert "gates=True" in str(e.value)
 
 
@@ -448,8 +527,116 @@ def test_audit_gate_authority_REFUSES_an_UNKNOWN_authority_state(WS):
     with pytest.raises(SystemExit) as e:
         WS.audit_gate_authority(dict(gate_arms={
             "z_bin_max": dict(value=5.0, authority_state="APPROVED",
-                              gates=True)}))
+                              gates=True)}), require_complete=False)
     assert "authority_state" in str(e.value)
+
+
+# --- F5: the guard used to FAIL OPEN on an absent/empty/unparseable record ---
+@pytest.mark.parametrize("record,why", [
+    (dict(advisory_tolerances={}, pi_ratified_items=list(_PI_ITEMS)),
+     "the gate_arms KEY is absent entirely"),
+    (dict(gate_arms={}, advisory_tolerances={},
+          pi_ratified_items=list(_PI_ITEMS)), "gate_arms is an EMPTY dict"),
+    ({}, "the record is empty"),
+])
+def test_audit_gate_authority_REFUSES_an_ABSENT_or_EMPTY_record(WS, record,
+                                                                why):
+    """MEASURED 2026-08-05: all three of these were ACCEPTED, because the arm
+    loop read ``record.get(group, {})``. A guard that certifies a record with
+    no arms in it certifies nothing — and the absent-key case is precisely how
+    a refactor drops the gate without a red test."""
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(record)
+    assert "absent or empty" in str(e.value), why
+
+
+def test_audit_gate_authority_REFUSES_a_VACUOUS_published_allow_list(WS):
+    """``pi_ratified_items=[]`` was ACCEPTED. Every "only allow-listed items may
+    claim RATIFIED" statement a referee can check AGAINST THE RECORD is then
+    vacuously true, while the guard silently uses the module's own tuple."""
+    rec = dict(gate_arms={k: dict(v) for k, v in WS.GATE_ARMS.items()},
+               advisory_tolerances={k: dict(v)
+                                    for k, v in WS.ADVISORY_TOLERANCES.items()},
+               pi_ratified_items=[])
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(rec)
+    assert "pi_ratified_items" in str(e.value)
+    # the honest record with the allow-list actually published is accepted
+    rec["pi_ratified_items"] = list(WS.PI_RATIFIED_ITEMS)
+    assert WS.audit_gate_authority(rec) is rec
+
+
+@pytest.mark.parametrize("record", [None, [1, 2], "gate_arms",
+                                    dict(gate_arms=None),
+                                    dict(gate_arms=[1, 2]),
+                                    dict(gate_arms=dict(z_bin_max=5.0))])
+def test_audit_gate_authority_REFUSES_UNPARSEABLE_input_as_SystemExit(WS,
+                                                                      record):
+    """Off-contract before: these raised AttributeError/TypeError out of the
+    guard's internals rather than the SystemExit every other refusal uses. A
+    caller that catches the guard's documented exception would have let them
+    through."""
+    with pytest.raises(SystemExit):
+        WS.audit_gate_authority(record, require_complete=False)
+
+
+# --- F3: the "ratified"-named-field scan was DEPTH 1 -------------------------
+@pytest.mark.parametrize("record,where", [
+    (dict(outer=dict(ratified_arms={"abs_z_total_max": 5.0,
+                                    "z_bin_max": 5.0})),
+     "nested one level under an innocuous key"),
+    (dict(gate_arms=dict(chi2_dof_max=dict(
+        value=3.0, authority_state="RATIFIED", gates=True,
+        ratified_arms={"abs_z_total_max": 5.0}))),
+     "nested INSIDE a gate_arms entry"),
+    (dict(a=dict(b=dict(c=dict(gate_tolerances_ratified=["z_bin_max"])))),
+     "three levels down"),
+    (dict(outer=[dict(ratified_arms={"z_bin_max": 5.0})]),
+     "inside a LIST element"),
+])
+def test_audit_gate_authority_scans_ratified_field_NAMES_AT_ANY_DEPTH(
+        WS, record, where):
+    """MEASURED 2026-08-05: every one of these was ACCEPTED. The scan was
+    ``for field, val in record.items()`` — depth 1 — while the docstring
+    claimed the retracted ``ratified_arms`` shape "must not be
+    reintroducible". It was reintroducible, one level down."""
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(record, require_complete=False)
+    assert "PI_RATIFIED_ITEMS" in str(e.value), where
+
+
+def test_audit_gate_authority_REFUSES_a_SCALAR_under_a_ratified_NAME(WS):
+    """A bool or a count under a `*ratified*` name is unauditable: the guard
+    cannot tell a claim from a tally. The committed-artifact test already
+    applied this rule; the module guard did not."""
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(dict(n_ratified_arms=3),
+                                require_complete=False)
+    assert "SCALAR" in str(e.value)
+
+
+# --- F6: the deny-list is keyed on the NUMBER, not on the label --------------
+@pytest.mark.parametrize("state", ["RESTATED_NOT_RATIFIED", "UNRATIFIED"])
+@pytest.mark.parametrize("name", ["ratio_span_by_z_max",
+                                  "ratio_span_by_snr_max"])
+@pytest.mark.parametrize("group", ["gate_arms", "advisory_tolerances"])
+def test_a_PI_DECLINED_number_may_not_GATE_under_ANY_label(WS, group, name,
+                                                           state):
+    """The UNRATIFIED-may-not-gate rule keys on the LABEL, and the guard
+    deliberately lets RESTATED_NOT_RATIFIED arms gate. So relabelling one of
+    the two numbers decision 8 declined BY NAME bought it deciding power. The
+    deny-list closes that: authority attaches to the number the PI ruled on."""
+    assert set(WS.PI_DECLINED_ITEMS) == {"ratio_span_by_z_max",
+                                         "ratio_span_by_snr_max"}
+    with pytest.raises(SystemExit) as e:
+        WS.audit_gate_authority(
+            {group: {name: dict(value=0.10, authority_state=state,
+                                gates=True)}}, require_complete=False)
+    assert "DECLINED" in str(e.value) or "gates=True" in str(e.value)
+    # ... and the honest record (declined, gates nothing) still passes
+    WS.audit_gate_authority(
+        {group: {name: dict(value=0.10, authority_state=state, gates=False)}},
+        require_complete=False)
 
 
 def test_the_unratified_z_arms_STILL_GATE_and_the_record_says_so(WS):

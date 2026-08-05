@@ -281,6 +281,18 @@ PI_RATIFIED_ITEMS = ("fail_closed_framework",
                      "matched_configuration_sbc",
                      "chi2_dof_max")
 
+# THE DENY-LIST — the two numbers PI decision 8 DECLINED **BY NAME**.
+#
+# The allow-list above is keyed on the LABEL an entry carries; that is not
+# enough on its own. ``audit_gate_authority`` deliberately permits a
+# RESTATED_NOT_RATIFIED arm to gate (the |z| arms really do refuse work and
+# recording otherwise would be a false claim in the other direction), so
+# relabelling a DECLINED number from UNRATIFIED to RESTATED_NOT_RATIFIED used
+# to buy it deciding power with a green suite. Authority attaches to the NUMBER
+# the PI ruled on, not to the label a later commit puts on it: these two names
+# may never gate under ANY authority_state.
+PI_DECLINED_ITEMS = ("ratio_span_by_z_max", "ratio_span_by_snr_max")
+
 PI_DECISION_8_VERBATIM = (
     "Ratify the fail-closed framework, matched-configuration SBC and chi2/dof "
     "<= 3 closure requirement. Do not yet ratify ratio_span_by_z_max=0.10 or "
@@ -305,6 +317,26 @@ AUTHORITY_CORRECTION_NOTE = (
     "no deciding authority behind it, and it still gates. Any artifact "
     "carrying `metadata.gate.ratified_arms` overstates its authority.")
 
+# THE PROVENANCE OF EACH ARM IS CHECKABLE, NOT ASSERTED.
+#
+# `introduced_commit` / `introduced_date` / `predates_decision_8` carry
+# authority weight (they are quoted in `pi_disposition`), and exactly this
+# class of claim was found FALSE in the sibling module: `run_posterior.py`
+# carried a comment asserting its |z| arms "pre-date this change", which was
+# wrong for two of the five arms it named (retracted in 6f9f998). So the
+# recorded SHA is verified against the repository by
+# `tests/test_window_study.py::test_the_recorded_introduction_commits_are_the_ones_git_reports`
+# using the command below — `git log -S` lists newest-first, so the LAST entry
+# is the commit that introduced the string. Fabricating a SHA goes RED.
+GATE_ARM_PROVENANCE_FILE = "CDDF_analysis/hbi_mcmc/run_posterior.py"
+GATE_ARM_PROVENANCE_CHECK = (
+    "git log --format='%H %ad' --date=short -S<canonical_name> -- "
+    + GATE_ARM_PROVENANCE_FILE + " | tail -1")
+
+#: the date PI decision 8 was taken. `predates_decision_8` is DERIVED from the
+#: git-verified `introduced_date` against this, never asserted independently.
+PI_DECISION_8_DATE = "2026-07-29"
+
 # Each arm's `value` is the number; `authority_state` is who stands behind it;
 # `gates` is whether it can refuse work. A caller cannot read a threshold out
 # of this structure without also seeing its authority state.
@@ -318,6 +350,7 @@ GATE_ARMS = {
         introduced_commit="f23961ec1e2cf47748a5a1b660205966a8d793f0",
         introduced_date="2026-07-28",
         predates_decision_8=True,
+        provenance_check=GATE_ARM_PROVENANCE_CHECK,
         pi_disposition=("PI decision 8 (2026-07-29): '|z| <= 5' MALFORMED as "
                         "stated, restated here. NOT ratified. PI direction "
                         "2026-08-05: 'The only currently ratified numerical "
@@ -333,6 +366,7 @@ GATE_ARMS = {
         introduced_commit="f23961ec1e2cf47748a5a1b660205966a8d793f0",
         introduced_date="2026-07-28",
         predates_decision_8=True,
+        provenance_check=GATE_ARM_PROVENANCE_CHECK,
         pi_disposition=("PI decision 8 (2026-07-29): '|z| <= 5' MALFORMED as "
                         "stated, restated here. NOT ratified. PI direction "
                         "2026-08-05: 'The only currently ratified numerical "
@@ -348,12 +382,20 @@ GATE_ARMS = {
         introduced_commit="f23961ec1e2cf47748a5a1b660205966a8d793f0",
         introduced_date="2026-07-28",
         predates_decision_8=True,
+        provenance_check=GATE_ARM_PROVENANCE_CHECK,
         pi_disposition=("PI decision 8 (2026-07-29) RATIFIED the 'chi2/dof <= "
                         "3 closure requirement' in writing, and the PI "
                         "direction of 2026-08-05 restates it as 'the only "
                         "currently ratified numerical closure gate'."),
     ),
 }
+
+#: THE ratified closure number, read from GATE_ARMS rather than re-typed.
+#: Bare `3.0` literals used to sit at four sites in this file (the verdict's
+#: `gate_max` / `factor_over_gate`, the arm-2 summary's `still_over_gate_by`
+#: and the authority-sensitivity prose), duplicating GATE_ARMS with nothing
+#: tying them to it.
+_CHI2_GATE = float(GATE_ARMS["chi2_dof_max"]["value"])
 
 # The two numbers PI decision 8 explicitly DECLINED. Measured and reported;
 # they gate nothing. (Field deliberately NOT named `*ratified*` so an
@@ -376,7 +418,26 @@ ADVISORY_TOLERANCES_NOTE = (
     "and proposed prospectively at a PI checkpoint before they may gate.")
 
 
-def audit_gate_authority(record):
+def _walk_named_fields(obj, path=""):
+    """Yield ``(path, key, value)`` for EVERY mapping key in ``obj``, AT ANY
+    DEPTH (lists are descended into by index).
+
+    Exists because the scan it feeds used to be ``for field, val in
+    record.items()`` — depth 1. Measured 2026-08-05: that accepted
+    ``{'outer': {'ratified_arms': {...}}}`` AND a ``ratified_arms`` key nested
+    inside a ``gate_arms`` entry, i.e. the exact retracted shape, one level
+    down, while the docstring claimed it "must not be reintroducible".
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield f"{path}.{k}", k, v
+            yield from _walk_named_fields(v, f"{path}.{k}")
+    elif isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            yield from _walk_named_fields(v, f"{path}[{i}]")
+
+
+def audit_gate_authority(record, require_complete=True):
     """FAIL CLOSED on a fabricated authority claim. Returns ``record``.
 
     This is the local analogue of ``ratification.enforce_authority_allow_list``
@@ -384,30 +445,84 @@ def audit_gate_authority(record):
     It refuses to hand back a record in which
 
       * an entry claims ``RATIFIED`` while not being in ``PI_RATIFIED_ITEMS``;
-      * any field whose NAME contains "ratified" carries anything outside
-        ``PI_RATIFIED_ITEMS`` — this is exactly the shape the retracted
-        ``ratified_arms`` key had, and it must not be reintroducible;
+      * any field whose NAME contains "ratified", **AT ANY DEPTH**, carries
+        anything outside ``PI_RATIFIED_ITEMS`` — this is exactly the shape the
+        retracted ``ratified_arms`` key had, and it must not be reintroducible;
+      * a "ratified"-named field holds a SCALAR: a bool or a count under such a
+        name is unauditable and the guard cannot tell it from a claim;
       * an ``authority_state`` is not one of ``AUTHORITY_STATES``;
-      * an advisory (UNRATIFIED) tolerance claims ``gates=True``.
+      * an advisory (UNRATIFIED) tolerance claims ``gates=True``;
+      * a number on ``PI_DECLINED_ITEMS`` claims ``gates=True`` under ANY
+        label — the deny-list is keyed on the NUMBER the PI ruled on, so
+        relabelling it ``RESTATED_NOT_RATIFIED`` does not buy it authority.
 
     It deliberately does NOT refuse ``gates=True`` on a
-    ``RESTATED_NOT_RATIFIED`` arm: those arms really do refuse work and
-    recording otherwise would be a false claim in the opposite direction.
+    ``RESTATED_NOT_RATIFIED`` arm that is not on the deny-list: those arms
+    really do refuse work and recording otherwise would be a false claim in the
+    opposite direction.
+
+    FAIL CLOSED ON AN ABSENT RECORD, not just a wrong one (``require_complete``,
+    default True). Measured 2026-08-05, all four ACCEPTED by the previous
+    implementation because it read ``record.get(group, {})``: ``gate_arms``
+    key absent; ``gate_arms={}``; ``record={}``; and ``pi_ratified_items=[]``
+    — a record that publishes an EMPTY allow-list, which makes every
+    "only allow-listed items" statement in the artifact vacuously true for a
+    reader who checks the record rather than this module. A guard that passes
+    a record with no arms in it is a guard that certifies nothing.
+
+    ``require_complete=False`` checks the refusal rules ONLY, for callers
+    auditing a FRAGMENT (a single arm, the retracted shape on its own). It is
+    not the default: forgetting the argument must fail closed.
     """
     allowed = set(PI_RATIFIED_ITEMS)
-    for field, val in record.items():
-        if "ratified" in field.lower():
-            names = set(val) if isinstance(val, (dict, list, tuple, set)) \
-                else {val}
-            stray = {n for n in names if n not in allowed}
-            if stray:
-                raise SystemExit(
-                    f"AUTHORITY GUARD: field {field!r} names {sorted(stray)}, "
-                    f"which PI_RATIFIED_ITEMS does not allow-list. Only "
-                    f"{sorted(allowed)} were ratified (PI decision 8). This is "
-                    "the fabricated-authority shape retracted in 6f9f998.")
+    declined = set(PI_DECLINED_ITEMS)
+    if not isinstance(record, dict):
+        raise SystemExit(
+            f"AUTHORITY GUARD: gate record is {type(record).__name__}, not a "
+            "mapping. An unparseable authority record is a REFUSAL, not "
+            "something to skip.")
+    for path, field, val in _walk_named_fields(record):
+        if "ratified" not in field.lower():
+            continue
+        if not isinstance(val, (dict, list, tuple, set)):
+            raise SystemExit(
+                f"AUTHORITY GUARD: field {path!r} holds the SCALAR {val!r} "
+                "under a name containing 'ratified'. A scalar under such a "
+                "name is unauditable — the guard cannot tell a claim from a "
+                "count. Publish a collection of allow-listed names.")
+        stray = {n for n in val if n not in allowed}
+        if stray:
+            raise SystemExit(
+                f"AUTHORITY GUARD: field {path!r} names {sorted(stray)}, "
+                f"which PI_RATIFIED_ITEMS does not allow-list. Only "
+                f"{sorted(allowed)} were ratified (PI decision 8). This is "
+                "the fabricated-authority shape retracted in 6f9f998.")
+    _MISSING = object()
     for group in ("gate_arms", "advisory_tolerances"):
-        for name, arm in record.get(group, {}).items():
+        arms = record.get(group, _MISSING)
+        if require_complete and not (isinstance(arms, dict) and arms):
+            shown = "<absent>" if arms is _MISSING else repr(arms)
+            raise SystemExit(
+                f"AUTHORITY GUARD: {group!r} is {shown} — absent or empty. A "
+                "gate record with no arms in it certifies nothing, and "
+                "`record.get(group, {})` used to let exactly that through. "
+                "Pass require_complete=False to audit a fragment.")
+        if arms is _MISSING:
+            continue
+        # A key that is PRESENT but not a mapping is a refusal even in
+        # fragment mode: `gate_arms=None` is not an absent gate, it is a
+        # malformed one, and it used to escape as an AttributeError.
+        if not isinstance(arms, dict):
+            raise SystemExit(
+                f"AUTHORITY GUARD: {group!r} is {type(arms).__name__} "
+                f"{arms!r}, not a mapping of arm name -> authority-bearing "
+                "dict. A malformed authority record is a REFUSAL.")
+        for name, arm in arms.items():
+            if not isinstance(arm, dict):
+                raise SystemExit(
+                    f"AUTHORITY GUARD: {group}[{name!r}] = {arm!r} is a BARE "
+                    "THRESHOLD; a number must not be recordable without its "
+                    "authority state.")
             st = arm.get("authority_state")
             if st not in AUTHORITY_STATES:
                 raise SystemExit(
@@ -422,6 +537,24 @@ def audit_gate_authority(record):
                     f"AUTHORITY GUARD: {group}[{name!r}] is UNRATIFIED yet "
                     "claims gates=True. PI decision 8 declined it; it may be "
                     "measured and reported, not used to refuse work.")
+            if name in declined and arm.get("gates"):
+                raise SystemExit(
+                    f"AUTHORITY GUARD: {group}[{name!r}] claims gates=True "
+                    f"under authority_state={st!r}, but PI decision 8 "
+                    f"DECLINED that number BY NAME (PI_DECLINED_ITEMS = "
+                    f"{sorted(declined)}). Relabelling a declined number does "
+                    "not ratify it; the deny-list is keyed on the number, not "
+                    "on the label.")
+    if require_complete:
+        published = record.get("pi_ratified_items")
+        if list(published or ()) != list(PI_RATIFIED_ITEMS):
+            raise SystemExit(
+                "AUTHORITY GUARD: pi_ratified_items is "
+                f"{published!r}, not {list(PI_RATIFIED_ITEMS)}. The allow-list "
+                "must be PUBLISHED IN THE RECORD and non-empty, or every "
+                "'only allow-listed items may claim RATIFIED' statement a "
+                "reader can check against the record itself is vacuously "
+                "true.")
     return record
 
 
@@ -1292,7 +1425,9 @@ def build_verdict(rows, packmeta, pilot=None):
             n_closing_all_arms=len(closing),
             n_closing_under_pi_authority_only=len(closing_pi_only),
             closing_configurations_under_pi_authority_only=closing_pi_only,
-            pi_authority_gating_arm="chi2_dof_max <= 3.0 (PI decision 8)",
+            pi_authority_gating_arm=(
+                f"chi2_dof_max <= {GATE_ARMS['chi2_dof_max']['value']} "
+                "(PI decision 8)"),
             verdict_unchanged_without_the_unapproved_arms=bool(
                 len(closing) == len(closing_pi_only)),
             note=("MEASURED, not asserted: each configuration's gate was "
@@ -1302,12 +1437,19 @@ def build_verdict(rows, packmeta, pilot=None):
                   "study's conclusion rests on that arm alone and the "
                   "unratified |z| numbers change nothing."),
         ),
+        # `gate_max` used to be the bare literal 3.0, duplicating GATE_ARMS and
+        # shipping a threshold into the artifact with NO authority state
+        # attached — the very separability the 2026-08-05 correction exists to
+        # remove. It is now read from GATE_ARMS and carries its state.
         best_by_reporting_chi2_dof=dict(
             config=best[0],
             chi2_dof=best[1]["primary_reporting_window"]["chi2_dof"],
             ratio=best[1]["primary_reporting_window"]["ratio"],
-            gate_max=3.0,
-            factor_over_gate=best[1]["primary_reporting_window"]["chi2_dof"] / 3.0),
+            gate_max=_CHI2_GATE,
+            gate_max_arm="chi2_dof_max",
+            gate_max_authority_state=GATE_ARMS["chi2_dof_max"]["authority_state"],
+            factor_over_gate=(
+                best[1]["primary_reporting_window"]["chi2_dof"] / _CHI2_GATE)),
         reporting_window_chi2_dof=table("primary_reporting_window", "chi2_dof"),
         reporting_window_chi2_dof_caveat=(
             "CONFOUNDED WITH SAMPLE SIZE — see p2_power_confound and "
@@ -1507,7 +1649,11 @@ def recommendation(rows, per_clamp, pilot=None):
             high_n_ratio=g("london0", "lya_only", "hi",
                            "high_n_above_21p6", "ratio"),
             still_over_gate_by=g("london0", "lya_only", "hi",
-                                 "primary_reporting_window", "chi2_dof") / 3.0,
+                                 "primary_reporting_window",
+                                 "chi2_dof") / _CHI2_GATE,
+            gate_max=_CHI2_GATE,
+            gate_max_arm="chi2_dof_max",
+            gate_max_authority_state=GATE_ARMS["chi2_dof_max"]["authority_state"],
         ),
         arm2_fitting_window=arm2_pointer(pilot),
         which_part_rests_on_what=dict(
