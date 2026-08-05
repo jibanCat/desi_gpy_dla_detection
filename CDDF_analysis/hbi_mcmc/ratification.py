@@ -988,23 +988,81 @@ _AUTHORITY_META_SUFFIXES = (
     "policy", "glossary", "meaning", "meanings",
 )
 
-#: a CLAIM key whose first token is a COUNT prefix, or whose last token
-#: RESTRICTS rather than names, does not hold a set of ratified names:
-#: ``n_closing_pi_ratified_arm_only`` counts configurations, it does not
-#: assert that anything was ratified.  Skipping those is a deliberate
-#: narrowing of R1 and is pinned by a test that also proves the SAME list
-#: under ``gate_tolerances_ratified`` is still caught.
-_COUNT_PREFIXES = ("n", "num", "count", "total", "len")
-_NON_NAME_BEARING_HEADS = (
-    "only", "count", "n", "num", "flag", "enabled", "note", "notes", "date",
-    "status", "state", "scope", "effect", "question", "detail", "details",
-    "summary", "meaning", "meanings", "policy", "correction",
+# ---------------------------------------------------------------------------
+# 🔴 ASSERTION vs REFERENCE.  MEASURED FALSE-ALARM DEFECT, 2026-08-05.
+#
+# The first version of R1 asked only "does this key contain the participle",
+# and on the CORRECTED sibling tips that produced false alarms on keys that
+# merely REFER to the ratified arm instead of claiming something is ratified:
+#
+#   verdict_rests_on_the_ratified_arm_alone   a sensitivity block whose
+#                                             sub-keys are what/full_grid/
+#                                             window/answer
+#   min_factor_over_ratified_chi2_gate        a float: a margin OVER the gate
+#   n_closing_pi_ratified_arm_only            a count of configurations
+#
+# All three are the honest disclosure this module exists to REQUIRE.  A guard
+# that flags them pressures people to delete correct disclosures, which is the
+# same defect inverted.  Patching the names one at a time does not converge --
+# the siblings keep adding more -- so the discriminator is GRAMMATICAL:
+#
+#   ASSERTION  the participle is the HEAD of the phrase.  Either it is last
+#              (``gate_tolerances_ratified``), or everything after it ends in
+#              a COLLECTION noun naming what is claimed (``ratified_arms``,
+#              ``pi_ratified_items``, ``ratified_z_arms``).
+#   REFERENCE  a PREPOSITION or DETERMINER governs it (``rests_ON_THE_ratified
+#              _arm``, ``factor_OVER_ratified_chi2_gate``), or the phrase
+#              continues past the participle into something that is not a
+#              collection (``..._ratified_arm_ALONE``, ``..._arm_ONLY``).
+#              English puts the head last; a modifier under a preposition is
+#              pointing AT the ratified thing, not asserting one.
+# ---------------------------------------------------------------------------
+
+#: a token that makes what follows a REFERENCE rather than an assertion
+_REFERENCE_GOVERNORS = (
+    # prepositions
+    "on", "over", "under", "by", "for", "with", "from", "to", "of", "in",
+    "at", "above", "below", "against", "per", "than", "versus", "vs",
+    "beyond", "within", "without", "across", "between", "into", "onto",
+    # determiners / relatives (a key spelling out a sentence)
+    "the", "a", "an", "that", "which", "whose", "its",
+    # verbs that make the phrase a statement ABOUT the ratified thing
+    "rests", "rest", "depends", "relies", "uses", "reads", "counts",
+    "closing", "failing", "passing", "measured", "compared",
 )
+
+#: nouns that name a COLLECTION of the things claimed ratified.  A key may
+#: continue past the participle only into one of these.
+_COLLECTION_NOUNS = (
+    "items", "item", "arms", "arm", "names", "name", "list", "lists", "set",
+    "sets", "tolerances", "tolerance", "gates", "gate", "criteria",
+    "criterion", "thresholds", "threshold", "entries", "keys", "ids",
+    "things", "requirements", "requirement",
+)
+
+#: a CLAIM key whose first token COUNTS does not hold a set of names.
+_COUNT_PREFIXES = ("n", "num", "count", "total", "len", "min", "max", "mean",
+                   "median", "sum", "frac", "fraction", "pct", "percent",
+                   "ratio", "factor")
 
 #: ``status``, ``gate_status``, ``authority_state`` -- all the same field.
 _STATUS_KEY_RE = re.compile(r"(?:^|_)(?:status|state)$")
 _PI_TOKEN_RE = re.compile(r"\bPI\b")
-_SUBJECT_FIELDS = ("name", "key", "tolerance", "criterion")
+
+#: fields that name, on the record itself, WHAT the record is about
+_SUBJECT_FIELDS = ("name", "key", "tolerance", "criterion", "canonical_name",
+                   "arm", "item", "gate", "subject")
+
+#: fields whose presence makes a mapping a GLOSSARY ENTRY -- a definition of a
+#: term -- rather than a record about a criterion.  ``{"state": "RATIFIED",
+#: "meaning": "A deciding authority ratified this IN WRITING..."}`` is the
+#: state VOCABULARY, and asserts nothing about any tolerance.
+_DEFINITION_FIELDS = ("meaning", "definition", "description", "doc",
+                      "docstring", "explanation", "means")
+
+#: fields that make a mapping a RECORD ABOUT SOMETHING (a value it governs)
+_VALUE_FIELDS = ("value", "threshold", "number", "tolerance_value", "max",
+                 "limit", "gates", "contributes_to_pass_fail")
 
 #: an identifier that LOOKS like a gate tolerance.  Deliberately loose on the
 #: stem and strict on the suffix, so ``abs_z_total_max`` -- a local spelling
@@ -1072,22 +1130,44 @@ def classify_key(key):
 
 
 def claim_is_name_bearing(key):
-    """Does this CLAIM key hold the NAMES of the things claimed ratified?
+    """Is the participle the HEAD of this key -- an ASSERTION, not a REFERENCE?
+
+    See "ASSERTION vs REFERENCE" above.  ``True`` means the key claims that
+    the things it holds ARE ratified, and R1/R5/R7 apply.  ``False`` means it
+    points at the ratified thing while saying something else about it, and
+    only the prose rule applies.
 
         >>> claim_is_name_bearing("gate_tolerances_ratified")
         True
         >>> claim_is_name_bearing("ratified_arms")
         True
+        >>> claim_is_name_bearing("pi_ratified_items")
+        True
+        >>> claim_is_name_bearing("ratified_z_arms")
+        True
+        >>> claim_is_name_bearing("verdict_rests_on_the_ratified_arm_alone")
+        False
+        >>> claim_is_name_bearing("min_factor_over_ratified_chi2_gate")
+        False
         >>> claim_is_name_bearing("n_closing_pi_ratified_arm_only")
         False
-        >>> claim_is_name_bearing("closing_configurations_pi_ratified_arm_only")
+        >>> claim_is_name_bearing("n_failing_ratified_chi2_arm_alone")
         False
     """
     toks = [t for t in _norm_key(key).split("_") if t]
     if not toks:
         return False
-    return not (toks[0] in _COUNT_PREFIXES
-                or toks[-1] in _NON_NAME_BEARING_HEADS)
+    if toks[0] in _COUNT_PREFIXES:
+        return False                    # it counts or measures; it does not name
+    idx = next((i for i, t in enumerate(toks) if t in _CLAIM_TOKENS), None)
+    if idx is None:
+        return False
+    if any(t in _REFERENCE_GOVERNORS for t in toks[:idx]):
+        return False                    # a preposition/determiner governs it
+    tail = toks[idx + 1:]
+    if not tail:
+        return True                     # the participle is the head
+    return tail[-1] in _COLLECTION_NOUNS
 
 
 def _v(rule, source, path, subject, detail):
@@ -1132,12 +1212,123 @@ def _scope_limits_authority(mapping):
     return "pi_ratified_items" in scope and "NOTHING ELSE" in scope.upper()
 
 
-def _subject_of(mapping, owner):
+def _named_entities(text):
+    """Criterion names a string NAMES, on identifier boundaries.
+
+    The same extractor R4 uses, so "what does this string talk about" has one
+    definition.  ``"chi2_dof_max <= 3.0 (PI decision 8)"`` -> ``{chi2_dof_max}``.
+    """
+    known = set(RESTATED_NOT_RATIFIED) | set(UNRATIFIED) | set(RATIFIED)
+    found = {n for n in known
+             if re.search(r"(?<![0-9A-Za-z_])" + re.escape(n)
+                          + r"(?![0-9A-Za-z_])", text)}
+    return found | set(_TOLERANCE_NAME_RE.findall(text))
+
+
+#: a subject must be a NAME.  ``z_criterion`` carries a field literally called
+#: ``criterion`` whose value is a PARAGRAPH describing the criterion; taking
+#: that as the subject is how a correct block got attributed to prose.
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+
+
+def _as_subject_name(value):
+    """``value`` if it is an identifier-shaped NAME, else ``None``."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    if not v or len(v) > 64 or not _IDENTIFIER_RE.match(v):
+        return None
+    return v
+
+
+def _is_criterion_name(name):
+    """Does ``name`` denote a CRITERION, as opposed to a structural container?
+
+    ``z_bin_max`` does; ``z_criterion``, ``full_grid`` and
+    ``authority_sensitivity`` do not.  R3 needs one: an authority field whose
+    subject is a container is not making a per-criterion authority claim.
+    """
+    if not isinstance(name, str) or not name:
+        return False
+    if name in all_records() or name in PI_RATIFIED_ITEMS:
+        return True
+    return bool(_TOLERANCE_NAME_RE.fullmatch(name))
+
+
+def _is_ratification_stamp(mapping):
+    """Does this mapping publish a ratified-name list of its own?
+
+    Such a mapping IS a record about criteria collectively, so a bare
+    top-level PI authority on it must be scoped -- that is the v1 defect, and
+    it keeps firing even though the stamp's own subject is not a criterion.
+    """
+    return any(classify_key(k) == "CLAIM" and claim_is_name_bearing(k)
+               for k in mapping)
+
+
+def _subject_of(mapping, owner, field=None):
+    """WHAT a status/authority field is about.
+
+    🔴 MEASURED FALSE-ALARM DEFECT, 2026-08-05.  This used to fall straight
+    through to ``owner`` -- the enclosing key -- and on the corrected sibling
+    tips that attributed correct records to the wrong subject:
+
+        {"gate_max_arm": "chi2_dof_max",
+         "gate_max_authority_state": "RATIFIED"}    subject was
+                                                    "best_by_reporting_chi2_dof"
+        {"pi_authority_gating_arm": "chi2_dof_max <= 3.0 (PI decision 8)"}
+                                                    subject was
+                                                    "authority_sensitivity"
+
+    In both the real subject is ``chi2_dof_max``, which IS allow-listed, so
+    both were false alarms.  Resolution order, most specific first, and none
+    of it keys on a particular field name:
+
+      1. a subject field ON THE RECORD (``name``/``arm``/``canonical_name``);
+      2. the STEM SIBLING: strip the status/authority suffix off the field's
+         own key and look for a sibling sharing that stem whose value names an
+         entity (``gate_max_authority_state`` -> ``gate_max_arm``);
+      3. the entity the FIELD'S OWN VALUE names, when it names exactly one;
+      4. the enclosing key.
+    """
     for f in _SUBJECT_FIELDS:
-        val = mapping.get(f)
-        if isinstance(val, str) and val:
-            return val
+        name = _as_subject_name(mapping.get(f))
+        if name is not None:
+            return name
+    if field is not None:
+        nfield = _norm_key(field)
+        stem = re.sub(r"(?:^|_)(?:authority_state|authority_status|"
+                      r"authority|status|state)$", "", nfield)
+        if stem and stem != nfield:
+            for k, v in mapping.items():
+                nk = _norm_key(k)
+                if nk == nfield or not nk.startswith(stem + "_"):
+                    continue
+                name = _as_subject_name(v)
+                if name is not None and _norm_key(name) != "ratified":
+                    return name
+        named = _named_entities(mapping.get(field) or "")
+        if len(named) == 1:
+            return next(iter(named))
     return owner
+
+
+def _is_glossary_entry(mapping):
+    """Is this mapping a DEFINITION OF A TERM rather than a record?
+
+    ``{"state": "RATIFIED", "meaning": "A deciding authority ratified this IN
+    WRITING. Only the items in PI_RATIFIED_ITEMS may carry this state."}`` is
+    the state VOCABULARY.  It asserts nothing about any criterion, and a guard
+    that flags it is telling people not to publish their own legend.
+
+    Recognised by SHAPE, not by name: it defines a term and governs nothing --
+    no subject field and no value field.
+    """
+    if not any(f in mapping for f in _DEFINITION_FIELDS):
+        return False
+    if any(f in mapping for f in _SUBJECT_FIELDS):
+        return False
+    return not any(f in mapping for f in _VALUE_FIELDS)
 
 
 def _scan_prose(text, *, source, path):
@@ -1235,28 +1426,53 @@ def _check_claim_key(key, value, *, source, path, owner):
 def _check_mapping(mapping, *, source, path, owner):
     """R2 and R3 for one mapping."""
     out = []
+    glossary = _is_glossary_entry(mapping)
     for key, val in mapping.items():
         nkey = _norm_key(key)
-        if _STATUS_KEY_RE.search(nkey) and isinstance(val, str):
-            if _norm_key(val) == "ratified":
-                subject = _subject_of(mapping, owner)
-                if subject is None:
-                    out.append(_v(
-                        "R5_UNRECOGNISED", source, f"{path}/{key}", None,
-                        "status=RATIFIED with no resolvable subject "
-                        "(no enclosing key and no name/key/tolerance field)"))
-                elif subject not in PI_RATIFIED_ITEMS:
-                    out.append(_v(
-                        "R2_STATUS_CLAIM", source, f"{path}/{key}", subject,
-                        f"records status=RATIFIED for {subject!r}, which is "
-                        f"not on PI_RATIFIED_ITEMS={PI_RATIFIED_ITEMS}"))
+        if (_STATUS_KEY_RE.search(nkey) and isinstance(val, str)
+                and _norm_key(val) == "ratified" and not glossary):
+            subject = _subject_of(mapping, owner, field=key)
+            if subject is None:
+                out.append(_v(
+                    "R5_UNRECOGNISED", source, f"{path}/{key}", None,
+                    "status=RATIFIED with no resolvable subject "
+                    "(no enclosing key and no name/key/tolerance field)"))
+            elif subject not in PI_RATIFIED_ITEMS:
+                out.append(_v(
+                    "R2_STATUS_CLAIM", source, f"{path}/{key}", subject,
+                    f"records status=RATIFIED for {subject!r}, which is "
+                    f"not on PI_RATIFIED_ITEMS={PI_RATIFIED_ITEMS}"))
         ntoks = nkey.split("_")
         if ("authority" in ntoks and ntoks[-1] not in _AUTHORITY_META_SUFFIXES
                 and isinstance(val, str) and _affirms_pi(val)):
-            subject = _subject_of(mapping, owner)
+            if _scope_limits_authority(mapping):
+                continue
+            # 🔴 WHAT DOES THE STRING ITSELF SAY IT IS ABOUT?  A per-tolerance
+            # authority disclosure names its subjects INSIDE the value --
+            # "chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and
+            # z_bin_max are RESTATED_NOT_RATIFIED" -- and that is the honest
+            # record this module exists to require.  If every entity the
+            # string names is allow-listed, the structural claim is correct;
+            # whether the PROSE then says something false is R4's job, on this
+            # same string, with its qualifier vocabulary.
+            named = _named_entities(val)
+            if named and named <= set(PI_RATIFIED_ITEMS):
+                continue
+            subject = _subject_of(mapping, owner, field=key)
             if subject in PI_RATIFIED_ITEMS:
                 continue
-            if _scope_limits_authority(mapping):
+            # 🔴 R3 NEEDS A CRITERION.  If the subject is a structural
+            # container (`z_criterion`, `full_grid`, `authority_sensitivity`),
+            # the field is not claiming that a particular criterion was
+            # ratified, and treating it as one flags RETRACTION NOTES -- the
+            # honest disclosure this module exists to require.  The prose is
+            # then R4's business, on this same string.
+            # THE COST, stated: an authority claim written as prose that names
+            # NO criterion escapes R3, and escapes R4 unless it carries an
+            # unqualified uppercase RATIFIED next to a name.  Pinned by
+            # test_the_R3_subject_rule_states_the_gap_it_leaves.
+            if not (_is_criterion_name(subject)
+                    or _is_ratification_stamp(mapping)):
                 continue
             out.append(_v(
                 "R3_PI_AUTHORITY", source, f"{path}/{key}", subject,

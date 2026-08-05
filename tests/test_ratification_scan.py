@@ -719,3 +719,292 @@ def test_the_PROSE_rule_keys_on_the_BARE_claim_and_its_bypass_is_stated():
     assert _subjects(RAT.scan_data(
         {"note": "abs_z_total_max is RATIFIED."},
         source="s")) == {"abs_z_total_max"}
+
+
+# ==========================================================================
+# 6. 🔴 THE MEASURED FALSE-ALARM RATE, ON REAL CORRECTED CODE
+#
+# A guard whose false-alarm rate has not been measured on real corrected code
+# is the fabricated-authority defect inverted: it pressures people to DELETE
+# correct disclosures.  This project has already been burned once by a gate
+# whose false-alarm rate was measured at the wrong geometry
+# (ratio_span_by_z_max: 0.3434 on a 4-row pack, 0.0819 at production), so the
+# rate is measured here on the real corpus and PINNED, in BOTH directions:
+#
+#   CLEAN  three CORRECTED trees that must not raise a single new violation
+#   DIRTY  three PRE-FIX trees that must still be caught, by exact subject
+#
+# The DIRTY half is the power check.  Without it, a guard that had simply been
+# switched off would pass the CLEAN half perfectly -- the same monotonicity
+# trap as a containment test that cannot fail an over-wide band.
+#
+# MEASURED FIRST TIME ROUND, before the grammar was fixed: 116 violations on
+# corrected code (112 on cfg@7a9c0a7, 4 on win@3383939), every one of them a
+# false alarm on an honest disclosure.
+# ==========================================================================
+
+#: (label, commit, tree-subdir) -- all six are ANCESTORS of their branch tips,
+#: verified with `git merge-base --is-ancestor`, so they survive the merge.
+_CORPUS_CLEAN = (
+    ("cfg@7a9c0a7", "7a9c0a778b412d5ca98c7c6927177e2e175d2430"),
+    ("win@3383939", "3383939c4e68cd401b6eb23be14850cce01ce4d6"),
+)
+_CORPUS_DIRTY = (
+    ("cfg@b512bda", "b512bda438e780c478e50d6522944c1187af1e7c",
+     {"z_total_max", "z_bin_max"}, {"R1_NAME_CLAIM"}, 4),
+    ("cfg@a4be6bd", "a4be6bd0878b189707d03588c867323ea19609f6",
+     {"z_total_max", "z_bin_max"}, {"R1_NAME_CLAIM"}, 2),
+    ("win@4a33d24~1", "4a33d24bd04363997fdd2ce0afec0b5332365e0c~1",
+     {"abs_z_total_max", "z_bin_max"},
+     {"R1_NAME_CLAIM", "R4_PROSE_CLAIM"}, 5),
+)
+
+#: 🔴 THE ONE FINDING THE CORRECTED cfg TREE LEGITIMATELY CARRIES, enumerated
+#: so it cannot hide a new one.  cfg derives gate authority from its OWN
+#: jax-free ``reporting.GATE_AUTHORITY`` table rather than from
+#: ``ratification.py``; R7 says a computed ratified-name list must be derived
+#: from THIS module.  That is a real finding about the merge -- after it there
+#: must be ONE authority source -- not a false alarm, and it is listed rather
+#: than excused.  Adding a site here is a decision, not a maintenance chore.
+_EXPECTED_R7_ON_CFG = {
+    ("adopted_config.py", "gate_tolerances_ratified"),
+    ("reporting.py", "ratified"),
+    ("run_posterior.py", "gate_tolerances_ratified"),
+}
+
+
+def _archive(commit, dest):
+    """Extract ``CDDF_analysis`` at ``commit``.  A missing commit FAILS."""
+    dest.mkdir(parents=True, exist_ok=True)
+    p = subprocess.run(f"git archive {commit} CDDF_analysis | tar -x -C {dest}",
+                       shell=True, cwd=str(ROOT), capture_output=True,
+                       text=True)
+    assert p.returncode == 0, (
+        f"corpus commit {commit} is not reachable, so the false-alarm rate "
+        f"cannot be re-measured. This is a FAILURE, not a skip: reproduce "
+        f"with `git archive {commit} CDDF_analysis`.\n{p.stderr}")
+    return dest
+
+
+@pytest.fixture(scope="module")
+def corpus(tmp_path_factory):
+    root = tmp_path_factory.mktemp("ratification_corpus")
+    out = {}
+    for label, commit in list(_CORPUS_CLEAN) + [(l, c) for l, c, *_ in
+                                                _CORPUS_DIRTY]:
+        out[label] = _archive(commit, root / label.replace("@", "_")
+                              .replace("~", "-"))
+    return out
+
+
+def test_the_CORRECTED_sibling_tips_scan_CLEAN__measured_false_alarm_rate(
+        corpus):
+    """🔴 FALSE-ALARM RATE, MEASURED ON REAL CORRECTED CODE.
+
+    Both siblings retracted their fabrications.  Their corrected tips publish
+    exactly the disclosures this module demands -- a sensitivity block keyed
+    ``verdict_rests_on_the_ratified_arm_alone``, a per-tolerance ``authority``
+    string saying two of three arms are RESTATED_NOT_RATIFIED, a legend
+    defining the state vocabulary, an ``authority_state`` next to the
+    ``gate_max_arm`` it describes.  Every one of those is a REFERENCE to the
+    ratified arm or a correct attribution, not a claim, and the guard must
+    leave all of them alone."""
+    n_files = n_claims = n_fp = 0
+    for label, _ in _CORPUS_CLEAN:
+        res = RAT.scan_paths([str(corpus[label])])
+        unexpected = [v for v in res.violations
+                      if not (v["rule"] == "R7_UNDERIVED"
+                              and (os.path.basename(v["source"]),
+                                   v["path"].split(":")[-1])
+                              in _EXPECTED_R7_ON_CFG)]
+        assert unexpected == [], (
+            f"{label}: {len(unexpected)} FALSE ALARM(S) on corrected code:\n"
+            + "\n".join(RAT.format_violation(v) for v in unexpected[:8]))
+        n_files += res.n_files
+        n_claims += res.n_claims
+        n_fp += len(unexpected)
+        # not vacuous: the tree really was read, and it really does contain
+        # ratification claims for the guard to have got right
+        assert res.n_files > 100, (label, res.n_files)
+        assert res.n_claims >= 1, (label, res.n_claims)
+    # and this branch's own production tree
+    res = RAT.scan_paths([str(ROOT / "CDDF_analysis"), str(ROOT / "docs")])
+    assert res.violations == [], res.report()
+    n_files += res.n_files
+    n_claims += res.n_claims
+    assert n_files > 380, n_files
+    assert n_claims >= 15, n_claims
+    assert n_fp == 0, n_fp
+
+
+def test_the_PRE_FIX_tips_are_still_CAUGHT__the_power_half(corpus):
+    """The other direction, without which the test above is worthless: a guard
+    that had been switched off would score a perfect false-alarm rate.  Each
+    pre-fix tree must still be rejected, with the EXACT subjects -- not merely
+    "some violation"."""
+    for label, _, subjects, rules, n in _CORPUS_DIRTY:
+        res = RAT.scan_paths([str(corpus[label])])
+        assert res.ok is False, f"{label} scanned clean but IS fabricating"
+        got = {v["rule"] for v in res.violations}
+        assert got == rules, (label, got, rules)
+        assert _subjects(res.violations) == subjects, (
+            label, _subjects(res.violations), subjects)
+        assert len(res.violations) == n, (label, len(res.violations), n)
+        # the RATIFIED one is never among them -- the guard discriminates
+        assert "chi2_dof_max" not in _subjects(res.violations), label
+
+
+def test_the_grammar_separates_ASSERTION_from_REFERENCE_on_the_real_keys():
+    """The FIX, at the level it was made.  These are the exact keys the two
+    corrected tips publish; patching them one at a time would not converge,
+    so the discriminator is grammatical and is pinned on the real strings."""
+    for key in ("gate_tolerances_ratified", "ratified_arms",
+                "pi_ratified_items", "ratified_z_arms", "ratified_tolerances"):
+        assert RAT.claim_is_name_bearing(key) is True, key
+    for key in ("verdict_rests_on_the_ratified_arm_alone",
+                "min_factor_over_ratified_chi2_gate",
+                "max_factor_over_ratified_chi2_gate",
+                "n_failing_ratified_chi2_arm_alone",
+                "n_closing_pi_ratified_arm_only",
+                "closing_configurations_pi_ratified_arm_only",
+                "effect_on_pi_ratified_items"):
+        assert RAT.claim_is_name_bearing(key) is False, key
+    # 🔴 EACH CLAUSE ISOLATED, because the real keys trip several at once and
+    # a test that only uses them cannot tell which clause is doing the work.
+    # tail-only (no preposition, no count prefix): the phrase runs PAST the
+    # participle into something that is not a collection
+    for key in ("ratified_arm_alone", "ratified_chi2_gate_alone",
+                "ratified_arm_only", "ratified_gate_margin"):
+        assert RAT.claim_is_name_bearing(key) is False, key
+    # governor-only: a preposition, with a collection tail that would
+    # otherwise qualify
+    for key in ("rests_on_ratified_arms", "factor_over_ratified_gates"):
+        assert RAT.claim_is_name_bearing(key) is False, key
+    # count-prefix-only
+    assert RAT.claim_is_name_bearing("n_ratified_arms") is False
+    # and the payload under a tail-disqualified key is not scanned
+    assert RAT.scan_data(
+        {"ratified_arm_alone": {"z_total_max": 5.0}}, source="s") == []
+    # a REFERENCE key carrying the live-site payload is still not an assertion
+    ref = {"verdict_rests_on_the_ratified_arm_alone":
+           {"what": "chi2/dof <= 3 is the only ratified arm",
+            "answer": "YES"}}
+    assert RAT.scan_data(ref, source="s") == []
+    # ... and the SAME payload under an ASSERTION key is caught
+    bad = {"ratified_arms": {"z_total_max": 5.0, "chi2_dof_max": 3.0}}
+    assert _subjects(RAT.scan_data(bad, source="s")) == {"z_total_max"}
+
+
+def test_a_status_field_is_attributed_to_the_ENTITY_IT_DESCRIBES():
+    """Subject resolution, on the real shapes.  Before this, an
+    ``authority_state`` was attributed to its enclosing key and a correct
+    record read as a fabrication."""
+    # 1. the STEM SIBLING names it
+    ok = {"best_by_reporting_chi2_dof": {
+        "gate_max": 3.0, "gate_max_arm": "chi2_dof_max",
+        "gate_max_authority_state": "RATIFIED"}}
+    assert RAT.scan_data(ok, source="s") == []
+    bad = dict(ok)
+    bad["best_by_reporting_chi2_dof"] = dict(
+        ok["best_by_reporting_chi2_dof"], gate_max_arm="z_bin_max")
+    assert _subjects(RAT.scan_data(bad, source="s")) == {"z_bin_max"}
+    # 2. the VALUE names it
+    ok2 = {"authority_sensitivity": {
+        "pi_authority_gating_arm": "chi2_dof_max <= 3.0 (PI decision 8)"}}
+    assert RAT.scan_data(ok2, source="s") == []
+    bad2 = {"authority_sensitivity": {
+        "pi_authority_gating_arm": "z_bin_max <= 5.0 is the gating arm "
+                                   "(PI decision 8)"}}
+    v2 = RAT.scan_data(bad2, source="s")
+    # the RULE matters, not just the subject: with the value-names-its-subject
+    # rule removed this string is still caught by the PROSE rule, so asserting
+    # only the subject cannot tell the two apart.
+    assert "R3_PI_AUTHORITY" in _rules(v2), v2
+    assert _subjects(v2) == {"z_bin_max"}, v2
+    # 3. a subject field holding PROSE is not a subject
+    assert RAT._as_subject_name("chi2_dof_max") == "chi2_dof_max"
+    assert RAT._as_subject_name(
+        "PASS iff |z_tot| <= z_total_max AND chi2_dof <= chi2_dof_max") is None
+    # 4. a correct disclosure INSIDE an unratified record: the record is keyed
+    #    z_bin_max, but its authority field attributes authority only to the
+    #    allow-listed arm.  That is true and must not fire.
+    #    (TWO allow-listed names, so the "value names its subject" rule cannot
+    #    resolve it and the allow-list subset check is what does the work)
+    ok3 = {"z_bin_max": {
+        "authority": "the PI ratified chi2_dof_max and "
+                     "matched_configuration_sbc; this arm is not one of them"}}
+    assert RAT.scan_data(ok3, source="s") == [], RAT.scan_data(ok3, source="s")
+    #    ... while claiming it for THIS arm does fire
+    bad3 = {"z_bin_max": {"authority": RAT.PI_AUTHORITY}}
+    assert _rules(RAT.scan_data(bad3, source="s")) == {"R3_PI_AUTHORITY"}
+
+
+def test_a_LEGEND_defining_the_state_vocabulary_is_not_a_claim():
+    """The corrected window artifact publishes the three-state legend.  A
+    guard that flags a project's own glossary is telling it not to explain
+    itself."""
+    legend = {"authority_states": [
+        {"state": "RATIFIED",
+         "meaning": "A deciding authority (the PI) ratified this IN WRITING. "
+                    "Only the items in PI_RATIFIED_ITEMS may carry this "
+                    "state."},
+        {"state": "UNRATIFIED", "meaning": "Set by the author, never ratified."}
+    ]}
+    assert RAT.scan_data(legend, source="s") == []
+    # but a legend entry that ALSO governs a value is a record, and is checked
+    rec = {"z_bin_max": {"state": "RATIFIED", "meaning": "...", "value": 5.0}}
+    assert _subjects(RAT.scan_data(rec, source="s")) == {"z_bin_max"}
+
+
+def test_a_RETRACTION_NOTE_is_not_a_fabrication_but_a_FABRICATION_still_is():
+    """The 97-hit class.  cfg's corrected ``z_criterion/authority`` is a
+    correction saying the previous wording fabricated PI authority.  Flagging
+    it is the defect inverted."""
+    correction = {"z_criterion": {
+        "criterion": "PASS iff |z_tot| <= z_total_max AND chi2_dof <= "
+                     "chi2_dof_max, with the tolerances read from GATE. "
+                     "AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE: "
+                     "chi2_dof_max = 3.0 is RATIFIED (PI decision 8); "
+                     "z_total_max and z_bin_max are RESTATED_NOT_RATIFIED -- "
+                     "no deciding authority ratified them.",
+        "authority": "CORRECTION (2026-08-05). Until this date the criterion "
+                     "field asserted that all three were RATIFIED under PI "
+                     "decision 8. That was FABRICATED PI AUTHORITY. The ONE "
+                     "ratified numerical closure gate is chi2/dof <= 3."}}
+    assert RAT.scan_data(correction, source="s") == [], (
+        RAT.scan_data(correction, source="s"))
+    # the wording it retracts IS caught, by R4, on the same field
+    fabricated = {"z_criterion": {
+        "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= 5 AND "
+                     "chi2_dof <= chi2_dof_max; all three are RATIFIED under "
+                     "PI decision 8."}}
+    v = RAT.scan_data(fabricated, source="s")
+    assert "R4_PROSE_CLAIM" in _rules(v), v
+    assert _subjects(v) == {"z_total_max", "z_bin_max"}, v
+
+
+def test_the_R3_subject_rule_states_the_gap_it_leaves():
+    """🔴 THE COST OF THE NARROWING, pinned so it cannot widen silently.
+
+    R3 now needs a CRITERION as its subject.  An authority claim written as
+    prose under a structural container, naming no criterion, escapes R3 -- and
+    escapes R4 too unless it carries an unqualified uppercase RATIFIED beside
+    a name.  That gap is real and is recorded here rather than discovered
+    later.  What still fires: a criterion-keyed record, and a ratification
+    STAMP whose top-level authority is unscoped (v1's defect)."""
+    gap = {"some_container": {"authority": "the PI approved this"}}
+    assert RAT.scan_data(gap, source="s") == []          # THE GAP
+    # 1. a criterion-keyed record still fires
+    assert _rules(RAT.scan_data(
+        {"z_bin_max": {"authority": RAT.PI_AUTHORITY}},
+        source="s")) == {"R3_PI_AUTHORITY"}
+    # 2. a STAMP -- a mapping publishing its own ratified-name list -- still
+    #    fires when its top-level authority is unscoped, even though its
+    #    subject is not a criterion.  This is the v1 mechanism.
+    stamp = {"gate_authority": {"authority": RAT.PI_AUTHORITY,
+                                "pi_ratified_items": ["chi2_dof_max"]}}
+    assert _rules(RAT.scan_data(stamp, source="s")) == {"R3_PI_AUTHORITY"}
+    scoped = {"gate_authority": dict(
+        stamp["gate_authority"],
+        authority_scope="applies to pi_ratified_items AND TO NOTHING ELSE")}
+    assert RAT.scan_data(scoped, source="s") == []
