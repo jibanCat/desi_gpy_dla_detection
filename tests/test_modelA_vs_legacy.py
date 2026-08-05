@@ -365,3 +365,110 @@ def test_Tc1_report_fold_vs_legacy_at_fixed_calibration(
         oow = float(np.sum(W * LO.kernel_free_mu(pack, f)))
         assert abs(mu_kleg + oow - leg) / leg < 1e-6
         assert abs(mu_new + oow - leg) / leg < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# B3 (2026-08-05) — the convention mapping was INVERTED, and there was no clamp
+# ---------------------------------------------------------------------------
+def _synth_pack():
+    from CDDF_analysis.hbi_mcmc.pack import synthetic_pack, small_test_grid
+    return synthetic_pack(0, **small_test_grid())
+
+
+def test_B3_the_documented_convention_mapping_is_the_measured_one():
+    """``K_from_pack_coeffs``'s docstring claimed
+    ``(midpoint, 'softplus', 'sigmoid', 'direct')`` reproduces
+    ``forward.build_K``. It is the PRE-FIX recipe; the mapping was exactly
+    inverted. Both numbers pinned on synthetic_pack(0, **small_test_grid()),
+    whose ``resp_N_ref`` IS the grid midpoint 20.0."""
+    pk = _synth_pack()
+    assert float(pk.resp_N_ref) == 20.0
+    assert float(np.asarray(pk.ntrue_edges, float).mean()) == pytest.approx(20.0)
+    SR, ZR = np.asarray(pk.resp_mu_coef).shape[:2]
+    c = F.build_consts(pk, resp_clamp="both")
+    K = np.asarray(F.build_K(jnp.zeros((2, SR, ZR)), c))
+
+    pre = LO.K_from_pack_coeffs(pk, 20.0, "softplus", "sigmoid", "direct")
+    com = LO.K_from_pack_coeffs(pk, 20.0, "clip", "legacy", "moment")
+    d_pre = float(np.abs(pre - K).max())
+    d_com = float(np.abs(com - K).max())
+    # the two MEASURED numbers, pinned
+    assert d_pre == pytest.approx(2.811e-01, rel=1e-3), d_pre
+    assert d_com == pytest.approx(4.441e-16, rel=1e-3), d_com
+    # ...and the ORDERING, which is the whole claim: the committed tuple is the
+    # one that reproduces build_K, by ~15 orders of magnitude
+    assert d_com < 1e-12 < 1e-3 < d_pre
+    # the retracted sentence must not be back in the source
+    import inspect
+    src = inspect.getsource(LO.K_from_pack_coeffs)
+    assert "CORRECTION (2026-08-05)" in src
+    assert "2.811e-01" in src and "4.441e-16" in src
+
+
+def test_B3_the_D2_clamp_is_selectable_and_off_by_default(pack):
+    """Before B3 this function implemented NO covariate clamp, so the only
+    cross-convention kernel instrument on the path evaluated the UNCLAMPED
+    kernel while the fold it is compared against clamps by default.
+
+    MEASURED on the committed v1.1 2LPT-0 pack, over the live strata:
+      oracle clamp_mode='off'  vs fold resp_clamp='both' : max|diff| = 3.55e-01
+      oracle clamp_mode='both' vs fold resp_clamp='both' : max|diff| = 6.38e-15
+    i.e. the instrument was a THIRD of a unit of kernel bin mass away from
+    production, and now is not — if you ask for the clamp."""
+    import os
+    from CDDF_analysis.hbi_mcmc.pack import load_pack as _lp
+    v11 = LO.DEF_PACK.replace(".npz", "_v11.npz")
+    if not os.path.exists(v11):
+        pytest.skip("v1.1 pack absent")
+    rp = _lp(v11)
+    assert rp.resp_N_fit_range is not None
+    SR, ZR = np.asarray(rp.resp_mu_coef).shape[:2]
+    nref = float(rp.resp_N_ref)
+    live = np.asarray(rp.dX).sum(axis=0) > 0
+
+    Kf = np.asarray(F.build_K(jnp.zeros((2, SR, ZR)),
+                              F.build_consts(rp, resp_clamp="both")))
+    off = LO.K_from_pack_coeffs(rp, nref, "clip", "legacy", "moment")
+    both = LO.K_from_pack_coeffs(rp, nref, "clip", "legacy", "moment",
+                                 clamp_mode="both")
+    d_off = float(np.abs(off - Kf)[live].max())
+    d_both = float(np.abs(both - Kf)[live].max())
+    assert d_off == pytest.approx(3.5505e-01, rel=1e-3), d_off
+    assert d_both < 1e-13, d_both
+
+    # DEFAULT PRESERVES THE OLD BEHAVIOUR: no clamp_mode == clamp_mode='off'
+    np.testing.assert_array_equal(
+        off, LO.K_from_pack_coeffs(rp, nref, "clip", "legacy", "moment",
+                                   clamp_mode="off"))
+    # ...and 'off' still reproduces the UNCLAMPED fold exactly, which is what
+    # this module's `consts` fixture builds
+    Ku = np.asarray(F.build_K(jnp.zeros((2, SR, ZR)),
+                              F.build_consts(rp, resp_clamp="off")))
+    assert float(np.abs(off - Ku)[live].max()) < 1e-13
+
+    # 'hi' is the third mode forward.build_consts takes and it agrees with the
+    # fold's 'hi' too
+    Kh = np.asarray(F.build_K(jnp.zeros((2, SR, ZR)),
+                              F.build_consts(rp, resp_clamp="hi")))
+    hi = LO.K_from_pack_coeffs(rp, nref, "clip", "legacy", "moment",
+                               clamp_mode="hi")
+    assert float(np.abs(hi - Kh)[live].max()) < 1e-13
+
+
+def test_B3_clamp_mode_fails_closed():
+    """A bad mode, and a clamp asked of a pack that cannot supply the range,
+    must RAISE — never silently fall back to the unclamped kernel, which is the
+    failure this whole finding is about."""
+    import dataclasses
+    pk = _synth_pack()
+    with pytest.raises(ValueError, match="clamp_mode"):
+        LO.K_from_pack_coeffs(pk, 20.0, "clip", "legacy", "moment",
+                              clamp_mode="yes")
+    stripped = dataclasses.replace(pk, resp_N_fit_range=None)
+    with pytest.raises(ValueError, match="resp_N_fit_range"):
+        LO.K_from_pack_coeffs(stripped, 20.0, "clip", "legacy", "moment",
+                              clamp_mode="both")
+    # ...but clamp_mode='off' on that same pack still works, and is documented
+    # as the unclamped kernel
+    assert LO.K_from_pack_coeffs(stripped, 20.0, "clip", "legacy",
+                                 "moment").shape[0] > 0

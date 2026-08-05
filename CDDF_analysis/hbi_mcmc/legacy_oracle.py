@@ -193,24 +193,64 @@ def legacy_K_density(pack: ModelAPack, frm, reach: float | None = 2.0
 
 
 def K_from_pack_coeffs(pack: ModelAPack, n_ref: float, sig_mode: str,
-                       ramp_mode: str, param_mode: str) -> np.ndarray:
+                       ramp_mode: str, param_mode: str,
+                       clamp_mode: str = "off") -> np.ndarray:
     """Kernel masses from the PACK coefficient block under selectable
     conventions — the finding-decomposition instrument.
 
-    sig_mode  : 'softplus' (fold: σ = floor + softplus(poly)) | 'clip'
-                (legacy: σ = clip(poly, floor)).
-    ramp_mode : 'sigmoid' (fold: γ·logistic((N−c)/w)) | 'legacy'
-                (γ clamped to ±0.995·skew_max, ·(1 − clip((N−c)/w, 0, 1))).
-    param_mode: 'direct' (fold: (ξ,ω,a) = (N+μpoly, σ, γ)) | 'moment'
-                (legacy: moment-match via _moment_to_skewnormal_vec).
+    sig_mode  : 'softplus' (PRE-FIX: σ = floor + softplus(poly)) | 'clip'
+                (committed: σ = clip(poly, floor); finding F2).
+    ramp_mode : 'sigmoid' (PRE-FIX: γ·logistic((N−c)/w)) | 'legacy'
+                (committed: γ clamped to ±0.995·skew_max,
+                ·(1 − clip((N−c)/w, 0, 1)); finding F3).
+    param_mode: 'direct' (PRE-FIX: (ξ,ω,a) = (N+μpoly, σ, γ)) | 'moment'
+                (committed: moment-match via _moment_to_skewnormal_vec;
+                finding F4).
+    clamp_mode: 'off' (DEFAULT, and what this function did before 2026-08-05:
+                the moment polynomials are evaluated at the UNCLAMPED bin
+                centre) | 'both' | 'hi' (finding D2: the covariate is clamped
+                to each response cell's calibrated ``resp_N_fit_range``, the
+                same three modes ``forward.build_consts`` takes).
 
-    (n_ref=20.95 midpoint, 'softplus', 'sigmoid', 'direct') reproduces the
-    fold's ``build_K`` recipe; (NPZ N_ref, 'clip', 'legacy', 'moment')
-    reproduces ``legacy_K_masses`` to ~1e-14.
+    🔴 CORRECTION (2026-08-05). This docstring used to say that
+    ``(midpoint n_ref, 'softplus', 'sigmoid', 'direct')`` reproduces the fold's
+    ``build_K`` and that the all-legacy tuple reproduces ``legacy_K_masses``.
+    THE MAPPING WAS EXACTLY INVERTED, and had been since findings F1–F4 were
+    FIXED — at which point ``build_K`` adopted the legacy conventions and the
+    'softplus/sigmoid/direct' tuple became the PRE-FIX recipe it no longer runs.
+    MEASURED on ``synthetic_pack(0, **small_test_grid())`` (n_ref = 20.0, the
+    grid midpoint, which is also this pack's ``resp_N_ref``):
+
+        ('softplus', 'sigmoid', 'direct') : max|diff vs build_K| = 2.811e-01
+        ('clip',     'legacy',  'moment') : max|diff vs build_K| = 4.441e-16
+
+    So: the COMMITTED tuple is ('clip', 'legacy', 'moment') at the pack's own
+    ``resp_N_ref``, and it reproduces BOTH ``build_K`` and ``legacy_K_masses``,
+    because after the F1–F4 fixes those two are the same recipe. The pinning
+    test is ``tests/test_modelA_vs_legacy.py::test_B3_*``; the historical
+    per-mechanism ladder is ``test_Tk2_decomposition_table``.
+
+    D2, the second half of the same defect: until 2026-08-05 this function
+    implemented NO covariate clamp at all, so the only cross-convention kernel
+    instrument on the path evaluated the UNCLAMPED kernel while the fold it was
+    being compared against clamps by default (``resp_clamp='both'``). The clamp
+    is now a selectable convention like the other three. Default 'off'
+    PRESERVES this function's historical behaviour — the ladder in
+    ``test_Tk2_decomposition_table`` reads the same numbers as before — so a
+    caller comparing against a clamped fold must ASK for the clamp.
     """
     from scipy.special import ndtr, owens_t
     from CDDF_analysis.hbi.znz_kernel import (_moment_to_skewnormal_vec,
                                               _SN_SKEW_MAX)
+    if clamp_mode not in ("off", "both", "hi"):
+        raise ValueError(f"clamp_mode must be 'off'|'both'|'hi', "
+                         f"got {clamp_mode!r}")
+    if clamp_mode != "off" and pack.resp_N_fit_range is None:
+        raise ValueError(
+            "K_from_pack_coeffs: clamp_mode=%r needs pack.resp_N_fit_range, "
+            "which this pack does not carry (schema v1 / pre-2026-07-28). "
+            "Re-extract, or pass clamp_mode='off' and READ the result as the "
+            "unclamped kernel it is." % clamp_mode)
     nhat = np.asarray(pack.nhat_edges, float)
     ntrue, Nc, _, zc = _grids(pack)
     mu_c = np.asarray(pack.resp_mu_coef, float)
@@ -230,13 +270,26 @@ def K_from_pack_coeffs(pack: ModelAPack, n_ref: float, sig_mode: str,
     ramp_c, ramp_w = [float(v) for v in np.asarray(pack.resp_skew_ramp, float)]
     floor = float(pack.resp_sig_floor)
     u = Nc - float(n_ref)
+    rr = (None if pack.resp_N_fit_range is None
+          else np.asarray(pack.resp_N_fit_range, float))      # (SR, ZR, 2)
     out = np.zeros((S, KK, Cn, B))
     for s in range(S):
         for K in range(KK):
             sr, zr = int(s2sr[s]), int(K2zr[K])
-            mpoly = sum(mu_c[sr, zr, d] * u ** d for d in range(D))
-            spoly = sum(sg_c[sr, zr, d] * u ** d for d in range(D))
-            kpoly = sum(sk_c[sr, zr, d] * u ** d for d in range(D))
+            # finding D2: the fitted polynomials' COVARIATE is clamped to the
+            # response cell's calibrated range; the ramp and the bin centre
+            # stay on the UNCLAMPED Nc (exactly forward.build_K's split — the
+            # clamp guards the polynomials' covariate, not the physical N of
+            # the bin).
+            if clamp_mode == "off":
+                u_c = u
+            elif clamp_mode == "both":
+                u_c = np.clip(Nc, rr[sr, zr, 0], rr[sr, zr, 1]) - float(n_ref)
+            else:                                             # "hi"
+                u_c = np.minimum(Nc, rr[sr, zr, 1]) - float(n_ref)
+            mpoly = sum(mu_c[sr, zr, d] * u_c ** d for d in range(D))
+            spoly = sum(sg_c[sr, zr, d] * u_c ** d for d in range(D))
+            kpoly = sum(sk_c[sr, zr, d] * u_c ** d for d in range(D))
             if sig_mode == "softplus":
                 sig = floor + np.logaddexp(0.0, spoly)
             elif sig_mode == "clip":
