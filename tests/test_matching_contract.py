@@ -419,6 +419,23 @@ def test_contract_claims_no_ratified_authority():
     assert MC.contract_dict()["authority"]["newly_ratified_here"] == []
 
 
+def test_the_measured_candidate_decomposition_is_recorded_and_closes():
+    """The per-candidate side, MEASURED 2026-08-05 on the 19.5-floor 2LPT-0
+    detection bundle, is recorded in the contract and its four slots sum to the
+    window total.
+
+    MUTATION: change ``true_N_below_19p7`` from 4521 to the 17.2-floor bundle's
+    8591. MEASURED baseline: 53401 + 4521 + 70 + 9094 == 67086 exactly; the
+    17.2-floor split 53401 + 8591 + 70 + 5016 sums to 67078, a DIFFERENT
+    detection set (8 rows), so the two must never be mixed."""
+    m = MC.MATCHING["is_TP"]["measured_2lpt0_19p5_floor_bundle"]
+    w = m["window_nhat_19p7_to_21p6"]
+    assert (w["true_N_in_window"] + w["true_N_below_19p7"]
+            + w["true_N_above_21p6"] + w["unmatched"]) == w["total"] == 67086
+    assert m["n_is_TP"] + m["n_unmatched"] == m["n_on_pack_grid"] == 88071
+    assert m["n_is_TP_with_nhi_true_below_19p5"] == 0
+
+
 def test_the_reporting_window_is_reused_never_redeclared():
     """MUTATION: hardcode 19.7 / 21.6 in matching_contract instead of importing.
     MEASURED baseline: the two constants MUST be the same objects reporting.py

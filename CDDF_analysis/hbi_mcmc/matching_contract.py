@@ -254,6 +254,16 @@ MATCHING = dict(
             "lies below the floor is labelled NOT is_TP."),
         floor_used_by_the_pack_detection_side=19.5,
         floor_used_by_the_molly172_sub_floor_cells=17.2,
+        measured_2lpt0_19p5_floor_bundle=dict(
+            n_cat_cut=582855, n_op=495553, n_on_pack_grid=88071,
+            n_is_TP=63890, n_unmatched=24181,
+            n_is_TP_with_nhi_true_below_19p5=0,
+            window_nhat_19p7_to_21p6=dict(
+                total=67086, true_N_in_window=53401, true_N_below_19p7=4521,
+                true_N_above_21p6=70, unmatched=9094),
+            measured="2026-08-05, extract_pack.load_mock_bundle. See "
+                     "KNOWN_CONTRADICTIONS TRUTH_FLOOR_ASYMMETRY_IN_is_TP for "
+                     "the 17.2-floor split of the same window."),
     ),
     found=dict(
         # THE definition the completeness NUMERATOR uses.
@@ -1081,13 +1091,27 @@ KNOWN_CONTRADICTIONS = (
              "pre-floored at 19.5, so a candidate whose genuine absorber is at "
              "N = 19.2 is is_TP == False and is indistinguishable, in the "
              "pack, from a forest FP.",
-        measured="The pack's `counts` do not carry is_TP at all, so this "
-                 "does not corrupt the candidate LEDGER; it means the "
-                 "per-candidate PREDICATES of P1/P4/P6 are not evaluable from "
-                 "the pack alone and require the bundle re-cut at the basis "
-                 "floor.",
+        measured=(
+            "MEASURED 2026-08-05 on the 19.5-floor 2LPT-0 DETECTION bundle "
+            "(extract_pack.load_mock_bundle, 14 s): n_cat_cut 582855, "
+            "n_op 495553, 88071 on the pack grid, of which 63890 is_TP and "
+            "24181 unmatched. ZERO is_TP rows have NHI_TRUE < 19.5 -- the "
+            "truth table was pre-floored there. Inside the observed reporting "
+            "window N_hat in [19.7, 21.6) the 67086 candidates split "
+            "53401 / 4521 / 70 / 9094 into (true N in window) / (true N < "
+            "19.7) / (true N >= 21.6) / (unmatched). The SAME window cut on a "
+            "17.2-floor bundle is reported elsewhere as 67078 = 53401 + 8591 + "
+            "70 + 5016: the in-window and above-ceiling slots are IDENTICAL "
+            "and 4070 candidates move from 'unmatched' to 'below 19.7' purely "
+            "because the matcher can now see them. The 8-candidate difference "
+            "in the totals is the known cat_cut perturbation "
+            "(extract_pack.py:962-970, 88071 -> 88053 over the whole grid)."),
+        effect="P1 and P6 are NOT separable at the per-candidate level without "
+               "naming the truth floor the matcher ran at. Two defensible "
+               "splits of the same 67086 candidates exist and differ by 4070.",
         status="STRUCTURAL. It is why check_accounting_identity works on the "
-               "MODEL side (basis bins) and not on the per-candidate side.",
+               "MODEL side (basis bins, where the truth histogram is cut at "
+               "the basis floor) and not on the per-candidate side.",
     ),
 )
 
