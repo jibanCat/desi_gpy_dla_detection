@@ -1545,22 +1545,153 @@ def test_committed_artifact_gate_arms_carry_their_authority_state(ARTIFACT, WS):
         ARTIFACT["metadata"]["gate"]["authority_correction_note"]
 
 
-def test_committed_artifact_per_config_gates_carry_authority_too(ARTIFACT):
+# --- F2: the artifact's threshold VALUES were never asserted -----------------
+def test_committed_artifact_carries_THE_RATIFIED_NUMBERS_not_just_the_labels(
+        ARTIFACT, WS):
+    """MEASURED 2026-08-05, both left 106 passed: setting
+    `metadata.gate.gate_arms.chi2_dof_max.value` to 30.0, and
+    `advisory_tolerances.ratio_span_by_z_max.value` to 0.9.
+
+    The suite checked `authority_state` and `gates` and the key SET, never the
+    NUMBER — and the `== 3.0` / `== 5.0` assertions elsewhere in this file run
+    against the MODULE, not against the committed record. So the artifact a
+    referee actually reads could ship a different ratified threshold with a
+    green suite. chi2/dof <= 3 is the ONE PI-ratified numerical closure gate;
+    it is written out literally here, not read from the module, so a mutation
+    of BOTH still goes red."""
+    g = ARTIFACT["metadata"]["gate"]
+    assert g["gate_arms"]["chi2_dof_max"]["value"] == 3.0
+    assert g["gate_arms"]["abs_z_total_max"]["value"] == 5.0
+    assert g["gate_arms"]["z_bin_max"]["value"] == 5.0
+    assert g["advisory_tolerances"]["ratio_span_by_z_max"]["value"] == 0.10
+    assert g["advisory_tolerances"]["ratio_span_by_snr_max"]["value"] == 0.15
+    # ... and every one of them equals what the module would emit today
+    ref = WS.restated_gate_criteria()
+    for grp in ("gate_arms", "advisory_tolerances"):
+        for name, arm in ref[grp].items():
+            assert g[grp][name]["value"] == arm["value"], (grp, name)
+
+
+def test_committed_artifact_gate_block_IS_the_modules_restated_criteria(
+        ARTIFACT, WS):
+    """F9. Nothing asserted that `metadata.gate` still agrees with
+    `restated_gate_criteria()`, so the committed record could go stale against
+    the module that claims to define it — mutant Y63 (blanking a note in the
+    artifact) left 106 passed. `metadata.gate` carries NO run-specific field:
+    it is that function's return value verbatim, so this is a plain equality."""
+    ref = json.loads(json.dumps(WS.restated_gate_criteria()))
+    got = ARTIFACT["metadata"]["gate"]
+    assert set(got) == set(ref)
+    for k in ref:
+        assert got[k] == ref[k], k
+
+
+def test_committed_artifact_gate_max_is_not_a_BARE_threshold(ARTIFACT, WS):
+    """F8. `gate_max` used to ship as the bare literal 3.0 with no authority
+    state — the separability the whole correction exists to remove, and
+    `grep gate_max tests/` returned nothing."""
+    chi2 = WS.GATE_ARMS["chi2_dof_max"]
+    for blk in (ARTIFACT["verdict"]["best_by_reporting_chi2_dof"],
+                ARTIFACT["verdict"]["recommendation"]["best_measured"]):
+        assert blk["gate_max"] == 3.0 == chi2["value"]
+        assert blk["gate_max_arm"] == "chi2_dof_max"
+        assert blk["gate_max_authority_state"] == "RATIFIED"
+
+
+def test_committed_artifact_per_config_gates_carry_authority_too(ARTIFACT, WS):
     """Not just the metadata block: every one of the 12 configurations echoes
-    its gate, and each echo must be authority-bearing."""
+    its gate, and each echo must be authority-bearing.
+
+    F2/F7: the echo's arm SET and each arm's VALUE are pinned too. Measured,
+    both left 106 passed: deleting `z_bin_max` from one config's `gate_arms`
+    (the loop was `for name, arm in pc["gate_arms"].items()`, so a missing arm
+    is simply not visited), and moving a threshold value.
+
+    F1: the `failures` iteration was VACUOUS on an empty list — emptying one
+    config's `failures` left 106 passed. A config that does not close MUST
+    carry a reason, and one that closes MUST carry none."""
     cfgs = ARTIFACT["arm1_analysis_window"]
     assert len(cfgs) == 12
+    ref = WS.GATE_ARMS
     for k, v in cfgs.items():
         pc = v["primary_closes"]
         assert "gate" not in pc, f"{k} still echoes the bare `gate` dict"
+        assert set(pc["gate_arms"]) == {"abs_z_total_max", "z_bin_max",
+                                        "chi2_dof_max"}, k
         for name, arm in pc["gate_arms"].items():
             assert set(arm) == {"value", "authority_state", "gates"}, (k, name)
+            assert arm["value"] == ref[name]["value"], (k, name)
+            assert arm["authority_state"] == ref[name]["authority_state"], (
+                k, name)
+            assert arm["gates"] is bool(ref[name]["gates"]), (k, name)
+        assert pc["gate_arms"]["chi2_dof_max"]["value"] == 3.0, k
+        # NON-VACUOUS: closes <=> no failures, in BOTH directions
+        assert pc["closes"] is (not pc["failures"]), (k, pc["closes"],
+                                                      pc["failures"])
+        assert pc["closes_on_pi_authority_only"] is (
+            not pc["failures_on_pi_authority_only"]), k
+        assert set(pc["failures_on_pi_authority_only"]) <= set(pc["failures"])
         # a refusal on an unratified number must name it as such
         for f in pc["failures"]:
             if f.startswith("chi2_dof"):
                 assert "RATIFIED" not in f, (k, f)
             else:
                 assert "RESTATED_NOT_RATIFIED" in f, (k, f)
+
+
+# --- F1: THE COUNTING ARGUMENT reconciling the summary with the per-config ---
+def test_committed_artifact_verdict_COUNTS_the_per_config_flags(ARTIFACT):
+    """THE MISSING SUPPORT-MATCH. The artifact's SUMMARY
+    (`verdict.n_closing_primary_window`, `verdict.authority_sensitivity`) was
+    pinned to 0 and the per-config PRIMARY flags were pinned to nothing, and
+    NOTHING RECONCILED THE TWO. Measured 2026-08-05, all leaving 106 passed:
+    flipping one config's `primary_closes.closes` to true; and flipping ALL
+    TWELVE to `closes=true, failures=[]` while leaving
+    `n_closing_primary_window = 0`.
+
+    That is this project's canonical defect class -- a numerator and a
+    denominator on different supports -- and the decisive check is a COUNTING
+    ARGUMENT: the summary must be the literal tally of the per-config flags,
+    identified BY NAME, not merely a number that happens to agree."""
+    cfgs = ARTIFACT["arm1_analysis_window"]
+    v = ARTIFACT["verdict"]
+    assert v["n_configurations"] == len(cfgs)
+
+    closing = sorted(k for k, c in cfgs.items()
+                     if c["primary_closes"]["closes"])
+    assert v["n_closing_primary_window"] == len(closing), (
+        f"summary says {v['n_closing_primary_window']} configurations close; "
+        f"counting the per-config flags gives {len(closing)}: {closing}")
+    assert sorted(v["closing_configurations"]) == closing
+
+    a = v["authority_sensitivity"]
+    assert a["n_closing_all_arms"] == len(closing)
+    pi_only = sorted(k for k, c in cfgs.items()
+                     if c["primary_closes"]["closes_on_pi_authority_only"])
+    assert a["n_closing_under_pi_authority_only"] == len(pi_only), (
+        a["n_closing_under_pi_authority_only"], pi_only)
+    assert sorted(a["closing_configurations_under_pi_authority_only"]) == \
+        pi_only
+    # ... and the headline boolean is that comparison, not an assertion
+    assert a["verdict_unchanged_without_the_unapproved_arms"] is (
+        len(closing) == len(pi_only))
+    # dropping the two unratified arms can only ever ADD closures
+    assert set(closing) <= set(pi_only)
+
+
+def test_committed_artifact_per_config_flags_are_REDERIVED_from_its_metrics(
+        ARTIFACT, WS):
+    """The counting argument above pins summary-to-per-config. This pins
+    per-config-to-its-own-measurements: every flag and every failure string is
+    recomputed with the committed `closes()` from the metrics the SAME config
+    records, so a hand-edited flag disagrees with the numbers standing next to
+    it."""
+    for k, cfg in ARTIFACT["arm1_analysis_window"].items():
+        got = WS.closes(cfg["primary_reporting_window"], WS.GATE_ARMS)
+        pc = cfg["primary_closes"]
+        for f in ("closes", "failures", "closes_on_pi_authority_only",
+                  "failures_on_pi_authority_only"):
+            assert pc[f] == got[f], (k, f, pc[f], got[f])
 
 
 def test_committed_artifact_headline_does_NOT_rest_on_an_unratified_arm(
