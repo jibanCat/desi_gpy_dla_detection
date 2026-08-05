@@ -148,6 +148,66 @@ MOLLY_TSV_NHI172 = ("/scratch/cavestru_root/cavestru0/mfho/"
                     "gl_prod_2lpt0_v1_20260526/figures_molly_nhi172/"
                     "molly_matrix.tsv")
 
+# --- the ANALYSIS spectral window (PI decision 2, 2026-07-29) ---------------
+# TWO DIFFERENT "windows" exist and must never be conflated:
+#
+#   (a) the FINDER FITTING window — ``Parameters.min_lambda`` (911.75) /
+#       ``max_lambda`` (production 1250; library default 1216.75). That is the
+#       region the GP actually models, so changing it changes the LIKELIHOOD and
+#       requires re-running the finder. NOTHING here touches it.
+#   (b) the ANALYSIS window — ``HBIConfig.lam_rf_min``, applied POST-HOC to
+#       decide which absorbers and which pathlength count. That is what this
+#       registry varies, and it costs no inference.
+#
+# Every window-DEPENDENT calibration ingredient is named here, per window, so a
+# mismatch is a KeyError rather than a silently wrong number. What is
+# window-dependent, and why:
+#   lam_rf_min .... cat_cut / truth_cut / dX (build_pathlength carves the
+#                   per-sightline window from it)
+#   molly_tsv ..... the completeness matrix MEASURED in that window
+#                   (molly_faithful_pc_plots writes lya_only/ and lya_lyb/
+#                   subdirs; their `molly_summary.tsv` stamps `lam_rf_min`)
+#   molly_tsv_172 . the sub-floor (floor-17.2) matrix the ``molly172``
+#                   completeness convention splices underneath
+#   forward_npz ... the forward RESPONSE. znz_kernel build-forward-cache takes
+#                   --lam-rf-min (default 1025), so the frozen
+#                   forward_response_2lpt0.npz is a lya_only object. Folding it
+#                   against a 911-A selection is a window mismatch.
+_PROD_2LPT0 = "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526"
+_WSTUDY_DIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+               "window_study")
+
+ANALYSIS_WINDOWS = {
+    # the NOMINAL Molly window — the standard reference. Always retained.
+    "lya_only": dict(
+        lam_rf_min=1025.0,
+        molly_tsv=FF.DEF_MOLLY_TSV,
+        molly_tsv_172=MOLLY_TSV_NHI172,
+        forward_npz=TF._DEF_FORWARD,
+        counts_tag="",              # the canonical cache names (unchanged)
+    ),
+    # the full Lya+Lyb forest.
+    "lya_lyb": dict(
+        lam_rf_min=911.0,
+        molly_tsv=(f"{_PROD_2LPT0}/figures_molly_nhi195/lya_lyb/"
+                   "molly_matrix.tsv"),
+        molly_tsv_172=(f"{_PROD_2LPT0}/figures_molly_nhi172_bywindow/lya_lyb/"
+                       "molly_matrix.tsv"),
+        forward_npz=f"{_WSTUDY_DIR}/forward_response_2lpt0_lam911.npz",
+        counts_tag="_lya_lyb",
+    ),
+}
+DEF_WINDOW = "lya_only"
+
+
+def window_spec(window=DEF_WINDOW):
+    """The ANALYSIS-window ingredient bundle. Unknown name -> KeyError."""
+    if window not in ANALYSIS_WINDOWS:
+        raise KeyError(
+            f"unknown analysis window {window!r}; known: "
+            f"{sorted(ANALYSIS_WINDOWS)}")
+    return dict(ANALYSIS_WINDOWS[window])
+
 
 def _reporting_module():
     """Load ``reporting.py`` file-directly (jax-free env; same trick as pack.py)."""
@@ -412,7 +472,8 @@ def compute_t_sigma(hbi_dir: str = None, floor: float = T_SIGMA_FLOOR):
     return t, detail
 
 
-def load_molly_counts_block(convention="const_extrap", counts172_path=None):
+def load_molly_counts_block(convention="const_extrap", counts172_path=None,
+                            window=DEF_WINDOW):
     """Molly completeness counts (matched-real numerator) via the committed
     ff_fp_estimator cache; build it if absent. Purity is never read (RhoGuard).
 
@@ -438,15 +499,28 @@ def load_molly_counts_block(convention="const_extrap", counts172_path=None):
     if convention not in COMPLETENESS_CONVENTIONS:
         raise ValueError(f"completeness convention must be one of "
                          f"{COMPLETENESS_CONVENTIONS}, got {convention!r}")
-    mc = FF.load_molly_counts()
+    w = window_spec(window)
+    # window-scoped cache names: the counts are regenerated from a cut bundle at
+    # THIS window's lam_rf_min, so a lya_only cache must never be read as if it
+    # were lya_lyb. The lya_only tag is "" so its path is unchanged.
+    counts_path = FF.DEF_MOLLY_COUNTS
+    if w["counts_tag"]:
+        base, ext = os.path.splitext(FF.DEF_MOLLY_COUNTS)
+        counts_path = f"{base}{w['counts_tag']}{ext}"
+    mc = FF.load_molly_counts(counts_path)
     if mc is None:
-        FF.build_molly_counts_cache()
-        mc = FF.load_molly_counts()
+        FF.build_molly_counts_cache(out_path=counts_path,
+                                    molly_tsv=w["molly_tsv"],
+                                    lam_rf_min=w["lam_rf_min"])
+        mc = FF.load_molly_counts(counts_path)
     n_det = np.asarray(mc["cmp_nfound"], float)            # (s=8, nhi_cells)
     n_tot = np.asarray(mc["cmp_nfid"], float)
     nhi_edges = np.asarray(mc["nhi_edges"], float)
     prov = dict(path=mc["path"], max_c_diff=float(mc["max_c_diff"]),
                 convention=convention,
+                analysis_window=window,
+                lam_rf_min=float(w["lam_rf_min"]),
+                molly_tsv=w["molly_tsv"],
                 below_floor=("constant extrapolation of molly cell 0 "
                              "([19.5,20.0)) — forward.build_consts clips "
                              "b_to_cell to 0"))
@@ -456,12 +530,15 @@ def load_molly_counts_block(convention="const_extrap", counts172_path=None):
                     molly_snr_edges=np.asarray(mc["snr_edges"], float)), prov, None
 
     # --- molly172: splice the MEASURED sub-floor cells underneath ------------
-    assert_mock_only(MOLLY_TSV_NHI172)
+    tsv172 = w["molly_tsv_172"]
+    assert_mock_only(tsv172)
     counts172_path = counts172_path or os.path.join(
-        os.path.dirname(mc["path"]), "molly_counts_nhi172.npz")
+        os.path.dirname(mc["path"]),
+        f"molly_counts_nhi172{w['counts_tag']}.npz")
     if not os.path.exists(counts172_path):
         FF.build_molly_counts_cache(out_path=counts172_path,
-                                    molly_tsv=MOLLY_TSV_NHI172)
+                                    molly_tsv=tsv172,
+                                    lam_rf_min=w["lam_rf_min"])
     d = np.load(counts172_path, allow_pickle=True)
     e172 = np.asarray(d["nhi_edges"], float)
     if not np.allclose(np.asarray(d["snr_edges"], float),
@@ -479,7 +556,7 @@ def load_molly_counts_block(convention="const_extrap", counts172_path=None):
     det = np.concatenate([np.asarray(d["cmp_nfound"], float)[:, :n_sub], n_det], 1)
     tot = np.concatenate([np.asarray(d["cmp_nfid"], float)[:, :n_sub], n_tot], 1)
     prov.update(
-        path_below_floor=counts172_path, tsv_below_floor=MOLLY_TSV_NHI172,
+        path_below_floor=counts172_path, tsv_below_floor=tsv172,
         max_c_diff_below_floor=float(d["max_c_diff"]),
         n_cells_spliced_below_floor=int(n_sub),
         below_floor=("MEASURED sub-floor cells from the same production run's "
@@ -488,37 +565,55 @@ def load_molly_counts_block(convention="const_extrap", counts172_path=None):
     from CDDF_analysis.hbi.cddf_catalog_hbi import load_molly_matrix as _lmm
     return dict(molly_n_det=det, molly_n_tot=tot, molly_nhi_edges=e172,
                 molly_snr_edges=np.asarray(mc["snr_edges"], float)), \
-        prov, _lmm(MOLLY_TSV_NHI172)
+        prov, _lmm(tsv172)
 
 
 def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
-                   product_path: str = AB.DEF_LOA0_PRODUCT):
+                   product_path: str = AB.DEF_LOA0_PRODUCT,
+                   window: str = DEF_WINDOW):
     """loa-0 forest-FP block. Scalars/consistency from the COMMITTED product
     (Loa0FP.from_product inputs); the (c=29, s=8) fp_counts from the raw loa-0
     dlacat re-binned with the product's OWN op cut (SNR>2 strict, P_DLA>0.99
     strict, lya_only lam_rest>=1025, Z_DLA in [2.0,3.5) as the fine mu_FP grid).
 
     GUARD: the re-derived molly-cell counts must equal the committed product's
-    n_fp_molly EXACTLY (else the raw catalog drifted from the product)."""
+    n_fp_molly EXACTLY (else the raw catalog drifted from the product).
+
+    ``window`` (2026-07-29, PI decision 2): the committed loa-0 FP product was
+    built at the product's OWN lam_rf_min (1025 A, ``lya_only``). Under a
+    DIFFERENT analysis window the FP background must be re-derived at that
+    window or the arm under-counts its own forest FPs — and the Lyb region is
+    exactly where forest FPs are worst, so leaving it at 1025 would bias the
+    comparison. The guard is therefore evaluated at the PRODUCT's window (where
+    it is checkable, and stays EXACT), and the emitted ``fp_counts`` are binned
+    at the REQUESTED window. Both totals are reported.
+    """
     assert_mock_only(loa0_out); assert_mock_only(product_path)
+    w = window_spec(window)
     loa0 = Loa0FP.from_product(product_path)          # committed loader
     prod = np.load(product_path, allow_pickle=True)
     snr_min = float(prod["snr_min"]); p_dla_min = float(prod["p_dla_min"])
     lya_min = float(prod["lya_only_lam_rf_min"])
+    lam_req = float(w["lam_rf_min"])
 
     cat = load_loa0_fp_catalog(loa0_out)              # committed raw loader
-    snr = np.asarray(cat["SNR_REDSIDE"], float)
-    pdla = np.asarray(cat["P_DLA"], float)
-    nhi = np.asarray(cat["NHI"], float)
-    z_dla = np.asarray(cat["Z_DLA"], float)
-    op = (snr > snr_min) & (pdla > p_dla_min)
-    if lya_min > 0:
-        z_qso = np.asarray(cat["Z_QSO"], float)
-        op &= (LYA_REST * (1.0 + z_dla) / (1.0 + z_qso)) >= lya_min
-    nhi, snr, z_dla = nhi[op], snr[op], z_dla[op]
+    snr_all = np.asarray(cat["SNR_REDSIDE"], float)
+    pdla_all = np.asarray(cat["P_DLA"], float)
+    nhi_all = np.asarray(cat["NHI"], float)
+    z_dla_all = np.asarray(cat["Z_DLA"], float)
+    z_qso_all = np.asarray(cat["Z_QSO"], float)
+    lam_rest = LYA_REST * (1.0 + z_dla_all) / (1.0 + z_qso_all)
+    op_base = (snr_all > snr_min) & (pdla_all > p_dla_min)
 
-    # GUARD: exact replication of the committed product's molly-cell counts
-    i, j = loa0._cell_idx(nhi, snr)
+    def _sel(lam_min):
+        op = op_base.copy()
+        if lam_min > 0:
+            op &= lam_rest >= lam_min
+        return op
+
+    # --- GUARD, always evaluated at the PRODUCT's own window ---------------
+    op_prod = _sel(lya_min)
+    i, j = loa0._cell_idx(nhi_all[op_prod], snr_all[op_prod])
     n_molly_rederived = np.zeros_like(loa0.n_fp_molly)
     np.add.at(n_molly_rederived, (i, j), 1.0)
     if not np.array_equal(n_molly_rederived, loa0.n_fp_molly):
@@ -526,33 +621,61 @@ def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
             "loa-0 FP re-bin GUARD failed: raw dlacat op-binned molly counts != "
             f"committed product n_fp_molly ({product_path}) — inputs drifted.")
 
-    # schema grid: c on nhat 0.1-dex bins, s on the molly SNR strata; z-windowed
-    # to [2.0, 3.5) exactly like the product's fine mu_FP grid (n_fp_fine).
-    c = _idx(NHAT_EDGES, nhi)
-    s = np.clip(_idx(SNR_EDGES, snr), 0, N_S - 1)
-    zok = (z_dla >= ZF_EDGES[0]) & (z_dla < ZF_EDGES[-1])
-    ok = (c >= 0) & (c < N_C) & zok
-    fp_counts = np.zeros((N_C, N_S), dtype=np.int64)
-    np.add.at(fp_counts, (c[ok], s[ok]), 1)
+    def _bin(op):
+        """schema grid: c on nhat 0.1-dex bins, s on the molly SNR strata;
+        z-windowed to [2.0, 3.5) exactly like the product's fine mu_FP grid."""
+        nhi, snr, z_dla = nhi_all[op], snr_all[op], z_dla_all[op]
+        c = _idx(NHAT_EDGES, nhi)
+        s = np.clip(_idx(SNR_EDGES, snr), 0, N_S - 1)
+        zok = (z_dla >= ZF_EDGES[0]) & (z_dla < ZF_EDGES[-1])
+        ok = (c >= 0) & (c < N_C) & zok
+        out = np.zeros((N_C, N_S), dtype=np.int64)
+        np.add.at(out, (c[ok], s[ok]), 1)
+        return out, int(((c >= 0) & (c < N_C)).sum()), int(op.sum())
 
-    # cross-check vs the committed product's z-windowed fine grid over N>=19.5
+    fp_prod, in_c_prod, n_op_prod = _bin(op_prod)
+
+    # cross-check vs the committed product's z-windowed fine grid over N>=19.5,
+    # at the PRODUCT's window (the only window it can be checked at)
     b195 = int(np.searchsorted(np.round(loa0.logN_lo, 3), 19.5))
     n_fine_ge195 = int(loa0.n_fp_fine[b195:, :].sum())
-    if int(fp_counts.sum()) != n_fine_ge195:
+    if int(fp_prod.sum()) != n_fine_ge195:
         raise RuntimeError(
-            f"loa-0 FP re-bin GUARD failed: fp_counts total {int(fp_counts.sum())} "
+            f"loa-0 FP re-bin GUARD failed: fp_counts total {int(fp_prod.sum())} "
             f"!= committed n_fp_fine[N>=19.5] total {n_fine_ge195}.")
+
+    if abs(lam_req - lya_min) < 1e-9:
+        fp_counts, in_c_req, n_op_req = fp_prod, in_c_prod, n_op_prod
+    else:
+        fp_counts, in_c_req, n_op_req = _bin(_sel(lam_req))
+        # a WIDER window can only ADD forest FPs; a narrower one only remove.
+        if lam_req < lya_min and int(fp_counts.sum()) < int(fp_prod.sum()):
+            raise RuntimeError(
+                f"loa-0 FP window GUARD failed: widening lam_rf_min "
+                f"{lya_min} -> {lam_req} REDUCED the binned FP total "
+                f"{int(fp_prod.sum())} -> {int(fp_counts.sum())}; the wider "
+                "window's selection must be a superset.")
 
     prov = dict(
         product=product_path, loa0_out=loa0_out,
+        analysis_window=window,
         op_cut=dict(snr_min=snr_min, p_dla_min=p_dla_min,
-                    lya_only_lam_rf_min=lya_min,
+                    lam_rf_min=lam_req,
+                    product_lya_only_lam_rf_min=lya_min,
                     z_window=[float(ZF_EDGES[0]), float(ZF_EDGES[-1])]),
-        n_fp_op_total=int(len(nhi)),
-        n_fp_in_c_window_all_z=int(((c >= 0) & (c < N_C)).sum()),
+        n_fp_op_total=int(n_op_req),
+        n_fp_in_c_window_all_z=int(in_c_req),
+        n_fp_binned_total=int(fp_counts.sum()),
+        n_fp_binned_total_at_product_window=int(fp_prod.sum()),
+        n_fp_op_total_at_product_window=int(n_op_prod),
         n_fp_fine_ge195_total=n_fine_ge195,
         n_sl_loa0=float(loa0.n_sl_loa0),
-        molly_rebin_guard="EXACT match to committed n_fp_molly",
+        molly_rebin_guard=("EXACT match to committed n_fp_molly, evaluated at "
+                           f"the PRODUCT's window lam_rf_min={lya_min}"),
+        window_note=("fp_counts are binned at lam_rf_min="
+                     f"{lam_req}; the committed product's n_fp_molly / "
+                     "n_fp_fine guards are checkable only at "
+                     f"{lya_min} and were checked there."),
         axes="fp_counts is (c=29, s=8) — schema global axis order c,b,k,K,s",
     )
     return fp_counts, loa0, prov
@@ -561,18 +684,21 @@ def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
 # ---------------------------------------------------------------------------
 # per-mock extraction
 # ---------------------------------------------------------------------------
-def _make_cfg(mock: str, out_dir: str, molly_tsv: str = None) -> HBIConfig:
+def _make_cfg(mock: str, out_dir: str, molly_tsv: str = None,
+              window: str = DEF_WINDOW) -> HBIConfig:
     m = MOCKS[mock]
     for p in m.values():
         assert_mock_only(p)
-    molly_tsv = molly_tsv or FF.DEF_MOLLY_TSV       # frozen 2LPT-0 lya_only-nhi195
+    w = window_spec(window)
+    # frozen 2LPT-0 lya_only-nhi195 by default (== ANALYSIS_WINDOWS[lya_only])
+    molly_tsv = molly_tsv or w["molly_tsv"]
     assert_mock_only(molly_tsv)
     return HBIConfig(
         catalog_dir=m["catalog_dir"], truth_path=m["truth_path"],
         bal_cat_path=m["bal_cat_path"], molly_tsv=molly_tsv, out_dir=out_dir,
         mockdir=m["mockdir"],
         zbins=tuple(ZC_EDGES.tolist()),
-        lam_rf_min=1025.0,                          # lya_only window (schema/dX)
+        lam_rf_min=w["lam_rf_min"],                 # ANALYSIS window (schema/dX)
         no_bal=True,
         v2_z_fit_lo=2.0, v2_z_fit_hi=3.5, v2_z_fit_step=0.1,
         completeness_z_resolved=True, completeness_z_min_count=30.0,
@@ -580,10 +706,11 @@ def _make_cfg(mock: str, out_dir: str, molly_tsv: str = None) -> HBIConfig:
     )
 
 
-def load_mock_bundle(mock: str, out_dir: str, molly_tsv: str = None):
+def load_mock_bundle(mock: str, out_dir: str, molly_tsv: str = None,
+                     window: str = DEF_WINDOW):
     """Load one mock's cut bundle + op mask + per-sightline pathlength through
     the committed machinery (ab_loa0_fp_baseline.build_ingredients path)."""
-    cfg = _make_cfg(mock, out_dir, molly_tsv=molly_tsv)
+    cfg = _make_cfg(mock, out_dir, molly_tsv=molly_tsv, window=window)
     mm = load_molly_matrix(cfg.molly_tsv)
     truth_floor = float(mm.nhi_edges[0])            # 19.5 (nhi195 matrix)
     t0 = time.time()
@@ -635,7 +762,8 @@ def build_g_block(bundle):
     return g_grid, g_occ
 
 
-def load_truth_bundle(mock: str, out_dir: str, truth_floor: float):
+def load_truth_bundle(mock: str, out_dir: str, truth_floor: float,
+                      window: str = DEF_WINDOW):
     """TRUTH-ONLY cut bundle at a LOWER NHI floor (schema-v1.1 basis pad).
 
     The detection side is deliberately NOT taken from here. Lowering
@@ -648,7 +776,7 @@ def load_truth_bundle(mock: str, out_dir: str, truth_floor: float):
     caller GUARDS that its >= reporting-floor histogram reproduces the
     unpadded one exactly.
     """
-    cfg = _make_cfg(mock, out_dir)
+    cfg = _make_cfg(mock, out_dir, window=window)
     mm = load_molly_matrix(cfg.molly_tsv)
     t0 = time.time()
     qso_lookup = _build_qso_lookup(cfg)
@@ -705,8 +833,20 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
     ``None``/0.1 = the shipped default, bit-for-bit. The OBSERVED (n-hat) grid
     and the REPORTING grid stay 0.1 dex whatever this is.
     """
+    # the ANALYSIS window is taken from `frozen`, never from a separate
+    # argument: every window-dependent calibration block lives in `frozen`, so
+    # a per-pack window override could only ever produce a MIXED-window pack.
+    window = frozen.get("analysis_window", DEF_WINDOW)
+    w = window_spec(window)
+    # MERGE (2026-08-05): the two axes meet HERE. The adopted-basis stream owns
+    # `basis_width` (the LATENT true-N grid) and the spectral-window stream owns
+    # `window` (which calibration blocks `frozen` carries). They are independent
+    # and compose: this is what makes the lya_lyb x 0.2-dex cell expressible at
+    # all -- it needs both branches, which is why it could not be run before the
+    # integration. Both are printed so a pack's provenance is legible from the
+    # log alone.
     print(f"[pack] extracting {mock} (pad_floor={pad_floor}, "
-          f"basis_width={basis_width}) ...")
+          f"basis_width={basis_width}, window={window}) ...")
     t0 = time.time()
     # DETECTION-side bundle cache: identical for every pad floor by
     # construction (the pad touches the truth axis only), so a ladder sweep
@@ -714,8 +854,22 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
     bundles = frozen.setdefault("_bundles", {})
     bundle = bundles.get(mock)
     if bundle is None:
-        bundle = load_mock_bundle(mock, out_dir)
+        bundle = load_mock_bundle(mock, out_dir, window=window)
         bundles[mock] = bundle
+    # window GUARD: a cached bundle cut at a DIFFERENT lam_rf_min than the
+    # frozen calibration would give a mixed-window pack, which is never
+    # comparable. Real bundles always carry an HBIConfig; a bundle whose cfg has
+    # no `lam_rf_min` is a TEST DOUBLE, and the provenance records that the
+    # check could not be performed rather than pretending it passed.
+    _bundle_lam = getattr(bundle["cfg"], "lam_rf_min", None)
+    window_verified = _bundle_lam is not None
+    if window_verified and abs(float(_bundle_lam)
+                               - float(w["lam_rf_min"])) > 1e-9:
+        raise RuntimeError(
+            f"window GUARD failed: cached bundle for {mock} was cut at "
+            f"lam_rf_min={_bundle_lam} but the frozen calibration "
+            f"is window {window!r} (lam_rf_min={w['lam_rf_min']}). A "
+            "mixed-window pack is never comparable.")
 
     cat = bundle["cat_cut"]; op = bundle["op_mask"]
     nhat = np.asarray(cat["NHI"], float)[op]
@@ -754,12 +908,26 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
         # TRUTH-side bundle cache: one cut per (mock, floor). The DEEPEST floor
         # already carries every shallower pad's rows, but the cut is re-run per
         # floor so each pack's provenance names the floor it was actually cut at.
+        # NOTE the key is (mock, floor) and NOT (mock, floor, window): the
+        # cache lives inside `frozen`, and `frozen` is built PER WINDOW
+        # (build_frozen_calibration stamps frozen["analysis_window"]), so two
+        # windows can never share one cache. The window is verified on the
+        # loaded bundle below instead of being encoded in the key, which keeps
+        # the committed M1 guard tests' cache-injection contract intact.
         tkey = (mock, round(float(ntrue_edges[0]), 3))
         tcache = frozen.setdefault("_truth_bundles", {})
         tb = tcache.get(tkey)
         if tb is None:
-            tb = load_truth_bundle(mock, out_dir, float(ntrue_edges[0]))
+            tb = load_truth_bundle(mock, out_dir, float(ntrue_edges[0]),
+                                   window=window)
             tcache[tkey] = tb
+        _tb_lam = getattr(tb["cfg"], "lam_rf_min", None)
+        if _tb_lam is not None and abs(float(_tb_lam)
+                                       - float(w["lam_rf_min"])) > 1e-9:
+            raise RuntimeError(
+                f"window GUARD failed: the padded TRUTH bundle for {mock} was "
+                f"cut at lam_rf_min={_tb_lam} but the frozen calibration is "
+                f"window {window!r} (lam_rf_min={w['lam_rf_min']}).")
         tc_pad, tc_pad_bks, n_pad_in_window = build_truth_counts(tb, ntrue_edges)
         # GUARD (like-for-like): the padded truth histogram must reproduce the
         # UNPADDED one EXACTLY over the reporting window. Anything else means
@@ -869,10 +1037,33 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
         date=time.strftime("%Y-%m-%d %H:%M:%S"),
         code_commit=_git_commit(),
         command=" ".join(sys.argv),
+        analysis_window=dict(
+            name=window,
+            lam_rf_min=float(w["lam_rf_min"]),
+            lam_rf_max=(float(getattr(bundle["cfg"], "lam_rf_max"))
+                        if hasattr(bundle["cfg"], "lam_rf_max") else None),
+            bundle_lam_rf_min_verified=bool(window_verified),
+            bundle_lam_rf_min=(float(_bundle_lam) if window_verified else None),
+            molly_tsv=w["molly_tsv"],
+            molly_tsv_172=w["molly_tsv_172"],
+            forward_npz=w["forward_npz"],
+            what=("the ANALYSIS window (HBIConfig.lam_rf_min), applied "
+                  "POST-HOC to select absorbers + pathlength. NOT the FINDER "
+                  "FITTING window (Parameters.min_lambda = 911.75, "
+                  "max_lambda = 1250 in production), which this pack does not "
+                  "and cannot change — that would require re-running the GP."),
+            registry="CDDF_analysis/hbi_mcmc/extract_pack.py:ANALYSIS_WINDOWS",
+            not_window_matched=[
+                "t_sigma: read from CDDF_analysis/hbi/ff_fp_{mock}.json, which "
+                "were built at lam_rf_min=1025. They are PRIOR WIDTHS on the "
+                "cross-mock transfer factor, not data-plane objects, and are "
+                "IDENTICAL in both windows here — so they cannot drive a "
+                "window difference, but they are also not re-measured.",
+            ]),
         inputs=dict(
             catalog_dir=m["catalog_dir"], truth=m["truth_path"],
             bal_cat=m["bal_cat_path"], mockdir=m["mockdir"],
-            molly_tsv=FF.DEF_MOLLY_TSV,
+            molly_tsv=w["molly_tsv"],
             molly_counts_cache=frozen["molly_prov"]["path"],
             forward_model=frozen["fwd_meta"]["path"],
             loa0_product=frozen["fp_prov"]["product"],
@@ -1008,7 +1199,8 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
                 dx_gap=dx_gap, bundle=bundle)
 
 
-def build_frozen_calibration(out_dir: str, completeness="const_extrap") -> dict:
+def build_frozen_calibration(out_dir: str, completeness="const_extrap",
+                             window: str = DEF_WINDOW) -> dict:
     """Build the frozen 2LPT-0 calibration blocks ONCE (shared by every pack).
     Returns the dict extract_pack consumes; stashes the 2LPT-0 bundle so the
     2lpt0 pack does not reload it.
@@ -1019,18 +1211,24 @@ def build_frozen_calibration(out_dir: str, completeness="const_extrap") -> dict:
     >= 19.5 rows left bit-identical to the canonical 2LPT-0 surface — so the
     two conventions differ ONLY below the reporting floor.
     """
-    print("[frozen] building 2LPT-0 calibration blocks ...")
-    fwd, fwd_meta = load_forward_response_pack()
+    w = window_spec(window)
+    print(f"[frozen] building 2LPT-0 calibration blocks "
+          f"(window={window}, lam_rf_min={w['lam_rf_min']}) ...")
+    fwd, fwd_meta = load_forward_response_pack(w["forward_npz"])
+    fwd_meta["analysis_window"] = window
+    fwd_meta["lam_rf_min"] = float(w["lam_rf_min"])
     t_sigma, t_detail = compute_t_sigma()
-    molly, molly_prov, mm_alt = load_molly_counts_block(convention=completeness)
-    fp_counts, _loa0, fp_prov = build_fp_block()
-    bundle0 = load_mock_bundle("2lpt0", out_dir)
+    molly, molly_prov, mm_alt = load_molly_counts_block(convention=completeness,
+                                                       window=window)
+    fp_counts, _loa0, fp_prov = build_fp_block(window=window)
+    bundle0 = load_mock_bundle("2lpt0", out_dir, window=window)
     g_available = True
     try:
         g_grid, g_occ = build_g_block(bundle0)
         if mm_alt is not None:
             bundle_alt = load_mock_bundle("2lpt0", out_dir,
-                                          molly_tsv=MOLLY_TSV_NHI172)
+                                          molly_tsv=w["molly_tsv_172"],
+                                          window=window)
             g_alt, occ_alt = build_g_block(bundle_alt)
             n_sub = g_alt.shape[0] - g_grid.shape[0]
             if n_sub <= 0:
@@ -1057,6 +1255,7 @@ def build_frozen_calibration(out_dir: str, completeness="const_extrap") -> dict:
                 fp_counts=fp_counts, fp_prov=fp_prov,
                 g_grid=g_grid, g_occupancy=g_occ, g_available=g_available,
                 completeness_convention=completeness,
+                analysis_window=window, window_spec=w,
                 _bundles={"2lpt0": bundle0})
 
 
@@ -1086,10 +1285,19 @@ def main(argv=None):
     p.add_argument("--tag", default="",
                    help="filename suffix so a ladder of packs can share one "
                         "out-dir (modelA_pack_<mock><tag>.npz)")
+    p.add_argument("--analysis-window", default=DEF_WINDOW,
+                   choices=sorted(ANALYSIS_WINDOWS),
+                   help="ANALYSIS window (HBIConfig.lam_rf_min): 'lya_only' "
+                        "(1025 A, the NOMINAL Molly reference) or 'lya_lyb' "
+                        "(911 A, the full forest). This is NOT the finder "
+                        "fitting window. Every window-dependent calibration "
+                        "ingredient (completeness matrix, sub-floor matrix, "
+                        "forward response, loa-0 FP cut) moves with it.")
     args = p.parse_args(argv)
     os.makedirs(args.out_dir, exist_ok=True)
     frozen = build_frozen_calibration(
-        args.out_dir, completeness=args.completeness_below_floor)
+        args.out_dir, completeness=args.completeness_below_floor,
+        window=args.analysis_window)
     results = {}
     for mock in args.mocks:
         results[mock] = {k: v for k, v in
