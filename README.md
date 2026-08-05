@@ -453,7 +453,11 @@ There are some customizable features for this GP-DLA model.
 For customization, go to this tutorial:
 
 - Number of DLA samples
-- Marginalizing over meanflux for purity (Ho 2021 model)
+- Marginalizing over meanflux for purity (`null_meanflux_gp.py` / `dla_meanflux_gp.py`;
+  the approach of [Ho, Bird & Garnett 2021, arXiv:2103.10964](https://arxiv.org/abs/2103.10964)).
+  **Off the production path** — `run_bayes_select.py` imports only `NullGPMAT` / `DLAGPMAT` /
+  `SubDLAGPMAT`, so the deployed finder is the Ho et al. 2020 lineage, not the 2021 method.
+  See `docs/provenance/METHOD_LINEAGE.md`.
 - Resample the DLA column density prior
 - Per-spectrum τ_eff fit (`gpy_dla_detection.tau_eb.fit_tau_eb`)
 

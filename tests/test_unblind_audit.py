@@ -229,8 +229,22 @@ def _leaf_key(path: str) -> str:
     return __import__("re").sub(r"(\[\d+\])+$", "", seg)
 
 
+#: A tombstone's REASON FOR EXISTING is to record that a retired artifact carried a dirty
+#: stamp. Its `/artifact/stamped_code_commit` is therefore a QUOTATION of someone else's
+#: stamp, not a provenance claim of its own -- the same disclaimer-vs-scanner trap as
+#: c596ff7, one level up. The exemption is deliberately narrow: it is gated on the doc
+#: declaring the tombstone schema, it names exactly ONE path, and a dirty sha anywhere else
+#: in a tombstone still fires. The tombstone's OWN stamp
+#: (`/metadata/code_commit`) is NOT exempt and is separately required to be a clean
+#: 40-char sha by tests/test_tombstones.py::test_tombstone_schema_required_fields.
+_TOMBSTONE_SCHEMA = "hbi-artifact-tombstone"
+_TOMBSTONE_QUOTED_STAMP_PATHS = frozenset({"/artifact/stamped_code_commit"})
+
+
 def _stamp_like_dirty_values(doc):
     """Yield (path, value) for every DIRTY-looking sha that is a stamp, not prose."""
+    is_tombstone = (isinstance(doc, dict)
+                    and doc.get("schema") == _TOMBSTONE_SCHEMA)
     def walk(x, p=""):
         if isinstance(x, dict):
             for k, v in x.items():
@@ -247,6 +261,9 @@ def _stamp_like_dirty_values(doc):
         # ancestor named note/why/reason/evidence/supersedes/... exempt its entire
         # subtree, which is precisely where an aggregator parks its per-leg stamps.
         if any(t in _leaf_key(path).lower() for t in _PROSE_KEY_TOKENS):
+            continue
+        # narrow, schema-gated: a tombstone quoting the stamp it retires
+        if is_tombstone and path in _TOMBSTONE_QUOTED_STAMP_PATHS:
             continue
         yield path, val
 
@@ -287,6 +304,40 @@ def test_the_dirty_substamp_scanner_is_not_vacuous():
     }
     hits = dict(_stamp_like_dirty_values(planted))
     assert hits == {"/legs/2lpt1/variantA/code_commit_of_run": "d496f42-dirty"}, hits
+
+
+def test_the_tombstone_exemption_is_narrow_and_cannot_be_abused():
+    """Guard the guard's ONE exemption. A tombstone may quote the dirty stamp it retires at
+    /artifact/stamped_code_commit and nowhere else, and only while declaring the tombstone
+    schema. Four cases, each of which the exemption must get right."""
+    quoted = "d496f42a8de932a58055c4d02523996fdb7d962a-dirty"
+
+    # (a) a real tombstone: the quoted stamp is exempt
+    tomb = {"schema": _TOMBSTONE_SCHEMA,
+            "artifact": {"stamped_code_commit": quoted},
+            "metadata": {"code_commit": "0" * 40}}
+    assert dict(_stamp_like_dirty_values(tomb)) == {}
+
+    # (b) SAME doc without the schema declaration: NOT exempt. The exemption cannot be
+    #     borrowed by an ordinary artifact that happens to use the same key name.
+    impostor = {k: v for k, v in tomb.items() if k != "schema"}
+    assert dict(_stamp_like_dirty_values(impostor)) == {
+        "/artifact/stamped_code_commit": quoted}
+
+    # (c) a tombstone with a dirty sha ANYWHERE ELSE still fires -- the exemption is one
+    #     path, not a licence for the whole document.
+    smuggler = json.loads(json.dumps(tomb))
+    smuggler["artifact"]["also_ran_at"] = quoted
+    smuggler["successor_policy"] = {"built_from": quoted}
+    assert dict(_stamp_like_dirty_values(smuggler)) == {
+        "/artifact/also_ran_at": quoted, "/successor_policy/built_from": quoted}
+
+    # (d) a tombstone whose OWN stamp is dirty still fires. Documenting someone else's
+    #     dirty tree must never launder your own.
+    self_dirty = json.loads(json.dumps(tomb))
+    self_dirty["metadata"]["code_commit"] = quoted
+    assert dict(_stamp_like_dirty_values(self_dirty)) == {
+        "/metadata/code_commit": quoted}
 
 
 def test_the_prose_exemption_is_scoped_to_the_LEAF_key():

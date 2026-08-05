@@ -1,0 +1,23 @@
+# .mailmap -- display-time identity canonicalisation. Changes NO commit object, and
+# therefore NO SHA. See docs/provenance/GIT_IDENTITY.md for why history was NOT rewritten.
+#
+# Format: <Proper Name> <proper@email>  [<Commit Name>] <commit@email>
+#
+# 1) The `panel5@test.local` placeholder identity (PI decision 5, 2026-07-29).
+#    A repo-local `user.email` override in .git/config shadowed the correct global
+#    identity, so a run of agent-panel commits were authored and committed as
+#    `panel5 <panel5@test.local>`. The override has been removed; these commits keep their
+#    SHAs and are re-attributed for display only.
+Ming-Feng Ho <mfho@umich.edu> panel5 <panel5@test.local>
+Ming-Feng Ho <mfho@umich.edu> <panel5@test.local>
+
+# 2) Same-email name aliases. These are the same author with the same address, so the
+#    mapping asserts nothing beyond what the commit already records.
+Ming-Feng Ho <mfho@umich.edu> jibanmich <mfho@umich.edu>
+Ming-Feng Ho <mfho@umich.edu> jibancat <mfho@umich.edu>
+
+# NOT mapped, deliberately: the historical UCR/NTU addresses (mho026@ucr.edu,
+# r04244007@ntu.edu.tw) and their name aliases (jibanmac, jibancat, Ming-Feng Ho). Folding
+# a different email into this one is a stronger attribution claim than decision 5 asked
+# for; it is a separate cleanup and needs its own sign-off. Co-author identities
+# (Garnett, Bird, Copilot) are untouched.
