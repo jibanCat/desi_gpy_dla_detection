@@ -99,6 +99,42 @@ production geometry.  (That entry was OPEN when this paragraph was written
 and is RESOLVED as of 2026-08-05; ``pi_decision`` reads both views, which is
 why the pointer here is to it and not to ``OPEN_PI_DECISIONS``.)
 
+WHY THE IMPORT-TIME GUARD WAS NOT ENOUGH  (2026-08-05)
+------------------------------------------------------
+``enforce_authority_allow_list`` polices ONE dict in ONE module on ONE branch.
+It was measured to be too narrow, not suspected of it: at the time this
+paragraph was written, TWO fabricated-authority sites were live on sibling
+branches that this module does not exist on, and BOTH used field names the
+import-time guard has never looked at.
+
+  * ``adopted_config.py`` writes ``gate_tolerances_ratified=["z_total_max",
+    "z_bin_max", "chi2_dof_max"]``, and the same list appears in
+    ``adopted_config_closure.json`` at ``/verdict/gate_tolerances_ratified``;
+    two of those three names are NOT RATIFIED.
+  * ``window_study.py`` writes ``ratified_arms={"abs_z_total_max": 5.0,
+    "z_bin_max": 5.0, "chi2_dof_max": 3.0}``, repeats it as
+    ``metadata.gate.ratified_arms`` in ``spectral_window_study.json``, and
+    states it in prose as "THE THREE RATIFIED ARMS (PI decision 8) are ...";
+    two of those three names are NOT RATIFIED.
+
+Neither is a ``record``, so ``audit_authority_claims`` cannot see either; and
+``ratification.py`` was not on those branches, so nothing ran at all.  The
+guard is therefore widened along three axes at once:
+
+  1. it scans ANY key that ASSERTS ratification (``/ratifi/`` minus the
+     negated and subject-naming forms -- see ``classify_key``), not the two
+     field names it happened to know;
+  2. it scans ARTIFACTS (JSON) and CODE (Python, by AST) and PROSE, because
+     both live sites appear in all three forms;
+  3. it is RUNNABLE OVER A TREE, not only at import of this one module:
+     ``python -m CDDF_analysis.hbi_mcmc.ratification --check <paths>``
+     exits non-zero on a fabricated claim, so a merge can run it over branches
+     that do not contain this file.
+
+It FAILS CLOSED.  An unreadable path, an unparseable file, a ratification
+claim whose shape is not recognised, a claim whose subject cannot be resolved,
+and a scan that inspected ZERO files are all FAILURES, not passes.
+
 PI DIRECTION OF 2026-08-05 (verbatim, recorded in ``PI_DIRECTIONS``)
 --------------------------------------------------------------------
 "The only currently ratified numerical closure gate is chi2/dof <= 3.  Any
@@ -117,6 +153,14 @@ can be ratified) and did not disarm them.  They still gate.  See
 """
 from __future__ import annotations
 
+import argparse
+import ast
+import fnmatch
+import json
+import os
+import re
+import sys
+
 __all__ = [
     "RATIFIED", "UNRATIFIED", "RESTATED_NOT_RATIFIED",
     "RATIFICATION_DATE", "RATIFYING_AUTHORITY", "PI_AUTHORITY",
@@ -127,6 +171,13 @@ __all__ = [
     "audit_authority_claims", "enforce_authority_allow_list",
     "OPEN_PI_DECISIONS", "RESOLVED_PI_DECISIONS", "PI_DECISIONS",
     "PI_DIRECTIONS", "pi_decision", "PROSPECTIVE_THRESHOLD_CONDITIONS",
+    "REQUIRED_STAMP_KEYS", "IncompleteStampError", "SELF_SCAN_MIN_CLAIMS",
+    # the widened, tree-runnable guard
+    "SCAN_SCHEMA", "SCAN_RULES", "SCAN_SUFFIXES", "classify_key",
+    "claim_is_name_bearing", "format_violation",
+    "scan_data", "scan_json_text", "scan_python_source", "scan_markdown",
+    "scan_file", "scan_paths", "ScanResult", "enforce_no_fabricated_claims",
+    "enforce_no_fabricated_claims_data", "main",
 ]
 
 RATIFICATION_DATE = "2026-07-29"
@@ -581,8 +632,30 @@ def audit_authority_claims(records=None):
     ``declined_by`` field is exempt (declining is not authorising), as is the
     literal "NONE -- the PI was asked and DECLINED" non-claim.
     """
-    recs = all_records() if records is None else records
+    default = records is None
+    recs = all_records() if default else records
     bad = []
+    if not isinstance(recs, dict):
+        return [f"ratification records are {type(recs).__name__}, not a "
+                f"mapping; nothing could be audited"]
+    if not recs:
+        return ["ratification records are EMPTY; an audit that inspected no "
+                "record is not a pass"]
+    if default:
+        # 🔴 FAIL-OPEN HOLE, ROUND 4.  Before this, emptying ``RATIFIED``
+        # made the audit return [] and the module import CLEANLY: the guard
+        # scanned the records that were there and there were none.  A guard
+        # that passes because the thing it guards was deleted is the worst
+        # shape in this project's catalogue.  The allow-list is now checked in
+        # BOTH directions -- nothing off it may claim PI authority, and
+        # everything ON it must actually have a RATIFIED record.
+        for name in PI_RATIFIED_ITEMS:
+            rec = recs.get(name)
+            if not isinstance(rec, dict) or rec.get("status") != "RATIFIED":
+                bad.append(
+                    f"{name}: is on PI_RATIFIED_ITEMS but has no RATIFIED "
+                    f"record. The allow-list and the records must agree; a "
+                    f"missing record cannot be read as 'nothing to check'.")
     for name, rec in sorted(recs.items()):
         if not isinstance(rec, dict):
             bad.append(f"{name}: ratification record is not a dict")
@@ -678,13 +751,56 @@ def record(name):
                     f"UNRATIFIED (report-only)."}
 
 
+#: 🔴 FAIL-OPEN HOLE, ROUND 4.  The worst pattern in this project's catalogue
+#: is "delete an entire artifact block and every test stays green".  Of the
+#: stamp's blocks only four were pinned by any test; the rest could be dropped
+#: silently, and a reader of the JSON would simply not see that the |z| arms
+#: gate without authority.  ``ratification_stamp`` now REFUSES to build an
+#: incomplete stamp, and `required` may only ever GROW (the ratified
+#: fail-closed framework says so in as many words).
+REQUIRED_STAMP_KEYS = (
+    "schema", "ratification_date", "authority", "authority_scope",
+    "pi_ratified_items", "ratified", "restated_not_ratified", "unratified",
+    "unratified_effect", "unratified_note", "unratified_but_gating",
+    "unratified_but_gating_effect", "unratified_but_gating_note",
+    "open_pi_decisions", "open_pi_decisions_note", "resolved_pi_decisions",
+    "pi_directions", "prospective_threshold_conditions",
+    "authority_allow_list_clean", "self_scan", "correction_note",
+)
+
+
+#: 🔴 THE POWER CHECK for the import-time self-scan (see the bottom of this
+#: module).  "Zero violations" is not evidence unless something was inspected.
+SELF_SCAN_MIN_CLAIMS = 2
+_SELF_SCAN_COUNTER = {"claims": 0}
+
+
+class IncompleteStampError(RuntimeError):
+    """Raised when a ratification stamp is missing a block it must carry."""
+
+
 def ratification_stamp():
     """The block every artifact carries, verbatim.
 
     Small on purpose: a reader of the JSON alone must be able to see which
     criteria were authorised to refuse work, WHICH REFUSE WORK WITHOUT BEING
     AUTHORISED, and which are report-only -- without opening the source.
+
+    FAIL-CLOSED: raises :class:`IncompleteStampError` rather than returning a
+    stamp that is missing any of ``REQUIRED_STAMP_KEYS``.
     """
+    stamp = _build_stamp()
+    missing = [k for k in REQUIRED_STAMP_KEYS if k not in stamp]
+    if missing:
+        raise IncompleteStampError(
+            "the ratification stamp is missing required block(s): "
+            + ", ".join(missing)
+            + ". A stamp that silently drops a block lets an artifact stop "
+              "reporting which criteria refuse work without authority.")
+    return stamp
+
+
+def _build_stamp():
     return {
         "schema": "gate_ratification/v2",
         "ratification_date": RATIFICATION_DATE,
@@ -740,6 +856,21 @@ def ratification_stamp():
         "prospective_threshold_conditions": list(
             PROSPECTIVE_THRESHOLD_CONDITIONS),
         "authority_allow_list_clean": (audit_authority_claims() == []),
+        # 🔴 A POWER CHECK, IN THE ARTIFACT.  "clean" is worthless without
+        # "of how many": a stamp whose ratification blocks were deleted also
+        # scans clean.  This says what the guard actually inspected, so a
+        # reader of the JSON alone can tell a real pass from a vacuous one.
+        "self_scan": {
+            "schema": SCAN_SCHEMA,
+            "rules": sorted(SCAN_RULES),
+            "n_claims_inspected": _SELF_SCAN_COUNTER["claims"],
+            "min_claims_required": SELF_SCAN_MIN_CLAIMS,
+            "note": "the import-time scan of this stamp. A zero here would "
+                    "mean the stamp carries no checkable ratification claim "
+                    "at all, and the module refuses to import in that state. "
+                    "Tree-wide equivalent: python -m "
+                    "CDDF_analysis.hbi_mcmc.ratification --check <paths>",
+        },
         "correction_note": (
             "schema v2 CORRECTS v1 (88f2ecb), which recorded the four "
             "|z| <= 5 arms as RATIFIED by the PI on grounds that were false: "
@@ -751,5 +882,821 @@ def ratification_stamp():
     }
 
 
+# ===========================================================================
+# THE WIDENED GUARD -- a scanner for ratification CLAIMS, in any shape,
+# anywhere in a tree, runnable from a merge hook.
+#
+# The import-time allow-list above sees ONE dict, in ONE module, on ONE
+# branch, under TWO field names (``status`` and ``authority``).  Every one of
+# those four narrownesses was measured to be a real miss -- see the module
+# docstring, "WHY THE IMPORT-TIME GUARD WAS NOT ENOUGH".
+#
+# WHAT COUNTS AS A CLAIM.  Four independent rules, each of which fires on its
+# own, so no single reshuffle of a record evades all four:
+#
+#   R1_NAME_CLAIM      a key that ASSERTS ratification (``classify_key`` ->
+#                      "CLAIM") holding NAMES: a list of strings, or the keys
+#                      of a mapping.  Every name must be on
+#                      ``PI_RATIFIED_ITEMS``.  This is the rule that catches
+#                      ``gate_tolerances_ratified=[...]`` and
+#                      ``ratified_arms={...}``, neither of which is a record
+#                      and neither of which the import-time guard can see.
+#   R2_STATUS_CLAIM    any mapping with a ``*status`` field whose value is the
+#                      bare token RATIFIED.  Its SUBJECT (its key in the
+#                      enclosing mapping, or its own ``name``/``key``/
+#                      ``tolerance`` field) must be allow-listed.
+#   R3_PI_AUTHORITY    any mapping with an ``*authority*`` field naming the PI
+#                      affirmatively.  Same subject rule.  Generalises
+#                      ``audit_authority_claims`` to arbitrary nesting and to
+#                      JSON.  ONE escape, and it is the v1 lesson made
+#                      executable: a stamp may carry a top-level PI authority
+#                      IF it carries an ``authority_scope`` that names
+#                      ``pi_ratified_items`` and says NOTHING ELSE.
+#   R4_PROSE_CLAIM     a sentence containing an unqualified ``RATIFIED`` and a
+#                      criterion name that is not allow-listed.  Catches the
+#                      form that has escaped every structural guard so far
+#                      (three times after the retraction).
+#
+# AND THE FAIL-CLOSED RULES, which exist because a guard that returns "clean"
+# for something it could not read is worse than no guard:
+#
+#   R5_UNRECOGNISED    a CLAIM key whose value is not a shape this scanner
+#                      knows how to check (a bare number, a mixed list, a
+#                      mapping with computed keys), or a status/authority
+#                      claim whose subject cannot be resolved.
+#   R6_UNPARSEABLE     a path that does not exist, cannot be read, or does not
+#                      parse as the JSON/Python it is named as.
+#   R7_UNDERIVED       a CLAIM key in CODE whose value is computed rather than
+#                      literal AND whose expression does not reference this
+#                      module.  ``list(RAT.ratified_names())`` is fine --
+#                      that IS the single source of truth.  An expression that
+#                      builds a ratified-name list from anywhere else is not
+#                      checkable and is refused.
+#   R8_NOTHING_SCANNED a scan that inspected zero files.  A green check that
+#                      looked at nothing is the fail-open shape this project
+#                      has been burned by; it is an error, not a pass.
+# ===========================================================================
+
+SCAN_SCHEMA = "ratification_scan/v1"
+
+#: file kinds the tree scanner understands.  ``.md`` is prose-only (R4).
+SCAN_SUFFIXES = (".py", ".json", ".md")
+
+SCAN_RULES = {
+    "R1_NAME_CLAIM": "a ratification-asserting key names something that is "
+                     "not on PI_RATIFIED_ITEMS",
+    "R2_STATUS_CLAIM": "a record's status is RATIFIED but its subject is not "
+                       "on PI_RATIFIED_ITEMS",
+    # 🔴 phrased WITHOUT a bare "PI" token on purpose: R3 fires on any
+    # authority field that affirms it, and the first run of this scanner
+    # flagged this very glossary entry.  That is the guard working, and the
+    # fix is to reword the glossary, NOT to widen _AUTHORITY_META_KEYS.
+    "R3_PI_AUTHORITY": "a record names the deciding authority as having "
+                       "ratified a subject that is not on PI_RATIFIED_ITEMS",
+    "R4_PROSE_CLAIM": "a sentence calls a non-allow-listed criterion RATIFIED",
+    "R5_UNRECOGNISED": "a ratification claim in a shape this scanner cannot "
+                       "check, or whose subject cannot be resolved "
+                       "(FAIL-CLOSED)",
+    "R6_UNPARSEABLE": "a path that cannot be read or parsed (FAIL-CLOSED)",
+    "R7_UNDERIVED": "a computed ratified-name list not derived from "
+                    "CDDF_analysis.hbi_mcmc.ratification (FAIL-CLOSED)",
+    "R8_NOTHING_SCANNED": "the scan inspected zero files (FAIL-CLOSED)",
+}
+
+_NONWORD_RE = re.compile(r"[^0-9a-z]+")
+
+#: key tokens that ASSERT ratification, as opposed to ``ratification`` /
+#: ``ratifying``, which merely NAME the subject of a record.
+_CLAIM_TOKENS = ("ratified", "ratifies", "ratify")
+#: token prefixes that negate the assertion outright (``unratified``, ...)
+_NEGATED_PREFIXES = ("unratif", "nonratif", "notratif", "deratif", "disratif")
+#: a word immediately before a claim token that negates it
+_NEGATING_PREDECESSORS = ("not", "non", "never", "un", "no", "yet", "without",
+                          "pending", "declined", "unratified")
+
+#: an ``authority``-bearing key whose LAST token is one of these is a
+#: META-field ABOUT an authority claim (a note, a scope, a correction) rather
+#: than the claim itself.  A suffix rule rather than a name list, so a new
+#: ``*_note`` does not need registering -- and it is exactly what makes R3
+#: leave a RETRACTION NOTE alone while still firing on the ``authority`` field
+#: it retracts.  🔴 THE COST, stated rather than hidden: an authority claim
+#: written as prose inside a ``*_note`` is R4's job, not R3's, and R4 keys on
+#: an UPPERCASE ``RATIFIED``.  A lowercase prose claim in a note escapes both.
+_AUTHORITY_META_SUFFIXES = (
+    "note", "notes", "scope", "question", "detail", "details", "correction",
+    "explanation", "disposition", "history", "rationale", "clean", "check",
+    "policy", "glossary", "meaning", "meanings",
+)
+
+#: a CLAIM key whose first token is a COUNT prefix, or whose last token
+#: RESTRICTS rather than names, does not hold a set of ratified names:
+#: ``n_closing_pi_ratified_arm_only`` counts configurations, it does not
+#: assert that anything was ratified.  Skipping those is a deliberate
+#: narrowing of R1 and is pinned by a test that also proves the SAME list
+#: under ``gate_tolerances_ratified`` is still caught.
+_COUNT_PREFIXES = ("n", "num", "count", "total", "len")
+_NON_NAME_BEARING_HEADS = (
+    "only", "count", "n", "num", "flag", "enabled", "note", "notes", "date",
+    "status", "state", "scope", "effect", "question", "detail", "details",
+    "summary", "meaning", "meanings", "policy", "correction",
+)
+
+#: ``status``, ``gate_status``, ``authority_state`` -- all the same field.
+_STATUS_KEY_RE = re.compile(r"(?:^|_)(?:status|state)$")
+_PI_TOKEN_RE = re.compile(r"\bPI\b")
+_SUBJECT_FIELDS = ("name", "key", "tolerance", "criterion")
+
+#: an identifier that LOOKS like a gate tolerance.  Deliberately loose on the
+#: stem and strict on the suffix, so ``abs_z_total_max`` -- a local spelling
+#: that appears in NO ratification record -- is still recognised as a name.
+_TOLERANCE_NAME_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+_max\b")
+
+#: prose forms that are the CORRECT way to mention an unratified name next to
+#: the word.  A sentence carrying one of these is not making a claim.
+#: 🔴 KEPT NARROW ON PURPOSE, and this is the guard's stated weakness: every
+#: form here is a way for a real claim to be skipped, so a looser list is a
+#: wider bypass.  The five original forms are the ones the 2026-07-30 prose
+#: guard shipped with; the rest were each added only after a real, checked
+#: sentence in this tree needed them.
+_PROSE_QUALIFIER_RE = re.compile(
+    r"NOT[ _-]RATIFIED|not ratified|UNRATIFIED|unratified|"
+    r"RESTATED_NOT_RATIFIED|nobody ratified|no deciding authority|"
+    r"never ratified|not been ratified|declined to ratif|"
+    r"not yet ratified|NOT A RATIFICATION|not a ratification")
+
+#: an expression that is DERIVED from this module is checkable at run time by
+#: the import-time guard, so a static scanner must not refuse it.
+_DERIVED_RE = re.compile(
+    r"ratification|\bRAT\b|\b_RAT\b|ratified_names|PI_RATIFIED_ITEMS|"
+    r"RATIFIED|ratification_stamp")
+
+
+def _norm_key(key):
+    """``"Gate Tolerances Ratified"`` -> ``"gate_tolerances_ratified"``."""
+    return _NONWORD_RE.sub("_", str(key).lower()).strip("_")
+
+
+def classify_key(key):
+    """``"CLAIM"`` | ``"NEGATED"`` | ``"SUBJECT"`` | ``None``.
+
+    The discriminator is grammatical and it is the reason the widened guard
+    needs no hand-maintained field-name list: the past participle
+    (``ratified``) ASSERTS, the noun (``ratification``) merely NAMES.
+
+        >>> classify_key("gate_tolerances_ratified")
+        'CLAIM'
+        >>> classify_key("ratified_arms")
+        'CLAIM'
+        >>> classify_key("gate_tolerances_not_ratified")
+        'NEGATED'
+        >>> classify_key("unratified_but_gating")
+        'NEGATED'
+        >>> classify_key("ratification_date")
+        'SUBJECT'
+        >>> classify_key("chi2_dof_max") is None
+        True
+    """
+    toks = [t for t in _norm_key(key).split("_") if t]
+    for t in toks:
+        if t.startswith(_NEGATED_PREFIXES):
+            return "NEGATED"
+    for i, t in enumerate(toks):
+        if t in _CLAIM_TOKENS:
+            if i and toks[i - 1] in _NEGATING_PREDECESSORS:
+                return "NEGATED"
+            return "CLAIM"
+    for t in toks:
+        if t.startswith("ratif"):     # ratification, ratifying, ratifiable
+            return "SUBJECT"
+    return None
+
+
+def claim_is_name_bearing(key):
+    """Does this CLAIM key hold the NAMES of the things claimed ratified?
+
+        >>> claim_is_name_bearing("gate_tolerances_ratified")
+        True
+        >>> claim_is_name_bearing("ratified_arms")
+        True
+        >>> claim_is_name_bearing("n_closing_pi_ratified_arm_only")
+        False
+        >>> claim_is_name_bearing("closing_configurations_pi_ratified_arm_only")
+        False
+    """
+    toks = [t for t in _norm_key(key).split("_") if t]
+    if not toks:
+        return False
+    return not (toks[0] in _COUNT_PREFIXES
+                or toks[-1] in _NON_NAME_BEARING_HEADS)
+
+
+def _v(rule, source, path, subject, detail):
+    return {"rule": rule, "source": str(source), "path": str(path),
+            "subject": (None if subject is None else str(subject)),
+            "detail": str(detail)}
+
+
+def format_violation(v):
+    subj = f" [{v['subject']}]" if v.get("subject") else ""
+    return f"{v['source']}:{v['path']}{subj} {v['rule']}: {v['detail']}"
+
+
+def _affirms_pi(text):
+    """Does this authority string name the PI as the AUTHORISER?
+
+    Declining is not authorising, and neither is an explicit non-claim.
+    """
+    if not (_PI_TOKEN_RE.search(text)
+            or "principal investigator" in text.lower()):
+        return False
+    upper = text.upper()
+    if "DECLIN" in upper:
+        return False
+    if upper.lstrip().startswith("NONE"):
+        return False
+    return True
+
+
+def _scope_limits_authority(mapping):
+    """The ONE escape from R3, and it is v1's defect written as a condition.
+
+    v1 put ``authority: "PI (...)"`` at the top of the stamp with nothing
+    saying what it covered, and that is how four |z| arms acquired PI
+    authority.  A stamp may carry a top-level PI authority only if it also
+    states, IN THE ARTIFACT, that the authority covers ``pi_ratified_items``
+    and nothing else.
+    """
+    scope = mapping.get("authority_scope")
+    if not isinstance(scope, str):
+        return False
+    return "pi_ratified_items" in scope and "NOTHING ELSE" in scope.upper()
+
+
+def _subject_of(mapping, owner):
+    for f in _SUBJECT_FIELDS:
+        val = mapping.get(f)
+        if isinstance(val, str) and val:
+            return val
+    return owner
+
+
+def _scan_prose(text, *, source, path):
+    """R4.  Sentence-scoped, so the modules can (and must) DISCUSS these names.
+
+    A sentence claims ratification if it carries an unqualified ``RATIFIED``
+    and names a criterion that is not allow-listed.  Names come from two
+    places, and the second is what makes this catch a spelling no record uses:
+    the known unratified names, AND anything matching ``*_max``.
+    """
+    if "RATIFIED" not in text:
+        return []
+    known = set(RESTATED_NOT_RATIFIED) | set(UNRATIFIED)
+    flat = re.sub(r"\s+", " ", text)
+    out = []
+    for sent in re.split(r"(?<=[.!?])\s", flat):
+        if "RATIFIED" not in sent:
+            continue
+        if _PROSE_QUALIFIER_RE.search(sent):
+            continue
+        # identifier-boundary, not substring: ``abs_z_total_max`` must report
+        # itself and NOT also its suffix ``z_total_max``, or one claim reads
+        # as two and the violation count stops meaning anything.
+        names = {n for n in known
+                 if re.search(r"(?<![0-9A-Za-z_])" + re.escape(n)
+                              + r"(?![0-9A-Za-z_])", sent)}
+        names |= set(_TOLERANCE_NAME_RE.findall(sent))
+        for name in sorted(names - set(PI_RATIFIED_ITEMS)):
+            out.append(_v(
+                "R4_PROSE_CLAIM", source, path, name,
+                f"calls {name!r} RATIFIED without qualification: "
+                f"{sent[:220]!r}"))
+    return out
+
+
+def _check_claim_names(names, *, source, path):
+    out = []
+    for name in names:
+        if name not in PI_RATIFIED_ITEMS:
+            out.append(_v(
+                "R1_NAME_CLAIM", source, path, name,
+                f"asserts that {name!r} is ratified; PI_RATIFIED_ITEMS is "
+                f"{PI_RATIFIED_ITEMS} and nothing else may be claimed. "
+                f"Decision 8 ratified exactly three things."))
+    return out
+
+
+def _check_claim_key(key, value, *, source, path, owner):
+    """R1 / R5 for one ``key: value`` pair whose key CLAIMS ratification."""
+    if value is None or value is False:
+        return []
+    if value is True:
+        subject = _subject_of({}, owner)
+        if subject is None:
+            return [_v("R5_UNRECOGNISED", source, path, None,
+                       f"{key!r} is True but the scanner cannot resolve WHAT "
+                       f"is being called ratified")]
+        return _check_claim_names([subject], source=source, path=path)
+    if isinstance(value, str):
+        if _norm_key(key) == _norm_key(value):
+            # a self-naming ENUM constant (``RATIFIED = "RATIFIED"``), which
+            # DEFINES the state token rather than applying it to anything.
+            return []
+        if _norm_key(value) in ("ratified", "pi_ratified", "ratified_by_pi",
+                               "ratified_by_the_pi"):
+            subject = _subject_of({}, owner)
+            if subject is None:
+                return [_v("R5_UNRECOGNISED", source, path, None,
+                           f"{key!r}={value!r} asserts ratification with no "
+                           f"resolvable subject")]
+            return _check_claim_names([subject], source=source, path=path)
+        return []                       # prose; the string walker handles it
+    if isinstance(value, (list, tuple, set)):
+        seq = list(value)
+        if not seq:
+            return []
+        if not all(isinstance(e, str) for e in seq):
+            return [_v("R5_UNRECOGNISED", source, path, None,
+                       f"{key!r} claims ratification but holds a "
+                       f"non-string element; the scanner cannot tell what is "
+                       f"being claimed")]
+        return _check_claim_names(seq, source=source, path=path)
+    if isinstance(value, dict):
+        names = [k for k in value if isinstance(k, str)]
+        if len(names) != len(value):
+            return [_v("R5_UNRECOGNISED", source, path, None,
+                       f"{key!r} claims ratification but has non-string keys")]
+        return _check_claim_names(names, source=source, path=path)
+    return [_v("R5_UNRECOGNISED", source, path, None,
+               f"{key!r} claims ratification and holds "
+               f"{type(value).__name__}, which is not a shape this scanner "
+               f"can check")]
+
+
+def _check_mapping(mapping, *, source, path, owner):
+    """R2 and R3 for one mapping."""
+    out = []
+    for key, val in mapping.items():
+        nkey = _norm_key(key)
+        if _STATUS_KEY_RE.search(nkey) and isinstance(val, str):
+            if _norm_key(val) == "ratified":
+                subject = _subject_of(mapping, owner)
+                if subject is None:
+                    out.append(_v(
+                        "R5_UNRECOGNISED", source, f"{path}/{key}", None,
+                        "status=RATIFIED with no resolvable subject "
+                        "(no enclosing key and no name/key/tolerance field)"))
+                elif subject not in PI_RATIFIED_ITEMS:
+                    out.append(_v(
+                        "R2_STATUS_CLAIM", source, f"{path}/{key}", subject,
+                        f"records status=RATIFIED for {subject!r}, which is "
+                        f"not on PI_RATIFIED_ITEMS={PI_RATIFIED_ITEMS}"))
+        ntoks = nkey.split("_")
+        if ("authority" in ntoks and ntoks[-1] not in _AUTHORITY_META_SUFFIXES
+                and isinstance(val, str) and _affirms_pi(val)):
+            subject = _subject_of(mapping, owner)
+            if subject in PI_RATIFIED_ITEMS:
+                continue
+            if _scope_limits_authority(mapping):
+                continue
+            out.append(_v(
+                "R3_PI_AUTHORITY", source, f"{path}/{key}", subject,
+                f"names the PI as authority ({val[:90]!r}) for subject "
+                f"{subject!r}, which is not on "
+                f"PI_RATIFIED_ITEMS={PI_RATIFIED_ITEMS}"
+                + ("" if subject is not None else
+                   "; and the subject could not be resolved, so the claim "
+                   "cannot be checked at all")))
+    return out
+
+
+def scan_data(obj, *, source="<data>", path="", owner=None, _counter=None):
+    """Every rule, over a parsed JSON-like structure.  Returns violations.
+
+    ``_counter`` (a one-key dict) accumulates how many ratification CLAIMS
+    were inspected, so a clean result can be told apart from a vacuous one --
+    a containment/coverage check that cannot fail is not a check.
+    """
+    out = []
+    if isinstance(obj, dict):
+        out += _check_mapping(obj, source=source, path=path or "/",
+                              owner=owner)
+        for key, val in obj.items():
+            kpath = f"{path}/{key}"
+            if classify_key(key) == "CLAIM" and claim_is_name_bearing(key):
+                if _counter is not None:
+                    _counter["claims"] = _counter.get("claims", 0) + 1
+                out += _check_claim_key(key, val, source=source, path=kpath,
+                                        owner=owner)
+            out += scan_data(val, source=source, path=kpath, owner=str(key),
+                             _counter=_counter)
+    elif isinstance(obj, (list, tuple)):
+        for i, val in enumerate(obj):
+            out += scan_data(val, source=source, path=f"{path}[{i}]",
+                             owner=owner, _counter=_counter)
+    elif isinstance(obj, str):
+        out += _scan_prose(obj, source=source, path=path or "/")
+    return out
+
+
+def scan_json_text(text, *, source="<json>", _counter=None):
+    try:
+        data = json.loads(text)
+    except Exception as exc:                                # noqa: BLE001
+        return [_v("R6_UNPARSEABLE", source, "/", None,
+                   f"does not parse as JSON: {exc}")]
+    return scan_data(data, source=source, _counter=_counter)
+
+
+# --- the code side ---------------------------------------------------------
+
+_UNRESOLVED = object()
+
+
+def _const(node):
+    """The literal value of an AST node, or ``_UNRESOLVED``."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    return _UNRESOLVED
+
+
+def _target_name(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Subscript):
+        sub = _const(node.slice)
+        if isinstance(sub, str):
+            return sub
+    return None
+
+
+def _literal_names(node):
+    """Names claimed by an AST value node, or ``None`` if it is not literal.
+
+    Deliberately tolerant of PARTLY-computed containers: ``{"a": _r(...)}``
+    still tells us the NAMES, which is what R1 checks.
+    """
+    if isinstance(node, ast.Dict):
+        if any(k is None for k in node.keys):               # {**other}
+            return _UNRESOLVED
+        names = [_const(k) for k in node.keys]
+        if any(not isinstance(n, str) for n in names):
+            return _UNRESOLVED
+        return names
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        vals = [_const(e) for e in node.elts]
+        if any(not isinstance(v, str) for v in vals):
+            return _UNRESOLVED
+        return vals
+    if isinstance(node, ast.Constant):
+        return node.value
+    return _UNRESOLVED
+
+
+def _is_factory_dict(node, resolver=_const):
+    """A dict LITERAL that is a template: at least one value is computed.
+
+    ``_r(...)`` in this module returns ``{"status": "RATIFIED", "statement":
+    statement, ...}``.  Its subject is supplied by the CALLER, and every
+    caller is a dict entry whose key R1 already checks.  A dict whose values
+    all RESOLVE to constants is not a template and gets no such exemption --
+    including through a module-level string constant, so ``{"status":
+    RATIFIED}`` cannot buy the exemption a genuine template gets.
+    """
+    if not isinstance(node, ast.Dict):
+        return False
+    return any(resolver(v) is _UNRESOLVED for v in node.values)
+
+
+def scan_python_source(text, *, source="<py>", _counter=None):
+    """R1/R2/R3/R4/R5/R7 over Python source, by AST.
+
+    Claims in code are keyword arguments, assignment targets and string dict
+    keys.  Both live fabricated-authority sites are of the first two kinds:
+    ``gate_tolerances_ratified=[...]`` is a keyword argument and
+    ``ratified_arms={...}`` is a keyword argument.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        return [_v("R6_UNPARSEABLE", source, "/", None,
+                   f"does not parse as Python: {exc}")]
+
+    parent = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent[id(child)] = node
+
+    # 🔴 FAIL-OPEN HOLE, ROUND 4.  R2/R3 read only CONSTANT field values, so a
+    # module that writes ``authority_state=RATIFIED`` with a module-level
+    # ``RATIFIED = "RATIFIED"`` constant -- which is exactly how the spectral
+    # -window module spells it -- was invisible to both.  Module-level string
+    # constants are resolved so the Name and the literal are checked alike.
+    strconst = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value,
+                                                       ast.Constant) \
+                and isinstance(node.value.value, str):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    strconst[tgt.id] = node.value.value
+
+    def resolve(node):
+        val = _const(node)
+        if val is not _UNRESOLVED:
+            return val
+        if isinstance(node, ast.Name) and node.id in strconst:
+            return strconst[node.id]
+        return _UNRESOLVED
+
+    out = []
+
+    def claim(key, value_node, where):
+        if classify_key(key) != "CLAIM" or not claim_is_name_bearing(key):
+            return
+        if isinstance(value_node, ast.Constant) and isinstance(
+                value_node.value, str) and _norm_key(key) == _norm_key(
+                    value_node.value):
+            return                          # enum constant, see above
+        if _counter is not None:
+            _counter["claims"] = _counter.get("claims", 0) + 1
+        names = _literal_names(value_node)
+        if names is _UNRESOLVED:
+            seg = ast.get_source_segment(text, value_node) or ""
+            if _DERIVED_RE.search(seg):
+                return                       # derived from this module: OK
+            out.append(_v(
+                "R7_UNDERIVED", source, where, None,
+                f"{key!r} claims ratification from a computed expression "
+                f"that does not reference "
+                f"CDDF_analysis.hbi_mcmc.ratification: {seg[:120]!r}"))
+            return
+        if isinstance(names, list):
+            out.extend(_check_claim_names(names, source=source, path=where))
+            return
+        out.extend(_check_claim_key(key, names, source=source, path=where,
+                                    owner=None))
+
+    for node in ast.walk(tree):
+        line = getattr(node, "lineno", "?")
+        if isinstance(node, ast.keyword) and node.arg:
+            claim(node.arg, node.value, f"line {line}:{node.arg}")
+        elif isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                nm = _target_name(tgt)
+                if nm:
+                    claim(nm, node.value, f"line {line}:{nm}")
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            nm = _target_name(node.target)
+            if nm:
+                claim(nm, node.value, f"line {line}:{nm}")
+        elif isinstance(node, ast.Dict):
+            for knode, vnode in zip(node.keys, node.values):
+                kv = _const(knode) if knode is not None else _UNRESOLVED
+                if isinstance(kv, str):
+                    claim(kv, vnode, f"line {line}:{kv}")
+            # R2/R3 need the mapping's own fields plus its SUBJECT
+            flat = {}
+            for knode, vnode in zip(node.keys, node.values):
+                kv = _const(knode) if knode is not None else _UNRESOLVED
+                vv = resolve(vnode)
+                if isinstance(kv, str) and vv is not _UNRESOLVED:
+                    flat[kv] = vv
+            if not flat:
+                continue
+            owner = None
+            par = parent.get(id(node))
+            if isinstance(par, ast.Dict):
+                for knode, vnode in zip(par.keys, par.values):
+                    if vnode is node and knode is not None:
+                        kv = _const(knode)
+                        if isinstance(kv, str):
+                            owner = kv
+            elif isinstance(par, ast.keyword) and par.arg:
+                owner = par.arg
+            elif isinstance(par, ast.Assign):
+                for tgt in par.targets:
+                    owner = owner or _target_name(tgt)
+            if owner is None and _is_factory_dict(node, resolve):
+                continue                     # a template; callers carry names
+            out.extend(_check_mapping(flat, source=source,
+                                      path=f"line {line}", owner=owner))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            out.extend(_scan_prose(node.value, source=source,
+                                   path=f"line {line}"))
+
+    # dedupe: ast.walk reaches nested dicts through several roots
+    seen, uniq = set(), []
+    for v in out:
+        k = (v["rule"], v["path"], v["subject"], v["detail"])
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(v)
+    return uniq
+
+
+def scan_markdown(text, *, source="<md>"):
+    return _scan_prose(text, source=source, path="/")
+
+
+def scan_file(path, *, _counter=None):
+    """Dispatch on suffix.  An unreadable file is a FAILURE, not a skip."""
+    path = str(path)
+    try:
+        with open(path, "r", encoding="utf-8", errors="strict") as fh:
+            text = fh.read()
+    except Exception as exc:                                # noqa: BLE001
+        return [_v("R6_UNPARSEABLE", path, "/", None,
+                   f"cannot be read: {exc}")]
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix == ".json":
+        return scan_json_text(text, source=path, _counter=_counter)
+    if suffix == ".py":
+        return scan_python_source(text, source=path, _counter=_counter)
+    if suffix == ".md":
+        return scan_markdown(text, source=path)
+    return [_v("R6_UNPARSEABLE", path, "/", None,
+               f"suffix {suffix!r} is not one this scanner knows how to "
+               f"check; SCAN_SUFFIXES={SCAN_SUFFIXES}")]
+
+
+class ScanResult(object):
+    """What a scan measured.  ``ok`` is the ONLY thing a caller should trust.
+
+    ``n_files`` and ``n_claims`` are reported so that a clean result can be
+    distinguished from a vacuous one: a scan of an empty tree, or of a tree
+    with no ratification claims in it, is not evidence that the guard works.
+    """
+
+    __slots__ = ("violations", "files", "n_claims", "roots", "excluded")
+
+    def __init__(self, violations, files, n_claims, roots, excluded):
+        self.violations = list(violations)
+        self.files = list(files)
+        self.n_claims = int(n_claims)
+        self.roots = list(roots)
+        self.excluded = list(excluded)
+
+    @property
+    def n_files(self):
+        return len(self.files)
+
+    @property
+    def ok(self):
+        return not self.violations
+
+    def as_dict(self):
+        return {"schema": SCAN_SCHEMA, "roots": self.roots,
+                "excluded": self.excluded, "n_files": self.n_files,
+                "n_claims_inspected": self.n_claims,
+                "n_violations": len(self.violations),
+                "ok": self.ok, "violations": self.violations,
+                "rules": dict(SCAN_RULES)}
+
+    def report(self):
+        lines = [f"RATIFICATION SCAN  ({SCAN_SCHEMA})",
+                 f"  roots      : {', '.join(self.roots) or '(none)'}",
+                 f"  excluded   : {', '.join(self.excluded) or '(none)'}",
+                 f"  files      : {self.n_files}",
+                 f"  claims     : {self.n_claims} ratification assertion(s) "
+                 f"inspected",
+                 f"  violations : {len(self.violations)}"]
+        for v in self.violations:
+            lines.append("    " + format_violation(v))
+        lines.append("OK" if self.ok else "FABRICATED RATIFICATION AUTHORITY")
+        return "\n".join(lines)
+
+
+def _iter_files(roots, excluded):
+    """Every scannable file under ``roots``.  A missing root is a FAILURE."""
+    files, errors = [], []
+    for root in roots:
+        if not os.path.exists(root):
+            errors.append(_v("R6_UNPARSEABLE", root, "/", None,
+                             "path does not exist"))
+            continue
+        if os.path.isfile(root):
+            files.append(root)
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in sorted(dirnames)
+                           if d not in (".git", "__pycache__", ".pytest_cache",
+                                        ".mypy_cache", ".ipynb_checkpoints",
+                                        "node_modules", ".eggs")]
+            for fn in sorted(filenames):
+                if os.path.splitext(fn)[1].lower() in SCAN_SUFFIXES:
+                    files.append(os.path.join(dirpath, fn))
+    keep = []
+    for f in files:
+        if any(fnmatch.fnmatch(f, pat) or fnmatch.fnmatch(os.path.basename(f),
+                                                          pat)
+               for pat in excluded):
+            continue
+        keep.append(f)
+    return keep, errors
+
+
+def scan_paths(roots, *, exclude=()):
+    """Scan files and directories.  Returns a :class:`ScanResult`.
+
+    FAIL-CLOSED in four places, each separately tested: a path that does not
+    exist, a file that cannot be read, a file that does not parse, and a scan
+    that inspected zero files.
+    """
+    roots = [str(r) for r in roots]
+    exclude = [str(p) for p in exclude]
+    files, violations = _iter_files(roots, exclude)
+    counter = {"claims": 0}
+    for path in files:
+        violations.extend(scan_file(path, _counter=counter))
+    if not files:
+        violations.append(_v(
+            "R8_NOTHING_SCANNED", ", ".join(roots) or "(no roots)", "/", None,
+            "the scan inspected ZERO files. A guard that looked at nothing "
+            "is not a passing guard."))
+    return ScanResult(violations, files, counter["claims"], roots, exclude)
+
+
+def enforce_no_fabricated_claims(roots, *, exclude=()):
+    """``scan_paths`` that RAISES.  For use in tests and merge hooks."""
+    res = scan_paths(roots, exclude=exclude)
+    if not res.ok:
+        raise FabricatedAuthorityError(res.report())
+    return res
+
+
+def enforce_no_fabricated_claims_data(obj, *, source="<data>"):
+    """``scan_data`` that RAISES.  The in-process form, for a routine that is
+    about to WRITE an artifact: refuse to emit it rather than emit a
+    fabricated claim and rely on someone scanning the tree later."""
+    bad = scan_data(obj, source=source)
+    if bad:
+        raise FabricatedAuthorityError(
+            "fabricated ratification authority:\n  "
+            + "\n  ".join(format_violation(v) for v in bad))
+    return True
+
+
+def main(argv=None):
+    """``python -m CDDF_analysis.hbi_mcmc.ratification --check <paths>``.
+
+    Exit 0 clean, 1 on any violation, 2 on usage error.  Runnable over a whole
+    tree -- including branches on which this module does not exist -- because
+    the two live fabricated-authority sites were on exactly such branches.
+    """
+    ap = argparse.ArgumentParser(
+        prog="python -m CDDF_analysis.hbi_mcmc.ratification",
+        description="Refuse any code or artifact that claims a ratification "
+                    "no deciding authority granted.")
+    ap.add_argument("--check", nargs="+", metavar="PATH", required=True,
+                    help="files or directories to scan (.py, .json, .md)")
+    ap.add_argument("--exclude", action="append", default=[], metavar="GLOB",
+                    help="skip paths matching GLOB. ECHOED in the report: an "
+                         "exclusion that is not visible is a bypass.")
+    ap.add_argument("--json", action="store_true",
+                    help="machine-readable output")
+    ap.add_argument("--stamp", action="store_true",
+                    help="print the ratification stamp and exit")
+    args = ap.parse_args(argv)
+
+    if args.stamp:
+        print(json.dumps(ratification_stamp(), indent=2, sort_keys=True))
+        return 0
+
+    res = scan_paths(args.check, exclude=args.exclude)
+    if args.json:
+        print(json.dumps(res.as_dict(), indent=2, sort_keys=True))
+    else:
+        print(res.report())
+    return 0 if res.ok else 1
+
+
+# ---------------------------------------------------------------------------
 # 🔴 fail at IMPORT, not at review time.
+# ---------------------------------------------------------------------------
 enforce_authority_allow_list()
+
+#: 🔴 and the WIDENED rules, on this module's own data, also at import: the
+#: allow-list guard cannot see a claim written in any shape other than a
+#: record, and this module's own stamp is a JSON block like any other.
+_SELF_SCAN = scan_data(ratification_stamp(), source=__name__ + ".stamp",
+                       _counter=_SELF_SCAN_COUNTER)
+if _SELF_SCAN:
+    raise FabricatedAuthorityError(
+        "fabricated ratification authority in this module's own stamp:\n  "
+        + "\n  ".join(format_violation(v) for v in _SELF_SCAN))
+# 🔴 THE POWER CHECK, at import.  A stamp whose ratification blocks had been
+# DELETED would also scan clean -- the fail-open shape ("deleting an entire
+# artifact block leaves everything green") this project has hit repeatedly.
+if _SELF_SCAN_COUNTER["claims"] < SELF_SCAN_MIN_CLAIMS:
+    raise FabricatedAuthorityError(
+        f"the import-time self-scan inspected only "
+        f"{_SELF_SCAN_COUNTER['claims']} ratification claim(s) in this "
+        f"module's own stamp, fewer than the {SELF_SCAN_MIN_CLAIMS} it must "
+        f"carry ('pi_ratified_items' and 'ratified'). A clean scan of a stamp "
+        f"with its ratification blocks removed is not a pass.")
+
+if __name__ == "__main__":                                  # pragma: no cover
+    sys.exit(main())
