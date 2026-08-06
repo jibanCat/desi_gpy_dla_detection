@@ -1,0 +1,3202 @@
+{
+ "spec": "docs/PHASEB_STATS_SPEC_2026-08-06.md (frozen)",
+ "seeds": {
+  "cov": 41001,
+  "null": 43001
+ },
+ "ensembles": {
+  "cov": 2000,
+  "null": 2000
+ },
+ "group_edges": [
+  [
+   19.7,
+   20.3
+  ],
+  [
+   20.3,
+   21.0
+  ],
+  [
+   21.0,
+   21.6
+  ]
+ ],
+ "code_commit": "853550d24177341842de36c3c9aabedd91e41fae",
+ "rows": [
+  {
+   "pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz",
+   "fp_eta_migrated_at_load": false,
+   "fp_calibration_events": 89,
+   "conditional": {
+    "layer": "A (conditional implementation; variance = predicted mean; historical chi2/dof <= 3 is a CONDITIONAL diagnostic, not a predictive science gate)",
+    "window": {
+     "label": "win",
+     "window_logN": [
+      19.7,
+      21.6
+     ],
+     "n_bins_in_window": 19,
+     "n_bins_in_z_set": 19,
+     "total_mu": 68266.1126513544,
+     "total_obs": 67086.0,
+     "total_ratio": 1.0175910421154102,
+     "z_total": -4.516696194476069,
+     "z_bin_max": 10.001904581183512,
+     "chi2_dof": 22.094021781801782,
+     "per_bin": [
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8118.438019328619,
+       "obs": 7688.0,
+       "ratio": 1.0559882959584572,
+       "z": -4.777210570786884
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6466.12273737037,
+       "obs": 7154.0,
+       "ratio": 0.9038471816285113,
+       "z": 8.55438874398892
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7411.037807593573,
+       "obs": 6550.0,
+       "ratio": 1.13145615383108,
+       "z": -10.001904581183512
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6343.745839812387,
+       "obs": 6036.0,
+       "ratio": 1.0509850629245174,
+       "z": -3.8638415051870325
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6088.780425873858,
+       "obs": 5538.0,
+       "ratio": 1.0994547536789199,
+       "z": -7.058514986380127
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5313.697847984839,
+       "obs": 5015.0,
+       "ratio": 1.0595608869361595,
+       "z": -4.097638729006141
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4980.9602882115905,
+       "obs": 4582.0,
+       "ratio": 1.087071210871146,
+       "z": -5.652923774092881
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4201.487075709139,
+       "obs": 4196.0,
+       "ratio": 1.001307692018384,
+       "z": -0.08465243140901273
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3829.987612556024,
+       "obs": 3722.0,
+       "ratio": 1.0290133295421882,
+       "z": -1.744918933390588
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3058.3463098418974,
+       "obs": 3236.0,
+       "ratio": 0.9451008374047891,
+       "z": 3.212409506679843
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2753.246561140357,
+       "obs": 2852.0,
+       "ratio": 0.9653739695443047,
+       "z": 1.88204357801473
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2155.741820896955,
+       "obs": 2389.0,
+       "ratio": 0.9023615826274403,
+       "z": 5.023871326456995
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1858.7666679376448,
+       "obs": 1992.0,
+       "ratio": 0.9331157971574522,
+       "z": 3.0902986446731444
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1524.7752310348828,
+       "obs": 1656.0,
+       "ratio": 0.920757989755364,
+       "z": 3.3605696630844175
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1248.6293398556531,
+       "obs": 1437.0,
+       "ratio": 0.8689139456198004,
+       "z": 5.330850361885772
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1034.8886029335827,
+       "obs": 1138.0,
+       "ratio": 0.9093924454600902,
+       "z": 3.2052349460125704
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 814.3175775684414,
+       "obs": 876.0,
+       "ratio": 0.929586275763061,
+       "z": 2.161546170924308
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 615.8708202065882,
+       "obs": 623.0,
+       "ratio": 0.9885566937505428,
+       "z": 0.2872729628304236
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 447.27206549799143,
+       "obs": 406.0,
+       "ratio": 1.1016553337388952,
+       "z": -1.9515079128248518
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "full": {
+     "label": "full",
+     "window_logN": [
+      null,
+      null
+     ],
+     "n_bins_in_window": 29,
+     "n_bins_in_z_set": 29,
+     "total_mu": 88122.55797538643,
+     "total_obs": 88071.0,
+     "total_ratio": 1.00058541376147,
+     "z_total": -0.1736809985185182,
+     "z_bin_max": 10.001904581183512,
+     "chi2_dof": 19.228042267090995,
+     "per_bin": [
+      {
+       "lo": 19.5,
+       "hi": 19.6,
+       "mu": 10745.435144025218,
+       "obs": 11128.0,
+       "ratio": 0.965621418406292,
+       "z": 3.6905667763856216
+      },
+      {
+       "lo": 19.6,
+       "hi": 19.7,
+       "mu": 8282.083055335796,
+       "obs": 9165.0,
+       "ratio": 0.9036642722679536,
+       "z": 9.701749591882951
+      },
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8118.438019328619,
+       "obs": 7688.0,
+       "ratio": 1.0559882959584572,
+       "z": -4.777210570786884
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6466.12273737037,
+       "obs": 7154.0,
+       "ratio": 0.9038471816285113,
+       "z": 8.55438874398892
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7411.037807593573,
+       "obs": 6550.0,
+       "ratio": 1.13145615383108,
+       "z": -10.001904581183512
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6343.745839812387,
+       "obs": 6036.0,
+       "ratio": 1.0509850629245174,
+       "z": -3.8638415051870325
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6088.780425873858,
+       "obs": 5538.0,
+       "ratio": 1.0994547536789199,
+       "z": -7.058514986380127
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5313.697847984839,
+       "obs": 5015.0,
+       "ratio": 1.0595608869361595,
+       "z": -4.097638729006141
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4980.9602882115905,
+       "obs": 4582.0,
+       "ratio": 1.087071210871146,
+       "z": -5.652923774092881
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4201.487075709139,
+       "obs": 4196.0,
+       "ratio": 1.001307692018384,
+       "z": -0.08465243140901273
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3829.987612556024,
+       "obs": 3722.0,
+       "ratio": 1.0290133295421882,
+       "z": -1.744918933390588
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3058.3463098418974,
+       "obs": 3236.0,
+       "ratio": 0.9451008374047891,
+       "z": 3.212409506679843
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2753.246561140357,
+       "obs": 2852.0,
+       "ratio": 0.9653739695443047,
+       "z": 1.88204357801473
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2155.741820896955,
+       "obs": 2389.0,
+       "ratio": 0.9023615826274403,
+       "z": 5.023871326456995
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1858.7666679376448,
+       "obs": 1992.0,
+       "ratio": 0.9331157971574522,
+       "z": 3.0902986446731444
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1524.7752310348828,
+       "obs": 1656.0,
+       "ratio": 0.920757989755364,
+       "z": 3.3605696630844175
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1248.6293398556531,
+       "obs": 1437.0,
+       "ratio": 0.8689139456198004,
+       "z": 5.330850361885772
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1034.8886029335827,
+       "obs": 1138.0,
+       "ratio": 0.9093924454600902,
+       "z": 3.2052349460125704
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 814.3175775684414,
+       "obs": 876.0,
+       "ratio": 0.929586275763061,
+       "z": 2.161546170924308
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 615.8708202065882,
+       "obs": 623.0,
+       "ratio": 0.9885566937505428,
+       "z": 0.2872729628304236
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 447.27206549799143,
+       "obs": 406.0,
+       "ratio": 1.1016553337388952,
+       "z": -1.9515079128248518
+      },
+      {
+       "lo": 21.6,
+       "hi": 21.7,
+       "mu": 309.08956862376897,
+       "obs": 294.0,
+       "ratio": 1.051325063346153,
+       "z": -0.8582911812184173
+      },
+      {
+       "lo": 21.7,
+       "hi": 21.8,
+       "mu": 205.51758438668827,
+       "obs": 156.0,
+       "ratio": 1.3174204127351812,
+       "z": -3.454100400151209
+      },
+      {
+       "lo": 21.8,
+       "hi": 21.9,
+       "mu": 130.73659323497145,
+       "obs": 104.0,
+       "ratio": 1.257082627259341,
+       "z": -2.3383390744108516
+      },
+      {
+       "lo": 21.9,
+       "hi": 22.0,
+       "mu": 81.21148187646104,
+       "obs": 63.0,
+       "ratio": 1.289071140896207,
+       "z": -2.0208615850003286
+      },
+      {
+       "lo": 22.0,
+       "hi": 22.1,
+       "mu": 48.79838542752027,
+       "obs": 35.0,
+       "ratio": 1.3942395836434365,
+       "z": -1.9752658046050005
+      },
+      {
+       "lo": 22.1,
+       "hi": 22.2,
+       "mu": 28.081357805268212,
+       "obs": 19.0,
+       "ratio": 1.4779662002772742,
+       "z": -1.7137273805785171
+      },
+      {
+       "lo": 22.2,
+       "hi": 22.3,
+       "mu": 15.998052584627114,
+       "obs": 12.0,
+       "ratio": 1.333171048718926,
+       "z": -0.9995739788120193
+      },
+      {
+       "lo": 22.3,
+       "hi": 22.4,
+       "mu": 9.49410073171199,
+       "obs": 9.0,
+       "ratio": 1.0549000813013323,
+       "z": -0.16035724246014016
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "mu_total": 88122.55797538643,
+    "mu_fp_total": 14682.949169806607,
+    "mu_sig_total": 73439.60880557982,
+    "obs_total": 88071.0,
+    "by_z": {
+     "chi2_dof": 18.396247919183644,
+     "max_abs_z": 7.515129690773787,
+     "n_rows": 15,
+     "note": "FULL grid (not window-restricted)"
+    },
+    "by_snr": {
+     "chi2_dof": 48.98813985831927,
+     "max_abs_z": 10.769054783285506,
+     "n_rows": 6,
+     "note": "FULL grid (not window-restricted)"
+    }
+   },
+   "conditional_eta_off": {
+    "layer": "A (conditional implementation; variance = predicted mean; historical chi2/dof <= 3 is a CONDITIONAL diagnostic, not a predictive science gate)",
+    "window": {
+     "label": "win",
+     "window_logN": [
+      19.7,
+      21.6
+     ],
+     "n_bins_in_window": 19,
+     "n_bins_in_z_set": 19,
+     "total_mu": 68293.81327190048,
+     "total_obs": 67086.0,
+     "total_ratio": 1.018003954206548,
+     "z_total": -4.621778373759547,
+     "z_bin_max": 10.075030092842386,
+     "chi2_dof": 22.223648998854767,
+     "per_bin": [
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8132.76592650763,
+       "obs": 7688.0,
+       "ratio": 1.0578519675478186,
+       "z": -4.931878536706719
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6469.943512618106,
+       "obs": 7154.0,
+       "ratio": 0.9043812570056061,
+       "z": 8.504361671476403
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7417.724164277111,
+       "obs": 6550.0,
+       "ratio": 1.1324769716453604,
+       "z": -10.075030092842386
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6345.656227436254,
+       "obs": 6036.0,
+       "ratio": 1.0513015618681667,
+       "z": -3.887241728197775
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6089.735619685791,
+       "obs": 5538.0,
+       "ratio": 1.0996272336016235,
+       "z": -7.070201695917913
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5313.697847984839,
+       "obs": 5015.0,
+       "ratio": 1.0595608869361595,
+       "z": -4.097638729006141
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4980.9602882115905,
+       "obs": 4582.0,
+       "ratio": 1.087071210871146,
+       "z": -5.652923774092881
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4201.487075709139,
+       "obs": 4196.0,
+       "ratio": 1.001307692018384,
+       "z": -0.08465243140901273
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3829.987612556024,
+       "obs": 3722.0,
+       "ratio": 1.0290133295421882,
+       "z": -1.744918933390588
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3058.3463098418974,
+       "obs": 3236.0,
+       "ratio": 0.9451008374047891,
+       "z": 3.212409506679843
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2753.246561140357,
+       "obs": 2852.0,
+       "ratio": 0.9653739695443047,
+       "z": 1.88204357801473
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2155.741820896955,
+       "obs": 2389.0,
+       "ratio": 0.9023615826274403,
+       "z": 5.023871326456995
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1858.7666679376448,
+       "obs": 1992.0,
+       "ratio": 0.9331157971574522,
+       "z": 3.0902986446731444
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1524.7752310348828,
+       "obs": 1656.0,
+       "ratio": 0.920757989755364,
+       "z": 3.3605696630844175
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1248.6293398556531,
+       "obs": 1437.0,
+       "ratio": 0.8689139456198004,
+       "z": 5.330850361885772
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1034.8886029335827,
+       "obs": 1138.0,
+       "ratio": 0.9093924454600902,
+       "z": 3.2052349460125704
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 814.3175775684414,
+       "obs": 876.0,
+       "ratio": 0.929586275763061,
+       "z": 2.161546170924308
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 615.8708202065882,
+       "obs": 623.0,
+       "ratio": 0.9885566937505428,
+       "z": 0.2872729628304236
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 447.27206549799143,
+       "obs": 406.0,
+       "ratio": 1.1016553337388952,
+       "z": -1.9515079128248518
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "full": {
+     "label": "full",
+     "window_logN": [
+      null,
+      null
+     ],
+     "n_bins_in_window": 29,
+     "n_bins_in_z_set": 29,
+     "total_mu": 88207.57022464857,
+     "total_obs": 88071.0,
+     "total_ratio": 1.0015506832515648,
+     "z_total": -0.4598361329699124,
+     "z_bin_max": 10.075030092842386,
+     "chi2_dof": 19.071342866252234,
+     "per_bin": [
+      {
+       "lo": 19.5,
+       "hi": 19.6,
+       "mu": 10782.687702690648,
+       "obs": 11128.0,
+       "ratio": 0.9689690602705471,
+       "z": 3.3254355198379972
+      },
+      {
+       "lo": 19.6,
+       "hi": 19.7,
+       "mu": 8302.142125386412,
+       "obs": 9165.0,
+       "ratio": 0.9058529323934983,
+       "z": 9.469873659644643
+      },
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8132.76592650763,
+       "obs": 7688.0,
+       "ratio": 1.0578519675478186,
+       "z": -4.931878536706719
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6469.943512618106,
+       "obs": 7154.0,
+       "ratio": 0.9043812570056061,
+       "z": 8.504361671476403
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7417.724164277111,
+       "obs": 6550.0,
+       "ratio": 1.1324769716453604,
+       "z": -10.075030092842386
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6345.656227436254,
+       "obs": 6036.0,
+       "ratio": 1.0513015618681667,
+       "z": -3.887241728197775
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6089.735619685791,
+       "obs": 5538.0,
+       "ratio": 1.0996272336016235,
+       "z": -7.070201695917913
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5313.697847984839,
+       "obs": 5015.0,
+       "ratio": 1.0595608869361595,
+       "z": -4.097638729006141
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4980.9602882115905,
+       "obs": 4582.0,
+       "ratio": 1.087071210871146,
+       "z": -5.652923774092881
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4201.487075709139,
+       "obs": 4196.0,
+       "ratio": 1.001307692018384,
+       "z": -0.08465243140901273
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3829.987612556024,
+       "obs": 3722.0,
+       "ratio": 1.0290133295421882,
+       "z": -1.744918933390588
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3058.3463098418974,
+       "obs": 3236.0,
+       "ratio": 0.9451008374047891,
+       "z": 3.212409506679843
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2753.246561140357,
+       "obs": 2852.0,
+       "ratio": 0.9653739695443047,
+       "z": 1.88204357801473
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2155.741820896955,
+       "obs": 2389.0,
+       "ratio": 0.9023615826274403,
+       "z": 5.023871326456995
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1858.7666679376448,
+       "obs": 1992.0,
+       "ratio": 0.9331157971574522,
+       "z": 3.0902986446731444
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1524.7752310348828,
+       "obs": 1656.0,
+       "ratio": 0.920757989755364,
+       "z": 3.3605696630844175
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1248.6293398556531,
+       "obs": 1437.0,
+       "ratio": 0.8689139456198004,
+       "z": 5.330850361885772
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1034.8886029335827,
+       "obs": 1138.0,
+       "ratio": 0.9093924454600902,
+       "z": 3.2052349460125704
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 814.3175775684414,
+       "obs": 876.0,
+       "ratio": 0.929586275763061,
+       "z": 2.161546170924308
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 615.8708202065882,
+       "obs": 623.0,
+       "ratio": 0.9885566937505428,
+       "z": 0.2872729628304236
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 447.27206549799143,
+       "obs": 406.0,
+       "ratio": 1.1016553337388952,
+       "z": -1.9515079128248518
+      },
+      {
+       "lo": 21.6,
+       "hi": 21.7,
+       "mu": 309.08956862376897,
+       "obs": 294.0,
+       "ratio": 1.051325063346153,
+       "z": -0.8582911812184173
+      },
+      {
+       "lo": 21.7,
+       "hi": 21.8,
+       "mu": 205.51758438668827,
+       "obs": 156.0,
+       "ratio": 1.3174204127351812,
+       "z": -3.454100400151209
+      },
+      {
+       "lo": 21.8,
+       "hi": 21.9,
+       "mu": 130.73659323497145,
+       "obs": 104.0,
+       "ratio": 1.257082627259341,
+       "z": -2.3383390744108516
+      },
+      {
+       "lo": 21.9,
+       "hi": 22.0,
+       "mu": 81.21148187646104,
+       "obs": 63.0,
+       "ratio": 1.289071140896207,
+       "z": -2.0208615850003286
+      },
+      {
+       "lo": 22.0,
+       "hi": 22.1,
+       "mu": 48.79838542752027,
+       "obs": 35.0,
+       "ratio": 1.3942395836434365,
+       "z": -1.9752658046050005
+      },
+      {
+       "lo": 22.1,
+       "hi": 22.2,
+       "mu": 28.081357805268212,
+       "obs": 19.0,
+       "ratio": 1.4779662002772742,
+       "z": -1.7137273805785171
+      },
+      {
+       "lo": 22.2,
+       "hi": 22.3,
+       "mu": 15.998052584627114,
+       "obs": 12.0,
+       "ratio": 1.333171048718926,
+       "z": -0.9995739788120193
+      },
+      {
+       "lo": 22.3,
+       "hi": 22.4,
+       "mu": 9.49410073171199,
+       "obs": 9.0,
+       "ratio": 1.0549000813013323,
+       "z": -0.16035724246014016
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "mu_total": 88207.57022464856,
+    "mu_fp_total": 14767.961419068735,
+    "mu_sig_total": 73439.60880557982,
+    "obs_total": 88071.0,
+    "by_z": {
+     "chi2_dof": 18.48659521299809,
+     "max_abs_z": 7.640350657148092,
+     "n_rows": 15,
+     "note": "FULL grid (not window-restricted)"
+    },
+    "by_snr": {
+     "chi2_dof": 49.17916488118281,
+     "max_abs_z": 10.628949614623778,
+     "n_rows": 6,
+     "note": "FULL grid (not window-restricted)"
+    }
+   },
+   "predictive": {
+    "T_obs": 40.72123098109325,
+    "p_value": 0.0004997501249375312,
+    "p_is_bound": true,
+    "p_mc_error": 0.0004996252342383581,
+    "null_quantiles": {
+     "q05": 0.42133788985720494,
+     "q50": 2.4488763028394245,
+     "q95": 7.507742386970496,
+     "q99": 11.076391329694138
+    },
+    "null_mean": 3.0142510226209844,
+    "null_sd": 2.407105459482038,
+    "effective_dof_note": "null mean 3.01, sd 2.41; chi2-like eff dof ~ 3.0 only if var ~ 2*mean (var/2mean = 0.96)",
+    "residual": [
+     -1760.8226779636461,
+     130.46366370638862,
+     450.2463629028607
+    ],
+    "residual_z": [
+     -1.986447208610899,
+     0.8644488287259965,
+     5.934792817350319
+    ],
+    "n_null_draws": 2000,
+    "seed_null": 43001,
+    "fallback_1d": false,
+    "covariance": {
+     "axis_labels": [
+      "nhat[19.7,20.3)",
+      "nhat[20.3,21.0)",
+      "nhat[21.0,21.6)"
+     ],
+     "group_edges": [
+      [
+       19.7,
+       20.3
+      ],
+      [
+       20.3,
+       21.0
+      ],
+      [
+       21.0,
+       21.6
+      ]
+     ],
+     "units": "catalogue counts",
+     "method": "parametric bootstrap through the production fold: y*~Poisson(mu(n0_obs)); n0*~Poisson(n0_obs) -> lam*=n0*/ell -> forward.fold_mu_fp; d = G(y*) - G(mu(n0*))",
+     "raw_dim": 2610,
+     "algebraic_rank": 3,
+     "effective_rank": 1.1846318713646395,
+     "eigenvalues": [
+      785742.9493463251,
+      22777.142687364725,
+      5749.676937911184
+     ],
+     "condition_number": 136.65862583781617,
+     "regularization": "none (exact inverse; frozen fallback at cond>1e6)",
+     "calibration_events_total": 89,
+     "calibration_events_per_group": [
+      29,
+      0,
+      0
+     ],
+     "n_resamples": 2000,
+     "seed": 41001,
+     "matrix": [
+      [
+       785736.9744295802,
+       -284.9851340833987,
+       2139.4601055044923
+      ],
+      [
+       -284.9851340833987,
+       22777.211799649827,
+       -26.013384192096076
+      ],
+      [
+       2139.4601055044923,
+       -26.013384192096076,
+       5755.582742371185
+      ]
+     ],
+     "mc_error_rel_max": 11.65619591398935,
+     "survey_variance": [
+      39741.822677963646,
+      22838.53633629361,
+      5685.753637097139
+     ],
+     "calibration_variance": [
+      751172.6625933419,
+      1.045562915022305e-18,
+      7.469039548065107e-21
+     ]
+    },
+    "layer": "B (calibration-predictive); simulation-calibrated p; NO ratified threshold"
+   },
+   "transport": {
+    "layer": "C (transport stress; UNCALIBRATED systematic \u2014 never absorbed into predictive covariance)",
+    "total_obs": 88071.0,
+    "total_mu": 88122.55797538643,
+    "total_mu_fp": 14682.949169806607,
+    "residual": -51.55797538642946,
+    "z_survey_only": -0.1736809985185182,
+    "z_with_calibration": -0.032540053674994636,
+    "var_survey": 88122.55797538643,
+    "var_calibration": 2422348.273293534
+   },
+   "support": {
+    "live_cells": 2610,
+    "n_pad_bins": 2,
+    "fp_events_per_group": [
+     29,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "pack": "modelA_pack_london0_winlya_only_pad19p0_molly172_bw0p2.npz",
+   "fp_eta_migrated_at_load": false,
+   "fp_calibration_events": 89,
+   "conditional": {
+    "layer": "A (conditional implementation; variance = predicted mean; historical chi2/dof <= 3 is a CONDITIONAL diagnostic, not a predictive science gate)",
+    "window": {
+     "label": "win",
+     "window_logN": [
+      19.7,
+      21.6
+     ],
+     "n_bins_in_window": 19,
+     "n_bins_in_z_set": 19,
+     "total_mu": 72003.4860262579,
+     "total_obs": 69631.0,
+     "total_ratio": 1.0340722670399376,
+     "z_total": -8.841519346499368,
+     "z_bin_max": 14.698632759707083,
+     "chi2_dof": 28.157125674456847,
+     "per_bin": [
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8237.823977286955,
+       "obs": 7579.0,
+       "ratio": 1.0869275600061954,
+       "z": -7.258771787405077
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6639.415555039264,
+       "obs": 6850.0,
+       "ratio": 0.9692577452612064,
+       "z": 2.5844097013292884
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7672.494013804513,
+       "obs": 6385.0,
+       "ratio": 1.2016435417078328,
+       "z": -14.698632759707083
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6601.589012703043,
+       "obs": 6078.0,
+       "ratio": 1.0861449510863843,
+       "z": -6.444159523773976
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6353.6707438838275,
+       "obs": 5734.0,
+       "ratio": 1.108069540265753,
+       "z": -7.774073456173447
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5583.714440881882,
+       "obs": 5447.0,
+       "ratio": 1.0250990344927267,
+       "z": -1.8295858416691022
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 5271.934770205773,
+       "obs": 4808.0,
+       "ratio": 1.0964922566983721,
+       "z": -6.389574062455296
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4472.734552894137,
+       "obs": 4427.0,
+       "ratio": 1.0103308228809886,
+       "z": -0.683845314292248
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 4112.207708861154,
+       "obs": 4093.0,
+       "ratio": 1.0046928191695954,
+       "z": -0.2995284250091452
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3314.649239653526,
+       "obs": 3460.0,
+       "ratio": 0.9579911097264526,
+       "z": 2.5246345375601553
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 3014.520851350643,
+       "obs": 3056.0,
+       "ratio": 0.9864269801540063,
+       "z": 0.7554760273028882
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2378.127426567563,
+       "obs": 2684.0,
+       "ratio": 0.8860385344886598,
+       "z": 6.272244454542645
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 2050.5292424659356,
+       "obs": 2265.0,
+       "ratio": 0.9053109238260201,
+       "z": 4.736255277494956
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1689.2455763946623,
+       "obs": 1848.0,
+       "ratio": 0.9140939266204883,
+       "z": 3.862597369123395
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1381.791141950079,
+       "obs": 1542.0,
+       "ratio": 0.8961032048962899,
+       "z": 4.3098814332092985
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1137.1275411323377,
+       "obs": 1243.0,
+       "ratio": 0.9148250532038115,
+       "z": 3.139629568089082
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 896.1430123416078,
+       "obs": 915.0,
+       "ratio": 0.9793912703186971,
+       "z": 0.6299174733542304
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 686.9257389914017,
+       "obs": 702.0,
+       "ratio": 0.9785266937199454,
+       "z": 0.5751500156365089
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 508.84147984959054,
+       "obs": 515.0,
+       "ratio": 0.9880417084458069,
+       "z": 0.2730141227579488
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "full": {
+     "label": "full",
+     "window_logN": [
+      null,
+      null
+     ],
+     "n_bins_in_window": 29,
+     "n_bins_in_z_set": 29,
+     "total_mu": 92155.17056238366,
+     "total_obs": 87840.0,
+     "total_ratio": 1.0491253479324187,
+     "z_total": -14.214713563727438,
+     "z_bin_max": 15.355002100724082,
+     "chi2_dof": 28.509427442788773,
+     "per_bin": [
+      {
+       "lo": 19.5,
+       "hi": 19.6,
+       "mu": 10807.276069465628,
+       "obs": 9211.0,
+       "ratio": 1.173301060630293,
+       "z": -15.355002100724082
+      },
+      {
+       "lo": 19.6,
+       "hi": 19.7,
+       "mu": 8371.924903630155,
+       "obs": 8232.0,
+       "ratio": 1.0169976802271812,
+       "z": -1.5292636105702193
+      },
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8237.823977286955,
+       "obs": 7579.0,
+       "ratio": 1.0869275600061954,
+       "z": -7.258771787405077
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6639.415555039264,
+       "obs": 6850.0,
+       "ratio": 0.9692577452612064,
+       "z": 2.5844097013292884
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7672.494013804513,
+       "obs": 6385.0,
+       "ratio": 1.2016435417078328,
+       "z": -14.698632759707083
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6601.589012703043,
+       "obs": 6078.0,
+       "ratio": 1.0861449510863843,
+       "z": -6.444159523773976
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6353.6707438838275,
+       "obs": 5734.0,
+       "ratio": 1.108069540265753,
+       "z": -7.774073456173447
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5583.714440881882,
+       "obs": 5447.0,
+       "ratio": 1.0250990344927267,
+       "z": -1.8295858416691022
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 5271.934770205773,
+       "obs": 4808.0,
+       "ratio": 1.0964922566983721,
+       "z": -6.389574062455296
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4472.734552894137,
+       "obs": 4427.0,
+       "ratio": 1.0103308228809886,
+       "z": -0.683845314292248
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 4112.207708861154,
+       "obs": 4093.0,
+       "ratio": 1.0046928191695954,
+       "z": -0.2995284250091452
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3314.649239653526,
+       "obs": 3460.0,
+       "ratio": 0.9579911097264526,
+       "z": 2.5246345375601553
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 3014.520851350643,
+       "obs": 3056.0,
+       "ratio": 0.9864269801540063,
+       "z": 0.7554760273028882
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2378.127426567563,
+       "obs": 2684.0,
+       "ratio": 0.8860385344886598,
+       "z": 6.272244454542645
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 2050.5292424659356,
+       "obs": 2265.0,
+       "ratio": 0.9053109238260201,
+       "z": 4.736255277494956
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1689.2455763946623,
+       "obs": 1848.0,
+       "ratio": 0.9140939266204883,
+       "z": 3.862597369123395
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1381.791141950079,
+       "obs": 1542.0,
+       "ratio": 0.8961032048962899,
+       "z": 4.3098814332092985
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1137.1275411323377,
+       "obs": 1243.0,
+       "ratio": 0.9148250532038115,
+       "z": 3.139629568089082
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 896.1430123416078,
+       "obs": 915.0,
+       "ratio": 0.9793912703186971,
+       "z": 0.6299174733542304
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 686.9257389914017,
+       "obs": 702.0,
+       "ratio": 0.9785266937199454,
+       "z": 0.5751500156365089
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 508.84147984959054,
+       "obs": 515.0,
+       "ratio": 0.9880417084458069,
+       "z": 0.2730141227579488
+      },
+      {
+       "lo": 21.6,
+       "hi": 21.7,
+       "mu": 360.43679469719496,
+       "obs": 312.0,
+       "ratio": 1.1552461368499838,
+       "z": -2.5512959318091917
+      },
+      {
+       "lo": 21.7,
+       "hi": 21.8,
+       "mu": 244.74040533907277,
+       "obs": 201.0,
+       "ratio": 1.2176139569108098,
+       "z": -2.795953638415061
+      },
+      {
+       "lo": 21.8,
+       "hi": 21.9,
+       "mu": 157.5482697852247,
+       "obs": 101.0,
+       "ratio": 1.5598838592596505,
+       "z": -4.505183680569787
+      },
+      {
+       "lo": 21.9,
+       "hi": 22.0,
+       "mu": 96.83923877933441,
+       "obs": 72.0,
+       "ratio": 1.3449894274907557,
+       "z": -2.5241351164757106
+      },
+      {
+       "lo": 22.0,
+       "hi": 22.1,
+       "mu": 55.97751653793361,
+       "obs": 39.0,
+       "ratio": 1.4353209368700925,
+       "z": -2.269171648299483
+      },
+      {
+       "lo": 22.1,
+       "hi": 22.2,
+       "mu": 30.73260440138441,
+       "obs": 17.0,
+       "ratio": 1.8078002589049653,
+       "z": -2.4771552542473323
+      },
+      {
+       "lo": 22.2,
+       "hi": 22.3,
+       "mu": 16.70327141353033,
+       "obs": 18.0,
+       "ratio": 0.9279595229739073,
+       "z": 0.31728410514185174
+      },
+      {
+       "lo": 22.3,
+       "hi": 22.4,
+       "mu": 9.505462076313679,
+       "obs": 6.0,
+       "ratio": 1.5842436793856132,
+       "z": -1.1369952656635864
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "mu_total": 92155.17056238366,
+    "mu_fp_total": 14631.661638598287,
+    "mu_sig_total": 77523.50892378538,
+    "obs_total": 87840.0,
+    "by_z": {
+     "chi2_dof": 29.652249475994054,
+     "max_abs_z": 9.557148165809885,
+     "n_rows": 15,
+     "note": "FULL grid (not window-restricted)"
+    },
+    "by_snr": {
+     "chi2_dof": 110.28679972802853,
+     "max_abs_z": 15.4313881494898,
+     "n_rows": 6,
+     "note": "FULL grid (not window-restricted)"
+    }
+   },
+   "conditional_eta_off": {
+    "layer": "A (conditional implementation; variance = predicted mean; historical chi2/dof <= 3 is a CONDITIONAL diagnostic, not a predictive science gate)",
+    "window": {
+     "label": "win",
+     "window_logN": [
+      19.7,
+      21.6
+     ],
+     "n_bins_in_window": 19,
+     "n_bins_in_z_set": 19,
+     "total_mu": 72031.08988855574,
+     "total_obs": 69631.0,
+     "total_ratio": 1.0344686976857398,
+     "z_total": -8.942676371499594,
+     "z_bin_max": 14.768289493365467,
+     "chi2_dof": 28.393445791245007,
+     "per_bin": [
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8252.101837096183,
+       "obs": 7579.0,
+       "ratio": 1.0888114312041408,
+       "z": -7.4096635158688064
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6643.222984321725,
+       "obs": 6850.0,
+       "ratio": 0.9698135743535364,
+       "z": 2.536955491590203
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7679.157015048819,
+       "obs": 6385.0,
+       "ratio": 1.2026870814485229,
+       "z": -14.768289493365467
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6603.492727344274,
+       "obs": 6078.0,
+       "ratio": 1.0864581650780312,
+       "z": -6.466657475910822
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6354.622601204443,
+       "obs": 5734.0,
+       "ratio": 1.108235542588846,
+       "z": -7.785431818735585
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5583.714440881882,
+       "obs": 5447.0,
+       "ratio": 1.0250990344927267,
+       "z": -1.8295858416691022
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 5271.934770205773,
+       "obs": 4808.0,
+       "ratio": 1.0964922566983721,
+       "z": -6.389574062455296
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4472.734552894137,
+       "obs": 4427.0,
+       "ratio": 1.0103308228809886,
+       "z": -0.683845314292248
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 4112.207708861154,
+       "obs": 4093.0,
+       "ratio": 1.0046928191695954,
+       "z": -0.2995284250091452
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3314.649239653526,
+       "obs": 3460.0,
+       "ratio": 0.9579911097264526,
+       "z": 2.5246345375601553
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 3014.520851350643,
+       "obs": 3056.0,
+       "ratio": 0.9864269801540063,
+       "z": 0.7554760273028882
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2378.127426567563,
+       "obs": 2684.0,
+       "ratio": 0.8860385344886598,
+       "z": 6.272244454542645
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 2050.5292424659356,
+       "obs": 2265.0,
+       "ratio": 0.9053109238260201,
+       "z": 4.736255277494956
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1689.2455763946623,
+       "obs": 1848.0,
+       "ratio": 0.9140939266204883,
+       "z": 3.862597369123395
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1381.791141950079,
+       "obs": 1542.0,
+       "ratio": 0.8961032048962899,
+       "z": 4.3098814332092985
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1137.1275411323377,
+       "obs": 1243.0,
+       "ratio": 0.9148250532038115,
+       "z": 3.139629568089082
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 896.1430123416078,
+       "obs": 915.0,
+       "ratio": 0.9793912703186971,
+       "z": 0.6299174733542304
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 686.9257389914017,
+       "obs": 702.0,
+       "ratio": 0.9785266937199454,
+       "z": 0.5751500156365089
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 508.84147984959054,
+       "obs": 515.0,
+       "ratio": 0.9880417084458069,
+       "z": 0.2730141227579488
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "full": {
+     "label": "full",
+     "window_logN": [
+      null,
+      null
+     ],
+     "n_bins_in_window": 29,
+     "n_bins_in_z_set": 29,
+     "total_mu": 92239.88586391842,
+     "total_obs": 87840.0,
+     "total_ratio": 1.0500897753178327,
+     "z_total": -14.48711915913016,
+     "z_bin_max": 15.685176842733823,
+     "chi2_dof": 29.042096122467,
+     "per_bin": [
+      {
+       "lo": 19.5,
+       "hi": 19.6,
+       "mu": 10844.39850496962,
+       "obs": 9211.0,
+       "ratio": 1.1773312892161134,
+       "z": -15.685176842733823
+      },
+      {
+       "lo": 19.6,
+       "hi": 19.7,
+       "mu": 8391.913907363076,
+       "obs": 8232.0,
+       "ratio": 1.0194258876777302,
+       "z": -1.7456441813025045
+      },
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8252.101837096183,
+       "obs": 7579.0,
+       "ratio": 1.0888114312041408,
+       "z": -7.4096635158688064
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6643.222984321725,
+       "obs": 6850.0,
+       "ratio": 0.9698135743535364,
+       "z": 2.536955491590203
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7679.157015048819,
+       "obs": 6385.0,
+       "ratio": 1.2026870814485229,
+       "z": -14.768289493365467
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6603.492727344274,
+       "obs": 6078.0,
+       "ratio": 1.0864581650780312,
+       "z": -6.466657475910822
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6354.622601204443,
+       "obs": 5734.0,
+       "ratio": 1.108235542588846,
+       "z": -7.785431818735585
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5583.714440881882,
+       "obs": 5447.0,
+       "ratio": 1.0250990344927267,
+       "z": -1.8295858416691022
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 5271.934770205773,
+       "obs": 4808.0,
+       "ratio": 1.0964922566983721,
+       "z": -6.389574062455296
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4472.734552894137,
+       "obs": 4427.0,
+       "ratio": 1.0103308228809886,
+       "z": -0.683845314292248
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 4112.207708861154,
+       "obs": 4093.0,
+       "ratio": 1.0046928191695954,
+       "z": -0.2995284250091452
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3314.649239653526,
+       "obs": 3460.0,
+       "ratio": 0.9579911097264526,
+       "z": 2.5246345375601553
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 3014.520851350643,
+       "obs": 3056.0,
+       "ratio": 0.9864269801540063,
+       "z": 0.7554760273028882
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2378.127426567563,
+       "obs": 2684.0,
+       "ratio": 0.8860385344886598,
+       "z": 6.272244454542645
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 2050.5292424659356,
+       "obs": 2265.0,
+       "ratio": 0.9053109238260201,
+       "z": 4.736255277494956
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1689.2455763946623,
+       "obs": 1848.0,
+       "ratio": 0.9140939266204883,
+       "z": 3.862597369123395
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1381.791141950079,
+       "obs": 1542.0,
+       "ratio": 0.8961032048962899,
+       "z": 4.3098814332092985
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1137.1275411323377,
+       "obs": 1243.0,
+       "ratio": 0.9148250532038115,
+       "z": 3.139629568089082
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 896.1430123416078,
+       "obs": 915.0,
+       "ratio": 0.9793912703186971,
+       "z": 0.6299174733542304
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 686.9257389914017,
+       "obs": 702.0,
+       "ratio": 0.9785266937199454,
+       "z": 0.5751500156365089
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 508.84147984959054,
+       "obs": 515.0,
+       "ratio": 0.9880417084458069,
+       "z": 0.2730141227579488
+      },
+      {
+       "lo": 21.6,
+       "hi": 21.7,
+       "mu": 360.43679469719496,
+       "obs": 312.0,
+       "ratio": 1.1552461368499838,
+       "z": -2.5512959318091917
+      },
+      {
+       "lo": 21.7,
+       "hi": 21.8,
+       "mu": 244.74040533907277,
+       "obs": 201.0,
+       "ratio": 1.2176139569108098,
+       "z": -2.795953638415061
+      },
+      {
+       "lo": 21.8,
+       "hi": 21.9,
+       "mu": 157.5482697852247,
+       "obs": 101.0,
+       "ratio": 1.5598838592596505,
+       "z": -4.505183680569787
+      },
+      {
+       "lo": 21.9,
+       "hi": 22.0,
+       "mu": 96.83923877933441,
+       "obs": 72.0,
+       "ratio": 1.3449894274907557,
+       "z": -2.5241351164757106
+      },
+      {
+       "lo": 22.0,
+       "hi": 22.1,
+       "mu": 55.97751653793361,
+       "obs": 39.0,
+       "ratio": 1.4353209368700925,
+       "z": -2.269171648299483
+      },
+      {
+       "lo": 22.1,
+       "hi": 22.2,
+       "mu": 30.73260440138441,
+       "obs": 17.0,
+       "ratio": 1.8078002589049653,
+       "z": -2.4771552542473323
+      },
+      {
+       "lo": 22.2,
+       "hi": 22.3,
+       "mu": 16.70327141353033,
+       "obs": 18.0,
+       "ratio": 0.9279595229739073,
+       "z": 0.31728410514185174
+      },
+      {
+       "lo": 22.3,
+       "hi": 22.4,
+       "mu": 9.505462076313679,
+       "obs": 6.0,
+       "ratio": 1.5842436793856132,
+       "z": -1.1369952656635864
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "mu_total": 92239.88586391842,
+    "mu_fp_total": 14716.37694013304,
+    "mu_sig_total": 77523.50892378538,
+    "obs_total": 87840.0,
+    "by_z": {
+     "chi2_dof": 30.269874589083166,
+     "max_abs_z": 9.678650415747457,
+     "n_rows": 15,
+     "note": "FULL grid (not window-restricted)"
+    },
+    "by_snr": {
+     "chi2_dof": 111.71072956833679,
+     "max_abs_z": 15.634864249369757,
+     "n_rows": 6,
+     "note": "FULL grid (not window-restricted)"
+    }
+   },
+   "predictive": {
+    "T_obs": 46.90501883702722,
+    "p_value": 0.0004997501249375312,
+    "p_is_bound": true,
+    "p_mc_error": 0.0004996252342383581,
+    "null_quantiles": {
+     "q05": 0.3120231095162801,
+     "q50": 2.359336142718993,
+     "q95": 7.653842158432671,
+     "q99": 10.863141379652765
+    },
+    "null_mean": 2.8999385178686996,
+    "null_sd": 2.4086202787689914,
+    "effective_dof_note": "null mean 2.90, sd 2.41; chi2-like eff dof ~ 2.9 only if var ~ 2*mean (var/2mean = 1.00)",
+    "residual": [
+     -3015.707743599487,
+     178.2962080012694,
+     464.9255093403208
+    ],
+    "residual_z": [
+     -3.260919473660791,
+     1.131283266313802,
+     5.826363669206699
+    ],
+    "n_null_draws": 2000,
+    "seed_null": 43001,
+    "fallback_1d": false,
+    "covariance": {
+     "axis_labels": [
+      "nhat[19.7,20.3)",
+      "nhat[20.3,21.0)",
+      "nhat[21.0,21.6)"
+     ],
+     "group_edges": [
+      [
+       19.7,
+       20.3
+      ],
+      [
+       20.3,
+       21.0
+      ],
+      [
+       21.0,
+       21.6
+      ]
+     ],
+     "units": "catalogue counts",
+     "method": "parametric bootstrap through the production fold: y*~Poisson(mu(n0_obs)); n0*~Poisson(n0_obs) -> lam*=n0*/ell -> forward.fold_mu_fp; d = G(y*) - G(mu(n0*))",
+     "raw_dim": 2610,
+     "algebraic_rank": 3,
+     "effective_rank": 1.1854551821496753,
+     "eigenvalues": [
+      855277.6196052338,
+      24825.746820620858,
+      6363.973904012591
+     ],
+     "condition_number": 134.3936402796949,
+     "regularization": "none (exact inverse; frozen fallback at cond>1e6)",
+     "calibration_events_total": 89,
+     "calibration_events_per_group": [
+      29,
+      0,
+      0
+     ],
+     "n_resamples": 2000,
+     "seed": 41001,
+     "matrix": [
+      [
+       855260.3798508777,
+       3585.712237260983,
+       1222.1079619473198
+      ],
+      [
+       3585.712237260983,
+       24839.42207003501,
+       -177.38317108554247
+      ],
+      [
+       1222.1079619473198,
+       -177.38317108554247,
+       6367.538408954477
+      ]
+     ],
+     "mc_error_rel_max": 1.8860892817569015,
+     "survey_variance": [
+      41088.70774359949,
+      24614.70379199873,
+      6300.074490659679
+     ],
+     "calibration_variance": [
+      810110.9339766504,
+      1.3241510556126505e-19,
+      2.4769073089644388e-20
+     ]
+    },
+    "layer": "B (calibration-predictive); simulation-calibrated p; NO ratified threshold"
+   },
+   "transport": {
+    "layer": "C (transport stress; UNCALIBRATED systematic \u2014 never absorbed into predictive covariance)",
+    "total_obs": 87840.0,
+    "total_mu": 92155.17056238366,
+    "total_mu_fp": 14631.661638598287,
+    "residual": -4315.170562383661,
+    "z_survey_only": -14.214713563727438,
+    "z_with_calibration": -2.730458704375481,
+    "var_survey": 92155.17056238366,
+    "var_calibration": 2405455.3068138054
+   },
+   "support": {
+    "live_cells": 2610,
+    "n_pad_bins": 2,
+    "fp_events_per_group": [
+     29,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "pack": "modelA_pack_saclay0_winlya_only_pad19p0_molly172_bw0p2.npz",
+   "fp_eta_migrated_at_load": false,
+   "fp_calibration_events": 89,
+   "conditional": {
+    "layer": "A (conditional implementation; variance = predicted mean; historical chi2/dof <= 3 is a CONDITIONAL diagnostic, not a predictive science gate)",
+    "window": {
+     "label": "win",
+     "window_logN": [
+      19.7,
+      21.6
+     ],
+     "n_bins_in_window": 19,
+     "n_bins_in_z_set": 19,
+     "total_mu": 69154.11501340939,
+     "total_obs": 67424.0,
+     "total_ratio": 1.0256602250446338,
+     "z_total": -6.579092021129211,
+     "z_bin_max": 13.01542391275689,
+     "chi2_dof": 25.567061135547327,
+     "per_bin": [
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8166.914747642341,
+       "obs": 7562.0,
+       "ratio": 1.0799940158215209,
+       "z": -6.693683314296671
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6518.581989512306,
+       "obs": 6926.0,
+       "ratio": 0.9411755688005062,
+       "z": 5.046190684187939
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7487.207043231755,
+       "obs": 6361.0,
+       "ratio": 1.1770487412720885,
+       "z": -13.01542391275689
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6409.552854332833,
+       "obs": 5885.0,
+       "ratio": 1.0891338749928348,
+       "z": -6.552022618309058
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6145.954861968037,
+       "obs": 5552.0,
+       "ratio": 1.1069803425734936,
+       "z": -7.576327831628632
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5342.864634955278,
+       "obs": 5215.0,
+       "ratio": 1.0245186260700438,
+       "z": -1.7492962192401411
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4992.507333484824,
+       "obs": 4761.0,
+       "ratio": 1.0486257789298097,
+       "z": -3.2764639736150487
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4236.79610520405,
+       "obs": 4331.0,
+       "ratio": 0.9782489275465366,
+       "z": 1.4472717223255176
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3904.661080421819,
+       "obs": 3877.0,
+       "ratio": 1.0071346609290222,
+       "z": -0.4426673263422627
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3128.254174460484,
+       "obs": 3309.0,
+       "ratio": 0.9453775081476229,
+       "z": 3.2315974691404565
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2827.92746309166,
+       "obs": 2957.0,
+       "ratio": 0.9563501735176394,
+       "z": 2.4271673052540232
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2223.387240939128,
+       "obs": 2520.0,
+       "ratio": 0.8822965241821936,
+       "z": 6.290458102788082
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1910.471055232036,
+       "obs": 2118.0,
+       "ratio": 0.9020165511010557,
+       "z": 4.747975252766934
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1565.376106309679,
+       "obs": 1656.0,
+       "ratio": 0.9452754265155067,
+       "z": 2.2905161993659275
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1284.0401089720642,
+       "obs": 1466.0,
+       "ratio": 0.8758800197626632,
+       "z": 5.077926064352007
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1061.6875948710904,
+       "obs": 1138.0,
+       "ratio": 0.9329416475141392,
+       "z": 2.3420532755635195
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 838.7423447341698,
+       "obs": 782.0,
+       "ratio": 1.0725605431383245,
+       "z": -1.959264155895246
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 640.2521891658453,
+       "obs": 603.0,
+       "ratio": 1.0617780914856472,
+       "z": -1.4722320352059501
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 468.936084880002,
+       "obs": 405.0,
+       "ratio": 1.1578668762469184,
+       "z": -2.952495281083626
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "full": {
+     "label": "full",
+     "window_logN": [
+      null,
+      null
+     ],
+     "n_bins_in_window": 29,
+     "n_bins_in_z_set": 29,
+     "total_mu": 89119.80829156643,
+     "total_obs": 86763.0,
+     "total_ratio": 1.0271637482747995,
+     "z_total": -7.894727343972102,
+     "z_bin_max": 13.01542391275689,
+     "chi2_dof": 20.071693784827236,
+     "per_bin": [
+      {
+       "lo": 19.5,
+       "hi": 19.6,
+       "mu": 10782.929167149117,
+       "obs": 10096.0,
+       "ratio": 1.06803973525645,
+       "z": -6.615209168229337
+      },
+      {
+       "lo": 19.6,
+       "hi": 19.7,
+       "mu": 8318.176436422877,
+       "obs": 8554.0,
+       "ratio": 0.9724311943445028,
+       "z": 2.585670221659929
+      },
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8166.914747642341,
+       "obs": 7562.0,
+       "ratio": 1.0799940158215209,
+       "z": -6.693683314296671
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6518.581989512306,
+       "obs": 6926.0,
+       "ratio": 0.9411755688005062,
+       "z": 5.046190684187939
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7487.207043231755,
+       "obs": 6361.0,
+       "ratio": 1.1770487412720885,
+       "z": -13.01542391275689
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6409.552854332833,
+       "obs": 5885.0,
+       "ratio": 1.0891338749928348,
+       "z": -6.552022618309058
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6145.954861968037,
+       "obs": 5552.0,
+       "ratio": 1.1069803425734936,
+       "z": -7.576327831628632
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5342.864634955278,
+       "obs": 5215.0,
+       "ratio": 1.0245186260700438,
+       "z": -1.7492962192401411
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4992.507333484824,
+       "obs": 4761.0,
+       "ratio": 1.0486257789298097,
+       "z": -3.2764639736150487
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4236.79610520405,
+       "obs": 4331.0,
+       "ratio": 0.9782489275465366,
+       "z": 1.4472717223255176
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3904.661080421819,
+       "obs": 3877.0,
+       "ratio": 1.0071346609290222,
+       "z": -0.4426673263422627
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3128.254174460484,
+       "obs": 3309.0,
+       "ratio": 0.9453775081476229,
+       "z": 3.2315974691404565
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2827.92746309166,
+       "obs": 2957.0,
+       "ratio": 0.9563501735176394,
+       "z": 2.4271673052540232
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2223.387240939128,
+       "obs": 2520.0,
+       "ratio": 0.8822965241821936,
+       "z": 6.290458102788082
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1910.471055232036,
+       "obs": 2118.0,
+       "ratio": 0.9020165511010557,
+       "z": 4.747975252766934
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1565.376106309679,
+       "obs": 1656.0,
+       "ratio": 0.9452754265155067,
+       "z": 2.2905161993659275
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1284.0401089720642,
+       "obs": 1466.0,
+       "ratio": 0.8758800197626632,
+       "z": 5.077926064352007
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1061.6875948710904,
+       "obs": 1138.0,
+       "ratio": 0.9329416475141392,
+       "z": 2.3420532755635195
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 838.7423447341698,
+       "obs": 782.0,
+       "ratio": 1.0725605431383245,
+       "z": -1.959264155895246
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 640.2521891658453,
+       "obs": 603.0,
+       "ratio": 1.0617780914856472,
+       "z": -1.4722320352059501
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 468.936084880002,
+       "obs": 405.0,
+       "ratio": 1.1578668762469184,
+       "z": -2.952495281083626
+      },
+      {
+       "lo": 21.6,
+       "hi": 21.7,
+       "mu": 326.91694594382875,
+       "obs": 287.0,
+       "ratio": 1.139083435344351,
+       "z": -2.2076925360797643
+      },
+      {
+       "lo": 21.7,
+       "hi": 21.8,
+       "mu": 218.4589945094177,
+       "obs": 177.0,
+       "ratio": 1.23423160739784,
+       "z": -2.805006034367496
+      },
+      {
+       "lo": 21.8,
+       "hi": 21.9,
+       "mu": 137.52900322424517,
+       "obs": 79.0,
+       "ratio": 1.740873458534749,
+       "z": -4.990843828066936
+      },
+      {
+       "lo": 21.9,
+       "hi": 22.0,
+       "mu": 81.57469070920214,
+       "obs": 66.0,
+       "ratio": 1.2359801622606386,
+       "z": -1.7244146866691215
+      },
+      {
+       "lo": 22.0,
+       "hi": 22.1,
+       "mu": 45.54141288361389,
+       "obs": 32.0,
+       "ratio": 1.423169152612934,
+       "z": -2.0065996403393256
+      },
+      {
+       "lo": 22.1,
+       "hi": 22.2,
+       "mu": 25.81947817266404,
+       "obs": 25.0,
+       "ratio": 1.0327791269065616,
+       "z": -0.16127374092453534
+      },
+      {
+       "lo": 22.2,
+       "hi": 22.3,
+       "mu": 16.901279255961445,
+       "obs": 14.0,
+       "ratio": 1.2072342325686747,
+       "z": -0.7057156427939725
+      },
+      {
+       "lo": 22.3,
+       "hi": 22.4,
+       "mu": 11.84586988609388,
+       "obs": 9.0,
+       "ratio": 1.3162077651215423,
+       "z": -0.8268591965540848
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "mu_total": 89119.80829156641,
+    "mu_fp_total": 14622.40084489885,
+    "mu_sig_total": 74497.40744666758,
+    "obs_total": 86763.0,
+    "by_z": {
+     "chi2_dof": 23.189199407625143,
+     "max_abs_z": 8.023289974615661,
+     "n_rows": 15,
+     "note": "FULL grid (not window-restricted)"
+    },
+    "by_snr": {
+     "chi2_dof": 87.53459139841884,
+     "max_abs_z": 14.621788609550434,
+     "n_rows": 6,
+     "note": "FULL grid (not window-restricted)"
+    }
+   },
+   "conditional_eta_off": {
+    "layer": "A (conditional implementation; variance = predicted mean; historical chi2/dof <= 3 is a CONDITIONAL diagnostic, not a predictive science gate)",
+    "window": {
+     "label": "win",
+     "window_logN": [
+      19.7,
+      21.6
+     ],
+     "n_bins_in_window": 19,
+     "n_bins_in_z_set": 19,
+     "total_mu": 69181.70140443977,
+     "total_obs": 67424.0,
+     "total_ratio": 1.0260693729894366,
+     "z_total": -6.682661766410463,
+     "z_bin_max": 13.086560582895505,
+     "chi2_dof": 25.77231659313637,
+     "per_bin": [
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8181.183570589084,
+       "obs": 7562.0,
+       "ratio": 1.0818809270813388,
+       "z": -6.8455974230418395
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6522.387008964772,
+       "obs": 6926.0,
+       "ratio": 0.9417249507601461,
+       "z": 4.997604157336763
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7493.865827273568,
+       "obs": 6361.0,
+       "ratio": 1.1780955553016144,
+       "z": -13.086560582895505
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6411.455364059066,
+       "obs": 5885.0,
+       "ratio": 1.0894571561697648,
+       "z": -6.574810552596997
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6146.906116831154,
+       "obs": 5552.0,
+       "ratio": 1.107151678103594,
+       "z": -7.58787458879341
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5342.864634955278,
+       "obs": 5215.0,
+       "ratio": 1.0245186260700438,
+       "z": -1.7492962192401411
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4992.507333484824,
+       "obs": 4761.0,
+       "ratio": 1.0486257789298097,
+       "z": -3.2764639736150487
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4236.79610520405,
+       "obs": 4331.0,
+       "ratio": 0.9782489275465366,
+       "z": 1.4472717223255176
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3904.661080421819,
+       "obs": 3877.0,
+       "ratio": 1.0071346609290222,
+       "z": -0.4426673263422627
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3128.254174460484,
+       "obs": 3309.0,
+       "ratio": 0.9453775081476229,
+       "z": 3.2315974691404565
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2827.92746309166,
+       "obs": 2957.0,
+       "ratio": 0.9563501735176394,
+       "z": 2.4271673052540232
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2223.387240939128,
+       "obs": 2520.0,
+       "ratio": 0.8822965241821936,
+       "z": 6.290458102788082
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1910.471055232036,
+       "obs": 2118.0,
+       "ratio": 0.9020165511010557,
+       "z": 4.747975252766934
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1565.376106309679,
+       "obs": 1656.0,
+       "ratio": 0.9452754265155067,
+       "z": 2.2905161993659275
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1284.0401089720642,
+       "obs": 1466.0,
+       "ratio": 0.8758800197626632,
+       "z": 5.077926064352007
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1061.6875948710904,
+       "obs": 1138.0,
+       "ratio": 0.9329416475141392,
+       "z": 2.3420532755635195
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 838.7423447341698,
+       "obs": 782.0,
+       "ratio": 1.0725605431383245,
+       "z": -1.959264155895246
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 640.2521891658453,
+       "obs": 603.0,
+       "ratio": 1.0617780914856472,
+       "z": -1.4722320352059501
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 468.936084880002,
+       "obs": 405.0,
+       "ratio": 1.1578668762469184,
+       "z": -2.952495281083626
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "full": {
+     "label": "full",
+     "window_logN": [
+      null,
+      null
+     ],
+     "n_bins_in_window": 29,
+     "n_bins_in_z_set": 29,
+     "total_mu": 89204.46997438376,
+     "total_obs": 86763.0,
+     "total_ratio": 1.0281395292277093,
+     "z_total": -8.174441291001674,
+     "z_bin_max": 13.086560582895505,
+     "chi2_dof": 20.32995167891674,
+     "per_bin": [
+      {
+       "lo": 19.5,
+       "hi": 19.6,
+       "mu": 10820.028106810647,
+       "obs": 10096.0,
+       "ratio": 1.071714352893289,
+       "z": -6.960512719022574
+      },
+      {
+       "lo": 19.6,
+       "hi": 19.7,
+       "mu": 8338.152788548316,
+       "obs": 8554.0,
+       "ratio": 0.9747665172490432,
+       "z": 2.3638042975959577
+      },
+      {
+       "lo": 19.7,
+       "hi": 19.8,
+       "mu": 8181.183570589084,
+       "obs": 7562.0,
+       "ratio": 1.0818809270813388,
+       "z": -6.8455974230418395
+      },
+      {
+       "lo": 19.8,
+       "hi": 19.9,
+       "mu": 6522.387008964772,
+       "obs": 6926.0,
+       "ratio": 0.9417249507601461,
+       "z": 4.997604157336763
+      },
+      {
+       "lo": 19.9,
+       "hi": 20.0,
+       "mu": 7493.865827273568,
+       "obs": 6361.0,
+       "ratio": 1.1780955553016144,
+       "z": -13.086560582895505
+      },
+      {
+       "lo": 20.0,
+       "hi": 20.1,
+       "mu": 6411.455364059066,
+       "obs": 5885.0,
+       "ratio": 1.0894571561697648,
+       "z": -6.574810552596997
+      },
+      {
+       "lo": 20.1,
+       "hi": 20.2,
+       "mu": 6146.906116831154,
+       "obs": 5552.0,
+       "ratio": 1.107151678103594,
+       "z": -7.58787458879341
+      },
+      {
+       "lo": 20.2,
+       "hi": 20.3,
+       "mu": 5342.864634955278,
+       "obs": 5215.0,
+       "ratio": 1.0245186260700438,
+       "z": -1.7492962192401411
+      },
+      {
+       "lo": 20.3,
+       "hi": 20.4,
+       "mu": 4992.507333484824,
+       "obs": 4761.0,
+       "ratio": 1.0486257789298097,
+       "z": -3.2764639736150487
+      },
+      {
+       "lo": 20.4,
+       "hi": 20.5,
+       "mu": 4236.79610520405,
+       "obs": 4331.0,
+       "ratio": 0.9782489275465366,
+       "z": 1.4472717223255176
+      },
+      {
+       "lo": 20.5,
+       "hi": 20.6,
+       "mu": 3904.661080421819,
+       "obs": 3877.0,
+       "ratio": 1.0071346609290222,
+       "z": -0.4426673263422627
+      },
+      {
+       "lo": 20.6,
+       "hi": 20.7,
+       "mu": 3128.254174460484,
+       "obs": 3309.0,
+       "ratio": 0.9453775081476229,
+       "z": 3.2315974691404565
+      },
+      {
+       "lo": 20.7,
+       "hi": 20.8,
+       "mu": 2827.92746309166,
+       "obs": 2957.0,
+       "ratio": 0.9563501735176394,
+       "z": 2.4271673052540232
+      },
+      {
+       "lo": 20.8,
+       "hi": 20.9,
+       "mu": 2223.387240939128,
+       "obs": 2520.0,
+       "ratio": 0.8822965241821936,
+       "z": 6.290458102788082
+      },
+      {
+       "lo": 20.9,
+       "hi": 21.0,
+       "mu": 1910.471055232036,
+       "obs": 2118.0,
+       "ratio": 0.9020165511010557,
+       "z": 4.747975252766934
+      },
+      {
+       "lo": 21.0,
+       "hi": 21.1,
+       "mu": 1565.376106309679,
+       "obs": 1656.0,
+       "ratio": 0.9452754265155067,
+       "z": 2.2905161993659275
+      },
+      {
+       "lo": 21.1,
+       "hi": 21.2,
+       "mu": 1284.0401089720642,
+       "obs": 1466.0,
+       "ratio": 0.8758800197626632,
+       "z": 5.077926064352007
+      },
+      {
+       "lo": 21.2,
+       "hi": 21.3,
+       "mu": 1061.6875948710904,
+       "obs": 1138.0,
+       "ratio": 0.9329416475141392,
+       "z": 2.3420532755635195
+      },
+      {
+       "lo": 21.3,
+       "hi": 21.4,
+       "mu": 838.7423447341698,
+       "obs": 782.0,
+       "ratio": 1.0725605431383245,
+       "z": -1.959264155895246
+      },
+      {
+       "lo": 21.4,
+       "hi": 21.5,
+       "mu": 640.2521891658453,
+       "obs": 603.0,
+       "ratio": 1.0617780914856472,
+       "z": -1.4722320352059501
+      },
+      {
+       "lo": 21.5,
+       "hi": 21.6,
+       "mu": 468.936084880002,
+       "obs": 405.0,
+       "ratio": 1.1578668762469184,
+       "z": -2.952495281083626
+      },
+      {
+       "lo": 21.6,
+       "hi": 21.7,
+       "mu": 326.91694594382875,
+       "obs": 287.0,
+       "ratio": 1.139083435344351,
+       "z": -2.2076925360797643
+      },
+      {
+       "lo": 21.7,
+       "hi": 21.8,
+       "mu": 218.4589945094177,
+       "obs": 177.0,
+       "ratio": 1.23423160739784,
+       "z": -2.805006034367496
+      },
+      {
+       "lo": 21.8,
+       "hi": 21.9,
+       "mu": 137.52900322424517,
+       "obs": 79.0,
+       "ratio": 1.740873458534749,
+       "z": -4.990843828066936
+      },
+      {
+       "lo": 21.9,
+       "hi": 22.0,
+       "mu": 81.57469070920214,
+       "obs": 66.0,
+       "ratio": 1.2359801622606386,
+       "z": -1.7244146866691215
+      },
+      {
+       "lo": 22.0,
+       "hi": 22.1,
+       "mu": 45.54141288361389,
+       "obs": 32.0,
+       "ratio": 1.423169152612934,
+       "z": -2.0065996403393256
+      },
+      {
+       "lo": 22.1,
+       "hi": 22.2,
+       "mu": 25.81947817266404,
+       "obs": 25.0,
+       "ratio": 1.0327791269065616,
+       "z": -0.16127374092453534
+      },
+      {
+       "lo": 22.2,
+       "hi": 22.3,
+       "mu": 16.901279255961445,
+       "obs": 14.0,
+       "ratio": 1.2072342325686747,
+       "z": -0.7057156427939725
+      },
+      {
+       "lo": 22.3,
+       "hi": 22.4,
+       "mu": 11.84586988609388,
+       "obs": 9.0,
+       "ratio": 1.3162077651215423,
+       "z": -0.8268591965540848
+      }
+     ],
+     "z_criterion": {
+      "restatement_of": "the malformed criterion previously written as '|z| <= 5'. That string named neither WHICH z, nor over WHICH SET of bins, nor WHICH quantity sits in the denominator, nor how the per-bin values were reduced to one number. All four are pinned below.",
+      "residual_name": "Poisson Pearson residual, model in the denominator",
+      "per_bin_formula": "z_c = (obs_c - mu_c) / sqrt(max(mu_c, 1e-12))",
+      "total_formula": "z_tot = (obs_tot - mu_tot) / sqrt(max(mu_tot, 1e-12))",
+      "denominator": "mu, the MODEL prediction \u2014 not obs, and not (obs+mu)/2. The residual is therefore the Pearson residual of a Poisson(mu) model, and it is finite for obs_c = 0.",
+      "sign_convention": "obs - mu. z > 0 means the model UNDER-predicts the observed counts.",
+      "bin_set": "REPORTED n-hat bins c with obs_c > 0 whose interval [lo_c, hi_c) lies inside the evaluation window. Bins with obs_c == 0 are EXCLUDED (they carry no Poisson information about a ratio and would otherwise dominate a chi2/dof through a near-zero mu). Cells with dX == 0 are excluded upstream by ratio_tables.",
+      "reduction": "z_bin_max = max over that bin set of |z_c|",
+      "chi2_dof": "chi2_dof = ( sum over that bin set of z_c^2 ) / n_bins_in_set",
+      "criterion": "PASS iff |z_tot| <= z_total_max AND z_bin_max <= z_bin_max_tol AND chi2_dof <= chi2_dof_max, with the three tolerances read from run_posterior.GATE (5.0 / 5.0 / 3.0). AUTHORITY IS NOT UNIFORM ACROSS THOSE THREE and must not be read as such: chi2_dof_max = 3.0 is RATIFIED (PI decision 8); z_total_max and z_bin_max = 5.0 are RESTATED_NOT_RATIFIED \u2014 they refuse work and no deciding authority ratified them. Per-tolerance records: GATE_AUTHORITY.",
+      "authority": "\ud83d\udd34 CORRECTION (2026-08-05). Until this date the `criterion` field appended, to the three tolerances 5.0 / 5.0 / 3.0, a parenthetical asserting that all three were RATIFIED under PI decision 8. That was FABRICATED PI AUTHORITY, and the exact retracted wording is deliberately NOT reproduced here so that a grep for it cannot land on this correction \u2014 read it in git instead. Decision 8 called |z| <= 5 MALFORMED AS STATED and sent it back for restatement, which is the opposite of ratifying it. The restatement is this dict; the restated form has never been put to the PI. The ONE ratified numerical closure gate is chi2/dof <= 3. See GATE_AUTHORITY and GATE_AUTHORITY_NOTE \u2014 that table, not this prose, is the source of truth.",
+      "not_ratified": "SIX of the seven run_posterior.GATE tolerances are NOT ratified. FOUR |z| arms (z_total_max, z_bin_max, z_zbin_max, z_snrbin_max) are RESTATED_NOT_RATIFIED: they GATE, and nobody with deciding authority ratified them. TWO ratio-span tolerances (ratio_span_by_z_max = 0.10, ratio_span_by_snr_max = 0.15) are UNRATIFIED \u2014 the PI was asked and explicitly declined (decision 8); they are to be defined and calibrated prospectively, and this module does not use them. Only chi2_dof_max is ratified.",
+      "absolute_value": "the criterion is on |z|, two-sided. A large NEGATIVE z (over-prediction) fails identically to a large positive one."
+     }
+    },
+    "mu_total": 89204.46997438377,
+    "mu_fp_total": 14707.062527716189,
+    "mu_sig_total": 74497.40744666758,
+    "obs_total": 86763.0,
+    "by_z": {
+     "chi2_dof": 23.592762131896485,
+     "max_abs_z": 8.136753269443673,
+     "n_rows": 15,
+     "note": "FULL grid (not window-restricted)"
+    },
+    "by_snr": {
+     "chi2_dof": 88.4626927086884,
+     "max_abs_z": 14.829010360190102,
+     "n_rows": 6,
+     "note": "FULL grid (not window-restricted)"
+    }
+   },
+   "predictive": {
+    "T_obs": 32.687565986600674,
+    "p_value": 0.0004997501249375312,
+    "p_is_bound": true,
+    "p_mc_error": 0.0004996252342383581,
+    "null_quantiles": {
+     "q05": 0.33483437505818475,
+     "q50": 2.430899067462068,
+     "q95": 8.200038457144306,
+     "q99": 11.581490658577712
+    },
+    "null_mean": 3.0526430994788707,
+    "null_sd": 2.4907916782730957,
+    "effective_dof_note": "null mean 3.05, sd 2.49; chi2-like eff dof ~ 3.1 only if var ~ 2*mean (var/2mean = 1.02)",
+    "residual": [
+     -2570.0761316425487,
+     648.9955471659996,
+     190.96557106714954
+    ],
+    "residual_z": [
+     -2.7525526772073063,
+     4.296608585709715,
+     2.52590111955343
+    ],
+    "n_null_draws": 2000,
+    "seed_null": 43001,
+    "fallback_1d": false,
+    "covariance": {
+     "axis_labels": [
+      "nhat[19.7,20.3)",
+      "nhat[20.3,21.0)",
+      "nhat[21.0,21.6)"
+     ],
+     "group_edges": [
+      [
+       19.7,
+       20.3
+      ],
+      [
+       20.3,
+       21.0
+      ],
+      [
+       21.0,
+       21.6
+      ]
+     ],
+     "units": "catalogue counts",
+     "method": "parametric bootstrap through the production fold: y*~Poisson(mu(n0_obs)); n0*~Poisson(n0_obs) -> lam*=n0*/ell -> forward.fold_mu_fp; d = G(y*) - G(mu(n0*))",
+     "raw_dim": 2610,
+     "algebraic_rank": 3,
+     "effective_rank": 1.1692963149401534,
+     "eigenvalues": [
+      871815.757023318,
+      22810.619152281593,
+      5712.723343927268
+     ],
+     "condition_number": 152.60948317234275,
+     "regularization": "none (exact inverse; frozen fallback at cond>1e6)",
+     "calibration_events_total": 89,
+     "calibration_events_per_group": [
+      29,
+      0,
+      0
+     ],
+     "n_resamples": 2000,
+     "seed": 41001,
+     "matrix": [
+      [
+       871807.6960803072,
+       2168.0778850759157,
+       -1478.3707344014508
+      ],
+      [
+       2168.0778850759157,
+       22815.597688594295,
+       -101.45601875937975
+      ],
+      [
+       -1478.3707344014508,
+       -101.45601875937975,
+       5715.805750625312
+      ]
+     ],
+     "mc_error_rel_max": 2.669341118745961,
+     "survey_variance": [
+      40071.07613164255,
+      23224.004452834,
+      5859.0344289328505
+     ],
+     "calibration_variance": [
+      827759.6267140157,
+      3.82679655072056e-21,
+      2.3080780493738257e-20
+     ]
+    },
+    "layer": "B (calibration-predictive); simulation-calibrated p; NO ratified threshold"
+   },
+   "transport": {
+    "layer": "C (transport stress; UNCALIBRATED systematic \u2014 never absorbed into predictive covariance)",
+    "total_obs": 86763.0,
+    "total_mu": 89119.80829156641,
+    "total_mu_fp": 14622.40084489885,
+    "residual": -2356.8082915664127,
+    "z_survey_only": -7.894727343972055,
+    "z_with_calibration": -1.4931075780496728,
+    "var_survey": 89119.80829156641,
+    "var_calibration": 2402411.3086393094
+   },
+   "support": {
+    "live_cells": 2610,
+    "n_pad_bins": 2,
+    "fp_events_per_group": [
+     29,
+     0,
+     0
+    ]
+   }
+  }
+ ],
+ "metadata": {
+  "rederive": "python -m CDDF_analysis.hbi_mcmc.closure_table --packs /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_london0_winlya_only_pad19p0_molly172_bw0p2.npz /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_saclay0_winlya_only_pad19p0_molly172_bw0p2.npz --out CDDF_analysis/hbi_mcmc/closure_table_phaseB.json"
+ }
+}
