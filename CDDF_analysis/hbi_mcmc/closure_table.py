@@ -49,7 +49,12 @@ def _git_commit() -> str:
             ["git", "rev-parse", "HEAD"],
             cwd=os.path.dirname(os.path.abspath(__file__)),
             text=True).strip()
-    except Exception:
+    except (subprocess.SubprocessError, OSError) as e:
+        # headline provenance rule: a closure product should carry a git
+        # stamp; if it cannot, say so LOUDLY instead of silently.
+        print(f"[closure_table] WARNING: git commit stamp unavailable ({e}) "
+              "— the output's code_commit field will read '<unavailable>'",
+              file=sys.stderr)
         return "<unavailable>"
 
 
@@ -82,7 +87,13 @@ def conditional_layer(pack: ModelAPack) -> dict:
 
 
 def build_row(path: str, *, allow_legacy_eta: bool) -> dict:
+    # REAL-LOA guard (the module docstring's "MOCKS ONLY" is ENFORCED, exactly
+    # as in forward_selftest): this CLI writes result VALUES into a JSON, and
+    # real-LOA values are private (notes repo only).
+    assert "main_dark" not in path, "REAL-LOA guard: mock packs only"
     pack = load_pack(path)
+    assert "loa_main_dark" not in json.dumps(pack.provenance or {}), \
+        "REAL-LOA guard (provenance)"
     migrated = False
     if pack.fp_eta_c is None:
         if not allow_legacy_eta:

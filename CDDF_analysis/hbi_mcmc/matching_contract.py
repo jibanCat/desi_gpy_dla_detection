@@ -913,20 +913,29 @@ def basis_partition(ntrue_edges, lo=REPORT_FLOOR, hi=REPORT_CEILING):
 # ---------------------------------------------------------------------------
 FP_NORMALISATION = dict(
     contract=("mu_FP[c,k,s] = (N_prod / N_sl_loa0) . N_FP_loa0[c,s] . "
-              "exp(t_K) . E[k,s], i.e. in the pack's own scalars "
-              "mu_FP = fp_w . fp_ell_eff . lam_fp . exp(t) . E, because "
-              "lam_fp is defined by the loa-0 likelihood "
-              "fp_counts ~ Poisson(fp_ell_eff . lam_fp)."),
+              "(1 - eta_c) . exp(t_K) . E[k,s], i.e. in the pack's own "
+              "scalars mu_FP = fp_w . fp_ell_eff . (1 - fp_eta_c) . lam_fp . "
+              "exp(t) . E, because lam_fp is defined by the loa-0 likelihood "
+              "fp_counts ~ Poisson(fp_ell_eff . lam_fp) — the calibration "
+              "side carries NO eta (loa-0 is HCD-free, nothing occludes)."),
     source=("CDDF_analysis/hbi/build_loa0_fp_product.py:35-39 — "
             "mu_FP = (N_prod/N_sl_loa0) . N_FP_loa0_total . (1 - eta_bar), "
             "ell_eff = N_sl_loa0 . (N_sl_loa0/N_prod)."),
     identity="fp_w . fp_ell_eff == N_sl_loa0 exactly (VERIFIED == 2255.0 on all "
              "three adopted packs).",
-    eta="eta_DLA is FORCED to 0 (build_loa0_fp_product.py:DLA_ETA), so the "
-        "(1 - eta_bar) factor is 1 on the pack's N >= 19.5 grid.",
+    eta=("host-occlusion survival, per observed bin (pack.fp_eta_c; RESTORED "
+         "to the fold 2026-08-06, PI ruling 8). eta_DLA is FORCED to 0 "
+         "(build_loa0_fp_product.py:DLA_ETA), so eta_c == 0 at and above "
+         "N-hat 20.3; the [19.5, 20.3) bins carry eta_subdla = "
+         "0.005756532459300326. CORRECTION: this entry previously claimed "
+         "'the (1 - eta_bar) factor is 1 on the pack's N >= 19.5 grid' — "
+         "WRONG (it read the DLA-band forcing as if it covered the whole "
+         "grid); that claim rationalised the fold omitting the factor "
+         "entirely (-85.01 counts on the adopted 2LPT-0 pack)."),
     implemented_at=(
         "CDDF_analysis/hbi_mcmc/forward.py:fold_mu_fp — ONE definition, "
-        "`consts.fp_w * consts.fp_ell_eff * exp_t_k * lam_fp * fp_E`. "
+        "`consts.fp_w * consts.fp_ell_eff * (1 - consts.fp_eta_c) * exp_t_k "
+        "* lam_fp * fp_E`. "
         "``fold_mu`` calls it; ``forward_selftest.selftest`` calls it; "
         "``fold_mu_reference`` re-implements the same expression "
         "INDEPENDENTLY on purpose (it is the numpy oracle and must not share "
@@ -1065,7 +1074,8 @@ def assert_forward_fp_normalisation(pack, *, rtol=1e-9):
 
     A check against the CODE, not against the pack: the pack's scalars are
     pushed through ``forward.fold_mu_fp`` and the total compared with
-    ``fp_w . fp_ell_eff . lam_fp``.  It PASSES on the repaired fold and it is
+    ``fp_w . fp_ell_eff . (1 - eta_c) . lam_fp`` (the (1 - eta) host-occlusion
+    survival restored 2026-08-06).  It PASSES on the repaired fold and it is
     the standing regression guard for
     ``RESOLVED_BY_ID['FP_ELL_EFF_OMITTED']``: dropping ``consts.fp_ell_eff``
     from the fold again makes the ratio equal ``fp_ell_eff`` exactly (13.59 on
@@ -1082,7 +1092,8 @@ def assert_forward_fp_normalisation(pack, *, rtol=1e-9):
         regressed = abs(r - a["fp_ell_eff"]) <= 1e-6 * max(a["fp_ell_eff"], 1.0)
         raise ContractViolation(
             "FP NORMALISATION VIOLATION: the contract requires "
-            "mu_FP = fp_w * fp_ell_eff * lam_fp * exp(t) * E. On this pack the "
+            "mu_FP = fp_w * fp_ell_eff * (1 - eta_c) * lam_fp * exp(t) * E "
+            "((1 - eta) restored 2026-08-06). On this pack the "
             f"contract total is {a['mu_fp_total_per_contract']:.4f} and the "
             f"total the COMMITTED forward.fold_mu_fp produces is "
             f"{a['mu_fp_total_as_folded']:.4f} (measured ratio {r:.9f}). "

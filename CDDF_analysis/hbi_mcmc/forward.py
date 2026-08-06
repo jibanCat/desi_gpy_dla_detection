@@ -23,7 +23,9 @@ not a count.  The production-volume FP expectation the loa-0 product defines
 (build_loa0_fp_product.py:34-39) is
 
     mu_FP = (N_prod / N_sl_loa0) * N_FP_loa0 * (1 - eta_bar)
-          = fp_w * fp_ell_eff * lam_fp        (since lam_fp = N_FP_loa0/ell_eff)
+          = fp_w * fp_ell_eff * (1 - eta_bar) * lam_fp
+            (since lam_fp = N_FP_loa0/ell_eff; the survival factor does NOT
+            cancel into the identity below — it multiplies the fold only)
 
 and ``fp_w * fp_ell_eff == N_sl_loa0`` exactly, because the extractor builds
 ``fp_w = N_prod/N_sl_loa0`` and ``fp_ell_eff = N_sl_loa0^2/N_prod``.  Until
@@ -671,7 +673,10 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
         eta_c = np.zeros(C_n, float)
     else:
         eta_c = np.asarray(pack.fp_eta_c, float)
-        if eta_c.shape != (C_n,) or np.any(eta_c < 0) or np.any(eta_c >= 1):
+        # NB: NaN passes both "< 0" and ">= 1" (every NaN comparison is
+        # False), so finiteness must be tested explicitly (fail-closed).
+        if eta_c.shape != (C_n,) or np.any(~np.isfinite(eta_c)) \
+                or np.any(eta_c < 0) or np.any(eta_c >= 1):
             raise ValueError("fold_mu_reference: bad fp_eta_c")
     sig_floor = float(pack.resp_sig_floor)
     ramp_c, ramp_w = [float(v) for v in np.asarray(pack.resp_skew_ramp, float)]

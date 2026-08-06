@@ -133,6 +133,19 @@ def test_calibration_side_carries_no_eta():
         "side appears to carry an eta factor it must not have")
 
 
+def test_oracle_rejects_nan_eta(base_pack):
+    """NaN passes both "< 0" and ">= 1" (NaN comparisons are all False), so
+    the oracle must test finiteness explicitly — the fail-closed NaN rule."""
+    consts = F.build_consts(base_pack)
+    theta, psi_c, psi_k, log_t = _zero_args(base_pack, consts)
+    lam = np.asarray(base_pack.truth["lam_fp_true"])
+    eta = np.zeros(base_pack.n_c)
+    eta[3] = np.nan
+    poisoned = dataclasses.replace(base_pack, fp_eta_c=eta)
+    with pytest.raises(ValueError, match="bad fp_eta_c"):
+        F.fold_mu_reference(theta, psi_c, psi_k, log_t, lam, poisoned)
+
+
 def test_validate_pack_rejects_out_of_range_eta(base_pack):
     bad = dataclasses.replace(base_pack,
                               fp_eta_c=np.full(base_pack.n_c, 1.0))

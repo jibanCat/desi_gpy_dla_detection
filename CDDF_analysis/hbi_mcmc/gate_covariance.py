@@ -258,8 +258,14 @@ class PredictiveGateResult:
             n_null_draws=self.n_null_draws, seed_null=self.seed_null,
             fallback_1d=self.fallback_1d,
             covariance=self.covariance.report(),
-            layer="B (calibration-predictive); simulation-calibrated p; "
-                  "NO ratified threshold",
+            layer=("B (calibration-predictive); simulation-calibrated p; "
+                   "NO ratified threshold"
+                   + ("; COND>1e6 FALLBACK ENGAGED: T_obs/p refer to the "
+                      "DESCRIPTIVE max|z| over the 1-dim standardized group "
+                      "residuals, NOT the prespecified confirmatory "
+                      "Mahalanobis statistic (frozen spec section 3: no "
+                      "inversion; report the standardized residuals)"
+                      if self.fallback_1d else "")),
         )
 
 
@@ -272,13 +278,25 @@ def predictive_gate(pack: ModelAPack, *,
                     resp_clamp: str = "both") -> PredictiveGateResult:
     """The frozen Layer-B primary gate: 3-group Mahalanobis T with an
     independent-ensemble null. Every analysis choice matches the observed
-    evaluation exactly (same grouping, same frozen covariance, same plug-in)."""
+    evaluation exactly (same grouping, same frozen covariance, same plug-in).
+
+    The cond > 1e6 fallback (frozen spec section 3) is decided from the
+    matrix that is about to be inverted, RE-MEASURED here — never from the
+    stored provenance field alone (a record can drift from the object it
+    describes) — and from the stored field as well, so EITHER exceeding the
+    threshold refuses the inversion. In fallback mode T degrades to the
+    DESCRIPTIVE max|z| over the 1-dim standardized group residuals; the
+    prespecified confirmatory Mahalanobis statistic is undefined there and
+    ``report()`` labels the result accordingly."""
     A = group_aggregator(pack, group_edges)
     if covariance is None:
         covariance = estimate_covariance(pack, group_edges=group_edges,
                                          resp_clamp=resp_clamp)
     C = covariance.matrix
-    fallback = covariance.condition_number > MAX_CONDITION_NUMBER
+    ev = np.linalg.eigvalsh(C)                    # ascending
+    cond_measured = float(ev[-1] / max(ev[0], 1e-300))
+    fallback = (cond_measured > MAX_CONDITION_NUMBER
+                or covariance.condition_number > MAX_CONDITION_NUMBER)
     Cinv = None if fallback else np.linalg.inv(C)
 
     mu_sig, fp_fold, live = _fold_parts(pack, resp_clamp=resp_clamp)

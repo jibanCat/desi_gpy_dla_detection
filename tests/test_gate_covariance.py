@@ -105,6 +105,43 @@ def test_gate_rejects_an_injected_group_shift(pack, edges):
     assert res.p_value < 0.02
 
 
+def test_cond_fallback_refuses_inversion_and_is_labeled(pack, edges):
+    """The frozen cond>1e6 fallback (spec section 3) — previously untested.
+
+    Two arms, matching the two ways the guard can see trouble:
+    (a) a degenerate MATRIX behind a healthy stored condition_number — the
+        fallback must engage from the re-measured cond, never trusting the
+        stored record alone;
+    (b) a healthy matrix with a poisoned stored field — the stored field must
+        also be honored (either exceeding the threshold refuses inversion).
+    In both arms T degrades to the descriptive max|z| and the report says so.
+    """
+    cov = GC.estimate_covariance(pack, group_edges=edges, n_draws=150, seed=21)
+    G = cov.matrix.shape[0]
+    # (a) rank-1 (singular) matrix with a positive diagonal; stored cond stays
+    # the healthy one from the estimate — only the re-measured cond can fire
+    v = np.sqrt(np.diag(cov.matrix))
+    bad = dataclasses.replace(cov, matrix=np.outer(v, v) + 1e-12 * np.eye(G))
+    assert bad.condition_number < GC.MAX_CONDITION_NUMBER   # the stored record
+    res = GC.predictive_gate(pack, covariance=bad, group_edges=edges,
+                             n_null_draws=60, seed_null=22)
+    assert res.fallback_1d
+    want = float(np.max(np.abs(res.residual) / np.sqrt(np.diag(bad.matrix))))
+    assert res.T_obs == pytest.approx(want, rel=1e-12)
+    assert 0.0 < res.p_value <= 1.0
+    assert "FALLBACK ENGAGED" in res.report()["layer"]
+    # (b) healthy matrix, poisoned stored field
+    poisoned = dataclasses.replace(cov, condition_number=1e9)
+    res_b = GC.predictive_gate(pack, covariance=poisoned, group_edges=edges,
+                               n_null_draws=60, seed_null=23)
+    assert res_b.fallback_1d
+    # and the healthy covariance does NOT fall back (label unqualified)
+    res_ok = GC.predictive_gate(pack, covariance=cov, group_edges=edges,
+                                n_null_draws=60, seed_null=24)
+    assert not res_ok.fallback_1d
+    assert "FALLBACK" not in res_ok.report()["layer"]
+
+
 def test_transport_delta_method_matches_the_ensemble(pack, edges):
     """Layer C's delta-method calibration variance on the TOTAL must agree
     with the resampling ensemble's variance of the folded-FP total."""
