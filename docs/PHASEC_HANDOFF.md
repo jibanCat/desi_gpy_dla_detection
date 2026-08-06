@@ -18,26 +18,35 @@
    (`docs/PHASEC_CHECKPOINT_2026-08-06.md`); independent code review
    (`docs/PHASEC_CODE_REVIEW_2026-08-06.md`, PASS-WITH-FINDINGS, all
    eight findings dispositioned — see the work log).
-2. **Running:** nothing. No SLURM jobs in flight from this stream.
-3. **Blocked:** **Stage 2 (production calibration + FP expansion) is
-   BLOCKED on explicit PI authorization** (§12 default rule — no
-   documented envelope exists). Do NOT launch. Layer-B threshold
-   ratification, r5 cadence: PI decisions pending.
-4. **Next executable step (after PI authorization only):** generate the
-   production arms with `injection/gen_phaseC_resp.py --substrate
-   prodlike` using the FULL per-bin/per-cell counts of
-   `diagnostics_phaseC/design_sizing/sizing.json` (production anchors =
-   every 0.2-dex bin center in [20.5,22.4) + bridge [19.5,20.5); role
-   manifest committed BEFORE the first sbatch; 25% whole-healpix holdout
-   assigned at generation), then `launch_gl.sh` with
-   `phaseC_resp_gl_v1.env` per arm. HARD pre-production blockers
-   (review findings F3/F7): (a) add the λ_rf/z_QSO/BAL analysis-window
-   cuts to `measure_phaseC_pairs.py` (sentinel + DLAFLAG already
-   fixed); (b) build the labeled response-artifact writer (support
-   labels per PHASEC_CALIB_DESIGN §6) WITH role-enforcement — the
-   scorer must REFUSE rows whose sidecar role is not the one being
-   measured, and holdout healpix must be unreadable by the calibration
-   path.
+2. **Running:** **Stage-2A GP jobs IN FLIGHT** — 56619743 (prod_v1,
+   2,597 spec, ~76 CPU-h, wall ~8 h) and 56619744 (env-probe, 260 spec,
+   ~1 h), launched from the frozen state (freeze doc + A1/A2; role
+   manifests committed BEFORE sbatch at `c5faab0`/`ff44c4b`). Do NOT
+   cancel; on completion run the scoring → bridge → go/no-go chain in
+   the NEXT COMMANDS below.
+3. **Blocked:** Stage 2B (the main FP allocation) is blocked on the
+   Stage-2A go/no-go (rulings §3) — NOT on further PI input unless the
+   bridge fails or precision/power miss. Authorization: 1,850 CPU-h
+   ceiling, 5% FP target (Decision 1, recorded above).
+4. **Next executable step (when jobs 56619743/56619744 complete):**
+   ```
+   cd /home/mfho/wt_calib_phaseC
+   export LD_LIBRARY_PATH=$HOME/.local/usr/local/lib64:$LD_LIBRARY_PATH
+   PYG=/home/mfho/.conda/envs/gpdla/bin/python
+   ARM=/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/prod_v1
+   $PYG injection/measure_phaseC_pairs.py --arm $ARM --role bridge --out $ARM/pairs_bridge.json
+   $PYG injection/measure_phaseC_pairs.py --arm $ARM --role production-calibration --out $ARM/pairs_production.json
+   $PYG injection/measure_phaseC_pairs.py --arm ${ARM%/*}/prod_env_probe_v1 --role environment-probe --out ${ARM%/*}/prod_env_probe_v1/pairs_probe.json
+   $PYG injection/build_phaseC_response.py --pairs-bridge $ARM/pairs_bridge.json \
+        --pairs-production $ARM/pairs_production.json \
+        --out /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0_phaseC.npz
+   ```
+   Then the go/no-go per rulings §3.1: BRIDGE_PASS + precision/power +
+   support artifact ⇒ freeze artifact, predict G1/G2/G3 (packs
+   re-extracted with the new envelope), then Stage 2B; FAIL ⇒ quarantine
+   + STOP for PI. Holdout is touched ONLY at the final evaluation
+   (`--role held-out-evaluation --evaluation-step`). The F3/F7
+   pre-production blockers are CLOSED (commits `99fb62e`, `c2154f4`).
 5. **Warnings for a fresh session:**
    * The pilot's clamped-region observation (−0.03…−0.14 dex below the
      clamp) is ENGINEERING-VALIDATION ONLY (§11) — do not quote it as a
@@ -183,6 +192,17 @@ envelope; if the rerun would breach the ceiling ⇒ PI ruling first.
   suite, stochastic test → explained release-cadence skip (`c3b0941`).
 - [06 s2] Budget + PI checkpoint + this handoff committed (`8bfd842`);
   branch + notes repo pushed.
+- [06 s3] STAGE 2 OPENED under PI Decision 1 (1,850 CPU-h ceiling, 5%
+  FP): rulings anchored (notes `dd1e85c`); ratifications recorded
+  (`aab727b`); pre-production code landed F3/F7 (`99fb62e`, A1
+  `c2154f4`); executable state FROZEN (`5ee7202` + A1/A2); production
+  arms generated at the frozen seeds (prod_v1: 2,597 inj, 48 healpix,
+  roles bridge 769 / production 1,167 / holdout 661 on 13 whole healpix,
+  0 exhausted cells; env-probe: 260 inj clean substrate); role manifests
+  committed BEFORE sbatch (`c5faab0`, `ff44c4b`); bridge/artifact
+  builder committed (A2, `4076ad9`); **GP jobs 56619743 (prod) +
+  56619744 (probe) submitted**. Budget spent so far this stage: ~8.3
+  CPU-h pilot (C1) + ~77 CPU-h in flight.
 - [06 s2] Independent §21 code review RETURNED: **PASS-WITH-FINDINGS**
   (`docs/PHASEC_CODE_REVIEW_2026-08-06.md` — verbatim record +
   disposition). Every re-run reproduced committed numbers (pairs JSON
