@@ -1,0 +1,92 @@
+{
+  "track": "post-repair SNR residual (adversarial referee, Phase A)",
+  "review_only": true,
+  "code_commit_reviewed": "9d73365fa0396e3f911e1fdea0a47f72f21a2a17",
+  "claim_under_review": "PI checkpoint 2026-08-05 s10: by_snr chi2/dof 36.61/62.91/54.61 worse than the n-hat gate, coherent monotone SNR tilt",
+  "scripts": ["s1_reproduce.py", "s2_reconstruct.py", "s3_calnoise.py", "s4_attrib.py", "s5_joint_fix.py"],
+  "result_files": ["s1_reproduce.json", "s2_reconstruct.json", "s3_calnoise.json", "s4_attrib.json", "s5_joint_fix.json"],
+  "environment": {
+    "python": "/home/mfho/.conda/envs/gpdla-hbi/bin/python",
+    "threads": "OMP/OPENBLAS/MKL_NUM_THREADS=1",
+    "jax_x64": true
+  },
+  "seeds": {"s3": 20260805, "s4": 20260806, "s5": 20260807},
+  "n_draws": {"s3": 500, "s4": 500, "s5": 2000},
+  "exact_reproduction": {
+    "packs": "/tmp/claude-114399728/-home-mfho-desi-gpy-dla-detection/b10b5e23-575d-487e-811d-479f51611f63/scratchpad/r04_packs/modelA_pack_{2lpt0,london0,saclay0}_bw0p2_pad19p0_molly172.npz",
+    "pack_build": "extract_pack at commit 9d73365, window=lya_only, pad_floor=19.0, completeness=molly172, basis_width=0.2; counts_total 88071/87840/86763",
+    "fold": "CDDF_analysis.hbi_mcmc.forward_selftest.selftest(pack, resp_clamp='both') -- the repaired production fold, no emulation",
+    "statistic": "by_snr/by_z marginals RESTRICTED to nhat in [19.7,21.6] on the c-axis; chi2/dof = sum z^2 / n over the 6 non-empty strata; z=(obs-mu)/sqrt(mu)",
+    "command": "cd /home/mfho/wt_review_phaseA/review_phaseA/snr_residual && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 /home/mfho/.conda/envs/gpdla-hbi/bin/python s1_reproduce.py  (window-restricted arm in s2_reconstruct.py)",
+    "reproduced_by_snr_chi2dof": [36.61, 62.91, 54.61],
+    "reproduced_z_rows_2lpt0": [8.14, -1.35, 0.9, -4.0, -7.14, -9.16],
+    "reproduced_window_by_nhat_chi2dof": [22.22, 28.39, 25.77],
+    "reproduced_by_z_chi2dof": [9.94, 9.72, 7.85],
+    "reproduced_full_mu_over_obs": [1.0016, 1.0501, 1.0281],
+    "note_variant": "the committed by_snr numbers are the WINDOW-RESTRICTED marginal, not the gate's full-grid by_snr (full-grid: 49.18/111.71/88.46); the checkpoint does not state this"
+  },
+  "independent_reconstruction": {
+    "max_abs_dev_vs_production_fold": 1.1e-13,
+    "window_fp_events_per_stratum": [8, 8, 3, 3, 3, 4],
+    "full_fp_events_per_stratum": [19, 31, 13, 6, 8, 12],
+    "fp_w": [165.932, 165.353, 165.248],
+    "E_masked_colsum_populated_strata": 1.0
+  },
+  "calibration_noise_propagation": {
+    "var_cal_over_var_surv_window_strata": "5.5 to 17.4",
+    "delta_method": {
+      "window_by_snr_chi2dof": {"surv": [36.61, 62.91, 54.61], "corrected": [3.58, 5.86, 4.91]},
+      "window_by_snr_maxz": {"surv": [9.16, 9.83, 10.93], "corrected": [3.58, 3.96, 3.71]},
+      "full_by_snr_chi2dof": {"surv": [49.18, 111.71, 88.46], "corrected": [1.6, 4.09, 2.85]},
+      "window_by_nhat_chi2dof": {"surv": [22.22, 28.39, 25.77], "corrected": [9.36, 9.65, 8.93]},
+      "window_by_nhat_maxz": {"surv": [10.08, 14.77, 13.09], "corrected": [5.65, 6.39, 6.29]},
+      "full_total_z": {"surv": [-0.46, -14.49, -8.17], "corrected": [-0.09, -2.77, -1.54]},
+      "window_total_z": {"surv": [-4.62, -8.94, -6.68], "corrected": [-1.3, -2.58, -1.89]},
+      "corrected_window_by_snr_z_rows_2lpt0": [2.05, -0.31, 0.28, -1.09, -1.75, -3.58]
+    },
+    "bootstrap_b1_frequentist": {
+      "framing": "observed n0 taken as the true rate (stated choice); n0* ~ Poisson(n0) shared across mocks; obs* ~ Poisson(mu(n0)); replicate statistic uses mu(n0*)",
+      "window_by_snr_null_chi2_q50_q95": [11.5, 28.0],
+      "per_mock_p_chi2": [0.018, 0.0, 0.002],
+      "per_mock_p_maxz": [0.106, 0.058, 0.034]
+    },
+    "jeffreys_variants": {
+      "cell_level_b2_in_s3": "DEFECTIVE-AS-IMPLEMENTED: +0.5 phantom mean per zero cell x 29 cells/row dominates the null (p=1.0). Superseded.",
+      "s4_first_joint_test": "DEFECTIVE-AS-IMPLEMENTED for the same reason. Superseded by s5.",
+      "row_level_b2r_per_mock_p_chi2": [0.056, 0.01, 0.016]
+    },
+    "cross_mock_coherence": {
+      "corr_z_star_across_mocks_under_null": "+0.81 to +0.95 per stratum (shared 89-event template)",
+      "p_all3_committed_sign_pattern_under_null": 0.016,
+      "meaning": "cross-mock agreement of the tilt is ~ONE observation, not three independent confirmations"
+    },
+    "joint_tests_s5": {
+      "J1_frequentist_shared_draw": {"sum_chi2_obs": 154.1, "null_q50_q95": [33.5, 80.1], "p_sum_chi2": 0.002, "p_maxz": 0.0385},
+      "J2_row_jeffreys_posterior_predictive": {"p_sum_chi2": 0.0195, "p_maxz": 0.124}
+    }
+  },
+  "attribution": {
+    "signal_side_no_fp_frac_gap": {
+      "snr_2_3": [0.171, 0.176, 0.193],
+      "snr_7_inf": [-0.033, -0.038, -0.034],
+      "z_nofp_snr_2_3": [19.9, 21.1, 22.7],
+      "z_nofp_snr_7_inf": [-4.5, -5.4, -4.8],
+      "reading": "the tilt exists with FP OFF; the top stratum is over-predicted by the signal fold alone (FP share there 3.2-3.5%, cannot fix it)"
+    },
+    "truth_stratification": "dX-proportional truth allocation matches truth_counts_bks per-stratum shares to <=1.4% (cell-level L1 6.6-6.7%) -- NOT the cause",
+    "support_check": "no hole: strata [0,2) have dX=obs=fp=0 consistently, FP product snr_min=2.0, molly_snr_edges==snr_edges; stratum [3,4) straddles resp_snr_edge 3.5 (coarseness note only)",
+    "fp_allN_reallocation": {
+      "loa0_allN_snr_profile": [93, 269, 253, 243, 245, 1275],
+      "window_by_snr_chi2_after_rank1_realloc_to_allN": [150.4, 173.2, 168.9],
+      "window_by_snr_chi2_rank1_own_profile": [43.4, 72.8, 67.3],
+      "reading": "DIAGNOSIS ONLY. Reallocating to the all-N profile makes it 3-4x WORSE: the FP SNR profile is strongly N-conditional; the in-support conditional is the right object. Any future frozen-FP-shape option must freeze the IN-SUPPORT conditional shape."
+    }
+  },
+  "verdict": {
+    "i_claim_survives": false,
+    "i_detail": "After propagating loa-0 calibration Poisson noise, corrected by_snr chi2/dof 3.6/5.9/4.9 < corrected window by_nhat 9.4/9.7/8.9: the N-hat axis remains the leading residual. by_snr was the arm MOST inflated by unpropagated calibration noise (var ratios 5.5-17.4x).",
+    "ii_origin": "MIXTURE: ~85-95% of the survey-only by_snr chi2 is calibration sampling noise. The survivor (joint p 0.002-0.02, max|z|<=4) is SIGNAL-SIDE SNR dependence (no-FP fold under-predicts [2,3) by 17-19%, over-predicts [7,inf) by 3.3-3.8%). Not FP SNR misallocation (tested direction worsens 3-4x), not truth stratification (<=1.4%), not a support hole. Candidates: per-stratum completeness error, kernel SNR dependence, unmodelled sub-19.0 promotions at low SNR (one-sided-support class).",
+    "iii_model_freedom": "NOT justified. Correct fix: propagate calibration uncertainty in the gate statistics (delta variance or the b1 null). The full model already samples lam_fp; only the selftest/gate plugs the raw point estimate into a survey-only z.",
+    "iv_closure_and_fp_repair": "Closure-failure verdict STANDS (window by_nhat 8.9-9.7 corrected, >= 3x the ratified gate). The FP-repair overshoot -1.80/-3.45/-2.61% is largely within the template's own calibration noise (full-total z -> -0.09/-2.77/-1.54; fp_w*sqrt(89) ~ 1565 counts ~ 1.8% of total); marginal only on London-0 (~-2.8 sigma), and the three mocks share the same 89-event draw so this is one observation, not three."
+  }
+}
