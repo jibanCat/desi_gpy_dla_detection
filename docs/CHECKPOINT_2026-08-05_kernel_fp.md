@@ -1,6 +1,27 @@
 # Consolidated checkpoint — 2026-08-05
 
-**Status: WORK IN PROGRESS. Nothing here is paper-facing.** No artifact in either lineage is
+> ## ⚠️ CORRECTION NOTICE (2026-08-06 — read before citing anything below)
+> This mid-session checkpoint predates two rounds of correction and contains
+> statements that were later retracted or rejected. Authoritative record: the
+> final PI checkpoint `docs/PI_CHECKPOINT_2026-08-05_kernel_fp_identifiability.md`
+> (itself corrected 2026-08-06 — see its correction notice) and the independent
+> Phase-A adversarial review (branch `review/phaseA-adversarial-2026-08-05`,
+> frozen verdict `review_phaseA/PHASE_A_VERDICT.md` @ a11dae0). In particular:
+> - The **"+2,519 / +3,478 / +3,089 on one dof"** Δdeviance verdict below was
+>   **RETRACTED on 2026-08-05** (PI checkpoint §8 correction): it reproduces
+>   the frozen-shape case only; under the production model's free FP shape the
+>   survey prefers the opposite convention. Why it was wrong: the comparison
+>   was conditional on a restriction the model does not impose.
+> - The **"an arbitrary one-parameter exponential fits the floor better"** and
+>   FP-supply framings below feed the ceiling claim that the Phase-A review
+>   **REJECTED as stated** (comparator mislabeled, direction inverted; the
+>   twin validates the corrected normalization at +0.2%; the survivor is a
+>   cross-mock transport systematic).
+> - Closure and residual magnitudes below predate the `fp_ell_eff` repair,
+>   the `(1−η̄)` restoration (2026-08-06), and the calibration-noise-aware
+>   variance accounting; none of the numeric verdicts here is current.
+
+**Status: WORK IN PROGRESS — SUPERSEDED (see correction notice). Nothing here is paper-facing.** No artifact in either lineage is
 marked `paper_facing: true` (verified by walking every tracked JSON). No rung 10, no campaign,
 no freeze, no tag, no lineage merge, no inference PR.
 
@@ -150,10 +171,15 @@ differ in variance is **wrong**. So the repair is a code-organisation choice, no
   false positives.
 - **The counting identity holds only on the calibration twin.**
   `(obs−mu)/(mu_fp·(ell−1))` = **0.990** (2lpt0) but **0.677** (london0), **0.821** (saclay0).
-- **The survey counts prefer the other explanation.** Exact non-negative Poisson MLE:
+- ~~**The survey counts prefer the other explanation.** Exact non-negative Poisson MLE:
   Δdeviance for fixing `a_fp` at `ell_eff` versus free is **+2,519 / +3,478 / +3,089 on one
   dof**. The fix is **not identifiable from count data**; it rests entirely on the loa-0
-  likelihood.
+  likelihood.~~
+  **[RETRACTED 2026-08-05, annotated 2026-08-06]** This reproduced the
+  frozen-shape case only; the "one dof" framing was wrong, and under the
+  production model's free FP shape the preference reverses (165–265 deviance
+  units the other way). See the final PI checkpoint §8 correction and the
+  Phase-A review verdict. Do not quote these numbers.
 
 **What IS robust:** the deficit *is* the catalogue-unmatched population —
 `(obs−mu)/census` = **0.977 / 0.963 / 1.057** on all three. Not a matching artifact:

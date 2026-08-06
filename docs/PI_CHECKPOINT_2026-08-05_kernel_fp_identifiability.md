@@ -1,9 +1,69 @@
 # PI SCIENCE CHECKPOINT — 2026-08-05
 ## Low-N response, completeness, and false-positive separation
 
+> ## ⚠️ CORRECTION NOTICE (2026-08-06, PI-approved record correction)
+> An independent adversarial review (branch `review/phaseA-adversarial-2026-08-05`,
+> frozen verdict `review_phaseA/PHASE_A_VERDICT.md` @ a11dae0; five review
+> tracks, none reusing this session's probe code paths) re-derived every
+> headline number below. **The numbers reproduce exactly; four headline
+> interpretations do not survive.** Inline `[CORRECTED 2026-08-06]` blocks
+> mark each. Summary of the corrections:
+>
+> 1. **§8 "not separately identifiable" — REJECTED as stated.** 15 of the "16
+>    of 75 within 1°" directions are pad↔window (a fine-basis truncation
+>    artifact; 0 of 30 sub-degree on the ratified 0.2-dex basis) and the
+>    0.0176° direction is 97.4% window by energy; pad↔FP is the
+>    best-separated pair (data-supported ≥ 6.6°). The exact degeneracies are
+>    pad↔(completeness × sub-20.0 window) and t↔λ — neither involves the FP.
+>    Correct statement: **the pad amplitude is prior-identified, not
+>    data-identified** (sd(log₁₀T_A): ≥ 0.6 dex likelihood-only → ~0.05 dex
+>    under the full production priors); the FP total is anchor-identified;
+>    the FP (c,s) shape is prior-dominated.
+> 2. **§8 "Δdev = 41, i.e. 0.6σ … a wrong model is undetectable" —
+>    REJECTED.** The 0.6σ derivation divided a between-model LRT statistic by
+>    the sd of the absolute GOF deviance (√(2·2610) = 72) — a category error.
+>    Reconciliation of the two numbers: **41.2** is the NOISELESS deviance
+>    gap dev(F3: FP-only, 75 pad amplitudes pinned to 0) − dev(F1: both
+>    free) — a noncentrality, not a test statistic; **85.6** is the same
+>    nested comparison on the Poisson-noise realization (seed 17). The
+>    correct empirical null (parametric bootstrap, N=120; boundary +
+>    correlation make Wilks χ²(75) wrong in the opposite direction): mean
+>    23.2 ± 7.3, q99 = 40.7 → p(85.6) ≤ 0.0083, detection power ≈ 1.00. No
+>    single σ-equivalent exists (the null is non-pivotal). What survives:
+>    the misfit is invisible to the absolute-GOF check (power 0.058), and
+>    the FP total is badly mis-fit in both models WITHOUT the anchor — a
+>    parameter-identification statement, not model-misspecification
+>    invisibility.
+> 3. **§7 "μ_FP exceeds the mock's entire FP supply … lower bounds; no
+>    parameter can fix this" — REJECTED as stated.** Under the committed
+>    unmatched estimand (truth floor 19.5: 24,181/19,197/20,225) μ_FP is
+>    BELOW the ceiling by 23–39%; the quoted comparator was the floor-17.2
+>    hostless class, which is ~92% genuine sub-floor-host detections (the
+>    "over-counts forest FP" direction claim is inverted). After measuring
+>    chance z-coincidence (8.5–9.0%): μ_FP/supply = **1.002 on the twin**
+>    (normalization validated absolutely), 1.447/1.307 on the held-outs —
+>    a cross-mock TRANSPORT systematic (~1.9–2.8σ including the template's
+>    own 89-event noise; effectively one observation), not a supply ceiling.
+> 4. **§10 "the leading residual is now the SNR axis" — REJECTED.** The
+>    by_snr numbers below are (a) silently window-restricted and (b)
+>    computed against survey-only variance while each of the 89 loa-0
+>    calibration events carries a ~166-count folded footprint
+>    (var_cal/var_surv up to 17 per stratum). Propagated: by_snr χ²/dof
+>    3.6/5.9/4.9; **the N̂ axis remains the leading residual** (window
+>    by_nhat 8.9–9.7). Cross-mock coherence of the tilt is ~one observation
+>    (shared template). A small genuine signal-side SNR effect survives
+>    (p ≈ 0.002–0.02); no SNR model freedom is justified.
+>
+> Consequently the stop-decision rationale below ("they do [remain
+> non-identifiable]") is void as stated; the stop itself remains justified on
+> corrected grounds (transport systematic, gate variance model, prior-
+> dominated FP shape — see the Phase-A verdict §9 and the 2026-08-06 PI
+> rulings). Closure failure itself is UPHELD (~3× the ratified gate on the
+> N̂ axis under corrected variance accounting, all three mocks).
+
 **Why this stops here.** The session brief says to halt at a consolidated checkpoint if the
 components remain non-identifiable without a substantive prior, external calibration or new
-injections. **They do.** The measurement is in §8 and it is a clean negative result, not a
+injections. **They do.** *(Superseded — see correction notice, item 1.)* The measurement is in §8 and it is a clean negative result, not a
 defect awaiting a fix.
 
 **Nothing here is paper-facing.** No artifact in either lineage is marked `paper_facing: true`
@@ -152,6 +212,10 @@ between the candidates. Stopped there deliberately.
 
 ## 7. Held-out transfer error and nuisance calibration
 
+> **[CORRECTED 2026-08-06 — see correction notice, item 3]** The
+> supply-ceiling interpretation of the table below is rejected; the numbers
+> compare against the floor-17.2 hostless class, not a forest-FP ceiling.
+
 🔴 **The corrected μ_FP exceeds the mock's entire false-positive supply — on all three mocks, far
 worse off the calibration twin.** Re-measured on the 17.2-truth-floor bundle, every partition
 summing exactly to the on-grid total:
@@ -178,6 +242,12 @@ mocks. **Any "validated on three mocks" statement about the nuisances is unsuppo
 closing the residual — is a hard-coded guess, not a measured fit covariance.
 
 ## 8. 🔴 IDENTIFIABILITY — THE DECISIVE RESULT
+
+> **[CORRECTED 2026-08-06 — see correction notice, items 1–2]** The headline
+> below is rejected as stated (the sub-degree directions are pad↔window, not
+> pad↔FP; the Δdev = 41 → "0.6σ" calibration is invalid; the wrong model is
+> detected with power ≈ 1 by a properly calibrated LRT). Retained here
+> unchanged for the record.
 
 **Populations A (sub-floor migration) and B (forest FP) are NOT separately identifiable from these
 observables.**
@@ -245,6 +315,9 @@ Adopted config, zero-sampling truth fold, all three mocks:
   *worse* than the n̂ gate value on all three — with a coherent monotone tilt: SNR [2,3)
   under-predicted (z +8.14/+9.67/+10.93), SNR ≥ 5 over-predicted (z −4 to −9.8). Separately
   measured, the `by_snr` arm is violated at **6.9×–10.8×** tolerance on all 18 committed packs.
+  **[CORRECTED 2026-08-06 — see correction notice, item 4]**: these values are
+  window-restricted (unstated) and survey-only-variance; with the 89-event
+  calibration noise propagated they drop to 3.6/5.9/4.9 and the N̂ axis leads.
 - **Only 32.6% of μ_FP lands in [19.7,21.6]**; 67.4% lands in the masked [19.5,19.7) strip. The FP
   term is mostly constrained by bins that are not reported.
 
