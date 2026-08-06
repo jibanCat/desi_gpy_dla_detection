@@ -1,0 +1,1210 @@
+{
+ "schema": "phaseC_pairs/v1",
+ "label": "PILOT ENGINEERING VALIDATION (design \u00a710) \u2014 not production",
+ "arm": "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/pilot_clean",
+ "dlacats": [
+  "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/pilot_clean/gp_out/dlacat-v2.8.5-mockcat-0-2.fits",
+  "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/pilot_clean/gp_out/dlacat-v2.8.5-mockcat-2-4.fits",
+  "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/pilot_clean/gp_out/dlacat-v2.8.5-mockcat-4-6.fits"
+ ],
+ "matcher": "examples.molly_faithful_pc_plots.match_truth_to_cat_molly dz_rel=0.01 nhi_desc (the production object)",
+ "op_mask": {
+  "p_dla_min": 0.99,
+  "snr_min": 2.0
+ },
+ "n_injected": 102,
+ "n_matched_any_p": 100,
+ "n_matched_op": 98,
+ "n_gp_rows": 248,
+ "n_op_rows": 244,
+ "n_unmatched_op_rows": 146,
+ "n_unmatched_op_near_natural_truth": 0,
+ "n_injections_with_multi_candidates": 10,
+ "substrate": "clean",
+ "per_anchor": [
+  {
+   "logN": 19.6,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.03140423872033615,
+   "dx_sd": 0.07206632685086457,
+   "dx": [
+    -0.08236282713178866,
+    0.019554349691116357
+   ],
+   "old_pred_bias": 0.2318722935874549,
+   "old_pred_sd": 0.25605228110165656,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -5.166480087360934
+  },
+  {
+   "logN": 19.6,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": 0.11849309901120009,
+   "dx_sd": 0.29439408766755437,
+   "dx": [
+    -0.08967495671975456,
+    0.32666115474215474
+   ],
+   "old_pred_bias": 0.18497059844698757,
+   "old_pred_sd": 0.20790333866795502,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.3193453443294194
+  },
+  {
+   "logN": 19.6,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": 0.048033007377592085,
+   "dx_sd": 0.1979027985718418,
+   "dx": [
+    -0.09190540350835263,
+    0.1879714182635368
+   ],
+   "old_pred_bias": 0.1312994959834999,
+   "old_pred_sd": 0.15695270313566462,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.5950223964867892
+  },
+  {
+   "logN": 19.6,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 1,
+   "n_matched_op": 1,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.09982104641712652,
+   "dx_sd": null,
+   "dx": [
+    0.09982104641712652
+   ],
+   "old_pred_bias": 0.2461845825151693,
+   "old_pred_sd": 0.2364421400231875,
+   "old_covariate_clamped": false
+  },
+  {
+   "logN": 19.6,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.20699420947634017,
+   "dx_sd": 0.3149393168646633,
+   "dx": [
+    -0.01570151714092205,
+    0.4296899360936024
+   ],
+   "old_pred_bias": 0.1940287261118455,
+   "old_pred_sd": 0.197156532081229,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.058220620401836065
+  },
+  {
+   "logN": 19.6,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": -0.0031381854787841945,
+   "dx_sd": 0.09365473612290312,
+   "dx": [
+    -0.0693620844815257,
+    0.06308571352395731
+   ],
+   "old_pred_bias": 0.14671321245430172,
+   "old_pred_sd": 0.15671250035703274,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -2.262799384960442
+  },
+  {
+   "logN": 19.6,
+   "z": 3.2,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 1,
+   "n_matched_op": 1,
+   "n_multi_candidate": 1,
+   "dx_mean": -0.03664145871938018,
+   "dx_sd": null,
+   "dx": [
+    -0.03664145871938018
+   ],
+   "old_pred_bias": 0.2748662949587483,
+   "old_pred_sd": 0.2486920507508102,
+   "old_covariate_clamped": false
+  },
+  {
+   "logN": 19.6,
+   "z": 3.2,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": -0.025428058382388485,
+   "dx_sd": 0.07991625883626309,
+   "dx": [
+    0.031081270167792496,
+    -0.08193738693256947
+   ],
+   "old_pred_bias": 0.22219672295599596,
+   "old_pred_sd": 0.2022279546221212,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -4.382015990837524
+  },
+  {
+   "logN": 19.6,
+   "z": 3.2,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": 0.08712557031456569,
+   "dx_sd": 0.36994903912377913,
+   "dx": [
+    0.3487190445724373,
+    -0.1744679039433059
+   ],
+   "old_pred_bias": 0.17012511820902051,
+   "old_pred_sd": 0.1621087313871131,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.31728447404860016
+  },
+  {
+   "logN": 20.0,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 0,
+   "n_multi_candidate": 0,
+   "dx_mean": null,
+   "dx_sd": null,
+   "dx": [],
+   "old_pred_bias": 0.11117654120605718,
+   "old_pred_sd": 0.22088339047575706,
+   "old_covariate_clamped": false
+  },
+  {
+   "logN": 20.0,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.2434775184158955,
+   "dx_sd": 0.4751766177096949,
+   "dx": [
+    0.5794781270597085,
+    -0.09252309022791749
+   ],
+   "old_pred_bias": 0.06435747870646288,
+   "old_pred_sd": 0.17555520418592369,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.5330943906096133
+  },
+  {
+   "logN": 20.0,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.03234425456858858,
+   "dx_sd": 0.14737257574460758,
+   "dx": [
+    -0.13655240223852871,
+    0.07186389310135155
+   ],
+   "old_pred_bias": 0.042022759004910384,
+   "old_pred_sd": 0.12201398373982388,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.7136391466149328
+  },
+  {
+   "logN": 20.0,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.04180765503948969,
+   "dx_sd": 0.19197903905811217,
+   "dx": [
+    -0.17755733540315788,
+    0.0939420253241785
+   ],
+   "old_pred_bias": 0.11521465577106976,
+   "old_pred_sd": 0.21519009081802545,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -1.156704828990409
+  },
+  {
+   "logN": 20.0,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.18631573051013284,
+   "dx_sd": 0.2543789469006473,
+   "dx": [
+    0.3661888088546732,
+    0.006442652165592477
+   ],
+   "old_pred_bias": 0.06775427836398595,
+   "old_pred_sd": 0.1643693133557021,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.6591395067973803
+  },
+  {
+   "logN": 20.0,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.08214721153015958,
+   "dx_sd": 0.21552184491288084,
+   "dx": [
+    -0.0702497465015739,
+    0.23454416956189306
+   ],
+   "old_pred_bias": 0.0503757737238937,
+   "old_pred_sd": 0.11813018474204896,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.208478162665492
+  },
+  {
+   "logN": 20.0,
+   "z": 3.2,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.05356537351944013,
+   "dx_sd": 0.0950276837159661,
+   "dx": [
+    -0.12076009307545021,
+    0.013629346036569956
+   ],
+   "old_pred_bias": 0.12622152761454786,
+   "old_pred_sd": 0.21856486415766943,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -2.675610558715508
+  },
+  {
+   "logN": 20.0,
+   "z": 3.2,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.017529664220475638,
+   "dx_sd": 0.0833991992092739,
+   "dx": [
+    -0.07650180352688096,
+    0.041442475085929686
+   ],
+   "old_pred_bias": 0.09959756511236831,
+   "old_pred_sd": 0.17412605981980284,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -1.9861451646561186
+  },
+  {
+   "logN": 20.0,
+   "z": 3.2,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    2
+   ],
+   "n_inj": 1,
+   "n_matched_any": 1,
+   "n_matched_op": 1,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.19507462275659293,
+   "dx_sd": null,
+   "dx": [
+    0.19507462275659293
+   ],
+   "old_pred_bias": 0.07062020303075586,
+   "old_pred_sd": 0.12825081317802783,
+   "old_covariate_clamped": false
+  },
+  {
+   "logN": 20.6,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.09145518765149063,
+   "dx_sd": 0.07448268033897765,
+   "dx": [
+    -0.03878797930284961,
+    -0.14412239600013166
+   ],
+   "old_pred_bias": 0.013611646692950922,
+   "old_pred_sd": 0.19063686816501244,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -1.9949193746691645
+  },
+  {
+   "logN": 20.6,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.029624903923009427,
+   "dx_sd": 0.07462632752661195,
+   "dx": [
+    -0.08239368617212506,
+    0.023143878326106204
+   ],
+   "old_pred_bias": -0.0027951260624388295,
+   "old_pred_sd": 0.15211838495910332,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.5084403451629822
+  },
+  {
+   "logN": 20.6,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": 0.05276829640349767,
+   "dx_sd": 0.10585066790322291,
+   "dx": [
+    -0.02207942866399648,
+    0.12761602147099183
+   ],
+   "old_pred_bias": -0.0004175433506848246,
+   "old_pred_sd": 0.10107290047581803,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.7105872584132921
+  },
+  {
+   "logN": 20.6,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.025856452523797202,
+   "dx_sd": 0.08655089688689181,
+   "dx": [
+    0.08705717863029605,
+    -0.035344273582701646
+   ],
+   "old_pred_bias": 0.028436596690603933,
+   "old_pred_sd": 0.18537907588181254,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.04215871822038315
+  },
+  {
+   "logN": 20.6,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.03813252915317733,
+   "dx_sd": 0.011942976491096163,
+   "dx": [
+    -0.029687569488771715,
+    -0.046577488817582946
+   ],
+   "old_pred_bias": 0.014262183625984684,
+   "old_pred_sd": 0.1314128352676618,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -6.204258499895361
+  },
+  {
+   "logN": 20.6,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.05045885111498727,
+   "dx_sd": 0.06495723342904969,
+   "dx": [
+    0.0963905513597858,
+    0.004527150870188734
+   ],
+   "old_pred_bias": 0.009931074270094063,
+   "old_pred_sd": 0.09145784497161465,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.8823487183991783
+  },
+  {
+   "logN": 20.6,
+   "z": 3.2,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.04685115141641738,
+   "dx_sd": 0.033022551248169815,
+   "dx": [
+    -0.07020162133607855,
+    -0.023500681496756215
+   ],
+   "old_pred_bias": 0.04493468466307448,
+   "old_pred_sd": 0.18120096456296722,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -3.930791816836539
+  },
+  {
+   "logN": 20.6,
+   "z": 3.2,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": -0.07289718421343139,
+   "dx_sd": 0.07912178425525575,
+   "dx": [
+    -0.12884473439990174,
+    -0.016949634026961036
+   ],
+   "old_pred_bias": 0.04346603060228134,
+   "old_pred_sd": 0.1424808125234073,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -2.0798625574825
+  },
+  {
+   "logN": 21.0,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.04095147313502956,
+   "dx_sd": 0.004092525630339439,
+   "dx": [
+    0.03805762050963679,
+    0.04384532576042233
+   ],
+   "old_pred_bias": 0.004220873056874395,
+   "old_pred_sd": 0.18547706237658607,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 12.69262980286355
+  },
+  {
+   "logN": 21.0,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.007182863945081053,
+   "dx_sd": 0.039938011389223614,
+   "dx": [
+    -0.02105757473534453,
+    0.035423302625506636
+   ],
+   "old_pred_bias": 0.028281187319550767,
+   "old_pred_sd": 0.15321742713870773,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.7470961628189468
+  },
+  {
+   "logN": 21.0,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.03414719753459927,
+   "dx_sd": 0.02117816884616054,
+   "dx": [
+    0.04912242433883307,
+    0.019171970730365473
+   ],
+   "old_pred_bias": 0.03227212382044473,
+   "old_pred_sd": 0.10809017551965112,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.12521170721931354
+  },
+  {
+   "logN": 21.0,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.08938672417889393,
+   "dx_sd": 0.16714786843506807,
+   "dx": [
+    -0.20757811541020743,
+    0.028804667052419575
+   ],
+   "old_pred_bias": 0.0437024446607497,
+   "old_pred_sd": 0.16688310517202426,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -1.1260479080001142
+  },
+  {
+   "logN": 21.0,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.05116219312071557,
+   "dx_sd": 0.2557940095669839,
+   "dx": [
+    0.23203587187242647,
+    -0.12971148563099533
+   ],
+   "old_pred_bias": 0.06921383838984298,
+   "old_pred_sd": 0.12025808320913521,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -0.0998024996987388
+  },
+  {
+   "logN": 21.0,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": -0.06894135068414009,
+   "dx_sd": 0.01834239990231627,
+   "dx": [
+    -0.08191138603830339,
+    -0.05597131532997679
+   ],
+   "old_pred_bias": 0.05234224706210287,
+   "old_pred_sd": 0.09447704089268623,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -9.351061460854977
+  },
+  {
+   "logN": 21.0,
+   "z": 3.2,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    2
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.018929715960926075,
+   "dx_sd": 0.12749998500847146,
+   "dx": [
+    -0.10908581996159938,
+    0.07122638803974723
+   ],
+   "old_pred_bias": 0.09122314243246016,
+   "old_pred_sd": 0.12838904426386513,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": -1.2218014477706753
+  },
+  {
+   "logN": 21.2,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.04852651652135975,
+   "dx_sd": 0.11671252090429637,
+   "dx": [
+    0.1310547315021644,
+    -0.034001698459444896
+   ],
+   "old_pred_bias": 0.016221233050634228,
+   "old_pred_sd": 0.18739852220799386,
+   "old_covariate_clamped": false,
+   "z_vs_old_mean": 0.39144531937640303
+  },
+  {
+   "logN": 21.2,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.01535874663450798,
+   "dx_sd": 0.008966070574390826,
+   "dx": [
+    -0.009018777330759065,
+    -0.021698715938256896
+   ],
+   "old_pred_bias": 0.04500941121013854,
+   "old_pred_sd": 0.1555069380737725,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -9.521837559836442
+  },
+  {
+   "logN": 21.2,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.05652062751975073,
+   "dx_sd": 0.125538150712569,
+   "dx": [
+    0.14528950518622707,
+    -0.03224825014672561
+   ],
+   "old_pred_bias": 0.043491540612043765,
+   "old_pred_sd": 0.11117871464269768,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": 0.14677539302299206
+  },
+  {
+   "logN": 21.2,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 1,
+   "dx_mean": -0.03221843934349522,
+   "dx_sd": 0.03318491211892562,
+   "dx": [
+    -0.008753162951123272,
+    -0.05568371573586717
+   ],
+   "old_pred_bias": 0.061886442230811266,
+   "old_pred_sd": 0.1609362471489248,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -4.010388797504126
+  },
+  {
+   "logN": 21.2,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.09965880497005841,
+   "dx_sd": 0.14340422000771513,
+   "dx": [
+    -0.20106090138828137,
+    0.0017432914481645412
+   ],
+   "old_pred_bias": 0.08279277071023727,
+   "old_pred_sd": 0.11938133687516395,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -1.7992880041433479
+  },
+  {
+   "logN": 21.2,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.018385174067146792,
+   "dx_sd": 0.06122089880060181,
+   "dx": [
+    0.061674886759387704,
+    -0.02490453862509412
+   ],
+   "old_pred_bias": 0.05974283856895814,
+   "old_pred_sd": 0.09571257921453949,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.9553693459652861
+  },
+  {
+   "logN": 21.2,
+   "z": 3.2,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    2
+   ],
+   "n_inj": 1,
+   "n_matched_any": 1,
+   "n_matched_op": 1,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.04716736893373508,
+   "dx_sd": null,
+   "dx": [
+    -0.04716736893373508
+   ],
+   "old_pred_bias": 0.10200546951138538,
+   "old_pred_sd": 0.1270190980733388,
+   "old_covariate_clamped": true
+  },
+  {
+   "logN": 21.6,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.00468810839601197,
+   "dx_sd": 0.0875350243045892,
+   "dx": [
+    0.057208500881092306,
+    -0.06658471767311624
+   ],
+   "old_pred_bias": 0.017695193394372755,
+   "old_pred_sd": 0.18768844592025066,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.36162403808223414
+  },
+  {
+   "logN": 21.6,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.04098173003922234,
+   "dx_sd": 0.0797477123212146,
+   "dx": [
+    -0.01540841812722249,
+    0.09737187820566717
+   ],
+   "old_pred_bias": 0.04500941121013854,
+   "old_pred_sd": 0.1555069380737725,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.07142526313333725
+  },
+  {
+   "logN": 21.6,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.019806515358212096,
+   "dx_sd": 0.028716506193036527,
+   "dx": [
+    0.04011215161929371,
+    -0.0004991209028695209
+   ],
+   "old_pred_bias": 0.043491540612043765,
+   "old_pred_sd": 0.11117871464269768,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -1.1664261562306761
+  },
+  {
+   "logN": 21.6,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.00045385976642542403,
+   "dx_sd": 0.1445499484230857,
+   "dx": [
+    0.10175838898370415,
+    -0.102666108516555
+   ],
+   "old_pred_bias": 0.061886442230811266,
+   "old_pred_sd": 0.1609362471489248,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.6099102872654258
+  },
+  {
+   "logN": 21.6,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.03099945428316886,
+   "dx_sd": 0.1297716746498259,
+   "dx": [
+    -0.060762976867657414,
+    0.12276188543399513
+   ],
+   "old_pred_bias": 0.08279277071023727,
+   "old_pred_sd": 0.11938133687516395,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.564428337147452
+  },
+  {
+   "logN": 21.6,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.06713233007243247,
+   "dx_sd": 0.013423502778294039,
+   "dx": [
+    -0.05764048023062429,
+    -0.07662417991424064
+   ],
+   "old_pred_bias": 0.05974283856895814,
+   "old_pred_sd": 0.09571257921453949,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -13.366748395297114
+  },
+  {
+   "logN": 22.0,
+   "z": 2.3,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": 0.002792668302763701,
+   "dx_sd": 0.10524419732130594,
+   "dx": [
+    0.07721155390919421,
+    -0.0716262173036668
+   ],
+   "old_pred_bias": 0.017695193394372755,
+   "old_pred_sd": 0.18768844592025066,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.20025192490011343
+  },
+  {
+   "logN": 22.0,
+   "z": 2.3,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.14946160831248534,
+   "dx_sd": 0.0579903707087761,
+   "dx": [
+    -0.10845622394078802,
+    -0.19046699268418266
+   ],
+   "old_pred_bias": 0.04500941121013854,
+   "old_pred_sd": 0.1555069380737725,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -4.742572774341593
+  },
+  {
+   "logN": 22.0,
+   "z": 2.3,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    0
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.14522739600409906,
+   "dx_sd": 0.07317269874384272,
+   "dx": [
+    -0.0934864845246075,
+    -0.19696830748359062
+   ],
+   "old_pred_bias": 0.043491540612043765,
+   "old_pred_sd": 0.11117871464269768,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -3.6473833030742995
+  },
+  {
+   "logN": 22.0,
+   "z": 2.75,
+   "snr_stratum": 0,
+   "resp_cell": [
+    0,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.05243211452555485,
+   "dx_sd": 0.2483242083410596,
+   "dx": [
+    -0.22802384617629912,
+    0.12315961712518941
+   ],
+   "old_pred_bias": 0.061886442230811266,
+   "old_pred_sd": 0.1609362471489248,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.6510474934192699
+  },
+  {
+   "logN": 22.0,
+   "z": 2.75,
+   "snr_stratum": 1,
+   "resp_cell": [
+    1,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.048861343408368896,
+   "dx_sd": 0.26361343657113656,
+   "dx": [
+    0.1375415052029716,
+    -0.23526419201970938
+   ],
+   "old_pred_bias": 0.08279277071023727,
+   "old_pred_sd": 0.11938133687516395,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.7062881018149663
+  },
+  {
+   "logN": 22.0,
+   "z": 2.75,
+   "snr_stratum": 2,
+   "resp_cell": [
+    2,
+    1
+   ],
+   "n_inj": 2,
+   "n_matched_any": 2,
+   "n_matched_op": 2,
+   "n_multi_candidate": 0,
+   "dx_mean": -0.020531134040139065,
+   "dx_sd": 0.1255715559958412,
+   "dx": [
+    -0.10932363280894464,
+    0.06826136472866651
+   ],
+   "old_pred_bias": 0.05974283856895814,
+   "old_pred_sd": 0.09571257921453949,
+   "old_covariate_clamped": true,
+   "z_vs_old_mean": -0.9040625471990762
+  }
+ ]
+}
