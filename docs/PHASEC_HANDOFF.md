@@ -37,6 +37,30 @@
 - [06:0x] Branch `calibration/phaseC-highN-fp-2026-08-06` created at
   `a56e3c8`, worktree `/home/mfho/wt_calib_phaseC`, clean. This handoff
   committed as the first commit.
+- [06 session 2] Start-state verification PASSED: all four protected tips
+  match the rulings (9d73365 / 1533333 / a420abd / a56e3c8); Phase-B branch
+  clean; all Phase-B artifact commits present (26a267a is in the NOTES
+  repo, tip c0b8210 as expected); 7 phaseB packs + window manifest on
+  scratch. The rulings verbatim file the first session claimed
+  (`notes/2026-08-06_phaseC_rulings.md`) did NOT exist — now written and
+  committed (notes repo `29007f7`).
+- [06 session 2] 🔴 TEST-BASELINE CAVEAT: the ruling's "939 passed/1
+  xfailed" is NOT reproducible as a single pytest run in any current env.
+  `gpdla-hbi` lacks `desiutil` (25 collection errors), `gpdla` lacks
+  jax/corner (9 errors). Three files fail collection in BOTH envs:
+  `test_mcmc.py` (needs corner+desiutil), `test_selection.py` /
+  `test_zestimation.py` (import `process_qso` from run_bayes_select — the
+  symbol does not exist at this tip: a source-level break inherited from
+  before Phase B, not introduced here). Two-env union run recorded below.
+- [06 session 2] Response-preimage analysis COMMITTED
+  (`diagnostics_phaseC/preimage/`): G3 feed = 12.7% from true<21.0, 84.0%
+  in-band, 3.3% from true>21.6; 99% feed region true [20.3,21.7); **47.3%
+  of G3 mu sits on CLAMPED covariates** (top anchors 21.04–21.22); the
+  measured-but-single-anchor band [20.6,21.1] carries the peak sensitivity
+  (14,300 counts/dex at [20.7,21.1)); +450 counts ≡ +0.031 dex coherent
+  mean bias there (the §9 effect size). Sanity: closure-table 3-group
+  residual reproduced to 1e-6 on ALL mocks; oracle copy vs build_K 1e-14.
+  Replicates (shares within 0.5%) on London/Saclay.
 
 ## NEXT COMMANDS (exact resume points)
 
