@@ -707,7 +707,23 @@ def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
     # per fine N bin (band_eta_per_nbin; eta_DLA == 0 forced by the product).
     # Map onto the schema's observed N-hat bins, asserting band constancy
     # within every pack bin so a band boundary can never be silently averaged.
-    from CDDF_analysis.hbi_mcmc.pack import eta_from_intervals
+    # pack.py is jax-free at import, but importing it AS A PACKAGE MEMBER
+    # triggers CDDF_analysis.hbi_mcmc.__init__, which imports jax — and the
+    # extract phase deliberately runs in the jax-free `gpdla` env. Load it
+    # file-directly (the same idiom window_study._extract_pack_module uses
+    # for THIS module).
+    import importlib.util as _ilu
+    _pk_name = "modelA_pack_schema_extract"
+    if _pk_name in sys.modules:
+        _pk = sys.modules[_pk_name]
+    else:
+        _spec = _ilu.spec_from_file_location(
+            _pk_name, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "pack.py"))
+        _pk = _ilu.module_from_spec(_spec)
+        sys.modules[_pk_name] = _pk
+        _spec.loader.exec_module(_pk)
+    eta_from_intervals = _pk.eta_from_intervals
     fp_eta_c = eta_from_intervals(
         NHAT_EDGES,
         np.asarray(prod["logN_lo"], float),
