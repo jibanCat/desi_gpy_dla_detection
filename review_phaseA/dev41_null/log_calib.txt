@@ -1,0 +1,17 @@
+anchors ready 64s; obs_T=85.5964
+done 20/300  200s
+done 40/300  313s
+done 60/300  444s
+done 80/300  556s
+done 100/300  630s
+done 120/300  711s
+done 140/300  781s
+done 160/300  857s
+done 180/300  930s
+done 200/300  1008s
+done 220/300  1085s
+done 240/300  1162s
+done 260/300  1232s
+done 280/300  1304s
+done 300/300  1376s
+ALL DONE 1376s  n=300
