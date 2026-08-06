@@ -155,11 +155,14 @@ def test_r5_deterministic_calibration_width_contract():
 
         r = [1/(d/16+.5)+1/((t−d)/16+.5)] / [1/(d+.5)+1/(t−d+.5)]
 
-    tends to 16 from BELOW (the Jeffreys +1/2 damps it), so at this pack's
-    count scale every cell must satisfy 14.0 <= r <= 16.0 — a fixed,
-    justified threshold; fixed inputs; no sampling; fails reproducibly.
-    Cells with fewer than 32 expected detections are excluded (there the
-    +1/2 offset legitimately dominates and the bound is not tight)."""
+    tends to 16 from BELOW (the Jeffreys +1/2 damps it), so every included
+    cell must satisfy 14.0 <= r <= 16.0 — a fixed, justified threshold;
+    fixed inputs; no sampling; fails reproducibly. WHERE THE LOWER BOUND
+    COMES FROM (review finding F4): r >= 14 is guaranteed iff
+    min(d, t−d) >= 52 pre-shrink (= 3.25 post-shrink); the inclusion
+    floor is therefore set at 3.5 POST-shrink (= 56 pre-shrink), strictly
+    above the bound's requirement, so the assertion cannot fail on
+    healthy plumbing regardless of future grid/count changes."""
     from CDDF_analysis.hbi_mcmc.forward import eta_hat_sigma_hat, build_consts
 
     pk = synthetic_pack(0, **GRID, fp_frac=0.25, t_true=T_TRUE)
@@ -168,7 +171,7 @@ def test_r5_deterministic_calibration_width_contract():
     _, sig1 = eta_hat_sigma_hat(nd, nt)
     _, sig16 = eta_hat_sigma_hat(nd / 16.0, nt / 16.0)
     r = (sig16 / sig1) ** 2
-    ok = (nd / 16.0 >= 2.0) & ((nt - nd) / 16.0 >= 2.0)
+    ok = (nd / 16.0 >= 3.5) & ((nt - nd) / 16.0 >= 3.5)
     assert ok.any(), "no cells above the small-count floor — grid too small"
     assert np.all(r[ok] >= 14.0) and np.all(r[ok] <= 16.0), (
         f"R5 deterministic width contract violated: variance ratio range "

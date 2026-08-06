@@ -37,12 +37,18 @@ identity with this branch verified — 3 docstring lines).
 Mechanical findings (pilot-repairable class): one SLURM step failed in
 4 s and the next step covered its range (dlacats complete; the 15% retry
 allowance is justified); the FP-side accounting of unmatched op-rows
-needs the ANALYSIS-WINDOW cut before interpretation (373 unmatched
+needs the ANALYSIS-WINDOW cut before interpretation (370 unmatched
 op-rows on prodlike include out-of-window and sub-floor-truth
 detections by construction — a production-matcher refinement, not a
-matching defect; 0 on clean after natural-truth attribution... 146
-unmatched rows on clean are all out-of-window/sub-floor class since no
-natural truth exists there).
+matching defect; the 146 unmatched rows on clean are all
+out-of-window/sub-floor class since no natural truth exists there).
+
+Post-review re-score (review finding F3): the sentinel filter
+(NHI_ERR/Z_DLA_ERR == −1, pre-match) and DLAFLAG == 0 were added to the
+matcher and both arms re-scored — 3 sentinel rows dropped on prodlike, 0
+on clean, ALL previously unmatched: every matched-pair, completeness and
+per-anchor number above is unchanged. The λ_rf/z_QSO/BAL window cuts
+remain the open pre-Stage-2 item (tracked in the handoff).
 
 ## Pilot-precision observation (labeled, NOT confirmation)
 

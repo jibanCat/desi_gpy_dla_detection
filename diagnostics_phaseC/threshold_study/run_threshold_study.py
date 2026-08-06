@@ -10,8 +10,9 @@ failures sit far beyond either threshold; nothing here revises them).
 
 THE SIMULATED PROCEDURE IS THE DEPLOYED ONE. Universe: a schema-conformant
 `synthetic_pack` at the production 29×15×8 geometry with a KNOWN truth and
-a production-regime FP calibration (~90 events carrying a ~15% mu_FP
-share, per-event weight ~50 — the 89-event/1.5e4-count regime). Per
+a production-regime FP calibration (realized: 94 events carrying a
+12.3% mu_FP share — the 89-event/1.5e4-count regime; fp_regime in the
+artifact records the realized values). Per
 replicate r:
 
     n0_r ~ Poisson(n0_true)                    # realized finite calibration
@@ -26,10 +27,12 @@ observed-scale alternative, ε ∈ {0.5, 0.25} the smaller-material-defect
 alternatives (§14.3). Deployed seeds stay FIXED across replicates (that IS
 the deployed procedure; replicate randomness enters through y_r, n0_r).
 
-FAITHFULNESS GUARD: the study's cached inner loop is asserted, on the
-first replicate of every config, to reproduce the committed
-`gate_covariance.predictive_gate` T_obs and p EXACTLY (same inputs, same
-seeds) before any bulk replication is trusted.
+FAITHFULNESS GUARD: once per PACK (κ config), before bulk replication,
+the study's reduced observed-statistic path is asserted to reproduce the
+committed `gate_covariance.predictive_gate` T_obs EXACTLY given the same
+covariance object. (The p-value cannot be bit-compared: the reduced
+ensembles consume a different rng stream — statistically identical, not
+seed-identical; see the Gate docstring. Review finding F8a.)
 
 Family-wise rates: per replicate, THREE independent y-draws share one
 n0_r (the three real mocks share the same calibration events), giving the

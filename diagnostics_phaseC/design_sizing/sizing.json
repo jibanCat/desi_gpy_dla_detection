@@ -1,7 +1,7 @@
 {
  "schema": "phaseC_calib_sizing/v1",
  "date": "2026-08-06",
- "code_commit": "ccf9d6d6bc303d0179cfa7b13fffb281c3b3334b",
+ "code_commit": "8bfd84286c24f8a627bcbe278fecf40f1f57c061",
  "frozen_criteria": {
   "sigma_G3_precision_max": 150.08333333333334,
   "sigma_G3_power_max": 116.72427879951883,
@@ -23,8 +23,8 @@
   "167 CPU-s/spec (pilot re-measures)"
  ],
  "n_uniform_per_bin": 230,
- "sigma_G3_achieved": 111.9567060318549,
- "power_achieved": 0.9258853896639953,
+ "sigma_G3_achieved": 113.03646024326429,
+ "power_achieved": 0.9203454098040735,
  "implied_sigma_G1_G2": {
   "G1": 618.4,
   "G2": 444.8

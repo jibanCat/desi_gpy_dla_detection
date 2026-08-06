@@ -10,8 +10,15 @@ Faithfulness guards: the committed `fold_mu_fp` linearity probe (1e-9) and
 exact T-statistic agreement with the committed `predictive_gate`
 (|ΔT| < 1e-12). The observed Phase-B failures enter ONLY as the ε=1
 alternative SHAPE (the twin's per-bin fractional residual, committed as
-`observed_tilt_shape.npz`) — the threshold candidates were never evaluated
-against the observed data.
+`observed_tilt_shape.npz`, regenerable bit-identically by the committed
+`make_observed_tilt_shape.py`) — the threshold candidates were never
+evaluated against the observed data.
+
+Provenance note (review finding F8c): `threshold_study.json` carries
+`code_commit = 13e0d46` — the run predated the script's own commit
+(`90d5b91`) by one commit in the same session; the independent reviewer's
+smoke re-run with the committed code reproduces the faithfulness-guard T
+exactly, tying the artifact to the committed routine.
 
 ## Operating characteristics (per-mock rates; family = 3 mocks sharing one calibration draw)
 

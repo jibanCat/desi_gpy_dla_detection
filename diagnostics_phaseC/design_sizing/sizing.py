@@ -139,8 +139,13 @@ def main():
     n_final = {b: max(n_ney[b], CELL_FLOOR_PAIRS * 9) for b in PROD_BINS}
     for b in TAIL_BINS:
         n_final[b] = TAIL_FLOOR
-    sig_achieved = float(np.sqrt(var_G3({b: n for b, n in n_final.items()
-                                         if b in PROD_BINS})))
+    # sigma over ALL re-measured bins — bridge + production + tail (review
+    # finding F6: the frozen criterion is on the full response-induced
+    # sigma(G3), and the bridge/tail bins are re-measured too)
+    n_all = dict(n_final)
+    for b in BRIDGE_BINS:
+        n_all[b] = BRIDGE_PAIRS_PER_BIN
+    sig_achieved = float(np.sqrt(var_G3(n_all)))
     power_achieved = float(
         norm.cdf(G3_RESIDUAL / sig_achieved - norm.ppf(1 - ALPHA / 2)))
 

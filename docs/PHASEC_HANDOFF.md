@@ -16,7 +16,8 @@
    (p<0.01 not evidently too strict); H9/fallback/r5 governance
    (docs + code + tests); PI checkpoint
    (`docs/PHASEC_CHECKPOINT_2026-08-06.md`); independent code review
-   (record committed alongside).
+   (`docs/PHASEC_CODE_REVIEW_2026-08-06.md`, PASS-WITH-FINDINGS, all
+   eight findings dispositioned — see the work log).
 2. **Running:** nothing. No SLURM jobs in flight from this stream.
 3. **Blocked:** **Stage 2 (production calibration + FP expansion) is
    BLOCKED on explicit PI authorization** (§12 default rule — no
@@ -29,11 +30,14 @@
    every 0.2-dex bin center in [20.5,22.4) + bridge [19.5,20.5); role
    manifest committed BEFORE the first sbatch; 25% whole-healpix holdout
    assigned at generation), then `launch_gl.sh` with
-   `phaseC_resp_gl_v1.env` per arm. Before production: (a) add the
-   analysis-window cut to the FP-side accounting in
-   `measure_phaseC_pairs.py` (pilot finding, mechanical); (b) build the
-   labeled response-artifact writer (support labels per
-   PHASEC_CALIB_DESIGN §6 — the one Stage-2 implementation piece left).
+   `phaseC_resp_gl_v1.env` per arm. HARD pre-production blockers
+   (review findings F3/F7): (a) add the λ_rf/z_QSO/BAL analysis-window
+   cuts to `measure_phaseC_pairs.py` (sentinel + DLAFLAG already
+   fixed); (b) build the labeled response-artifact writer (support
+   labels per PHASEC_CALIB_DESIGN §6) WITH role-enforcement — the
+   scorer must REFUSE rows whose sidecar role is not the one being
+   measured, and holdout healpix must be unreadable by the calibration
+   path.
 5. **Warnings for a fresh session:**
    * The pilot's clamped-region observation (−0.03…−0.14 dex below the
      clamp) is ENGINEERING-VALIDATION ONLY (§11) — do not quote it as a
@@ -143,8 +147,24 @@
   fallback, contingency path only, test pinned (`b63a076`); r5
   restructured — deterministic [14,16]× Jeffreys width contract in the
   suite, stochastic test → explained release-cadence skip (`c3b0941`).
-- [06 s2] Budget + PI checkpoint + this handoff committed; independent
-  §21 code review dispatched and its record committed alongside.
+- [06 s2] Budget + PI checkpoint + this handoff committed (`8bfd842`);
+  branch + notes repo pushed.
+- [06 s2] Independent §21 code review RETURNED: **PASS-WITH-FINDINGS**
+  (`docs/PHASEC_CODE_REVIEW_2026-08-06.md` — verbatim record +
+  disposition). Every re-run reproduced committed numbers (pairs JSON
+  bit-identical; preimage to 4e-16; truth-by-SNR bit-identical); no
+  frozen criterion weakened; prohibition boundary enforced. Fixes
+  landed same-day: F1 npz provenance (force-added + committed
+  generator, bit-reproduced); F2 the checkpoint's premature
+  review-record claim (this entry and the committed record correct it);
+  F3 sentinel+DLAFLAG in the pair matcher (3 sentinel rows on prodlike,
+  all previously unmatched — NO pilot number changed; window cuts remain
+  the pre-Stage-2 item); F4 r5 floor raised to the analytic bound;
+  F5 bridge CI clause replaced PRE-DATA by a real dispersion guard
+  (PI to ratify, checkpoint decision 4b); F6 σ(G3) now summed over all
+  re-measured bins: **113.0 counts, power 0.920** (criteria still met);
+  F7 role-enforcement tracked as a hard Stage-2 blocker; F8 doc nits
+  fixed.
 
 ## Exact rerun commands (any artifact on this branch)
 

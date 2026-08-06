@@ -171,9 +171,10 @@ Sizing model and achieved plan (committed:
 `diagnostics_phaseC/design_sizing/sizing.py|json`): per-bin independent
 measurement, σ(mean) = sd/√n, σ_frac(width) = 1/√(2n), sd from the
 current response [PA: pilot re-measures], completeness from the pack
-molly surface [PA]. Achieved at the frozen counts: **σ(G3) = 112.0
-counts, power = 0.926**. Implied (reported, non-driving): σ(G1) = 618,
-σ(G2) = 445 counts. Sensitivities to tails, z- and SNR-stratification
+molly surface [PA]. Achieved at the frozen counts, σ summed over ALL
+re-measured bins (bridge + production + tail; review finding F6):
+**σ(G3) = 113.0 counts, power = 0.920**. Implied (reported,
+non-driving): σ(G1) = 618, σ(G2) = 445 counts. Sensitivities to tails, z- and SNR-stratification
 and transition rules: the per-bin/per-cell tables in `sizing.json` and
 the preimage conditioning decomposition; the per-bin tail beyond ±3 sd
 is NOT constrained at these counts (stated limitation — tail behavior

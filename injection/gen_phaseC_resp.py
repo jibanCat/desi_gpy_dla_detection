@@ -79,7 +79,6 @@ def build_prodlike_table(mockdir, snr_cut=2.0):
 def veto_hcd_neighbors(manifest, hcd, dv_excl_kms):
     """Drop rows whose injected z sits within dv_excl of a truth HCD on the
     SAME sightline. Returns (kept_rows, n_dropped)."""
-    by_tid = {}
     tid_arr = np.asarray(hcd["TARGETID"], np.int64)
     z_arr = np.asarray(hcd["Z"], float)
     order = np.argsort(tid_arr, kind="stable")

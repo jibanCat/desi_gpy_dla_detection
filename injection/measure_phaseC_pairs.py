@@ -6,10 +6,16 @@ Scores a GP re-inference run on an anchored injection arm
 production matching object — `match_truth_to_cat_molly` imported from
 `examples.molly_faithful_pc_plots` (the same function `load_and_cut_catalog`
 uses, at the same window `dz_rel = 0.01`, same NHI-descending greedy order,
-same min-|ΔNHI| tie-break). Matching runs BEFORE cuts, exactly as
-`load_and_cut_catalog` does; the op-mask (P_DLA > 0.99 strict, native red-side
-SNR > 2 strict) is applied to the matched rows afterwards, exactly as
-`measure_znz_response` does. No new matching convention is introduced.
+same min-|ΔNHI| tie-break). Production ORDER is reproduced: the sentinel
+filter (`NHI_ERR == −1 | Z_DLA_ERR == −1` rows dropped) runs BEFORE
+matching (load_and_cut_catalog step 3), matching runs before cuts (step
+5), then the op-mask (P_DLA > 0.99 strict, native red-side SNR > 2
+strict, DLAFLAG == 0 where the column exists) applies to the matched rows
+as in `measure_znz_response`. REMAINING KNOWN DIFFERENCE (review finding
+F3, open pre-production item): the production λ_rf analysis-window /
+z_QSO / BAL cuts are NOT applied here — required before any Stage-2
+scoring, immaterial for the pilot's per-anchor pair moments. No new
+matching convention is introduced.
 
 Outputs per (logN anchor × z anchor × SNR stratum) and per response cell:
   n_injected, n_matched_op (completeness w/ Jeffreys CI), dx = N̂ − N_true
@@ -80,12 +86,23 @@ def main():
     roles = json.load(open(os.path.join(a.arm, "roles.json")))
     dla, dlacat_paths = _load_dlacat(os.path.join(a.arm, "gp_out"))
 
+    # production step 3: sentinel rows dropped BEFORE matching (F3 fix)
+    n_sentinel = 0
+    if "NHI_ERR" in dla.colnames and "Z_DLA_ERR" in dla.colnames:
+        sent = ((np.asarray(dla["NHI_ERR"], float) == -1)
+                | (np.asarray(dla["Z_DLA_ERR"], float) == -1))
+        n_sentinel = int(sent.sum())
+        dla = dla[~sent]
+
     # the matcher's cat/truth column contract
     cat = Table()
     cat["TARGETID"] = np.asarray(dla["TARGETID"], np.int64)
     cat["Z_DLA"] = np.asarray(dla["Z_DLA"], float)
     cat["NHI"] = np.asarray(dla["NHI"], float)
     cat["P_DLA"] = np.asarray(dla["P_DLA"], float)
+    dlaflag_ok = (np.asarray(dla["DLAFLAG"], float) == 0
+                  if "DLAFLAG" in dla.colnames
+                  else np.ones(len(dla), bool))
     truth = Table()
     truth["TARGETID"] = np.asarray(man["target_id"], np.int64)
     truth["Z_TRUTH"] = np.asarray(man["z_true"], float)
@@ -99,7 +116,8 @@ def main():
                                                 man["native_snr"])}
     cat_snr = np.array([tid2snr.get(int(t), np.nan)
                         for t in cat["TARGETID"]])
-    op = (np.asarray(cat["P_DLA"], float) > P_DLA_MIN) & (cat_snr > SNR_MIN)
+    op = (np.asarray(cat["P_DLA"], float) > P_DLA_MIN) & (cat_snr > SNR_MIN) \
+        & dlaflag_ok
 
     # per-injection records: matched op-row (via the 1-to-1 match), moments
     # match_truth_to_cat_molly gives cat-side NHI_TRUE; invert to truth-side:
@@ -214,6 +232,7 @@ def main():
                    f"dz_rel={DZ_REL} nhi_desc (the production object)",
         "op_mask": {"p_dla_min": P_DLA_MIN, "snr_min": SNR_MIN},
         "n_injected": int(len(truth)),
+        "n_sentinel_rows_dropped_prematch": n_sentinel,
         "n_matched_any_p": n_match_any,
         "n_matched_op": int(matched_op_mask.sum()),
         "n_gp_rows": int(len(cat)),

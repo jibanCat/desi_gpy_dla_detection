@@ -13,6 +13,7 @@
   "snr_min": 2.0
  },
  "n_injected": 102,
+ "n_sentinel_rows_dropped_prematch": 0,
  "n_matched_any_p": 100,
  "n_matched_op": 98,
  "n_gp_rows": 248,

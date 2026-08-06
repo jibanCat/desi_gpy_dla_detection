@@ -76,8 +76,16 @@ standardized by its C_bridge sd. The bridge PASSES iff ALL of:
 1. **G3-projected difference:** |Σ_a w_a Δ_a| projected through the
    preimage sensitivity map onto predicted G3 counts is **< 75 counts**
    (half the production σ target — a bridge failure at the size of the
-   production error budget must not be smoothed into the splice), AND its
-   95% CI does not exclude values < 75.
+   production error budget must not be smoothed into the splice), AND the
+   95% CI UPPER BOUND of that projected difference is **< 116.7 counts**
+   (the binding production σ target).
+   *[AMENDMENT 2026-08-06, PRE-DATA, PI to ratify: the original second
+   clause — "its 95% CI does not exclude values < 75" — was VACUOUS (a CI
+   always contains its point estimate; independent review finding F5).
+   Replaced, before any bridge datum existed, by the real dispersion
+   guard above: a bridge measurement too noisy to bound the estimand
+   difference below the production error budget cannot pass. This is a
+   TIGHTENING recorded in writing per the design's own amendment rule.]*
 2. **No coherent offset:** the precision-weighted global mean-shift
    z = |Σ Δ_a/σ²_a| / √(Σ 1/σ²_a) < 3, and the same for widths.
 3. **No localized break:** max standardized |Δ_a| < 4 (Bonferroni-aware

@@ -78,8 +78,9 @@ production anchors, density, support, conditioning, roles, holdout:
 `docs/PHASEC_CALIB_DESIGN.md` (`a6e434b`); bridge covariance treatment,
 acceptance criterion, transition/stitching + lack-of-fit escalation:
 `docs/PHASEC_BRIDGE_DESIGN.md` (`b5d927e`). Sizing/precision/power:
-`diagnostics_phaseC/design_sizing/sizing.json` — σ(G3) = 112, power
-0.926, implied σ(G1)/σ(G2) = 618/445. Pilot verdict + pairs + hashes:
+`diagnostics_phaseC/design_sizing/sizing.json` — σ(G3) = 113.0 over all
+re-measured bins (review-corrected), power 0.920, implied σ(G1)/σ(G2) =
+618/445. Pilot verdict + pairs + hashes:
 `diagnostics_phaseC/pilot/` (`cd6044a`); measured 106 CPU-s/spec, 96%
 yield, matching/accounting exact. Truth-by-SNR:
 `diagnostics_phaseC/truth_by_snr/` (`ccf9d6d`). Threshold operating
@@ -89,8 +90,13 @@ definition + Layer-A conditional ratification:
 `docs/PHASEC_GATE_GOVERNANCE.md` (`f70541c`). Conservative fallback
 reporting implemented + tested (`b63a076`). r5 deterministic merge guard
 + release-cadence stochastic spec (`c3b0941`). Budget:
-`docs/PHASEC_BUDGET.md`. Independent code review: committed as the
-review record alongside this checkpoint. Tests: closure-path suites all
+`docs/PHASEC_BUDGET.md`. Independent code review (§21):
+`docs/PHASEC_CODE_REVIEW_2026-08-06.md` — verdict
+**PASS-WITH-FINDINGS**; every re-run reproduced committed numbers
+(several bit-identically), no frozen criterion weakened, the prohibition
+boundary enforced in code; all eight findings dispositioned same-day
+(record at the end of that file), the two record-keeping defects fixed,
+F3/F7 tracked as pre-Stage-2 blockers. Tests: closure-path suites all
 green in `gpdla-hbi` (354 passed + 1 explained skip after the r5
 restructure); the full-suite baseline is environment-split and is
 documented with its caveats in `docs/PHASEC_HANDOFF.md` (the ruling's
@@ -116,6 +122,12 @@ exceeds its scipy's supported range).
 4. **r5 stochastic validation cadence**: release-cadence re-powered run
    (~1–2 CPU-h) as specified in the governance doc — approve cadence or
    direct otherwise.
+4b. **Bridge criterion 1 amendment ratification**: the independent
+   review found the frozen criterion's CI clause vacuous (F5); it was
+   replaced PRE-DATA by a real dispersion guard (95% CI upper bound of
+   the G3-projected difference < 116.7 counts — a tightening, recorded
+   in `PHASEC_BRIDGE_DESIGN.md` §4). Ratify or direct otherwise before
+   Stage 2.
 5. Deferred by rule (not asked now): whether the measured response
    suffices for Paper 1; further response structure (only if the frozen
    degree-2 lack-of-fit test fails); transport-prior recalibration;
