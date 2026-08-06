@@ -1,0 +1,1314 @@
+{
+"schema": "phaseC_roles/v2",
+"dv_excl_kms": 5000.0,
+"n_vetoed": 0,
+"holdout_healpix": [],
+"production_spec": "diagnostics_phaseC/design_sizing/sizing.json",
+"production_stats": {
+"redraws_hcd": 0,
+"redraws_window": 54,
+"exhausted_cells": []
+},
+"roles": {
+"0": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"1": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"2": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"3": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"4": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"5": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"6": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"7": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"8": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"9": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"10": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"11": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"12": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"13": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"14": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"15": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"16": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"17": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"18": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"19": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"20": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"21": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"22": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"23": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"24": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"25": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"26": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"27": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"28": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"29": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"30": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"31": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"32": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"33": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"34": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"35": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"36": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"37": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"38": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"39": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"40": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"41": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"42": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"43": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"44": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"45": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"46": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"47": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"48": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"49": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"50": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"51": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"52": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"53": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"54": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"55": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"56": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"57": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"58": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"59": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"60": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"61": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"62": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"63": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"64": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"65": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"66": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"67": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"68": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"69": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"70": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"71": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"72": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"73": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"74": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"75": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"76": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"77": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"78": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"79": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"80": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"81": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"82": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"83": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"84": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"85": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"86": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"87": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"88": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"89": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"90": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"91": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"92": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"93": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"94": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"95": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"96": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"97": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"98": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"99": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"100": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"101": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"102": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"103": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"104": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"105": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"106": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"107": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"108": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"109": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"110": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"111": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"112": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"113": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"114": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"115": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"116": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"117": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"118": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"119": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"120": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"121": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"122": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"123": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"124": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"125": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"126": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"127": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"128": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"129": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"130": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"131": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"132": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"133": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"134": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"135": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"136": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"137": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"138": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"139": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"140": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"141": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"142": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"143": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"144": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"145": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"146": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"147": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"148": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"149": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"150": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"151": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"152": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"153": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"154": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"155": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"156": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"157": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"158": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"159": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"160": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"161": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"162": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"163": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"164": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"165": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"166": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"167": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"168": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"169": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"170": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"171": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"172": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"173": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"174": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"175": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"176": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"177": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"178": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"179": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"180": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"181": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"182": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"183": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"184": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"185": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"186": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"187": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"188": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"189": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"190": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"191": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"192": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"193": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"194": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"195": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"196": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"197": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"198": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"199": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"200": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"201": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"202": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"203": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"204": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"205": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"206": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"207": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"208": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"209": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"210": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"211": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"212": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"213": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"214": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"215": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"216": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"217": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"218": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"219": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"220": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"221": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"222": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"223": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"224": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"225": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"226": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"227": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"228": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"229": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"230": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"231": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"232": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"233": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"234": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"235": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"236": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"237": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"238": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"239": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"240": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"241": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"242": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"243": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"244": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"245": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"246": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"247": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"248": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"249": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"250": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"251": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"252": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"253": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"254": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"255": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"256": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"257": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"258": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+},
+"259": {
+"role": "environment-probe",
+"substrate": "clean",
+"seed": 20260811
+}
+}
+}
