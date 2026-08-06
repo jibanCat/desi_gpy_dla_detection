@@ -1,4 +1,35 @@
-# Phase-C gate governance — Layer A, H9, provisional Layer-B threshold, fallback, r5
+# Phase-C gate governance — Layer A, H9, Layer-B threshold, fallback, r5
+
+## 0. Ruled interpretation language (Stage-2 rulings §1, 2026-08-06 — BINDING)
+
+* **The clamp** is the conservative boundary continuation
+  K(x > x_max) = K(x_max): a numerical boundary treatment, NOT evidence
+  that the true response is constant outside calibrated support. "47.3%
+  of the predicted G3 mean lies on clamped covariates" MEANS: nearly
+  half of the current G3 prediction depends on a boundary-continuation
+  assumption rather than a direct response measurement in the relevant
+  joint conditioning support. Clamped cells are never "directly
+  measured". The pilot's −0.03…−0.14 dex observation is pilot evidence
+  only, never a confirmatory response measurement.
+* **A bridge pass** establishes pipeline and estimand COMPATIBILITY and
+  supports a continuous old–new combination; it is NOT sufficient
+  evidence that the old response is scientifically correct (the two
+  pipelines may share truth-construction assumptions, matching
+  conventions, estimators, normalization choices, or defects).
+* **Low-N boundary (binding wording):** "The evidential strength and
+  apparent significance of the earlier low-boundary failure have been
+  substantially reduced and reinterpreted after correcting FP accounting
+  and propagating calibration uncertainty. Much of the earlier evidence
+  for a distinct low-boundary defect has been weakened or reclassified,
+  but the underlying low-N response has not yet been directly
+  validated." Never state the low-boundary residual disappeared or that
+  the 19.5 boundary passed closure. The Stage-2 checkpoint keeps the
+  high-N response verdict and the low-boundary status in SEPARATE
+  sections.
+* **Phase-C2 scope:** a domain-of-validity and calibration-support
+  exercise — replace the clamped/thinly-measured region with a direct,
+  precision-qualified measurement and test closure under the unchanged
+  Phase-B statistics. Not a kernel refit; not a low-boundary campaign.
 
 Implements PI rulings 2026-08-06 §14, §17, §18. Nothing here alters any
 frozen Phase-B statistic, covariance, binning, group, or produced number;
@@ -62,9 +93,22 @@ older records — `closure_table` keeps its `conditional` block untouched).
   never to appear as a bare label in PI- or manuscript-facing text; cite
   this section.
 
-## 3. Provisional Layer-B threshold (§14.3)
+## 3. Layer-B threshold — RATIFIED 2026-08-06
 
-p < 0.01 remains PROVISIONAL. The operating study
+**p < 0.01 is RATIFIED by the PI (Stage-2 rulings, Decision 2) as the
+rejection threshold for THE CURRENT FROZEN Layer-B calibration-predictive
+gate**, on the operating-study evidence (healthy-triple false alarm 3.4%
+vs 11.7% at 0.05; observed failures at p ≤ 5e-4, so the verdict is
+insensitive to the choice; the power difference immaterial at the
+observed magnitude). Binding conditions of the ratification: continuous
+p-values and finite-ensemble MC uncertainty stay in all reporting; the
+threshold is NOT universal outside this frozen multi-mock gate; any
+change in the number of mocks, tested projections, null construction,
+calibration size, multiplicity rule, or fallback behavior REQUIRES a
+fresh operating-characteristic assessment before reuse.
+
+Pre-ratification record (kept for provenance): p < 0.01 was provisional
+through Phase C1. The operating study
 (`diagnostics_phaseC/threshold_study/` — independently simulated
 characteristics on a production-geometry synthetic universe running the
 DEPLOYED procedure; the observed failures enter only as the ε = 1
@@ -113,8 +157,16 @@ alternate result.
   Fixed inputs, no sampling, fails reproducibly. The existing
   deterministic Farr-gate check (`test_r5_farr_gate_fires_on_shrunk_
   calibration`) stays.
-* **18.3 Stochastic validation** (release/scheduled cadence, NOT
-  per-commit): the existing posterior-width comparison, re-powered.
+* **18.3 Stochastic validation — cadence APPROVED 2026-08-06** (Stage-2
+  rulings, Decision 4): release-cadence, ~1–2 CPU-h/run; the
+  deterministic guard (18.2) remains the ordinary merge-blocking
+  contract; the under-powered test is never restored as a per-commit
+  blocker. Required records per run: power target; seeds/realizations;
+  false-failure and false-pass estimates; the exact release trigger
+  (defined here as: any tag/release candidate on this analysis line, and
+  any PI checkpoint that adopts a new calibration artifact); results
+  retained under `diagnostics_phaseC/r5_release_validation/` with
+  provenance stamps. The existing posterior-width comparison, re-powered:
   Measured state (3 seeds, Phase-B tree): sd ratios 0.958/0.998/1.040 —
   MC noise ±4–10% exceeds the effect at 2×200/150 draws. Requirement:
   false-failure ≤ 5% and false-pass ≤ 10% against the ×1/16 shrink,

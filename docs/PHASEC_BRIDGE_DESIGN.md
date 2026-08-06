@@ -79,13 +79,22 @@ standardized by its C_bridge sd. The bridge PASSES iff ALL of:
    production error budget must not be smoothed into the splice), AND the
    95% CI UPPER BOUND of that projected difference is **< 116.7 counts**
    (the binding production σ target).
-   *[AMENDMENT 2026-08-06, PRE-DATA, PI to ratify: the original second
-   clause — "its 95% CI does not exclude values < 75" — was VACUOUS (a CI
-   always contains its point estimate; independent review finding F5).
-   Replaced, before any bridge datum existed, by the real dispersion
-   guard above: a bridge measurement too noisy to bound the estimand
-   difference below the production error budget cannot pass. This is a
-   TIGHTENING recorded in writing per the design's own amendment rule.]*
+   *[AMENDMENT 2026-08-06, PRE-DATA — **RATIFIED by the PI (Stage-2
+   rulings, Decision 3)**. Preserved record per the ratification: the
+   ORIGINAL clause read "its 95% CI does not exclude values < 75"; it
+   was VACUOUS because a CI always contains its point estimate, so the
+   clause was implied by the point-estimate clause and guarded nothing
+   (independent review finding F5). The REVISED criterion is the
+   dispersion guard above (95% CI upper bound of the G3-projected
+   old−new difference < 116.7 counts, the binding production σ target).
+   Timing evidence: amended in commit `ddb3485` (2026-08-06), before
+   ANY production bridge or response datum existed — the only injection
+   data in existence were the 310 engineering-only pilot injections,
+   and NO production response result had been generated or viewed. The
+   covariance-aware treatment of the shared forest family (§3:
+   C_old + C_new + empirically bounded Ĉ_shared) is unchanged by the
+   amendment. This guard is FROZEN through Stage 2; the ratification is
+   not permission for any post-data alteration.]*
 2. **No coherent offset:** the precision-weighted global mean-shift
    z = |Σ Δ_a/σ²_a| / √(Σ 1/σ²_a) < 3, and the same for widths.
 3. **No localized break:** max standardized |Δ_a| < 4 (Bonferroni-aware

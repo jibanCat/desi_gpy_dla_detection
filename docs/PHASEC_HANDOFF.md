@@ -54,6 +54,40 @@
      ~1.7 GB, hashes in `diagnostics_phaseC/pilot/input_hashes.sha256`);
      roles are in `roles.json` sidecars (the manifest schema is frozen).
 
+## STAGE-2 AUTHORIZATION + BUDGET BREAKDOWN (PI Decision 1, 2026-08-06)
+
+**Authorized: hard ceiling ≈1,850 CPU-h total; FP target 5% (3% NOT
+authorized); response campaign ≤110 CPU-h within it. Ceiling = maximum,
+not target — the sequential stopping rule can and should stop earlier.
+Sequential: Stage 2A (response+bridge, go/no-go) BEFORE the majority of
+the FP spend (Stage 2B). Any projected or actual overrun ⇒ NEW PI ruling
+before more jobs.** Rulings verbatim: notes repo
+`notes/2026-08-06_phaseC_stage2_rulings.md` (`dd1e85c`).
+
+Reconciliation of the two quoted figures: "≈710 CPU-h" = the
+common-reference FP-to-5% line ONLY; "≈1,850" = the complete envelope:
+
+| item | CPU-h (measured basis) |
+|---|---|
+| **Stage 2A** high-N response injections (2,533 spec incl. bridge + env-probe + holdout, @106 CPU-s pilot-measured) | ≈ 75 |
+| Stage 2A retry allowance (15%, pilot-justified) + generation | ≈ 12 |
+| Stage 2A bridge/scoring/artifact analysis compute | ≈ 3 |
+| *(Stage 2A authorized sub-ceiling)* | *(110 max; ≈90 projected)* |
+| **Stage 2B** common-reference FP → 5% (+311 events @2.29 CPU-h/event, loa-0 mock-0 new healpix) | ≈ 710 |
+| Stage 2B Saclay transport control (jura-0, ~100 ev) | ≈ 230 |
+| Stage 2B Saclay method-bias pair (~100 ev) | ≈ 230 |
+| Stage 2B London natural control (~100 ev; transferred label) | ≈ 230 |
+| Stage 2B held-out evaluation (mock-1 loa-0, ~150 ev) | ≈ 340 |
+| Covariance / null / operating-characteristic simulations (numpy-reduced) | ≤ 5 |
+| Fixed overhead (pack re-extraction 21 s/mock; artifact builds; tests) | ≤ 5 |
+| **Projected total** | **≈ 1,840 ≤ 1,850 ceiling** |
+
+Spend tracking: append actual sacct TotalCPU per campaign to this table
+as jobs complete; a projected breach of 1,850 stops all launches.
+Invalidation rule (§4 of the rulings): outputs from a behaviorally
+changed executable state are quarantined and re-run within the same
+envelope; if the rerun would breach the ceiling ⇒ PI ruling first.
+
 ## Standing context (do not re-derive)
 
 - **Phase-B conclusion (FROZEN by PI, do not weaken or strengthen):** the
