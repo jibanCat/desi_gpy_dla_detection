@@ -278,6 +278,41 @@ def main():
         ph_sd[sr, zr, bi] = rec["dx_sd"] if rec["dx_sd"] else np.nan
         ph_n[sr, zr, bi] = rec["n_matched_op"]
 
+    # ---- frozen precision/power go-condition (rulings §3.1) ----
+    # achieved sigma(G3) from the MEASURED per-bin pooled sd/n, via the
+    # sizing model (per-bin independent; width term 1/sqrt(2n)); power at
+    # two-sided alpha=0.01 against the 450.25-count effect.
+    W_per_frac = np.abs(np.array(
+        tw["sensitivity"]["dG3_per_bin_width_scale"])) / 0.10
+    var_g3 = 0.0
+    per_bin_prec = []
+    for A_n in new_anchor_N:
+        b = int(np.argmin(np.abs(Nc_bins - A_n)))
+        ok = np.isfinite(ph_mean[:, :, new_anchor_N.index(A_n)])
+        n_tot = int(ph_n[:, :, new_anchor_N.index(A_n)][ok].sum())
+        if n_tot < 2:
+            continue
+        sds = ph_sd[:, :, new_anchor_N.index(A_n)][ok]
+        ns = ph_n[:, :, new_anchor_N.index(A_n)][ok]
+        sd_pool = float(np.sqrt(np.nansum(sds ** 2 * ns) / max(ns.sum(), 1)))
+        v = (S_per_dex[b] ** 2 * sd_pool ** 2 + W_per_frac[b] ** 2 / 2.0) \
+            / n_tot
+        var_g3 += v
+        per_bin_prec.append({"logN": A_n, "n_pairs": n_tot,
+                             "sd_pooled": sd_pool,
+                             "sigma_G3_contrib": float(np.sqrt(v))})
+    sigma_g3 = float(np.sqrt(var_g3))
+    power = float(_norm.cdf(450.25 / max(sigma_g3, 1e-9)
+                            - _norm.ppf(1 - 0.01 / 2)))
+    precision_pass = bool(sigma_g3 <= 116.7)
+    power_pass = bool(power >= 0.90)
+    verdict["precision_power"] = {
+        "sigma_G3_achieved": sigma_g3, "sigma_G3_max": 116.7,
+        "power_achieved": power, "power_min": 0.90,
+        "per_bin": per_bin_prec,
+        "pass": bool(precision_pass and power_pass)}
+
+
     lof = np.ones((3, 3))
     mu_new = np.array(env["mu_coef"], float)
     sg_new = np.array(env["sig_coef"], float)

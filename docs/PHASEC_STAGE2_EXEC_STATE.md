@@ -119,6 +119,20 @@ python 3.11 conda envs at `/home/mfho/.conda/envs/{gpdla,gpdla-hbi}`.
   operationalization: the old envelope stores no per-anchor
   multi-candidate record, so criterion 3's multi-candidate clause tests
   new-side cells against the pooled new-side rate (rates reported raw).
+* A3 (pre-analysis, no GP output read): the builder additionally
+  computes the FROZEN §3.1 precision/power go-condition from the
+  MEASURED per-bin pooled sd/n (σ(G3) ≤ 116.7; power ≥ 0.90 at
+  two-sided α = 0.01 vs 450.25 counts) and stores it in the bridge
+  verdict BEFORE the artifact write. New sha256 `09d9bd4a…`.
+* Stage-2B substrate facts recorded during 2A wait (design-affecting,
+  resolved at 2B): 2LPT `mock-1/loa-0` carries CATALOGS ONLY (no
+  spectra-16) — the held-out FP substrate falls back to whole-healpix
+  blocks within mock-0/loa-0 + a mock-1/loa-124 natural-HCD-free
+  cross-check (TRANSFERRED label; the Saclay method-bias pair calibrates
+  it), unless the PI authorizes generating mock-1/loa-0 spectra. London
+  `jura-124` lacks `hcd_truth_cat`/`snr_cat` under those names (truth
+  may be `dla_cat.fits`; SNR must come from the production-run products)
+  — to be pinned before any London control job.
 
 ## Budget manifest
 
