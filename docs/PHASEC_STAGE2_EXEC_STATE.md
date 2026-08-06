@@ -108,6 +108,17 @@ python 3.11 conda envs at `/home/mfho/.conda/envs/{gpdla,gpdla-hbi}`.
   dX-drawn production z; the exact-z grouping would have fragmented
   production cells into singletons. Hash updated above; the pilot JSONs
   remain the committed v1 engineering record.
+* A2 (pre-ANALYSIS; the GP jobs were launched but no output had been
+  read): the bridge-statistic implementation
+  `injection/build_phaseC_response.py` sha256
+  `0bed6665…17c562023` — implements the FROZEN §4 criteria numbers
+  verbatim (75 / 116.7 / z<3 / |z|<4 / 3σ completeness / LOF p≥0.01 /
+  shared-inflation ratio 1.5), the old-side comparison at the deployed
+  clamped covariate, the union refit, and the quarantine path. The GP
+  jobs' behavior is untouched (analysis-side only). One recorded
+  operationalization: the old envelope stores no per-anchor
+  multi-candidate record, so criterion 3's multi-candidate clause tests
+  new-side cells against the pooled new-side rate (rates reported raw).
 
 ## Budget manifest
 
