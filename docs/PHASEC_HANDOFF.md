@@ -61,6 +61,15 @@
   mean bias there (the §9 effect size). Sanity: closure-table 3-group
   residual reproduced to 1e-6 on ALL mocks; oracle copy vs build_K 1e-14.
   Replicates (shares within 0.5%) on London/Saclay.
+- [06 session 2] Truth-by-SNR refold COMMITTED
+  (`diagnostics_phaseC/truth_by_snr/`, PI §16, one pass, exploratory):
+  truth's real SNR allocation differs from pathlength-proportional by only
+  6.6–6.7% L1, and folding it moves G3 by ≤5 counts (450.2→452.7 twin) and
+  window χ²/dof by ≤0.25 on all three mocks. **Allocation/composition
+  REFUTED as the tilt driver; G3 deficit SNR-near-uniform under both
+  allocations; H10's G1 SNR tilt survives → calibration-surface structure,
+  not allocation.** No SNR nuisance introduced; design unchanged (SNR
+  stratification of anchors stays required).
 
 ## NEXT COMMANDS (exact resume points)
 
