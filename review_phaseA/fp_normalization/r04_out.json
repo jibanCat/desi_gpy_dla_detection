@@ -1,0 +1,47 @@
+{
+ "2lpt0": {
+  "ratio_full": 1.0015506832515648,
+  "ratio_win": 1.018003954206548,
+  "obs_tot": 88071.0,
+  "mu_tot": 88207.57022464856,
+  "mu_sig_tot": 73439.60880557982,
+  "mu_fp_tot": 14767.961419068735,
+  "required_fp_for_total_closure": 14631.391194420183,
+  "mu_fp_over_required": 1.0093340559919302,
+  "S_forest_fp_r03b": 14738.821017020087,
+  "mu_fp_over_S": 1.0019771189306796,
+  "required_over_S": 0.9927110979585242,
+  "overshoot_counts": 136.57022464855982,
+  "fp_excess_vs_S_counts": 29.140402048647957
+ },
+ "london0": {
+  "ratio_full": 1.0500897753178327,
+  "ratio_win": 1.0344686976857398,
+  "obs_tot": 87840.0,
+  "mu_tot": 92239.88586391842,
+  "mu_sig_tot": 77523.50892378538,
+  "mu_fp_tot": 14716.37694013304,
+  "required_fp_for_total_closure": 10316.491076214617,
+  "mu_fp_over_required": 1.4264905413491475,
+  "S_forest_fp_r03b": 10167.737758670737,
+  "mu_fp_over_S": 1.4473600017450647,
+  "required_over_S": 1.014629932544929,
+  "overshoot_counts": 4399.885863918418,
+  "fp_excess_vs_S_counts": 4548.639181462302
+ },
+ "saclay0": {
+  "ratio_full": 1.0281395292277096,
+  "ratio_win": 1.0260693729894366,
+  "obs_tot": 86763.0,
+  "mu_tot": 89204.46997438377,
+  "mu_sig_tot": 74497.40744666758,
+  "mu_fp_tot": 14707.062527716189,
+  "required_fp_for_total_closure": 12265.592553332419,
+  "mu_fp_over_required": 1.1990503079054629,
+  "S_forest_fp_r03b": 11251.175418088838,
+  "mu_fp_over_S": 1.3071578729517648,
+  "required_over_S": 1.090160991856253,
+  "overshoot_counts": 2441.46997438377,
+  "fp_excess_vs_S_counts": 3455.8871096273506
+ }
+}

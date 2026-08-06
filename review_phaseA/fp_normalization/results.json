@@ -1,0 +1,99 @@
+{
+  "review": "Phase A adversarial referee — FP normalization defect and repair (commit 7707c8e, reviewed tip 9d73365)",
+  "date": "2026-08-05",
+  "verdict": {
+    "defect": "CONFIRMED — the pre-repair fold under-normalized the folded FP term by exactly fp_ell_eff (13.59–13.65x per mock), derived independently from a sightline-counting argument, not by reproducing the claim's arithmetic",
+    "repair": "CORRECT (exact) — fp_ell_eff is the exactly-required exposure factor given the calibration likelihood; validated ABSOLUTELY on the twin mock: mu_FP / (chance-corrected physical forest-FP census) = 1.0020. Known residual bias: the fold omits the loa-0 product's own (1-eta_band) occlusion factor (-0.58% on the FP term, sub-DLA band), immaterial vs the 10.6% Poisson width of the 89-count calibration",
+    "ceiling_claim": "SAME-ESTIMAND: NO. (1) The comparator called 'unmatched detections' is NOT the committed primary unmatched estimand (vs which mu_FP is 23-39% BELOW, not above); it is the hostless-at-truth-floor-17.2 class. (2) The claimed bound direction ('unmatched over-counts forest FP, so the excess is a lower bound') is INVERTED for that comparator: chance z-coincidence with the dense >=17.2 truth (measured 8.5-9.0% by z-scramble) makes it an UNDER-count of the forest-FP supply. After correction the excess is 1.002 (2LPT-0: GONE), 1.447 (London-0), 1.307 (Saclay-0): a cross-mock TRANSPORT failure, not a normalization failure"
+  },
+  "task1_dimensional_derivation": {
+    "counting_argument": "r_hat[c,s] = n0[c,s]/ns0 (FP per searched loa-0 sightline); expected mock FP census = r_hat * nsm * (1-eta). Model: n0 ~ Poisson(ell*lam), ell = ns0^2/nsm => lam_hat = n0*nsm/ns0^2; fold w*ell*lam_hat = (nsm/ns0)*n0 = r_hat*nsm. Reproduces the counting answer EXACTLY ONCE, except (1-eta) which appears nowhere in the Model A chain although the commit message equates the fold to an expression containing it",
+    "why_ell_is_ns0sq_over_nsm": "likelihood-inert reparameterization (any positive constant works if fold and calibration share it; verified posterior-identical in r02). The convention makes the Gamma-posterior variance of the folded total equal the frequentist variance of the production-extrapolated count Var[w*n0] = w^2*n0 — inherited 'production-extrapolation variance' bookkeeping from the Q2 Loa0FP product",
+    "identity_w_times_ell_eq_ns0": "an algebraic TAUTOLOGY of the extractor's two definitions ((nsm/ns0)*(ns0^2/nsm) = ns0 for ANY nsm); its numerical check verifies float round-trip and pack integrity, not physics. Verified == 2255.0 EXACTLY on: 2lpt0_v11, london0_v11, saclay0_v11, 2lpt0_nonv11, london0_nonv11 (raw and coarsen_basis(0.1, pad 19.0)), and 3 freshly extracted adopted-config packs. saclay0 non-v11 npz is ABSENT from the preserved dir (only its .provenance.json exists) — 5 of the 6 requested packs exist",
+    "exp_t": "applied once, fold-side only; calibration has no exp(t) because t is the loa-0->mock transfer (identity on loa-0 by definition). Consistent",
+    "eta": "eta enters ZERO times in Model A (fp_counts are raw counts; fp_E_alloc is a dX share; fp_w, fp_ell are pure ratios). The loa-0 product and the Q2 FF route (cddf_catalog_hbi.Loa0FP.mu_fp_*) both carry (1-eta_band); Model A's fold does not. Product values: eta_subdla = 0.005757, eta_lls = 0.011187, eta_dla = 0 (forced)",
+    "numbers": {
+      "n0_pack_support": 89,
+      "ns0": 2255.0,
+      "nsm": {"2lpt0": 374177.0, "london0": 372870.0, "saclay0": 372634.0},
+      "fp_ell_eff": {"2lpt0": 13.589891949531905, "london0": 13.637527824711025, "saclay0": 13.646164869550283},
+      "mu_fp_corrected": {"2lpt0": 14767.961419068737, "london0": 14716.376940133037, "saclay0": 14707.062527716187},
+      "counting_vs_fold_rel_agreement": 1.24e-16,
+      "defective_fold_total_2lpt0": 1086.6871844096895,
+      "defect_ratio_equals_ell_exactly": true,
+      "poisson_rel_sd_of_calibration": 0.1057
+    }
+  },
+  "task2_site_audit_at_9d73365": {
+    "consistent_executable": [
+      "forward.py:455-488 fold_mu_fp — THE single FP-term definition (w*ell*exp(t)*lam*E)",
+      "forward.py:519 fold_mu — delegates to fold_mu_fp",
+      "forward.py:674-675 fold_mu_reference — independent numpy copy, same expression (agreement 1.6e-15 at a random point, r05)",
+      "model_a.py:230-233 — calibration likelihood Poisson(fp_ell_eff * lam_fp); model_a.py:598-600 init lam_total = sum(fp_counts)/ell",
+      "forward_selftest.py:161-172 — lam = fp_counts/ell; mu_fp via fold_mu_fp (exact split, r05)",
+      "pack.py:1054-1073 synthetic_pack — fp_data_per_unit carries w*ell; fp_counts ~ Poisson(ell*lam_true); generator->fold share test EXACT (0.15/1.15 = 0.130435 measured 0.13043478260869568, r05)",
+      "extract_pack.py:998-1002 — fp_w = nsm/ns0, fp_ell = ns0*(ns0/nsm) (identity source)",
+      "matching_contract.py:952-1069 fold_mu_fp_total_guard — executes the repair by calling forward.fold_mu_fp (C3)",
+      "evidence.py:409-430 _mu_draws — PPC folds sampled lam_fp through fold_mu (repaired path)",
+      "tests/test_modelA_forward.py:473-502 — the old omission tripwire replaced by a carries-ell-at-every-site test + mutation pins"
+    ],
+    "inconsistent_or_stale": [
+      "matching_contract.py:572-574 — P4_FOREST_FP 'forward_term' PROSE still reads 'fp_w . exp(t_K(k)) . lam_fp[c,s] . fp_E[k,s]' (the PRE-repair expression, fp_ell_eff missing). Documentation only; the executable guard in the same file is repaired. Deliberately left and escalated per the 7707c8e message, but at the reviewed tip the contract registry misstates the fold",
+      "ALL committed hbi_mcmc JSON artifacts are PRE-repair (commit stamps): adopted_config_closure.json (8963e39, total_ratio 0.846/0.895/0.871), rung9_forward_selftest.json (a9fe97b, total ratio 0.7307 while the repair commit quotes the re-measured 0.8860), d1_basis_pad_ladder.json (1c1b149), spectral_window_study.json + _bw0p2 (a12385f, 06:28 same day but before the 12:38 repair), e4_conditioning.json (0557032), posterior_synthetic_smoke.json (f23961e). Nothing in-tree marks them superseded"
+    ],
+    "not_applicable": [
+      "e4_probe.py:81 — lam_fp = zeros (FP-off conditioning probe; FP enters mu additively so its conclusions are FP-normalization-independent)",
+      "legacy_oracle.py — FP-off by design",
+      "guard tree CDDF_analysis/hbi/cddf_catalog_hbi.py:1181-1215 (Loa0FP.mu_fp_grid/mu_fp_scalar) — Q2 FF route uses direct counting n_fine * vol_scale * (1-eta); never had the ell defect (ell there is Gamma-variance bookkeeping, inert); NOTE it carries (1-eta) which the Model A fold drops"
+    ],
+    "double_count": "NONE FOUND — generator->fold share exact, calibration draw mean-matched, fold==oracle 1.6e-15, selftest split exact (r05_out.json)"
+  },
+  "task3_prior_sensitivity": {
+    "conclusion": "The two options (lam an intensity + ell in the fold vs lam' = ell*lam a count) are posterior-identical to 9.26e-7 relative — exactly the predicted eps*(1/ell - 1) tilt from the Gamma(1/2, eps=1e-6) exponential cutoff; the x^{-1/2} power-law part transforms into itself times a constant, the ZeroSumNormal->softmax shape prior never sees the total (v-gradient of the log-likelihood identical under (total, ell) vs (ell*total, 1) to 2.8e-8), and NUTS geometry differs only by a constant shift log(ell) in the sampled log-total coordinate. The choice is genuinely immaterial",
+    "numbers": {"rel_mean_diff": 9.264149708186305e-07, "rel_sd_diff": 9.264149862334504e-07, "predicted": 9.264158976602867e-07}
+  },
+  "task4_ceiling_estimand": {
+    "support_check": "my re-derived census on the pack support reproduces the pack count totals EXACTLY (88071 / 87840 / 86763) — support alignment verified",
+    "committed_primary_unmatched": {"2lpt0": 24181, "london0": 19197, "saclay0": 20225,
+      "note": "truth floored 19.5, greedy 1-to-1, |dz|/(1+z_t) < 0.01. mu_FP is BELOW these by 39%/23%/27% — the ceiling claim FAILS under the committed 'unmatched' estimand; its numbers correspond to the floor-17.2 hostless class"},
+    "hostless_floor172_ANYhost": {"2lpt0": 13491, "london0": 9253, "saclay0": 10273,
+      "mu_over_hostless": {"2lpt0": 1.0947, "london0": 1.5904, "saclay0": 1.4316},
+      "note": "the claim's +6.55/+53.3/+38.9% correspond to a greedy floor-17.2 match (implied comparators 13860/9600/10590), same estimand family as this"},
+    "chance_coincidence_measured_by_z_scramble": {
+      "p_chance_vs_ge17.2_truth": {"2lpt0": 0.0847, "london0": 0.0900, "saclay0": 0.0869},
+      "p_chance_vs_ge19.5_truth": {"2lpt0": 0.0315, "london0": 0.0354, "saclay0": 0.0322},
+      "method": "op detections displaced by +-0.10/+-0.15 in z, same ANY-host matcher; offset spread ~ +-0.008 systematic"},
+    "corrected_forest_fp_supply_S": {"2lpt0": 14738.8, "london0": 10167.7, "saclay0": 11251.2},
+    "mu_fp_over_S": {"2lpt0": 1.0020, "london0": 1.4474, "saclay0": 1.3072},
+    "lls_host_channel": {"counts": {"2lpt0": 10209, "london0": 9433, "saclay0": 9492},
+      "composition": "~69% of sub-19.5-hosted unmatched rows have hosts in [19.0,19.5) although chance-window weights put only ~24% there (and 40% in [17.2,18)) — the channel is ~92% GENUINE sub-floor-host detections, not chance overlap. The committed primary 'unmatched' is therefore not a forest-FP measure at all"},
+    "multi_candidate_channel": "one physical fluctuation CAN produce multiple candidate rows (multi-DLA decomposition), but the loa-0 numerator uses the same finder and catalog conventions so the multiplicity is convention-consistent between mu_FP and the census; greedy sibling losses measured at 481/511/460 rows (floor-19.5)",
+    "transport": "ASSUMED, not demonstrated, for the cross mocks: one frozen 2LPT-0 loa-0 rate scaled by the global sightline ratio, with exp(t)~N(0, t_sigma=[0.127,0.165,0.100]) per coarse z. Demonstrated EXACT only on the twin (this review: 1.0020). Measured cross-mock transport bias ln(1.447)=0.37 and ln(1.307)=0.27 — a coherent shift of 2.2-3.7 sigma against the t prior widths: the prior under-covers the actual transport error. Per-SNR-stratum proportionality also untested (single global fp_w); the checkpoint's own post-repair SNR-axis chi2/dof 36.6-62.9 corroborates a (c,s)-shape/allocation misfit that survives a correct total"
+  },
+  "task5_overshoot": {
+    "claim_located": "the '1.8-3.5% over-prediction' = the REPORTING-WINDOW [19.7,21.6) total ratios; reproduced at the reviewed tip on freshly extracted adopted-config packs: 1.0180 / 1.0345 / 1.0261 (full-grid: 1.00155 / 1.05009 / 1.02814)",
+    "is_ell_admissibly_wrong": "NO admissible reading makes ell_eff the wrong factor given the calibration likelihood as written: it is fixed by the requirement that the SAME lam parameter consistently parameterize both Poisson means; the only free choice is the (likelihood-inert, r02) parameterization. The single defensible correction the fold omits is (1-eta_band): -0.58% on the FP term (-85 counts) relative to the loa-0 product's own production-volume definition — the commit message's chain of equalities silently drops it",
+    "attribution_measured": {
+      "2lpt0": "total closes at +0.16% (+137 counts; FP excess vs physical supply +29 counts). The +1.8% window residual is a SHAPE effect compensated outside the window — signal-side (kernel/completeness/g), not FP normalization",
+      "london0": "total overshoot +4400 counts vs FP transport excess +4549 counts — essentially ALL transport (required_FP/S = 1.015: signal fold + physical supply close to 1.5%)",
+      "saclay0": "total overshoot +2441 counts vs FP transport excess +3456 counts — transport-dominated with a ~ -1000-count signal-side deficit (required_FP/S = 1.090)"
+    },
+    "verdict_on_competing_readings": "(a) 'loa-0 template carries ~6% residual bias' — REFUTED on the twin: the 6% was the un-corrected chance-coincidence blur of the comparator; the transport-free twin comparison gives +0.2% +- ~1%. (b) 'the repair factor slightly overshoots' — REFUTED: the factor is exact; the measured overshoot decomposes into cross-mock FP transport plus twin signal-shape residuals",
+    "distinguishing_measurement": "performed here: (i) twin-mock chance-corrected hostless census vs mu_FP (transport-free normalization test); (ii) required_FP (= obs - mu_sig) vs physical supply S per mock (attribution split). Future sharpening: per-coarse-z and per-SNR-stratum versions of (i), and loa-0-equivalent runs on London/Saclay forests to calibrate the transport directly"
+  },
+  "remaining_ambiguities": [
+    "saclay0 non-v11 pack npz absent from the preserved dir — identity verified on 5/6 requested packs + 3 fresh extractions",
+    "z-scramble chance rate carries ~+-0.8pp offset-dependence; the twin agreement 1.0020 is therefore consistent with both 0 and the -0.58% eta omission",
+    "the claim's exact comparators (13860/9600/10590 implied) were produced with the greedy floor-17.2 matcher whose dump files no longer exist; my ANY-host comparator differs by ~2-4% in the expected (availability) direction",
+    "t_sigma is calibrated from FF-route (FP-subtracted) closure ratios and applied to an FP-forward-modelled term (cross-link flagged in the contract, unresolved); measured cross-mock transport bias exceeds it",
+    "per-(c,s) FP shape is prior-dominated (149/174 live cells with zero calibration counts per the PI checkpoint) — the total-level conclusions here do not certify the shape"
+  ],
+  "scripts": {
+    "r01_dimensions_identity.py": "counting derivation + identity/defect-ratio checks on all packs -> r01_out.json",
+    "r02_prior_sensitivity.py": "exact + numerical posterior-equivalence of the two parameterizations -> r02_out.json",
+    "r03_ceiling_estimand.py": "independent unmatched/hostless census on the pack support -> r03_out.json",
+    "r03b_chance_coincidence.py": "z-scramble chance-rate measurement + corrected supply -> r03b_out.json",
+    "r04_closure_overshoot.py": "post-repair closure re-measurement on freshly extracted adopted packs + attribution -> r04_out.json",
+    "r05_generator_roundtrip.py": "double-count audit round trips -> r05_out.json"
+  }
+}

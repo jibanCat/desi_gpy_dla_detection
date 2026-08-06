@@ -1,0 +1,18 @@
+{
+ "generator_fold_share": {
+  "requested_fp_frac": 0.15,
+  "folded_fp_share": 0.13043478260869568,
+  "ratio_to_requested": 0.8695652173913045,
+  "would_be_if_fold_dropped_ell": 0.0639861759475767
+ },
+ "generator_calibration": {
+  "expected_total": 6.029310097789247,
+  "drawn_total": 9.0,
+  "z_score": 1.209827660191801
+ },
+ "fold_vs_oracle_max_rel": 1.5783798038278807e-15,
+ "selftest_split": {
+  "max_abs_mu_minus_sig_minus_fp": 7.105427357601002e-15,
+  "max_abs_selftest_fp_vs_direct": 0.0
+ }
+}

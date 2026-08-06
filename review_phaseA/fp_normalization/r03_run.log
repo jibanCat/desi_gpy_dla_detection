@@ -1,0 +1,182 @@
+[snr] built per-QSO lookup from external snr_cat+zcat (full snr_cat (molly recipe)): 1213217 TIDs (/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/snr_cat.fits, /nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits)
+[load] catalog: 769833 rows from 1 files
+  [2lpt0] bundle: n_cat_cut=582855, n_op=495553, n_sl=374177 (27s)
+{
+ "2lpt0": {
+  "n_cat_cut": 582855,
+  "n_op": 495553,
+  "n_sl": 374177,
+  "n_truth_cut_ge195": 146792,
+  "truth_file_floor": 17.200004834392264,
+  "n_sel_pack_support": 88071,
+  "unmatched_primary": 24181,
+  "hostless_any195": 23700,
+  "hostless_any172_forestFP_candidates": 13491,
+  "sibling_channel_unm_with_195_host": 481,
+  "lls_host_channel": 10209,
+  "lls_host_hist": {
+   "[17.0,18.0)": 1034,
+   "[18.0,18.5)": 688,
+   "[18.5,19.0)": 1424,
+   "[19.0,19.5)": 7063
+  },
+  "unm_by_nhat": {
+   "19.5": 9078,
+   "19.6": 6008,
+   "19.7": 3662,
+   "19.8": 2321,
+   "19.9": 1366,
+   "20.0": 775,
+   "20.1": 431,
+   "20.2": 253,
+   "20.3": 146,
+   "20.4": 61,
+   "20.5": 40,
+   "20.6": 20,
+   "20.7": 5,
+   "20.8": 8,
+   "20.9": 2,
+   "21.0": 2,
+   "21.1": 1,
+   "21.5": 1,
+   "21.9": 1
+  },
+  "unmatched_above_nhat_20p2": 540,
+  "chance_match": {
+   "p_upper": 0.06581984945372572,
+   "availability": 0.3887405308191182,
+   "p_eff": 0.025586843215075785,
+   "total_search_dz": 147039.55268774327
+  },
+  "mu_fp_corrected": 14767.961419068737,
+  "excess_vs_unmatched_primary": -0.38927416487867594,
+  "excess_vs_hostless172": 0.0946528366369237,
+  "mu_fp_poisson_rel_sd": 0.10570328451633798,
+  "mu_fp_after_eta_and_chance": 14307.258851459519,
+  "secs": 29.6
+ }
+}
+[snr] built per-QSO lookup from external snr_cat+zcat (full snr_cat (molly recipe)): 926122 TIDs (/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir/snr_cat.fits, /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_london0/mockdir/zcat.fits)
+[load] catalog: 741760 rows from 1 files
+  [london0] bundle: n_cat_cut=557113, n_op=471439, n_sl=372870 (25s)
+{
+ "london0": {
+  "n_cat_cut": 557113,
+  "n_op": 471439,
+  "n_sl": 372870,
+  "n_truth_cut_ge195": 156699,
+  "truth_file_floor": 17.226506885935155,
+  "n_sel_pack_support": 87840,
+  "unmatched_primary": 19197,
+  "hostless_any195": 18686,
+  "hostless_any172_forestFP_candidates": 9253,
+  "sibling_channel_unm_with_195_host": 511,
+  "lls_host_channel": 9433,
+  "lls_host_hist": {
+   "[17.0,18.0)": 823,
+   "[18.0,18.5)": 499,
+   "[18.5,19.0)": 1223,
+   "[19.0,19.5)": 6888
+  },
+  "unm_by_nhat": {
+   "19.5": 7019,
+   "19.6": 4783,
+   "19.7": 3084,
+   "19.8": 1814,
+   "19.9": 1061,
+   "20.0": 644,
+   "20.1": 345,
+   "20.2": 185,
+   "20.3": 115,
+   "20.4": 49,
+   "20.5": 33,
+   "20.6": 22,
+   "20.7": 10,
+   "20.8": 9,
+   "20.9": 10,
+   "21.0": 4,
+   "21.1": 3,
+   "21.2": 2,
+   "21.3": 1,
+   "21.4": 1,
+   "22.0": 1,
+   "22.2": 1,
+   "22.3": 1
+  },
+  "unmatched_above_nhat_20p2": 447,
+  "chance_match": {
+   "p_upper": 0.07080035777589534,
+   "availability": 0.38025769149771216,
+   "p_eff": 0.026922380605074056,
+   "total_search_dz": 146174.4831810631
+  },
+  "mu_fp_corrected": 14716.376940133037,
+  "excess_vs_unmatched_primary": -0.23340225347017574,
+  "excess_vs_hostless172": 0.590443849576682,
+  "mu_fp_poisson_rel_sd": 0.10570328451633798,
+  "mu_fp_after_eta_and_chance": 14237.742475074978,
+  "secs": 26.8
+ }
+}
+[snr] built per-QSO lookup from external snr_cat+zcat (full snr_cat (molly recipe)): 1221478 TIDs (/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/snr_cat.fits, /nfs/turbo/lsa-cavestru/mfho/DESI/mocks/saclay/qq_desi_y3/v4.7.5/mock-0/juraLy8-124/zcat.fits)
+[load] catalog: 820613 rows from 1 files
+  [edge-snap] nudged 2 exact-on-interior-edge value(s) off the molly grid by +1e-09 (NHI_TRUE:1, NHI:1) so the molly regen matches the right-inclusive cell convention (build_truth_match_resample validate).
+  [saclay0] bundle: n_cat_cut=629746, n_op=543105, n_sl=372634 (23s)
+{
+ "saclay0": {
+  "n_cat_cut": 629746,
+  "n_op": 543105,
+  "n_sl": 372634,
+  "n_truth_cut_ge195": 152224,
+  "truth_file_floor": 17.200000762939453,
+  "n_sel_pack_support": 86763,
+  "unmatched_primary": 20225,
+  "hostless_any195": 19765,
+  "hostless_any172_forestFP_candidates": 10273,
+  "sibling_channel_unm_with_195_host": 460,
+  "lls_host_channel": 9492,
+  "lls_host_hist": {
+   "[17.0,18.0)": 866,
+   "[18.0,18.5)": 552,
+   "[18.5,19.0)": 1204,
+   "[19.0,19.5)": 6870
+  },
+  "unm_by_nhat": {
+   "19.5": 7922,
+   "19.6": 5152,
+   "19.7": 3173,
+   "19.8": 1820,
+   "19.9": 986,
+   "20.0": 573,
+   "20.1": 282,
+   "20.2": 151,
+   "20.3": 80,
+   "20.4": 38,
+   "20.5": 17,
+   "20.6": 9,
+   "20.7": 6,
+   "20.8": 3,
+   "20.9": 5,
+   "21.0": 1,
+   "21.1": 2,
+   "21.3": 2,
+   "21.7": 1,
+   "21.9": 1,
+   "22.2": 1
+  },
+  "unmatched_above_nhat_20p2": 317,
+  "chance_match": {
+   "p_upper": 0.06923005522876585,
+   "availability": 0.3875867143157452,
+   "p_eff": 0.026832649638014933,
+   "total_search_dz": 145509.78127675861
+  },
+  "mu_fp_corrected": 14707.062527716187,
+  "excess_vs_unmatched_primary": -0.27282756352453963,
+  "excess_vs_hostless172": 0.4316229463366288,
+  "mu_fp_poisson_rel_sd": 0.10570328451633798,
+  "mu_fp_after_eta_and_chance": 14230.043086156764,
+  "secs": 25.5
+ }
+}
+wrote r03_out.json
