@@ -80,10 +80,57 @@ def main():
     ap.add_argument("--mockdir", default=DEFAULT_MOCKDIR,
                     help="natural-truth source for unmatched-row attribution")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--role", default="pilot-validation",
+                    help="ONLY manifest rows with this sidecar role are "
+                         "scored (F7 role enforcement; fail-loud)")
+    ap.add_argument("--evaluation-step", action="store_true",
+                    help="required to score role=held-out-evaluation")
     a = ap.parse_args()
+
+    if a.role == "held-out-evaluation" and not a.evaluation_step:
+        raise SystemExit(
+            "REFUSED: scoring held-out-evaluation rows requires "
+            "--evaluation-step (the frozen-statistic evaluation only; "
+            "rulings §5/§12 — holdout must never enter calibration).")
 
     man = Table.read(os.path.join(a.arm, "injection_truth.fits"))
     roles = json.load(open(os.path.join(a.arm, "roles.json")))
+    role_map = {int(k): v["role"] for k, v in roles["roles"].items()}
+    if "inj_id" not in man.colnames:
+        raise SystemExit("injection_truth.fits lacks inj_id — regenerate")
+    man_roles = np.array([role_map.get(int(i), "MISSING")
+                          for i in man["inj_id"]])
+    if np.any(man_roles == "MISSING"):
+        raise SystemExit("roles.json does not cover every manifest row "
+                         "(fail-loud; F7)")
+    keep = man_roles == a.role
+    n_role_excluded = int((~keep).sum())
+    hold_hpx = set(roles.get("holdout_healpix") or [])
+    if a.role != "held-out-evaluation" and hold_hpx:
+        bad = np.isin(np.asarray(man["healpix"], np.int64)[keep],
+                      sorted(hold_hpx))
+        if bad.any():
+            raise SystemExit("role/healpix inconsistency: non-holdout role "
+                             "selected rows on holdout healpix (fail-loud)")
+    man = man[keep]
+    if len(man) == 0:
+        raise SystemExit(f"no manifest rows with role {a.role!r}")
+
+    # F3 truth-side estimand support (BEFORE matching): only injections
+    # whose z_true sits inside the sightline's ANALYSIS window and whose
+    # z_qso is in (2, 4.25) belong to the response estimand. Production
+    # generation guarantees this by construction; pilot arms have a
+    # reported out-of-window fraction.
+    from gen_phaseC_resp import analysis_window, ZQSO_MIN, ZQSO_MAX
+    man_win = np.array([analysis_window(float(z)) for z in man["z_qso"]])
+    man_in_win = ((np.asarray(man["z_qso"], float) > ZQSO_MIN)
+                  & (np.asarray(man["z_qso"], float) < ZQSO_MAX)
+                  & (np.asarray(man["z_true"], float) > man_win[:, 0])
+                  & (np.asarray(man["z_true"], float) < man_win[:, 1]))
+    n_inj_out_of_window = int((~man_in_win).sum())
+    man = man[man_in_win]
+    if len(man) == 0:
+        raise SystemExit("no in-window manifest rows")
     dla, dlacat_paths = _load_dlacat(os.path.join(a.arm, "gp_out"))
 
     # production step 3: sentinel rows dropped BEFORE matching (F3 fix)
@@ -116,8 +163,19 @@ def main():
                                                 man["native_snr"])}
     cat_snr = np.array([tid2snr.get(int(t), np.nan)
                         for t in cat["TARGETID"]])
+    # F3 cat-side: the ANALYSIS-window geometry per sightline (=
+    # make_lambda_z_BAL_cuts direct form) + z_qso in (2, 4.25) on the
+    # op-mask. BAL veto holds by substrate construction.
+    tid2zq = {int(t): float(z) for t, z in zip(man["target_id"],
+                                               man["z_qso"])}
+    cat_zq = np.array([tid2zq.get(int(t), np.nan) for t in cat["TARGETID"]])
+    win = np.array([analysis_window(z) if np.isfinite(z) else (np.inf, -np.inf)
+                    for z in cat_zq])
+    cat_zd = np.asarray(cat["Z_DLA"], float)
+    in_window = ((cat_zq > ZQSO_MIN) & (cat_zq < ZQSO_MAX)
+                 & (cat_zd > win[:, 0]) & (cat_zd < win[:, 1]))
     op = (np.asarray(cat["P_DLA"], float) > P_DLA_MIN) & (cat_snr > SNR_MIN) \
-        & dlaflag_ok
+        & dlaflag_ok & in_window
 
     # per-injection records: matched op-row (via the 1-to-1 match), moments
     # match_truth_to_cat_molly gives cat-side NHI_TRUE; invert to truth-side:
@@ -232,6 +290,9 @@ def main():
                    f"dz_rel={DZ_REL} nhi_desc (the production object)",
         "op_mask": {"p_dla_min": P_DLA_MIN, "snr_min": SNR_MIN},
         "n_injected": int(len(truth)),
+        "role_scored": a.role,
+        "n_role_excluded": n_role_excluded,
+        "n_injections_out_of_analysis_window": n_inj_out_of_window,
         "n_sentinel_rows_dropped_prematch": n_sentinel,
         "n_matched_any_p": n_match_any,
         "n_matched_op": int(matched_op_mask.sum()),
