@@ -1,0 +1,175 @@
+{
+ "schema": "phaseC_threshold_study/v1",
+ "label": "independently simulated operating characteristics; the observed Phase-B failures are NOT inputs except as the \u03b5=1 alternative SHAPE (power target, \u00a714.3)",
+ "routine": "diagnostics_phaseC/threshold_study/run_threshold_study.py",
+ "date": "2026-08-06",
+ "code_commit": "13e0d466bdbc4e7769a41a51e66e9b2e299ea735",
+ "deployed_recipe": {
+  "B_cov": 2000,
+  "B_null": 2000,
+  "seed_cov": 41001,
+  "seed_null": 43001,
+  "seeds_fixed_across_replicates": true
+ },
+ "geometry": "prod_29x15x8 synthetic_pack seed 7",
+ "fp_regime": {
+  "fp_events": 94,
+  "counts_total": 35854,
+  "mu_fp_share": 0.12322195570926535
+ },
+ "faithfulness_guard": {
+  "T_committed": 25.984795595071947,
+  "T_reduced": 25.98479559507196,
+  "p_committed_fixed_seed": 0.0004997501249375312
+ },
+ "smoke": false,
+ "configs": {
+  "healthy_kappa1": {
+   "B_null=2000": {
+    "alpha=0.01": {
+     "per_mock_rate": 0.016666666666666666,
+     "per_mock_mc_halfwidth_95": 0.003239330063340144,
+     "family_any_of_3": 0.034,
+     "family_all_pass": 0.966,
+     "n_replicates": 2000
+    },
+    "alpha=0.05": {
+     "per_mock_rate": 0.05733333333333333,
+     "per_mock_mc_halfwidth_95": 0.005882516004920696,
+     "family_any_of_3": 0.117,
+     "family_all_pass": 0.883,
+     "n_replicates": 2000
+    }
+   },
+   "B_null=500": {
+    "alpha=0.01": {
+     "per_mock_rate": 0.018,
+     "per_mock_mc_halfwidth_95": 0.003364127464885954,
+     "family_any_of_3": 0.035,
+     "family_all_pass": 0.965,
+     "n_replicates": 2000
+    },
+    "alpha=0.05": {
+     "per_mock_rate": 0.061,
+     "per_mock_mc_halfwidth_95": 0.006055892535374121,
+     "family_any_of_3": 0.127,
+     "family_all_pass": 0.873,
+     "n_replicates": 2000
+    }
+   }
+  },
+  "power_eps1.0": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.5083333333333333,
+    "per_mock_mc_halfwidth_95": 0.04000277536667971,
+    "family_any_of_3": 0.5083333333333333,
+    "family_all_pass": 0.49166666666666664,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.7616666666666667,
+    "per_mock_mc_halfwidth_95": 0.0340922225300293,
+    "family_any_of_3": 0.7616666666666667,
+    "family_all_pass": 0.23833333333333334,
+    "n_replicates": 600
+   }
+  },
+  "power_eps0.5": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.07666666666666666,
+    "per_mock_mc_halfwidth_95": 0.02128937902474516,
+    "family_any_of_3": 0.07666666666666666,
+    "family_all_pass": 0.9233333333333333,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.19166666666666668,
+    "per_mock_mc_halfwidth_95": 0.03149553466292807,
+    "family_any_of_3": 0.19166666666666668,
+    "family_all_pass": 0.8083333333333333,
+    "n_replicates": 600
+   }
+  },
+  "power_eps0.25": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.025,
+    "per_mock_mc_halfwidth_95": 0.012492597808302322,
+    "family_any_of_3": 0.025,
+    "family_all_pass": 0.975,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.10166666666666667,
+    "per_mock_mc_halfwidth_95": 0.02418179281409267,
+    "family_any_of_3": 0.10166666666666667,
+    "family_all_pass": 0.8983333333333333,
+    "n_replicates": 600
+   }
+  },
+  "healthy_kappa4.5": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.013333333333333334,
+    "per_mock_mc_halfwidth_95": 0.009177725046929498,
+    "family_any_of_3": 0.013333333333333334,
+    "family_all_pass": 0.9866666666666667,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.05,
+    "per_mock_mc_halfwidth_95": 0.01743922781165114,
+    "family_any_of_3": 0.05,
+    "family_all_pass": 0.95,
+    "n_replicates": 600
+   }
+  },
+  "power_kappa4.5": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.4166666666666667,
+    "per_mock_mc_halfwidth_95": 0.03944874780907125,
+    "family_any_of_3": 0.4166666666666667,
+    "family_all_pass": 0.5833333333333334,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.6466666666666666,
+    "per_mock_mc_halfwidth_95": 0.03824837503205323,
+    "family_any_of_3": 0.6466666666666666,
+    "family_all_pass": 0.35333333333333333,
+    "n_replicates": 600
+   }
+  },
+  "healthy_kappa12.5": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.005,
+    "per_mock_mc_halfwidth_95": 0.005643869830769192,
+    "family_any_of_3": 0.005,
+    "family_all_pass": 0.995,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.051666666666666666,
+    "per_mock_mc_halfwidth_95": 0.01771194177614305,
+    "family_any_of_3": 0.051666666666666666,
+    "family_all_pass": 0.9483333333333334,
+    "n_replicates": 600
+   }
+  },
+  "power_kappa12.5": {
+   "alpha=0.01": {
+    "per_mock_rate": 0.4166666666666667,
+    "per_mock_mc_halfwidth_95": 0.03944874780907125,
+    "family_any_of_3": 0.4166666666666667,
+    "family_all_pass": 0.5833333333333334,
+    "n_replicates": 600
+   },
+   "alpha=0.05": {
+    "per_mock_rate": 0.67,
+    "per_mock_mc_halfwidth_95": 0.037624853488086835,
+    "family_any_of_3": 0.67,
+    "family_all_pass": 0.33,
+    "n_replicates": 600
+   }
+  }
+ },
+ "wall_seconds": 206.5
+}
