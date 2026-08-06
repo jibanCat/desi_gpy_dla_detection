@@ -1,0 +1,111 @@
+{
+ "label": "exploratory (supplement to spec s7.3-7.4 discriminants)",
+ "metric": "survey + calibration diagonal (delta method, exact for the linear FP fold)",
+ "chi2_before_twin": 177.95674462661913,
+ "cases": {
+  "psi_k_tau1": {
+   "max_abs_b_prior_units": 1.8540484313135774,
+   "rms_b_prior_units": 0.759069573634041,
+   "refold": {
+    "2lpt0": {
+     "chi2_before": 177.95674462661913,
+     "chi2_after": 115.1754849196345,
+     "explained_fraction": 0.3527894367741411
+    },
+    "london0": {
+     "chi2_before": 183.4819981794739,
+     "chi2_after": 112.15457893220245,
+     "explained_fraction": 0.3887434187276625
+    },
+    "saclay0": {
+     "chi2_before": 169.76724525184525,
+     "chi2_after": 186.50287302070456,
+     "explained_fraction": -0.09857983937968973
+    }
+   }
+  },
+  "psi_k_tau3": {
+   "max_abs_b_prior_units": 3.302866180916469,
+   "rms_b_prior_units": 1.5977339411303255,
+   "refold": {
+    "2lpt0": {
+     "chi2_before": 177.95674462661913,
+     "chi2_after": 304.71193326574286,
+     "explained_fraction": -0.7122808910956187
+    },
+    "london0": {
+     "chi2_before": 183.4819981794739,
+     "chi2_after": 310.06075307455285,
+     "explained_fraction": -0.6898701570236077
+    },
+    "saclay0": {
+     "chi2_before": 169.76724525184525,
+     "chi2_after": 287.62631827709305,
+     "explained_fraction": -0.6942391793564593
+    }
+   }
+  },
+  "psi_c_tau1": {
+   "max_abs_b_sigma_hat_units": 0.7917497455250244,
+   "rms_b_sigma_hat_units": 0.24338570305380958,
+   "refold": {
+    "2lpt0": {
+     "chi2_before": 177.95674462661913,
+     "chi2_after": 172.28162341405664,
+     "explained_fraction": 0.03189045306751237
+    },
+    "london0": {
+     "chi2_before": 183.4819981794739,
+     "chi2_after": 177.62002168076143,
+     "explained_fraction": 0.03194851024555845
+    },
+    "saclay0": {
+     "chi2_before": 169.76724525184525,
+     "chi2_after": 165.85586142793204,
+     "explained_fraction": 0.02303968482324592
+    }
+   }
+  },
+  "psi_c_tau3": {
+   "max_abs_b_sigma_hat_units": 6.064359303114893,
+   "rms_b_sigma_hat_units": 1.8442017121186918,
+   "refold": {
+    "2lpt0": {
+     "chi2_before": 177.95674462661913,
+     "chi2_after": 141.53925302504297,
+     "explained_fraction": 0.20464237912412764
+    },
+    "london0": {
+     "chi2_before": 183.4819981794739,
+     "chi2_after": 146.29378628598093,
+     "explained_fraction": 0.20268043874864017
+    },
+    "saclay0": {
+     "chi2_before": 169.76724525184525,
+     "chi2_after": 145.46892608237223,
+     "explained_fraction": 0.14312725127528048
+    }
+   }
+  },
+  "joint_tau1": {
+   "max_abs_b_prior_units": 1.8503097713468843,
+   "refold": {
+    "2lpt0": {
+     "chi2_before": 177.95674462661913,
+     "chi2_after": 114.86805978978443,
+     "explained_fraction": 0.3545169640476654
+    },
+    "london0": {
+     "chi2_before": 183.4819981794739,
+     "chi2_after": 111.82240928412992,
+     "explained_fraction": 0.3905537851470844
+    },
+    "saclay0": {
+     "chi2_before": 169.76724525184525,
+     "chi2_after": 185.90975801803197,
+     "explained_fraction": -0.0950861442219888
+    }
+   }
+  }
+ }
+}

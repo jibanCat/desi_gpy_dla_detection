@@ -1,0 +1,23 @@
+/home/mfho/wt_repair_phaseB/CDDF_analysis/calc_cddf.py:151: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  import scipy.integrate as integrate
+[frozen] building 2LPT-0 calibration blocks (window=lya_only, lam_rf_min=1025.0) ...
+[loa0] 3255 raw FP detections from 3 files
+[snr] built per-QSO lookup from external snr_cat+zcat (full snr_cat (molly recipe)): 1213217 TIDs (/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/snr_cat.fits, /nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits)
+[load] catalog: 769833 rows from 1 files
+  [2lpt0] bundle: n_cat_cut=582855, n_op=495553, n_sl=374177 (14s)
+[snr] built per-QSO lookup from external snr_cat+zcat (full snr_cat (molly recipe)): 1213217 TIDs (/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/snr_cat.fits, /nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits)
+[load] catalog: 769833 rows from 1 files
+  [2lpt0] bundle: n_cat_cut=582078, n_op=494962, n_sl=374177 (11s)
+[pack] extracting 2lpt0 (pad_floor=17.2, basis_width=0.2, window=lya_only) ...
+[snr] built per-QSO lookup from external snr_cat+zcat (full snr_cat (molly recipe)): 1213217 TIDs (/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/snr_cat.fits, /nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits)
+[load] catalog: 769833 rows from 1 files
+  [2lpt0] truth-pad bundle @floor 17.2: n_truth_cut=395700 (10s)
+[pack] 2lpt0: counts=88071 (op 495553, window 88071), dX_tot=500506.0, dx_gap=1.20e-13, truth_in_window=198123 -> /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_pad17p2_diag.npz (11s)
+{
+ "2lpt0": {
+  "npz": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_pad17p2_diag.npz",
+  "provenance": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_pad17p2_diag.provenance.json",
+  "counts_total": 88071,
+  "dx_gap": 1.2002611024203957e-13
+ }
+}

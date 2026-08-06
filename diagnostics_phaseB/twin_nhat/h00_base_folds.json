@@ -1,0 +1,297 @@
+{
+ "label": "exploratory (bounded diagnostic pass)",
+ "window": [
+  19.7,
+  21.6
+ ],
+ "mocks": {
+  "2lpt0": {
+   "nhat_edges": [
+    19.5,
+    19.6,
+    19.7,
+    19.8,
+    19.9,
+    20.0,
+    20.1,
+    20.2,
+    20.3,
+    20.4,
+    20.5,
+    20.6,
+    20.7,
+    20.8,
+    20.9,
+    21.0,
+    21.1,
+    21.2,
+    21.3,
+    21.4,
+    21.5,
+    21.6,
+    21.7,
+    21.8,
+    21.9,
+    22.0,
+    22.1,
+    22.2,
+    22.3,
+    22.4
+   ],
+   "win_mask": [
+    false,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "clamp": {
+    "both": {
+     "chi2_dof_window": 22.094021781801782,
+     "group_residual": [
+      -1760.8226779636461,
+      130.46366370638862,
+      450.2463629028607
+     ],
+     "window_total_mu": 68266.1126513544,
+     "window_total_obs": 67086.0,
+     "full_total_mu": 88122.55797538643,
+     "full_total_obs": 88071.0
+    },
+    "hi": {
+     "chi2_dof_window": 27.927898219833356,
+     "group_residual": [
+      -3011.1976222916564,
+      40.69431520130456,
+      449.6357098124663
+     ],
+     "window_total_mu": 69606.86759727789,
+     "window_total_obs": 67086.0,
+     "full_total_mu": 90202.82052719883,
+     "full_total_obs": 88071.0
+    }
+   }
+  },
+  "london0": {
+   "nhat_edges": [
+    19.5,
+    19.6,
+    19.7,
+    19.8,
+    19.9,
+    20.0,
+    20.1,
+    20.2,
+    20.3,
+    20.4,
+    20.5,
+    20.6,
+    20.7,
+    20.8,
+    20.9,
+    21.0,
+    21.1,
+    21.2,
+    21.3,
+    21.4,
+    21.5,
+    21.6,
+    21.7,
+    21.8,
+    21.9,
+    22.0,
+    22.1,
+    22.2,
+    22.3,
+    22.4
+   ],
+   "win_mask": [
+    false,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "clamp": {
+    "both": {
+     "chi2_dof_window": 28.157125674456847,
+     "group_residual": [
+      -3015.707743599487,
+      178.2962080012694,
+      464.9255093403208
+     ],
+     "window_total_mu": 72003.4860262579,
+     "window_total_obs": 69631.0,
+     "full_total_mu": 92155.17056238366,
+     "full_total_obs": 87840.0
+    },
+    "hi": {
+     "chi2_dof_window": 39.01084176554932,
+     "group_residual": [
+      -4290.3535826691295,
+      86.85055252641905,
+      464.2998217038803
+     ],
+     "window_total_mu": 73370.20320843885,
+     "window_total_obs": 69631.0,
+     "full_total_mu": 94279.85981186478,
+     "full_total_obs": 87840.0
+    }
+   }
+  },
+  "saclay0": {
+   "nhat_edges": [
+    19.5,
+    19.6,
+    19.7,
+    19.8,
+    19.9,
+    20.0,
+    20.1,
+    20.2,
+    20.3,
+    20.4,
+    20.5,
+    20.6,
+    20.7,
+    20.8,
+    20.9,
+    21.0,
+    21.1,
+    21.2,
+    21.3,
+    21.4,
+    21.5,
+    21.6,
+    21.7,
+    21.8,
+    21.9,
+    22.0,
+    22.1,
+    22.2,
+    22.3,
+    22.4
+   ],
+   "win_mask": [
+    false,
+    false,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "clamp": {
+    "both": {
+     "chi2_dof_window": 25.567061135547327,
+     "group_residual": [
+      -2570.0761316425487,
+      648.9955471659996,
+      190.96557106714954
+     ],
+     "window_total_mu": 69154.11501340939,
+     "window_total_obs": 67424.0,
+     "full_total_mu": 89119.80829156643,
+     "full_total_obs": 86763.0
+    },
+    "hi": {
+     "chi2_dof_window": 34.75510418005447,
+     "group_residual": [
+      -3857.655985941128,
+      556.7566010617811,
+      190.34355508119825
+     ],
+     "window_total_mu": 70534.55582979813,
+     "window_total_obs": 67424.0,
+     "full_total_mu": 91267.22741050104,
+     "full_total_obs": 86763.0
+    }
+   }
+  }
+ },
+ "sanity": {
+  "closure_chi2_dof": 22.094021781801782,
+  "recomputed": 22.094021781801782,
+  "closure_group_residual": [
+   -1760.8226779636461,
+   130.46366370638862,
+   450.2463629028607
+  ],
+  "recomputed_group_residual": [
+   -1760.8226779636461,
+   130.46366370638862,
+   450.2463629028607
+  ],
+  "reproduced": true
+ }
+}
