@@ -28,6 +28,7 @@ Rung map (one sampler fit is reused wherever the spec allows):
 Run: conda run -n gpdla-hbi python -m pytest tests/test_modelA_rungs.py -v
 """
 import dataclasses
+import os
 
 import numpy as np
 import pytest
@@ -142,21 +143,53 @@ def test_r4_farr_gate_reported(fit_main):
 
 # --- R5: finite calibration ----------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=False,
+def test_r5_deterministic_calibration_width_contract():
+    """R5's DETERMINISTIC merge guard (PI ruling 18.2, 2026-08-06;
+    docs/PHASEC_GATE_GOVERNANCE.md §5).
+
+    The merge-blocking core of R5 is the calibration-variance PLUMBING, not
+    the stochastic posterior: shrinking the molly calibration counts ×1/16
+    must widen the Jeffreys completeness width `sigma_hat` — the width
+    `build_consts` plumbs through as the psi_c prior scale — by the analytic
+    factor. For counts (d, t) the variance ratio
+
+        r = [1/(d/16+.5)+1/((t−d)/16+.5)] / [1/(d+.5)+1/(t−d+.5)]
+
+    tends to 16 from BELOW (the Jeffreys +1/2 damps it), so at this pack's
+    count scale every cell must satisfy 14.0 <= r <= 16.0 — a fixed,
+    justified threshold; fixed inputs; no sampling; fails reproducibly.
+    Cells with fewer than 32 expected detections are excluded (there the
+    +1/2 offset legitimately dominates and the bound is not tight)."""
+    from CDDF_analysis.hbi_mcmc.forward import eta_hat_sigma_hat, build_consts
+
+    pk = synthetic_pack(0, **GRID, fp_frac=0.25, t_true=T_TRUE)
+    nd = np.asarray(pk.molly_n_det, float)
+    nt = np.asarray(pk.molly_n_tot, float)
+    _, sig1 = eta_hat_sigma_hat(nd, nt)
+    _, sig16 = eta_hat_sigma_hat(nd / 16.0, nt / 16.0)
+    r = (sig16 / sig1) ** 2
+    ok = (nd / 16.0 >= 2.0) & ((nt - nd) / 16.0 >= 2.0)
+    assert ok.any(), "no cells above the small-count floor — grid too small"
+    assert np.all(r[ok] >= 14.0) and np.all(r[ok] <= 16.0), (
+        f"R5 deterministic width contract violated: variance ratio range "
+        f"[{r[ok].min():.2f}, {r[ok].max():.2f}] outside [14, 16]")
+    # and the fold consumes THIS surface as the psi_c prior scale (plumbing)
+    consts = build_consts(pk)
+    assert np.allclose(np.asarray(consts.sigma_hat), sig1, rtol=0, atol=0)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("RUN_R5_STOCHASTIC"),
     reason=(
-        "UNDER-POWERED stochastic guard (measured 2026-08-06): at 2x200/150 "
-        "draws the sd comparison's MC noise (~+-4-10%, ESS-limited) exceeds "
-        "the calibration-shrink effect it guards. 3-seed measurement on the "
-        "Phase-B tree: ratios 0.958/0.998/1.040 — no consistent direction; "
-        "the committed-HEAD pass (+3.7%) was a seed accident, and the "
-        "(1-eta) consts-field graph change flipped XLA compilation enough "
-        "to flip the seed-0 draw with BIT-IDENTICAL inputs and folded mu. "
-        "Not a model behavior change (verified). Disposition (re-powering "
-        "the guard with larger dedicated fits, or replacing the noisy sd "
-        "comparison) is a PI-checkpoint item; do NOT delete — a future "
-        "genuine width regression larger than the noise still trips it in "
-        "expectation."))
+        "R5 stochastic recovery validation runs at RELEASE cadence, not "
+        "per-commit (PI ruling 18.3, 2026-08-06; docs/PHASEC_GATE_GOVERNANCE"
+        ".md §5): at 2x200/150 draws the sd comparison's MC noise (~+-4-10%, "
+        "ESS-limited; 3-seed measurement 0.958/0.998/1.040) exceeds the "
+        "calibration-shrink effect, so a per-commit run is seed luck either "
+        "way. The deterministic width contract above guards the plumbing "
+        "per-commit; set RUN_R5_STOCHASTIC=1 to run this one explicitly. "
+        "Do NOT delete — the re-powered release-cadence version is specified "
+        "in the governance doc."))
 def test_r5_posterior_width_grows_with_shrunk_calibration(fit_main, fit_lowcal):
     _, red1 = fit_main
     _pk16, (_mcmc16, red16) = fit_lowcal
