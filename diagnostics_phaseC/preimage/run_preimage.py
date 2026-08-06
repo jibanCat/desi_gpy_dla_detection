@@ -296,23 +296,24 @@ def preimage_one(mock, pack_path):
     # --- sensitivity map (the §9 effect-size scale) -----------------------
     # dG3[b]: counts moved into G3 by a +DELTA_MEAN dex mean shift of bin b's
     # kernel alone; dG3w[b]: by a +DELTA_WIDTH fractional sd increase.
-    g3_lo, g3_hi = 21.0, CEIL
-    dG3_mean = np.zeros(B)
-    dG3_width = np.zeros(B)
-    F0 = oracle_K_edges(pk, consts, np.array([g3_lo, g3_hi]))
-    mass0 = (F0[:, :, 1, :] - F0[:, :, 0, :])[:, kz]       # (S, Kf, B)
-    base_g3_b = np.einsum("skb,bks->b", mass0, contrib)
+    grp_edges = np.array([WIN[0], 20.3, 21.0, CEIL])       # G1 | G2 | G3
+    dG_mean = np.zeros((3, B))
+    dG_width = np.zeros((3, B))
+    F0 = oracle_K_edges(pk, consts, grp_edges)
+    mass0 = (F0[:, :, 1:, :] - F0[:, :, :-1, :])[:, kz]    # (S, Kf, 3, B)
+    base_g_b = np.einsum("skgb,bks->gb", mass0, contrib)
     for b in range(B):
         dm = np.zeros(B); dm[b] = DELTA_MEAN
-        Fm = oracle_K_edges(pk, consts, np.array([g3_lo, g3_hi]),
-                            delta_mean=dm)
-        mm = (Fm[:, :, 1, :] - Fm[:, :, 0, :])[:, kz]
-        dG3_mean[b] = np.einsum("skb,bks->b", mm, contrib)[b] - base_g3_b[b]
+        Fm = oracle_K_edges(pk, consts, grp_edges, delta_mean=dm)
+        mm = (Fm[:, :, 1:, :] - Fm[:, :, :-1, :])[:, kz]
+        dG_mean[:, b] = (np.einsum("skgb,bks->gb", mm, contrib)[:, b]
+                         - base_g_b[:, b])
         ws = np.ones(B); ws[b] = 1.0 + DELTA_WIDTH
-        Fw = oracle_K_edges(pk, consts, np.array([g3_lo, g3_hi]),
-                            width_scale=ws)
-        mw = (Fw[:, :, 1, :] - Fw[:, :, 0, :])[:, kz]
-        dG3_width[b] = np.einsum("skb,bks->b", mw, contrib)[b] - base_g3_b[b]
+        Fw = oracle_K_edges(pk, consts, grp_edges, width_scale=ws)
+        mw = (Fw[:, :, 1:, :] - Fw[:, :, :-1, :])[:, kz]
+        dG_width[:, b] = (np.einsum("skgb,bks->gb", mw, contrib)[:, b]
+                          - base_g_b[:, b])
+    dG3_mean, dG3_width = dG_mean[2], dG_width[2]
 
     # sanity: reproduce the closure table's 3-group residual for this mock
     mu_all_c = np.asarray(st["mu"])
@@ -353,6 +354,10 @@ def preimage_one(mock, pack_path):
             "delta_width_frac": DELTA_WIDTH,
             "dG3_per_bin_mean_shift": dG3_mean.tolist(),
             "dG3_per_bin_width_scale": dG3_width.tolist(),
+            "dG1_per_bin_mean_shift": dG_mean[0].tolist(),
+            "dG1_per_bin_width_scale": dG_width[0].tolist(),
+            "dG2_per_bin_mean_shift": dG_mean[1].tolist(),
+            "dG2_per_bin_width_scale": dG_width[1].tolist(),
         },
         "M_bc_file": None,   # filled by caller
         "_M_bc": M_bc.tolist(),
