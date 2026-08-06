@@ -1021,6 +1021,15 @@ def aggregate_report(mocks, *, clamps=("off", "both", "hi"), use_fp=True):
     for name, path in mocks:
         assert "main_dark" not in path, "REAL-LOA guard: mock packs only"
         pack = load_pack(path)
+        # This tool's purpose includes auditing HISTORICAL packs, so the
+        # schema-v1.2 legacy migration is applied here EXPLICITLY and logged
+        # ((1-eta) restoration 2026-08-06); build_consts stays fail-loud.
+        if pack.fp_eta_c is None:
+            from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands
+            print(f"[selftest] {name}: legacy pack (pre-2026-08-06) — "
+                  "attaching fp_eta_c from the committed band table "
+                  "(pack.FP_ETA_BANDS_COMMITTED)", file=sys.stderr)
+            pack = attach_fp_eta_bands(pack)
         assert "loa_main_dark" not in json.dumps(pack.provenance or {}), \
             "REAL-LOA guard (provenance)"
         if pack.truth_counts is None:
@@ -1159,6 +1168,14 @@ def main(argv=None):
     from CDDF_analysis.hbi_mcmc.pack import load_pack
     assert "main_dark" not in a.pack, "REAL-LOA guard: mock packs only"
     pack = load_pack(a.pack)
+    # Same explicit logged legacy migration as aggregate_report above: the
+    # CLI/preflight audits HISTORICAL packs ((1-eta) restoration 2026-08-06).
+    if pack.fp_eta_c is None:
+        from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands
+        print(f"[selftest] {os.path.basename(a.pack)}: legacy pack "
+              "(pre-2026-08-06) — attaching fp_eta_c from the committed band "
+              "table (pack.FP_ETA_BANDS_COMMITTED)", file=sys.stderr)
+        pack = attach_fp_eta_bands(pack)
     assert "loa_main_dark" not in json.dumps(pack.provenance or {}), \
         "REAL-LOA guard (provenance)"
     if pack.truth_counts is None:

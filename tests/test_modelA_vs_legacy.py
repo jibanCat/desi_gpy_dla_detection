@@ -69,6 +69,12 @@ pytest.importorskip("fitsio")
 import jax.numpy as jnp  # noqa: E402
 
 from CDDF_analysis.hbi_mcmc.pack import load_pack  # noqa: E402
+
+# 2026-08-06 (fp_eta_c restoration): legacy fixture packs predate the schema
+# field; migrate them EXPLICITLY at the test boundary (idempotent; values
+# identical to a fresh extraction — pack.FP_ETA_BANDS_COMMITTED).
+from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _attach_fp_eta
+load_pack = (lambda _f: (lambda *a, **k: _attach_fp_eta(_f(*a, **k))))(load_pack)
 from CDDF_analysis.hbi_mcmc import forward as F  # noqa: E402
 from CDDF_analysis.hbi_mcmc import legacy_oracle as LO  # noqa: E402
 
@@ -417,6 +423,8 @@ def test_B3_the_D2_clamp_is_selectable_and_off_by_default(pack):
     production, and now is not — if you ask for the clamp."""
     import os
     from CDDF_analysis.hbi_mcmc.pack import load_pack as _lp
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    _lp = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(_lp)
     v11 = LO.DEF_PACK.replace(".npz", "_v11.npz")
     if not os.path.exists(v11):
         pytest.skip("v1.1 pack absent")

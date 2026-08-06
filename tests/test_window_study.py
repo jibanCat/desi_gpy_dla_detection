@@ -1128,7 +1128,15 @@ def fp_catalog(tmp_path):
         Z_QSO=np.full(len(spec), z_qso, float),
     )
     product = str(tmp_path / "loa0_fp_product.npz")
-    np.savez(product, snr_min=2.0, p_dla_min=0.99, lya_only_lam_rf_min=1025.0)
+    # band_eta arrays: faithful to the committed product schema (restoration
+    # 2026-08-06) — a fine eta grid covering the pack's observed range with
+    # the product's band structure (eta_DLA == 0 forced at >= 20.3).
+    lo_f = np.arange(17.2, 22.4 - 1e-9, 0.1)
+    np.savez(product, snr_min=2.0, p_dla_min=0.99, lya_only_lam_rf_min=1025.0,
+             logN_lo=lo_f, logN_hi=lo_f + 0.1,
+             band_eta_per_nbin=np.where(
+                 lo_f >= 20.3 - 1e-9, 0.0,
+                 np.where(lo_f >= 19.0 - 1e-9, 0.005757, 0.011187)))
     return dict(cat=cat, product=product,
                 n_op_prod=3, n_binned_prod=2, n_op_req=5, n_binned_req=4)
 
@@ -1155,8 +1163,15 @@ def test_build_fp_block_REDERIVES_the_forest_FP_background_at_the_REQUESTED_wind
     kw = dict(loa0_out=str(tmp_path / "loa0_dlacat"),
               product_path=fp_catalog["product"])
 
-    fp_only, _l, prov_only = EP.build_fp_block(window="lya_only", **kw)
-    fp_lyb, _l2, prov_lyb = EP.build_fp_block(window="lya_lyb", **kw)
+    fp_only, eta_only, _l, prov_only = EP.build_fp_block(window="lya_only", **kw)
+    fp_lyb, eta_lyb, _l2, prov_lyb = EP.build_fp_block(window="lya_lyb", **kw)
+
+    # the restored per-observed-bin eta (2026-08-06): sub-DLA band value below
+    # 20.3, the forced eta_DLA == 0 at and above it, window-independent
+    for eta in (eta_only, eta_lyb):
+        assert eta.shape == (29,)
+        assert np.allclose(eta[:8], 0.005757)     # [19.5, 20.3)
+        assert np.allclose(eta[8:], 0.0)          # [20.3, 22.4)
 
     # the reference arm: the product's own window, unchanged
     assert prov_only["op_cut"]["lam_rf_min"] == 1025.0
@@ -2028,7 +2043,7 @@ def _wire_frozen(EP, monkeypatch, n_nhi=3):
 
     def fake_fp(window=None, **kw):
         seen["fp"] = window
-        return np.zeros((29, 8)), None, {}
+        return np.zeros((29, 8)), np.zeros(29), None, {}
     monkeypatch.setattr(EP, "build_fp_block", fake_fp)
 
     def fake_bundle(mock, out_dir, molly_tsv=None, window=None):

@@ -40,6 +40,12 @@ from CDDF_analysis.hbi_mcmc.pack import (
     PackSchemaError, load_pack, synthetic_pack, small_test_grid, validate_pack,
 )
 
+# 2026-08-06 (fp_eta_c restoration): legacy fixture packs predate the schema
+# field; migrate them EXPLICITLY at the test boundary (idempotent; values
+# identical to a fresh extraction — pack.FP_ETA_BANDS_COMMITTED).
+from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _attach_fp_eta
+load_pack = (lambda _f: (lambda *a, **k: _attach_fp_eta(_f(*a, **k))))(load_pack)
+
 _PACK_DIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
              "modelA_packs")
 _PACK_V1 = os.path.join(_PACK_DIR, "modelA_pack_2lpt0.npz")
@@ -198,7 +204,13 @@ def test_rung9_forward_failure_signature_is_reproduced_without_sampling():
     with ``mu_FP`` under-normalised by ``fp_ell_eff`` (13.5899 on this pack:
     1086.687 folded where the loa-0 product defines 14767.961).  With the
     exposure carried, the SAME pack, the SAME clamp mode and the SAME routine
-    give 0.7042 and 0.8860.
+    gave 0.7042 and 0.8860.
+
+    🔴 RE-MEASURED 2026-08-06, (1-eta) HOST-OCCLUSION RESTORATION (PI ruling
+    8): the FP term now carries x(1-0.005756532459300326) below N-hat 20.3,
+    giving 0.7008 and 0.8851.  VERIFIED pure-FP: re-folding with eta forced
+    to zero reproduces 0.7042 / 0.8860 exactly, every bin at/above 20.3 is
+    bit-identical, and the total mu shift is -85.012 counts.
 
     So most of the reported bottom-bin deficit was the FP normalisation, NOT
     the basis truncation: the deficit at [19.5,19.6) shrinks from 6.0x to 1.4x.
@@ -212,8 +224,10 @@ def test_rung9_forward_failure_signature_is_reproduced_without_sampling():
     tab = FS.ratio_tables(res, pack)
     rows = tab["by_nhat"]
     assert rows[0]["lo"] == pytest.approx(19.5)
-    assert rows[0]["ratio"] == pytest.approx(0.7042, abs=2e-3)   # was 0.1655
-    assert tab["total"]["ratio"] == pytest.approx(0.8860, abs=2e-3)  # was 0.7307
+    # (1-eta) restoration 2026-08-06: was 0.7042; x(1-0.005756532459300326) on the FP term
+    assert rows[0]["ratio"] == pytest.approx(0.7008, abs=2e-3)   # was 0.1655 pre-repair
+    # (1-eta) restoration 2026-08-06: was 0.8860; x(1-0.005756532459300326) on the FP term
+    assert tab["total"]["ratio"] == pytest.approx(0.8851, abs=2e-3)  # was 0.7307 pre-repair
     hi = [r["ratio"] for r in rows if r["lo"] > 21.65]
     assert min(hi) > 1.45 and max(hi) > 3.0
     # the arithmetic impossibility that proves D1 on its own

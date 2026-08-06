@@ -100,7 +100,7 @@ _REQUIRED_KEYS = (
 # polynomials on real packs (synthetic packs embed their own reference).
 _OPTIONAL_KEYS = ("resp_fitcov_diag", "resp_N_ref", "truth_counts_bks",
                   "dX_coarse_committed", "molly_snr_edges", "nhat_masked_bins",
-                  "resp_N_fit_range")
+                  "resp_N_fit_range", "fp_eta_c")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -148,6 +148,10 @@ class ModelAPack:
     # cell: the min/max true-N anchor the moment polynomials were actually FIT
     # at.  REQUIRED by the fold (2026-07-28 finding D2) -- see forward.py.
     resp_N_fit_range: Optional[np.ndarray] = None
+    # (C,) per-observed-bin host-occlusion fraction of the loa-0 FP product
+    # definition (mu_FP ∝ (1 - eta_band); eta_DLA == 0 forced). REQUIRED by
+    # the fold (restoration 2026-08-06, PI ruling 8) -- see forward.py.
+    fp_eta_c: Optional[np.ndarray] = None
     truth_counts_bks: Optional[np.ndarray] = None  # (B, Kf, S)
     dX_coarse_committed: Optional[np.ndarray] = None
     molly_snr_edges: Optional[np.ndarray] = None
@@ -543,6 +547,12 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
         _fail("fp_E_alloc: empty strata must have zero allocation")
     if not np.allclose(colsum[dx_pop], 1.0, atol=1e-8):
         _fail(f"fp_E_alloc: schema requires sum_k E[k,s] == 1 per populated stratum, got {colsum}")
+    if pack.fp_eta_c is not None:
+        _check_shape("fp_eta_c", pack.fp_eta_c, (C,))
+        _check_finite("fp_eta_c", pack.fp_eta_c)
+        eta = np.asarray(pack.fp_eta_c, float)
+        if np.any(eta < 0) or np.any(eta >= 1):
+            _fail("fp_eta_c: host-occlusion fractions must satisfy 0 <= eta < 1")
     _check_shape("t_sigma", pack.t_sigma, (KK,))
     _check_finite("t_sigma", pack.t_sigma)
     if np.any(np.asarray(pack.t_sigma) <= 0):
@@ -609,6 +619,7 @@ def load_pack(npz_path, *, allow_nonstandard_grid: bool = False) -> ModelAPack:
         # so load/save round-trips are faithful.
         resp_N_ref=(float(data["resp_N_ref"]) if "resp_N_ref" in data else None),
         resp_N_fit_range=data.get("resp_N_fit_range"),
+        fp_eta_c=data.get("fp_eta_c"),
         truth_counts_bks=data.get("truth_counts_bks"),
         dX_coarse_committed=data.get("dX_coarse_committed"),
         molly_snr_edges=data.get("molly_snr_edges"),
@@ -637,6 +648,68 @@ def save_pack(pack: ModelAPack, npz_path, *, allow_nonstandard_grid: bool = Fals
     prov_path = npz_path.parent / (npz_path.name[:-4] + ".provenance.json")
     prov_path.write_text(json.dumps(prov, indent=2, default=str))
     return npz_path
+
+
+# --- schema v1.2 migration: fp_eta_c ------------------------------------------
+#: the committed loa-0 product's host-occlusion band structure
+#: (gl_loa0_fp_v1_20260615 band_eta_per_nbin; eta_DLA == 0 FORCED by the
+#: product — see build_loa0_fp_product.py). Used ONLY by the explicit
+#: legacy-pack migration below; the extractor reads the product arrays.
+FP_ETA_BANDS_COMMITTED = (
+    (17.2, 19.0, 0.0111869413715736),
+    (19.0, 20.3, 0.005756532459300326),
+    (20.3, np.inf, 0.0),
+)
+
+
+def eta_from_intervals(nhat_edges, seg_lo, seg_hi, seg_eta) -> np.ndarray:
+    """(C,) per-observed-bin eta from piecewise interval values.
+
+    THE one canonical interval lookup (used by the extractor on the product's
+    fine grid and by ``attach_fp_eta_bands`` on the committed band table).
+    FAIL-LOUD: every observed bin must be covered and must not straddle a
+    boundary between different eta values — a band edge can never be silently
+    averaged across (the one-sided-support bug class).
+    """
+    ne = np.asarray(nhat_edges, float)
+    seg_lo = np.asarray(seg_lo, float)
+    seg_hi = np.asarray(seg_hi, float)
+    seg_eta = np.asarray(seg_eta, float)
+    out = np.empty(len(ne) - 1, float)
+    for c in range(len(ne) - 1):
+        lo_c, hi_c = float(ne[c]), float(ne[c + 1])
+        inside = (seg_hi > lo_c + 1e-9) & (seg_lo < hi_c - 1e-9)
+        if not inside.any():
+            raise ValueError(
+                f"eta_from_intervals: observed bin [{lo_c}, {hi_c}) is not "
+                "covered by the eta segments — cannot derive eta.")
+        vals = np.unique(np.round(seg_eta[inside], 12))
+        if vals.size != 1:
+            raise ValueError(
+                f"eta_from_intervals: observed bin [{lo_c}, {hi_c}) straddles "
+                f"an eta band boundary (values {vals}) — refusing to average "
+                "across bands.")
+        out[c] = float(vals[0])
+    return out
+
+
+def attach_fp_eta_bands(pack: ModelAPack,
+                        bands=FP_ETA_BANDS_COMMITTED) -> ModelAPack:
+    """EXPLICIT schema-v1.2 migration for packs extracted before 2026-08-06.
+
+    Derives ``fp_eta_c`` from the committed product's band structure and
+    returns a new pack. Idempotent: a pack that already carries ``fp_eta_c``
+    is returned unchanged (so it can wrap any loader). This is an explicit
+    opt-in — ``build_consts`` stays fail-loud on unmigrated packs — mirroring
+    the v1.1 ``resp_fit_range_from_forward_npz`` migration pattern.
+    """
+    if pack.fp_eta_c is not None:
+        return pack
+    lo = [b[0] for b in bands]
+    hi = [b[1] for b in bands]
+    eta = [b[2] for b in bands]
+    return dataclasses.replace(
+        pack, fp_eta_c=eta_from_intervals(pack.nhat_edges, lo, hi, eta))
 
 
 # --- schema v1.1 migration ----------------------------------------------------
@@ -836,6 +909,7 @@ def synthetic_pack(
     fp_frac=0.15,
     fp_ell_eff=4.0,
     fp_w=0.8,
+    fp_eta=None,
     t_true=None,
     t_sigma=None,
 ) -> ModelAPack:
@@ -1028,6 +1102,16 @@ def synthetic_pack(
     t_sigma = (np.linspace(0.45, 0.20, KK) if t_sigma is None
                else np.asarray(t_sigma, float))
 
+    # --- host-occlusion vector (restoration 2026-08-06). Default 0 (no
+    # occlusion) keeps legacy synthetic expectations; pass a vector or scalar
+    # to exercise the (1 - eta_c) factor through generator AND fold.
+    if fp_eta is None:
+        fp_eta_c = np.zeros(C, float)
+    else:
+        fp_eta_c = np.broadcast_to(np.asarray(fp_eta, float), (C,)).copy()
+    if np.any(fp_eta_c < 0) or np.any(fp_eta_c >= 1):
+        raise ValueError("synthetic_pack: fp_eta must satisfy 0 <= eta < 1")
+
     # --- assemble a provisional pack (zero counts) so the oracle can run on it
     zero_counts = np.zeros((C, Kf, S), dtype=np.int64)
     zero_fp = np.zeros((C, S), dtype=np.int64)
@@ -1042,7 +1126,8 @@ def synthetic_pack(
         resp_z_edges=resp_z_edges, resp_sig_floor=resp_sig_floor,
         resp_skew_ramp=resp_skew_ramp,
         fp_counts=zero_fp, fp_ell_eff=fp_ell_eff,
-        fp_w_sightline_ratio=fp_w, fp_E_alloc=E_alloc, t_sigma=t_sigma,
+        fp_w_sightline_ratio=fp_w, fp_E_alloc=E_alloc,
+        fp_eta_c=fp_eta_c, t_sigma=t_sigma,
         truth_counts=np.zeros((B, Kf), dtype=np.int64),
         resp_fitcov_diag=resp_fitcov_diag,
         resp_N_ref=float(resp_N_ref),
@@ -1065,7 +1150,12 @@ def synthetic_pack(
         # replica was generated under the SAME convention as the defect and
         # could not possibly detect it.  Whatever the fold does, this line must
         # do; ``fp_frac`` is defined as a share of the DATA-side counts.
-        fp_data_per_unit = fp_w * fp_ell_eff * (shape_cs * exp_t_alloc[None, :]).sum()
+        # (1 - fp_eta_c) weighting: the generator must invert the SAME fold
+        # the model uses (restoration 2026-08-06) — the data-side FP carries
+        # the host-occlusion survival per observed bin; the loa-0 calibration
+        # side (fp_counts below) does not.
+        fp_data_per_unit = fp_w * fp_ell_eff * (
+            (1.0 - fp_eta_c)[:, None] * shape_cs * exp_t_alloc[None, :]).sum()
         L0 = fp_frac * mu_signal.sum() / fp_data_per_unit
         lam_fp_true = L0 * shape_cs
     else:

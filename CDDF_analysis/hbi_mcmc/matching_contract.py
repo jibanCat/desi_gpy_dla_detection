@@ -978,8 +978,14 @@ def _fp_fold_total_through_forward(pack) -> float:
             f"(column sums {col[bad].tolist()}). The schema requires it "
             "(pack.py:545) and the FP normalisation is not checkable without "
             "it.")
+    if getattr(pack, "fp_eta_c", None) is None:
+        raise ContractViolation(
+            "fp_eta_c: the pack does not carry the per-observed-bin "
+            "host-occlusion vector (restoration 2026-08-06). Re-extract the "
+            "pack or migrate it explicitly (pack.attach_fp_eta_bands).")
     consts = _FoldFPConsts(kz_to_K=kz, fp_w=float(pack.fp_w_sightline_ratio),
-                           fp_ell_eff=ell, fp_E=E)
+                           fp_ell_eff=ell, fp_E=E,
+                           fp_eta_c=np.asarray(pack.fp_eta_c, float))
     log_t = np.zeros(int(kz.max()) + 1 if kz.size else 1)
     mu_fp = np.asarray(fold_mu_fp(log_t, fp_counts / ell, consts))
     return float(mu_fp.sum())
@@ -997,6 +1003,7 @@ class _FoldFPConsts:
     fp_w: float
     fp_ell_eff: float
     fp_E: np.ndarray
+    fp_eta_c: np.ndarray   # (C,) host-occlusion survival (restored 2026-08-06)
 
 
 def fp_normalisation_audit(pack) -> dict:
@@ -1021,20 +1028,34 @@ def fp_normalisation_audit(pack) -> dict:
     """
     w = float(pack.fp_w_sightline_ratio)
     ell = float(pack.fp_ell_eff)
+    if getattr(pack, "fp_eta_c", None) is None:
+        raise ContractViolation(
+            "fp_eta_c: the pack does not carry the per-observed-bin "
+            "host-occlusion vector (restoration 2026-08-06). Re-extract the "
+            "pack or migrate it explicitly (pack.attach_fp_eta_bands).")
+    eta_c = np.asarray(pack.fp_eta_c, float)
     n_fp = float(np.asarray(pack.fp_counts, float).sum())
     lam_tot = n_fp / ell
-    contract = w * ell * lam_tot                 # == w * n_fp
+    # the product's own definition (build_loa0_fp_product.py, restored
+    # 2026-08-06): mu_FP = w * ell * sum_cs (1 - eta_c) * lam[c,s]
+    #            == w * sum_c (1 - eta_c) * n0_row[c]
+    n_fp_surv = float(((1.0 - eta_c)[:, None]
+                       * np.asarray(pack.fp_counts, float)).sum())
+    contract = w * n_fp_surv
     folded = _fp_fold_total_through_forward(pack)
     return dict(
         n_fp_loa0=n_fp, fp_w_sightline_ratio=w, fp_ell_eff=ell,
         lam_total_plugin=lam_tot,
+        n_fp_eta_survived=n_fp_surv,
         mu_fp_total_as_folded=folded,
         mu_fp_total_per_contract=contract,
         ratio_contract_over_folded=(contract / folded if folded > 0 else np.inf),
-        mu_fp_total_if_ell_eff_omitted=w * lam_tot,
+        mu_fp_total_if_ell_eff_omitted=w * lam_tot * n_fp_surv / max(n_fp, 1e-300),
+        mu_fp_total_if_eta_omitted=w * n_fp,
         n_sl_loa0_implied=w * ell,
         fold_site="CDDF_analysis/hbi_mcmc/forward.py:fold_mu_fp — mu_fp = "
-                  "consts.fp_w * consts.fp_ell_eff * exp_t_k * lam_fp * fp_E. "
+                  "consts.fp_w * consts.fp_ell_eff * (1 - consts.fp_eta_c) "
+                  "* exp_t_k * lam_fp * fp_E. "
                   "MEASURED by calling it, not by reading it.",
     )
 
@@ -1588,8 +1609,12 @@ def _FITCOV_PROVENANCE(pack) -> dict:
 
 
 #: MEASURED per-candidate reference partition of the on-grid detections.  This
-#: is what the FP ceiling check compares against: mu_FP cannot exceed the
-#: number of on-grid candidates that have no genuine absorber at all.
+#: is what the hostless-census comparison reports against: the floor-17.2
+#: `unmatched` class.  CORRECTION (Phase-A adversarial review, frozen verdict,
+#: review/phaseA-adversarial-2026-08-05 @ a11dae0): this class is NOT a
+#: physical forest-FP ceiling — ~92% of it is genuine sub-floor detections —
+#: so "mu_FP cannot exceed it" was an estimand error, not a physical bound.
+#: Evidence: review_phaseA/fp_normalization/findings.md.
 _FP_CEILING_BUNDLE = ("truth floor 17.2, lya_only, op mask, on the pack grid "
                       "(N_hat in [19.5,22.4), z in [2.0,3.5))")
 _FP_CEILING_MEASURED_ON = (
@@ -1597,19 +1622,24 @@ _FP_CEILING_MEASURED_ON = (
     "host_truth_floor=17.2) + _snap_off_molly_edges, 11 s per mock")
 _FP_CEILING_NOTE = (
     "the four is_TP slots plus `unmatched` sum to the on-grid total EXACTLY. "
-    "`unmatched` is the ONLY slot a forest FP can come from, and it is an "
-    "OVER-count of the FP: it also holds blends, second candidates on an "
-    "already-claimed truth row, and matches beyond dz_rel (P6 sub-slot (c)). "
-    "So the ceiling is a LOWER BOUND on the excess, not an estimate of it. "
+    "CORRECTION (Phase-A, 2026-08-06): `unmatched` is the floor-17.2 HOSTLESS "
+    "class, not a forest-FP supply — ~92% of it is genuine sub-floor "
+    "detections, and after chance-coincidence correction mu_FP/supply = 1.002 "
+    "on 2LPT-0. It also holds blends, second candidates on an already-claimed "
+    "truth row, and matches beyond dz_rel (P6 sub-slot (c)). "
     "The 19.5-floor DETECTION bundle the pack itself uses has (on 2LPT-0) "
     "88071 on-grid rows with 24181 unmatched, but 4070+ of those are genuine "
     "absorbers the 19.5-floored truth table hid — see "
     "TRUTH_FLOOR_ASYMMETRY_IN_is_TP. The 17.2-floor `unmatched` is the "
-    "defensible ceiling.")
+    "defensible comparator, as a CENSUS, not as a ceiling. Evidence: "
+    "review_phaseA/fp_normalization/findings.md.")
 
 #: 🔴 RE-MEASURED 2026-08-05 on ALL THREE mocks.  The earlier table carried
 #: 2lpt0 only and ``fp_ceiling_audit`` returned "NOT MEASURED" for the other
-#: two, i.e. the check was UNAVAILABLE exactly where the violation is largest.
+#: two, i.e. the check was UNAVAILABLE exactly where the excess is largest.
+#: The mu_fp_per_contract / excess / excess_frac columns carry the
+#: (1-eta)-restored FP fold (2026-08-06), re-derived by running
+#: ``fp_normalisation_audit`` on each adopted pack.
 FP_CEILING_MEASURED = {
     "2lpt0": dict(
         bundle=_FP_CEILING_BUNDLE, measured=_FP_CEILING_MEASURED_ON,
@@ -1617,8 +1647,10 @@ FP_CEILING_MEASURED = {
         P1_true_19p0_to_19p7=15438, P2_true_19p7_to_21p6=55058,
         P6_true_above_21p6=497, P6_true_below_19p0=3200,
         unmatched=13860,
-        mu_fp_per_contract=14767.961419068737,
-        excess=907.9614190687371, excess_frac=0.06551,
+        # (1-eta) restoration 2026-08-06: was 14767.961419068737; x(1-0.005756532459300326) on the FP term
+        mu_fp_per_contract=14682.949169806607,
+        # (1-eta) restoration 2026-08-06: was 907.9614190687371 / 0.06551; x(1-0.005756532459300326) on the FP term
+        excess=822.9491698066067, excess_frac=0.05938,
         note=_FP_CEILING_NOTE,
     ),
     "london0": dict(
@@ -1627,8 +1659,10 @@ FP_CEILING_MEASURED = {
         P1_true_19p0_to_19p7=15834, P2_true_19p7_to_21p6=59186,
         P6_true_above_21p6=602, P6_true_below_19p0=2611,
         unmatched=9598,
-        mu_fp_per_contract=14716.376940133037,
-        excess=5118.376940133037, excess_frac=0.53328,
+        # (1-eta) restoration 2026-08-06: was 14716.376940133037; x(1-0.005756532459300326) on the FP term
+        mu_fp_per_contract=14631.66163859828,
+        # (1-eta) restoration 2026-08-06: was 5118.376940133037 / 0.53328; x(1-0.005756532459300326) on the FP term
+        excess=5033.66163859828, excess_frac=0.52445,
         note=_FP_CEILING_NOTE,
     ),
     "saclay0": dict(
@@ -1637,8 +1671,10 @@ FP_CEILING_MEASURED = {
         P1_true_19p0_to_19p7=15733, P2_true_19p7_to_21p6=57213,
         P6_true_above_21p6=539, P6_true_below_19p0=2668,
         unmatched=10592,
-        mu_fp_per_contract=14707.062527716187,
-        excess=4115.062527716187, excess_frac=0.38851,
+        # (1-eta) restoration 2026-08-06: was 14707.062527716187; x(1-0.005756532459300326) on the FP term
+        mu_fp_per_contract=14622.400844898844,
+        # (1-eta) restoration 2026-08-06: was 4115.062527716187 / 0.38851; x(1-0.005756532459300326) on the FP term
+        excess=4030.4008448988443, excess_frac=0.38051,
         note=_FP_CEILING_NOTE,
     ),
 }
@@ -1646,24 +1682,35 @@ FP_CEILING_MEASURED = {
 
 def fp_ceiling_audit(pack, *, mu_fp_per_contract, n_unmatched_on_grid=None,
                      mock=None) -> dict:
-    """HARD CONSISTENCY CHECK (referee M-B): can the mock SUPPLY that many FPs?
+    """ESTIMAND COMPARISON (referee M-B, corrected): mu_FP vs the floor-17.2
+    hostless census.
 
-    A forest false positive is, by definition, an on-grid op-passing candidate
-    with no genuine absorber.  So ``mu_FP`` cannot exceed the mock's own count
-    of UNMATCHED on-grid candidates — and even that is an over-count, since
-    blends and second candidates on a claimed truth row also land there.
+    🔴 CORRECTION (Phase-A adversarial review, frozen verdict,
+    review/phaseA-adversarial-2026-08-05 @ a11dae0).
+    PREVIOUSLY CLAIMED: "a forest FP is an on-grid candidate with no genuine
+    absorber, so mu_FP cannot exceed the mock's unmatched on-grid count" — a
+    physical forest-FP CEILING, reported as "VIOLATED".
+    WHY WRONG: the comparator is the floor-17.2 HOSTLESS class, ~92% of which
+    is genuine sub-floor detections, not forest FPs; after chance-coincidence
+    correction mu_FP/supply = 1.002 on 2LPT-0 (the calibration twin), so the
+    on-twin excess is an ESTIMAND ARTIFACT, not a physical violation.
+    Cross-mock, the excess reflects the unresolved transport systematic
+    (Layer C), which is a different object again.
+    REPLACED BY: this audit still runs the SAME numeric comparison (that is
+    its job — it guards that the comparison is REPORTED), but the verdict
+    string is "mu_fp_exceeds_hostless_census", never a physical-ceiling claim.
+    EVIDENCE: review_phaseA/fp_normalization/findings.md.
 
-    🔴 RE-MEASURED 2026-08-05 on ALL THREE mocks.  The ceiling is VIOLATED on
-    every one of them, and by far more than on the calibration mock:
+    RE-MEASURED 2026-08-06 with the (1-eta)-restored fold:
 
-        mock      on-grid   unmatched     mu_FP     excess    excess/ceiling
-        2lpt0       88053       13860   14767.96    +907.96      +6.55%
-        london0     87831        9598   14716.38   +5118.38     +53.33%
-        saclay0     86745       10592   14707.06   +4115.06     +38.85%
+        mock      on-grid   unmatched     mu_FP     excess    excess/census
+        2lpt0       88053       13860   14682.95    +822.95      +5.94%
+        london0     87831        9598   14631.66   +5033.66     +52.45%
+        saclay0     86745       10592   14622.40   +4030.40     +38.05%
 
     An earlier version of this table held 2LPT-0 alone, so the check returned
     "NOT MEASURED" on london0 and saclay0 — i.e. it was UNAVAILABLE exactly
-    where the violation is 5x larger.  Every partition sums to its on-grid
+    where the excess is 5x larger.  Every partition sums to its on-grid
     total exactly; see FP_CEILING_MEASURED for the four is_TP slots.
     """
     if mock is None:
@@ -1681,14 +1728,24 @@ def fp_ceiling_audit(pack, *, mu_fp_per_contract, n_unmatched_on_grid=None,
                            "17.2-floor bundle has not been run. The check is "
                            "UNAVAILABLE, not passed.")
     ceil_ = float(n_unmatched_on_grid)
+    # Phase-A correction 2026-08-06: the numeric comparison is UNCHANGED; only
+    # the verdict language moved from a physical-ceiling claim ("VIOLATED")
+    # to the estimand statement. See the docstring's correction block.
     return dict(mock=mock, mu_fp_per_contract=mu, ceiling=ceil_,
                 excess=mu - ceil_, ratio=mu / ceil_ if ceil_ else np.inf,
                 exceeds_ceiling=bool(mu > ceil_),
                 reference=ref,
-                status=("VIOLATED: the contract's own mu_FP exceeds the total "
-                        "number of on-grid candidates the mock has available "
-                        "to be false positives" if mu > ceil_ else
-                        "within the ceiling"))
+                status=("mu_fp_exceeds_hostless_census: the contract's mu_FP "
+                        "exceeds the mock's floor-17.2 hostless-class census "
+                        "(unmatched on-grid candidates). NOT a physical "
+                        "forest-FP ceiling: ~92% of that class is genuine "
+                        "sub-floor detections; on the calibration twin the "
+                        "excess is resolved by chance-coincidence correction "
+                        "(mu_FP/supply = 1.002), and cross-mock it reflects "
+                        "the unresolved transport systematic (Layer C). See "
+                        "review_phaseA/fp_normalization/findings.md."
+                        if mu > ceil_ else
+                        "mu_fp_within_hostless_census"))
 
 
 def _truth_ledger_value_guards(T, C_bs, rho, rho_bks, kz,
@@ -1785,8 +1842,9 @@ def check_accounting_identity(pack, *, resp_clamp="both",
       * ``prior_cost`` — how many sigma of the model's own declared nuisances
         it takes to close the counts.  NOT a feasibility verdict; the module
         no longer emits one (referee C3).
-      * ``fp_ceiling`` — whether the recommended mu_FP even fits inside the
-        mock's supply of unmatched candidates.
+      * ``fp_ceiling`` — the hostless-census comparison: mu_FP vs the mock's
+        floor-17.2 unmatched class. An ESTIMAND comparison, not a physical
+        forest-FP ceiling (Phase-A 2026-08-06 — see ``fp_ceiling_audit``).
     """
     geom = validate_pack_against_contract(pack, **validate_kw) if validate else {}
 
@@ -1887,15 +1945,22 @@ def check_accounting_identity(pack, *, resp_clamp="both",
                    "2lpt0 +882.30, london0 -3287.42, saclay0 -2079.08. It was "
                    "previously emitted with no comment at all (referee M-B)."))
     if fp_ceil.get("exceeds_ceiling"):
+        # Phase-A correction 2026-08-06: same trigger condition and value;
+        # the id/detail no longer assert a physical forest-FP-supply ceiling
+        # (rejected interpretation — see fp_ceiling_audit's docstring).
         flags.append(dict(
-            id="MU_FP_EXCEEDS_THE_MOCK_FP_SUPPLY",
+            id="MU_FP_EXCEEDS_THE_HOSTLESS_CENSUS",
             value=float(fp_ceil["excess"]),
             detail=f"mu_FP_per_contract = {fp_ceil['mu_fp_per_contract']:.2f} "
                    f"exceeds the mock's {fp_ceil['ceiling']:.0f} unmatched "
-                   "on-grid candidates. No partition of the mock can supply "
-                   "that many forest FPs, and the ceiling is itself an "
-                   "over-count (it includes blends and second candidates). "
-                   "See fp_ceiling.reference (referee M-B)."))
+                   "on-grid candidates (the floor-17.2 hostless census, "
+                   "~92% genuine sub-floor detections — NOT a forest-FP "
+                   "supply). On the calibration twin the excess is an "
+                   "estimand artifact resolved by chance-coincidence "
+                   "correction; cross-mock it reflects the unresolved "
+                   "transport systematic (Layer C). See fp_ceiling.reference "
+                   "(referee M-B; Phase-A verdict "
+                   "review_phaseA/fp_normalization/findings.md)."))
     if flags and strict:
         raise ContractViolation(
             "check_accounting_identity(strict=True): "

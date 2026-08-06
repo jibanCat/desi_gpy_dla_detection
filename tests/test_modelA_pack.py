@@ -314,6 +314,9 @@ def _tiny_frozen():
         fwd_meta=dict(path="<synthetic>", z_covariate="zqso",
                       fwd_response_kind="skewnormal", deg_N=2),
         fp_counts=np.zeros((EP.N_C, EP.N_S), dtype=np.int64),
+        # fp_eta_c restoration (2026-08-06): the frozen block now carries the
+        # per-observed-bin host-occlusion vector.
+        fp_eta_c=np.zeros(EP.N_C),
         fp_prov=dict(product="<synthetic>", loa0_out="<synthetic>",
                      n_sl_loa0=1000.0),
         t_sigma=np.full(EP.N_KC, 0.10), t_sigma_detail={},

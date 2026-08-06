@@ -5,9 +5,15 @@ The expected-count fold (spec section 2, per calibration context):
     mu[c,k,s] = dX[k,s] * sum_b K[c<-b](psi_k_delta; s, kz_to_K[k])
                           * C[b->cell,s](psi_c) * g[b,k]
                           * exp(theta_pop[b,k]) * dN_b
-              + w * ell_eff * exp(t[kz_to_K[k]]) * lam_fp[c,s] * E[k,s]
+              + w * ell_eff * (1 - eta_c[c]) * exp(t[kz_to_K[k]]) * lam_fp[c,s] * E[k,s]
 
-The ``ell_eff`` factor in the FP term is NOT decoration (repaired 2026-08-05).
+The ``ell_eff`` factor in the FP term is NOT decoration (repaired 2026-08-05),
+and ``(1 - eta_c)`` is the host-occlusion survival of the product's own
+definition (restored 2026-08-06, PI ruling 8): a forest FP can only occur in
+un-occluded forest, so the production-volume expectation carries
+``(1 - eta_band)`` per observed band (eta_DLA == 0 forced by the product;
+eta_subdla = 0.00576). The loa-0 calibration side carries NO eta — loa-0 is
+HCD-free, nothing occludes.
 ``lam_fp`` is defined by the loa-0 calibration likelihood
 
     fp_counts[c,s] ~ Poisson(fp_ell_eff * lam_fp[c,s])        (model_a.py)
@@ -233,6 +239,7 @@ class ModelAConsts:
     fp_w: float
     fp_ell_eff: float
     fp_E: jnp.ndarray            # (Kf, S)
+    fp_eta_c: jnp.ndarray        # (C,) host-occlusion fraction per observed bin
     t_sigma: jnp.ndarray         # (KK,)
     # dims
     n_c: int
@@ -254,8 +261,21 @@ _CLAMP_MODES = ("both", "hi", "off")
 
 
 def build_consts(pack: ModelAPack, *, resp_clamp: str = "both",
-                 allow_unclamped_response: bool = False) -> ModelAConsts:
+                 allow_unclamped_response: bool = False,
+                 allow_missing_fp_eta: bool = False) -> ModelAConsts:
     """Precompute the static fold inputs (index maps, powers, Jeffreys eta-hat).
+
+    FAIL-CLOSED on the FP host-occlusion vector (restoration 2026-08-06, PI
+    ruling 8): the pack MUST carry ``fp_eta_c`` — the per-observed-bin
+    host-occlusion fraction of the loa-0 FP product's own definition
+    (``build_loa0_fp_product.py``: a forest FP can only occur in un-occluded
+    forest, so the transported production expectation carries ``(1 − η_band)``
+    per band, with ``η_DLA ≡ 0`` forced). Until 2026-08-06 the fold carried
+    this factor ZERO times while the product definition it implements carries
+    it once (+0.58% bias on the sub-DLA-band FP term).
+    ``allow_missing_fp_eta=True`` admits a pack extracted before 2026-08-06
+    and sets η ≡ 0 — it exists so diagnostics can reproduce the pre-restoration
+    numbers, not so production can skip the factor.
 
     FAIL-CLOSED on the response covariate reference (fix F1/F1b): the pack
     MUST carry ``resp_N_ref`` — the reference N the coefficient polynomials
@@ -308,6 +328,27 @@ def build_consts(pack: ModelAPack, *, resp_clamp: str = "both",
                 "resp_N_fit_range), or pass allow_unclamped_response=True to "
                 "REPRODUCE the pre-fix behaviour in a diagnostic.")
         resp_clamp = "off"
+    if getattr(pack, "fp_eta_c", None) is None:
+        if not allow_missing_fp_eta:
+            raise ValueError(
+                "build_consts: pack.fp_eta_c is None — the per-observed-bin "
+                "host-occlusion fraction of the loa-0 FP product definition "
+                "(mu_FP ∝ (1 − η_band)) is REQUIRED (restoration 2026-08-06, "
+                "PI ruling 8). Re-extract the pack (extract_pack emits it "
+                "from the product's band_eta_per_nbin), or pass "
+                "allow_missing_fp_eta=True to REPRODUCE the pre-restoration "
+                "behaviour (η ≡ 0) in a diagnostic.")
+        fp_eta_c = np.zeros(pack.n_c, float)
+    else:
+        fp_eta_c = np.asarray(pack.fp_eta_c, float)
+        if fp_eta_c.shape != (pack.n_c,):
+            raise ValueError(
+                f"build_consts: fp_eta_c has shape {fp_eta_c.shape}, "
+                f"expected ({pack.n_c},)")
+        if np.any(~np.isfinite(fp_eta_c)) or np.any(fp_eta_c < 0) \
+                or np.any(fp_eta_c >= 1):
+            raise ValueError(
+                "build_consts: fp_eta_c must be finite with 0 <= eta < 1")
     ntrue = np.asarray(pack.ntrue_edges, float)
     Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
     dN = np.diff(ntrue)
@@ -402,6 +443,7 @@ def build_consts(pack: ModelAPack, *, resp_clamp: str = "both",
         fp_w=float(pack.fp_w_sightline_ratio),
         fp_ell_eff=float(pack.fp_ell_eff),
         fp_E=jnp.asarray(pack.fp_E_alloc, float),
+        fp_eta_c=jnp.asarray(fp_eta_c, float),
         t_sigma=jnp.asarray(pack.t_sigma, float),
         n_c=pack.n_c, n_b=pack.n_b, n_k=pack.n_k, n_kk=pack.n_kk,
         n_s=pack.n_s, n_molly=pack.n_molly,
@@ -455,8 +497,8 @@ def build_K(psi_k_delta, consts: ModelAConsts):
 def fold_mu_fp(log_t, lam_fp, consts: ModelAConsts):
     """THE false-positive term of the fold. One definition, one call site each.
 
-        mu_FP[c,k,s] = fp_w * fp_ell_eff * exp(t[kz_to_K[k]])
-                       * lam_fp[c,s] * fp_E[k,s]
+        mu_FP[c,k,s] = fp_w * fp_ell_eff * (1 - fp_eta_c[c])
+                       * exp(t[kz_to_K[k]]) * lam_fp[c,s] * fp_E[k,s]
 
     Extracted 2026-08-05 (behaviour-preserving; ``fold_mu`` calls it and the
     expression is byte-for-byte the one it used to inline).  It exists because
@@ -484,7 +526,13 @@ def fold_mu_fp(log_t, lam_fp, consts: ModelAConsts):
     exp_t_k = jnp.exp(jnp.asarray(log_t))[consts.kz_to_K]  # (Kf,)
     # fp_w * fp_ell_eff == N_sl_loa0 exactly; see the module docstring for why
     # fp_ell_eff must be here (lam_fp is per unit loa-0 exposure, not a count).
-    return consts.fp_w * consts.fp_ell_eff * exp_t_k[None, :, None] \
+    # (1 - fp_eta_c): host-occlusion survival per observed bin — the product's
+    # own definition (a forest FP can only occur in un-occluded forest); the
+    # loa-0 calibration side (Poisson(ell_eff * lam)) correctly does NOT carry
+    # it, because loa-0 has no HCDs to occlude. Restored 2026-08-06.
+    return consts.fp_w * consts.fp_ell_eff \
+        * (1.0 - consts.fp_eta_c)[:, None, None] \
+        * exp_t_k[None, :, None] \
         * jnp.asarray(lam_fp)[:, None, :] * consts.fp_E[None, :, :]
 
 
@@ -527,7 +575,8 @@ def fold_mu(theta_pop, psi_c, psi_k_delta, log_t, lam_fp, consts: ModelAConsts):
 
 def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
                       pack: ModelAPack, resp_clamp="both",
-                      allow_unclamped_response=False):
+                      allow_unclamped_response=False,
+                      allow_missing_fp_eta=False):
     """Plain-numpy oracle of the SAME fold expression, computed cell by cell."""
     from scipy.special import ndtr, owens_t, expit
 
@@ -611,6 +660,19 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
     # the loa-0 exposure lam_fp is defined per (see the module docstring); the
     # FP term is under-normalised by exactly this factor without it
     ell = float(pack.fp_ell_eff)
+    # host-occlusion survival per observed bin (own logic, independent of
+    # build_consts): the product's mu_FP definition carries (1 - eta_band).
+    if getattr(pack, "fp_eta_c", None) is None:
+        if not allow_missing_fp_eta:
+            raise ValueError(
+                "fold_mu_reference: pack.fp_eta_c is None — REQUIRED "
+                "(restoration 2026-08-06); pass allow_missing_fp_eta=True to "
+                "reproduce the pre-restoration behaviour in a diagnostic.")
+        eta_c = np.zeros(C_n, float)
+    else:
+        eta_c = np.asarray(pack.fp_eta_c, float)
+        if eta_c.shape != (C_n,) or np.any(eta_c < 0) or np.any(eta_c >= 1):
+            raise ValueError("fold_mu_reference: bad fp_eta_c")
     sig_floor = float(pack.resp_sig_floor)
     ramp_c, ramp_w = [float(v) for v in np.asarray(pack.resp_skew_ramp, float)]
 
@@ -672,5 +734,6 @@ def fold_mu_reference(theta_pop, psi_c, psi_k_delta, log_t, lam_fp,
                     acc += (mass * C_cells[s, b2cell[b]] * g[b2cell[b], k]
                             * f[b, k] * dN[b])
                 mu[c, k, s] = dX[k, s] * acc \
-                    + w * ell * np.exp(log_t[Kc]) * lam_fp[c, s] * E[k, s]
+                    + w * ell * (1.0 - eta_c[c]) * np.exp(log_t[Kc]) \
+                    * lam_fp[c, s] * E[k, s]
     return mu

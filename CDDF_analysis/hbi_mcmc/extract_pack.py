@@ -701,7 +701,26 @@ def build_fp_block(loa0_out: str = DEF_LOA0_OUT,
                      f"{lya_min} and were checked there."),
         axes="fp_counts is (c=29, s=8) — schema global axis order c,b,k,K,s",
     )
-    return fp_counts, loa0, prov
+
+    # --- per-observed-bin host-occlusion vector (restoration 2026-08-06,
+    # PI ruling 8). The product's own mu_FP definition carries (1 - eta_band)
+    # per fine N bin (band_eta_per_nbin; eta_DLA == 0 forced by the product).
+    # Map onto the schema's observed N-hat bins, asserting band constancy
+    # within every pack bin so a band boundary can never be silently averaged.
+    from CDDF_analysis.hbi_mcmc.pack import eta_from_intervals
+    fp_eta_c = eta_from_intervals(
+        NHAT_EDGES,
+        np.asarray(prod["logN_lo"], float),
+        np.asarray(prod["logN_hi"], float),
+        np.asarray(prod["band_eta_per_nbin"], float))
+    prov["fp_eta_c"] = dict(
+        source="product band_eta_per_nbin (host-occlusion; eta_DLA==0 forced)",
+        eta_values=sorted({float(v) for v in fp_eta_c}),
+        note=("per-observed-bin (1 - eta) survival applied ONCE in the fold "
+              "(forward.fold_mu_fp); the loa-0 calibration side carries no "
+              "eta (loa-0 is HCD-free). Restored 2026-08-06."),
+    )
+    return fp_counts, fp_eta_c, loa0, prov
 
 
 # ---------------------------------------------------------------------------
@@ -1022,6 +1041,7 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
         **frozen["fwd"],
         # loa-0 FP
         fp_counts=frozen["fp_counts"],              # (c,s) int64
+        fp_eta_c=frozen["fp_eta_c"],                # (c,) host-occlusion eta
         fp_ell_eff=np.float64(fp_ell),
         fp_w_sightline_ratio=np.float64(fp_w),
         fp_E_alloc=fp_E_alloc,                      # (k,s)
@@ -1247,7 +1267,7 @@ def build_frozen_calibration(out_dir: str, completeness="const_extrap",
     t_sigma, t_detail = compute_t_sigma()
     molly, molly_prov, mm_alt = load_molly_counts_block(convention=completeness,
                                                        window=window)
-    fp_counts, _loa0, fp_prov = build_fp_block(window=window)
+    fp_counts, fp_eta_c, _loa0, fp_prov = build_fp_block(window=window)
     bundle0 = load_mock_bundle("2lpt0", out_dir, window=window)
     g_available = True
     try:
@@ -1279,7 +1299,7 @@ def build_frozen_calibration(out_dir: str, completeness="const_extrap",
             f"{len(molly['molly_nhi_edges']) - 1}")
     return dict(fwd=fwd, fwd_meta=fwd_meta, t_sigma=t_sigma,
                 t_sigma_detail=t_detail, molly=molly, molly_prov=molly_prov,
-                fp_counts=fp_counts, fp_prov=fp_prov,
+                fp_counts=fp_counts, fp_eta_c=fp_eta_c, fp_prov=fp_prov,
                 g_grid=g_grid, g_occupancy=g_occ, g_available=g_available,
                 completeness_convention=completeness,
                 analysis_window=window, window_spec=w,

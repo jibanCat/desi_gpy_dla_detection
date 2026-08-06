@@ -29,6 +29,12 @@ from CDDF_analysis.hbi_mcmc.pack import (  # noqa: E402
     ModelAPack, PackSchemaError, load_pack, save_pack, small_test_grid,
     synthetic_pack)
 
+# 2026-08-06 (fp_eta_c restoration): legacy fixture packs predate the schema
+# field; migrate them EXPLICITLY at the test boundary (idempotent; values
+# identical to a fresh extraction — pack.FP_ETA_BANDS_COMMITTED).
+from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _attach_fp_eta
+load_pack = (lambda _f: (lambda *a, **k: _attach_fp_eta(_f(*a, **k))))(load_pack)
+
 SEED = 0
 
 
@@ -364,7 +370,14 @@ def test_folded_fp_total_on_extracted_packs(path):
     populated = E.sum(axis=0) > 0
     assert fp[:, ~populated].sum() == 0.0
     got = _fp_only_total(pk)
-    want = float(pk.fp_w_sightline_ratio) * float(fp.sum())
+    # (1 - eta) restoration (2026-08-06, PI ruling 8): the folded total now
+    # carries the host-occlusion survival per observed bin. On the committed
+    # calibration all 89 events sit below N-hat 20.3, so the total is
+    # fp_w * (1 - eta_subdla) * 89 = 14682.949... (was 14767.961 before the
+    # restoration; the pre-2026-08-05 defect value 1086.687 still goes red).
+    eta_c = np.asarray(pk.fp_eta_c, float)
+    want = float(pk.fp_w_sightline_ratio) * float(
+        ((1.0 - eta_c)[:, None] * fp).sum())
     np.testing.assert_allclose(got, want, rtol=1e-12)
 
 

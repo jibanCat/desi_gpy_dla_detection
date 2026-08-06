@@ -52,16 +52,28 @@ def _fake_pack(*, ntrue=None, nhat=None, molly=None, n_b=None, n_k=3, n_s=2,
                truth_bks=True, counts=None, fp_counts=None,
                fp_ell_eff=13.589891949531905, fp_w=165.93215077605322,
                molly_n_det=None, molly_n_tot=None, kz=None, t_sigma=None,
-               mock=None, fp_E_alloc=None):
+               mock=None, fp_E_alloc=None, fp_eta_c=None):
     """A minimal duck-typed pack.
 
     ``validate_pack_against_contract`` / ``fp_normalisation_audit`` /
     ``check_accounting_identity(row_mass=...)`` touch only these fields, so a
     namespace is enough and the tests stay fast and survey-free.
+
+    2026-08-06 (fp_eta_c restoration): the schema now REQUIRES the
+    per-observed-bin host-occlusion vector, so the fake pack carries it too —
+    derived from the committed loa-0 band table exactly as the explicit
+    legacy-pack migration (``pack.attach_fp_eta_bands``) would derive it.
     """
     ntrue = ADOPTED_NTRUE if ntrue is None else np.asarray(ntrue, float)
     nhat = REAL_NHAT if nhat is None else np.asarray(nhat, float)
     molly = MOLLY172 if molly is None else np.asarray(molly, float)
+    if fp_eta_c is None:
+        from CDDF_analysis.hbi_mcmc.pack import (
+            FP_ETA_BANDS_COMMITTED, eta_from_intervals)
+        fp_eta_c = eta_from_intervals(nhat,
+                                      [b[0] for b in FP_ETA_BANDS_COMMITTED],
+                                      [b[1] for b in FP_ETA_BANDS_COMMITTED],
+                                      [b[2] for b in FP_ETA_BANDS_COMMITTED])
     B = len(ntrue) - 1 if n_b is None else n_b
     M = len(molly) - 1
     nd = np.full((n_s, M), 60.0) if molly_n_det is None else np.asarray(molly_n_det, float)
@@ -78,6 +90,7 @@ def _fake_pack(*, ntrue=None, nhat=None, molly=None, n_b=None, n_k=3, n_s=2,
         fp_E_alloc=(np.full((n_k, n_s), 1.0 / n_k) if fp_E_alloc is None
                     else np.asarray(fp_E_alloc, float)),
         molly_n_det=nd, molly_n_tot=nt,
+        fp_eta_c=np.asarray(fp_eta_c, float),
         t_sigma=(np.array([0.1, 0.1, 0.1]) if t_sigma is None
                  else np.asarray(t_sigma, float)),
         provenance=(dict(mock=mock) if mock else dict()),
@@ -372,28 +385,36 @@ def _fp_only_pack(n_fp=89):
 
 def test_fp_normalisation_audit_reproduces_the_pack_scalars():
     """MEASURED on all three ADOPTED packs: fp_w * fp_ell_eff == 2255.0 exactly
-    (== N_sl_loa0), and the contract total is fp_w * N_FP.
+    (== N_sl_loa0), and the contract total is fp_w * sum_c (1-eta_c) * N_FP[c]
+    (the (1-eta) host-occlusion factor restored 2026-08-06, PI ruling 8).
 
     ``mu_fp_total_as_folded`` is obtained by CALLING ``forward.fold_mu_fp``,
     which is the whole point: the previous version hard-coded a reading of the
     fold's source and went stale the moment the fold was repaired.
 
-    MUTATION: change ``contract = w * ell * lam_tot`` to ``w * lam_tot`` in
+    MUTATION: change ``contract = w * n_fp_surv`` to ``w * lam_tot`` in
     ``fp_normalisation_audit``. MEASURED baseline: the contract total drops
-    14767.961419068737 -> 1086.6871844096897, the ratio goes 1.0 ->
+    14682.949169806607 -> 1080.431634359856, the ratio goes 1.0 ->
     0.07358272..., and ``assert_forward_fp_normalisation`` starts raising on
     the CORRECT fold."""
     a = MC.fp_normalisation_audit(_fp_only_pack())
     assert a["n_sl_loa0_implied"] == pytest.approx(2255.0, abs=1e-9)
+    # (1-eta) restoration 2026-08-06: was 165.93215077605322 * 89.0; x(1-0.005756532459300326) on the FP term
     assert a["mu_fp_total_per_contract"] == pytest.approx(
-        165.93215077605322 * 89.0, rel=1e-12)
+        14682.949169806609, rel=1e-12)
     # the COMMITTED fold agrees with the contract, to float round-off
+    # (1-eta) restoration 2026-08-06: was 14767.961419068737; x(1-0.005756532459300326) on the FP term
     assert a["mu_fp_total_as_folded"] == pytest.approx(
-        14767.961419068737, rel=1e-12)
+        14682.949169806609, rel=1e-12)
     assert a["ratio_contract_over_folded"] == pytest.approx(1.0, abs=1e-9)
+    # the pre-restoration total survives ONLY as a labelled counterfactual
+    assert a["mu_fp_total_if_eta_omitted"] == pytest.approx(
+        14767.961419068737, rel=1e-12)
     # the pre-repair value survives ONLY as a labelled counterfactual
+    # (1-eta) restoration 2026-08-06: was 1086.6871844096897; x(1-0.005756532459300326) on the FP term
     assert a["mu_fp_total_if_ell_eff_omitted"] == pytest.approx(
-        1086.6871844096897, rel=1e-9)
+        1080.431634359856, rel=1e-9)
+    # the omission ratio is UNCHANGED by the common (1-eta) factor
     assert (a["mu_fp_total_per_contract"]
             / a["mu_fp_total_if_ell_eff_omitted"]) == pytest.approx(
         13.589891949531905, rel=1e-9)
@@ -424,10 +445,11 @@ def test_assert_forward_fp_normalisation_raises_if_the_omission_RETURNS():
     ``fp_ell_eff`` is dropped from the fold's expression by patching
     ``forward.fold_mu_fp`` — the single site the FP term is defined at since
     2b436df, and the site ``matching_contract`` imports lazily at call time.
-    MEASURED baseline on this fake pack: the folded total falls
-    14767.961419068737 -> 1086.6871844096897, the ratio comes back exactly
-    fp_ell_eff = 13.589891949531905, and the message names the resolved
-    record.
+    MEASURED baseline on this fake pack ((1-eta) restoration 2026-08-06: was
+    14767.961419068737 -> 1086.6871844096897): the folded total falls
+    14682.949169806607 -> 1080.431634359856, the ratio comes back exactly
+    fp_ell_eff = 13.589891949531905 — UNCHANGED by the common (1-eta)
+    factor — and the message names the resolved record.
 
     MUTATION: widen ``rtol`` to 1e2, or drop the ``ratio != 1`` test. MEASURED
     baseline: a 13.6x under-normalisation stops being reported. MUTATION:
@@ -457,7 +479,11 @@ def test_assert_forward_fp_normalisation_raises_if_the_omission_RETURNS():
         msg = str(e.value)
         assert "RE-INTRODUCED" in msg
         assert "FP_ELL_EFF_OMITTED" in msg
-        assert "1086.687" in msg and "14767.961" in msg
+        # (1-eta) restoration 2026-08-06: was "1086.687" and "14767.961"; x(1-0.005756532459300326) on the FP term
+        # (message strings verified by RUNNING the raise: "... contract total
+        # is 14682.9492 and the total the COMMITTED forward.fold_mu_fp
+        # produces is 1080.4316 ...")
+        assert "1080.431" in msg and "14682.949" in msg
         a = MC.fp_normalisation_audit(pk)
         assert a["ratio_contract_over_folded"] == pytest.approx(
             13.589891949531905, rel=1e-9)
@@ -882,45 +908,68 @@ def test_fitcov_provenance_travels_with_every_psi_k_cost():
 
 
 # ===========================================================================
-# 8. M-B: the FP ceiling and the negative implied population
+# 8. M-B (corrected): the hostless-census comparison and the negative implied
+#    population
 # ===========================================================================
-def test_fp_ceiling_audit_refuses_a_mu_fp_above_the_mock_supply():
-    """REFEREE M-B. A forest FP is an on-grid candidate with NO genuine
-    absorber, so mu_FP cannot exceed the mock's own unmatched on-grid count.
+def test_fp_hostless_audit_flags_a_mu_fp_above_the_hostless_census():
+    """REFEREE M-B, CORRECTED by the Phase-A adversarial review (frozen
+    verdict, review/phaseA-adversarial-2026-08-05 @ a11dae0).
+
+    PREVIOUSLY CLAIMED here: "a forest FP is an on-grid candidate with NO
+    genuine absorber, so mu_FP cannot exceed the mock's unmatched on-grid
+    count" — a physical forest-FP ceiling, reported VIOLATED.
+    WHY WRONG: the comparator is the floor-17.2 HOSTLESS class (~92% genuine
+    sub-floor detections), not a forest-FP supply; after chance-coincidence
+    correction mu_FP/supply = 1.002 on the calibration twin.
+    REPLACED BY: the audit still runs the SAME numeric comparison and flags
+    mu_FP > census — this test guards that the comparison is REPORTED — but
+    the verdict string is "mu_fp_exceeds_hostless_census", never a physical
+    claim. EVIDENCE: review_phaseA/fp_normalization/findings.md.
 
     MEASURED 2026-08-05 on the 2LPT-0 17.2-floor bundle
     (load_and_cut_catalog(truth_nhi_floor=17.2), 11 s): the 88053 on-grid
     op-passing candidates split 15438 / 55058 / 497 / 3200 / 13860 into
     (true N in [19.0,19.7)) / ([19.7,21.6)) / (>= 21.6) / (< 19.0) /
-    (unmatched), summing to 88053 exactly. The contract's own recommended
-    mu_FP_per_contract = 14767.96 EXCEEDS the 13860 by 907.96 — and 13860 is
-    already an OVER-count, since blends and second candidates on a claimed
-    truth row also land there.
+    (unmatched), summing to 88053 exactly. With the (1-eta)-restored fold the
+    contract's mu_FP_per_contract = 14682.95 exceeds the 13860 by 822.95.
 
     MUTATION: change ``exceeds_ceiling`` to ``mu >= 2 * ceil_``. MEASURED
-    baseline: the audit stops reporting VIOLATED on 14767.96 vs 13860."""
+    baseline: the audit stops reporting the excess on 14682.95 vs 13860."""
     ref = MC.FP_CEILING_MEASURED["2lpt0"]
     assert (ref["P1_true_19p0_to_19p7"] + ref["P2_true_19p7_to_21p6"]
             + ref["P6_true_above_21p6"] + ref["P6_true_below_19p0"]
             + ref["unmatched"]) == ref["n_on_grid"] == 88053
     a = MC.fp_ceiling_audit(_fake_pack(mock="2lpt0"),
-                            mu_fp_per_contract=14767.961419068737)
+                            # (1-eta) restoration 2026-08-06: was 14767.961419068737; x(1-0.005756532459300326) on the FP term
+                            mu_fp_per_contract=14682.949169806607)
     assert a["ceiling"] == 13860.0
     assert a["exceeds_ceiling"] is True
-    assert a["excess"] == pytest.approx(907.961419, abs=1e-4)
-    assert "VIOLATED" in a["status"]
+    # (1-eta) restoration 2026-08-06: was 907.961419; x(1-0.005756532459300326) on the FP term
+    assert a["excess"] == pytest.approx(822.949170, abs=1e-4)
+    assert "mu_fp_exceeds_hostless_census" in a["status"]
+    assert "VIOLATED" not in a["status"]          # the rejected physical claim
     # a mock with no measured census reports UNAVAILABLE, never a silent pass
     b = MC.fp_ceiling_audit(_fake_pack(mock="not_a_mock"),
                             mu_fp_per_contract=1e9)
     assert b["exceeds_ceiling"] is None and "NOT MEASURED" in b["status"]
 
 
-def test_the_fp_ceiling_is_measured_and_VIOLATED_on_all_three_mocks():
+def test_the_hostless_comparison_is_measured_on_all_three_mocks():
     """The census used to exist for 2LPT-0 only, so ``fp_ceiling_audit``
     returned "NOT MEASURED" on london0 and saclay0 — UNAVAILABLE exactly where
-    the violation is largest.
+    the excess is largest.
 
-    RE-MEASURED 2026-08-05, 17.2-truth-floor bundle
+    CORRECTED (Phase-A adversarial review, frozen verdict,
+    review/phaseA-adversarial-2026-08-05 @ a11dae0): this test previously
+    asserted the excess as a physical forest-FP-ceiling VIOLATION. The
+    comparator is the floor-17.2 hostless class (~92% genuine sub-floor
+    detections); on the calibration twin the excess is an estimand artifact
+    resolved by chance-coincidence correction (mu_FP/supply = 1.002), and
+    cross-mock it reflects the unresolved transport systematic (Layer C).
+    The COMPARISON stays measured and reported; the claim does not. Evidence:
+    review_phaseA/fp_normalization/findings.md.
+
+    Census RE-MEASURED 2026-08-05, 17.2-truth-floor bundle
     (load_and_cut_catalog(truth_nhi_floor=17.2, host_truth_floor=17.2) +
     _snap_off_molly_edges, ~11 s per mock), op mask, on the pack grid
     (N_hat in [19.5,22.4), z in [2.0,3.5)). Every partition sums EXACTLY to its
@@ -931,20 +980,22 @@ def test_the_fp_ceiling_is_measured_and_VIOLATED_on_all_three_mocks():
         london0    87831      15834        59186         602    2611      9598
         saclay0    86745      15733        57213         539    2668     10592
 
-        mock      mu_FP_per_contract     excess        excess/ceiling
-        2lpt0        14767.961419        + 907.961         + 6.55%
-        london0      14716.376940        +5118.377         +53.33%
-        saclay0      14707.062528        +4115.063         +38.85%
+    mu_FP re-derived 2026-08-06 by running ``fp_normalisation_audit`` on each
+    adopted pack with the (1-eta)-restored fold:
 
-    ``unmatched`` also holds blends and second candidates, so every excess is a
-    LOWER BOUND.
+        mock      mu_FP_per_contract     excess        excess/census
+        2lpt0        14682.949170        + 822.949         + 5.94%
+        london0      14631.661639        +5033.662         +52.45%
+        saclay0      14622.400845        +4030.401         +38.05%
 
     MUTATION: delete the london0 and saclay0 entries from
     ``FP_CEILING_MEASURED``. MEASURED baseline: both come back "NOT MEASURED"
-    and the two largest violations (+53% and +39%) stop being reported."""
-    want = {"2lpt0": (88053, 15438, 55058, 497, 3200, 13860, 14767.961419068737),
-            "london0": (87831, 15834, 59186, 602, 2611, 9598, 14716.376940133037),
-            "saclay0": (86745, 15733, 57213, 539, 2668, 10592, 14707.062527716187)}
+    and the two largest excesses (+52% and +38%) stop being reported."""
+    # (1-eta) restoration 2026-08-06: mu was 14767.961419068737 / 14716.376940133037
+    # / 14707.062527716187; x(1-0.005756532459300326) on the FP term
+    want = {"2lpt0": (88053, 15438, 55058, 497, 3200, 13860, 14682.949169806607),
+            "london0": (87831, 15834, 59186, 602, 2611, 9598, 14631.66163859828),
+            "saclay0": (86745, 15733, 57213, 539, 2668, 10592, 14622.400844898844)}
     assert set(MC.FP_CEILING_MEASURED) == set(want)
     for m, (tot, p1, p2, hi, lo, unm, mu) in want.items():
         r = MC.FP_CEILING_MEASURED[m]
@@ -953,20 +1004,24 @@ def test_the_fp_ceiling_is_measured_and_VIOLATED_on_all_three_mocks():
                 r["P6_true_below_19p0"], r["unmatched"]) == \
             (tot, p1, p2, hi, lo, unm), m
         assert p1 + p2 + hi + lo + unm == tot, m
+        assert r["mu_fp_per_contract"] == mu, m
         a = MC.fp_ceiling_audit(_fake_pack(mock=m), mu_fp_per_contract=mu)
         assert a["ceiling"] == float(unm), m
         assert a["exceeds_ceiling"] is True, m
         assert a["excess"] == pytest.approx(mu - unm, rel=1e-9), m
-        assert "VIOLATED" in a["status"], m
-    # the two transfer mocks are the WORSE violations, which is the finding
+        assert "mu_fp_exceeds_hostless_census" in a["status"], m
+        assert "VIOLATED" not in a["status"], m   # the rejected physical claim
+    # the two transfer mocks carry the larger excesses — cross-mock this is
+    # the Layer-C transport systematic, not a forest-FP statement
+    # (1-eta) restoration 2026-08-06: ratios were 1.53328 / 1.38851; x(1-0.005756532459300326) on the FP term
     assert MC.fp_ceiling_audit(
         _fake_pack(mock="london0"),
-        mu_fp_per_contract=14716.376940133037)["ratio"] == pytest.approx(
-        1.53328, abs=1e-5)
+        mu_fp_per_contract=14631.66163859828)["ratio"] == pytest.approx(
+        1.52445, abs=1e-5)
     assert MC.fp_ceiling_audit(
         _fake_pack(mock="saclay0"),
-        mu_fp_per_contract=14707.062527716187)["ratio"] == pytest.approx(
-        1.38851, abs=1e-5)
+        mu_fp_per_contract=14622.400844898844)["ratio"] == pytest.approx(
+        1.38051, abs=1e-5)
 
 
 def test_the_fp_z_shape_one_sided_support_is_recorded():
@@ -1022,9 +1077,10 @@ def test_a_negative_implied_unsupported_population_is_flagged():
     comment at all.
 
     MUTATION: delete the ``NEGATIVE_IMPLIED_P6_UNSUPPORTED`` block in
-    ``check_accounting_identity``. MEASURED baseline: on this toy the modelled
-    slots predict 384.0 + 165.93 = 549.93 against n_obs = 100, so the implied
-    population is -449.93 and the flag must fire; ``strict=True`` must raise."""
+    ``check_accounting_identity``. MEASURED baseline on this toy ((1-eta)
+    restoration 2026-08-06: the FP slot was 165.93): the modelled slots
+    predict 384.0 + 164.98 = 548.98 against n_obs = 100, so the implied
+    population is -448.98 and the flag must fire; ``strict=True`` must raise."""
     pk, T, rho = _toy(n_obs_total=100)
     pk.fp_counts = np.zeros((len(REAL_NHAT) - 1, 2), dtype=np.int64)
     pk.fp_counts[0, 0] = 1
@@ -1146,7 +1202,8 @@ def test_the_bal_magnitude_is_retracted_and_the_null_is_recorded():
 @pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
                     reason="adopted window-study pack not on this filesystem")
 def test_identity_on_the_adopted_2lpt0_pack():
-    """The referee-facing run. MEASURED 2026-08-05 on
+    """The referee-facing run. MEASURED 2026-08-06 ((1-eta) restoration; the
+    2026-08-05 values are noted inline) on
     modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz, resp_clamp=both:
 
         N_obs                       88071
@@ -1158,19 +1215,25 @@ def test_identity_on_the_adopted_2lpt0_pack():
         P1 scatter-in            18033.092
         P2 in-window             53847.300
         P6 above ceiling           540.349
-        P4 as FOLDED             14767.961   <- measured through fold_mu_fp
-        P4 per contract          14767.961
-        P4 if ell_eff omitted     1086.687   <- COUNTERFACTUAL, pre-7707c8e
-        candidate residual (folded)   -882.298   ( -1.002%)
-        candidate residual (contr)    -882.298   ( -1.002%)
-        candidate residual (ctf)   -14563.572   (-16.536%)
-        efficiency AT CALIBRATION    0.7103624   <- a POINT, not a bound
-        efficiency required (contr)  0.7190167
+        P4 as FOLDED             14682.949   <- was 14767.961; x(1-eta)
+        P4 per contract          14682.949   <- was 14767.961; x(1-eta)
+        P4 if ell_eff omitted     1080.432   <- COUNTERFACTUAL, pre-7707c8e
+        candidate residual (folded)   -967.310   <- was -882.298
+        candidate residual (contr)    -967.310   <- was -882.298
+        candidate residual (ctf)   -14569.827   <- was -14563.572
+        efficiency AT CALIBRATION    0.7103624   <- a POINT, not a bound;
+                                                    signal-side, eta-UNCHANGED
+        efficiency required (contr)  0.7198506   <- was 0.7190167
+
+    Every signal-side row is bit-unchanged by the restoration; only the FP
+    term and its downstream residuals moved, by x(1-0.005756532459300326).
 
     MUTATION: set ``rho_bks`` to 1 everywhere. MEASURED baseline: found_off
     collapses 9895.303 -> 0.0 and the candidate residual (contract) moves
-    -882.298 -> +9013.005."""
+    into surplus (was -882.298 -> +9013.005 pre-restoration)."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    load_pack = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(load_pack)
     pk = load_pack(ADOPTED_PACK, allow_nonstandard_grid=True)
     r = MC.check_accounting_identity(pk)
     t, c, f = r["truth_ledger"], r["candidate_ledger"], r["feasibility"]
@@ -1186,15 +1249,22 @@ def test_identity_on_the_adopted_2lpt0_pack():
     assert c["P6_above_ceiling"] == pytest.approx(540.349, abs=1e-2)
     # the fold and the contract now AGREE; the pre-repair number survives only
     # as an explicitly labelled counterfactual
-    assert c["as_folded"]["P4_forest_fp"] == pytest.approx(14767.961, abs=1e-2)
-    assert c["as_folded"]["residual"] == pytest.approx(-882.298, abs=1e-2)
+    # (1-eta) restoration 2026-08-06: was 14767.961; x(1-0.005756532459300326) on the FP term
+    assert c["as_folded"]["P4_forest_fp"] == pytest.approx(14682.949, abs=1e-2)
+    # (1-eta) restoration 2026-08-06: was -882.298; x(1-0.005756532459300326) on the FP term
+    assert c["as_folded"]["residual"] == pytest.approx(-967.310, abs=1e-2)
     assert c["folded_equals_contract"] is True
-    assert c["per_contract"]["residual"] == pytest.approx(-882.298, abs=1e-2)
-    assert c["if_ell_eff_omitted"]["residual"] == pytest.approx(-14563.572,
+    # (1-eta) restoration 2026-08-06: was -882.298; x(1-0.005756532459300326) on the FP term
+    assert c["per_contract"]["residual"] == pytest.approx(-967.310, abs=1e-2)
+    # (1-eta) restoration 2026-08-06: was -14563.572; x(1-0.005756532459300326) on the FP term
+    assert c["if_ell_eff_omitted"]["residual"] == pytest.approx(-14569.827,
                                                                abs=1e-2)
     assert "COUNTERFACTUAL" in c["if_ell_eff_omitted"]["note"]
+    # signal-side: eta-UNCHANGED by construction (the restoration touches
+    # only the FP term)
     assert f["efficiency_at_calibration"] == pytest.approx(0.7103624, abs=1e-6)
-    assert f["efficiency_required_per_contract"] == pytest.approx(0.7190167,
+    # (1-eta) restoration 2026-08-06: was 0.7190167; x(1-0.005756532459300326) on the FP term
+    assert f["efficiency_required_per_contract"] == pytest.approx(0.7198506,
                                                                   abs=1e-6)
 
 
@@ -1204,19 +1274,23 @@ def test_the_adopted_geometry_closes_inside_one_sigma_of_prior_cost():
     """REFEREE C3, the positive half. On the ADOPTED geometry the counts are
     reached at a SMALL prior cost, so no infeasibility follows.
 
-    MEASURED 2026-08-05 on the adopted 2LPT-0 pack (gap = 882.298 counts):
+    MEASURED 2026-08-06 with the (1-eta)-restored FP fold on the adopted
+    2LPT-0 pack (gap = 967.310 counts; was 882.298 — the gap grows by exactly
+    the 85.012-count FP reduction; the two suprema and the calibration point
+    are signal-side and eta-UNCHANGED):
 
         efficiency at calibration        0.7103624   (a POINT)
-        efficiency REQUIRED per contract 0.7190167
+        efficiency REQUIRED per contract 0.7198506   (was 0.7190167)
         sup over psi_c alone (C -> 1)    0.8572838
         sup over psi_k alone (rho -> 1)  0.8074237
-        min prior chi2 in psi_c          107.8667  (10.386 sigma, 96 free)
-        psi_k_delta[1] uniform witness   -0.7056356 prior-sd
-                                         chi2 4.4813  ->  2.117 sigma
-        loa-0 FP Poisson 1 sd            1565.401 counts -> gap = 0.5636 sigma
-        uniform transfer shift           delta -0.0616031, chi2 0.75467
-                                                          ->  0.8687 sigma
-        cheapest declared direction      0.5636 sigma
+        min prior chi2 in psi_c          130.3258  (11.416 sigma, 96 free;
+                                                    was 107.8667)
+        psi_k_delta[1] uniform witness   -0.7577637 prior-sd (was -0.7056356)
+                                         chi2 5.1679  ->  2.273 sigma
+        loa-0 FP Poisson 1 sd            1565.401 counts -> gap = 0.6179 sigma
+        uniform transfer shift           delta -0.0681502, chi2 0.92360
+                                                          ->  0.9610 sigma
+        cheapest declared direction      0.6179 sigma
 
     The required efficiency sits FAR BELOW both one-block suprema and three
     separate declared directions close it inside ~1 sigma. The retracted
@@ -1227,65 +1301,101 @@ def test_the_adopted_geometry_closes_inside_one_sigma_of_prior_cost():
     collapses 0.8572838 -> 0.7103624 and this test fails on the first
     assertion."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    load_pack = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(load_pack)
     pk = load_pack(ADOPTED_PACK, allow_nonstandard_grid=True)
     p = MC.check_accounting_identity(pk)["prior_cost"]
+    # the two suprema are signal-side: eta-UNCHANGED by construction
     assert p["sup_efficiency_psi_c_only"] == pytest.approx(0.8572838, abs=1e-6)
     assert p["sup_efficiency_psi_k_only"] == pytest.approx(0.8074237, abs=1e-6)
     assert p["efficiency_required"] < p["sup_efficiency_psi_c_only"]
     assert p["efficiency_required"] < p["sup_efficiency_psi_k_only"]
-    assert p["gap_counts"] == pytest.approx(882.298, abs=1e-2)
-    assert p["psi_c"]["min_prior_chi2_upper_bound"] == pytest.approx(107.8667,
+    # (1-eta) restoration 2026-08-06: was 882.298; x(1-0.005756532459300326) on the FP term
+    assert p["gap_counts"] == pytest.approx(967.310, abs=1e-2)
+    # (1-eta) restoration 2026-08-06: was 107.8667; x(1-0.005756532459300326) on the FP term (larger gap -> larger cost)
+    assert p["psi_c"]["min_prior_chi2_upper_bound"] == pytest.approx(130.3258,
                                                                      abs=1e-3)
-    assert p["psi_c"]["min_prior_chi2_lower_bound"] == pytest.approx(107.8667,
+    assert p["psi_c"]["min_prior_chi2_lower_bound"] == pytest.approx(130.3258,
                                                                      abs=1e-3)
     k = p["psi_k_delta"]
-    assert k["witness_alpha_in_prior_sd"] == pytest.approx(-0.7056356, abs=1e-5)
-    assert k["witness_prior_chi2"] == pytest.approx(4.4813, abs=1e-3)
-    assert k["witness_mahalanobis_sigma"] == pytest.approx(2.1169, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was -0.7056356; x(1-0.005756532459300326) on the FP term
+    assert k["witness_alpha_in_prior_sd"] == pytest.approx(-0.7577637, abs=1e-5)
+    # (1-eta) restoration 2026-08-06: was 4.4813; x(1-0.005756532459300326) on the FP term
+    assert k["witness_prior_chi2"] == pytest.approx(5.1679, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was 2.1169; x(1-0.005756532459300326) on the FP term
+    assert k["witness_mahalanobis_sigma"] == pytest.approx(2.2733, abs=1e-3)
     assert k["is_a_witness_not_the_minimum"] is True
     assert k["fitcov_sd_provenance"]["pack_carries_resp_fitcov_diag"] is False
     assert p["fp_total_poisson"]["one_sd_counts"] == pytest.approx(1565.401,
                                                                    abs=1e-2)
-    assert p["fp_total_poisson"]["gap_in_sd"] == pytest.approx(0.5636, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was 0.5636; x(1-0.005756532459300326) on the FP term
+    assert p["fp_total_poisson"]["gap_in_sd"] == pytest.approx(0.6179, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was 0.8687; x(1-0.005756532459300326) on the FP term
     assert p["transfer_t"]["witness_mahalanobis_sigma"] == pytest.approx(
-        0.8687, abs=1e-3)
-    assert p["cheapest_declared_direction_sigma"] == pytest.approx(0.5636,
+        0.9610, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was 0.5636; x(1-0.005756532459300326) on the FP term
+    assert p["cheapest_declared_direction_sigma"] == pytest.approx(0.6179,
                                                                    abs=1e-3)
     assert p["cheapest_declared_direction_sigma"] < 1.0
 
 
 @pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
                     reason="adopted window-study pack not on this filesystem")
-def test_the_fp_ceiling_is_violated_on_the_adopted_2lpt0_pack():
-    """REFEREE M-B, on the real pack. MEASURED 2026-08-05:
-    mu_FP_per_contract = 14767.961 vs the mock's 13860 unmatched on-grid
-    candidates -> excess 907.961, ratio 1.06551, and the flag fires.
+def test_the_fp_hostless_comparison_is_reported_on_the_adopted_2lpt0_pack():
+    """REFEREE M-B, on the real pack — CORRECTED interpretation.
 
-    MUTATION: drop the ``MU_FP_EXCEEDS_THE_MOCK_FP_SUPPLY`` flag block.
+    PREVIOUSLY (as ``test_the_fp_ceiling_is_violated_on_the_adopted_2lpt0_
+    pack``) this asserted a "VIOLATED / EXCEEDS by 907.96 / +6.55%" reading:
+    a physical forest-FP ceiling. The 2026-08-06 Phase-A adversarial review
+    REJECTED that interpretation (frozen verdict,
+    review/phaseA-adversarial-2026-08-05 @ a11dae0): the comparator is the
+    floor-17.2 HOSTLESS class (~92% genuine sub-floor detections, not a
+    forest-FP ceiling), and after chance-coincidence correction
+    mu_FP/supply = 1.002 on 2LPT-0. The mu_FP > hostless excess on the twin
+    is an ESTIMAND ARTIFACT resolved by that correction; cross-mock it
+    reflects the unresolved transport systematic (Layer C). Evidence:
+    review_phaseA/fp_normalization/findings.md.
+
+    What this test still guards: the audit REPORTS these estimand
+    comparisons (the census, the eta-restored mu_FP, the excess, the flag).
+
+    MEASURED 2026-08-06 ((1-eta)-restored fold): mu_FP_per_contract =
+    14682.949 vs the mock's 13860 unmatched on-grid candidates -> excess
+    822.949, and the flag fires.
+
+    MUTATION: drop the ``MU_FP_EXCEEDS_THE_HOSTLESS_CENSUS`` flag block.
     MEASURED baseline: ``flags`` goes from one entry to zero on this pack."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    load_pack = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(load_pack)
     pk = load_pack(ADOPTED_PACK, allow_nonstandard_grid=True)
     r = MC.check_accounting_identity(pk)
     a = r["fp_ceiling"]
     assert a["mock"] == "2lpt0"
     assert a["ceiling"] == 13860.0
-    assert a["mu_fp_per_contract"] == pytest.approx(14767.9614, abs=1e-3)
-    assert a["excess"] == pytest.approx(907.9614, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was 14767.9614; x(1-0.005756532459300326) on the FP term
+    assert a["mu_fp_per_contract"] == pytest.approx(14682.9492, abs=1e-3)
+    # (1-eta) restoration 2026-08-06: was 907.9614; x(1-0.005756532459300326) on the FP term
+    assert a["excess"] == pytest.approx(822.9492, abs=1e-3)
     assert a["exceeds_ceiling"] is True
-    assert [f["id"] for f in r["flags"]] == ["MU_FP_EXCEEDS_THE_MOCK_FP_SUPPLY"]
+    assert "mu_fp_exceeds_hostless_census" in a["status"]
+    assert "VIOLATED" not in a["status"]          # the rejected physical claim
+    assert [f["id"] for f in r["flags"]] == ["MU_FP_EXCEEDS_THE_HOSTLESS_CENSUS"]
 
 
 @pytest.mark.skipif(not os.path.exists(UNPADDED_PACK),
                     reason="unpadded v1.1 pack not on this filesystem")
 def test_the_counting_argument_on_the_unpadded_pack():
-    """The D1 counting argument, run through the contract. MEASURED 2026-08-05
-    on modelA_pack_2lpt0_v11.npz (0.1-dex basis, NO pad):
+    """The D1 counting argument, run through the contract. MEASURED 2026-08-06
+    with the (1-eta)-restored fold (2026-08-05 values noted inline) on
+    modelA_pack_2lpt0_v11.npz (0.1-dex basis, NO pad):
 
         N_obs 88071 > truth on basis 73610
-        efficiency required, FP if ell_eff omitted : 1.18168  <- IMPOSSIBLE
-                                                       (the trivial bound;
+        efficiency required, FP if ell_eff omitted : 1.18178  <- IMPOSSIBLE
+                                                       (was 1.18168; the
+                                                        trivial bound;
                                                         a COUNTERFACTUAL now)
-        efficiency required, FP per contract       : 0.99583
+        efficiency required, FP per contract       : 0.99698  (was 0.99583)
         sup over psi_c alone (C -> 1)          : 0.99384   <- BELOW the
                                                               requirement
         min prior chi2 in psi_c                : infinity
@@ -1298,6 +1408,8 @@ def test_the_counting_argument_on_the_unpadded_pack():
     MUTATION: pass ``require_pad=True``. MEASURED baseline: the pack is refused
     before any number is produced."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    load_pack = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(load_pack)
     pk = load_pack(UNPADDED_PACK, allow_nonstandard_grid=True)
     r = MC.check_accounting_identity(
         pk, require_pad=False, require_measured_sub_floor_completeness=False)
@@ -1305,10 +1417,14 @@ def test_the_counting_argument_on_the_unpadded_pack():
     assert r["truth_ledger"]["residual"] == pytest.approx(0.0, abs=1e-6)
     assert r["truth_ledger"]["n_truth_on_basis"] == 73610.0
     assert r["candidate_ledger"]["n_obs"] == 88071.0
+    # (1-eta) restoration 2026-08-06: was 1.18168; x(1-0.005756532459300326) on the FP term
     assert f["efficiency_required_if_ell_eff_omitted"] == pytest.approx(
-        1.18168, abs=1e-4)
-    assert f["efficiency_required_per_contract"] == pytest.approx(0.99583, abs=1e-4)
-    assert f["efficiency_required_as_folded"] == pytest.approx(0.99583, abs=1e-4)
+        1.1817765, abs=1e-4)
+    # (1-eta) restoration 2026-08-06: was 0.99583; x(1-0.005756532459300326) on the FP term
+    # (recomputed by running this code path: 0.9969847959542641)
+    assert f["efficiency_required_per_contract"] == pytest.approx(0.9969848, abs=1e-4)
+    # (1-eta) restoration 2026-08-06: was 0.99583; x(1-0.005756532459300326) on the FP term
+    assert f["efficiency_required_as_folded"] == pytest.approx(0.9969848, abs=1e-4)
     assert f["feasible_if_ell_eff_omitted"] is False   # the trivial bound
     assert f["feasible_per_contract"] is True
     assert f["feasible_as_folded"] is True
@@ -1329,21 +1445,32 @@ def test_the_unpadded_refutation_is_a_prior_cost_argument_on_all_three_mocks():
     materially stronger than the adopted-geometry one — and it is a PRIOR-COST
     argument (chi2 ~ 1e4), not a bound argument, on two of the three.
 
-    MEASURED 2026-08-05:
+    MEASURED 2026-08-06 with the (1-eta)-restored fold (the smaller mu_FP
+    raises every required efficiency, so the refutation gets STRONGER; the
+    suprema are signal-side and eta-UNCHANGED; 2026-08-05 values noted):
 
         pack          eff req (contract FP)  sup psi_c alone   min prior chi2 psi_c
-        2lpt0_v11        0.9958299            0.9938370 (< req)   infinity
-        london0_v11      0.9385533            0.9939876           10757.4 (103.7 s)
-        saclay0_v11      0.9559406            0.9937649           20085.8 (141.7 s)
+        2lpt0_v11        0.9969848            0.9938370 (< req)   infinity
+                         (was 0.9958299)
+        london0_v11      0.9396406            0.9939876           11168.1 (105.68 s)
+                         (was 0.9385533)                          (was 10757.4)
+        saclay0_v11      0.9570638            0.9937649           20902.1 (144.58 s)
+                         (was 0.9559406)                          (was 20085.8)
 
     MUTATION: return ``upper_bound=0.0`` whenever the bisection finds no
     feasible lambda. MEASURED baseline: the two finite costs collapse to 0 and
     the 1e4-scale statement disappears."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    load_pack = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(load_pack)
     want = {
-        "2lpt0": (0.9958299, 0.9938370, np.inf, None),
-        "london0": (0.9385533, 0.9939876, 10757.4, 103.72),
-        "saclay0": (0.9559406, 0.9937649, 20085.8, 141.72),
+        # (1-eta) restoration 2026-08-06 (all recomputed by running this code
+        # path): req was 0.9958299 / 0.9385533 / 0.9559406, chi2 was
+        # 10757.4 / 20085.8, mah was 103.72 / 141.72;
+        # x(1-0.005756532459300326) on the FP term
+        "2lpt0": (0.9969848, 0.9938370, np.inf, None),
+        "london0": (0.9396406, 0.9939876, 11168.065, 105.68),
+        "saclay0": (0.9570638, 0.9937649, 20902.128, 144.58),
     }
     for m, (req, sup, chi2, mah) in want.items():
         pk = load_pack(os.path.join(V11DIR, f"modelA_pack_{m}_v11.npz"),
@@ -1369,15 +1496,23 @@ def test_the_unpadded_refutation_is_a_prior_cost_argument_on_all_three_mocks():
 @pytest.mark.skipif(not os.path.exists(ADOPTED_PACK),
                     reason="adopted window-study packs not on this filesystem")
 def test_the_negative_implied_population_shows_up_on_the_real_packs():
-    """REFEREE M-B, on the real packs. MEASURED 2026-08-05 on the adopted
-    0.2-dex/pad-19.0 packs: P6_unsupported_implied_per_contract is
-    2lpt0 +882.30, london0 -3287.42, saclay0 -2079.08. Two of the three imply a
-    NEGATIVE number of candidates and were emitted with no comment.
+    """REFEREE M-B, on the real packs. MEASURED 2026-08-06 with the
+    (1-eta)-restored fold on the adopted 0.2-dex/pad-19.0 packs:
+    P6_unsupported_implied_per_contract is 2lpt0 +967.31, london0 -3202.71,
+    saclay0 -1994.42 (each moved UP by exactly its mock's (1-eta) FP
+    reduction; was +882.30 / -3287.42 / -2079.08). Two of the three still
+    imply a NEGATIVE number of candidates and were once emitted with no
+    comment.
 
     MUTATION: delete the negative-flag block. MEASURED baseline: london0 and
-    saclay0 report zero flags."""
+    saclay0 stop reporting the NEGATIVE_IMPLIED flag."""
     from CDDF_analysis.hbi_mcmc.pack import load_pack
-    want = {"2lpt0": 882.298, "london0": -3287.42, "saclay0": -2079.08}
+    from CDDF_analysis.hbi_mcmc.pack import attach_fp_eta_bands as _aeta
+    load_pack = (lambda _f: (lambda *a, **k: _aeta(_f(*a, **k))))(load_pack)
+    # (1-eta) restoration 2026-08-06: was 882.298 / -3287.42 / -2079.08
+    # (recomputed by running this code path); x(1-0.005756532459300326) on
+    # the FP term
+    want = {"2lpt0": 967.310, "london0": -3202.71, "saclay0": -1994.42}
     seen_negative = 0
     for m, v in want.items():
         p = os.path.join(
