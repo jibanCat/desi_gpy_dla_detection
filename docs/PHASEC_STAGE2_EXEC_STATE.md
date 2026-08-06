@@ -1,8 +1,9 @@
 # FROZEN Stage-2 executable-state specification (rulings §4)
 
 **This document IS the freeze.** The frozen state = the tree at the
-commit that INTRODUCES this file (locate it with
-`git log --diff-filter=A --format=%H -- docs/PHASEC_STAGE2_EXEC_STATE.md`).
+LATEST commit touching this file (introduced at `5ee7202`; pre-launch
+amendments update it — see the amendment log at the end; post-launch
+amendments follow the quarantine protocol).
 Every Stage-2 production job must launch from exactly that commit; every
 production artifact stamps `git rev-parse HEAD` and it must match.
 Behavior-changing corrections after launch follow the rulings' §4
@@ -37,7 +38,7 @@ commit itself.
 | `diagnostics_phaseC/design_sizing/sizing.json` | `5682b527…f94c9779` |
 | `diagnostics_phaseC/preimage/preimage.json` | `cfee1319…fe84e026` |
 | `injection/gen_phaseC_resp.py` | `ac3560de…ea396b5c` |
-| `injection/measure_phaseC_pairs.py` | `b24d06c8…d3323f` |
+| `injection/measure_phaseC_pairs.py` | `f3960f08…2e9af578` |
 | `gpy_dla_detection/inject_absorber.py` | `4305c6a5…f63ff9e85` |
 | `examples/molly_faithful_pc_plots.py` (THE matcher) | `881d8976…acd64cd1` |
 | `slurm/greatlakes/production/phaseC_resp_gl_v1.env` | `e6e423e2…5ac73afd` |
@@ -97,6 +98,16 @@ retired as a baseline claim. Environment lockfiles:
 `docs/env_locks/gpdla_pip_freeze_2026-08-06.txt` (171 pkgs),
 `docs/env_locks/gpdla-hbi_pip_freeze_2026-08-06.txt` (177 pkgs);
 python 3.11 conda envs at `/home/mfho/.conda/envs/{gpdla,gpdla-hbi}`.
+
+## Amendment log (pre-launch only)
+
+* A1 (pre-launch, NO production outputs existed): the scorer's
+  per-anchor aggregation regrouped from exact-z keys to (logN anchor ×
+  response z-cell × SNR stratum) with per-pair healpix carried for the
+  bridge Ĉ_shared split (`phaseC_pairs/v2`) — required for continuous
+  dX-drawn production z; the exact-z grouping would have fragmented
+  production cells into singletons. Hash updated above; the pilot JSONs
+  remain the committed v1 engineering record.
 
 ## Budget manifest
 

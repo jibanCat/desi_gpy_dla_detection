@@ -237,17 +237,20 @@ def main():
         (env["emp_N_anchors"][sr, zr].min(), env["emp_N_anchors"][sr, zr].max())
         for zr in range(3)]) for sr in range(3)])
 
-    # per-anchor-cell aggregation
+    # per-anchor-cell aggregation: (logN anchor × response z-cell × SNR
+    # stratum) — the z key is the RESPONSE CELL, not the exact z value
+    # (production draws z continuously ∝ dX within the cell; the pilot's
+    # fixed z-anchors map into the same cells)
     man_z = np.asarray(man["z_true"], float)
     man_n = np.asarray(man["logN_true"], float)
     man_snr = np.asarray(man["native_snr"], float)
     anchors = sorted(set(np.round(man_n, 4).tolist()))
-    zanchors = sorted(set(np.round(man_z, 4).tolist()))
+    man_zr = np.array([_cell(z, RESP_Z_EDGES) for z in man_z])
     per_anchor = []
     for A in anchors:
-        for Z in zanchors:
+        for zr_i in range(len(RESP_Z_EDGES) - 1):
             for s_i in range(len(RESP_SNR_EDGES) - 1):
-                sel = (np.abs(man_n - A) < 1e-6) & (np.abs(man_z - Z) < 1e-6)
+                sel = (np.abs(man_n - A) < 1e-6) & (man_zr == zr_i)
                 sel &= ((man_snr > RESP_SNR_EDGES[s_i])
                         & (man_snr <= RESP_SNR_EDGES[s_i + 1] if
                            np.isfinite(RESP_SNR_EDGES[s_i + 1]) else True))
@@ -255,13 +258,14 @@ def main():
                 if idx.size == 0:
                     continue
                 mo = matched_op_mask[idx]
-                dxs = []
+                dxs, hlist = [], []
                 for j in idx[mo]:
                     ci = truth_cat_row[j]
                     dxs.append(float(cat["NHI"][ci]) - float(t_n[j]))
+                    hlist.append(int(man["healpix"][j]))
                 dxs = np.array(dxs)
-                sr, zr = _cell(np.median(man_snr[idx]), RESP_SNR_EDGES), \
-                    _cell(Z, RESP_Z_EDGES)
+                Z = float(np.median(man_z[idx]))     # descriptive center
+                sr, zr = s_i, zr_i
                 Ncl = float(np.clip(A, rr[sr, zr, 0], rr[sr, zr, 1]))
                 u = np.array([1.0, Ncl - nref, (Ncl - nref) ** 2])
                 pred_b = float(mu_co[sr, zr] @ u)
@@ -275,6 +279,7 @@ def main():
                        "dx_mean": float(dxs.mean()) if dxs.size else None,
                        "dx_sd": float(dxs.std(ddof=1)) if dxs.size > 1 else None,
                        "dx": dxs.tolist(),
+                       "pair_healpix": hlist,
                        "old_pred_bias": pred_b, "old_pred_sd": pred_s,
                        "old_covariate_clamped": bool(Ncl != A)}
                 if dxs.size > 1:
@@ -283,7 +288,7 @@ def main():
                 per_anchor.append(rec)
 
     out = {
-        "schema": "phaseC_pairs/v1",
+        "schema": "phaseC_pairs/v2",
         "label": "PILOT ENGINEERING VALIDATION (design §10) — not production",
         "arm": a.arm, "dlacats": dlacat_paths,
         "matcher": "examples.molly_faithful_pc_plots.match_truth_to_cat_molly "
