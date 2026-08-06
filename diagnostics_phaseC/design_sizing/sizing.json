@@ -1,0 +1,210 @@
+{
+ "schema": "phaseC_calib_sizing/v1",
+ "date": "2026-08-06",
+ "code_commit": "ccf9d6d6bc303d0179cfa7b13fffb281c3b3334b",
+ "frozen_criteria": {
+  "sigma_G3_precision_max": 150.08333333333334,
+  "sigma_G3_power_max": 116.72427879951883,
+  "binding": "power",
+  "alpha_two_sided": 0.01,
+  "power_target": 0.9,
+  "effect_size_counts": 450.25,
+  "effect_size_equivalents": {
+   "mean_shift_dex_at_20.7_21.1": 0.031,
+   "mean_shift_dex_at_21.1_21.5_negative": -0.13,
+   "note": "from the preimage sensitivity map (planning)"
+  }
+ },
+ "sizing_model_assumptions": [
+  "per-bin independent measurement (conservative vs smooth fit)",
+  "sigma(mean) = sd_kernel/sqrt(n); sigma(width)/width = 1/sqrt(2n)",
+  "sd_kernel from the CURRENT response (pilot re-measures)",
+  "completeness from the pack molly surface (pilot re-measures)",
+  "167 CPU-s/spec (pilot re-measures)"
+ ],
+ "n_uniform_per_bin": 230,
+ "sigma_G3_achieved": 111.9567060318549,
+ "power_achieved": 0.9258853896639953,
+ "implied_sigma_G1_G2": {
+  "G1": 618.4,
+  "G2": 444.8
+ },
+ "table": [
+  {
+   "bin": 2,
+   "true_lo": 19.5,
+   "true_hi": 19.7,
+   "role": "bridge",
+   "pairs": 150,
+   "completeness": 0.752,
+   "injections": 230,
+   "sd_kernel_dex": 0.21,
+   "S_counts_per_dex": 8.9,
+   "W_counts_per_unitfrac": 14.3
+  },
+  {
+   "bin": 3,
+   "true_lo": 19.7,
+   "true_hi": 19.9,
+   "role": "bridge",
+   "pairs": 150,
+   "completeness": 0.752,
+   "injections": 230,
+   "sd_kernel_dex": 0.193,
+   "S_counts_per_dex": 15.9,
+   "W_counts_per_unitfrac": 21.6
+  },
+  {
+   "bin": 4,
+   "true_lo": 19.9,
+   "true_hi": 20.1,
+   "role": "bridge",
+   "pairs": 150,
+   "completeness": 0.89,
+   "injections": 194,
+   "sd_kernel_dex": 0.178,
+   "S_counts_per_dex": 45.1,
+   "W_counts_per_unitfrac": 49.4
+  },
+  {
+   "bin": 5,
+   "true_lo": 20.1,
+   "true_hi": 20.3,
+   "role": "bridge",
+   "pairs": 150,
+   "completeness": 0.89,
+   "injections": 194,
+   "sd_kernel_dex": 0.166,
+   "S_counts_per_dex": 119.4,
+   "W_counts_per_unitfrac": 99.8
+  },
+  {
+   "bin": 6,
+   "true_lo": 20.3,
+   "true_hi": 20.5,
+   "role": "bridge",
+   "pairs": 150,
+   "completeness": 0.931,
+   "injections": 186,
+   "sd_kernel_dex": 0.157,
+   "S_counts_per_dex": 384.9,
+   "W_counts_per_unitfrac": 227.1
+  },
+  {
+   "bin": 7,
+   "true_lo": 20.5,
+   "true_hi": 20.7,
+   "role": "production",
+   "pairs": 108,
+   "completeness": 0.957,
+   "injections": 130,
+   "sd_kernel_dex": 0.15,
+   "S_counts_per_dex": 1328.9,
+   "W_counts_per_unitfrac": 485.7
+  },
+  {
+   "bin": 8,
+   "true_lo": 20.7,
+   "true_hi": 20.9,
+   "role": "production",
+   "pairs": 238,
+   "completeness": 0.957,
+   "injections": 287,
+   "sd_kernel_dex": 0.146,
+   "S_counts_per_dex": 4985.3,
+   "W_counts_per_unitfrac": 775.7
+  },
+  {
+   "bin": 9,
+   "true_lo": 20.9,
+   "true_hi": 21.1,
+   "role": "production",
+   "pairs": 359,
+   "completeness": 0.979,
+   "injections": 422,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 9313.0,
+   "W_counts_per_unitfrac": 436.8
+  },
+  {
+   "bin": 10,
+   "true_lo": 21.1,
+   "true_hi": 21.3,
+   "role": "production",
+   "pairs": 108,
+   "completeness": 0.979,
+   "injections": 127,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 583.9,
+   "W_counts_per_unitfrac": 451.6
+  },
+  {
+   "bin": 11,
+   "true_lo": 21.3,
+   "true_hi": 21.5,
+   "role": "production",
+   "pairs": 108,
+   "completeness": 0.979,
+   "injections": 127,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 1836.9,
+   "W_counts_per_unitfrac": 261.5
+  },
+  {
+   "bin": 12,
+   "true_lo": 21.5,
+   "true_hi": 21.7,
+   "role": "production",
+   "pairs": 108,
+   "completeness": 0.974,
+   "injections": 128,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 1286.1,
+   "W_counts_per_unitfrac": 64.7
+  },
+  {
+   "bin": 13,
+   "true_lo": 21.7,
+   "true_hi": 21.9,
+   "role": "production",
+   "pairs": 108,
+   "completeness": 0.974,
+   "injections": 128,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 94.3,
+   "W_counts_per_unitfrac": 26.2
+  },
+  {
+   "bin": 14,
+   "true_lo": 21.9,
+   "true_hi": 22.1,
+   "role": "production-tail",
+   "pairs": 60,
+   "completeness": 0.931,
+   "injections": 75,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 3.5,
+   "W_counts_per_unitfrac": 2.1
+  },
+  {
+   "bin": 15,
+   "true_lo": 22.1,
+   "true_hi": 22.4,
+   "role": "production-tail",
+   "pairs": 60,
+   "completeness": 0.931,
+   "injections": 75,
+   "sd_kernel_dex": 0.144,
+   "S_counts_per_dex": 0.0,
+   "W_counts_per_unitfrac": 0.0
+  }
+ ],
+ "totals": {
+  "pairs": 2007,
+  "injections": 2533,
+  "cpu_hours_finder": 117.5,
+  "cpu_hours_with_pilot_and_margin": 147.5,
+  "storage_gb_estimate": 7.5
+ },
+ "per_cell_note": "pairs allocated across the 9 response cells proportional to the cell G3 share [[0.207, 0.154, 0.078], [0.132, 0.097, 0.052], [0.142, 0.091, 0.046]] with a floor of 12 pairs/(bin,cell)"
+}
