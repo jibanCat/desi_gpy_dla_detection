@@ -128,8 +128,14 @@ def test_cond_fallback_refuses_inversion_and_is_labeled(pack, edges):
     assert res.fallback_1d
     want = float(np.max(np.abs(res.residual) / np.sqrt(np.diag(bad.matrix))))
     assert res.T_obs == pytest.approx(want, rel=1e-12)
-    assert 0.0 < res.p_value <= 1.0
+    # PI ruling 17 (2026-08-06), conservative fallback reporting: the
+    # uncalibrated max|z| tail carries NO p-value and NO pass/fail; no null
+    # ensemble is drawn. (Before Phase C this path attached the same p-value
+    # machinery; the fallback has never engaged on a produced result.)
+    assert res.p_value is None
+    assert res.n_null_draws == 0
     assert "FALLBACK ENGAGED" in res.report()["layer"]
+    assert "NO p-value" in res.report()["layer"]
     # (b) healthy matrix, poisoned stored field
     poisoned = dataclasses.replace(cov, condition_number=1e9)
     res_b = GC.predictive_gate(pack, covariance=poisoned, group_edges=edges,

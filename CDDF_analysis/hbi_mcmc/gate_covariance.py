@@ -232,9 +232,11 @@ class PredictiveGateResult:
     """Layer-B primary gate outcome (confirmatory statistic)."""
 
     T_obs: float
-    p_value: float
+    p_value: Optional[float]      # None in fallback mode (PI ruling §17,
+    #                               2026-08-06): an uncalibrated max|z| tail
+    #                               carries NO p-value and NO pass/fail
     p_is_bound: bool              # True when 0 exceedances (p <= 1/(B+1))
-    p_mc_error: float             # binomial MC error on p
+    p_mc_error: float             # binomial MC error on p (0.0 in fallback)
     null_quantiles: dict          # q05/q50/q95/q99 of the null T
     null_mean: float
     null_sd: float
@@ -248,7 +250,8 @@ class PredictiveGateResult:
 
     def report(self) -> dict:
         return dict(
-            T_obs=float(self.T_obs), p_value=float(self.p_value),
+            T_obs=float(self.T_obs),
+            p_value=(None if self.p_value is None else float(self.p_value)),
             p_is_bound=self.p_is_bound, p_mc_error=float(self.p_mc_error),
             null_quantiles={k: float(v) for k, v in self.null_quantiles.items()},
             null_mean=float(self.null_mean), null_sd=float(self.null_sd),
@@ -260,11 +263,13 @@ class PredictiveGateResult:
             covariance=self.covariance.report(),
             layer=("B (calibration-predictive); simulation-calibrated p; "
                    "NO ratified threshold"
-                   + ("; COND>1e6 FALLBACK ENGAGED: T_obs/p refer to the "
-                      "DESCRIPTIVE max|z| over the 1-dim standardized group "
-                      "residuals, NOT the prespecified confirmatory "
-                      "Mahalanobis statistic (frozen spec section 3: no "
-                      "inversion; report the standardized residuals)"
+                   + ("; COND>1e6 FALLBACK ENGAGED: T_obs is the DESCRIPTIVE "
+                      "max|z| over the 1-dim standardized group residuals, "
+                      "NOT the prespecified confirmatory Mahalanobis "
+                      "statistic; NO p-value and NO pass/fail are attached "
+                      "(PI ruling 17, 2026-08-06: an uncalibrated tail "
+                      "carries neither; frozen spec section 3: no inversion; "
+                      "report the standardized residuals)"
                       if self.fallback_1d else "")),
         )
 
@@ -312,6 +317,23 @@ def predictive_gate(pack: ModelAPack, *,
 
     d_obs = _group_vector(y, A, live) - _group_vector(mu_obs, A, live)
     T_obs = stat(y, mu_obs)
+
+    if fallback:
+        # PI ruling §17 (2026-08-06), conservative fallback reporting: the
+        # fallback max|z| has NO independently calibrated null covering the
+        # full procedure (mode selection + multiplicity, frozen beforehand),
+        # so it carries NO p-value and NO pass/fail — standardized residuals
+        # and the descriptive max|z| only. No null ensemble is drawn.
+        return PredictiveGateResult(
+            T_obs=T_obs, p_value=None, p_is_bound=False, p_mc_error=0.0,
+            null_quantiles={}, null_mean=float("nan"), null_sd=float("nan"),
+            effective_dof_note=("fallback: no null drawn (uncalibrated "
+                                "max|z| tail; PI ruling 17, 2026-08-06)"),
+            residual=d_obs,
+            residual_z=d_obs / np.sqrt(np.diag(C)),
+            covariance=covariance, n_null_draws=0,
+            seed_null=seed_null, fallback_1d=True,
+        )
 
     rng = np.random.default_rng(seed_null)
     T_null = np.empty(n_null_draws)
