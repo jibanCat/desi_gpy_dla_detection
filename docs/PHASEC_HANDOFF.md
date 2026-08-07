@@ -55,31 +55,66 @@ surface-vs-own-pairs corrections project to ≈ the full +450-count G3
 discrepancy (exact number = the GATED P1 refold). Stopping rule fully
 MET; the completeness investigation is COMPLETE.
 
-### Exact next step (the PI's binding sequence, rulings §25/§33)
+### 2026-08-07 session: power addendum + PROPOSED estimand freeze — STOPPED AT THE PI CHECKPOINT
 
-Write and commit the P1 ESTIMAND FREEZE (`docs/P1_ESTIMAND_SPEC.md`):
-parent population = live support (S2N_RED>2); the joint operator with
-the natural-anchored kernel choice (natural-pair K at high N OR
-injected K + the measured N-rising imprint correction — the freeze must
-pick and justify ONE before any holdout contact), miss state,
-conditioning, blend-composition term, transition [20.4,21.0], THEN the
-failure taxonomy + holdout adjudicability gate. NOTE for the PI at the
-next checkpoint: the natural high-N estimand is already measured at
-production precision from mock-0's own catalog (4,871+868 pairs above
-21.0) — most of P2's content exists free; mock-1 (~1,500 CPU-h) would
-buy realization independence only.
+1. **State recovery VERIFIED** (fresh session): tips = origin (then
+   `3c3e821`), worktree clean, notes `e3930cb`; protected tips
+   unmoved; cache + quarantine intact; closure-path suites **331
+   passed / 1 skipped** (the explained r5 skip); `t2_pairing.json`
+   re-run reproduces bit-level up to 1–2 ulp; sacct since Aug 5 shows
+   ONLY the four authorized GP jobs from this repo (all other jobs =
+   `~/hcd_priya`, a separate project). No Stage-2B / P2 / forced-fit
+   launches. Holdout roles intact (661 held-out; scripts filter).
+2. **Post-specified power/robustness addendum (`6aa526f`,
+   `t2_power.py`, labeled — verdict NOT re-adjudicated):** catalogued-
+   shell coupling excluded at ~15× margin (needed slope 38σ above
+   measured; lever absent); near-field channel bounded MECHANICALLY by
+   the `forest_flux_frac` design covariate — wrong sign for coupling
+   (cleanest sites read highest, +0.037±0.017) and ≤0.007 dex per 1σ
+   population shift; offset persists at full size in shell=0 pairs
+   (+0.0475 peak); **natural kernel 15–25% WIDER than injected at
+   every bin**; frozen offsets project to **+387±76 G3 counts**
+   (labeled; refold gated).
+3. **P1 ESTIMAND SPEC — PROPOSED FREEZE (`5b63f49`,
+   `docs/P1_ESTIMAND_SPEC.md`):** coherent (C_molly, K_natural-pairs)
+   on live support; pairs-faithful de-clamped representation; explicit
+   miss state; frozen 9-cell conditioning; blend class inside K as
+   composition; **no estimand transition** ([20.4,21.1] = validation
+   overlap); injected campaign = validation + frozen transfer map;
+   estimand ID `p1_natpair_ck/v1` with atomic C/K + fail-loud guards.
+   States plainly: within-realization; realization independence = P2
+   content (separate PI decision).
+4. **Failure taxonomy + holdout gate — PROPOSED FREEZE (`7fdf570`,
+   `docs/P1_FAILURE_TAXONOMY.md`, `p1_holdout_gate.py/.json`,
+   design-side only):** seven categories, one primary; holdout
+   adjudicable at the material scale (power 0.99 vs the 0.031-dex
+   defect pooled over [20.7,21.1), ≥0.99 vs clamp-scale per bin); NOT
+   adjudicable ≤0.015 dex (carried as covariance systematic); frozen
+   Holm-corrected battery, one-time read.
+
+### Exact next step — PI DECISION REQUIRED (do not proceed without it)
+
+The Tier-2 attribution + P1-design checkpoint is RETURNED. The PI
+reviews `docs/P1_ESTIMAND_SPEC.md` + `docs/P1_FAILURE_TAXONOMY.md`.
+On acceptance the next executable step is: build the K artifact +
+guards + R=C·K identity test + healpix-jackknife (spec §10–§11) —
+NOT the holdout, NOT the refold, NOT Stage-2B. Open questions the PI
+may rule on at the same time: (a) whether P2 (mock-1 realization
+independence, ~1,500 CPU-h) is wanted before or after the holdout;
+(b) ratification of the proposed gate tolerances (taxonomy §4).
 
 ### Budget
 
 Spent ≈ 75 of the 1,850 CPU-h ceiling (pilot 8.3 + Stage-2A GP 66.9 +
 <1 analysis). Withheld: Stage-2B FP program (~1,740), P2 (~1,500, needs
-a NEW ruling). Tier-2 catalog tests: <1 CPU-h, cache-based.
+a NEW ruling). Tier-2 catalog tests + 08-07 addendum/gate: <1 CPU-h
+total, cache/design-side, login node; storage +~40 KB committed JSON.
 
-### Repository tips (2026-08-06, this revision)
+### Repository tips (2026-08-07, this revision)
 
 | ref | tip |
 |---|---|
-| `calibration/phaseC-p1-coherent-ck-2026-08-06` (THIS branch, wt `/home/mfho/wt_p1_ck`) | `27ec0b2` + this handoff commit |
+| `calibration/phaseC-p1-coherent-ck-2026-08-06` (THIS branch, wt `/home/mfho/wt_p1_ck`) | `7fdf570` + this handoff commit |
 | `calibration/phaseC-highN-fp-2026-08-06` (Stage-2A record, wt `/home/mfho/wt_calib_phaseC`) | `60cef40` (frozen) |
 | notes repo (`~/desi_gpy_dla_notes`) | `e3930cb` |
 | protected: `hbi-mcmc-threeroute` / `lls-subdla-cddf` / `review/phaseA…` / `repair/phaseB…` | `9d73365` / `1533333` / `a420abd` / `a56e3c8` (unmoved) |
