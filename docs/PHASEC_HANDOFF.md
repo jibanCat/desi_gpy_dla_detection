@@ -41,32 +41,33 @@ further work (this revision).
    realism (predicts flatness in those covariates). If coherent over
    [20.7,21.1) it projects to ~700 counts on G3 — material.
 
-### SOLE GATE
+### SOLE GATE — RESOLVED (2026-08-06, `468f901`)
 
-Stopping-rule criterion 3 is NOT met until this offset is attributed or
-bounded at catalog level. **The P1 estimand freeze, taxonomy, holdout
-gate, Stage-2B and P2 are ALL blocked behind exactly this one
-attribution.** If the catalog-level tests cannot separate the two
-mechanisms, STOP and return the spectrum-level (forced-fit/stack)
-Tier-3 budget to the PI — do not run it.
+`t2_pairing.py` ran under its frozen verdict rule:
+**IMPRINT-SUPPORTED (environment-flat)** — D1 offset rises with host N
+(+0.018→+0.045, z→8.0); D2 shell-density slope difference z = +0.51
+(coupling bounded ≲0.015 dex/count at 95%; proxy limitation stated).
+**Level-A capstone (`t2_completion.md`): the NATURAL pairs refute the
+deployed clamp directly** — pairs−surface = −0.030 (−6.5σ) /
+−0.044 (−5.4σ) / −0.043 (−3.8σ) over [21.4,22.1); true mean-bias falls
++0.055→+0.01 while the clamp holds +0.05. Labeled back-of-envelope:
+surface-vs-own-pairs corrections project to ≈ the full +450-count G3
+discrepancy (exact number = the GATED P1 refold). Stopping rule fully
+MET; the completeness investigation is COMPLETE.
 
-### Exact next command
+### Exact next step (the PI's binding sequence, rulings §25/§33)
 
-```
-cd /home/mfho/wt_p1_ck
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-/home/mfho/.conda/envs/gpdla-hbi/bin/python \
-  diagnostics_phaseC/p1_completeness/t2_pairing.py
-```
-(t2_pairing.py = the bounded catalog-level discrimination test:
-per-stratum common-substrate comparison of natural-isolated vs injected
-pairs on the SAME (z-cell × SNR-stratum × healpix-class) support with
-prespecified reweighting on PRE-selection covariates {z_true, S2N_RED,
-z_qso}; then the two discriminants — offset vs host N_true
-[coupling: rising; imprint: flat-to-profile-driven] and offset vs local
-catalogued absorber density within 3,000/10,000 km/s [coupling: rising;
-imprint: flat]. Predicted signatures stated in the script header BEFORE
-the run, per house rules.)
+Write and commit the P1 ESTIMAND FREEZE (`docs/P1_ESTIMAND_SPEC.md`):
+parent population = live support (S2N_RED>2); the joint operator with
+the natural-anchored kernel choice (natural-pair K at high N OR
+injected K + the measured N-rising imprint correction — the freeze must
+pick and justify ONE before any holdout contact), miss state,
+conditioning, blend-composition term, transition [20.4,21.0], THEN the
+failure taxonomy + holdout adjudicability gate. NOTE for the PI at the
+next checkpoint: the natural high-N estimand is already measured at
+production precision from mock-0's own catalog (4,871+868 pairs above
+21.0) — most of P2's content exists free; mock-1 (~1,500 CPU-h) would
+buy realization independence only.
 
 ### Budget
 
