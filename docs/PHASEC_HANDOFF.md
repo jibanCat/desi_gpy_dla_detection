@@ -4,6 +4,87 @@
 
 ## CURRENT STATE (read this first) — P1 BRANCH (`calibration/phaseC-p1-coherent-ck-2026-08-06`, worktree `/home/mfho/wt_p1_ck`)
 
+### PI checkpoint 3 ACCEPTED (2026-08-06, after Tier 1 + partial Tier 2)
+
+**Accepted: the Tier-1/2 findings and the criterion-4 correction. The
+Stage-2A bridge no-go REMAINS SUPPORTED by criteria 1–3.** Ordered:
+continue the BOUNDED CATALOG-LEVEL Tier-2 tests; **no forced fits, no
+holdout opening, no Stage-2B, no P2**; handoff updated+pushed before
+further work (this revision).
+
+### Corrected scientific record (quote THESE, not earlier phrasings)
+
+1. The Stage-2A bridge FAILED on criteria 1–3 (pair-based: G3-projected
+   D = −476 ± 105; coherence z 7.9/10.5; local pattern). **Criterion 4's
+   "completeness far outside 3σ" is RETRACTED as physics** — it pooled
+   the fold's dead (dX = 0, S2N_RED ≤ 2) molly strata into C_molly; the
+   PI accepted the correction. The response artifact remains QUARANTINED.
+2. The natural-vs-injection completeness gap was DEAD-STRATA
+   ACCOUNTING: 47.0% of in-window truth sits on S2N_RED ≤ 2 sightlines
+   outside the live fold. Live-support natural completeness =
+   0.800/0.898/0.952/0.979/0.976 over [19.5,20)/[20,20.4)/[20.4,21)/
+   [21,21.5)/≥21.5 ≈ injected (0.81–0.99). Deployed C_molly reproduced
+   integer-exactly (two-chain splice; matching competition embedded).
+3. The deployed degree-2+clamp SURFACE misfits its OWN raw pairs:
+   surface−pairs = +0.071/+0.020/−0.017/−0.035/−0.028/−0.004 dex over
+   [19.5,19.8)…[21.0,21.3) — edge failure at BOTH boundaries; much of
+   the low-N bridge Δ was this representation error.
+4. Blend class (catalogued 17.2–19.5 neighbor ≤3,000 km/s): 7.5–8.0% of
+   natural pairs, dx elevated +0.03…+0.10 dex — real, secondary.
+5. 🔴 **SURVIVING OPEN OBJECT (the sole gate): a pair-level
+   natural−injected dx offset of +0.00…+0.06 dex — isolated-natural
+   minus injected ≈ +0.019/−0.004/+0.035/+0.017/+0.032/+0.059 at
+   19.6/19.8/20.2/20.4/20.8/21.0 — largest at 21.0 where BOTH
+   selections are ≥98% complete and blends are controlled.** Candidate
+   mechanisms (§18): host-environment forest coupling (predicts
+   host-N/local-density dependence) vs imprint-vs-injection profile
+   realism (predicts flatness in those covariates). If coherent over
+   [20.7,21.1) it projects to ~700 counts on G3 — material.
+
+### SOLE GATE
+
+Stopping-rule criterion 3 is NOT met until this offset is attributed or
+bounded at catalog level. **The P1 estimand freeze, taxonomy, holdout
+gate, Stage-2B and P2 are ALL blocked behind exactly this one
+attribution.** If the catalog-level tests cannot separate the two
+mechanisms, STOP and return the spectrum-level (forced-fit/stack)
+Tier-3 budget to the PI — do not run it.
+
+### Exact next command
+
+```
+cd /home/mfho/wt_p1_ck
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+/home/mfho/.conda/envs/gpdla-hbi/bin/python \
+  diagnostics_phaseC/p1_completeness/t2_pairing.py
+```
+(t2_pairing.py = the bounded catalog-level discrimination test:
+per-stratum common-substrate comparison of natural-isolated vs injected
+pairs on the SAME (z-cell × SNR-stratum × healpix-class) support with
+prespecified reweighting on PRE-selection covariates {z_true, S2N_RED,
+z_qso}; then the two discriminants — offset vs host N_true
+[coupling: rising; imprint: flat-to-profile-driven] and offset vs local
+catalogued absorber density within 3,000/10,000 km/s [coupling: rising;
+imprint: flat]. Predicted signatures stated in the script header BEFORE
+the run, per house rules.)
+
+### Budget
+
+Spent ≈ 75 of the 1,850 CPU-h ceiling (pilot 8.3 + Stage-2A GP 66.9 +
+<1 analysis). Withheld: Stage-2B FP program (~1,740), P2 (~1,500, needs
+a NEW ruling). Tier-2 catalog tests: <1 CPU-h, cache-based.
+
+### Repository tips (2026-08-06, this revision)
+
+| ref | tip |
+|---|---|
+| `calibration/phaseC-p1-coherent-ck-2026-08-06` (THIS branch, wt `/home/mfho/wt_p1_ck`) | `27ec0b2` + this handoff commit |
+| `calibration/phaseC-highN-fp-2026-08-06` (Stage-2A record, wt `/home/mfho/wt_calib_phaseC`) | `60cef40` (frozen) |
+| notes repo (`~/desi_gpy_dla_notes`) | `e3930cb` |
+| protected: `hbi-mcmc-threeroute` / `lls-subdla-cddf` / `review/phaseA…` / `repair/phaseB…` | `9d73365` / `1533333` / `a420abd` / `a56e3c8` (unmoved) |
+| quarantined artifact | `track_c/stage0/quarantined_forward_response_2lpt0_phaseC.npz` |
+| holdout | prod_v1 roles: 13 healpix / 661 injections — UNREAD |
+
 **P1 phase opened per the PI's P1 rulings (notes repo
 `notes/2026-08-06_phaseC_p1_rulings.md` @ `e3930cb`). Sequence: bounded
 completeness investigation → P1 estimand freeze → taxonomy +
