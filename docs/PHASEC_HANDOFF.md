@@ -2,7 +2,40 @@
 ### Branch `calibration/phaseC-highN-fp-2026-08-06`, root `a56e3c8` (= Phase-B tip, frozen)
 ### Session 2 closed 2026-08-06; PHASE C1 COMPLETE — resume from "CURRENT STATE"
 
-## CURRENT STATE (read this first)
+## CURRENT STATE (read this first) — P1 BRANCH (`calibration/phaseC-p1-coherent-ck-2026-08-06`, worktree `/home/mfho/wt_p1_ck`)
+
+**P1 phase opened per the PI's P1 rulings (notes repo
+`notes/2026-08-06_phaseC_p1_rulings.md` @ `e3930cb`). Sequence: bounded
+completeness investigation → P1 estimand freeze → taxonomy +
+adjudicability gate → one-time holdout → verdict. Stage-2B FP spend
+withheld; holdout unread; quarantine intact; P2/P3 not begun.**
+
+P1 progress:
+1. Spec + FROZEN stopping rule committed BEFORE any aggregate
+   (`6e08d63`, `bfcb2e4`).
+2. **Tier 1 COMPLETE (`cf4d5db`, and the t1_findings commit):**
+   deployed C_molly reproduced integer-exactly (two-chain splice);
+   🔴 **the 43–58%-vs-81–99% completeness gap was DEAD-STRATA
+   ACCOUNTING** — 47.0% of in-window truth sits on S2N_RED ≤ 2
+   sightlines the fold zeroes (dX=0); live-support natural completeness
+   0.800/0.898/0.952/0.979/0.976 ≈ injected. Bridge criterion 4 was
+   mis-pooled (bridge verdict UNCHANGED — criteria 1–3 pair-based);
+   the −0.051±0.011 at 21.0 now stands FREE of selection (both
+   pipelines ≥97.9% complete there).
+3. **Next executable step — Tier 2 (bounded):** explain/bound the
+   sub-20.4 pair-mean offset (+0.12 dex at 19.6 decaying to +0.004 ±
+   0.013 at 20.4): mismatch/blend composition tests on cached pairs
+   (natural matched pairs claimed by blended sub-floor structure vs
+   injections with the 5,000 km/s exclusion; use
+   `p1_completeness_cache.npz` + the stage2A pairs JSONs; per-stratum,
+   PRE-selection covariates only for any reweighting). Then the §22
+   consequence report → P1 estimand freeze (parent population =
+   LIVE support S2N_RED>2 — decided by Tier 1), joint operator,
+   taxonomy, adjudicability gate.
+4. Cache: `/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/
+   p1_completeness_cache.npz` (cat_cut/truth_cut/is_TP + S2N/ZQSO).
+
+## PRIOR STATE (Stage-2A, superseded but binding context)
 
 1. **Complete:** Phase C1 in full — start-state verification; preimage
    (`diagnostics_phaseC/preimage/`); truth-by-SNR refold (allocation
