@@ -1,0 +1,204 @@
+{
+ "schema": "p1_holdout_gate/v1",
+ "date": "2026-08-07",
+ "design_side_only": true,
+ "n_holdout_design": 661,
+ "n_calib_design": 1936,
+ "bins": [
+  {
+   "N": [
+    19.5,
+    20.0
+   ],
+   "n_holdout": 110,
+   "n_holdout_live": 110,
+   "calib_pair_yield": 0.81,
+   "n_eff_pairs": 89.10000000000001,
+   "robust_width_used": 0.1,
+   "sigma_mean_dx": 0.01059402876939547,
+   "width_flagged_default": true,
+   "yield_from_t1_fallback": true,
+   "power_D-mean-31": {
+    "0.05": 0.833031116989041,
+    "0.01": 0.6369611091984698
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9971070627682341,
+    "0.01": 0.9839759758562983
+   },
+   "power_D-comp-5": {
+    "0.05": 0.26656876036780575,
+    "0.01": 0.10765632317768375
+   }
+  },
+  {
+   "N": [
+    20.0,
+    20.4
+   ],
+   "n_holdout": 108,
+   "n_holdout_live": 108,
+   "calib_pair_yield": 0.9,
+   "n_eff_pairs": 97.2,
+   "robust_width_used": 0.1,
+   "sigma_mean_dx": 0.010143010324169742,
+   "width_flagged_default": true,
+   "yield_from_t1_fallback": true,
+   "power_D-mean-31": {
+    "0.05": 0.8635323416568277,
+    "0.01": 0.6845508508517413
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9985087653274457,
+    "0.01": 0.9907055476124196
+   },
+   "power_D-comp-5": {
+    "0.05": 0.4098568632673816,
+    "0.01": 0.19939668190398496
+   }
+  },
+  {
+   "N": [
+    20.4,
+    20.7
+   ],
+   "n_holdout": 84,
+   "n_holdout_live": 84,
+   "calib_pair_yield": 0.9827586206896551,
+   "n_eff_pairs": 82.55172413793103,
+   "robust_width_used": 0.09939512473522857,
+   "sigma_mean_dx": 0.010939614267551414,
+   "width_flagged_default": false,
+   "yield_from_t1_fallback": false,
+   "power_D-mean-31": {
+    "0.05": 0.8088793125228357,
+    "0.01": 0.6017614074882374
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9954805726752316,
+    "0.01": 0.9769630718642335
+   },
+   "power_D-comp-5": {
+    "0.05": 0.9406794073759812,
+    "0.01": 0.8275780063281546
+   }
+  },
+  {
+   "N": [
+    20.7,
+    21.0
+   ],
+   "n_holdout": 59,
+   "n_holdout_live": 59,
+   "calib_pair_yield": 0.9955947136563876,
+   "n_eff_pairs": 58.74008810572687,
+   "robust_width_used": 0.08859881588109297,
+   "sigma_mean_dx": 0.011560074176781067,
+   "width_flagged_default": false,
+   "yield_from_t1_fallback": false,
+   "power_D-mean-31": {
+    "0.05": 0.7647542848485473,
+    "0.01": 0.5421353103113926
+   },
+   "power_D-mean-50": {
+    "0.05": 0.990991480339178,
+    "0.01": 0.9598892881051481
+   },
+   "power_D-comp-5": {
+    "0.05": 0.9712806166569945,
+    "0.01": 0.9004451114050966
+   }
+  },
+  {
+   "N": [
+    21.0,
+    21.3
+   ],
+   "n_holdout": 135,
+   "n_holdout_live": 135,
+   "calib_pair_yield": 1.0,
+   "n_eff_pairs": 135.0,
+   "robust_width_used": 0.08756698517489103,
+   "sigma_mean_dx": 0.007536566116887661,
+   "width_flagged_default": false,
+   "yield_from_t1_fallback": false,
+   "power_D-mean-31": {
+    "0.05": 0.9843530391221407,
+    "0.01": 0.9379084388260055
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9999985256210346,
+    "0.01": 0.9999753047034523
+   },
+   "power_D-comp-5": {
+    "0.05": 0.9999475087645465,
+    "0.01": 0.99944863332466
+   }
+  },
+  {
+   "N": [
+    21.3,
+    21.7
+   ],
+   "n_holdout": 75,
+   "n_holdout_live": 75,
+   "calib_pair_yield": 1.0,
+   "n_eff_pairs": 75.0,
+   "robust_width_used": 0.09724592292183432,
+   "sigma_mean_dx": 0.011228991955302928,
+   "width_flagged_default": false,
+   "yield_from_t1_fallback": false,
+   "power_D-mean-31": {
+    "0.05": 0.7883608948304192,
+    "0.01": 0.5733391490122255
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9936629080672872,
+    "0.01": 0.9697361863260512
+   },
+   "power_D-comp-5": {
+    "0.05": 0.9916210628610055,
+    "0.01": 0.9621428034986954
+   }
+  },
+  {
+   "N": [
+    21.7,
+    22.4
+   ],
+   "n_holdout": 90,
+   "n_holdout_live": 90,
+   "calib_pair_yield": 0.98,
+   "n_eff_pairs": 88.2,
+   "robust_width_used": 0.1,
+   "sigma_mean_dx": 0.010647942749998997,
+   "width_flagged_default": true,
+   "yield_from_t1_fallback": true,
+   "power_D-mean-31": {
+    "0.05": 0.8292984335060354,
+    "0.01": 0.6313879090695169
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9968883573762986,
+    "0.01": 0.9829933403090885
+   },
+   "power_D-comp-5": {
+    "0.05": 0.9233815024220581,
+    "0.01": 0.7916975978691259
+   }
+  }
+ ],
+ "critical_window_20p7_21p1": {
+  "n_holdout_live": 164,
+  "n_eff_pairs": 163.63876651982378,
+  "sigma_mean_dx": 0.006885706524461616,
+  "power_D-mean-31": {
+   "0.05": 0.9944908163247033,
+   "0.01": 0.9729634649656029
+  },
+  "power_D-mean-50": {
+   "0.05": 0.9999999425583077,
+   "0.01": 0.999998604226845
+  }
+ }
+}
