@@ -74,3 +74,63 @@ that is the GATED P1 predict step, not performed here.
 * The estimand freeze can now be written; per the PI's binding sequence
   it follows at the next work step, with the failure taxonomy and the
   holdout adjudicability gate, before any holdout read.
+
+## 5. POST-SPECIFIED power/robustness addendum (2026-08-07, `t2_power.py`)
+
+Everything in this section was specified AFTER the frozen verdict was
+seen; it diagnoses, it does not re-adjudicate. Frozen bins/proxies only.
+
+**Power of D2 against the material coupling alternative (P1).** The
+isolation-mirrored naturals do NOT sit at higher catalogued shell
+density than the injected sightlines (mean shell 0.144 vs 0.166 —
+lever −0.023). For the catalogued-neighbor channel to carry the
++0.045 dex offset at [21.0,21.3) it would need a slope difference of
++0.32 dex/count, which is **38σ above the measured** +0.0042 ± 0.0083;
+even crediting the channel with the FULL natural mean shell count at
+the 95% upper slope difference (+0.021), its contribution is
+**≤ +0.003 dex** vs +0.045 required. D2 was NOT underpowered for the
+channel it proxies; that channel is excluded at ~15× margin.
+
+**Mechanical bound on the un-proxied near-field channel (P2).**
+Injected dx vs `forest_flux_frac` (PRE-injection forest flux at the
+trough centre — a design covariate recorded at generation, before any
+selection): slope +0.037 ± 0.017 (n = 1,047; fff sd 0.186). Two
+consequences: (i) magnitude — a 1σ population shift in pre-existing
+central absorption moves dx by ≤ 0.007 dex (worst-conceivable
+full-range shift ≤ 0.037), 6× below the offset; (ii) **sign — the
+slope is POSITIVE (cleanest sites read HIGHEST): pre-existing
+absorption at the trough slightly DEPRESSES fitted N̂**, the opposite
+of what coupling-inflation requires. Correlated near-field absorption
+therefore cannot manufacture the positive natural−injected offset
+through the GP's measured response to local absorption (caveat: the
+response is measured on `inject_voigt` imprints; attenuation from fff
+point-noise could hide magnitude but cannot flip the sign).
+
+**Robustness (R1–R3).** R1 joint dependence: per-bin D2 slope
+differences z = −0.61 / +2.48 / −1.13 / +2.07 — sign-alternating, no
+coherent pattern, and z = −1.13 (wrong sign for coupling) at
+[21.0,21.3) where the offset peaks. R2: the offset persists at full
+size in shell = 0 pairs on both sides (+0.0184/+0.0185/**+0.0475**/
++0.0331 — cf. unrestricted +0.0177/+0.0249/+0.0454/+0.0376). R3 —
+**decision-relevant for the freeze: the natural kernel is WIDER than
+the injected one at every bin** (robust σ 0.100–0.116 vs 0.088–0.099;
+sd 0.124–0.136 vs 0.097–0.108, ~15–25%): an injected-K-plus-mean-
+correction design would still mis-state the kernel width (worth
+~50–150 G3 counts through the committed width sensitivities).
+
+**Projection (R4, labeled back-of-envelope).** The frozen D1 offsets
+folded through the committed preimage mean-shift sensitivities
+(overlap-weighted 0.2-dex bins; sub-20.4 excluded, bounded ≤ ~25
+counts): **ΔG3 = +387 ± 76 counts** — the scale of the full +450-count
+discrepancy. The exact number remains the GATED P1 refold.
+
+**Alternatives that remain viable at catalog level.** (i) imprint
+realism (supported); (ii) an environmental variable coupled to N̂ yet
+uncorrelated with BOTH catalogued shell density AND central forest
+transmission — no physical candidate in the LyaCoLoRe→quickquasars
+generative chain is known to us, but it cannot be excluded from
+catalogs; (iii) any truth-side property correlated with being-natural
+that alters the imprint at fixed catalog NHI — which IS the imprint
+hypothesis, not a rival. Verdict wording stays: **consistent with
+imprint-realism differences and disfavors the tested environmental
+explanations** — uniqueness is NOT claimed.

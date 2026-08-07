@@ -1,0 +1,316 @@
+{
+ "schema": "p1_t2_power/v1",
+ "date": "2026-08-07",
+ "label": "POST-SPECIFIED power/robustness addendum; frozen verdict NOT re-adjudicated",
+ "P1_d2_power": {
+  "mean_shell_natural": [
+   0.1436181434599156,
+   0.0027799283135272615
+  ],
+  "mean_shell_injected": [
+   0.166189111747851,
+   0.012643954488161937
+  ],
+  "lever_nat_minus_inj": -0.022570968287935395,
+  "slope_diff": {
+   "value": 0.004242221177980078,
+   "sigma": 0.008283812396984109,
+   "upper95": 0.020478493476068928
+  },
+  "offset_to_explain_21.0_21.3": 0.045362552080292086,
+  "required_slope_diff_if_channel_via_meanS": 0.31585530203537937,
+  "required_over_measured_sigma": 37.61710984315005,
+  "max_channel_contribution_dex_at_95": 0.002941083213889013,
+  "note": "Isolation-mirrored naturals do NOT sit at higher catalogued shell density than injected sightlines (lever ~ 0 or negative); even crediting the channel with the FULL natural mean shell count at the 95% upper slope difference, its contribution is max_channel_contribution_dex_at_95 \u2014 the catalogued-neighbor channel is excluded with large margin, i.e. D2 is NOT underpowered for that channel. The channel with NO catalog proxy (sub-17.2 absorption within 5,000 km/s) is bounded mechanically by P2 below."
+ },
+ "P2_forest_flux_mechanical": {
+  "n_pairs_domain": 1047,
+  "n_dup_zkey": 3,
+  "n_forest_blend_flagged": 8,
+  "n_fff_nan": 0,
+  "ols_dx_vs_fff": {
+   "slope": 0.037363100739932154,
+   "slope_sigma": 0.017305941648825648,
+   "n": 1047
+  },
+  "terciles": [
+   {
+    "fff_range": [
+     -Infinity,
+     0.5681709603547256
+    ],
+    "mean_dx": [
+     0.00172069750804302,
+     0.006682807973929738,
+     349
+    ]
+   },
+   {
+    "fff_range": [
+     0.5681709603547256,
+     0.7234291488161263
+    ],
+    "mean_dx": [
+     -0.0033045097704074633,
+     0.005239597294597003,
+     349
+    ]
+   },
+   {
+    "fff_range": [
+     0.7234291488161263,
+     Infinity
+    ],
+    "mean_dx": [
+     0.015570964107281584,
+     0.004629542023361022,
+     349
+    ]
+   }
+  ],
+  "fff_spread_sd": 0.1864233639581447,
+  "note": "forest_flux_frac = PRE-injection forest flux at the trough centre / local pseudo-continuum (design covariate, coadd_injection.py). A flat dx vs fff bounds the mechanical channel by which correlated near-field absorption could inflate fitted N-hat; implied max shift = |slope|x(fff spread) reported in the completion note."
+ },
+ "R1_slopes_by_N": [
+  {
+   "N": [
+    20.4,
+    20.7
+   ],
+   "natural": {
+    "slope": 0.004216920298790178,
+    "slope_sigma": 0.003718640607078499,
+    "n": 8867
+   },
+   "injected": {
+    "slope": 0.015672560927101325,
+    "slope_sigma": 0.01839442745938222,
+    "n": 228
+   },
+   "difference": {
+    "value": -0.011455640628311146,
+    "sigma": 0.018766546020061545,
+    "z": -0.61042882457246
+   }
+  },
+  {
+   "N": [
+    20.7,
+    21.0
+   ],
+   "natural": {
+    "slope": 0.003943827974514216,
+    "slope_sigma": 0.004500427740771517,
+    "n": 5553
+   },
+   "injected": {
+    "slope": -0.040511248454715605,
+    "slope_sigma": 0.01733519630155707,
+    "n": 226
+   },
+   "difference": {
+    "value": 0.04445507642922982,
+    "sigma": 0.0179098542892851,
+    "z": 2.4821573481938315
+   }
+  },
+  {
+   "N": [
+    21.0,
+    21.3
+   ],
+   "natural": {
+    "slope": 0.006559996116539259,
+    "slope_sigma": 0.005976286385437216,
+    "n": 3106
+   },
+   "injected": {
+    "slope": 0.022406938304152,
+    "slope_sigma": 0.012665805349110975,
+    "n": 413
+   },
+   "difference": {
+    "value": -0.01584694218761274,
+    "sigma": 0.014004949985713281,
+    "z": -1.131524368439624
+   }
+  },
+  {
+   "N": [
+    21.3,
+    21.7
+   ],
+   "natural": {
+    "slope": 0.03510272199260393,
+    "slope_sigma": 0.008622736252753461,
+    "n": 1434
+   },
+   "injected": {
+    "slope": -0.0029290410796784425,
+    "slope_sigma": 0.01621134894392948,
+    "n": 180
+   },
+   "difference": {
+    "value": 0.03803176307228238,
+    "sigma": 0.01836190118333045,
+    "z": 2.0712323137218975
+   }
+  }
+ ],
+ "R2_offset_shell0": [
+  {
+   "N": [
+    20.4,
+    20.7
+   ],
+   "offset": 0.01844968867336399,
+   "sigma": 0.007401525278163981,
+   "z": 2.492687382666159
+  },
+  {
+   "N": [
+    20.7,
+    21.0
+   ],
+   "offset": 0.0185150453857736,
+   "sigma": 0.006995275375199434,
+   "z": 2.646792927039808
+  },
+  {
+   "N": [
+    21.0,
+    21.3
+   ],
+   "offset": 0.04751925329461373,
+   "sigma": 0.005587241341693884,
+   "z": 8.504958062220974
+  },
+  {
+   "N": [
+    21.3,
+    21.7
+   ],
+   "offset": 0.03311289365870671,
+   "sigma": 0.008756508955165044,
+   "z": 3.7815177062286915
+  }
+ ],
+ "R3_widths": [
+  {
+   "N": [
+    20.4,
+    20.7
+   ],
+   "natural": {
+    "sd": 0.135701608904065,
+    "robust": 0.1156701761297649,
+    "n": 8867
+   },
+   "injected": {
+    "sd": 0.1076889046662788,
+    "robust": 0.09939512473522857,
+    "n": 228
+   }
+  },
+  {
+   "N": [
+    20.7,
+    21.0
+   ],
+   "natural": {
+    "sd": 0.12756380386142768,
+    "robust": 0.10762697384282915,
+    "n": 5553
+   },
+   "injected": {
+    "sd": 0.0970731535608451,
+    "robust": 0.08859881588109297,
+    "n": 226
+   }
+  },
+  {
+   "N": [
+    21.0,
+    21.3
+   ],
+   "natural": {
+    "sd": 0.12488770411628214,
+    "robust": 0.10216434031661867,
+    "n": 3106
+   },
+   "injected": {
+    "sd": 0.10533163464315386,
+    "robust": 0.08756698517489103,
+    "n": 413
+   }
+  },
+  {
+   "N": [
+    21.3,
+    21.7
+   ],
+   "natural": {
+    "sd": 0.1243787877381497,
+    "robust": 0.09975017106527181,
+    "n": 1434
+   },
+   "injected": {
+    "sd": 0.10295273523948156,
+    "robust": 0.09724592292183432,
+    "n": 180
+   }
+  }
+ ],
+ "R4_g3_projection": {
+  "per_bin": [
+   {
+    "N": [
+     20.4,
+     20.7
+    ],
+    "W_counts_per_dex": 1521.380025038744,
+    "offset": 0.017702285657740312,
+    "sigma": 0.007378111443459617,
+    "counts": 26.931903797215952,
+    "counts_sigma": 11.224911372589235
+   },
+   {
+    "N": [
+     20.7,
+     21.0
+    ],
+    "W_counts_per_dex": 9641.799527086747,
+    "offset": 0.024874019979816447,
+    "sigma": 0.006675277839882104,
+    "counts": 239.8303140781405,
+    "counts_sigma": 64.36169071974791
+   },
+   {
+    "N": [
+     21.0,
+     21.3
+    ],
+    "W_counts_per_dex": 5240.332442924258,
+    "offset": 0.045362552080292086,
+    "sigma": 0.005669118191513693,
+    "counts": 237.71485336019592,
+    "counts_sigma": 29.708063981761303
+   },
+   {
+    "N": [
+     21.3,
+     21.7
+    ],
+    "W_counts_per_dex": -3122.987071967407,
+    "offset": 0.037563641458363405,
+    "sigma": 0.00817767356666321,
+    "counts": -117.31076665048782,
+    "counts_sigma": 25.538768827458796
+   }
+  ],
+  "total_counts": 387.1663045850645,
+  "total_sigma": 76.1788923941125,
+  "note": "BACK-OF-ENVELOPE, labeled: the frozen D1 natural-minus-injected offsets folded through the committed preimage mean-shift sensitivities (0.2-dex bins, overlap-weighted). Sub-20.4 contribution excluded (bounded <=~25 counts, Tier-1). This projects what an UNCORRECTED injected-anchored kernel would omit; the exact number is the GATED P1 refold, not performed."
+ },
+ "wall_s": 1.7
+}
