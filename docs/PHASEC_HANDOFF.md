@@ -18,16 +18,21 @@
    (`docs/PHASEC_CHECKPOINT_2026-08-06.md`); independent code review
    (`docs/PHASEC_CODE_REVIEW_2026-08-06.md`, PASS-WITH-FINDINGS, all
    eight findings dispositioned — see the work log).
-2. **Running:** **Stage-2A GP jobs IN FLIGHT** — 56619743 (prod_v1,
-   2,597 spec, ~76 CPU-h, wall ~8 h) and 56619744 (env-probe, 260 spec,
-   ~1 h), launched from the frozen state (freeze doc + A1/A2; role
-   manifests committed BEFORE sbatch at `c5faab0`/`ff44c4b`). Do NOT
-   cancel; on completion run the scoring → bridge → go/no-go chain in
-   the NEXT COMMANDS below.
-3. **Blocked:** Stage 2B (the main FP allocation) is blocked on the
-   Stage-2A go/no-go (rulings §3) — NOT on further PI input unless the
-   bridge fails or precision/power miss. Authorization: 1,850 CPU-h
-   ceiling, 5% FP target (Decision 1, recorded above).
+2. **Running:** nothing. Stage-2A GP jobs 56619743/56619744 COMPLETED
+   (66.9 CPU-h consumed; +8.3 pilot ⇒ ≈75 of 1,850 spent).
+3. **Blocked: 🔴 STAGE-2A NO-GO — the production bridge FAILED all four
+   frozen criteria; the response is QUARANTINED
+   (`quarantined_forward_response_2lpt0_phaseC.npz`); STOPPED FOR PI
+   REVIEW per rulings §3.1. Stage 2B's main FP spend is WITHHELD.**
+   Read `docs/PHASEC_STAGE2A_BRIDGE_VERDICT.md` FIRST: the failure
+   decomposes into (1) a detection-conditioned estimand mismatch below
+   ~20.4 — (C_molly, K_natural) is a jointly-defined pair the injected
+   campaign does not share — vanishing exactly where completeness
+   saturates (Δ = +0.004 at 20.4), and (2) a genuine high-N boundary
+   discrepancy: −0.051 ± 0.011 at 21.0, and measured ≈0…−0.04 above
+   21.2 vs the clamp's +0.03…+0.09. Precision/power themselves PASSED
+   (σ(G3) = 99.0, power 0.976). PI decision paths P1/P2/P3 in the
+   verdict doc; do not adopt any unilaterally.
 4. **Next executable step (when jobs 56619743/56619744 complete):**
    ```
    cd /home/mfho/wt_calib_phaseC
@@ -90,6 +95,10 @@ common-reference FP-to-5% line ONLY; "≈1,850" = the complete envelope:
 | Covariance / null / operating-characteristic simulations (numpy-reduced) | ≤ 5 |
 | Fixed overhead (pack re-extraction 21 s/mock; artifact builds; tests) | ≤ 5 |
 | **Projected total** | **≈ 1,840 ≤ 1,850 ceiling** |
+
+ACTUALS (sacct TotalCPU): pilot 8.3; Stage-2A production GP jobs
+56619743+56619744 = 66.9 ⇒ **≈75 CPU-h spent**; Stage 2B NOT launched
+(withheld at the Stage-2A no-go).
 
 Spend tracking: append actual sacct TotalCPU per campaign to this table
 as jobs complete; a projected breach of 1,850 stops all launches.
@@ -203,6 +212,26 @@ envelope; if the rerun would breach the ceiling ⇒ PI ruling first.
   builder committed (A2, `4076ad9`); **GP jobs 56619743 (prod) +
   56619744 (probe) submitted**. Budget spent so far this stage: ~8.3
   CPU-h pilot (C1) + ~77 CPU-h in flight.
+- [06 s3] **STAGE-2A EXECUTED AND STOPPED AT THE NO-GO.** GP jobs
+  completed (66.9 CPU-h); scoring at full fidelity (bridge 694/769,
+  production 1,163/1,167 op-matched, 0 out-of-window; roles enforced;
+  holdout untouched); precision/power go-condition PASSED (σ(G3)=99.0,
+  power 0.976); **the frozen bridge FAILED all four criteria**
+  (D = −476 ± 105 counts; z_mean 7.9; z_width 10.5; completeness far
+  outside 3σ at every bridge anchor) → artifact QUARANTINED by the
+  builder; diagnostic-only projection (labeled) shows wholesale
+  adoption would shift groups by (−3,700, +1,200, −470) — the low-N
+  estimand contamination the quarantine prevented. Diagnosis: (1)
+  detection-conditioned estimand mismatch below ~20.4 (Δ tracks
+  completeness 0.43→0.58 molly vs 0.81→0.99 injected; vanishes exactly
+  at 20.4; clean-probe rules out substrate effects, |z|≤2.0 everywhere);
+  (2) the high-N boundary: −0.051±0.011 at 21.0 and ≈0…−0.04 measured
+  above 21.2 vs clamp +0.03…+0.09 — the original Phase-C question, now
+  measured. Verdict + PI decision paths (P1 pair-replacement / P2
+  estimand-matched natural remeasurement on mock-1 ≈1,500 CPU-h / P3
+  bounded-systematic label): `docs/PHASEC_STAGE2A_BRIDGE_VERDICT.md`.
+  Two mechanical builder fixes during scoring (dx_sd row field; anchor
+  union) + one recorded cosmetic defect (criterion-4 21.0 row inert).
 - [06 s2] Independent §21 code review RETURNED: **PASS-WITH-FINDINGS**
   (`docs/PHASEC_CODE_REVIEW_2026-08-06.md` — verbatim record +
   disposition). Every re-run reproduced committed numbers (pairs JSON

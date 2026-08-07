@@ -156,7 +156,7 @@ def main():
         omega = rec["dx_sd"] / old_s - 1.0
         sig_om = 1.0 / np.sqrt(2.0 * n)     # fractional width sd
         rows.append(dict(logN=A_n, sr=sr, zr=zr, n=n, delta=d,
-                         sig_old=sig_old, sig_new=sig_new,
+                         sig_old=sig_old, sig_new=sig_new, dx_sd=rec["dx_sd"],
                          sig_d=float(np.hypot(sig_old, sig_new)),
                          omega=omega, sig_omega=sig_om,
                          healpix=rec.get("pair_healpix", []),
@@ -265,7 +265,7 @@ def main():
 
     # ---------------- 2/3. artifact (adopted or quarantined) -------------
     new_anchor_N = sorted({round(float(r["logN"]), 2)
-                           for r in pp["per_anchor"]})
+                           for r in pp["per_anchor"] + pb["per_anchor"]})
     B_new = len(new_anchor_N)
     ph_mean = np.full((3, 3, B_new), np.nan)
     ph_sd = np.full((3, 3, B_new), np.nan)
