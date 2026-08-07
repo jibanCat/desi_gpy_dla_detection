@@ -22,16 +22,26 @@ P1 progress:
    mis-pooled (bridge verdict UNCHANGED — criteria 1–3 pair-based);
    the −0.051±0.011 at 21.0 now stands FREE of selection (both
    pipelines ≥97.9% complete there).
-3. **Next executable step — Tier 2 (bounded):** explain/bound the
-   sub-20.4 pair-mean offset (+0.12 dex at 19.6 decaying to +0.004 ±
-   0.013 at 20.4): mismatch/blend composition tests on cached pairs
-   (natural matched pairs claimed by blended sub-floor structure vs
-   injections with the 5,000 km/s exclusion; use
-   `p1_completeness_cache.npz` + the stage2A pairs JSONs; per-stratum,
-   PRE-selection covariates only for any reweighting). Then the §22
-   consequence report → P1 estimand freeze (parent population =
-   LIVE support S2N_RED>2 — decided by Tier 1), joint operator,
-   taxonomy, adjudicability gate.
+3. **Tier 2 PARTIAL (`ed6865e`) — read `t2_findings.md`:** (a) Level A:
+   the deployed SURFACE misfits its OWN pairs (+0.071 at [19.5,19.8),
+   −0.035 at [20.4,20.7)) — much of the low-N bridge Δ was surface
+   representation error (bridge FAIL stands: it tested what production
+   uses); (b) blends quantified (7.5–8% of pairs, +0.03..+0.10 dex,
+   secondary); (c) 🔴 SURVIVING: pair-level natural−injected offset
+   +0.00..+0.06, largest +0.059 at 21.0 with BOTH selections ≥98%
+   complete — candidates: host-environment forest coupling / imprint
+   realism (§18 class). Stopping-rule criterion 3 NOT met (~700 counts
+   on G3 if coherent over [20.7,21.1)).
+4. **Next executable step — Tier 2 completion:** per-stratum
+   paired/common-substrate comparisons of the 20.7–21.3 offset
+   (same-healpix, same-SNR-stratum, same-z natural-vs-injected pair
+   subsets; prespecified reweighting on PRE-selection covariates only:
+   z_true, S2N_RED, z_qso); test the offset's dependence on host N and
+   on local catalogued absorber density (host-coupling signature) vs
+   flatness (imprint-realism signature). If catalogs cannot separate
+   them → Tier-3 spectrum-level need goes BACK TO THE PI with a budget
+   (§21: forced-fit/stack campaign not authorized). P1 estimand freeze
+   BLOCKED until this attribution/bounding lands.
 4. Cache: `/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/
    p1_completeness_cache.npz` (cat_cut/truth_cut/is_TP + S2N/ZQSO).
 
