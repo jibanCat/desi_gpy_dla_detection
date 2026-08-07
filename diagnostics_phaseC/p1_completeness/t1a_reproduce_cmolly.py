@@ -139,6 +139,8 @@ def main():
         tr_Z=(col(truth_cut, "Z_TRUTH") if "Z_TRUTH" in truth_cut.colnames
               else col(truth_cut, "Z_DLA")),
         tr_SNR=col(truth_cut, "SNR"),
+        tr_S2N=col(truth_cut, "S2N_RED"),
+        tr_ZQSO=col(truth_cut, "Z_QSO"),
     )
     if "DLAFLAG" in cat_cut.colnames:
         save["cat_DLAFLAG"] = np.asarray(cat_cut["DLAFLAG"], float)

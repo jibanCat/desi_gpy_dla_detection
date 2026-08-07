@@ -1,0 +1,232 @@
+{
+ "schema": "p1_t1_ledger/v1",
+ "date": "2026-08-06",
+ "hierarchy": [
+  "H1_no_candidate",
+  "H2_bundle_cut",
+  "H3_subthreshold",
+  "H4_tolerance",
+  "H5_assignment",
+  "matched"
+ ],
+ "dz_rel": 0.01,
+ "ledger": {
+  "(19.5, 20.0)": {
+   "H1_no_candidate": {
+    "n": 3834,
+    "near_neighbor": 154
+   },
+   "H2_bundle_cut": {
+    "n": 39
+   },
+   "H3_subthreshold": {
+    "n": 1826,
+    "near_neighbor": 49
+   },
+   "H5_assignment": {
+    "n": 766,
+    "near_neighbor": 764
+   },
+   "matched": {
+    "n": 25895
+   }
+  },
+  "(20.0, 20.4)": {
+   "H1_no_candidate": {
+    "n": 1035,
+    "near_neighbor": 53
+   },
+   "H2_bundle_cut": {
+    "n": 23,
+    "near_neighbor": 1
+   },
+   "H3_subthreshold": {
+    "n": 767,
+    "near_neighbor": 16
+   },
+   "H5_assignment": {
+    "n": 364,
+    "near_neighbor": 363
+   },
+   "matched": {
+    "n": 19174
+   }
+  },
+  "(20.4, 21.0)": {
+   "H1_no_candidate": {
+    "n": 327,
+    "near_neighbor": 8
+   },
+   "H2_bundle_cut": {
+    "n": 24,
+    "near_neighbor": 1
+   },
+   "H3_subthreshold": {
+    "n": 357,
+    "near_neighbor": 9
+   },
+   "H5_assignment": {
+    "n": 166,
+    "near_neighbor": 164
+   },
+   "matched": {
+    "n": 17323
+   }
+  },
+  "(21.0, 21.5)": {
+   "H1_no_candidate": {
+    "n": 34,
+    "near_neighbor": 2
+   },
+   "H2_bundle_cut": {
+    "n": 12
+   },
+   "H3_subthreshold": {
+    "n": 42,
+    "near_neighbor": 5
+   },
+   "H5_assignment": {
+    "n": 16,
+    "near_neighbor": 16
+   },
+   "matched": {
+    "n": 4871
+   }
+  },
+  "(21.5, 23.0)": {
+   "H1_no_candidate": {
+    "n": 11
+   },
+   "H2_bundle_cut": {
+    "n": 3
+   },
+   "H3_subthreshold": {
+    "n": 7
+   },
+   "matched": {
+    "n": 868
+   }
+  }
+ },
+ "alt_order": {
+  "(19.5, 20.0)": {
+   "H1_no_candidate": {
+    "n": 3834
+   },
+   "matched": {
+    "n": 25895
+   },
+   "H3_subthreshold": {
+    "n": 1830
+   },
+   "H5_assignment": {
+    "n": 766
+   },
+   "H2_bundle_cut": {
+    "n": 35
+   }
+  },
+  "(20.0, 20.4)": {
+   "matched": {
+    "n": 19174
+   },
+   "H1_no_candidate": {
+    "n": 1035
+   },
+   "H3_subthreshold": {
+    "n": 767
+   },
+   "H5_assignment": {
+    "n": 364
+   },
+   "H2_bundle_cut": {
+    "n": 23
+   }
+  },
+  "(20.4, 21.0)": {
+   "matched": {
+    "n": 17323
+   },
+   "H2_bundle_cut": {
+    "n": 24
+   },
+   "H3_subthreshold": {
+    "n": 357
+   },
+   "H1_no_candidate": {
+    "n": 327
+   },
+   "H5_assignment": {
+    "n": 166
+   }
+  },
+  "(21.0, 21.5)": {
+   "matched": {
+    "n": 4871
+   },
+   "H3_subthreshold": {
+    "n": 42
+   },
+   "H2_bundle_cut": {
+    "n": 12
+   },
+   "H1_no_candidate": {
+    "n": 34
+   },
+   "H5_assignment": {
+    "n": 16
+   }
+  },
+  "(21.5, 23.0)": {
+   "matched": {
+    "n": 868
+   },
+   "H1_no_candidate": {
+    "n": 11
+   },
+   "H3_subthreshold": {
+    "n": 7
+   },
+   "H2_bundle_cut": {
+    "n": 3
+   }
+  }
+ },
+ "secondary_flags": {
+  "(19.5, 20.0)": {
+   "multi_truth_sightline": 8000,
+   "near_neighbor_5000kms": 2098
+  },
+  "(20.0, 20.4)": {
+   "near_neighbor_5000kms": 1405,
+   "multi_truth_sightline": 5370
+  },
+  "(20.4, 21.0)": {
+   "multi_truth_sightline": 4604,
+   "near_neighbor_5000kms": 1220
+  },
+  "(21.0, 21.5)": {
+   "multi_truth_sightline": 1252,
+   "near_neighbor_5000kms": 354
+  },
+  "(21.5, 23.0)": {
+   "multi_truth_sightline": 249,
+   "near_neighbor_5000kms": 62
+  }
+ },
+ "natural_near_neighbor_fraction": {
+  "(19.5, 20.0)": 0.06483312731767614,
+  "(20.0, 20.4)": 0.06576791649112952,
+  "(20.4, 21.0)": 0.06704401824476562,
+  "(21.0, 21.5)": 0.07115577889447236,
+  "(21.5, 23.0)": 0.06974128233970754
+ },
+ "injection_placement": {
+  "accepted": 2597,
+  "redraws_hcd": 546,
+  "redraws_window": 489,
+  "proposals_estimated": 3632,
+  "note": "placement rejects (redraws) ONLY: used sightline, window-hosting failure, truth-HCD within 5,000 km/s (prodlike). No mask/SNR/blend/forest screening exists in the generator \u2014 the one systematic parent-population difference vs natural truth is the HCD-neighbor exclusion, quantified above on the natural side."
+ },
+ "wall_s": 3.6
+}
