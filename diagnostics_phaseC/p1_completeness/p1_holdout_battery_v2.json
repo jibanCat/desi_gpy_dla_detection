@@ -1,0 +1,238 @@
+{
+ "schema": "p1_holdout_battery/v2",
+ "date": "2026-08-07",
+ "supersedes": "p1_holdout_battery/v1 (retained as record)",
+ "frozen": true,
+ "no_holdout_outcome_used": true,
+ "primary_support_truth": "N_true >= 20.3",
+ "primary_family": {
+  "role": "the load-bearing P1 predictive gate (confirmatory)",
+  "alpha_family": 0.01,
+  "multiplicity": "Holm within family",
+  "tests": {
+   "mean_per_bin": [
+    {
+     "N": [
+      20.4,
+      20.7
+     ],
+     "calibration": {
+      "n": 228,
+      "mean": 0.02325817561716515,
+      "se": 0.0071318719363689526,
+      "sd": 0.1076889046662788
+     },
+     "yield": 0.9827586206896551
+    },
+    {
+     "N": [
+      20.7,
+      21.0
+     ],
+     "calibration": {
+      "n": 226,
+      "mean": 0.017111664700674555,
+      "se": 0.006457210123289778,
+      "sd": 0.0970731535608451
+     },
+     "yield": 0.9955947136563876
+    },
+    {
+     "N": [
+      21.0,
+      21.3
+     ],
+     "calibration": {
+      "n": 413,
+      "mean": -0.004623543243990776,
+      "se": 0.005183030902668027,
+      "sd": 0.10533163464315386
+     },
+     "yield": 1.0
+    },
+    {
+     "N": [
+      21.3,
+      21.7
+     ],
+     "calibration": {
+      "n": 180,
+      "mean": -0.013217005052343507,
+      "se": 0.007673643815500629,
+      "sd": 0.10295273523948156
+     },
+     "yield": 1.0
+    },
+    {
+     "N": [
+      21.7,
+      22.4
+     ],
+     "calibration": {
+      "n": 253,
+      "mean": -0.03277414910450973,
+      "se": 0.007625795205511698,
+      "sd": 0.1212956981374464
+     },
+     "yield": 0.98
+    }
+   ],
+   "pooled_critical": {
+    "N": [
+     20.7,
+     21.1
+    ],
+    "calibration": {
+     "n": 542,
+     "mean": 0.0037171247408410366,
+     "se": 0.004529830747635367,
+     "sd": 0.10545850699874693
+    }
+   },
+   "completeness_per_bin": [
+    {
+     "N": [
+      20.4,
+      20.7
+     ],
+     "yield": 0.9827586206896551
+    },
+    {
+     "N": [
+      20.7,
+      21.0
+     ],
+     "yield": 0.9955947136563876
+    },
+    {
+     "N": [
+      21.0,
+      21.3
+     ],
+     "yield": 1.0
+    },
+    {
+     "N": [
+      21.3,
+      21.7
+     ],
+     "yield": 1.0
+    },
+    {
+     "N": [
+      21.7,
+      22.4
+     ],
+     "yield": 0.98
+    }
+   ],
+   "width_per_bin": "variance-ratio at alpha 0.01; DIAGNOSTIC: review flag unless deviation > 25%",
+   "joint_operator": "per-group landing probabilities (G2/G3/miss) on [20.4,21.1] x live strata from frozen C_inj + K_natural minus frozen transfer offsets; chi^2 alpha 0.01"
+  },
+  "verdict": "any Holm-failure among mean/pooled/joint or a coherent completeness failure => HIGH-N PREDICTIVE NO-GO (F-pre primary); width-only deviation <= 25% => review flag, not no-go"
+ },
+ "low_boundary_family": {
+  "role": "transport extension gate (cannot reject high-N)",
+  "alpha_family": 0.01,
+  "multiplicity": "Holm within family",
+  "tests": {
+   "mean_per_bin": [
+    {
+     "N": [
+      19.5,
+      20.0
+     ],
+     "calibration": {
+      "n": 292,
+      "mean": 0.06971769712246063,
+      "se": 0.010581835678493245,
+      "sd": 0.1808224873387619
+     },
+     "yield": 0.81
+    },
+    {
+     "N": [
+      20.0,
+      20.4
+     ],
+     "calibration": {
+      "n": 265,
+      "mean": 0.029205029862726006,
+      "se": 0.008109071791859237,
+      "sd": 0.1320061249005693
+     },
+     "yield": 0.9
+    }
+   ],
+   "completeness_per_bin": [
+    {
+     "N": [
+      19.5,
+      20.0
+     ],
+     "yield": 0.81
+    },
+    {
+     "N": [
+      20.0,
+      20.4
+     ],
+     "yield": 0.9
+    }
+   ],
+   "subfloor_rate": {
+    "reference": {
+     "[19.5,20.0)": {
+      "rate": 0.07191780821917808,
+      "n": 292
+     },
+     "[20.0,20.4)": {
+      "rate": 0.0,
+      "n": 265
+     }
+    },
+    "test": "binomial two-sided alpha 0.01"
+   },
+   "lya_em_region": {
+    "reference": {
+     "interior": {
+      "n": 1537,
+      "mean": 0.01743626207946349,
+      "se": 0.003341534585432397,
+      "sd": 0.13100349863163963
+     },
+     "lya_em": {
+      "n": 204,
+      "mean": -0.03874916531613698,
+      "se": 0.006434432178826456,
+      "sd": 0.09190207376680433
+     },
+     "delta": -0.056185427395600465
+    },
+    "test": "holdout LYA_EM-minus-interior delta vs the frozen calibration delta; two-sided z, alpha 0.01; expected n ~ 60-70 => powered for a null-region alternative (z ~ 4)"
+   },
+   "below_floor_migration": "NOT holdout-testable: no injections below 19.5 exist (Phase-C directive); adjudicated development-side only (p1_migration.json); recorded here so its absence is never read as a pass"
+  },
+  "verdict_mapping": "failure => exactly one of: low-boundary support failure (F-sup-low) / support restriction / migration systematic / conditional-kernel requirement / unadjudicated transport (underpowered). It DOES NOT reject the high-N operator unless (frozen criterion) the implied contamination of high-N observed bins exceeds 50 G3-equivalent counts OR the primary joint-operator test fails simultaneously"
+ },
+ "exploratory": {
+  "subgroups": [
+   "z_qso terciles",
+   "LYB_EM region",
+   "EDGE flag",
+   "per-region high-N splits"
+  ],
+  "rules": "uncorrected, labeled exploratory; cannot reject the high-N operator; cannot tune anything after the read; cannot be promoted to confirmatory on favorable results"
+ },
+ "global_verdict_enumeration": [
+  "HIGH-N PREDICTIVE PASS (primary family all-pass)",
+  "HIGH-N PREDICTIVE FAILURE (F-pre; taxonomy primary)",
+  "LOW-BOUNDARY SUPPORT FAILURE (F-sup-low)",
+  "LOW-BOUNDARY TRANSPORT QUALIFICATION (systematic/conditional-kernel/support restriction)",
+  "SUBGROUP UNDERPOWER (non-adjudicable, recorded)",
+  "IMPLEMENTATION-INVALID (F-imp; nothing scientific adjudicated)"
+ ],
+ "gatekeeping": "hierarchical: the primary family alone decides the P1 predictive verdict; the low-boundary family is evaluated regardless but maps only to its own outcomes; exploratory results carry no verdict weight. high-N operator validity != low-boundary transport validity, by construction.",
+ "false_fail": "<= ~1% per family under the null (Holm, alpha 0.01); overall verdict false-fail bounded by the primary family's rate",
+ "non_adjudicable_dex": 0.015
+}
