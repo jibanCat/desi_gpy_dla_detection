@@ -1,0 +1,373 @@
+{
+ "schema": "p1_refold_closure/v1",
+ "date": "2026-08-08",
+ "authorization": "PI ruling 2026-08-08 \u00a75.2 \u2014 ONE gated refold",
+ "prediction_file": "p1_refold_prediction.json (verified equal in-memory before closure)",
+ "observed_total_live": 88071.0,
+ "groups_observed": [
+  37981.0,
+  22969.0,
+  6136.0
+ ],
+ "groups_predicted": [
+  38158.924658859825,
+  22997.897824487092,
+  6196.036425197745
+ ],
+ "groups_residual_obs_minus_pred": [
+  -177.92465885982529,
+  -28.897824487092294,
+  -60.0364251977453
+ ],
+ "per_group": [
+  {
+   "group": "G1[19.7,20.3)",
+   "prediction": 38158.924658859825,
+   "observed": 37981.0,
+   "residual": -177.92465885982529,
+   "sigma_total": 932.0659782003297,
+   "z_total": -0.1908927726375866,
+   "sigma_frozen_construction": 921.1213234554349,
+   "sigma_CKM": 142.4166254137679,
+   "relies_on": "(C,K) certified >= 20.3 truth + RESTRICTED [19.5,20.3) truth rows + explicit M source"
+  },
+  {
+   "group": "G2[20.3,21.0)",
+   "prediction": 22997.897824487092,
+   "observed": 22969.0,
+   "residual": -28.897824487092294,
+   "sigma_total": 175.6422038832775,
+   "z_total": -0.1645266561691304,
+   "sigma_frozen_construction": 151.11804845892837,
+   "sigma_CKM": 89.51826190750019,
+   "relies_on": "(C,K) certified + small explicit M (144)"
+  },
+  {
+   "group": "G3[21.0,21.6)",
+   "prediction": 6196.036425197745,
+   "observed": 6136.0,
+   "residual": -60.0364251977453,
+   "sigma_total": 91.74761465516934,
+   "z_total": -0.6543649709411019,
+   "sigma_frozen_construction": 78.66704158328145,
+   "sigma_CKM": 47.21357181412686,
+   "relies_on": "(C,K) certified; M = 0 measured"
+  }
+ ],
+ "layerA_window_chi2_dof": 6.535064132681742,
+ "layerA_threshold": "<= 3 (ratified, conditional-only label)",
+ "layerB": {
+  "frozen_construction": {
+   "T_obs": 0.6494614260681076,
+   "p_value": 0.8800599700149925,
+   "p_is_bound": false,
+   "p_mc_error": 0.00726297695019143,
+   "null_quantiles": {
+    "q05": 0.3327392208691809,
+    "q50": 2.3931440364523713,
+    "q95": 8.062781883044105,
+    "q99": 11.825693174524995
+   },
+   "null_mean": 2.9903188888810712,
+   "null_sd": 2.4870617115105222,
+   "condition_number": 137.15471412106095,
+   "fallback_1d": false,
+   "covariance": [
+    [
+     848464.492524292,
+     -465.94900977976005,
+     1207.7265870384538
+    ],
+    [
+     -465.94900977976005,
+     22836.66457003502,
+     96.8998591795898
+    ],
+    [
+     1207.7265870384538,
+     96.8998591795898,
+     6188.503431465731
+    ]
+   ],
+   "residual_z": [
+    -0.19316093801017464,
+    -0.1912268242065493,
+    -0.7631712593918674
+   ],
+   "seeds": {
+    "cov": 41001,
+    "null": 43001,
+    "B_cov": 2000,
+    "B_null": 2000
+   }
+  },
+  "total_with_CKM": {
+   "T_obs": 0.5189014649588188,
+   "p_value": 0.9090454772613693,
+   "p_is_bound": false,
+   "p_mc_error": 0.006428082034844139,
+   "null_quantiles": {
+    "q05": 0.3322652527101131,
+    "q50": 2.3252649314876557,
+    "q95": 7.7618158053929625,
+    "q99": 10.860551008752223
+   },
+   "null_mean": 2.966447960303055,
+   "null_sd": 2.4491742036875435,
+   "condition_number": 104.91476686031882,
+   "fallback_1d": false,
+   "covariance": [
+    [
+     868746.9877185374,
+     -4703.8361417430115,
+     1491.3827328587904
+    ],
+    [
+     -4703.8361417430115,
+     30850.18378497482,
+     -1747.9036106286849
+    ],
+    [
+     1491.3827328587904,
+     -1747.9036106286849,
+     8417.624794913445
+    ]
+   ],
+   "residual_z": [
+    -0.1908927726375866,
+    -0.1645266561691304,
+    -0.6543649709411019
+   ],
+   "seeds": {
+    "cov": 41001,
+    "null": 43001,
+    "B_cov": 2000,
+    "B_null": 2000
+   }
+  }
+ },
+ "layerB_rule_note": "p < 0.01 was RATIFIED (2026-08-06 decision 2) for the frozen multi-mock Layer-B construction; this refold is single-mock (2lpt0, within-realization by design) and the 'total' variant adds the (C,K,M) covariance per the 2026-08-08 ruling \u2014 both variants reported; construction difference disclosed",
+ "phaseB_baseline_2lpt0": {
+  "residual": [
+   -1760.8226779636461,
+   130.46366370638862,
+   450.2463629028607
+  ],
+  "residual_z": [
+   -1.986447208610899,
+   0.8644488287259965,
+   5.934792817350319
+  ],
+  "T_obs": 40.72123098109325,
+  "p_value": 0.0004997501249375312
+ },
+ "fraction_of_G3_discrepancy_explained": 1.1333412774523577,
+ "per_bin": {
+  "nhat_edges": [
+   19.5,
+   19.6,
+   19.7,
+   19.8,
+   19.9,
+   20.0,
+   20.1,
+   20.2,
+   20.3,
+   20.4,
+   20.5,
+   20.6,
+   20.7,
+   20.8,
+   20.9,
+   21.0,
+   21.1,
+   21.2,
+   21.3,
+   21.4,
+   21.5,
+   21.6,
+   21.7,
+   21.8,
+   21.9,
+   22.0,
+   22.1,
+   22.2,
+   22.3,
+   22.4
+  ],
+  "observed": [
+   11128.0,
+   9165.0,
+   7688.0,
+   7154.0,
+   6550.0,
+   6036.0,
+   5538.0,
+   5015.0,
+   4582.0,
+   4196.0,
+   3722.0,
+   3236.0,
+   2852.0,
+   2389.0,
+   1992.0,
+   1656.0,
+   1437.0,
+   1138.0,
+   876.0,
+   623.0,
+   406.0,
+   294.0,
+   156.0,
+   104.0,
+   63.0,
+   35.0,
+   19.0,
+   12.0,
+   9.0
+  ],
+  "mu_total": [
+   12356.272933412254,
+   9435.068290151547,
+   8241.820750085608,
+   6580.123405886968,
+   6994.086360832339,
+   5962.035576738916,
+   5519.806845580639,
+   4861.0517197353565,
+   4564.46995374151,
+   4203.9660160278045,
+   3685.8419567492033,
+   3261.4958483458913,
+   2873.523480456995,
+   2411.1818552593536,
+   1997.4187139063345,
+   1695.311814718952,
+   1425.6912018004814,
+   1147.815834954968,
+   892.3688981425768,
+   616.2940110678477,
+   418.55466451291943,
+   298.2262119583844,
+   168.68603391087808,
+   104.62248340919437,
+   52.75234398275675,
+   34.97632135743877,
+   17.821650816426146,
+   15.63395695589878,
+   7.915536301491351
+  ],
+  "z_poisson": [
+   -11.049716494443466,
+   -2.7803602499972264,
+   -6.100390569609191,
+   7.0745935346924655,
+   -5.310090705914596,
+   0.9579119553518262,
+   0.24487591137325465,
+   2.208054155824107,
+   0.25947043851765184,
+   -0.12286030173346771,
+   0.5955751450891094,
+   -0.4464378954802017,
+   -0.40151809779481074,
+   -0.4517341087106357,
+   -0.12124439333028665,
+   -0.9547689742808613,
+   0.29950475352817735,
+   -0.28972844902331296,
+   -0.5479579517007737,
+   0.2701275369118253,
+   -0.6136616999917774,
+   -0.24472501762793278,
+   -0.9767564871620518,
+   -0.06085766266037455,
+   1.4109241209819794,
+   0.004003775672977724,
+   0.27912583814058156,
+   -0.9190630854722357,
+   0.3854560321300413
+  ],
+  "window_mask": [
+   false,
+   false,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   true,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false,
+   false
+  ]
+ },
+ "G3_decomposition": {
+  "completeness_identity_kernel": 5057.618862300615,
+  "response_kernel_redistribution": 1138.4175628971307,
+  "migration_source": 0.0,
+  "fp": 0.0,
+  "total": 6196.036425197745,
+  "sigma_CKM": 47.21357181412686,
+  "per_truth_bin_contribution_to_G3": {
+   "[19.5,19.7)": 1.7102031516953795,
+   "[19.7,19.9)": 3.64771348995599,
+   "[19.9,20.1)": 7.8871026941443,
+   "[20.1,20.3)": 31.497819967560897,
+   "[20.3,20.5)": 57.528093469145915,
+   "[20.5,20.7)": 179.07770934976696,
+   "[20.7,20.9)": 655.8046117763187,
+   "[20.9,21.1)": 2023.6412376686847,
+   "[21.1,21.3)": 1952.096314962,
+   "[21.3,21.5)": 1009.5115038406268,
+   "[21.5,21.7)": 254.52736260609487,
+   "[21.7,21.9)": 18.212187306834338,
+   "[21.9,22.1)": 0.8945649149169249,
+   "[22.1,22.4)": 0.0
+  },
+  "truth_region_21p3_21p7_contribution": 1264.0388664467214
+ },
+ "sensitivity_2131_DIAGNOSTIC_ONLY": {
+  "note": "the disclosed holdout residual delta applied to the [21.3,21.7) truth region's landing rows; NEVER a verdict input; the primary refold uses the UNSHIFTED frozen operator",
+  "delta_dex_hold_minus_cal": -0.03877601417520354,
+  "dG_groups_if_region_shifted": [
+   0.0,
+   6.256512082017025,
+   105.32734856515214
+  ]
+ },
+ "provenance": {
+  "git_commit": "19f60abb575304e7c1e2349a0f544e95ce7f6c0a",
+  "pack": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz",
+  "pack_sha256": "9b0bda5902756c2055e99275bc5d388faa80fc7574f09db0543666ff3114fca6",
+  "ck_artifact": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/p1_natpair_ck_v1.npz",
+  "ck_artifact_sha256": "6893a9ef6eb79f4f60d3f4f50913ffa10595527befe4cf8d99dd809e0a698278",
+  "cache195": "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/p1_completeness_cache.npz",
+  "cache195_sha256": "05aeb1bc434dee0ca2c1fb7bda636c45d9c17e915df51e2c33a3a838ac5456cd",
+  "cache172": "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/p1_completeness_cache_172.npz",
+  "cache172_sha256": "0e439fe1948827f24d0f7edd700b6c8bc1875dab494e8ffa479cf1b70850e1ae",
+  "zcat": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits",
+  "estimand_id": "p1_natpair_ck/v1",
+  "migration_schema": "p1_migration/v1 (frozen definition, 0.1-dex re-binning; committed group totals gate-checked)",
+  "fold_support": "truth N_true >= 19.5 (primary certified >= 20.3; [19.5, 20.3) truth carries RESTRICTED low-boundary status); observed support = pack N-hat grid [19.5, 22.4); groups = frozen G1/G2/G3"
+ },
+ "wall_s": 26.8
+}
