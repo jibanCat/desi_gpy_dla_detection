@@ -1,0 +1,313 @@
+{
+ "schema": "p1_holdout_battery/v1",
+ "date": "2026-08-07",
+ "frozen": true,
+ "no_holdout_outcome_used": true,
+ "alpha_family": 0.01,
+ "multiplicity": "Holm within each family",
+ "non_adjudicable_dex": 0.015,
+ "families": {
+  "mean": {
+   "tests": "per-bin two-sided z of holdout mean dx vs the calibration reference mean (variance = sd_cal^2/n_holdout_pairs + se_cal^2), the 7 bins below, PLUS the pooled critical window",
+   "bins": [
+    {
+     "N": [
+      19.5,
+      20.0
+     ],
+     "calibration": {
+      "n": 292,
+      "mean": 0.06971769712246063,
+      "se": 0.010581835678493245,
+      "sd": 0.1808224873387619,
+      "robust": 0.1569630844345841
+     }
+    },
+    {
+     "N": [
+      20.0,
+      20.4
+     ],
+     "calibration": {
+      "n": 265,
+      "mean": 0.029205029862726006,
+      "se": 0.008109071791859237,
+      "sd": 0.1320061249005693,
+      "robust": 0.10805952974150337
+     }
+    },
+    {
+     "N": [
+      20.4,
+      20.7
+     ],
+     "calibration": {
+      "n": 228,
+      "mean": 0.02325817561716515,
+      "se": 0.0071318719363689526,
+      "sd": 0.1076889046662788,
+      "robust": 0.09939512473522857
+     }
+    },
+    {
+     "N": [
+      20.7,
+      21.0
+     ],
+     "calibration": {
+      "n": 226,
+      "mean": 0.017111664700674555,
+      "se": 0.006457210123289778,
+      "sd": 0.0970731535608451,
+      "robust": 0.08859881588109297
+     }
+    },
+    {
+     "N": [
+      21.0,
+      21.3
+     ],
+     "calibration": {
+      "n": 413,
+      "mean": -0.004623543243990776,
+      "se": 0.005183030902668027,
+      "sd": 0.10533163464315386,
+      "robust": 0.08756698517489103
+     }
+    },
+    {
+     "N": [
+      21.3,
+      21.7
+     ],
+     "calibration": {
+      "n": 180,
+      "mean": -0.013217005052343507,
+      "se": 0.007673643815500629,
+      "sd": 0.10295273523948156,
+      "robust": 0.09724592292183432
+     }
+    },
+    {
+     "N": [
+      21.7,
+      22.4
+     ],
+     "calibration": {
+      "n": 253,
+      "mean": -0.03277414910450973,
+      "se": 0.007625795205511698,
+      "sd": 0.1212956981374464,
+      "robust": 0.11894275882822136
+     }
+    }
+   ],
+   "pooled_window": {
+    "N": [
+     20.7,
+     21.1
+    ],
+    "calibration": {
+     "n": 542,
+     "mean": 0.0037171247408410366,
+     "se": 0.004529830747635367,
+     "sd": 0.10545850699874693,
+     "robust": 0.0889702867509713
+    }
+   }
+  },
+  "completeness": {
+   "tests": "per-bin two-sided binomial test of holdout op-matched pair yield vs the calibration yield in p1_holdout_gate.json (design-side denominators)",
+   "reference_yields": [
+    {
+     "N": [
+      19.5,
+      20.0
+     ],
+     "yield": 0.81,
+     "fallback": true
+    },
+    {
+     "N": [
+      20.0,
+      20.4
+     ],
+     "yield": 0.9,
+     "fallback": true
+    },
+    {
+     "N": [
+      20.4,
+      20.7
+     ],
+     "yield": 0.9827586206896551,
+     "fallback": false
+    },
+    {
+     "N": [
+      20.7,
+      21.0
+     ],
+     "yield": 0.9955947136563876,
+     "fallback": false
+    },
+    {
+     "N": [
+      21.0,
+      21.3
+     ],
+     "yield": 1.0,
+     "fallback": false
+    },
+    {
+     "N": [
+      21.3,
+      21.7
+     ],
+     "yield": 1.0,
+     "fallback": false
+    },
+    {
+     "N": [
+      21.7,
+      22.4
+     ],
+     "yield": 0.98,
+     "fallback": true
+    }
+   ]
+  },
+  "width": {
+   "tests": "per-bin two-sided variance-ratio of holdout dx sd vs calibration sd at alpha 0.01; DIAGNOSTIC weight -- triggers review, automatic no-go only if the ratio deviates by more than 25%",
+   "reference": [
+    {
+     "N": [
+      19.5,
+      20.0
+     ],
+     "sd": 0.1808224873387619
+    },
+    {
+     "N": [
+      20.0,
+      20.4
+     ],
+     "sd": 0.1320061249005693
+    },
+    {
+     "N": [
+      20.4,
+      20.7
+     ],
+     "sd": 0.1076889046662788
+    },
+    {
+     "N": [
+      20.7,
+      21.0
+     ],
+     "sd": 0.0970731535608451
+    },
+    {
+     "N": [
+      21.0,
+      21.3
+     ],
+     "sd": 0.10533163464315386
+    },
+    {
+     "N": [
+      21.3,
+      21.7
+     ],
+     "sd": 0.10295273523948156
+    },
+    {
+     "N": [
+      21.7,
+      22.4
+     ],
+     "sd": 0.1212956981374464
+    }
+   ]
+  },
+  "joint_overlap": {
+   "tests": "chi^2 over per-group landing probabilities (G1/G2/G3/miss) for holdout injections on [20.4,21.1] x live strata, predicted from the frozen calibration C_inj yields and K_natural minus the frozen transfer offsets; alpha 0.01; joint-operator form -- NOT a K-only bridge; no acceptance via total-count cancellation",
+   "frozen_transfer_offsets_nat_minus_inj": {
+    "[20.4,20.7)": 0.017702285657740312,
+    "[20.7,21.0)": 0.024874019979816447,
+    "[21.0,21.3)": 0.045362552080292086,
+    "[21.3,21.7)": 0.037563641458363405
+   }
+  }
+ },
+ "power": {
+  "source": "p1_holdout_gate.json (design-side)",
+  "critical_window": {
+   "n_holdout_live": 164,
+   "n_eff_pairs": 163.63876651982378,
+   "sigma_mean_dx": 0.006885706524461616,
+   "power_D-mean-31": {
+    "0.05": 0.9944908163247033,
+    "0.01": 0.9729634649656029
+   },
+   "power_D-mean-50": {
+    "0.05": 0.9999999425583077,
+    "0.01": 0.999998604226845
+   }
+  },
+  "per_bin_D_mean_31_alpha05": [
+   {
+    "N": [
+     19.5,
+     20.0
+    ],
+    "power": 0.833031116989041
+   },
+   {
+    "N": [
+     20.0,
+     20.4
+    ],
+    "power": 0.8635323416568277
+   },
+   {
+    "N": [
+     20.4,
+     20.7
+    ],
+    "power": 0.8088793125228357
+   },
+   {
+    "N": [
+     20.7,
+     21.0
+    ],
+    "power": 0.7647542848485473
+   },
+   {
+    "N": [
+     21.0,
+     21.3
+    ],
+    "power": 0.9843530391221407
+   },
+   {
+    "N": [
+     21.3,
+     21.7
+    ],
+    "power": 0.7883608948304192
+   },
+   {
+    "N": [
+     21.7,
+     22.4
+    ],
+    "power": 0.8292984335060354
+   }
+  ]
+ },
+ "verdict_mapping": "all families pass -> P1 holdout PASS (sufficiency within validated support only); any failure -> exactly one PRIMARY taxonomy category (P1_FAILURE_TAXONOMY.md #1); no re-runs; no tolerance changes; no holdout reuse for redesign",
+ "open_preconditions": "PI full-freeze ratification; artifact + guards built (DONE f1eff35); identity PASS (DONE); jackknife PASS (DONE); hidden-transition audit (spec section)"
+}
