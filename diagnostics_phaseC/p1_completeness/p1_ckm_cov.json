@@ -1,0 +1,243 @@
+{
+ "schema": "p1_ckm_cov/v1",
+ "date": "2026-08-08",
+ "artifact": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/p1_ckm_cov_v1.npz",
+ "artifact_sha256": "e310ef4de490d474523cc658c950b19d92de94292564f25bb15b28a49f68a49e",
+ "resampling": "whole-healpix delete-one jackknife, nside 16 nested, ONE shared block universe for C, K, M and the predicted groups; count components use the g/(g-1) pseudo-total scaling",
+ "n_blocks": 1140,
+ "ess_blocks": 976.591163821528,
+ "max_block_truth_share": 0.001498994991994004,
+ "component_ordering": [
+  "C_paf[19.5,20.0)",
+  "C_paf[20.0,20.4)",
+  "C_paf[20.4,20.7)",
+  "C_paf[20.7,21.0)",
+  "C_paf[21.0,21.3)",
+  "C_paf[21.3,21.7)",
+  "C_paf[21.7,22.4)",
+  "K_mean[19.5,20.0)",
+  "K_mean[20.0,20.4)",
+  "K_mean[20.4,20.7)",
+  "K_mean[20.7,21.0)",
+  "K_mean[21.0,21.3)",
+  "K_mean[21.3,21.7)",
+  "K_mean[21.7,22.4)",
+  "M_G1",
+  "M_G2",
+  "M_G3",
+  "Gpred_G1",
+  "Gpred_G2",
+  "Gpred_G3"
+ ],
+ "gates": {
+  "identity_integer_exact": true,
+  "migration_groups_committed": true,
+  "landing_mass_closure": true,
+  "deployed_rebuild_rel_err": 3.5070524492106574e-16,
+  "contraction_rel_err": 5.175344920329179e-16,
+  "psd_min_eig": -6.6361838004449485e-22,
+  "psd_max_eig": 24609.413462065797,
+  "asymmetry_before_symmetrize": 9.094947017729282e-13,
+  "sigma_vs_p1_joint_cov": [
+   {
+    "N": [
+     19.5,
+     20.0
+    ],
+    "sigmaC_ratio": 1.0000098427967925,
+    "sigmaK_ratio": 1.0000098427820454
+   },
+   {
+    "N": [
+     20.0,
+     20.4
+    ],
+    "sigmaC_ratio": 1.0000114587855988,
+    "sigmaK_ratio": 1.0000114587638955
+   },
+   {
+    "N": [
+     20.4,
+     20.7
+    ],
+    "sigmaC_ratio": 1.0000235321913562,
+    "sigmaK_ratio": 1.0000235321953883
+   },
+   {
+    "N": [
+     20.7,
+     21.0
+    ],
+    "sigmaC_ratio": 1.0000335781848315,
+    "sigmaK_ratio": 1.00003357818614
+   },
+   {
+    "N": [
+     21.0,
+     21.3
+    ],
+    "sigmaC_ratio": 1.0000685700955894,
+    "sigmaK_ratio": 1.000068570112604
+   },
+   {
+    "N": [
+     21.3,
+     21.7
+    ],
+    "sigmaC_ratio": 1.0001743471464986,
+    "sigmaK_ratio": 1.000174347095594
+   },
+   {
+    "N": [
+     21.7,
+     22.4
+    ],
+    "sigmaC_ratio": 1.001357466751185,
+    "sigmaK_ratio": 1.0013574750063474
+   }
+  ]
+ },
+ "theta_full_sample": {
+  "C_paf": [
+   0.7504326328800989,
+   0.8960820109535178,
+   0.9435088657221776,
+   0.9644393461428161,
+   0.9806520010601644,
+   0.9734012450481041,
+   0.984472049689441
+  ],
+  "K_mean": [
+   0.10902928367286965,
+   0.05858987776582439,
+   0.050541790407964436,
+   0.052607648899045824,
+   0.05332048051010839,
+   0.026488505416454478,
+   0.014419585252080716
+  ],
+  "M_groups": [
+   4088.0,
+   144.0,
+   0.0
+  ],
+  "Gpred_calibration_side": [
+   38158.924658859825,
+   22997.897824487092,
+   6196.036425197745
+  ]
+ },
+ "sigma": {
+  "C_paf[19.5,20.0)": 0.0025432734886561654,
+  "C_paf[20.0,20.4)": 0.0021966321472052905,
+  "C_paf[20.4,20.7)": 0.0021750850443582144,
+  "C_paf[20.7,21.0)": 0.0022127111502658527,
+  "C_paf[21.0,21.3)": 0.0022465553573927355,
+  "C_paf[21.3,21.7)": 0.0038021102511795976,
+  "C_paf[21.7,22.4)": 0.00690917439007722,
+  "K_mean[19.5,20.0)": 0.0011702146965243132,
+  "K_mean[20.0,20.4)": 0.0012442504471503173,
+  "K_mean[20.4,20.7)": 0.0014896930354855403,
+  "K_mean[20.7,21.0)": 0.0017856557774709543,
+  "K_mean[21.0,21.3)": 0.0022449713081571614,
+  "K_mean[21.3,21.7)": 0.0032655920787518136,
+  "K_mean[21.7,22.4)": 0.008078041762672643,
+  "M_G1": 87.2768998257607,
+  "M_G2": 12.407480255322305,
+  "M_G3": 0.0,
+  "Gpred_G1": 142.4166254137679,
+  "Gpred_G2": 89.51826190750019,
+  "Gpred_G3": 47.21357181412686
+ },
+ "Sigma_G": [
+  [
+   20282.495194245475,
+   -4237.887131963252,
+   283.65614582033675
+  ],
+  [
+   -4237.887131963252,
+   8013.519214939799,
+   -1844.8034698082747
+  ],
+  [
+   283.65614582033675,
+   -1844.8034698082747,
+   2229.121363447714
+  ]
+ ],
+ "sigma_G": {
+  "G1": 142.4166254137679,
+  "G2": 89.51826190750019,
+  "G3": 47.21357181412686
+ },
+ "dominant_cross_correlations_gt_0p3": [
+  {
+   "pair": [
+    "C_paf[19.5,20.0)",
+    "Gpred_G1"
+   ],
+   "corr": 0.34116884972979233
+  },
+  {
+   "pair": [
+    "C_paf[20.0,20.4)",
+    "Gpred_G1"
+   ],
+   "corr": 0.30745634979422115
+  },
+  {
+   "pair": [
+    "K_mean[20.0,20.4)",
+    "Gpred_G2"
+   ],
+   "corr": 0.4030921461642056
+  },
+  {
+   "pair": [
+    "K_mean[20.7,21.0)",
+    "Gpred_G2"
+   ],
+   "corr": -0.30557293453195805
+  },
+  {
+   "pair": [
+    "K_mean[20.7,21.0)",
+    "Gpred_G3"
+   ],
+   "corr": 0.4514320317399832
+  }
+ ],
+ "corr_M_vs_Gpred": {
+  "corr(M_G1, Gpred_G1)": 0.599114373969448,
+  "corr(M_G2, Gpred_G2)": 0.1032773440090329,
+  "corr(M_G3, Gpred_G3)": 0.0
+ },
+ "migration": {
+  "n_net_total": 10683,
+  "n_out_of_grid": 0
+ },
+ "kernel": {
+  "n_events_live": 66481,
+  "n_out_of_grid_landing": 8,
+  "n_cells_marginal_inherited": 24
+ },
+ "independence_note": "NO independent-error assumption: all components share the same deleted healpix; cross-covariances carried in `matrix`.",
+ "no_observed_counts": "pack `counts` never referenced; calibration-side only",
+ "provenance": {
+  "git_commit": "5a97b007ca959fae42370211f001cf00b8a7b111",
+  "pack": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz",
+  "pack_sha256": "9b0bda5902756c2055e99275bc5d388faa80fc7574f09db0543666ff3114fca6",
+  "ck_artifact": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/p1_natpair_ck_v1.npz",
+  "ck_artifact_sha256": "6893a9ef6eb79f4f60d3f4f50913ffa10595527befe4cf8d99dd809e0a698278",
+  "cache195": "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/p1_completeness_cache.npz",
+  "cache195_sha256": "05aeb1bc434dee0ca2c1fb7bda636c45d9c17e915df51e2c33a3a838ac5456cd",
+  "cache172": "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/p1_completeness_cache_172.npz",
+  "cache172_sha256": "0e439fe1948827f24d0f7edd700b6c8bc1875dab494e8ffa479cf1b70850e1ae",
+  "zcat": "/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/zcat.fits",
+  "estimand_id": "p1_natpair_ck/v1",
+  "migration_schema": "p1_migration/v1 (frozen definition, 0.1-dex re-binning; committed group totals gate-checked)",
+  "fold_support": "truth N_true >= 19.5 (primary certified >= 20.3; [19.5, 20.3) truth carries RESTRICTED low-boundary status); observed support = pack N-hat grid [19.5, 22.4); groups = frozen G1/G2/G3"
+ },
+ "wall_s": 6.7
+}
