@@ -1,0 +1,332 @@
+{
+ "schema": "p1_holdout_result/v1",
+ "date": "2026-08-07 23:39:20",
+ "authorization": "PI ruling 2026-08-07 (battery v2 RATIFIED; one-time read AUTHORIZED)",
+ "preflight": {
+  "git_head": "0df85ae0856039076e25b892a2e74d1efd3f9a21",
+  "git_dirty_files": [],
+  "battery_sha256": "567cd6f7a9353083865047282be22c189cdf6259251efae8dbcc7d0a3d8bc04f",
+  "battery_schema": "p1_holdout_battery/v2",
+  "artifact_sha256": "6893a9ef6eb79f4f60d3f4f50913ffa10595527befe4cf8d99dd809e0a698278",
+  "measure_script_sha256": "11c24955d899b12bc63598796d9416805acd94f5102dc86e186d995bc775cc0c",
+  "pairs_out_preexisting": false
+ },
+ "read_started_utc": "2026-08-07 23:39:20",
+ "read_command": "/home/mfho/.conda/envs/gpdla/bin/python /home/mfho/wt_p1_ck/injection/measure_phaseC_pairs.py --arm /scratch/cavestru_root/cavestru0/mfho/phaseC_resp/prod_v1 --role held-out-evaluation --evaluation-step --out /scratch/cavestru_root/cavestru0/mfho/phaseC_resp/prod_v1/pairs_holdout.json",
+ "read_returncode": 0,
+ "read_stderr_tail": "",
+ "holdout_consumed": true,
+ "pairs_sha256": "5ba917a35de8e938f28ec1b53bfac09dbbbb7e6a4766426a18860a02d7a4db09",
+ "n_injected_scored": 661,
+ "n_matched_op": 632,
+ "primary_family": {
+  "tests": [
+   {
+    "test": "mean[20.4,20.7)",
+    "hold": 0.012552522449537137,
+    "cal": 0.02325817561716515,
+    "n": 84,
+    "z": -0.7788825593058353,
+    "p": 0.43604889859429985,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "mean[20.7,21.0)",
+    "hold": 0.03465503092241056,
+    "cal": 0.017111664700674555,
+    "n": 59,
+    "z": 1.2361511759029973,
+    "p": 0.2164023752120019,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "mean[21.0,21.3)",
+    "hold": -0.0007709259357628365,
+    "cal": -0.004623543243990776,
+    "n": 134,
+    "z": 0.36790086522036675,
+    "p": 0.7129471550616404,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "mean[21.3,21.7)",
+    "hold": -0.051993019227547045,
+    "cal": -0.013217005052343507,
+    "n": 75,
+    "z": -2.7404511825327744,
+    "p": 0.0061354895687699695,
+    "p_holm": 0.06749038525646966,
+    "holm_reject": false
+   },
+   {
+    "test": "mean[21.7,22.4)",
+    "hold": -0.029343047922028558,
+    "cal": -0.03277414910450973,
+    "n": 89,
+    "z": 0.22952518065764513,
+    "p": 0.8184607516244595,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "pooled[20.7,21.1)",
+    "hold": 0.012297151790466556,
+    "cal": 0.0037171247408410366,
+    "n": 163,
+    "z": 0.9107641458593415,
+    "p": 0.3624196576541545,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "C[20.4,20.7)",
+    "hold": 1.0,
+    "cal": 0.9827586206896551,
+    "k": 84,
+    "n": 84,
+    "p": 0.4091160106997259,
+    "binom": "exact",
+    "abs_diff": 0.017241379310344862,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "C[20.7,21.0)",
+    "hold": 1.0,
+    "cal": 0.9955947136563876,
+    "k": 59,
+    "n": 59,
+    "p": 1.0,
+    "binom": "exact",
+    "abs_diff": 0.004405286343612369,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "C[21.0,21.3)",
+    "hold": 0.9925925925925926,
+    "cal": 1.0,
+    "k": 134,
+    "n": 135,
+    "p": 0.0,
+    "binom": "exact",
+    "abs_diff": 0.007407407407407418,
+    "p_holm": 0.0,
+    "holm_reject": true
+   },
+   {
+    "test": "C[21.3,21.7)",
+    "hold": 1.0,
+    "cal": 1.0,
+    "k": 75,
+    "n": 75,
+    "p": 1.0,
+    "binom": "exact",
+    "abs_diff": 0.0,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "C[21.7,22.4)",
+    "hold": 0.9888888888888889,
+    "cal": 0.98,
+    "k": 89,
+    "n": 90,
+    "p": 1.0,
+    "binom": "exact",
+    "abs_diff": 0.008888888888888946,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "joint_operator[20.4,21.1)",
+    "chi2": 0.5569091911706885,
+    "df": 4,
+    "obs": [
+     1.0,
+     5.0,
+     187.0,
+     55.0,
+     0.0
+    ],
+    "exp": [
+     1.7081877563420982,
+     5.877583063464141,
+     187.99452435888267,
+     52.41970432481512,
+     4.964960270648469e-07
+    ],
+    "p": 0.967729576084811,
+    "p_holm": 1.0,
+    "holm_reject": false
+   }
+  ],
+  "width_diagnostic": [
+   {
+    "bin": [
+     20.4,
+     20.7
+    ],
+    "ratio": 1.0114958575294661,
+    "flag_review": false
+   },
+   {
+    "bin": [
+     20.7,
+     21.0
+    ],
+    "ratio": 0.9467393150171936,
+    "flag_review": false
+   },
+   {
+    "bin": [
+     21.0,
+     21.3
+    ],
+    "ratio": 0.878673708725363,
+    "flag_review": false
+   },
+   {
+    "bin": [
+     21.3,
+     21.7
+    ],
+    "ratio": 1.0341555653372507,
+    "flag_review": false
+   },
+   {
+    "bin": [
+     21.7,
+     22.4
+    ],
+    "ratio": 1.1378180348657168,
+    "flag_review": false
+   }
+  ],
+  "mean_or_joint_holm_failure": false,
+  "completeness_coherent_failure": false,
+  "width_review_flags": [],
+  "verdict": "HIGH-N PREDICTIVE PASS"
+ },
+ "low_boundary_family": {
+  "tests": [
+   {
+    "test": "mean[19.5,20.0)",
+    "hold": 0.061141998812803494,
+    "cal": 0.06971769712246063,
+    "n": 89,
+    "z": -0.3916886584571905,
+    "p": 0.695288271048009,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "C[19.5,20.0)",
+    "hold": 0.8090909090909091,
+    "cal": 0.81,
+    "k": 89,
+    "n": 110,
+    "p": 1.0,
+    "binom": "exact",
+    "fallback_reference": false,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "mean[20.0,20.4)",
+    "hold": 0.023316178086925498,
+    "cal": 0.029205029862726006,
+    "n": 102,
+    "z": -0.38284813121136635,
+    "p": 0.7018323717821495,
+    "p_holm": 1.0,
+    "holm_reject": false
+   },
+   {
+    "test": "C[20.0,20.4)",
+    "hold": 0.9444444444444444,
+    "cal": 0.9,
+    "k": 102,
+    "n": 108,
+    "p": 0.14773348012920673,
+    "binom": "exact",
+    "fallback_reference": false,
+    "p_holm": 0.7386674006460336,
+    "holm_reject": false
+   },
+   {
+    "test": "subfloor_rate[19.5,20.0)",
+    "hold": 0.02247191011235955,
+    "cal": 0.07191780821917808,
+    "k": 2,
+    "n": 89,
+    "p": 0.09538715955188021,
+    "binom": "exact",
+    "p_holm": 0.5723229573112812,
+    "holm_reject": false
+   },
+   {
+    "test": "lya_em_delta",
+    "hold": -0.055044789842391875,
+    "cal": -0.056185427395600465,
+    "n_lya": 69,
+    "z": 0.09313895827712876,
+    "p": 0.9257931677069742,
+    "p_holm": 1.0,
+    "holm_reject": false
+   }
+  ],
+  "holm_failures": [],
+  "verdict": "LOW-BOUNDARY CONSISTENT"
+ },
+ "exploratory": {
+  "label": "EXPLORATORY ONLY \u2014 no verdict weight; cannot reject/tune/promote",
+  "cells": {
+   "LYB_EM": {
+    "n": 33,
+    "mean": 0.04270655210417032,
+    "sd": 0.11029969251536961
+   },
+   "EDGE": {
+    "n": 82,
+    "mean": -0.027972371678554795,
+    "sd": 0.09372664050001603
+   },
+   "zqso<2.8": {
+    "n": 256,
+    "mean": 0.0012853307931389446,
+    "sd": 0.10525825538310898
+   },
+   "zqso[2.8,3.3)": {
+    "n": 244,
+    "mean": 0.0017045348622581672,
+    "sd": 0.13257363373532344
+   },
+   "zqso>=3.3": {
+    "n": 132,
+    "mean": 0.02696730149572653,
+    "sd": 0.13852582168747282
+   },
+   "LYA_EM_highN": {
+    "n": 57,
+    "mean": -0.05673433184743995,
+    "sd": 0.08366967356680055
+   },
+   "INTERIOR_highN": {
+    "n": 366,
+    "mean": -0.003331369903104961,
+    "sd": 0.11341565549454354
+   }
+  }
+ },
+ "global_verdict": "HIGH-N PREDICTIVE PASS",
+ "global_notes": {
+  "width_no_go_triggered": false,
+  "low_boundary_maps_to_own_outcomes_only": true,
+  "gatekeeping": "hierarchical: the primary family alone decides the P1 predictive verdict; the low-boundary family is evaluated regardless but maps only to its own outcomes; exploratory results carry no verdict weight. high-N operator validity != low-boundary transport validity, by construction."
+ },
+ "wall_s": 3.5
+}
