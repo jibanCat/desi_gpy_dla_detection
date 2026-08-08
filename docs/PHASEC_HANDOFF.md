@@ -133,14 +133,49 @@ gates. **All six gates were then executed and PASS:**
    (`p1_holdout_battery.json`, `b029936`) — calibration+design side
    only; holdout untouched.
 
-### Exact next step — PRE-READ CHECKPOINT RETURNED; PI go/no-go required
+### 2026-08-07 AMENDED PI RULING: two-layer ratification; holdout NOT yet authorized
 
-The concise pre-read checkpoint (PI §8) is returned. If the PI
-ratifies the full estimand freeze and authorizes the one-time read:
-run the holdout battery via the committed measurement path
-(`--role held-out-evaluation --evaluation-step`), commit the full
-battery output in the same run that first touches the rows. NOT
-before. Stage-2B / P2 / refold / splice remain prohibited.
+PI accepted the pre-read gates but split ratification into a HIGH-N
+PRIMARY OPERATOR and a LOW-BOUNDARY TRANSPORT EXTENSION, and ordered
+seven work items before any read. **All seven executed same-day
+(commits `14d430f`…`41545a1` + spec §18):**
+
+1. **Chain bridge:** 17.2/nhi195 compatible — truth common support
+   IDENTICAL; 4 competition reassignments of 10,687 (excluded); 0.13%
+   catalogue-cut difference reported separately, never absorbed.
+2. **Below-floor migration (net):** f = 22.7% at observed [19.5,20),
+   15.2% at the 19.7 reporting floor, 4.1% at [20.0,20.3); **G1
+   10.36% (4,088 ev) / G2 0.60% (144 ± 12) / G3 = ZERO events.**
+   Primary operator keeps truth ≥ 19.5 + EXPLICIT source term; K
+   never renormalized.
+3. **Emission proximity (frozen regions):** Lyα-emission effect
+   −0.083…−0.093 dex at every N — largely COMMON-MODE (injected
+   −0.056, z −7.7); low-N completeness deficit near Lyα em (0.517 vs
+   0.773), confined to low N; marginal-K mixture shift ≤ 0.003 dex
+   (below materiality) ⇒ marginal K valid within-realization; frozen
+   conditional table required for cross-mixture transport.
+4. **Nomenclature (binding):** `C_fm` (finder-matched; 0.800) vs
+   `C_paf` (production-above-floor; 0.7504) — never interchangeable.
+5. **Joint (C,K) covariance:** whole-healpix jackknife; corr
+   −0.04…+0.04 all bins — NOT material; ESS 242–896; stable.
+6. **Hierarchical battery v2 + global verdict rule FROZEN pre-read**
+   (`p1_holdout_battery_v2.json`): primary high-N family alone
+   decides P1; low family maps to its own outcomes; below-floor
+   migration recorded as NOT holdout-testable; exploratory subgroups
+   cannot reject/tune/promote. High-N validity ≠ low-boundary
+   validity.
+7. **Primary support frozen: N_true ≥ 20.3** (molly edge; 99% of the
+   G3 feed; zero migrant events in observed G3).
+
+### Exact next step — AMENDED PRE-READ CHECKPOINT RETURNED; PI decision required
+
+Requested: (1) ratify the HIGH-N primary operator (support ≥ 20.3);
+(2) low-boundary extension = RESTRICTED/QUALIFIED (explicit source
+term + conditional table + C_paf nomenclature; no unqualified
+[19.5,22.5) closure claim); (3) authorize the one-time holdout read
+under battery v2. On authorization: run the battery via the committed
+measurement path, commit the full output in the same run that first
+touches the rows. Stage-2B / P2 / refold / splice remain prohibited.
 
 ### Budget
 

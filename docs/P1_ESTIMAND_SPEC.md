@@ -338,3 +338,79 @@ object only; not a production kernel source. Holdout framework:
 ratified in principle; still sealed; battery frozen
 (`p1_holdout_battery.json`). P2: deferred until after the holdout.
 Stage-2B: withheld. G3: not resolved. Low-N boundary: not closed.
+
+## 18. TWO-LAYER RATIFICATION STRUCTURE (PI amended ruling, 2026-08-07)
+
+### 18.1 High-N primary operator
+
+**Support: N_true ≥ 20.3** (a deployed molly cell edge; the committed
+preimage puts 99% of the G3 feed at true [20.3, 21.7)). Content: §1–§16
+unchanged — (C_molly, K_natural-pairs), all-pair parent, explicit miss
+states, exact merge/split accounting, no clamp, no hidden transition,
+atomic guards. **Below-floor migrants are measured at ZERO events in
+the observed G3 window, 0.60% (144 ± 12 events) in observed G2, 0.83%
+at observed [20.3, 20.7)** (`p1_migration.json`) — carried as an
+explicit measured source term, negligible for G3, stated for G2.
+
+### 18.2 Low-boundary transport extension (truth < 20.3 + below-floor)
+
+A separate conditional-support problem. Measured content:
+* **Below-floor inflow (N_true < 19.5 → N̂ > 19.5):** f_net = 22.7% of
+  the selected catalogue at observed [19.5, 20.0), 15.2% at the 19.7
+  reporting floor, 4.1% at [20.0, 20.3). Chain-compatibility bridge
+  PASSED first (`p1_chain_bridge.json`): truth common support
+  identical; 4 competition reassignments of 10,687 (excluded); one
+  0.13% catalogue-cut difference reported separately. Representation:
+  the primary operator keeps truth ≥ 19.5; the inflow is an EXPLICIT
+  source term; **K is never renormalized to hide it.**
+* **Emission-proximity dependence** (frozen regions,
+  `p1_emission_proximity.json`): K mean near quasar Lyα emission is
+  −0.083…−0.093 dex vs interior at every N (z −18…−32) — largely
+  COMMON-MODE with injections (−0.056, z −7.7; pipeline-mechanical);
+  low-N completeness deficit near Lyα em (0.517 vs 0.773 at
+  [19.5, 20.0)), confined to low N. Truth-vs-pair mixture shift on
+  the marginal K: ≤ 0.003 dex everywhere — below materiality ⇒ the
+  MARGINAL kernel remains valid for the within-realization fold; the
+  frozen conditional table (kernel_by_region) is REQUIRED for any
+  cross-mixture transport. LYA_EM and physical quasar proximity are
+  congruent by construction near Lyα (stated, never collapsed);
+  EDGE is a separate flag.
+* Failures here map to support restriction / migration systematic /
+  conditional transport uncertainty / no-claim — never to automatic
+  high-N rejection (frozen exception: implied high-N contamination
+  > 50 G3-equivalent counts, or a simultaneous primary joint failure).
+
+### 18.3 Authoritative completeness nomenclature (binding)
+
+* **`C_fm` — finder-matched completeness:** truth matched at the
+  operating point regardless of the N̂ floor (the Tier-1 ledger
+  object; 0.800 at [19.5, 20.0) live).
+* **`C_paf` — production-above-floor completeness:** the deployed
+  estimand's C; matched AND N̂ > 19.5 AND P_DLA > 0.99 AND
+  DLAFLAG = 0 (0.7504 at [19.5, 20.0) live; the artifact's
+  `C_molly_n_det/n_tot`).
+These names are mandatory in artifacts, docs, figures,
+manuscript-facing results and checkpoints; never interchangeable.
+
+### 18.4 Joint (C, K) calibration covariance
+
+Frozen construction (`p1_joint_cov.json`): whole-healpix delete-one
+jackknife, same realizations for C and K; corr(C, K) = −0.04…+0.04 in
+every battery bin — **not material**; ESS 242–896 blocks; max block
+share ≤ 1.2%; jackknife/naive SE ratios 0.98–1.06. Full G1/G2/G3
+covariance propagation = a refold-stage deliverable (before the gated
+refold, per the ruling).
+
+### 18.5 Hierarchical holdout verdict (battery v2)
+
+`p1_holdout_battery_v2.json` (supersedes v1, retained): primary
+high-N family (5 mean bins ≥ 20.4 + pooled [20.7, 21.1) +
+completeness + width-diagnostic + joint-operator; Holm α = 0.01)
+ALONE decides the P1 predictive verdict. Low-boundary family (2 low
+bins + subfloor rate + LYA_EM region test + low completeness; Holm
+α = 0.01) maps only to its own outcomes; below-floor migration is
+recorded as NOT holdout-testable (no sub-19.5 injections exist) and
+is adjudicated development-side. Exploratory subgroups are
+uncorrected, labeled, and cannot reject, tune, or be promoted. The
+global verdict enumeration and gatekeeping are frozen in the JSON —
+**high-N operator validity ≠ low-boundary transport validity.**
