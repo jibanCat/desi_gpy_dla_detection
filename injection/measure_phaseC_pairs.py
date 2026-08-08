@@ -258,11 +258,17 @@ def main():
                 if idx.size == 0:
                     continue
                 mo = matched_op_mask[idx]
-                dxs, hlist = [], []
+                dxs, hlist, ztl, zql = [], [], [], []
                 for j in idx[mo]:
                     ci = truth_cat_row[j]
                     dxs.append(float(cat["NHI"][ci]) - float(t_n[j]))
                     hlist.append(int(man["healpix"][j]))
+                    # additive per-pair DESIGN covariates (2026-08-07,
+                    # pre-holdout protocol amendment): needed by the
+                    # ratified battery-v2 region/z_qso tests; no
+                    # matching/selection semantics change
+                    ztl.append(float(man["z_true"][j]))
+                    zql.append(float(man["z_qso"][j]))
                 dxs = np.array(dxs)
                 Z = float(np.median(man_z[idx]))     # descriptive center
                 sr, zr = s_i, zr_i
@@ -280,6 +286,7 @@ def main():
                        "dx_sd": float(dxs.std(ddof=1)) if dxs.size > 1 else None,
                        "dx": dxs.tolist(),
                        "pair_healpix": hlist,
+                       "pair_z_true": ztl, "pair_z_qso": zql,
                        "old_pred_bias": pred_b, "old_pred_sd": pred_s,
                        "old_covariate_clamped": bool(Ncl != A)}
                 if dxs.size > 1:
