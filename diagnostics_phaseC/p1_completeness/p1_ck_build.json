@@ -1,0 +1,43 @@
+{
+ "schema": "p1_ck_build/v1",
+ "date": "2026-08-07",
+ "estimand_id": "p1_natpair_ck/v1",
+ "artifact": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/p1_natpair_ck_v1.npz",
+ "artifact_sha256": "6893a9ef6eb79f4f60d3f4f50913ffa10595527befe4cf8d99dd809e0a698278",
+ "identity_cells_checked": 56,
+ "identity_pass": true,
+ "miss_closure_pass": true,
+ "n_kernel_events_total": 77742,
+ "n_kernel_events_live": 66481,
+ "n_live_out_of_report_support": 0,
+ "tp_class_counts": {
+  "in_kernel": 77742,
+  "subfloor": 1701,
+  "lowP": 10285,
+  "flag": 0
+ },
+ "sparse_cells_live": 33,
+ "provenance": {
+  "schema": "p1_natpair_ck/v1",
+  "version": 1,
+  "date": "2026-08-07",
+  "git_commit": "bc2564f4a1b23bce0c39968d05aa3e1acaa6256a",
+  "builder": "injection/build_p1_natpair_ck.py",
+  "cache_path": "/scratch/cavestru_root/cavestru0/mfho/phaseC_resp/p1_completeness_cache.npz",
+  "cache_sha256": "05aeb1bc434dee0ca2c1fb7bda636c45d9c17e915df51e2c33a3a838ac5456cd",
+  "pack_path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz",
+  "pack_sha256": "9b0bda5902756c2055e99275bc5d388faa80fc7574f09db0543666ff3114fca6",
+  "floor": 19.5,
+  "p_dla_min": 0.99,
+  "sparse_n_min": 25,
+  "kernel_condition": "is_TP & (NHI_pred > 19.5) & (P_DLA > 0.99) & (DLAFLAG == 0), strict cell bounds",
+  "miss_classes": [
+   "unmatched",
+   "subfloor_nhat",
+   "lowP",
+   "flag"
+  ],
+  "continuation_rule": "no extrapolation beyond last populated bin; sparse cells inherit live N-marginal, flagged, variance inflated"
+ },
+ "wall_s": 2.1
+}
