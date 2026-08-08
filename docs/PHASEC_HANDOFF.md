@@ -401,7 +401,7 @@ envelope; if the rerun would breach the ceiling ⇒ PI ruling first.
   Old response envelope:
   .../cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz.
 
-## Work log (append-only; newest last)
+## Work log (append-only; newest last — see bottom for 2026-08-07)
 
 - [06:0x] Branch created at `a56e3c8`, worktree `/home/mfho/wt_calib_phaseC`,
   clean. Handoff committed as the first commit (`3802d27`).
@@ -538,3 +538,26 @@ $PY -m pytest tests/test_modelA_rungs.py tests/test_modelA_vs_legacy.py tests/te
 3. `diagnostics_phaseC/pilot/findings.md`
 4. `docs/PHASEC_BUDGET.md`
 5. `diagnostics_phaseC/preimage/findings.md`
+
+- [07] **P1 SESSION (full arc; session handoff = notes repo
+  `notes/2026-08-07_p1_session_handoff.md`):** recovery+verification
+  (interrupted session had completed Tier 2 at `3c3e821`; re-run
+  reproduces to 1–2 ulp; sacct clean — `armp`/`a3c` jobs are
+  `~/hcd_priya`, a different project) → power addendum (`6aa526f`) →
+  PI accepted, anchor approved → engineering gates: atomic (C,K)
+  artifact `f1eff35` (identity integer-exact ×56; exactly-once miss
+  closure; SUBFLOOR class found ⇒ `C_fm` 0.800 ≠ `C_paf` 0.7504),
+  loader+10 guard tests, width checks, jackknife PASS, battery v1 →
+  PI amended: two-layer split → chain bridge (compatible; 4/10,687
+  reassignments), below-floor migration (22.7% at [19.5,20); G1
+  10.36% / G2 0.60% / G3 ZERO), emission proximity (Lyα-em −0.09
+  common-mode; mixture shift ≤0.003), joint (C,K) cov (not material),
+  battery v2 + verdict rule, primary support ≥20.3 → PI ratified
+  spec-for-evaluation + battery v2 + one-time read → **THE READ
+  (`0df85ae` runner; result `1b0d6d2`): HIGH-N PREDICTIVE PASS; low
+  family consistent; C[21.0,21.3) Holm-reject = degenerate ref-1.0
+  artifact (0.74pp, disclosed, never reclassify); mean[21.3,21.7)
+  borderline Holm 0.067.** Issue #30 pre+post comments = authoritative
+  record. Tip `54a9163`. Awaiting PI: refold (prereq (C,K,M_<19.5)
+  joint cov + G1/G2/G3 covariance artifact), P2 VoI after refold.
+  Holdout CONSUMED — never rerun without a new PI ruling.
