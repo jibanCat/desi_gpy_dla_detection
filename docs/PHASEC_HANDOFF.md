@@ -167,15 +167,45 @@ seven work items before any read. **All seven executed same-day
 7. **Primary support frozen: N_true ≥ 20.3** (molly edge; 99% of the
    G3 feed; zero migrant events in observed G3).
 
-### Exact next step — AMENDED PRE-READ CHECKPOINT RETURNED; PI decision required
+### 2026-08-07 FINAL PI RULING + ONE-TIME HOLDOUT READ — EXECUTED, PASS
 
-Requested: (1) ratify the HIGH-N primary operator (support ≥ 20.3);
-(2) low-boundary extension = RESTRICTED/QUALIFIED (explicit source
-term + conditional table + C_paf nomenclature; no unqualified
-[19.5,22.5) closure claim); (3) authorize the one-time holdout read
-under battery v2. On authorization: run the battery via the committed
-measurement path, commit the full output in the same run that first
-touches the rows. Stage-2B / P2 / refold / splice remain prohibited.
+PI ratified: high-N specification FOR HOLDOUT EVALUATION (truth-side
+N_true ≥ 20.3); battery v2; the one-time read. Low-boundary:
+RESTRICTED/NOT RATIFIED. Refold/Stage-2B/P2/splice: withheld. Major
+desi_y3 merges: explicit PI approval required. Issue #30 is the
+authoritative status record (pre-read + post-read comments posted).
+
+**THE READ (consumed, valid):** single execution from committed
+`0df85ae` via `p1_holdout_read.py` → the committed measurement path
+(`--role held-out-evaluation --evaluation-step`); first-touch honored;
+661 scored / 632 matched-op; full battery in the same execution;
+result `p1_holdout_result.json` committed `1b0d6d2` (pushed).
+
+**VERDICT: HIGH-N PREDICTIVE PASS** (frozen v2 mapping); low-boundary
+CONSISTENT (all 6 tests); widths clean; joint-operator χ²=0.56/df4.
+Disclosed items: (i) C[21.0,21.3) formal Holm rejection against a
+pinned reference of EXACTLY 1.0 — degenerate binomial null,
+|Δ|=0.74pp < the 5pp coherence threshold → not a coherent failure per
+the frozen rule (not reclassified, disclosed); (ii) mean[21.3,21.7)
+z=−2.74, Holm p=0.067 — borderline, passed. EXPLORATORY (labeled): the
+Lyα-emission effect replicates out-of-sample (−0.053 vs −0.056).
+
+Certification wording (binding): specification RATIFIED; predictive
+validity CERTIFIED over the frozen primary claim and the TESTED
+observed-bin support only ([20.4,22.4) means/completeness, pooled
+[20.7,21.1), joint [20.4,21.1]). NOT established: cross-realization,
+mock-family, real-data transport, final G3 closure. `C_fm` ≠ `C_paf`
+nomenclature in force.
+
+### Exact next step — POST-HOLDOUT CHECKPOINT RETURNED; PI decision required
+
+Awaiting the PI's next-decision ruling on: (1) the gated refold —
+recommended, with the frozen prerequisite of extending the joint
+resampling to (C, K, M_<19.5) and building the G1/G2/G3 covariance
+artifact first (all deterministic, <5 CPU-h); (2) P2 value-of-
+information timing (recommend: full VoI analysis AFTER the refold
+verdict). This branch is RETAINED as the reviewable holdout branch
+until the ruling is recorded (§10). Nothing else is authorized.
 
 ### Budget
 
