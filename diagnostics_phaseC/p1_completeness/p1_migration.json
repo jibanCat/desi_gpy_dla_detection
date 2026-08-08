@@ -1,0 +1,190 @@
+{
+ "schema": "p1_migration/v1",
+ "date": "2026-08-07",
+ "representation": "primary operator N_true>=19.5 + EXPLICIT below-floor source term; no K renormalization",
+ "n_subfloor_tp_selected": 10687,
+ "n_reassigned_in_195_excluded": 4,
+ "n_net_migration": 10683,
+ "matrix": [
+  {
+   "N_true": [
+    17.2,
+    19.3
+   ],
+   "cells": [
+    {
+     "obs": [
+      19.5,
+      20.0
+     ],
+     "n": 5595
+    },
+    {
+     "obs": [
+      20.0,
+      20.3
+     ],
+     "n": 415
+    },
+    {
+     "obs": [
+      20.3,
+      20.7
+     ],
+     "n": 75
+    },
+    {
+     "obs": [
+      20.7,
+      21.1
+     ],
+     "n": 5
+    },
+    {
+     "obs": [
+      21.1,
+      22.5
+     ],
+     "n": 2
+    }
+   ],
+   "n_total": 6092
+  },
+  {
+   "N_true": [
+    19.3,
+    19.5
+   ],
+   "cells": [
+    {
+     "obs": [
+      19.5,
+      20.0
+     ],
+     "n": 4236
+    },
+    {
+     "obs": [
+      20.0,
+      20.3
+     ],
+     "n": 291
+    },
+    {
+     "obs": [
+      20.3,
+      20.7
+     ],
+     "n": 61
+    },
+    {
+     "obs": [
+      20.7,
+      21.1
+     ],
+     "n": 3
+    },
+    {
+     "obs": [
+      21.1,
+      22.5
+     ],
+     "n": 0
+    }
+   ],
+   "n_total": 4591
+  }
+ ],
+ "observed_bins": [
+  {
+   "obs": [
+    19.5,
+    20.0
+   ],
+   "n_selected": 43240,
+   "n_net_migrants": 9831,
+   "n_raw_172_migrants": 9835,
+   "f_net": 0.22735892691951898,
+   "f_raw": 0.22745143385753933
+  },
+  {
+   "obs": [
+    20.0,
+    20.3
+   ],
+   "n_selected": 17251,
+   "n_net_migrants": 706,
+   "n_raw_172_migrants": 706,
+   "f_net": 0.040925163758622686,
+   "f_raw": 0.040925163758622686
+  },
+  {
+   "obs": [
+    20.3,
+    20.7
+   ],
+   "n_selected": 16363,
+   "n_net_migrants": 136,
+   "n_raw_172_migrants": 136,
+   "f_net": 0.008311434333557416,
+   "f_raw": 0.008311434333557416
+  },
+  {
+   "obs": [
+    20.7,
+    21.1
+   ],
+   "n_selected": 9294,
+   "n_net_migrants": 8,
+   "n_raw_172_migrants": 8,
+   "f_net": 0.0008607703894986013,
+   "f_raw": 0.0008607703894986013
+  },
+  {
+   "obs": [
+    21.1,
+    22.5
+   ],
+   "n_selected": 5438,
+   "n_net_migrants": 2,
+   "n_raw_172_migrants": 2,
+   "f_net": 0.0003677822728944465,
+   "f_raw": 0.0003677822728944465
+  }
+ ],
+ "groups": {
+  "G1": {
+   "obs": [
+    19.7,
+    20.3
+   ],
+   "n_selected": 39466,
+   "n_net_migrants": 4088,
+   "f_net": 0.10358283079106066
+  },
+  "G2": {
+   "obs": [
+    20.3,
+    21.0
+   ],
+   "n_selected": 23912,
+   "n_net_migrants": 144,
+   "f_net": 0.006022080963532954
+  },
+  "G3": {
+   "obs": [
+    21.0,
+    21.6
+   ],
+   "n_selected": 6418,
+   "n_net_migrants": 0,
+   "f_net": 0.0
+  }
+ },
+ "reporting_floor_19p7_20p0": {
+  "n_selected": 22215,
+  "n_net_migrants": 3382,
+  "f_net": 0.15223947783029484
+ },
+ "wall_s": 0.4
+}

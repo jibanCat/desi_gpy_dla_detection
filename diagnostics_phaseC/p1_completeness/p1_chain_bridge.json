@@ -1,0 +1,98 @@
+{
+ "schema": "p1_chain_bridge/v1",
+ "date": "2026-08-07",
+ "designed_difference": "truth floor 17.2 vs 19.5 (competition)",
+ "catalogue_rows_identical": false,
+ "truth_common_support": {
+  "n_172_above_floor": 146792,
+  "n_195": 146792,
+  "identical": true,
+  "n_only_172": 0,
+  "n_only_195": 0
+ },
+ "common_support_competition": [
+  {
+   "N_true": [
+    19.5,
+    20.0
+   ],
+   "n_195": 24284,
+   "n_172": 24281,
+   "n_both_same_truth_bin": 24281,
+   "n_195_only": 3,
+   "n_172_only": 0
+  },
+  {
+   "N_true": [
+    20.0,
+    20.3
+   ],
+   "n_195": 14803,
+   "n_172": 14802,
+   "n_both_same_truth_bin": 14802,
+   "n_195_only": 1,
+   "n_172_only": 0
+  },
+  {
+   "N_true": [
+    20.3,
+    20.5
+   ],
+   "n_195": 8301,
+   "n_172": 8301,
+   "n_both_same_truth_bin": 8301,
+   "n_195_only": 0,
+   "n_172_only": 0
+  },
+  {
+   "N_true": [
+    20.5,
+    21.0
+   ],
+   "n_195": 13354,
+   "n_172": 13354,
+   "n_both_same_truth_bin": 13354,
+   "n_195_only": 0,
+   "n_172_only": 0
+  },
+  {
+   "N_true": [
+    21.0,
+    21.5
+   ],
+   "n_195": 4871,
+   "n_172": 4871,
+   "n_both_same_truth_bin": 4871,
+   "n_195_only": 0,
+   "n_172_only": 0
+  },
+  {
+   "N_true": [
+    21.5,
+    22.5
+   ],
+   "n_195": 868,
+   "n_172": 868,
+   "n_both_same_truth_bin": 868,
+   "n_195_only": 0,
+   "n_172_only": 0
+  }
+ ],
+ "subfloor_tp_172": {
+  "n_total_selected": 10687,
+  "n_reassigned_in_195": 4,
+  "n_unmatched_in_195": 10683,
+  "note": "reassigned = the SAME catalogue row is a \u226519.5-truth TP in the 195 chain (pure competition, NOT physical migration); unmatched_in_195 = candidate the 195 chain leaves as FP \u2014 the genuine below-floor attribution class for the migration source term"
+ },
+ "executable": {
+  "n_loaded": 769833,
+  "truth_nhi_floor": 17.2,
+  "n_truth_no_snr_dropped": 0,
+  "n_sentinel_dropped": 137,
+  "n_bal": 193737,
+  "host_truth_floor": 17.2,
+  "n_cat_cut": 582078,
+  "n_truth_cut": 395700
+ },
+ "wall_s": 17.1
+}
