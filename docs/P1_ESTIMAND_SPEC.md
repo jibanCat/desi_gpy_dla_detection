@@ -1,11 +1,16 @@
-# P1 ESTIMAND SPECIFICATION — PROPOSED FREEZE (for PI review)
+# P1 ESTIMAND SPECIFICATION — kernel anchor APPROVED; complete freeze PENDING mechanical gates
 
-**Status: PROPOSED. Nothing here is self-ratified.** This document is
-the estimand freeze the PI's binding sequence calls for (P1 rulings
-§25/§33; handoff "Exact next step"). It becomes FROZEN only on PI
-acceptance at the Tier-2 attribution / P1-design checkpoint. Until
-then: no K artifact is built, nothing is spliced into production, the
-holdout stays unread, Stage-2B stays withheld, P2/P3 are not begun.
+**Status (2026-08-07 PI ruling): the natural-pair kernel anchor
+(C_molly, K_natural-pairs) is APPROVED as the selected P1 design
+direction. The COMPLETE estimand freeze is NOT yet ratified** — final
+ratification is conditional on: (1) explicit overlap/blend coherence
+closure; (2) C/K parent-population compatibility; (3) atomic C/K
+artifact construction; (4) the explicit miss state and the R = C·K
+identity; (5) fail-loud provenance/estimand guards; (6) the frozen
+healpix-jackknife gate. §15–§16 below record the gate results
+(engineering phase, same ruling). Nothing is spliced into production,
+the holdout stays unread, Stage-2B stays withheld, P2 is deferred
+until after the holdout (PI sequencing decision).
 
 Inputs: Tier-1 (`t1_findings.md`, C_molly reproduced integer-exact;
 live-support completeness; attrition taxonomy), Tier-2
@@ -204,3 +209,132 @@ the low-N boundary is closed.
   explanations; uniqueness not claimed. The freeze is robust to that
   residual ambiguity (§6.3).
 * Stage-2A criterion 4 stays retracted as physics; criteria 1–3 stand.
+
+## 15. BINDING overlap/blend coherence section (PI conditions §2.1–§2.5, 2026-08-07)
+
+### 15.1 Parent population of K — exact
+
+**K is constructed from ALL eligible production-matched natural pairs
+— exactly the deployed completeness-numerator events** of the
+canonical nhi195 chain: `is_TP & (N̂ > 19.5) & (P_DLA > 0.99) &
+(DLAFLAG == 0)`, strict deployed cell bounds. It is NOT the isolated
+subset: the isolation restriction (no catalogued ≥17.2 neighbor within
+5,000 km/s) was and remains ONLY the frozen construction for the
+injected transfer map (§7), because injections exclude that class by
+placement. Blended pairs stay inside K; their composition is recorded
+per bin in the artifact (`composition`).
+
+### 15.2 C/K compatibility — verified, integer-exact
+
+C_molly (≥19.5 columns) and K derive from ONE chain and ONE matcher
+run (`t1a_reproduce_cmolly.py` chain; cache = its saved event tables):
+same truth population (nhi195-floored, in-window), same live-support
+definition, same z/N support, same finder catalogue and cut bundle,
+same matching rule (`match_truth_to_cat_molly`, dz_rel = 0.01,
+nhi_desc), same one-to-one assignment, same split/merge treatment.
+**Proof is the load-time identity: per-cell kernel event counts equal
+the pack's `molly_n_det` INTEGER-EXACTLY in all 56 ≥19.5 cells**
+(build `f1eff35`, re-verified at every load). The
+"C_all·K_isolated" incoherence the PI flagged does not arise: K is
+all-class. A marginalization argument is therefore NOT needed.
+
+**Decomposition finding surfaced by this closure:** the deployed
+numerator excludes matched detections with N̂ ≤ 19.5 (the SUBFLOOR
+class): 1,650 live events, 1,611 of them at [19.5, 20.0), five in
+[20.5, 21.0), zero above 21.0. Under the estimand convention the
+deployed C_live at [19.5, 20.0) is **0.7504**; the Tier-1 ledger's
+0.800 counted subfloor detections as matches (a different, now
+explicitly labeled object). The load-bearing region is unaffected.
+
+### 15.3 Width excess — subset results (frozen rule, `p1_width_checks`)
+
+Natural robust width vs injected, ratio (n):
+
+| N | all (K parent) | iso5k | shell0 | no-nb-30k |
+|---|---|---|---|---|
+| [20.4,20.7) | 1.24 (10,589) | 1.16 (8,867) | 1.16 (7,670) | 1.16 (5,023) |
+| [20.7,21.0) | 1.31 (6,726) | 1.21 (5,553) | 1.20 (4,830) | 1.22 (3,185) |
+| [21.0,21.3) | 1.27 (3,700) | 1.17 (3,106) | 1.15 (2,720) | 1.17 (1,786) |
+| [21.3,21.7) | 1.09 (1,720) | 1.03 (1,434) | 1.03 (1,240) | 1.01 (805) |
+
+The excess PERSISTS in the isolated/shell-zero/no-catalogued-neighbor
+subsets over [20.4, 21.3) → **catalogued-shell classes are ruled out
+as a SUFFICIENT explanation.** Per the frozen interpretation rule this
+does NOT exclude: sub-threshold neighboring absorbers, unresolved
+multi-component structure, non-catalogued overlap, quickquasars
+imprint complexity, or truth-side profile variation. All overlap is
+NOT claimed excluded. The catalogued-blend contribution to the K
+parent's width (~5–8%) is real and belongs inside the estimand.
+
+### 15.4 Merge/split accounting — every truth counted exactly once
+
+Matcher semantics (production object, documented): greedy one-to-one;
+cat rows walked in DESCENDING N̂; each row claims at most one
+still-unmatched truth on its TARGETID within dz_rel; tie-break by
+min |N̂ − N_truth|; a claimed truth is never re-claimed.
+
+| class | enters |
+|---|---|
+| one truth, multiple candidates (split) | strongest candidate → the K pair + C numerator; sibling rows are non-TP → purity/FP side ONLY (never K, never C) |
+| multiple truths, one candidate (merge) | the candidate claims ONE truth (its K pair); other truths → miss (unmatched) |
+| assignment competition | deterministic greedy above; losses land in miss (unmatched) |
+| unmatched secondary truth | miss (unmatched) |
+| duplicated/split catalogue entries | non-TP → purity side only |
+| matched, N̂ ≤ 19.5 | miss (subfloor class, explicit) |
+| matched, P_DLA ≤ 0.99 | miss (lowP class, explicit) |
+| matched, DLAFLAG ≠ 0 | miss (flag class, explicit; count 0 in this build) |
+
+**Exactly-once demonstration (enforced at build AND load):** per cell,
+`n_det + subfloor + lowP + flag + unmatched == molly_n_tot`,
+integer-exact in all 56 ≥19.5 cells; matched-truth keys verified
+unique (no truth carries two TP rows); no negative class anywhere. A
+merged candidate contributes exactly one K pair; multiplicity is not
+part of the forward model and never enters twice.
+
+### 15.5 Marginal vs multi-object response — the marginal operator CLOSES
+
+The per-absorber marginal operator's R = C·K identity closes
+integer-exactly (15.2/15.4) with the overlap classes explicitly
+placed. No blend kernel, mixture model, event-level response or
+support restriction is REQUIRED for closure. Should any future
+accounting break this identity, the build/loader fails loudly and the
+choice among those extensions returns to the PI (no auto-escalation).
+
+## 16. Representation integrity + hidden-transition audit (PI §3)
+
+Occupancy of the reporting grid (live support, 9 cells/bin;
+measured = cell n ≥ 25):
+
+* **[19.5, 21.7): 11 bins, ALL 9 cells measured in every bin**
+  (marginal n = 8,658 … 549). Directly measured; no pooling.
+* [21.7, 21.9): 3 cells measured / 6 sparse (marginal n = 207).
+* [21.9, 22.1): all cells sparse; marginal n = 82 (marginal-inherited,
+  flagged).
+* [22.1, 22.5): marginal n = 22 / 8 — sparse even marginally;
+  wide-error flagged; **no extrapolation beyond [22.3, 22.5)** and no
+  scientific claim there.
+
+Audit findings: NO parametric refit, NO clamp, NO smoothing beyond
+linear interpolation between bin centers (which reproduces the bin
+means identically at the centers — pairs-faithful by construction);
+ONE source chain for the entire ≥19.5 support (no source-chain
+transition); sparse-cell inheritance uses the LIVE N-marginal only,
+flagged with inflated variance (frozen rule in the artifact
+provenance); the de-clamped shape is carried directly by the data
+(+0.053/+0.052/+0.053 through [20.7, 21.3) → +0.034/+0.012 at
+[21.3, 21.7) → +0.017/+0.005 above — vs the deployed clamp's ≈+0.05).
+**No hidden estimand or representation transition exists.** The
+paper-facing restriction stands: no scientific claim below N = 19.7;
+formal artifact support to 19.5 does not close the low-N boundary.
+
+## 17. Authoritative status (PI §7, 2026-08-07)
+
+Tier-2 attribution: imprint-supported; tested environmental channels
+excluded or bounded; uniqueness not claimed. Natural-pair kernel
+anchor: APPROVED as the selected P1 design direction. Complete
+estimand freeze: NOT yet ratified — pending PI review of §15–§16 and
+the pre-read checkpoint. Injected response: validation and diagnostic
+object only; not a production kernel source. Holdout framework:
+ratified in principle; still sealed; battery frozen
+(`p1_holdout_battery.json`). P2: deferred until after the holdout.
+Stage-2B: withheld. G3: not resolved. Low-N boundary: not closed.

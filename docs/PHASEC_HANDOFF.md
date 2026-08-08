@@ -92,16 +92,55 @@ MET; the completeness investigation is COMPLETE.
    adjudicable ≤0.015 dex (carried as covariance systematic); frozen
    Holm-corrected battery, one-time read.
 
-### Exact next step — PI DECISION REQUIRED (do not proceed without it)
+### 2026-08-07 PI RULING (same day): anchor APPROVED, engineering phase EXECUTED
 
-The Tier-2 attribution + P1-design checkpoint is RETURNED. The PI
-reviews `docs/P1_ESTIMAND_SPEC.md` + `docs/P1_FAILURE_TAXONOMY.md`.
-On acceptance the next executable step is: build the K artifact +
-guards + R=C·K identity test + healpix-jackknife (spec §10–§11) —
-NOT the holdout, NOT the refold, NOT Stage-2B. Open questions the PI
-may rule on at the same time: (a) whether P2 (mock-1 realization
-independence, ~1,500 CPU-h) is wanted before or after the holdout;
-(b) ratification of the proposed gate tolerances (taxonomy §4).
+PI accepted the Tier-2 checkpoint; approved the natural-pair kernel
+anchor; ratified the holdout framework in principle; deferred P2 until
+after the holdout; complete freeze conditional on six mechanical
+gates. **All six gates were then executed and PASS:**
+
+1. **Atomic (C,K) artifact BUILT (`f1eff35`):**
+   `p1_natpair_ck_v1.npz` (sha256 in `p1_ck_build.json`); kernel
+   events = EXACTLY the deployed numerator events; **identity
+   integer-exact in all 56 ≥19.5 cells; miss closure exactly-once**
+   (det + subfloor + lowP + flag + unmatched == tot). NEW: the
+   SUBFLOOR class (matched, N̂≤19.5; 1,650 live, 1,611 at
+   [19.5,20.0), 0 above 21.0) is a MISS in the estimand → C_live at
+   [19.5,20.0) = 0.7504 under the deployed convention (ledger's 0.800
+   counted subfloor as matched; both labeled). Loader: fail-loud
+   guards (estimand/version/identity/closure/normalization/NaN),
+   read-only, no renormalization path; 10/10 guard tests incl.
+   scratch integration.
+2. **Population coherence (spec §15.1–15.2):** K = ALL eligible
+   production-matched pairs (NOT the isolated subset — that is only
+   the injected transfer map); C/K one-chain compatibility PROVEN by
+   the integer identity.
+3. **Width checks (spec §15.3, frozen rule):** the natural width
+   excess PERSISTS in iso/shell0/no-nb-30k subsets (×1.15–1.22 over
+   [20.4,21.3); converges ×1.01–1.03 at [21.3,21.7)) → catalogued
+   classes insufficient; all-overlap-excluded NOT claimed.
+4. **Merge/split accounting (spec §15.4):** every truth counted
+   exactly once; class→term table frozen; marginal per-absorber
+   operator CLOSES (spec §15.5) — no multi-object model needed.
+5. **Healpix jackknife (frozen gate, `p1_jackknife.json`): PASS** —
+   se ratios 0.98–1.03, max single-healpix shift 0.1–0.3 se,
+   ~1,100 healpix; nside-16-nest convention validated on 2,332
+   shared TARGETIDs.
+6. **Representation/hidden-transition audit (spec §16):** [19.5,21.7)
+   = 11 bins × all 9 cells directly measured; sparse structure
+   confined to ≥21.7, flagged; no refit/clamp/smoothing; one source
+   chain; NO hidden transition. Holdout battery FROZEN
+   (`p1_holdout_battery.json`, `b029936`) — calibration+design side
+   only; holdout untouched.
+
+### Exact next step — PRE-READ CHECKPOINT RETURNED; PI go/no-go required
+
+The concise pre-read checkpoint (PI §8) is returned. If the PI
+ratifies the full estimand freeze and authorizes the one-time read:
+run the holdout battery via the committed measurement path
+(`--role held-out-evaluation --evaluation-step`), commit the full
+battery output in the same run that first touches the rows. NOT
+before. Stage-2B / P2 / refold / splice remain prohibited.
 
 ### Budget
 
@@ -114,7 +153,7 @@ total, cache/design-side, login node; storage +~40 KB committed JSON.
 
 | ref | tip |
 |---|---|
-| `calibration/phaseC-p1-coherent-ck-2026-08-06` (THIS branch, wt `/home/mfho/wt_p1_ck`) | `7fdf570` + this handoff commit |
+| `calibration/phaseC-p1-coherent-ck-2026-08-06` (THIS branch, wt `/home/mfho/wt_p1_ck`) | `b029936` + spec/handoff commits (this revision) |
 | `calibration/phaseC-highN-fp-2026-08-06` (Stage-2A record, wt `/home/mfho/wt_calib_phaseC`) | `60cef40` (frozen) |
 | notes repo (`~/desi_gpy_dla_notes`) | `e3930cb` |
 | protected: `hbi-mcmc-threeroute` / `lls-subdla-cddf` / `review/phaseA…` / `repair/phaseB…` | `9d73365` / `1533333` / `a420abd` / `a56e3c8` (unmoved) |
