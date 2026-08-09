@@ -197,15 +197,68 @@ observed-bin support only ([20.4,22.4) means/completeness, pooled
 mock-family, real-data transport, final G3 closure. `C_fm` ≠ `C_paf`
 nomenclature in force.
 
-### Exact next step — POST-HOLDOUT CHECKPOINT RETURNED; PI decision required
+### 2026-08-08 PI RULING + GATED REFOLD — EXECUTED; G3 CLOSURE SUPPORTED
 
-Awaiting the PI's next-decision ruling on: (1) the gated refold —
-recommended, with the frozen prerequisite of extending the joint
-resampling to (C, K, M_<19.5) and building the G1/G2/G3 covariance
-artifact first (all deterministic, <5 CPU-h); (2) P2 value-of-
-information timing (recommend: full VoI analysis AFTER the refold
-verdict). This branch is RETAINED as the reviewable holdout branch
-until the ruling is recorded (§10). Nothing else is authorized.
+PI ruling (2026-08-08 kickoff) accepted the holdout PASS record and
+authorized ONLY: (1) the (C,K,M_<19.5) shared-resampling covariance
+artifact; (2) ONE gated refold; (3) the §6 post-refold checkpoint +
+P2 VoI. Both executed same-day on the NEW branch
+`calibration/phaseC-p1-refold-2026-08-08` (wt `/home/mfho/wt_p1_refold`,
+rooted at `5a97b00`; THIS revision).
+
+**Covariance `p1_ckm_cov/v1` (`807bdfc`; npz sha `e310ef4d…`):** ONE
+shared whole-healpix delete-one universe (nside16 nested; g=1,140;
+ESS 977; max share 0.15%) jointly perturbing C (deployed η̂ path), K
+(battery means + full empirical landing distributions), M (g/(g−1)
+pseudo-totals), propagated to predicted G1/G2/G3.
+σ_CKM(G)=(142.4, 89.5, 47.2); corr(M_G1,Gpred_G1)=0.60 (independence
+never assumed). Gates ALL PASS (identity integer-exact; M groups ==
+4088/144/0; rebuild 3.5e-16; contraction 5.2e-16; PSD; σ ratios
+1.0000× `p1_joint_cov.json`). Fail-loud loader `load_p1_ckm_cov`.
+
+**THE REFOLD (runner `p1_refold.py` committed `807bdfc` BEFORE
+execution; prediction `19f60ab` WRITTEN before closure; closure
+`a9b89cd`; one-shot guard now armed — close refuses re-runs):**
+kernel = certified `p1_natpair_ck/v1` EMPIRICAL landing distributions
+(the battery v2 joint-operator construction; zero parameters); truth
+≥ 19.5 + explicit M source; deployed C/g/alloc/FP unchanged;
+bit-level rebuild guard 3.5e-16.
+
+| G | pred | obs | resid | σ_tot | z |
+|---|---|---|---|---|---|
+| G1 | 38,158.9 | 37,981 | −177.9 | 932.1 | −0.19 |
+| G2 | 22,997.9 | 22,969 | −28.9 | 175.6 | −0.16 |
+| G3 | 6,196.0 | 6,136 | −60.0 | 91.7 | −0.65 |
+
+Layer-B: frozen T=0.65 p=0.880; +Σ_CKM T=0.52 p=0.909 → **PASS at the
+ratified p<0.01** (Phase-B: T=40.7, p=5e-4, G3 z=+5.93). **113% of the
++450.2-count G3 discrepancy explained.** 🔴 Layer-A window χ²/dof =
+6.54 (was 22.09) — ABOVE the ≤3 conditional threshold, excess ENTIRELY
+in observed [19.7,20.0) (37.2/50.0/28.2, alternating sign; all bins
+≥20.0 ≤4.9) → qualifies G1/low-boundary (RESTRICTED region), NOT the
+high-N claim. G3 decomposition: completeness 5,057.6 + kernel
+redistribution +1,138.4 + M 0 + FP 0; truth [21.3,21.7) carries
+1,264.0 (20.4%); disclosed-bin δ-shift diagnostic (−0.0388 dex) →
+ΔG3 = +105.3 (overshoot would deepen to ≈−1.8σ; DIAGNOSTIC ONLY).
+
+**Frozen verdict returned: G3 closure supported** — within-realization
+(2lpt0), committed estimand/support. NOT established: cross-
+realization, mock-family, real-data transport, low-boundary closure,
+full-support claims. Open first on this branch:
+`diagnostics_phaseC/p1_completeness/p1_refold_closure.json`,
+`p1_refold_prediction.json`, `p1_ckm_cov.json`, then the §6 checkpoint
+in issue #30 (post-refold comment, 2026-08-08).
+
+### Exact next step — POST-REFOLD CHECKPOINT RETURNED; PI decision required
+
+Awaiting the PI on: (1) ratify/refuse the refold verdict; (2) P2 —
+recommendation DEFER (~1,500 CPU-h ≈ 85% of the remaining Stage-2
+envelope; certifies realization-independence only; load-bearing only
+if the operator is promoted to production splice); (3) disposition of
+the retained branches. Nothing else is authorized: Stage-2B, P2
+launch, splice, production inference, low-boundary ratification,
+real-data transport claims, manuscript-facing final G3 claim, major
+desi_y3 merges all BLOCKED.
 
 ### Budget
 
@@ -213,8 +266,20 @@ Spent ≈ 75 of the 1,850 CPU-h ceiling (pilot 8.3 + Stage-2A GP 66.9 +
 <1 analysis). Withheld: Stage-2B FP program (~1,740), P2 (~1,500, needs
 a NEW ruling). Tier-2 catalog tests + 08-07 addendum/gate: <1 CPU-h
 total, cache/design-side, login node; storage +~40 KB committed JSON.
+08-08 covariance + refold: ≈0.02 CPU-h (login node, minutes); storage
++~50 KB committed JSON + two scratch npz (cov artifact, healpix map).
 
-### Repository tips (2026-08-07, this revision)
+### Repository tips (2026-08-08, this revision)
+
+| ref | tip |
+|---|---|
+| `calibration/phaseC-p1-refold-2026-08-08` (THIS branch, wt `/home/mfho/wt_p1_refold`) | `a9b89cd` (+ this handoff commit), pushed; RETAIN until PI rules |
+| `calibration/phaseC-p1-coherent-ck-2026-08-06` (holdout record, wt `/home/mfho/wt_p1_ck`) | `5a97b00` (RETAINED, untouched) |
+| covariance artifact | `track_c/stage0/p1_ckm_cov_v1.npz` sha `e310ef4d…` |
+| healpix sidecar | `track_c/stage0/p1_healpix_map_nside16.npz` (frozen p1_joint_cov convention) |
+| notes repo (`~/desi_gpy_dla_notes`) | `9e07c3d` + handoff commit |
+
+### Repository tips (2026-08-07, superseded — kept for the record)
 
 | ref | tip |
 |---|---|
@@ -561,3 +626,23 @@ $PY -m pytest tests/test_modelA_rungs.py tests/test_modelA_vs_legacy.py tests/te
   record. Tip `54a9163`. Awaiting PI: refold (prereq (C,K,M_<19.5)
   joint cov + G1/G2/G3 covariance artifact), P2 VoI after refold.
   Holdout CONSUMED — never rerun without a new PI ruling.
+- [08] **GATED REFOLD SESSION (session handoff = notes repo
+  `notes/2026-08-08_p1_refold_session_handoff.md`):** PI kickoff
+  ruling accepted the holdout PASS and authorized cov + ONE refold +
+  checkpoint → entry state verified (ancestry 54a9163/1b0d6d2/0df85ae
+  under pushed tip `5a97b00`; holdout files byte-identical since
+  `1b0d6d2`; artifact re-hashed `6893a9ef…`; worktrees clean) → NEW
+  branch `calibration/phaseC-p1-refold-2026-08-08` @ `5a97b00` →
+  (C,K,M) shared-healpix covariance `p1_ckm_cov/v1` (`807bdfc`; g=1,140,
+  σ_G=142/90/47, corr(M_G1,Gpred_G1)=0.60; all gates PASS) → refold
+  predict (`19f60ab`, pre-closure) → close (`a9b89cd`): obs
+  (37,981/22,969/6,136) vs pred (38,158.9/22,997.9/6,196.0), z_tot
+  (−0.19/−0.16/−0.65); Layer-B PASS p=0.880/0.909 (frozen/+Σ_CKM);
+  **113% of the +450 G3 discrepancy explained**; Layer-A 6.54>3
+  confined to observed [19.7,20.0) (RESTRICTED region — qualifies
+  G1/low-boundary, not high-N); [21.3,21.7) truth carries 20.4% of G3,
+  δ-shift diagnostic +105.3. **Verdict returned: G3 closure supported
+  (within-realization).** P2 VoI: DEFER. Issue #30 pre+post refold
+  comments = authoritative record. ONE-SHOT guard armed — the close
+  phase refuses re-execution; never rerun the refold without a new PI
+  ruling.
