@@ -1,0 +1,40 @@
+{
+ "schema": "wp2prime_decision/v1",
+ "date": "2026-08-12",
+ "control": {
+  "london0": true,
+  "saclay0": false
+ },
+ "layerB_gate_p": {
+  "london0": 0.544727636181909,
+  "saclay0": 0.0004997501249375312
+ },
+ "holm": [
+  {
+   "test": "saclay0:candidate_20p0",
+   "p": 7.840248128859587e-12,
+   "holm_threshold": 0.0025,
+   "reject": true
+  },
+  {
+   "test": "saclay0:aligned_20p1",
+   "p": 2.093658778200749e-09,
+   "holm_threshold": 0.0033333333333333335,
+   "reject": true
+  },
+  {
+   "test": "london0:candidate_20p0",
+   "p": 0.000744208316123571,
+   "holm_threshold": 0.005,
+   "reject": true
+  },
+  {
+   "test": "london0:aligned_20p1",
+   "p": 0.012747973425680296,
+   "holm_threshold": 0.01,
+   "reject": false
+  }
+ ],
+ "verdict": "HARD STOP \u2014 certified-domain control FAILED on a held-out family; PI checkpoint required",
+ "paper1_primary_floor": null
+}
