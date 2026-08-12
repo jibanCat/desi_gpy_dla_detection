@@ -8,9 +8,20 @@ from scipy.constants import speed_of_light
 # Quasar catalog selection cuts
 # ---------------------------------------------------------------
 
-# Redshift range for QSO catalog inclusion
-zmin_qso = 2.0
-zmax_qso = 4.25  # upper z bound for QSO inclusion (7.0 was tried historically)
+# Redshift range for QSO catalog inclusion.
+#
+# Env-overridable (GPDLA_ZMIN_QSO / GPDLA_ZMAX_QSO) so an incremental
+# production can select a DIFFERENT INPUT POPULATION without touching code —
+# e.g. the z_qso > 4.25 sightlines omitted from the 2026-06 LOA productions
+# (the 4.25 ceiling is the GP model's training-domain cut, applied here as
+# the production selection; 7.0 was tried historically: 942946 -> 945968).
+# Defaults are EXACTLY the historical production values; a run that sets
+# neither variable is bit-identical to the recorded LOA productions.
+# The driver logs the effective values (desi-DLAGP.py read_catalog).
+import os as _os
+
+zmin_qso = float(_os.environ.get("GPDLA_ZMIN_QSO", "2.0"))
+zmax_qso = float(_os.environ.get("GPDLA_ZMAX_QSO", "4.25"))
 # ---------------------------------------------------------------
 # DLA search window (GP model rest-frame wavelength range)
 # ---------------------------------------------------------------
