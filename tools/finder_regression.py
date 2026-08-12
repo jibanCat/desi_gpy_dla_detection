@@ -38,14 +38,25 @@ PIXES = [int(x) for x in os.environ.get("REG_PIXES", "24,147,150").split(",")]
 
 sys.path.insert(0, WT)
 
-QSOCAT = ("/nfs/turbo/lsa-cavestru/mfho/DESI/loa/"
-          "QSO_cat_loa_main_dark_healpix_v2-altbal.fits")
-MIRROR = "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/healpix/main/dark"
-HIST = ("/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/"
-        "loa_main_dark_v1/processed")
-GLDATA = "/scratch/cavestru_root/cavestru0/mfho/DESI/desi_gpy_dla_detection"
-MODEL = ("/nfs/turbo/lsa-cavestru/mfho/DESI/GP_trained/"
-         "DEPLOYED_phase2_2lpt_loa124_nohcd_nobal_wide_m/phase2_result.h5")
+QSOCAT = os.environ.get("REG_QSOCAT", "/nfs/turbo/lsa-cavestru/mfho/DESI/"
+                        "loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits")
+MIRROR = os.environ.get("REG_SPECTRA_ROOT",
+                        "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/healpix/"
+                        "main/dark")
+HIST = os.environ.get("REG_HIST", "/nfs/turbo/lsa-cavestru/mfho/DESI/"
+                      "gpdla_catalogs/loa_main_dark_v1/processed")
+DATAROOT = os.environ.get("REG_DATAROOT", "/scratch/cavestru_root/"
+                          "cavestru0/mfho/DESI/desi_gpy_dla_detection")
+GLDATA = DATAROOT
+MODEL = os.environ.get("REG_MODEL", "/nfs/turbo/lsa-cavestru/mfho/DESI/"
+                       "GP_trained/DEPLOYED_phase2_2lpt_loa124_nohcd_nobal"
+                       "_wide_m/phase2_result.h5")
+# REG_CONFIG: "headline" (MAX_DLAS=4/FILTER=1/PW50k; per-field h5
+# comparison vs REG_HIST) or "cddf" (MAX_DLAS=1/FILTER=0/PW100k — the
+# Paper-1 production config; catalog-level comparison vs REG_REF_FITS,
+# the original production dlacat FITS).
+CONFIG = os.environ.get("REG_CONFIG", "headline")
+REF_FITS = os.environ.get("REG_REF_FITS", "")
 
 
 def build_model_params():
@@ -56,9 +67,10 @@ def build_model_params():
         normalization_min_lambda=1425.0, normalization_max_lambda=1475.0,
         min_lambda=911.75, max_lambda=1250.0, dlambda=0.15, k=30,
         max_noise_variance=9.0, max_z_cut=3000.0, min_z_cut=3000.0,
-        num_forest_lines=31, num_lines=3, num_dla_samples=50000)
+        num_forest_lines=31, num_lines=3,
+        num_dla_samples=(100000 if CONFIG == "cddf" else 50000))
     params_subdla_dict = dict(params_dict)
-    params_subdla_dict["num_dla_samples"] = 50000
+    params_subdla_dict["num_dla_samples"] = params_dict["num_dla_samples"]
     return dict(
         learned_file=MODEL,
         catalog_name=f"{GLDATA}/data/dr12q/processed/catalog.mat",
@@ -66,14 +78,15 @@ def build_model_params():
                      "processed/los_catalog"),
         dla_catalog=(f"{GLDATA}/data/dla_catalogs/dr9q_concordance/"
                      "processed/dla_catalog"),
-        dla_samples_file=(f"{GLDATA}/data/dr12q/processed/"
-                          "pw_samples_a3_172_225_50000.mat"),
-        sub_dla_samples_file=(f"{GLDATA}/data/dr12q/processed/"
-                              "subdla_samples_a03_191_200_50000.mat"),
+        dla_samples_file=(f"{GLDATA}/data/dr12q/processed/pw_samples_"
+                          f"a3_172_225_{100000 if CONFIG == 'cddf' else 50000}.mat"),
+        sub_dla_samples_file=(f"{GLDATA}/data/dr12q/processed/subdla_samples_"
+                              f"a03_191_200_{100000 if CONFIG == 'cddf' else 50000}.mat"),
         params_dict=params_dict, params_subdla_dict=params_subdla_dict,
         min_z_separation=3000.0, prev_tau_0=0.00246, prev_beta=3.62,
-        max_dlas=4, plot_figures=False, max_workers=6, batch_size=1250,
-        figure_dir=OUT, filter_low_likelihood=True,
+        max_dlas=(1 if CONFIG == "cddf" else 4), plot_figures=False, max_workers=6, batch_size=1250,
+        figure_dir=OUT,
+        filter_low_likelihood=(CONFIG != "cddf"),
         filter_n_initial_floor=5000, filter_empty_mask_fallthrough=False,
         single_absorber_model=True, enable_tau_eb=True,
         tau_eb_factors=(0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0),
@@ -177,9 +190,63 @@ def compare():
     print(json.dumps(summary, indent=1))
 
 
+def compare_fits():
+    """CDDF-config gate: rerun outputs vs the ORIGINAL production catalog
+    FITS (per-sightline MAP rows). Pre-declared: MAP z/NHI and LOGP/P
+    fields bitwise-equal preferred; tolerances |dz|,|dN| <= 1e-9,
+    |dP| <= 1e-6, logp rel <= 1e-6 otherwise. Sightlines without a FITS
+    row must ALSO have no qualifying row in the rerun (row-presence
+    agreement is part of the gate)."""
+    import h5py
+    from astropy.io import fits as _fits
+    ref = _fits.open(REF_FITS)[1].data
+    ref_by_tid = {}
+    for r in ref:
+        ref_by_tid.setdefault(int(r["TARGETID"]), []).append(r)
+    summary = {}
+    fail = False
+    for pix in PIXES:
+        new = os.path.join(OUT, "processed",
+                           f"processed-main-dark-{pix}.h5")
+        with h5py.File(new) as hn:
+            tids = np.asarray(hn["target_ids"])
+            pd = np.asarray(hn["p_dlas"])
+            mz = np.asarray(hn["MAP_z_dlas"])
+            mn = np.asarray(hn["MAP_log_nhis"])
+        row = dict(n=len(tids), n_with_ref_row=0, worst_dz=0.0,
+                   worst_dN=0.0, worst_dP=0.0, presence_mismatch=0)
+        for i, t in enumerate(tids):
+            rr = ref_by_tid.get(int(t))
+            if rr is None:
+                continue
+            row["n_with_ref_row"] += 1
+            r0 = rr[0]
+            dz = abs(float(mz[i, 0] if mz.ndim > 1 else mz[i])
+                     - float(r0["Z_DLA"]))
+            dN = abs(float(mn[i, 0] if mn.ndim > 1 else mn[i])
+                     - float(r0["NHI"]))
+            dP = abs(float(pd[i]) - float(r0["P_DLA"]))
+            row["worst_dz"] = max(row["worst_dz"], dz)
+            row["worst_dN"] = max(row["worst_dN"], dN)
+            row["worst_dP"] = max(row["worst_dP"], dP)
+        fail |= (row["worst_dz"] > 1e-9 or row["worst_dN"] > 1e-9
+                 or row["worst_dP"] > 1e-6)
+        summary[str(pix)] = row
+    summary["_verdict"] = "ENV-FAIL" if fail else "ENV-PASS"
+    json.dump(summary, open(os.path.join(OUT,
+              "regression_fits_summary.json"), "w"), indent=1)
+    print(json.dumps(summary, indent=1))
+    sys.exit(1 if fail else 0)
+
+
 if __name__ == "__main__":
     if sys.argv[-1] == "compare":
         compare()
+    elif sys.argv[-1] == "compare_fits":
+        compare_fits()
+    elif CONFIG == "cddf":
+        run()
+        compare_fits()
     else:
         run()
         compare()
