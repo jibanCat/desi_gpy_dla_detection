@@ -2,7 +2,16 @@
 ### Branch `calibration/phaseC-highN-fp-2026-08-06`, root `a56e3c8` (= Phase-B tip, frozen)
 ### Session 2 closed 2026-08-06; PHASE C1 COMPLETE — resume from "CURRENT STATE"
 
-## CURRENT STATE (read this first) — P1 BRANCH (`calibration/phaseC-p1-coherent-ck-2026-08-06`, worktree `/home/mfho/wt_p1_ck`)
+## CURRENT STATE (read this first) — P1 CLOSED at the 2026-08-11 PI ruling
+
+**Where this document now lives:** tag `p1-refold-2026-08-08` (the
+retired `calibration/phaseC-p1-refold-2026-08-08` branch tip). Jump to
+"2026-08-11 PI RULING" for the binding scientific and governance state;
+"Repository refs (2026-08-11…)" for the authoritative refs. The P1
+worktrees (`wt_p1_refold`, `wt_p1_ck`, `wt_calib_phaseC`) were retired
+by that ruling — their committed state is reachable from the tags and
+retained branches listed there. Everything below this line is the
+historical record, newest-first by session.
 
 ### PI checkpoint 3 ACCEPTED (2026-08-06, after Tier 1 + partial Tier 2)
 
@@ -249,16 +258,76 @@ full-support claims. Open first on this branch:
 `p1_refold_prediction.json`, `p1_ckm_cov.json`, then the §6 checkpoint
 in issue #30 (post-refold comment, 2026-08-08).
 
-### Exact next step — POST-REFOLD CHECKPOINT RETURNED; PI decision required
+### 2026-08-11 PI RULING — refold RATIFIED (post-refold §6 checkpoint CLOSED)
 
-Awaiting the PI on: (1) ratify/refuse the refold verdict; (2) P2 —
-recommendation DEFER (~1,500 CPU-h ≈ 85% of the remaining Stage-2
-envelope; certifies realization-independence only; load-bearing only
-if the operator is promoted to production splice); (3) disposition of
-the retained branches. Nothing else is authorized: Stage-2B, P2
-launch, splice, production inference, low-boundary ratification,
-real-data transport claims, manuscript-facing final G3 claim, major
-desi_y3 merges all BLOCKED.
+The PI ruling on the 2026-08-08 post-refold checkpoint. Recorded in
+issue #30 (2026-08-11 comment) as the authoritative ledger; this
+section is the in-repo copy. **No scientific artifact was touched by
+this ruling** — `p1_refold_closure.json`, `p1_refold_prediction.json`,
+`p1_ckm_cov.json` and both scratch `.npz` artifacts are byte-identical
+to their `a9b89cd` / `807bdfc` state.
+
+1. The implementation-valid refold is **ACCEPTED**.
+2. **RATIFIED: G3 closure SUPPORTED within mock-0/2lpt0.**
+3. G2 is **ACCEPTED as clean within-realization**.
+4. G1 and the low-boundary extension **remain RESTRICTED / NOT
+   RATIFIED** because the fine-bin Layer-A gate fails.
+5. The disclosed `[21.3,21.7)` holdout residual is retained as a
+   **non-failing diagnostic only**.
+6. **P2 is DEFERRED.**
+7. Stage-2B, production splice, production inference, low-boundary
+   ratification and real-data transport **remain BLOCKED**.
+8. Any major merge into `desi_y3` **requires explicit PI approval**.
+
+**The `[21.3,21.7)` residual must not be used to** retune K, alter the
+frozen refold result, remove or redefine a bin, or motivate a post-hoc
+confirmatory rerun.
+
+#### Authoritative wording (quote THIS, not earlier phrasings)
+
+**High-N.** The natural-pair anchored high-N operator has a ratified
+specification (truth-side `N_true ≥ 20.3`), prospective holdout
+predictive certification, and within-realization G3 closure under the
+frozen refold. Preferred headline:
+
+> The coherent natural-pair response operator eliminates the original
+> G3 deficit in mock-0/2lpt0, leaving a residual of −60 ± 91.7 counts,
+> or −0.65σ.
+
+🔴 **"113% of the discrepancy explained" is NOT the primary scientific
+wording.** It is an accounting description, not an accuracy or
+confidence measure. The phrasing in the 2026-08-08 entry above is
+superseded as a headline and survives only as accounting.
+
+**G2.** G2 agrees cleanly at group level within mock-0/2lpt0 after
+including the explicit below-floor migration source (144 ± 12 counts).
+
+**G1 / low boundary.** G1 agrees only in aggregate (z = −0.19). The
+fine-binned Layer-A diagnostic fails at the 19.7 reporting floor
+(χ²/dof = 6.54 > 3, excess entirely in observed `[19.7,20.0)`), so the
+low-boundary response remains restricted and unratified. **Do not
+convert the group-level G1 agreement into a fine-bin or full-support
+closure claim.**
+
+**Not certified by this ruling:** realization independence; mock-family
+independence; real-data transport; full-support `[19.5,22.5)` closure.
+
+#### Mechanism (as ratified)
+
+G3 closure is driven by the coherent natural-pair response-kernel
+redistribution (+1,138.4 on a completeness identity-kernel base of
+5,057.6). Below-floor migration contributes **zero** to G3; deployed
+false positives contribute **zero** to G3.
+
+### Exact next step — NO PI DECISION OPEN
+
+The post-refold §6 checkpoint is closed by the 2026-08-11 ruling. No
+further action is authorized without a NEW PI ruling. BLOCKED: P2
+launch, Stage-2B, production splice, production inference, low-boundary
+ratification, real-data transport claims, full-support closure claims,
+cosmology propagation, any major `desi_y3` merge (explicit PI approval
+required). The refold is one-shot-guarded and the holdout is CONSUMED —
+neither may be rerun without a new ruling.
 
 ### Budget
 
@@ -269,15 +338,32 @@ total, cache/design-side, login node; storage +~40 KB committed JSON.
 08-08 covariance + refold: ≈0.02 CPU-h (login node, minutes); storage
 +~50 KB committed JSON + two scratch npz (cov artifact, healpix map).
 
-### Repository tips (2026-08-08, this revision)
+### Repository refs (2026-08-11, post-ruling — THIS revision)
 
-| ref | tip |
-|---|---|
-| `calibration/phaseC-p1-refold-2026-08-08` (THIS branch, wt `/home/mfho/wt_p1_refold`) | `a9b89cd` (+ this handoff commit), pushed; RETAIN until PI rules |
-| `calibration/phaseC-p1-coherent-ck-2026-08-06` (holdout record, wt `/home/mfho/wt_p1_ck`) | `5a97b00` (RETAINED, untouched) |
-| covariance artifact | `track_c/stage0/p1_ckm_cov_v1.npz` sha `e310ef4d…` |
-| healpix sidecar | `track_c/stage0/p1_healpix_map_nside16.npz` (frozen p1_joint_cov convention) |
-| notes repo (`~/desi_gpy_dla_notes`) | `9e07c3d` + handoff commit |
+Under the 2026-08-11 ruling the temporary refold worktree and feature
+branch are retired and replaced by immutable pushed tags. **A worktree
+is not provenance** once its exact committed state is reachable from a
+retained authoritative ref. The verified post-cleanup disposition is
+recorded in issue #30 (2026-08-11 post-cleanup comment) — that comment,
+not this table, is the confirmation of record.
+
+| ref | points at | role |
+|---|---|---|
+| tag `p1-refold-2026-08-08` | this handoff commit (refold branch tip) | **authoritative refold record** — full branch state incl. this ruling; replaces the temporary review branch |
+| tag `p1-refold-2026-08-08-closure` | `a9b89cd` | the frozen scientific result (closure commit) addressed directly |
+| tag `p1-holdout-2026-08-07` | `5a97b00` | consumed holdout record (read result `1b0d6d2`) |
+| branch `calibration/phaseC-p1-coherent-ck-2026-08-06` | `5a97b00` | RETAINED (local+remote) — the convenient authoritative review reference for the consumed holdout |
+| branch `calibration/phaseC-highN-fp-2026-08-06` | `60cef40` | RETAINED (local+remote) — Stage-2A anchor / quarantine record |
+| branch `calibration/phaseC-p1-refold-2026-08-08` | — | REMOVED (local+remote) — superseded by the tags above |
+| covariance artifact | `track_c/stage0/p1_ckm_cov_v1.npz` sha256 `e310ef4de490…f68a49e` | frozen |
+| operator artifact | `track_c/stage0/p1_natpair_ck_v1.npz` sha256 `6893a9ef…a698278` | frozen (`p1_natpair_ck/v1`) |
+| healpix sidecar | `track_c/stage0/p1_healpix_map_nside16.npz` | frozen p1_joint_cov convention |
+| notes repo (`~/desi_gpy_dla_notes`) | `9e07c3d` (refold entry) → `4e77c39` (08-08 session handoff) + the 2026-08-11 ruling entry | pushed |
+
+Lineage note: the refold branch was a **linear descendant** of both
+earlier calibration branches — `60cef40` ⊂ `5a97b00` ⊂ `807bdfc` ⊂
+`19f60ab` ⊂ `a9b89cd` ⊂ this commit — so neither earlier branch holds
+any commit the refold tags do not.
 
 ### Repository tips (2026-08-07, superseded — kept for the record)
 
@@ -646,3 +732,29 @@ $PY -m pytest tests/test_modelA_rungs.py tests/test_modelA_vs_legacy.py tests/te
   comments = authoritative record. ONE-SHOT guard armed — the close
   phase refuses re-execution; never rerun the refold without a new PI
   ruling.
+- [09] **RECOVERY + PI RULING SESSION (2026-08-11; governance only, no
+  science):** the 2026-08-08 session disconnected before the PI ruling
+  arrived. Recovery verified the whole reported state against the
+  repository: all six reported commits exist and are reachable
+  (`807bdfc`/`19f60ab`/`a9b89cd` on the refold branch, `5a97b00`
+  holdout, `60cef40` Stage-2A, `9e07c3d` notes); both scratch artifacts
+  re-hash EXACTLY (`e310ef4de490…f68a49e`, `6893a9ef…a698278`); every
+  number in `p1_refold_closure.json` reproduces the reported values
+  (G3 6,196.036/6,136/−60.036/91.748/z=−0.654; Layer-A 6.535;
+  Layer-B 0.880/0.909; decomposition 5,057.6 + 1,138.4 + 0 + 0); all
+  eight worktrees inspected, the five calibration ones clean including
+  untracked; local == remote on every calibration branch; NO commit
+  anywhere after `b1f0e25`; the only post-disconnect SLURM activity
+  (`gate_sigma`, `joint_ms_kodiaq`) has WorkDir
+  `/home/mfho/lya1d_priya_forecast` — a different project. **No blocked
+  action had been taken.** Two benign refinements to the handoff as
+  reported: the refold *branch tip* is `b1f0e25` (the 08-08 handoff
+  commit) with `a9b89cd` its parent — `a9b89cd` is the scientific-result
+  commit, `b1f0e25` the documentation commit; and the notes repo tip is
+  `4e77c39`, one session-handoff commit past `9e07c3d`. Structural fact
+  not previously recorded: the refold branch is a LINEAR SUPERSET of
+  both earlier calibration branches (0 unique commits on either). Then
+  the **2026-08-11 PI ruling** (above) was recorded here and in issue
+  #30, immutable tags were pushed, and the three completed P1 worktrees
+  plus the temporary refold branch were retired. Never rerun the refold
+  or reread the holdout without a new PI ruling.
