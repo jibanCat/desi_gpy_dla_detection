@@ -132,6 +132,21 @@ RESPONSE_ANCHOR_CEILING = 21.6
 # not 21.05. Pinned to the NPZ by
 # tests/test_adopted_reporting.py::test_response_anchor_measured_reproduces_
 # from_the_frozen_npz.
+#
+# 🔴 TERMINOLOGY CORRECTION 2026-08-11 (Phase-A stale-claims inventory item A4;
+# documentation only, no value below changes). "MEASURED" here means only:
+# these numbers are read from the frozen response NPZ rather than re-typed by
+# hand. It does NOT mean the anchor span is a physically measured support
+# boundary of the response. The Phase-A checkpoint established that
+# `resp_N_fit_range` is a BINNING KNOB, not a measurement: changing the septile
+# count on IDENTICAL data moves the reduced range from [19.34, 21.22] to
+# [19.10, 21.62] -- and it is also the clamp boundary. The directly measured
+# support is [19.5, 21.1), weakly measured to 21.5, and NOWHERE below 19.5.
+# So: do not quote this dict as "where the response stops being measured", and
+# do not treat a change in these numbers as evidence that the response changed.
+# Evidence: branch `review/phaseA-adversarial-2026-08-05`,
+# `review_phaseA/PHASE_A_VERDICT.md` @ a11dae0 and
+# `review_phaseA/stale_claims_inventory.md` item A4.
 RESPONSE_ANCHOR_MEASURED = dict(
     source=("/scratch/.../track_c/stage0/forward_response_2lpt0.npz "
             "-> pack.resp_fit_range_from_forward_npz -> emp_N_anchors"),
