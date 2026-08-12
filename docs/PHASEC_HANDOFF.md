@@ -4,12 +4,13 @@
 
 ## CURRENT STATE (read this first) — P1 CLOSED at the 2026-08-11 PI ruling
 
-**Where this document now lives:** tag `p1-refold-2026-08-08` (the
-retired `calibration/phaseC-p1-refold-2026-08-08` branch tip). Jump to
+**Where this document now lives:** branch
+`calibration/phaseC-p1-refold-2026-08-08` (RETAINED, local+remote, as
+the authoritative refold record — no worktree). Jump to
 "2026-08-11 PI RULING" for the binding scientific and governance state;
 "Repository refs (2026-08-11…)" for the authoritative refs. The P1
 worktrees (`wt_p1_refold`, `wt_p1_ck`, `wt_calib_phaseC`) were retired
-by that ruling — their committed state is reachable from the tags and
+by that ruling — their committed state stays reachable from the three
 retained branches listed there. Everything below this line is the
 historical record, newest-first by session.
 
@@ -340,30 +341,50 @@ total, cache/design-side, login node; storage +~40 KB committed JSON.
 
 ### Repository refs (2026-08-11, post-ruling — THIS revision)
 
-Under the 2026-08-11 ruling the temporary refold worktree and feature
-branch are retired and replaced by immutable pushed tags. **A worktree
-is not provenance** once its exact committed state is reachable from a
-retained authoritative ref. The verified post-cleanup disposition is
-recorded in issue #30 (2026-08-11 post-cleanup comment) — that comment,
-not this table, is the confirmation of record.
+**A worktree is not provenance** once its exact committed state is
+reachable from a retained authoritative ref, so the three completed P1
+worktrees are retired. **The branches are NOT** — see the tag conflict
+below. The verified post-cleanup disposition is recorded in issue #30
+(2026-08-11 post-cleanup comment); that comment, not this table, is the
+confirmation of record.
+
+🔴 **Tag conflict — OPEN PI QUESTION, resolved conservatively.** §9 of
+the ruling permits "an immutable pushed tag **or another explicitly
+retained authoritative branch**" to replace a temporary review branch.
+Issue #30's Standing constraints still say **"No freeze or tag"**, never
+lifted by any later ruling. Creating a provenance tag would relax a
+standing constraint on the session's own authority, so **no tag was
+created** and the §9 alternative was used instead: the refold branch is
+**explicitly retained** as the authoritative reference. Its local and
+remote counterparts therefore both stay. Converting it to an immutable
+tag (and only then deleting the branch) needs an explicit PI ruling that
+lifts or scopes "No freeze or tag".
 
 | ref | points at | role |
 |---|---|---|
-| tag `p1-refold-2026-08-08` | this handoff commit (refold branch tip) | **authoritative refold record** — full branch state incl. this ruling; replaces the temporary review branch |
-| tag `p1-refold-2026-08-08-closure` | `a9b89cd` | the frozen scientific result (closure commit) addressed directly |
-| tag `p1-holdout-2026-08-07` | `5a97b00` | consumed holdout record (read result `1b0d6d2`) |
-| branch `calibration/phaseC-p1-coherent-ck-2026-08-06` | `5a97b00` | RETAINED (local+remote) — the convenient authoritative review reference for the consumed holdout |
+| branch `calibration/phaseC-p1-refold-2026-08-08` | this handoff commit | **RETAINED (local+remote) — the authoritative refold record**: full lineage incl. `a9b89cd` and this ruling |
+| — closure commit inside it | `a9b89cd` | the frozen scientific result, addressable directly |
+| — prediction commit inside it | `19f60ab` | pre-registered, written before any closure statistic |
+| — covariance/runner commit inside it | `807bdfc` | frozen (C,K,M) covariance + committed refold runner |
+| branch `calibration/phaseC-p1-coherent-ck-2026-08-06` | `5a97b00` | RETAINED (local+remote) — the convenient authoritative review reference for the CONSUMED holdout (read result `1b0d6d2`) |
 | branch `calibration/phaseC-highN-fp-2026-08-06` | `60cef40` | RETAINED (local+remote) — Stage-2A anchor / quarantine record |
-| branch `calibration/phaseC-p1-refold-2026-08-08` | — | REMOVED (local+remote) — superseded by the tags above |
-| covariance artifact | `track_c/stage0/p1_ckm_cov_v1.npz` sha256 `e310ef4de490…f68a49e` | frozen |
-| operator artifact | `track_c/stage0/p1_natpair_ck_v1.npz` sha256 `6893a9ef…a698278` | frozen (`p1_natpair_ck/v1`) |
+| covariance artifact | `track_c/stage0/p1_ckm_cov_v1.npz` sha256 `e310ef4de490…f68a49e` | frozen; re-hashed EXACT on 2026-08-11 |
+| operator artifact | `track_c/stage0/p1_natpair_ck_v1.npz` sha256 `6893a9ef…a698278` | frozen (`p1_natpair_ck/v1`); re-hashed EXACT on 2026-08-11 |
 | healpix sidecar | `track_c/stage0/p1_healpix_map_nside16.npz` | frozen p1_joint_cov convention |
-| notes repo (`~/desi_gpy_dla_notes`) | `9e07c3d` (refold entry) → `4e77c39` (08-08 session handoff) + the 2026-08-11 ruling entry | pushed |
+| quarantined artifact | `track_c/stage0/quarantined_forward_response_2lpt0_phaseC.npz` | intact |
+| notes repo (`~/desi_gpy_dla_notes`) | `9e07c3d` → `4e77c39` → `379cd7c` (2026-08-11 ruling entry) | pushed |
+
+Worktrees `wt_p1_refold`, `wt_p1_ck`, `wt_calib_phaseC` are REMOVED;
+every commit they hosted stays reachable from the three retained
+branches above. To read this branch again without a worktree:
+`git show calibration/phaseC-p1-refold-2026-08-08:docs/PHASEC_HANDOFF.md`.
 
 Lineage note: the refold branch was a **linear descendant** of both
 earlier calibration branches — `60cef40` ⊂ `5a97b00` ⊂ `807bdfc` ⊂
 `19f60ab` ⊂ `a9b89cd` ⊂ this commit — so neither earlier branch holds
-any commit the refold tags do not.
+any commit the refold branch does not. They are retained for their
+distinct review roles (consumed holdout; Stage-2A anchor), not because
+they carry unique provenance.
 
 ### Repository tips (2026-08-07, superseded — kept for the record)
 
@@ -755,6 +776,10 @@ $PY -m pytest tests/test_modelA_rungs.py tests/test_modelA_vs_legacy.py tests/te
   not previously recorded: the refold branch is a LINEAR SUPERSET of
   both earlier calibration branches (0 unique commits on either). Then
   the **2026-08-11 PI ruling** (above) was recorded here and in issue
-  #30, immutable tags were pushed, and the three completed P1 worktrees
-  plus the temporary refold branch were retired. Never rerun the refold
-  or reread the holdout without a new PI ruling.
+  #30, and the three completed P1 worktrees (`wt_p1_refold`, `wt_p1_ck`,
+  `wt_calib_phaseC`) were retired. 🔴 The refold BRANCH was **kept**:
+  replacing it with an immutable tag would have relaxed the standing
+  "No freeze or tag" constraint in issue #30's body on the session's own
+  authority, so §9's alternative — an explicitly retained authoritative
+  branch — was used and the tag question was returned to the PI. Never
+  rerun the refold or reread the holdout without a new PI ruling.
