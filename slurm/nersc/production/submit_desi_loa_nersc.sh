@@ -109,6 +109,7 @@ build_and_run () {
         $([ "$FILTER_EMPTY_MASK_FALLTHROUGH" = "1" ] && echo "--filter_empty_mask_fallthrough 1") \
         --figure_dir "$FIGURE_DIR" \
         $([ -n "${PIXEL_COL:-}" ] && echo "--pixel_col $PIXEL_COL") \
+        $([ -n "${EXTERNAL_HPX_LIST:-}" ] && echo "--use_external_hpx_list --external_hpx_list $EXTERNAL_HPX_LIST") \
         --hpx_start "$hs" --hpx_end "$he"
 }
 
