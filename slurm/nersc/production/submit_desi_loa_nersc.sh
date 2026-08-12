@@ -108,7 +108,7 @@ build_and_run () {
         $([ -n "$FILTER_N_INITIAL_FLOOR" ] && echo "--filter_n_initial_floor $FILTER_N_INITIAL_FLOOR") \
         $([ "$FILTER_EMPTY_MASK_FALLTHROUGH" = "1" ] && echo "--filter_empty_mask_fallthrough 1") \
         --figure_dir "$FIGURE_DIR" \
-        --pixel_col "${PIXEL_COL:-HPXPIXEL}" \
+        $([ -n "${PIXEL_COL:-}" ] && echo "--pixel_col $PIXEL_COL") \
         --hpx_start "$hs" --hpx_end "$he"
 }
 
