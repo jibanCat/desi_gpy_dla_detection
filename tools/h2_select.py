@@ -61,17 +61,38 @@ def _seed_for(targetid, k, salt="h2v1"):
     return int.from_bytes(h[:8], "little")
 
 
-def _draw_one(targetid, k, z_qso, logn_grid, logn_weights):
-    rng = np.random.default_rng(_seed_for(targetid, k))
+def _draw_one(targetid, k, z_qso, logn_grid, logn_weights,
+              seg_frac=None, seg_edge=4.25, seg_min_width=0.03,
+              salt="h2v1"):
+    """Deterministic per-(TARGETID, k) draw.
+
+    seg_frac=None reproduces the H2-v1 design exactly: z_inj uniform in the
+    sightline window. With seg_frac=q (H2-v2, design-only variance
+    allocation, recorded in the plan): when the window has a usable segment
+    above seg_edge (width >= seg_min_width), draw the segment with
+    probability q for [seg_edge, zhi] and 1-q for [zlo, seg_edge], uniform
+    within the chosen segment. Sightlines without a usable high segment
+    keep the uniform draw (physical path is never manufactured).
+    """
+    rng = np.random.default_rng(_seed_for(targetid, k, salt=salt))
     zlo = Z_INJ_RANGE[0]
     zhi = min(float(z_qso) - (COLLAR_KMS / CKMS) * (1.0 + float(z_qso)),
               Z_INJ_RANGE[1])
     if zhi <= zlo:
         return None
-    z_inj = float(rng.uniform(zlo, zhi))
+    segment = "uniform"
+    if seg_frac is not None and (zhi - seg_edge) >= seg_min_width:
+        if rng.uniform() < seg_frac:
+            z_inj = float(rng.uniform(seg_edge, zhi))
+            segment = "hi"
+        else:
+            z_inj = float(rng.uniform(zlo, seg_edge))
+            segment = "lo"
+    else:
+        z_inj = float(rng.uniform(zlo, zhi))
     p = np.asarray(logn_weights, float)
     logn = float(rng.choice(logn_grid, p=p / p.sum()))
-    return z_inj, logn
+    return z_inj, logn, segment
 
 
 def main():
@@ -90,12 +111,29 @@ def main():
         cfg = json.load(fh)
     logn_grid = np.asarray(cfg["logN_grid"], float)
     logn_weights = np.asarray(cfg["logN_weights"], float)
-    n_sight = int(cfg["sightlines_per_cell"])
-    n_double = int(cfg["double_injection_sightlines_per_cell"])
     if len(logn_weights) != len(logn_grid):
         raise SystemExit("FATAL: logN_weights length != logN_grid length")
-    if n_double > n_sight:
-        raise SystemExit("FATAL: double_injection count exceeds cell size")
+    # v2 extensions (all optional; absent keys reproduce the v1 design):
+    #   arm_overrides: {"A": {"sightlines_per_cell", "double_..."},
+    #                   "B": {..., "z_substrata": [edges]}}
+    #   zinj: {"segment_frac": q, "segment_edge": 4.25,
+    #          "segment_min_width": 0.03}
+    #   seed_salt: distinct salt per campaign version ("h2v1" default)
+    overrides = cfg.get("arm_overrides", {})
+    zinj = cfg.get("zinj", {})
+    seg_frac = zinj.get("segment_frac")
+    seg_edge = float(zinj.get("segment_edge", 4.25))
+    seg_minw = float(zinj.get("segment_min_width", 0.03))
+    salt = cfg.get("seed_salt", "h2v1")
+
+    def cell_counts(arm):
+        o = overrides.get(arm, {})
+        ns = int(o.get("sightlines_per_cell", cfg["sightlines_per_cell"]))
+        nd = int(o.get("double_injection_sightlines_per_cell",
+                       cfg["double_injection_sightlines_per_cell"]))
+        if nd > ns:
+            raise SystemExit(f"FATAL: arm {arm} double count exceeds cell size")
+        return ns, nd
 
     from astropy.io import fits
     if not os.path.isfile(args.qsocat):
@@ -117,6 +155,8 @@ def main():
         pix = np.asarray(q["HPXPIXEL"][m], np.int64)
         edges = np.percentile(ts, [100 / 3, 200 / 3])
         tercile_edges[arm] = [float(x) for x in edges]
+        n_sight, n_double = cell_counts(arm)
+        substrata = overrides.get(arm, {}).get("z_substrata")
         for ti in range(3):
             if ti == 0:
                 mm = ts < edges[0]
@@ -124,8 +164,28 @@ def main():
                 mm = (ts >= edges[0]) & (ts < edges[1])
             else:
                 mm = ts >= edges[1]
-            order = np.sort(tid[mm])
-            picks = order[:n_sight]
+            if substrata:
+                # lowest-TARGETID per (z-substratum x tercile): blind,
+                # deterministic; guarantees z_qso coverage inside the cell.
+                nz = len(substrata) - 1
+                per = n_sight // nz
+                if per * nz != n_sight:
+                    raise SystemExit(
+                        f"FATAL: arm {arm} sightlines_per_cell {n_sight} "
+                        f"not divisible by {nz} z-substrata")
+                parts = []
+                for zi in range(nz):
+                    zm = mm & (z >= substrata[zi]) & (z < substrata[zi + 1])
+                    avail = np.sort(tid[zm])
+                    if len(avail) < per:
+                        raise SystemExit(
+                            f"FATAL: arm {arm} t{ti} z-substratum "
+                            f"[{substrata[zi]},{substrata[zi+1]}) has only "
+                            f"{len(avail)} parents < {per}")
+                    parts.append(avail[:per])
+                picks = np.sort(np.concatenate(parts))
+            else:
+                picks = np.sort(tid[mm])[:n_sight]
             cell = f"{arm}_t{ti}"
             n_inj_cell = 0
             for rank, t in enumerate(picks):
@@ -136,14 +196,17 @@ def main():
                     TSNR2_LYA=float(ts[j]), HPXPIXEL=int(pix[j]),
                     arm=arm, tercile=ti, cell=cell, n_inj=n_inj))
                 for k in range(n_inj):
-                    d = _draw_one(t, k, z[j], logn_grid, logn_weights)
+                    d = _draw_one(t, k, z[j], logn_grid, logn_weights,
+                                  seg_frac=seg_frac, seg_edge=seg_edge,
+                                  seg_min_width=seg_minw, salt=salt)
                     if d is None:
                         continue
-                    z_inj, logn = d
+                    z_inj, logn, segment = d
                     plan_rows.append(dict(
                         TARGETID=int(t), inj_idx=k, cell=cell,
                         Z_QSO=float(z[j]), HPXPIXEL=int(pix[j]),
                         z_inj=round(z_inj, 6), logN=logn,
+                        z_segment=segment,
                         collision_status="PENDING"))
                     n_inj_cell += 1
             summary_cells[cell] = dict(n_sightlines=len(picks),

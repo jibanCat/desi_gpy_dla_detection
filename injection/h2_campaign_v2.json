@@ -1,0 +1,20 @@
+{
+  "_protocol": "H2-v2 real-spectrum injection campaign (PI ruling 2026-08-13 §§12-25). PREPARATION config; H2 SCIENTIFIC EXECUTION IS PI-GATED. H2-v1 (h2_campaign_v1.json, plan sha a825346ece1badb3...) remains the immutable pre-execution design record.",
+  "_status": "PROPOSED-v2 — for explicit PI ratification. Changes vs v1: (1) arm allocation 300/600 (was 450/450) toward the primary extrapolation axis z_qso>4.25; (2) arm-B sightline selection additionally stratified over the pilot z_qso bins (guarantees high-z_qso window coverage; blind, lowest-TARGETID per sub-stratum); (3) z_inj two-segment design density within arm B (q=0.6 on the [4.25, z_hi] segment where >=0.03 wide) to raise z_DLA>4.25 leverage while never manufacturing path; (4) new seed salt h2v2. logN grid/weights UNCHANGED from v1 (PI §20).",
+  "logN_grid":    [19.5, 19.75, 20.0, 20.25, 20.5, 20.75, 21.0, 21.25, 21.5],
+  "logN_weights": [1.0,  1.5,   3.0,  3.0,   3.0,  1.5,   1.0,  1.0,   1.0],
+  "sightlines_per_cell": 90,
+  "double_injection_sightlines_per_cell": 60,
+  "arm_overrides": {
+    "A": {"sightlines_per_cell": 60, "double_injection_sightlines_per_cell": 40},
+    "B": {"sightlines_per_cell": 120, "double_injection_sightlines_per_cell": 80,
+          "z_substrata": [4.25, 4.4, 4.6, 4.9, 7.0]}
+  },
+  "zinj": {"segment_frac": 0.6, "segment_edge": 4.25, "segment_min_width": 0.03},
+  "seed_salt": "h2v2",
+  "_cells": "6 macro-cells unchanged (arm A [4.00,4.25] + arm B (4.25,7.0], x per-arm TSNR2_LYA terciles). Arm A: 60 sightlines/cell (40x2+20x1) = 100 inj/cell, 300 total. Arm B: 120 sightlines/cell (80x2+40x1) = 200 inj/cell, 600 total; sightlines drawn 30 per pilot z-bin sub-stratum.",
+  "_design_density": "DESIGN-ONLY (PI §22): p_inj(z_inj | sightline) is uniform-in-window for arm A and for arm-B sightlines without a usable z>4.25 segment; two-segment (q=0.6 high / 0.4 low, uniform within segment) otherwise. Recorded per injection in the plan (z_segment column). Estimators stay conditional on injected truth per (cell, N_true, z_inj bin); population-level quantities reweight by w_science/w_design exactly as in the v1 decision sheet §3.",
+  "_collision_rule": "UNCHANGED from v1 (pre-declared): re-draw z_inj if within 5000 km/s of ANY catalog candidate; deterministic seeded redraw <=100 then drop+log; candidate list frozen by sha at execution authorization",
+  "_estimators": "unchanged from v1",
+  "_compute": "unchanged: ~27-32 CPU-h for 900 injections"
+}
