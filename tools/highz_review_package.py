@@ -26,11 +26,18 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 from scipy.special import wofz
 
-CDDF_CAT = ("/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/"
-            "loa_cddf_main_dark_v1/dlacat-loa-cddf-main-dark-v1.fits")
-QSO_CAT = ("/nfs/turbo/lsa-cavestru/mfho/DESI/loa/"
-           "QSO_cat_loa_main_dark_healpix_v2-altbal.fits")
-HPX_ROOT = "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/healpix/main/dark"
+# Historical GL defaults; override via env or CLI (--cddf-cat/--qso-cat/
+# --hpx-root/--archive). Missing inputs fail loudly — no silent fallback.
+CDDF_CAT = os.environ.get(
+    "HZ_CDDF_CAT",
+    "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/"
+    "loa_cddf_main_dark_v1/dlacat-loa-cddf-main-dark-v1.fits")
+QSO_CAT = os.environ.get(
+    "HZ_QSO_CAT",
+    "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/"
+    "QSO_cat_loa_main_dark_healpix_v2-altbal.fits")
+HPX_ROOT = os.environ.get(
+    "HZ_HPX_ROOT", "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/healpix/main/dark")
 OUTDIR = os.environ.get("HZ_REVIEW_OUT", "highz_review_out")
 
 LYA, LYB, LYG, LYD, LYLIM = 1215.67, 1025.7223, 972.5368, 949.7431, 911.76
@@ -62,8 +69,9 @@ def voigt_tau(lam_obs, z, logN, line, b_kms=15.0):
     return tau0 * H
 
 
-def read_coadd_rows(pix, tids):
-    path = os.path.join(HPX_ROOT, str(pix // 100), str(pix),
+def read_coadd_rows(pix, tids, hpx_root=None):
+    path = os.path.join(hpx_root if hpx_root is not None else HPX_ROOT,
+                        str(pix // 100), str(pix),
                         f"coadd-main-dark-{pix}.fits")
     out = {}
     with fits.open(path, memmap=True) as h:
@@ -80,6 +88,27 @@ def read_coadd_rows(pix, tids):
                 iv = h[f"{cam}_IVAR"].data[i]
                 spec[cam] = (w, fl, iv)
             out[int(t)] = spec
+    return out
+
+
+def read_archive_rows(archive, tids):
+    """Spectrum source from a LoaArchive HDF5 (I/O substitute for
+    read_coadd_rows when the raw healpix coadds are not local).
+
+    Returns the same {tid: {cam: (wave, flux, ivar)}} shape; the archive's
+    single stitched grid is placed under "B" with empty "R"/"Z" so
+    stitch()/page() are unchanged. ivar is used as stored (the coadd path
+    reads *_IVAR only and never applies MASK; mirrored here).
+    """
+    out = {}
+    empty = (np.array([]), np.array([]), np.array([]))
+    for t in tids:
+        try:
+            s = archive.get_spectrum(int(t))
+        except KeyError:
+            continue
+        out[int(t)] = {"B": (s.wavelength, s.flux, s.ivar),
+                       "R": empty, "Z": empty}
     return out
 
 
@@ -203,11 +232,35 @@ def page(row, spec, outpath):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--cddf-cat", default=CDDF_CAT,
+                    help="DLA/CDDF catalog FITS (candidate selection source)")
+    ap.add_argument("--qso-cat", default=QSO_CAT,
+                    help="QSO parent catalog FITS (TARGETID->HPXPIXEL map)")
+    ap.add_argument("--hpx-root", default=HPX_ROOT,
+                    help="healpix coadd tree root (spectrum source)")
+    ap.add_argument("--archive", default=os.environ.get("HZ_ARCHIVE") or None,
+                    help="LoaArchive HDF5 spectrum source; replaces coadd "
+                         "reads under --hpx-root (I/O substitution only)")
+    ap.add_argument("--only-missing", action="store_true",
+                    help="skip candidates whose page PNG already exists "
+                         "in OUTDIR/pages")
     args = ap.parse_args()
+
+    # fail loudly on missing inputs — never fall back to an unintended path
+    for label, p in (("CDDF cat", args.cddf_cat), ("QSO cat", args.qso_cat)):
+        if not os.path.isfile(p):
+            sys.exit(f"FATAL: {label} not found: {p}")
+    if args.archive is not None:
+        if not os.path.isfile(args.archive):
+            sys.exit(f"FATAL: archive not found: {args.archive}")
+    elif not os.path.isdir(args.hpx_root):
+        sys.exit(f"FATAL: healpix root not found: {args.hpx_root} "
+                 "(pass --hpx-root or --archive)")
+
     os.makedirs(os.path.join(OUTDIR, "pages"), exist_ok=True)
 
-    c = fits.open(CDDF_CAT)[1].data
-    q = fits.open(QSO_CAT)[1].data
+    c = fits.open(args.cddf_cat)[1].data
+    q = fits.open(args.qso_cat)[1].data
     hpx = {int(t): int(p) for t, p in zip(q["TARGETID"], q["HPXPIXEL"])}
 
     m_all = c["Z_DLA"] >= 3.8
@@ -282,6 +335,16 @@ def main():
                                f"{r['Z_DLA']:.3f}.png"])
 
     # group by healpix, generate pages
+    archive = None
+    if args.archive is not None:
+        try:
+            from gpy_dla_detection.loa_archive import LoaArchive
+        except ImportError:
+            sys.path.insert(0, os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))))
+            from gpy_dla_detection.loa_archive import LoaArchive
+        archive = LoaArchive(args.archive)
+        archive.open()
     bypix = defaultdict(list)
     for i, r in enumerate(cand):
         p = hpx.get(int(r["TARGETID"]), -1)
@@ -291,9 +354,12 @@ def main():
     for p, idxs in sorted(bypix.items()):
         if p < 0:
             continue
+        tids = [int(cand[i]["TARGETID"]) for i in idxs]
         try:
-            specs = read_coadd_rows(p, [int(cand[i]["TARGETID"])
-                                        for i in idxs])
+            if archive is not None:
+                specs = read_archive_rows(archive, tids)
+            else:
+                specs = read_coadd_rows(p, tids, args.hpx_root)
         except Exception as e:
             print(f"[pix {p}] read failed: {e}")
             continue
@@ -301,10 +367,13 @@ def main():
             r = cand[i]
             t = int(r["TARGETID"])
             if t not in specs:
-                print(f"[pix {p}] TID {t} not in coadd")
+                print(f"[pix {p}] TID {t} not in "
+                      f"{'archive' if archive is not None else 'coadd'}")
                 continue
             out = os.path.join(OUTDIR, "pages",
                                f"hz_{t}_{r['Z_DLA']:.3f}.png")
+            if args.only_missing and os.path.exists(out):
+                continue
             try:
                 th = page(r, specs[t], out)
                 thumbs.append((r, th))
@@ -313,6 +382,8 @@ def main():
                     print(f"  {ndone} pages done")
             except Exception as e:
                 print(f"[pix {p}] TID {t} page failed: {e}")
+    if archive is not None:
+        archive.close()
 
     # contact sheets: 48 per sheet, ordered by z_DLA desc
     thumbs.sort(key=lambda x: -x[0]["Z_DLA"])
