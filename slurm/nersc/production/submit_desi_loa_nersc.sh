@@ -145,6 +145,23 @@ mkdir -p "$OUTDIR" "${OUTDIR}/logs"
 echo "[loa] $(date) job=${SLURM_JOB_ID:-NA} hpx_window=${START_INDEX}..${END_INDEX} ntasks=${NTASKS} W=${MAX_WORKERS}"
 echo "[loa] LEARNED_FILE=$LEARNED_FILE  OUTDIR=$OUTDIR"
 
+# Fail-loud C-Voigt preflight (default ON): production must run the compiled
+# _voigt.so; a fresh checkout without it would otherwise fall back to the
+# ~100x slower pure-Python path with only a RuntimeWarning buried in task
+# logs (observed at NERSC 2026-08-12, execution report §3.2). Runs ONCE in
+# the driver, before any allocation is burned by srun. VOIGT_PREFLIGHT=0
+# skips the gate — for non-production debugging only.
+if [ "${VOIGT_PREFLIGHT:-1}" = "1" ]; then
+    if ! python "${REPO_ROOT:-.}/tools/voigt_preflight.py" \
+            --repo-root "${REPO_ROOT:-.}" \
+            --json "${OUTDIR}/logs/voigt_preflight_${SLURM_JOB_ID:-NA}.json"; then
+        echo "[loa] ERROR: C-Voigt preflight FAILED; refusing to launch (build with tools/build_voigt.sh, or VOIGT_PREFLIGHT=0 for non-production debugging)" >&2
+        exit 1
+    fi
+else
+    echo "[loa] WARNING: VOIGT_PREFLIGHT=0 — C-Voigt gate SKIPPED (non-production only)" >&2
+fi
+
 # Option B (opt-in): compute spec-weighted task boundaries ONCE for this window;
 # each task reads its [b_k,b_{k+1}) via SLURM_PROCID. Requested-but-broken is a
 # loud failure (never silently fall back to a different split).
