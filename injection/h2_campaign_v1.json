@@ -1,0 +1,13 @@
+{
+  "_protocol": "Bounded H2 real-spectrum injection campaign (notes repo 2026-08-12_fable_floor_optimum_and_highz.md §7). PREPARATION config; H2 SCIENTIFIC EXECUTION IS PI-GATED.",
+  "_status": "PROPOSED — the exact logN concentration weights and the 6-macro-cell partition (2 population arms x 3 TSNR2_LYA terciles) are the natural reading of the frozen protocol (~900 injections, ~150 per (z,SNR) macro-cell, <=2 per sightline, logN grid 19.5..21.5 step 0.25 concentrated 19.8-20.6) but are surfaced here for explicit PI declaration at the execution gate. Everything else is frozen protocol text.",
+  "logN_grid":    [19.5, 19.75, 20.0, 20.25, 20.5, 20.75, 21.0, 21.25, 21.5],
+  "logN_weights": [1.0,  1.5,   3.0,  3.0,   3.0,  1.5,   1.0,  1.0,   1.0],
+  "sightlines_per_cell": 90,
+  "double_injection_sightlines_per_cell": 60,
+  "_cells": "6 macro-cells = arm A (4.00<=z_qso<=4.25, searched) + arm B (4.25<z_qso<=7.0, post-recovery), each x 3 per-arm TSNR2_LYA terciles; 90 sightlines/cell (60 with 2 injections + 30 with 1) = 150 injections/cell, 900 total",
+  "_draw": "z_inj uniform in [max(3.8, forest window), z_qso - 3000 km/s] ∩ [3.8, 5.0]; deterministic per-(TARGETID, inj_idx) sha256 seed, salt h2v1",
+  "_collision_rule": "PRE-DECLARED: re-draw z_inj if within 5000 km/s of ANY catalog candidate; applied at execution against the then-current candidate catalogs; every collision logged",
+  "_estimators": "completeness = recovery fraction per cell; response/migration = (N_hat - N_true) landing distributions per cell (same estimators as the mock kernel); uncertainties = per-cell binomial + bootstrap over sightlines",
+  "_compute": "anchor 106 CPU-s/spec => ~27 CPU-h for 900 injections, ~32 with retries (protocol figures)"
+}
