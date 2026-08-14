@@ -56,7 +56,11 @@ done
 # Scheduler knobs (from _base_nersc.env, with CLI override for QOS)
 ACCOUNT="${NERSC_SLURM_ACCOUNT:-desi}"
 QOS="${QOS_OVERRIDE:-${NERSC_SLURM_QOS:-regular}}"
-CONSTRAINT="${NERSC_SLURM_CONSTRAINT:-cpu}"
+# `-` (not `:-`): an EXPLICIT empty NERSC_SLURM_CONSTRAINT omits the flag
+# entirely (GL nodes carry no features); only an unset var falls back to the
+# Perlmutter default. Scheduler plumbing only.
+CONSTRAINT="${NERSC_SLURM_CONSTRAINT-cpu}"
+CONSTRAINT_FLAG=(); [ -n "$CONSTRAINT" ] && CONSTRAINT_FLAG=(--constraint="$CONSTRAINT")
 SLURM_TIME="${TIME_OVERRIDE:-${NERSC_SLURM_TIME:-08:00:00}}"
 NTASKS="${NERSC_NTASKS:-32}"
 W="${MAX_WORKERS:-8}"
@@ -147,7 +151,7 @@ for (( i=LOOP_START; i<LOOP_END; i+=WINDOW )); do
     window_export="START_INDEX=${i},END_INDEX=${chunk_end}"
     full_export="ALL,${COMMON_EXPORT},${window_export}"
     cmd=(sbatch --chdir="$REPO_ROOT"
-                --account="$ACCOUNT" --qos="$QOS" --constraint="$CONSTRAINT" --time="$SLURM_TIME"
+                --account="$ACCOUNT" --qos="$QOS" "${CONSTRAINT_FLAG[@]}" --time="$SLURM_TIME"
                 --nodes=1 --ntasks="$NTASKS" --cpus-per-task="$W"
                 --export="$full_export" "$INNER")
     echo "[launch-nersc] $(date +%H:%M:%S) window ${i}..${chunk_end}"
