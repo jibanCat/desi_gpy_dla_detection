@@ -396,6 +396,20 @@ def parse(options=None):
         help="end level2 folder",
     )
 
+    # archive spectral source (validated I/O substitution; PI 2026-08-13 L-A)
+    parser.add_argument(
+        "--spectra_archive",
+        type=str,
+        default=os.environ.get("GPDLA_SPECTRA_ARCHIVE") or None,
+        help=(
+            "LoaArchive HDF5 serving the post-coadd_cameras spectra instead "
+            "of raw healpix coadds (validated production-equivalent I/O; "
+            "healpix mode only). FAIL-LOUD: a missing archive/TARGETID/"
+            "grid mismatch aborts — never a silent fallback to raw coadds. "
+            "Absent -> historical raw-coadd behavior."
+        ),
+    )
+
     # healpix grouping column / coadd layout
     parser.add_argument(
         "--pixel_col",
@@ -582,6 +596,21 @@ def main(args=None):
                 "(cf. commit 98b50a4). Use the default HPXPIXEL."
             )
             exit(1)
+        if args.spectra_archive is not None:
+            # Fail loud BEFORE any work: archive mode is healpix-only and the
+            # archive must exist. Never silently fall back to raw coadds.
+            if args.mocks or args.tilebased:
+                log.error(
+                    "--spectra_archive is only supported in healpix mode "
+                    "(not --mocks / --tilebased)."
+                )
+                exit(1)
+            if not os.path.isfile(args.spectra_archive):
+                log.error(
+                    f"--spectra_archive not found: {args.spectra_archive} "
+                    "(archive mode is explicit; refusing to fall back)"
+                )
+                exit(1)
         catalog = read_catalog(
             args.qsocat, args.balmask, args.tilebased, pixel_col=args.pixel_col
         )
@@ -692,7 +721,11 @@ def main(args=None):
     log.info(f"using {nproc_futures} high-level processes")
 
     if not (args.tilebased) and not (args.mocks):
-        datapath = f"/global/cfs/cdirs/desi/spectro/redux/{args.release}/healpix/{args.survey}/{args.program}"
+        # Raw-coadd root: historical CFS default, overridable for portability
+        # (I/O only; PI 2026-08-13 L-A ruling §3).
+        spectro_redux = os.environ.get(
+            "GPDLA_SPECTRO_REDUX", "/global/cfs/cdirs/desi/spectro/redux")
+        datapath = f"{spectro_redux}/{args.release}/healpix/{args.survey}/{args.program}"
 
         if nproc_futures == 1:
             results = [
@@ -703,6 +736,7 @@ def main(args=None):
                     datapath,
                     select_pixel_cell(catalog, args.pixel_col, hpx),
                     model_params,  # Pass the model parameters dictionary here
+                    archive=args.spectra_archive,
                 )
                 for hpx in this_hpxs
             ]
@@ -716,6 +750,7 @@ def main(args=None):
                     "datapath": datapath,
                     "hpxcat": select_pixel_cell(catalog, args.pixel_col, hpx),
                     "model_params": model_params,
+                    "archive": args.spectra_archive,
                 }
                 for hpx in this_hpxs
             ]

@@ -77,7 +77,84 @@ warnings.simplefilter("error", OptimizeWarning)
 ##########################
 
 
-def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
+class _ArchiveSpectra:
+    """Post-coadd_cameras stand-in built from a LoaArchive (PI 2026-08-13,
+    verdict L-A). Carries exactly the fields the real-coadd production path
+    consumes downstream of coadd_cameras: wave/flux/ivar/mask["brz"] and
+    fibermap TARGETID. Resolution is not consumed on that path."""
+
+    def __init__(self, wave_f8, tids, flux, ivar, mask):
+        from astropy.table import Table
+
+        self.wave = {"brz": wave_f8}
+        self.flux = {"brz": flux}
+        self.ivar = {"brz": ivar}
+        self.mask = {"brz": mask}
+        self.fibermap = Table({"TARGETID": np.asarray(tids, np.int64)})
+        self.bands = ["brz"]
+        self.resolution_data = {"brz": None}
+
+
+def read_archive_group(archive_path, targetids):
+    """Serve the exact validated archive-adapter representation for a group
+    of TARGETIDs (I/O substitution for read_spectra+coadd_cameras; audited
+    2026-08-13, A/B + cross-site pilot PASS). FAIL-LOUD contract: a missing
+    archive, missing TARGETID, malformed entry, incompatible schema, or a
+    wavelength-grid mismatch RAISES — archive mode never silently falls
+    back to raw coadds or partial data.
+    """
+    import h5py
+
+    if not os.path.isfile(archive_path):
+        raise FileNotFoundError(
+            f"spectra archive not found: {archive_path} (archive mode is "
+            "explicit; refusing any fallback)")
+    grid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "data", "brz_wave_grid_f8.npy")
+    if not os.path.isfile(grid_file):
+        raise FileNotFoundError(
+            f"native brz float64 wavelength grid missing: {grid_file}")
+    wave_f8 = np.load(grid_file)
+    with h5py.File(archive_path, "r") as h:
+        if int(h.attrs.get("schema_version", -1)) != 1:
+            raise RuntimeError(
+                f"incompatible archive schema_version "
+                f"{h.attrs.get('schema_version')!r} (expected 1)")
+        a_wave = h["wavelength"][:]
+        if a_wave.shape != wave_f8.shape or not np.array_equal(
+                wave_f8.astype(np.float32), a_wave):
+            raise RuntimeError(
+                "archive wavelength grid does not match the native brz grid "
+                "(float32 cast mismatch) — wrong or corrupted archive")
+        cat = h["catalog"][:]
+        idx = {int(t): int(i) for i, t in enumerate(cat["TARGETID"])}
+        missing = [int(t) for t in targetids if int(t) not in idx]
+        if missing:
+            raise KeyError(
+                f"{len(missing)} TARGETID(s) absent from archive "
+                f"{archive_path}: {missing[:5]}{'...' if len(missing) > 5 else ''}")
+        tids = [int(t) for t in targetids]
+        n_pix = wave_f8.shape[0]
+        flux = np.empty((len(tids), n_pix), np.float64)
+        ivar = np.empty((len(tids), n_pix), np.float64)
+        mask = np.empty((len(tids), n_pix), np.uint32)
+        for k, t in enumerate(tids):
+            i = idx[t]
+            f = h["flux"][i]
+            v = h["ivar"][i]
+            m = h["mask"][i]
+            if f.shape != (n_pix,) or v.shape != (n_pix,) or m.shape != (n_pix,):
+                raise RuntimeError(
+                    f"malformed archive entry for TARGETID {t}: shapes "
+                    f"{f.shape}/{v.shape}/{m.shape} != ({n_pix},)")
+            flux[k] = f.astype(np.float64)
+            ivar[k] = v.astype(np.float64)
+            mask[k] = m
+    return _ArchiveSpectra(wave_f8, tids, flux, ivar, mask)
+
+
+def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params,
+                  archive=None):
     """
     Find the best fitting DLA profile(s) for spectra in hpx catalog.
 
@@ -89,6 +166,9 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     datapath (str): path to coadd files
     hpxcat (table): collection of spectra to search for DLAs, all belonging to a single healpix
     model_params (dict): dictionary of parameters for the DLAHolder model
+    archive (str, optional): LoaArchive HDF5 path — spectra are served from
+        the archive (validated I/O substitution) instead of the raw coadd;
+        the raw-coadd file need not exist. Absent -> historical behavior.
 
     Returns
     -------
@@ -100,7 +180,7 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
     coaddname = f"coadd-{survey}-{program}-{str(healpix)}.fits"
     coadd = os.path.join(datapath, str(healpix // 100), str(healpix), coaddname)
 
-    if os.path.exists(coadd):
+    if archive is not None or os.path.exists(coadd):
         # Reconstruct the Parameters instance from the dictionary
         params = Parameters(**model_params["params_dict"])
         params_subdla = Parameters(**model_params["params_subdla_dict"])
@@ -137,7 +217,8 @@ def dlasearch_hpx(healpix, survey, program, datapath, hpxcat, model_params):
             dla_bias=model_params.get("dla_bias", 2.0),
         )
 
-        fitresults = process_spectra_group(coadd, hpxcat, model)
+        fitresults = process_spectra_group(coadd, hpxcat, model,
+                                           archive=archive)
 
     else:
         log.error(f"could not locate coadd file for healpix {healpix}")
@@ -270,7 +351,7 @@ def dlasearch_mock(specfile, catalog, model_params):
     return fitresults
 
 
-def process_spectra_group(coaddpath, catalog, model: DLAHolder):
+def process_spectra_group(coaddpath, catalog, model: DLAHolder, archive=None):
     """
     Pre-process spectra from a single coadd file and run GP-DLA inference.
 
@@ -335,13 +416,21 @@ def process_spectra_group(coaddpath, catalog, model: DLAHolder):
         and n is the 0-based DLA index (0 for first DLA, 1 for second, ...).
     """
 
-    specobj = desispec.io.read_spectra(
-        coaddpath,
-        targetids=catalog["TARGETID"],
-        skip_hdus=["EXP_FIBERMAP", "SCORES", "EXTRA_CATALOG"],
-    )
+    if archive is not None:
+        # Archive spectral source (PI 2026-08-13, L-A): serve the validated
+        # post-coadd_cameras representation from the LoaArchive. Fail-loud;
+        # never a silent fallback to raw coadds. Everything below the
+        # `wave = specobj.wave["brz"]` line is the identical historical path.
+        specobj = read_archive_group(archive, catalog["TARGETID"])
+    else:
+        specobj = desispec.io.read_spectra(
+            coaddpath,
+            targetids=catalog["TARGETID"],
+            skip_hdus=["EXP_FIBERMAP", "SCORES", "EXTRA_CATALOG"],
+        )
     try:
-        specobj = coadd_cameras(specobj)
+        if archive is None:
+            specobj = coadd_cameras(specobj)
     except:
         if specobj.resolution_data is not None:
             # resample on linear grid
