@@ -1,6 +1,6 @@
 {
  "contract": "CANONICAL_PURITY_COMPLETENESS_CONTRACT",
- "version": "v1 (2026-08-15)",
+ "version": "v1.1 (2026-08-15; BAL policy corrected to the real-data analysis of record)",
  "code_head": "14df2ce (hbi/forward-2026-08; wt_forward_2026_08)",
  "molly_matrix_of_record": {
   "artifact": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/p1_natpair_ck_v1.npz",
@@ -47,7 +47,7 @@
    "p_dla_field": "P_DLA (posterior probability that the MAP absorber model is preferred; dlacat column)",
    "p_dla_cut": "P_DLA > 0.99 (strict)",
    "quality": "DLAFLAG == 0",
-   "bal_policy": "drop-all-BAL by TARGETID (Molly convention; production ran BALMASK=false so BAL handling is catalogue-side)",
+   "bal_policy": "REAL-DATA analysis of record (track_c_tf_loa staging + this work): drop TARGETIDs with BI_CIV>0 (v2-altbal catalogue; the staged bal_cat convention) + DLAFLAG POTENTIAL_BAL bit active via DLAFLAG==0. The Molly MOCK-eval drop-all-bal_cat convention applies to the truth-complete mock channel only. H2 canonical tables regenerated under BI_CIV>0 drop (15/179 armA, 31/360 armB sightlines).",
    "lambda_rf_window": "lya_only: lam_rf(Z_DLA) in [1025,1216] A via make_lambda_z_BAL_cuts (examples/molly_faithful_pc_plots.py:405): z_lo=max(3600/LYA-1, lam_min(1+zq)/LYA-1+collar), z_hi=min(zq-collar, lam_max(1+zq)/LYA-1-collar), collar=3000 km/s (z units), strict",
    "lyb_veto": "postprocess.lyb_veto.flag_lybeta (dz 0.005, higher-NHI parent required) - part of the bundle; STRUCTURALLY INERT under MAX_DLAS=1 single-row-per-sightline output (recorded, not dropped)"
   },

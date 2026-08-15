@@ -199,6 +199,12 @@ def main():
     for c in sorted({r["cell"] for r in per_truth}):
         strata.append(stratum(f"cell:{c}",
                               [r for r in per_truth if r["cell"] == c]))
+    # Molly-matrix truth-NHI bins (the C-table interface used by the
+    # real-data estimator: nhi_edges [19.5,20,20.3,20.5,21,21.5,22,inf])
+    MOLLY_EDGES = [19.5, 20.0, 20.3, 20.5, 21.0, 21.5, 22.0, np.inf]
+    for a, b in zip(MOLLY_EDGES[:-1], MOLLY_EDGES[1:]):
+        strata.append(stratum(f"molly_nhi:[{a},{b})",
+                              [r for r in per_truth if a <= r["n_true"] < b]))
 
     reporting = []
     for T in T_LIST:
