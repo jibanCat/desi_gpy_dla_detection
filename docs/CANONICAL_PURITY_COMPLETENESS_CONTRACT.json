@@ -1,0 +1,98 @@
+{
+ "contract": "CANONICAL_PURITY_COMPLETENESS_CONTRACT",
+ "version": "v1 (2026-08-15)",
+ "code_head": "14df2ce (hbi/forward-2026-08; wt_forward_2026_08)",
+ "molly_matrix_of_record": {
+  "artifact": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/p1_natpair_ck_v1.npz",
+  "sha256": "6893a9ef6eb79f4f60d3f4f50913ffa10595527befe4cf8d99dd809e0a698278",
+  "estimand_id": "p1_natpair_ck/v1",
+  "built": "2026-08-07 @ bc2564f",
+  "builder": "injection/build_p1_natpair_ck.py; loader injection/p1_ck_loader.py (fail-loud guards)",
+  "source_pack": "modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz sha 9b0bda59...",
+  "kernel_condition": "is_TP & (NHI_pred > 19.5) & (P_DLA > 0.99) & (DLAFLAG == 0), strict cell bounds",
+  "miss_closure": "det + subfloor_nhat + lowP + flag + unmatched == tot per cell",
+  "C_snr_edges": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   "inf"
+  ],
+  "C_nhi_truth_edges": [
+   17.2,
+   17.5,
+   18.0,
+   18.5,
+   19.0,
+   19.5,
+   20.0,
+   20.3,
+   20.5,
+   21.0,
+   21.5,
+   22.0,
+   "inf"
+  ],
+  "K_rep_basis_edges": "19.5:0.2:22.5 (ratified 0.2-dex reporting basis)",
+  "covariance_companion": "p1_ckm_cov_v1.npz (whole-healpix jackknife, nside 16 nested; p1_joint_cov machinery)"
+ },
+ "sample_contract": {
+  "P1_PRIMARY_LYA": {
+   "snr_field": "SNR_REDSIDE = mean(flux*sqrt(ivar)) over unmasked rest-frame [1420,1480] A (dlasearch.py:670-676, constants.py:40-41); per-spectrum, DLA-uncorrelated red side",
+   "snr_cut": "SNR_REDSIDE > 2 (strict)",
+   "p_dla_field": "P_DLA (posterior probability that the MAP absorber model is preferred; dlacat column)",
+   "p_dla_cut": "P_DLA > 0.99 (strict)",
+   "quality": "DLAFLAG == 0",
+   "bal_policy": "drop-all-BAL by TARGETID (Molly convention; production ran BALMASK=false so BAL handling is catalogue-side)",
+   "lambda_rf_window": "lya_only: lam_rf(Z_DLA) in [1025,1216] A via make_lambda_z_BAL_cuts (examples/molly_faithful_pc_plots.py:405): z_lo=max(3600/LYA-1, lam_min(1+zq)/LYA-1+collar), z_hi=min(zq-collar, lam_max(1+zq)/LYA-1-collar), collar=3000 km/s (z units), strict",
+   "lyb_veto": "postprocess.lyb_veto.flag_lybeta (dz 0.005, higher-NHI parent required) - part of the bundle; STRUCTURALLY INERT under MAX_DLAS=1 single-row-per-sightline output (recorded, not dropped)"
+  },
+  "P1_SENS_LYAB": {
+   "same_as_primary_except": "lambda_rf window [911,1216] (established lya_lyb convention, molly_faithful_pc_plots.py:110)",
+   "role": "SENSITIVITY ONLY - primary remains Lyalpha-only"
+  }
+ },
+ "matcher": {
+  "function": "examples/molly_faithful_pc_plots.py:match_truth_to_cat_molly",
+  "order": "cat rows in DESCENDING NHI_pred (ratified 2026-05-19 order fix)",
+  "association": "same TARGETID, |dz|/(1+z_truth) < 0.01, unmatched-truth pool, tie-break min |NHI_pred - NHI_truth|",
+  "cardinality": "greedy 1-to-1; no merge/split; each truth matched at most once",
+  "multiple_injections": "H2 sightlines carry <=2 injections; the same 1-to-1 matcher applies (both injections in the truth pool; single-absorber output can match at most one)"
+ },
+ "metrics": {
+  "association_purity": "N(selected detections matched to ANY valid truth in truth-complete support) / N(selected detections). Only defined on TRUTH-COMPLETE channels (mocks). NOT computable from H2 alone.",
+  "estimand_purity": "for reporting domain T: N(selected detections with measured in T AND matched truth in true T) / N(selected detections with measured in T). Sub-threshold matched detections are UPWARD MIGRANTS, never forest FP.",
+  "detection_completeness": "N(eligible truths with a selected valid match, ANY measured NHI) / N(eligible truths). Finder recovery.",
+  "reporting_completeness": "for true domain T: N(eligible truths in true T whose selected valid match ALSO lands measured in T) / N(eligible truths in true T). Includes downward migration as reporting loss; the scalar most directly tied to a thresholded estimand."
+ },
+ "response": {
+  "primary_calibration_object": "the full operator (truth bin i -> measured bin j) + MISS classes; scalars are projections, never replacements",
+  "orientation": "K_id_grid[(snr_cell, truth_nhi_cell), moments]; C = det/tot per (snr, truth-NHI) cell; counts preserved (no silent renormalization; loader-enforced)",
+  "sub_floor_support": "truth support to 17.2; latent/operator support NEVER truncated at reporting floor (ruling: broad latent support BINDING)"
+ },
+ "uncertainty": {
+  "canonical": "whole-healpix jackknife (nside 16 nested), the p1_joint_cov/p1_ckm_cov machinery - dependence unit = healpix (sightlines within a healpix and injections within a sightline are NOT IID)",
+  "h2_historical": "row-level Jeffreys 68% intervals (h2_analyze.py) - PRESERVED with that label; canonical H2 uncertainties regenerated with parent-sightline grouping (cluster bootstrap over sightlines) and differences recorded"
+ },
+ "h2_non_injection_detections": "a finder detection on an H2 real-spectrum substrate not matched to an injected truth is a NON-INJECTION DETECTION (the real spectrum may host a real absorber). NEVER counted as FP; excluded from purity claims; H2 informs completeness/response/migration/transport only. Forest-FP purity comes from the truth-complete Molly/mock channel (miss/unmatched classes + ff_fp products).",
+ "reporting_header_required": [
+  "SAMPLE",
+  "SNR field/cut",
+  "P_DLA field/cut",
+  "BAL/quality policy",
+  "TRUE domain",
+  "MEASURED domain",
+  "METRIC subtype",
+  "numerator",
+  "denominator",
+  "matcher",
+  "WINDOW",
+  "uncertainty method",
+  "dependence unit",
+  "contract version"
+ ]
+}
