@@ -119,9 +119,15 @@ def h2_c_table(window, gap_treatment="frozen"):
     return out, j["contract"]
 
 
-def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen"):
+def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen", gap_c=None):
     """In-place ADOPTED-calibration override of the molly C cells (SNR>=2 rows)."""
     tab, contract = h2_c_table(window, gap_treatment)
+    if gap_c is not None:
+        # PI item 2 (2026-08-16): explicit H2-inference value for the gap
+        # cell [20.3,20.5) — used by the C_gap response-mapping grid.
+        for key in list(tab):
+            if key.startswith("[20.3"):
+                tab[key] = (float(gap_c), None, None)
     nhi_edges = np.asarray(mm.nhi_edges, float)
     snr_edges = np.asarray(mm.snr_edges, float)
     patched, kept = [], []
@@ -132,10 +138,20 @@ def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen"):
         # analyzer wrote keys like "[19.5,20.0)"; normalize
         cand = [k for k in tab if abs(float(k.split(",")[0][1:]) - lo) < 1e-9]
         C = k_ = n_ = None
-        if cand and tab[cand[0]][0] is not None and tab[cand[0]][2] > 0:
-            C, k_, n_ = tab[cand[0]]
+        if cand and tab[cand[0]][0] is not None:
+            t0 = tab[cand[0]]
+            if t0[2] is None or t0[2] > 0:     # explicit gap_c has n=None
+                C, k_, n_ = t0
         if C is None:
             kept.append(key)
+            continue
+        if k_ is None:            # explicit gap_c: value only, keep frozen counts
+            for i in range(len(snr_edges) - 1):
+                if snr_edges[i] < 2.0:
+                    continue
+                mm.completeness[i, jcell] = C
+            patched.append(dict(cell=key, C=C, k=None, n=None,
+                                note="explicit gap_c (PI item 2)"))
             continue
         if envelope:
             dom = ("19.5-20.0" if lo < 20.0 - 1e-9 else
@@ -159,6 +175,8 @@ def main():
     ap.add_argument("--window", choices=["lya", "lyab"], default="lya")
     ap.add_argument("--envelope", choices=["none", "plus", "minus"], default="none")
     ap.add_argument("--gap-treatment", choices=["frozen", "h2coarse"], default="frozen")
+    ap.add_argument("--gap-c", type=float, default=None,
+                    help="explicit C value for the [20.3,20.5) gap cell (item-2 response mapping)")
     ap.add_argument("--zbins", default="3.8,4.25,4.5,5.0")
     ap.add_argument("--n-mc", type=int, default=120)
     ap.add_argument("--out-json", default=None)
@@ -170,7 +188,8 @@ def main():
 
     tag = (f"{a.variant}_{a.fp}_{a.window}"
            + (f"_env{a.envelope}" if a.envelope != "none" else "")
-           + (f"_gap{a.gap_treatment}" if a.gap_treatment != "frozen" else ""))
+           + (f"_gap{a.gap_treatment}" if a.gap_treatment != "frozen" else "")
+           + (f"_gapc{a.gap_c:g}" if a.gap_c is not None else ""))
     out_path = a.out_json or os.path.join(HZ_ROOT, f"track_c_tf_hz_{tag}.json")
     os.makedirs(HZ_ROOT, exist_ok=True)
     if os.path.exists(out_path) and not a.force:
@@ -221,7 +240,7 @@ def main():
         from CDDF_analysis.hbi.cddf_catalog_hbi import make_C_interpolator
         env = None if a.envelope == "none" else a.envelope
         cal_meta["gap_treatment"] = a.gap_treatment
-        cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env, a.gap_treatment)
+        cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env, a.gap_treatment, a.gap_c)
         ing["C_interp"] = make_C_interpolator(ing["mm"])
 
     if a.fp == "loa0":

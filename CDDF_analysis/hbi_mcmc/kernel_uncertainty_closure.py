@@ -84,7 +84,8 @@ def aggregate(mu_ckS, ne, edges):
     return out
 
 
-def run_pack(path, n_draws, rng):
+def run_pack(path, n_draws, rng, ensemble=None):
+    import dataclasses
     import jax.numpy as jnp
     from CDDF_analysis.hbi_mcmc.pack import load_pack
     from CDDF_analysis.hbi_mcmc.forward import build_consts, fold_mu
@@ -111,14 +112,45 @@ def run_pack(path, n_draws, rng):
     ne = np.asarray(pk.nhat_edges, float)
 
     ens = {}
-    for tag, use_c in (("kernel", False), ("kernel_completeness", True)):
-        draws = np.empty((n_draws, len(mu0)))
-        for i in range(n_draws):
-            pk_draw = rng.normal(0.0, 1.0, fitcov_sd.shape) * fitcov_sd
-            pc_draw = (jnp.asarray(rng.normal(0.0, 1.0, sigma_hat.shape)
-                                   * sigma_hat) if use_c else psi_c0)
-            draws[i] = fold(pk_draw, pc_draw)
-        ens[tag] = draws
+    if ensemble is None:
+        for tag, use_c in (("kernel", False), ("kernel_completeness", True)):
+            draws = np.empty((n_draws, len(mu0)))
+            for i in range(n_draws):
+                pk_draw = rng.normal(0.0, 1.0, fitcov_sd.shape) * fitcov_sd
+                pc_draw = (jnp.asarray(rng.normal(0.0, 1.0, sigma_hat.shape)
+                                       * sigma_hat) if use_c else psi_c0)
+                draws[i] = fold(pk_draw, pc_draw)
+            ens[tag] = draws
+    else:
+        # FULL kernel-fit covariance (PI item 1): coefficient DELTAS from the
+        # committed T-D resample-refit ensemble, applied to the pack's own
+        # response surfaces (assert the pack carries the frozen point model).
+        e = np.load(ensemble, allow_pickle=True)
+        for nm, pknm in (("point_mu", "resp_mu_coef"),
+                         ("point_sig", "resp_sig_coef"),
+                         ("point_skew", "resp_skew_coef")):
+            if not np.allclose(e[nm], np.asarray(getattr(pk, pknm), float),
+                               atol=1e-10):
+                raise SystemExit(f"pack {pknm} != ensemble point model — "
+                                 "cannot apply coefficient deltas")
+        n_e = e["mu_coef"].shape[0]
+        take = min(n_draws, n_e)
+        zeros_k = np.zeros_like(fitcov_sd)
+        for tag, use_c in (("kernel_full", False),
+                           ("kernel_full_completeness", True)):
+            draws = np.empty((take, len(mu0)))
+            for i in range(take):
+                consts_i = dataclasses.replace(
+                    consts,
+                    resp_mu_coef=jnp.asarray(e["mu_coef"][i]),
+                    resp_sig_coef=jnp.asarray(e["sig_coef"][i]),
+                    resp_skew_coef=jnp.asarray(e["skew_coef"][i]))
+                pc_draw = (jnp.asarray(rng.normal(0.0, 1.0, sigma_hat.shape)
+                                       * sigma_hat) if use_c else psi_c0)
+                mu = fold_mu(theta, pc_draw, jnp.asarray(zeros_k), zt,
+                             lam_fp, consts_i)
+                draws[i] = np.asarray(mu).sum(axis=(1, 2))
+            ens[tag] = draws
 
     def stats_on(mask_or_edges, kind):
         out = {}
@@ -166,6 +198,8 @@ def main():
     ap.add_argument("--n-draws", type=int, default=400)
     ap.add_argument("--out", default=os.path.join(
         _HERE, "kernel_uncertainty_closure.json"))
+    ap.add_argument("--ensemble", default=None,
+                    help="kernel_fit_ensemble npz (full-covariance mode)")
     a = ap.parse_args()
     rng = np.random.default_rng(20260816)
     rows = []
@@ -173,15 +207,15 @@ def main():
         p = os.path.join(a.packdir,
                          f"modelA_pack_{mock}_{ADOPTED_TAG}.npz")
         print(f"[kuc] {mock} ...", flush=True)
-        rows.append(run_pack(p, a.n_draws, rng))
+        rows.append(run_pack(p, a.n_draws, rng, ensemble=a.ensemble))
         r = rows[-1]
-        for res_name in ("fine_window", "report_0p2dex_window"):
+        for res_name in ("fine_window", "report_0p2dex_window", "groups"):
             b = r[res_name]
-            print(f"  {res_name}: fixed {b['fixed_poisson_only']['chi2_dof_diag']} | "
-                  f"+kernel diag {b['kernel']['chi2_dof_diag']} full "
-                  f"{b['kernel']['chi2_dof_fullcov']} | +k+c diag "
-                  f"{b['kernel_completeness']['chi2_dof_diag']} full "
-                  f"{b['kernel_completeness']['chi2_dof_fullcov']}")
+            keys = [k for k in b if k != "fixed_poisson_only"]
+            msg = f"  {res_name}: fixed {b['fixed_poisson_only']['chi2_dof_diag']}"
+            for k in keys:
+                msg += f" | {k} diag {b[k]['chi2_dof_diag']} full {b[k]['chi2_dof_fullcov']}"
+            print(msg)
 
     def _git():
         try:
