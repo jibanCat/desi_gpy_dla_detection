@@ -1,0 +1,264 @@
+{
+ "schema": "kernel_uncertainty_closure/v1",
+ "role": "DIAGNOSTIC REPORT (PI item 3, 2026-08-16). NOT a gate result; run_posterior.GATE unchanged. Priors used are the model's own calibration priors (psi_k_delta ~ N(0,fitcov_sd), psi_c ~ N(0,sigma_hat)); truth-point fold; nothing tuned to data.",
+ "code_commit": "1c02089f360b9e1cb973a8b7f794148faba9d72a",
+ "seed": 20260816,
+ "ratified_reference": "chi2/dof <= 3 (PI decision 8) on the Poisson form; the predictive forms below are the item-3 test, reported separately",
+ "packs": [
+  {
+   "pack": "modelA_pack_2lpt0_bw0p2_pad19p0_molly172.npz",
+   "n_draws": 400,
+   "fine_full_grid": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 29,
+     "chi2_dof_diag": 19.228,
+     "chi2_dof_fullcov": 19.228
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 29,
+     "chi2_dof_diag": 1.535,
+     "chi2_dof_fullcov": 5.092
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 29,
+     "chi2_dof_diag": 1.513,
+     "chi2_dof_fullcov": 4.805
+    }
+   },
+   "fine_window": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 19,
+     "chi2_dof_diag": 22.094,
+     "chi2_dof_fullcov": 22.094
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 19,
+     "chi2_dof_diag": 1.054,
+     "chi2_dof_fullcov": 2.992
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 19,
+     "chi2_dof_diag": 1.092,
+     "chi2_dof_fullcov": 2.96
+    }
+   },
+   "report_0p2dex_window": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 10,
+     "chi2_dof_diag": 27.351,
+     "chi2_dof_fullcov": 27.351
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 10,
+     "chi2_dof_diag": 2.838,
+     "chi2_dof_fullcov": 4.2
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 10,
+     "chi2_dof_diag": 3.255,
+     "chi2_dof_fullcov": 4.03
+    }
+   },
+   "groups": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 3,
+     "chi2_dof_diag": 38.139,
+     "chi2_dof_fullcov": 38.139
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 3,
+     "chi2_dof_diag": 1.551,
+     "chi2_dof_fullcov": 1.035
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 3,
+     "chi2_dof_diag": 2.037,
+     "chi2_dof_fullcov": 1.363
+    }
+   },
+   "total_ratio": 1.00059
+  },
+  {
+   "pack": "modelA_pack_london0_bw0p2_pad19p0_molly172.npz",
+   "n_draws": 400,
+   "fine_full_grid": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 29,
+     "chi2_dof_diag": 28.509,
+     "chi2_dof_fullcov": 28.509
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 29,
+     "chi2_dof_diag": 2.151,
+     "chi2_dof_fullcov": 7.488
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 29,
+     "chi2_dof_diag": 2.103,
+     "chi2_dof_fullcov": 7.184
+    }
+   },
+   "fine_window": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 19,
+     "chi2_dof_diag": 28.157,
+     "chi2_dof_fullcov": 28.157
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 19,
+     "chi2_dof_diag": 1.11,
+     "chi2_dof_fullcov": 2.156
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 19,
+     "chi2_dof_diag": 1.21,
+     "chi2_dof_fullcov": 2.104
+    }
+   },
+   "report_0p2dex_window": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 10,
+     "chi2_dof_diag": 41.053,
+     "chi2_dof_fullcov": 41.053
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 10,
+     "chi2_dof_diag": 3.592,
+     "chi2_dof_fullcov": 4.645
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 10,
+     "chi2_dof_diag": 3.942,
+     "chi2_dof_fullcov": 4.375
+    }
+   },
+   "groups": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 3,
+     "chi2_dof_diag": 85.647,
+     "chi2_dof_fullcov": 85.647
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 3,
+     "chi2_dof_diag": 3.751,
+     "chi2_dof_fullcov": 3.04
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 3,
+     "chi2_dof_diag": 4.213,
+     "chi2_dof_fullcov": 3.404
+    }
+   },
+   "total_ratio": 1.04913
+  },
+  {
+   "pack": "modelA_pack_saclay0_bw0p2_pad19p0_molly172.npz",
+   "n_draws": 400,
+   "fine_full_grid": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 29,
+     "chi2_dof_diag": 20.072,
+     "chi2_dof_fullcov": 20.072
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 29,
+     "chi2_dof_diag": 1.83,
+     "chi2_dof_fullcov": 4.621
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 29,
+     "chi2_dof_diag": 1.693,
+     "chi2_dof_fullcov": 4.545
+    }
+   },
+   "fine_window": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 19,
+     "chi2_dof_diag": 25.567,
+     "chi2_dof_fullcov": 25.567
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 19,
+     "chi2_dof_diag": 1.232,
+     "chi2_dof_fullcov": 3.701
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 19,
+     "chi2_dof_diag": 1.222,
+     "chi2_dof_fullcov": 3.479
+    }
+   },
+   "report_0p2dex_window": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 10,
+     "chi2_dof_diag": 35.888,
+     "chi2_dof_fullcov": 35.888
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 10,
+     "chi2_dof_diag": 4.052,
+     "chi2_dof_fullcov": 6.31
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 10,
+     "chi2_dof_diag": 3.964,
+     "chi2_dof_fullcov": 6.245
+    }
+   },
+   "groups": {
+    "fixed_poisson_only": {
+     "label": "fixed",
+     "n_bins": 3,
+     "chi2_dof_diag": 63.067,
+     "chi2_dof_fullcov": 63.067
+    },
+    "kernel": {
+     "label": "kernel",
+     "n_bins": 3,
+     "chi2_dof_diag": 3.966,
+     "chi2_dof_fullcov": 2.939
+    },
+    "kernel_completeness": {
+     "label": "kernel_completeness",
+     "n_bins": 3,
+     "chi2_dof_diag": 4.092,
+     "chi2_dof_fullcov": 3.434
+    }
+   },
+   "total_ratio": 1.02716
+  }
+ ]
+}
