@@ -202,7 +202,7 @@ def main():
     REDGES = np.arange(19.7, 21.7 + 1e-9, 0.2)
 
     rep = {}
-    for thr, key in ((20.0, "dndx_20p0_allz"), (20.3, "dndx_20p3_allz")):
+    for thr, key in ((20.0, "dndx_dla_20p0_allz"), (20.3, "dndx_dla_20p3_allz")):
         dr = np.asarray(red[key])
         tv = float(np.asarray(red_t[key])[0])
         q = np.percentile(dr, [16, 50, 84])
