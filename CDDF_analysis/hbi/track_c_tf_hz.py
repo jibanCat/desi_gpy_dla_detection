@@ -94,21 +94,34 @@ def _git_commit():
         return "unknown"
 
 
-def h2_c_table(window):
-    """Canonical arm-B DETECTION completeness per molly truth-NHI bin + counts."""
+def h2_c_table(window, gap_treatment="frozen"):
+    """Canonical arm-B DETECTION completeness per molly truth-NHI bin + counts.
+
+    gap_treatment='h2coarse' (PI item 7 sensitivity, 2026-08-16): fill the
+    H2 design-grid gap cell [20.3,20.5) with the canonical detection C of
+    the coarser PREDECLARED stratum nre:[20.3,20.7) (which covers the cell)
+    instead of the frozen 2LPT value. Bounded, defensible alternative —
+    no redesign, no top-up; both treatments reported."""
     sfx = "lya" if window == "lya" else "lyab"
     j = json.load(open(f"{H2_CANON}/h2_canonical_armB_{sfx}_nobal.json"))
     out = {}
+    coarse = None
     for s in j["detection_strata"]:
         if s["stratum"].startswith("molly_nhi:"):
             key = s["stratum"].split(":", 1)[1]
             out[key] = (s["detection_C"], s["k"], s["n"])
+        if s["stratum"] == "nre:20.3-20.7":
+            coarse = (s["detection_C"], s["k"], s["n"])
+    if gap_treatment == "h2coarse" and coarse is not None:
+        for key in list(out):
+            if key.startswith("[20.3"):
+                out[key] = coarse
     return out, j["contract"]
 
 
-def patch_mm_with_h2(mm, window, envelope):
+def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen"):
     """In-place ADOPTED-calibration override of the molly C cells (SNR>=2 rows)."""
-    tab, contract = h2_c_table(window)
+    tab, contract = h2_c_table(window, gap_treatment)
     nhi_edges = np.asarray(mm.nhi_edges, float)
     snr_edges = np.asarray(mm.snr_edges, float)
     patched, kept = [], []
@@ -145,6 +158,7 @@ def main():
     ap.add_argument("--fp", choices=["loa0", "pm"], default="loa0")
     ap.add_argument("--window", choices=["lya", "lyab"], default="lya")
     ap.add_argument("--envelope", choices=["none", "plus", "minus"], default="none")
+    ap.add_argument("--gap-treatment", choices=["frozen", "h2coarse"], default="frozen")
     ap.add_argument("--zbins", default="3.8,4.25,4.5,5.0")
     ap.add_argument("--n-mc", type=int, default=120)
     ap.add_argument("--out-json", default=None)
@@ -154,8 +168,9 @@ def main():
     if a.window == "lyab" and a.fp == "loa0":
         raise SystemExit("loa0 FP product is lya-only-1025; use --fp pm for lyab.")
 
-    tag = f"{a.variant}_{a.fp}_{a.window}" + (f"_env{a.envelope}"
-                                              if a.envelope != "none" else "")
+    tag = (f"{a.variant}_{a.fp}_{a.window}"
+           + (f"_env{a.envelope}" if a.envelope != "none" else "")
+           + (f"_gap{a.gap_treatment}" if a.gap_treatment != "frozen" else ""))
     out_path = a.out_json or os.path.join(HZ_ROOT, f"track_c_tf_hz_{tag}.json")
     os.makedirs(HZ_ROOT, exist_ok=True)
     if os.path.exists(out_path) and not a.force:
@@ -205,7 +220,8 @@ def main():
     if a.variant == "h2cal":
         from CDDF_analysis.hbi.cddf_catalog_hbi import make_C_interpolator
         env = None if a.envelope == "none" else a.envelope
-        cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env)
+        cal_meta["gap_treatment"] = a.gap_treatment
+        cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env, a.gap_treatment)
         ing["C_interp"] = make_C_interpolator(ing["mm"])
 
     if a.fp == "loa0":
