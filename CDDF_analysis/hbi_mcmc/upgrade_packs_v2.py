@@ -33,9 +33,12 @@ from CDDF_analysis.hbi_mcmc.count_conserving_fold import (
 SRCDIR = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
           "adopted_packs_20260816")
 DEF_OUT = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-           "adopted_packs_v2_20260817")
+           "adopted_packs_v2p1_20260817")
+# v1 -> v1.1 (2026-08-17): hierarchical-tilt-match recertification
+# (G-B exact PASS; LOGO 15/15; carrier rebuilt) - see the artifact
+# provenance block.
 ADOPTED = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-           "track_c/stage0/adopted_response_v1.npz")
+           "track_c/stage0/adopted_response_v1p1.npz")
 KFE = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
        "track_c/stage0/kernel_fit_ensemble_v1.npz")
 TAG = "bw0p2_pad19p0_molly172"
@@ -87,7 +90,7 @@ def main():
         raw["resp_fitcov_diag"] = fitcov
         raw["tp_convention_id"] = np.array(TP_ID)
         raw["contract_id"] = np.array(CONTRACT_ID)
-        raw["adopted_resp_version"] = np.array("adopted_response/v1")
+        raw["adopted_resp_version"] = np.array("adopted_response/v1.1")
         raw["adopted_resp_mu_coef"] = np.asarray(ad["mu_coef"], float)
         raw["adopted_resp_sig_coef"] = np.asarray(ad["sig_coef"], float)
         raw["adopted_resp_skew_coef"] = np.asarray(ad["skew_coef"], float)

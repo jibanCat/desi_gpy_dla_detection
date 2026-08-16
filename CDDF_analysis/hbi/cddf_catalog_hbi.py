@@ -635,15 +635,36 @@ def load_and_cut_catalog(cfg: HBIConfig, truth_nhi_floor: float = None,
         if zc != "Z_DLA":
             truth_h.rename_column(zc, "Z_DLA")
         truth_h["Z_TRUTH"] = np.asarray(truth_h["Z_DLA"], dtype=float)
-        truth_h = truth_h[np.asarray(truth_h["NHI"], dtype=float) >= host_floor]
+        # HIERARCHICAL tilt match (PI ruling 2026-08-17, G-B fix): the
+        # low-floor pass may ONLY assign detections the primary match left
+        # hostless, and only from the BELOW-MATRIX-FLOOR truth pool
+        # [host_floor, truth_nhi_floor). Every primary (>= matrix-floor)
+        # assignment is preserved verbatim. Rationale: running the greedy
+        # one-to-one matcher on the ENLARGED pool (the previous behaviour)
+        # is pool-dependent — in multi-absorber sightlines straddling the
+        # floor it reassigned a handful of detections (4/66,477 on the
+        # 2LPT-0 calibration set) to sub-floor hosts where the primary
+        # match — the population the molly completeness numerators certify
+        # against (guard G-B) — had assigned >= floor hosts. The
+        # hierarchical pass makes NHI_TILT_HOST == NHI_TRUE wherever the
+        # primary match assigned a host, which is what this block's
+        # docstring always claimed.
+        t_nhi = np.asarray(truth_h["NHI"], dtype=float)
+        truth_h = truth_h[(t_nhi >= host_floor)
+                          & (t_nhi < truth_nhi_floor - 1e-9)]
         # restrict to the same SNR/zqso-resolvable TIDs as the primary truth
         th_tids = np.asarray(truth_h["TARGETID"], dtype=np.int64)
         th_keep = np.array([qso_lookup.get(int(t)) is not None for t in th_tids])
         truth_h = truth_h[th_keep]
-        _itp, cat_NHI_TILT, _ztr, _tm = match_truth_to_cat_molly(
-            cat, truth_h, cfg.dz_rel, cat_iter_order=iter_order)
+        hostless = ~np.isfinite(np.asarray(cat_NHI_TR, dtype=float))
+        cat_sub = cat[hostless]
+        _itp, sub_NHI_TILT, _ztr, _tm = match_truth_to_cat_molly(
+            cat_sub, truth_h, cfg.dz_rel, cat_iter_order=iter_order)
+        cat_NHI_TILT = np.asarray(cat_NHI_TR, dtype=float).copy()
+        cat_NHI_TILT[hostless] = np.asarray(sub_NHI_TILT, dtype=float)
         cat["NHI_TILT_HOST"] = cat_NHI_TILT
         meta["host_truth_floor"] = float(host_floor)
+        meta["tilt_match_mode"] = "hierarchical_v2_20260817"
         # detections that gained a host ONLY from the low-floor match (the sub-DLA
         # up-migrants that the primary matrix-floor match left hostless)
         meta["n_tilt_host_recovered"] = int(
