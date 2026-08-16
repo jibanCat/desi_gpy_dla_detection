@@ -1,0 +1,221 @@
+{
+ "schema": "lane_l_matched_alpha_vs_hbi/v1",
+ "code_commit": "48d5942ac31a1df04526d8de40dac108330e0a57",
+ "inputs": {
+  "ff": "/scratch/cavestru_root/cavestru0/mfho/wp2prime_2026_08_12/ff_matched_2lpt0_long.json",
+  "ff_schema": "ff_matched_window/v1",
+  "ff_code_commit": "1877f4d80def8d2439872d4c1d92e143d99daf7c",
+  "pack": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/phaseB_packs/modelA_pack_2lpt0_winlya_only_pad19p0_molly172_bw0p2.npz",
+  "vs_hbi": "/home/mfho/wt_forward_2026_08/CDDF_analysis/hbi/calccddf_vs_hbi.json",
+  "ff_jobs": "57261601 (+57250729 byte-identical cross-commit receipt)"
+ },
+ "population": {
+  "matched_universe_n_targetids": 374177,
+  "n_sightlines_ff_matched": 188849,
+  "note": "matched = pack build_pathlength(no_bal=True) whitelist (374,177); the FF harness additionally requires TARGETID in hcd_truth_cat, giving z-dependent coverage (dX ratio 0.48-0.90) \u2014 BOTH n definitions and BOTH dX conventions recorded per zone; neither picked. The committed calccddf_vs_hbi n_sightlines=921,027 is a ROW count, not comparable."
+ },
+ "estimand": {
+  "ff": "PLUG-IN posterior-weighted detected counts (sampling point; NOT a credible interval); single-absorber restriction ~-7% applies to the FF route",
+  "alpha": "alpha = 1/R0 TRANSFERRED from the committed FULL-population artifact (matched-population R0 does not exist: the FF driver writes no truth counts); on-mock alpha=1/R0 is a TAUTOLOGY \u2014 claim is structural (z-only scalar cannot reproduce an N-resolved response), never 'HBI closes better on-mock'",
+  "fold": "RATIFIED P1 empirical-kernel fold (refold machinery, clamp=both) + mu_fp + z-resolved below-floor net migration (frozen selection replicated, gated on the committed G1/G2/G3 totals)"
+ },
+ "caveats": {
+  "z_resolved_warning": "the FF estimator manufactures a residual z-tilt (R0(>=20.3) 0.908->1.052->1.189); report z-marginalised unless controlled",
+  "wp2prime_z_tilt": "family-universal -0.150/-0.153 per unit z",
+  "matching_rule": "plug-in point vs posterior point are different estimands",
+  "zone_grid": "Z1-Z4 [2.0,2.4/2.6/3.0/3.5) \u2014 the FROZEN matched-FF aggregation grid; the FINAL Paper-1 low-z bins are B1-B5 [2.15,2.35/2.56/2.96,3.40,3.80): re-cutting the FF arm to B-bins needs a driver re-run (~3.5 h) \u2014 recorded, not silently done"
+ },
+ "reference_hbi_forward": {
+  "n_sightlines": 374177,
+  "R0_dndx": {
+   "20.3": 1.038139256710438,
+   "20.0": 1.0041256881248488,
+   "19.5": 0.9188717715662448,
+   "band_195_203": 0.8489754898994653
+  },
+  "dndx_est": {
+   "20.3": 0.05641560846013772,
+   "band_195_203": 0.07872393676846046,
+   "19.5": 0.13513954522859817
+  },
+  "note": "integrated-only committed HBI forward arm (pack universe)"
+ },
+ "alpha_perz_advisory": {
+  "z_2.0_2.5": {
+   "19.5": 1.1767030950892379,
+   "20.0": 1.1645548131019485,
+   "20.3": 1.2254525600918609,
+   "band_195_203": 1.1481822707712934
+  },
+  "z_2.5_3.0": {
+   "19.5": 1.0320668347964108,
+   "20.0": 1.0472902335920253,
+   "20.3": 1.1242848426967407,
+   "band_195_203": 0.9781542973758562
+  },
+  "z_3.0_3.5": {
+   "19.5": 0.9478806664225571,
+   "20.0": 0.9906518202284607,
+   "20.3": 1.070291932699157,
+   "band_195_203": 0.8752426396095718
+  },
+  "snr_gt4": {
+   "19.5": 1.080252085010701,
+   "20.0": 1.0960144893600208,
+   "20.3": 1.1655693490180772,
+   "band_195_203": 1.0301794608357318
+  }
+ },
+ "zones": [
+  {
+   "zone": "[2.0,2.4)",
+   "dX_ff_search": 122494.07705083239,
+   "dX_pack": 253851.49628001335,
+   "coverage_ratio": 0.4825,
+   "ge20.0": {
+    "ff_raw_dndx_ffdX": 0.156064,
+    "ff_raw_dndx_packdX": 0.075308,
+    "ff_alpha_corr_dndx_ffdX": 0.141454,
+    "ff_alpha_corr_dndx_packdX": 0.068257,
+    "alpha": 0.906381,
+    "fold_mu_counts": 18458.98,
+    "fold_obs_counts": 19405,
+    "fold_mu_dndx_packdX": 0.072716,
+    "fold_obs_dndx_packdX": 0.076442,
+    "fold_migration_counts": 229
+   },
+   "ge20.3": {
+    "ff_raw_dndx_ffdX": 0.101566,
+    "ff_raw_dndx_packdX": 0.04901,
+    "ff_alpha_corr_dndx_ffdX": 0.086694,
+    "ff_alpha_corr_dndx_packdX": 0.041833,
+    "alpha": 0.853569,
+    "fold_mu_counts": 11906.52,
+    "fold_obs_counts": 12624,
+    "fold_mu_dndx_packdX": 0.046903,
+    "fold_obs_dndx_packdX": 0.04973,
+    "fold_migration_counts": 29
+   }
+  },
+  {
+   "zone": "[2.4,2.6)",
+   "dX_ff_search": 58197.16259606804,
+   "dX_pack": 87587.47072360781,
+   "coverage_ratio": 0.6644,
+   "ge20.0": {
+    "ff_raw_dndx_ffdX": 0.128795,
+    "ff_raw_dndx_packdX": 0.085577,
+    "ff_alpha_corr_dndx_ffdX": 0.116737,
+    "ff_alpha_corr_dndx_packdX": 0.077566,
+    "alpha": 0.906381,
+    "fold_mu_counts": 8221.77,
+    "fold_obs_counts": 8272,
+    "fold_mu_dndx_packdX": 0.093869,
+    "fold_obs_dndx_packdX": 0.094443,
+    "fold_migration_counts": 122
+   },
+   "ge20.3": {
+    "ff_raw_dndx_ffdX": 0.084235,
+    "ff_raw_dndx_packdX": 0.05597,
+    "ff_alpha_corr_dndx_ffdX": 0.071901,
+    "ff_alpha_corr_dndx_packdX": 0.047774,
+    "alpha": 0.853569,
+    "fold_mu_counts": 5319.69,
+    "fold_obs_counts": 5265,
+    "fold_mu_dndx_packdX": 0.060736,
+    "fold_obs_dndx_packdX": 0.060111,
+    "fold_migration_counts": 23
+   }
+  },
+  {
+   "zone": "[2.6,3.0)",
+   "dX_ff_search": 85114.41034005958,
+   "dX_pack": 107346.56582557724,
+   "coverage_ratio": 0.7929,
+   "ge20.0": {
+    "ff_raw_dndx_ffdX": 0.121412,
+    "ff_raw_dndx_packdX": 0.096267,
+    "ff_alpha_corr_dndx_ffdX": 0.110045,
+    "ff_alpha_corr_dndx_packdX": 0.087254,
+    "alpha": 0.906381,
+    "fold_mu_counts": 11770.34,
+    "fold_obs_counts": 11891,
+    "fold_mu_dndx_packdX": 0.109648,
+    "fold_obs_dndx_packdX": 0.110772,
+    "fold_migration_counts": 274
+   },
+   "ge20.3": {
+    "ff_raw_dndx_ffdX": 0.081678,
+    "ff_raw_dndx_packdX": 0.064762,
+    "ff_alpha_corr_dndx_ffdX": 0.069717,
+    "ff_alpha_corr_dndx_packdX": 0.055279,
+    "alpha": 0.853569,
+    "fold_mu_counts": 7647.33,
+    "fold_obs_counts": 7599,
+    "fold_mu_dndx_packdX": 0.07124,
+    "fold_obs_dndx_packdX": 0.070789,
+    "fold_migration_counts": 52
+   }
+  },
+  {
+   "zone": "[3.0,3.5)",
+   "dX_ff_search": 46505.27526058184,
+   "dX_pack": 51720.45148931021,
+   "coverage_ratio": 0.8992,
+   "ge20.0": {
+    "ff_raw_dndx_ffdX": 0.121303,
+    "ff_raw_dndx_packdX": 0.109071,
+    "ff_alpha_corr_dndx_ffdX": 0.109946,
+    "ff_alpha_corr_dndx_packdX": 0.09886,
+    "alpha": 0.906381,
+    "fold_mu_counts": 7744.37,
+    "fold_obs_counts": 6818,
+    "fold_mu_dndx_packdX": 0.149735,
+    "fold_obs_dndx_packdX": 0.131824,
+    "fold_migration_counts": 185
+   },
+   "ge20.3": {
+    "ff_raw_dndx_ffdX": 0.083067,
+    "ff_raw_dndx_packdX": 0.074691,
+    "ff_alpha_corr_dndx_ffdX": 0.070904,
+    "ff_alpha_corr_dndx_packdX": 0.063754,
+    "alpha": 0.853569,
+    "fold_mu_counts": 5013.03,
+    "fold_obs_counts": 4309,
+    "fold_mu_dndx_packdX": 0.096925,
+    "fold_obs_dndx_packdX": 0.083313,
+    "fold_migration_counts": 34
+   }
+  },
+  {
+   "zone": "integrated",
+   "dX_ff_search": 312310.9252475417,
+   "dX_pack": 500505.9843185087,
+   "coverage_ratio": 0.624,
+   "ge20.0": {
+    "ff_raw_dndx_ffdX": 0.136363,
+    "ff_raw_dndx_packdX": 0.085089,
+    "ff_alpha_corr_dndx_ffdX": 0.123596,
+    "ff_alpha_corr_dndx_packdX": 0.077123,
+    "alpha": 0.906381,
+    "fold_mu_counts": 46195.46,
+    "fold_obs_counts": 46386,
+    "fold_mu_dndx_packdX": 0.092298,
+    "fold_obs_dndx_packdX": 0.092678,
+    "fold_migration_counts": 810
+   },
+   "ge20.3": {
+    "ff_raw_dndx_ffdX": 0.090162,
+    "ff_raw_dndx_packdX": 0.05626,
+    "ff_alpha_corr_dndx_ffdX": 0.076959,
+    "ff_alpha_corr_dndx_packdX": 0.048022,
+    "alpha": 0.853569,
+    "fold_mu_counts": 29886.57,
+    "fold_obs_counts": 29797,
+    "fold_mu_dndx_packdX": 0.059713,
+    "fold_obs_dndx_packdX": 0.059534,
+    "fold_migration_counts": 138
+   }
+  }
+ ]
+}
