@@ -36,7 +36,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.special import ndtr, owens_t, expit
 
-__all__ = ["surface_masses", "cc_fold_cmarginal", "phi_from_surfaces"]
+__all__ = ["surface_masses", "cc_fold_cmarginal", "phi_from_surfaces",
+           "cc_fold_adopted"]
 
 _SKEW_MAX = 0.5 * (4.0 - np.pi) * (np.sqrt(2.0 / np.pi) ** 3) / \
     (1.0 - 2.0 / np.pi) ** 1.5
@@ -201,3 +202,43 @@ def cc_fold_cmarginal(pack, theta_pop, lam_fp, *, mu_coef=None, sig_coef=None,
     if return_contrib:
         parts["contrib_cb"] = contrib
     return tp + fp, parts
+
+
+def cc_fold_adopted(pack, theta_pop, lam_fp, *, n_lat_floor=None,
+                    mu_coef=None, sig_coef=None, skew_coef=None,
+                    phi_ref_tol=1e-9):
+    """FAIL-CLOSED fold of a v1.2 pack's ADOPTED response representation.
+
+    Requires the complete adopted-contract stamp group (schema v1.2) and
+    ALWAYS folds count-conservingly: the adopted kernel renormalized to unit
+    in-grid mass, multiplied by the pack's stored deployed ``adopted_phi_ref``
+    — which is verified against a fresh recomputation from the pack's own
+    frozen surfaces (guard G-CC's stored-reference identity) before use.
+    Optional mu/sig/skew coefficient overrides (same shape as the adopted
+    surfaces) exist so the CARRIER ensemble can be propagated draw-by-draw
+    under the identical contract; the stamps and phi_ref stay mandatory.
+    """
+    for f in ("tp_convention_id", "contract_id", "adopted_resp_version",
+              "adopted_resp_mu_coef", "adopted_phi_ref"):
+        if getattr(pack, f, None) is None:
+            raise ValueError(
+                "cc_fold_adopted: pack lacks the adopted-contract stamp "
+                f"group (missing {f}) — refuse to fold; rebuild the pack "
+                "with upgrade_packs_v2 (PI ruling 2026-08-17).")
+    phi_stored = np.asarray(pack.adopted_phi_ref, float)
+    phi_fresh = phi_from_surfaces(pack)
+    d = float(np.max(np.abs(phi_stored - phi_fresh)))
+    if d > phi_ref_tol:
+        raise ValueError(
+            f"cc_fold_adopted: stored adopted_phi_ref differs from the "
+            f"deployed kernel's in-grid fraction by {d:.3e} > {phi_ref_tol} "
+            "— the count-conservation reference is corrupt (G-CC).")
+    return cc_fold_cmarginal(
+        pack, theta_pop, lam_fp,
+        mu_coef=(pack.adopted_resp_mu_coef if mu_coef is None else mu_coef),
+        sig_coef=(pack.adopted_resp_sig_coef if sig_coef is None
+                  else sig_coef),
+        skew_coef=(pack.adopted_resp_skew_coef if skew_coef is None
+                   else skew_coef),
+        fit_rng=np.asarray(pack.adopted_resp_fit_range, float),
+        renormalize=True, phi_ref=phi_stored, n_lat_floor=n_lat_floor)

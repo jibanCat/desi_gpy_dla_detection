@@ -102,13 +102,36 @@ def main():
             status="PASS" if cc_ok else "FAIL")
         fail |= not cc_ok
 
-    # G-C atomicity: TP-convention identifier
+    # G-C atomicity: TP-convention identifier + adopted stamps (v1.2 packs)
     tp_id = getattr(pk, "tp_convention_id", None)
-    report["G_C_atomic_tp_id"] = dict(
-        value=tp_id, status="MISSING" if tp_id is None else "PRESENT",
-        note=("packs predate the ratified contract; the identifier lands "
-              "with the next PI-authorized pack rebuild — MISSING is "
-              "reported, not failed, until then"))
+    if tp_id is None:
+        report["G_C_atomic_tp_id"] = dict(
+            value=None, status="MISSING",
+            note=("pack predates the ratified contract; the identifier "
+                  "lands with the PI-authorized pack rebuild — MISSING is "
+                  "reported, not failed, for legacy packs"))
+    else:
+        # v1.2 pack: the stamp group already passed the loader's all-or-none
+        # validation; here verify the stored count-conservation reference
+        # and exercise the fail-closed adopted fold end to end.
+        from CDDF_analysis.hbi_mcmc.count_conserving_fold import \
+            cc_fold_adopted
+        phi_stored = np.asarray(pk.adopted_phi_ref, float)
+        dphi_ref = float(np.max(np.abs(phi_stored - phi_from_surfaces(pk))))
+        gc_ok = dphi_ref <= 1e-9
+        mu_a, parts_a = cc_fold_adopted(pk, theta, lam)
+        lvl_a = float(mu_a.sum() / obs)
+        report["G_C_atomic_tp_id"] = dict(
+            value=tp_id, contract=pk.contract_id,
+            adopted_version=pk.adopted_resp_version,
+            carrier_draws=int(np.asarray(pk.adopted_carrier_mu).shape[0]),
+            stored_phi_ref_max_dev=dphi_ref,
+            adopted_cc_level=round(lvl_a, 4),
+            adopted_level_identity=("PASS" if abs(lvl_a - level) <= 1e-6
+                                    else "FAIL"),
+            status="PASS" if (gc_ok and abs(lvl_a - level) <= 1e-6)
+                   else "FAIL")
+        fail |= report["G_C_atomic_tp_id"]["status"] == "FAIL"
 
     print(json.dumps(report, indent=1))
     if a.json:

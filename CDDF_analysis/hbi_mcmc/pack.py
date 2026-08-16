@@ -101,6 +101,20 @@ _REQUIRED_KEYS = (
 _OPTIONAL_KEYS = ("resp_fitcov_diag", "resp_N_ref", "truth_counts_bks",
                   "dX_coarse_committed", "molly_snr_edges", "nhat_masked_bins",
                   "resp_N_fit_range", "fp_eta_c")
+# schema-v1.2 extension (PI ruling 2026-08-17, adoption + contract): the
+# ADOPTED response representation + its sightline-bootstrap carrier + the
+# count-conservation contract stamps. ALL-OR-NONE: a pack carrying any of
+# these must carry every one (validated below); the frozen resp_* surfaces
+# stay byte-identical and remain what fold_mu consumes — the adopted
+# surfaces are folded ONLY through count_conserving_fold.cc_fold_adopted
+# (renormalized, deployed phi_ref), never naively.
+_ADOPTED_KEYS = ("tp_convention_id", "contract_id", "adopted_resp_version",
+                 "adopted_resp_mu_coef", "adopted_resp_sig_coef",
+                 "adopted_resp_skew_coef", "adopted_resp_fit_range",
+                 "adopted_phi_ref", "adopted_carrier_mu",
+                 "adopted_carrier_sig", "adopted_carrier_skew",
+                 "adopted_carrier_shared3")
+_OPTIONAL_KEYS = _OPTIONAL_KEYS + _ADOPTED_KEYS
 
 
 @dataclasses.dataclass(frozen=True)
@@ -156,6 +170,20 @@ class ModelAPack:
     dX_coarse_committed: Optional[np.ndarray] = None
     molly_snr_edges: Optional[np.ndarray] = None
     nhat_masked_bins: Optional[np.ndarray] = None
+    # schema-v1.2 adopted-response/contract stamps (all-or-none; see
+    # _ADOPTED_KEYS above and _validate_adopted_contract below)
+    tp_convention_id: Optional[str] = None
+    contract_id: Optional[str] = None
+    adopted_resp_version: Optional[str] = None
+    adopted_resp_mu_coef: Optional[np.ndarray] = None    # (SR, ZR, DA)
+    adopted_resp_sig_coef: Optional[np.ndarray] = None   # (SR, ZR, DA)
+    adopted_resp_skew_coef: Optional[np.ndarray] = None  # (SR, ZR, DA)
+    adopted_resp_fit_range: Optional[np.ndarray] = None  # (SR, ZR, 2)
+    adopted_phi_ref: Optional[np.ndarray] = None         # (SR, ZR, B)
+    adopted_carrier_mu: Optional[np.ndarray] = None      # (Nd, SR, ZR, DA)
+    adopted_carrier_sig: Optional[np.ndarray] = None     # (Nd, SR, ZR, DA)
+    adopted_carrier_skew: Optional[np.ndarray] = None    # (Nd, SR, ZR, DA)
+    adopted_carrier_shared3: Optional[np.ndarray] = None  # (Nd, 3)
     # non-schema carriers (never validated, never saved except provenance)
     provenance: Optional[dict] = None
     truth: Optional[dict] = None  # synthetic ground truth (in-memory only)
@@ -503,6 +531,54 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
         _check_finite("resp_fitcov_diag", pack.resp_fitcov_diag)
         if np.any(np.asarray(pack.resp_fitcov_diag) < 0):
             _fail("resp_fitcov_diag: variances must be non-negative")
+    # schema-v1.2 adopted-response/contract stamp group: ALL-OR-NONE,
+    # fail-closed (PI ruling 2026-08-17). The frozen resp_* surfaces above
+    # are untouched by this group; the adopted surfaces may only be folded
+    # count-conservingly (count_conserving_fold.cc_fold_adopted).
+    _adopted_fields = ("tp_convention_id", "contract_id",
+                       "adopted_resp_version", "adopted_resp_mu_coef",
+                       "adopted_resp_sig_coef", "adopted_resp_skew_coef",
+                       "adopted_resp_fit_range", "adopted_phi_ref",
+                       "adopted_carrier_mu", "adopted_carrier_sig",
+                       "adopted_carrier_skew", "adopted_carrier_shared3")
+    _present = [f for f in _adopted_fields if getattr(pack, f) is not None]
+    if _present and len(_present) != len(_adopted_fields):
+        _fail("adopted-contract stamp group is ALL-OR-NONE: present="
+              f"{_present}, missing="
+              f"{[f for f in _adopted_fields if f not in _present]}")
+    if _present:
+        B = len(np.asarray(pack.ntrue_edges)) - 1
+        am = np.asarray(pack.adopted_resp_mu_coef, float)
+        if am.ndim != 3 or am.shape[:2] != (SR, ZR):
+            _fail(f"adopted_resp_mu_coef: bad shape {am.shape}")
+        DA = am.shape[-1]
+        for nm in ("adopted_resp_sig_coef", "adopted_resp_skew_coef"):
+            _check_shape(nm, getattr(pack, nm), (SR, ZR, DA))
+            _check_finite(nm, getattr(pack, nm))
+        _check_finite("adopted_resp_mu_coef", am)
+        _check_shape("adopted_resp_fit_range", pack.adopted_resp_fit_range,
+                     (SR, ZR, 2))
+        rr = np.asarray(pack.adopted_resp_fit_range, float)
+        if np.any(rr[..., 0] >= rr[..., 1]):
+            _fail("adopted_resp_fit_range: lo must be < hi in every cell")
+        _check_shape("adopted_phi_ref", pack.adopted_phi_ref, (SR, ZR, B))
+        pr = np.asarray(pack.adopted_phi_ref, float)
+        if np.any(~np.isfinite(pr)) or np.any(pr < 0) or np.any(pr > 1 + 1e-9):
+            _fail("adopted_phi_ref: must be finite fractions in [0, 1]")
+        cm = np.asarray(pack.adopted_carrier_mu, float)
+        if cm.ndim != 4 or cm.shape[1:] != (SR, ZR, DA) or cm.shape[0] < 50:
+            _fail(f"adopted_carrier_mu: bad shape {cm.shape} "
+                  "(need >= 50 draws matching the adopted surfaces)")
+        for nm in ("adopted_carrier_sig", "adopted_carrier_skew"):
+            _check_shape(nm, getattr(pack, nm), cm.shape)
+            _check_finite(nm, getattr(pack, nm))
+        _check_shape("adopted_carrier_shared3", pack.adopted_carrier_shared3,
+                     (cm.shape[0], 3))
+        for nm in ("tp_convention_id", "contract_id",
+                   "adopted_resp_version"):
+            v = getattr(pack, nm)
+            if not isinstance(v, str) or not v.strip():
+                _fail(f"{nm}: must be a non-empty string, got {v!r}")
     if pack.resp_N_ref is not None:
         nr = float(np.asarray(pack.resp_N_ref))
         if not np.isfinite(nr):
@@ -624,6 +700,21 @@ def load_pack(npz_path, *, allow_nonstandard_grid: bool = False) -> ModelAPack:
         dX_coarse_committed=data.get("dX_coarse_committed"),
         molly_snr_edges=data.get("molly_snr_edges"),
         nhat_masked_bins=data.get("nhat_masked_bins"),
+        tp_convention_id=(str(data["tp_convention_id"])
+                          if "tp_convention_id" in data else None),
+        contract_id=(str(data["contract_id"])
+                     if "contract_id" in data else None),
+        adopted_resp_version=(str(data["adopted_resp_version"])
+                              if "adopted_resp_version" in data else None),
+        adopted_resp_mu_coef=data.get("adopted_resp_mu_coef"),
+        adopted_resp_sig_coef=data.get("adopted_resp_sig_coef"),
+        adopted_resp_skew_coef=data.get("adopted_resp_skew_coef"),
+        adopted_resp_fit_range=data.get("adopted_resp_fit_range"),
+        adopted_phi_ref=data.get("adopted_phi_ref"),
+        adopted_carrier_mu=data.get("adopted_carrier_mu"),
+        adopted_carrier_sig=data.get("adopted_carrier_sig"),
+        adopted_carrier_skew=data.get("adopted_carrier_skew"),
+        adopted_carrier_shared3=data.get("adopted_carrier_shared3"),
         provenance=provenance,
     )
     validate_pack(pack, allow_nonstandard_grid=allow_nonstandard_grid)
