@@ -217,5 +217,20 @@
     "fold_migration_counts": 138
    }
   }
- ]
+ ],
+ "apples_to_apples_statement": {
+  "matched_dimensions": [
+   "primary sample selection (S2N_RED>2, P_DLA>0.99, DLAFLAG==0, BAL veto)",
+   "Lyalpha-only window (lam_rf_min=1025, 3000 km/s collars)",
+   "z_qso window (2.0,4.25) strict",
+   "absorber z-zones Z1-Z4 (frozen aggregation grid)",
+   "NHI thresholds 20.0/20.3",
+   "population whitelist = pack build_pathlength universe (374,177)"
+  ],
+  "declared_mismatches": [
+   "alpha: NO truly matched alpha exists for the matched population (the FF driver writes no truth counts); the applied alpha=1/R0 is TRANSFERRED from the full population and so labeled - per PI item 7 this is stated rather than forced",
+   "FF harness coverage: the calc_cddf harness additionally requires TARGETID in hcd_truth_cat (z-dependent dX coverage 0.48-0.90 of the matched universe); each zone row is internally consistent (counts and dX from the same covered subset); BOTH dX conventions recorded"
+  ],
+  "presentation_of_record": "per-zone rows (each internally consistent) + the z-marginalized matched comparison, with the z-tilt caveat retained verbatim - the cleanest defensible comparison per PI item 7; no percent difference is quoted across mismatched windows/populations/dX denominators"
+ }
 }
