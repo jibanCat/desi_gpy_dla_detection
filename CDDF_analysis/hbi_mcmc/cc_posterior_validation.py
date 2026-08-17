@@ -70,9 +70,27 @@ def build_cc_tensors(pack: ModelAPack):
 
 
 def model_cc(consts, Mg, counts=None, fp_counts=None, *,
-             fp_eps_rate=1e-6, fp_shape_sd=3.0,
+             fp_mode="joint", fp_eps_rate=1e-6, fp_shape_sd=3.0,
              sigma_N_scale=0.5, sigma_z_scale=0.5,
              level_scale=4.0, slope_scale=2.0):
+    """fp_mode: 'joint' = model_a's joint FP block (baseline);
+    'anchored' = lam_fp FIXED at the loa-0 forest-only calibration
+    (fp_counts/fp_ell_eff) and t FIXED at 0 — the PI-ruled strong
+    loa-0 anchor (uncertainties carried as post-hoc named bands, the
+    same fixed+carrier structure as the adopted kernel);
+    'anchored_t' = lam_fp fixed, t sampled with its calibrated prior
+    (isolates which nuisance drives);
+    'amplitude' = PI ruling (checkpoint 10.5, item 3): a single overall FP
+    normalization amplitude A anchored to the loa-0 forest-only calibration
+    with the calibration's own counting uncertainty
+    (A ~ Gamma(N_fp+1/2, N_fp), the Jeffreys posterior of the loa-0 total
+    rate; sd ~= 1/sqrt(N_fp)); the (C,S) SHAPE is FIXED at the loa-0
+    point estimate — no NHI-dependent FP shape freedom; t keeps its
+    separately calibrated prior. The fp_counts Poisson term is dropped in
+    this mode: the loa-0 information enters ONCE, through the A prior
+    (keeping both would double-count the calibration data). The prior
+    width is set by the loa-0 counts alone — nothing tuned from closure
+    or mock truth."""
     B, Kf = consts.n_b, consts.n_k
     C, S = consts.n_c, consts.n_s
     sigma_N = numpyro.sample("sigma_N", dist.HalfNormal(sigma_N_scale))
@@ -93,16 +111,35 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
 
     psi_c = numpyro.sample(
         "psi_c", dist.Normal(0.0, consts.sigma_hat).to_event(2))
-    t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma).to_event(1))
-
-    lam_total = numpyro.sample("fp_lam_total", dist.Gamma(0.5, fp_eps_rate))
-    v = numpyro.sample(
-        "fp_shape_v", dist.ZeroSumNormal(fp_shape_sd, event_shape=(C * S,)))
-    pi = jax.nn.softmax(v)
-    lam_fp = numpyro.deterministic("lam_fp", (lam_total * pi).reshape(C, S))
-    numpyro.sample("fp_counts",
-                   dist.Poisson(consts.fp_ell_eff * lam_fp).to_event(2),
-                   obs=fp_counts)
+    if fp_mode == "joint":
+        t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma).to_event(1))
+        lam_total = numpyro.sample("fp_lam_total",
+                                   dist.Gamma(0.5, fp_eps_rate))
+        v = numpyro.sample(
+            "fp_shape_v",
+            dist.ZeroSumNormal(fp_shape_sd, event_shape=(C * S,)))
+        pi = jax.nn.softmax(v)
+        lam_fp = numpyro.deterministic("lam_fp",
+                                       (lam_total * pi).reshape(C, S))
+        numpyro.sample("fp_counts",
+                       dist.Poisson(consts.fp_ell_eff * lam_fp).to_event(2),
+                       obs=fp_counts)
+    elif fp_mode in ("anchored", "anchored_t"):
+        lam_fp = numpyro.deterministic(
+            "lam_fp", jnp.asarray(fp_counts) / consts.fp_ell_eff)
+        if fp_mode == "anchored_t":
+            t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma)
+                               .to_event(1))
+        else:
+            t = numpyro.deterministic("t", jnp.zeros(consts.t_sigma.shape))
+    elif fp_mode == "amplitude":
+        n_fp = float(np.asarray(fp_counts).sum())
+        lam_hat = jnp.asarray(fp_counts) / consts.fp_ell_eff
+        A = numpyro.sample("fp_amp", dist.Gamma(n_fp + 0.5, n_fp))
+        lam_fp = numpyro.deterministic("lam_fp", A * lam_hat)
+        t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma).to_event(1))
+    else:
+        raise ValueError(f"unknown fp_mode {fp_mode!r}")
 
     # count-conserving fold with the FIXED adopted kernel (precomputed Mg)
     Cc = jax.nn.sigmoid(consts.eta_hat + psi_c)[:, consts.b_to_cell]  # (S,B)
@@ -128,6 +165,9 @@ def main():
     ap.add_argument("--warmup", type=int, default=500)
     ap.add_argument("--chains", type=int, default=2)
     ap.add_argument("--seed", type=int, default=20260818)
+    ap.add_argument("--fp-mode", default="joint",
+                    choices=["joint", "anchored", "anchored_t", "amplitude"])
+    ap.add_argument("--target-accept", type=float, default=0.9)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
@@ -138,12 +178,12 @@ def main():
     fpc = jnp.asarray(np.asarray(pk.fp_counts, float))
 
     from numpyro.infer import MCMC, NUTS
-    kern = NUTS(model_cc, target_accept_prob=0.9)
+    kern = NUTS(model_cc, target_accept_prob=a.target_accept)
     mcmc = MCMC(kern, num_warmup=a.warmup, num_samples=a.samples,
                 num_chains=a.chains, chain_method="sequential",
                 progress_bar=True)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts,
-             fp_counts=fpc)
+             fp_counts=fpc, fp_mode=a.fp_mode)
     sam = mcmc.get_samples(group_by_chain=False)
     f_draws = np.asarray(sam["f"])                       # (D, B, Kf)
 
@@ -165,14 +205,29 @@ def main():
     diag["fp_lam_total_over_naive"] = [round(float(q / naive), 4)
                                        for q in np.percentile(lam_draws,
                                                               [16, 50, 84])]
-    diag["t_post_mean"] = [float(x)
-                           for x in np.asarray(sam["t"]).mean(axis=0)]
+    diag["t_post_mean"] = ([float(x)
+                            for x in np.asarray(sam["t"]).mean(axis=0)]
+                           if "t" in sam else [0.0])
+    diag["t_post_in_prior_sd"] = (
+        [float(x) for x in (np.asarray(sam["t"]).mean(axis=0)
+                            / np.asarray(consts.t_sigma))]
+        if "t" in sam else [0.0])
+    if "fp_amp" in sam:
+        diag["fp_amp_post_p16_50_84"] = [
+            float(x) for x in np.percentile(sam["fp_amp"], [16, 50, 84])]
+        n_fp = float(np.asarray(pk.fp_counts, float).sum())
+        diag["fp_amp_prior_sd"] = round(float(1.0 / np.sqrt(n_fp)), 5)
+        diag["fp_amp_pull_sd"] = round(float(
+            (np.median(sam["fp_amp"]) - 1.0) * np.sqrt(n_fp)), 2)
+    diag["fp_mode"] = a.fp_mode
+    diag["target_accept"] = a.target_accept
     # posterior-median predictive vs obs at the reporting grain
     idx_med = int(np.argsort(np.asarray(
         sam["theta_level"]))[len(sam["theta_level"]) // 2])
     th_med = jnp.asarray(np.asarray(sam["theta_pop"])[idx_med])
     pc_med = jnp.asarray(np.asarray(sam["psi_c"])[idx_med])
-    t_med = jnp.asarray(np.asarray(sam["t"])[idx_med])
+    t_med = (jnp.asarray(np.asarray(sam["t"])[idx_med]) if "t" in sam
+             else jnp.zeros(consts.t_sigma.shape))
     lf_med = jnp.asarray(np.asarray(sam["lam_fp"])[idx_med])
     Cc = _jax.nn.sigmoid(consts.eta_hat + pc_med)[:, consts.b_to_cell]
     w = consts.g_bk * jnp.exp(th_med) * consts.dN_b[:, None]
