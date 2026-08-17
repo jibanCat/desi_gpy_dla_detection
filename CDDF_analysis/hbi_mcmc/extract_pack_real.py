@@ -71,6 +71,10 @@ V2P1 = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
         "molly172_v2.npz")
 LYA = 1215.67
 C_KMS = 299792.458
+# PI ruling (checkpoint 10.8): the ADOPTED observable-only collar. The
+# boundary guard b=300 km/s comes from the predeclared p95 z-error rule;
+# scan-validated on all three families (@8edd3b1, ckpt-10.8 note).
+COLLAR_KMS = 3300.0
 
 def _sha(path):
     h = hashlib.sha256()
@@ -80,11 +84,12 @@ def _sha(path):
     return h.hexdigest()
 
 
-def contract_row_mask(zq, zdla, tid, bal_tids, cfg):
+def contract_row_mask(zq, zdla, tid, bal_tids, cfg, collar_kms=None):
     """The audited cut-bundle geometry, truth-free: z_qso strict range, the
-    lya-only window with 3,000 km/s collars + 3,600 A observed floor, BAL
-    TID drop. (Certified against the committed chain in --cert-2lpt0.)"""
-    collar = 3000.0 / C_KMS
+    lya-only window with symmetric collars + 3,600 A observed floor, BAL
+    TID drop. (Machinery certified at collar 3000 in --cert-2lpt0; the
+    ADOPTED real convention is COLLAR_KMS=3300, scan-validated.)"""
+    collar = (COLLAR_KMS if collar_kms is None else collar_kms) / C_KMS
     z_lo = np.maximum(3600.0 / LYA - 1.0,
                       cfg.lam_rf_min * (1 + zq) / LYA - 1.0 + collar)
     z_hi = np.minimum(zq - collar,
@@ -95,20 +100,45 @@ def contract_row_mask(zq, zdla, tid, bal_tids, cfg):
     return m
 
 
-def build_data_plane(cat_rows, qso_lookup, bal_tids, cfg, mm):
+def build_data_plane(cat_rows, qso_lookup, bal_tids, cfg, mm,
+                     collar_kms=None):
     """counts (c,k,s), dX (k,s), x_tot (K,), n_sl — the per-family plane."""
+    collar_kms = COLLAR_KMS if collar_kms is None else collar_kms
     tid = cat_rows["TARGETID"].astype(np.int64)
     zq = np.asarray(cat_rows["Z_QSO"], float)
     zdla = np.asarray(cat_rows["Z_DLA"], float)
     nhi = np.asarray(cat_rows["NHI"], float)
     snr = np.asarray(cat_rows["SNR_REDSIDE"], float)
-    keep = contract_row_mask(zq, zdla, tid, bal_tids, cfg)
+    keep = contract_row_mask(zq, zdla, tid, bal_tids, cfg,
+                             collar_kms=collar_kms)
     op = (keep & (np.asarray(cat_rows["DLAFLAG"], int) == 0)
           & (np.asarray(cat_rows["P_DLA"], float) > cfg.p_dla_min)
           & (snr > cfg.snr_min))
     counts, n_in_window = EP.bin_counts_cks(nhi[op], zdla[op], snr[op])
-    X_tot, n_sl, qzl, qzh, qsn, Xcalc = build_pathlength(
-        cfg, qso_lookup=qso_lookup, return_per_sl=True)
+    # pathlength at the SAME collar (committed geometry, collar generalized;
+    # the 3000-collar limit reproduces build_pathlength to 6e-15 — certified)
+    from CDDF_analysis.hbi.cddf_catalog_hbi import (AbsorptionDistance,
+                                                    total_DeltaX_in_zbins)
+    bal_set = set(int(t) for t in bal_tids)
+    zqs, snrs = [], []
+    for t, (snr_v, zq_v) in qso_lookup.items():
+        if snr_v <= cfg.snr_min or not (cfg.z_qso_min < zq_v < cfg.z_qso_max) \
+                or t in bal_set or not np.isfinite(snr_v):
+            continue
+        zqs.append(zq_v)
+        snrs.append(snr_v)
+    zq_a = np.asarray(zqs, float)
+    qsn = np.asarray(snrs, float)
+    coll = collar_kms / C_KMS
+    qzl = np.maximum(3600.0 / LYA - 1.0,
+                     cfg.lam_rf_min * (1 + zq_a) / LYA - 1.0 + coll)
+    qzh = np.minimum(zq_a - coll,
+                     cfg.lam_rf_max * (1 + zq_a) / LYA - 1.0 - coll)
+    okw = np.isfinite(qzl) & np.isfinite(qzh) & (qzh > qzl)
+    qzl, qzh, qsn = qzl[okw], qzh[okw], qsn[okw]
+    n_sl = int(okw.sum())
+    Xcalc = AbsorptionDistance(zmax=float(qzh.max()), Omega_m=cfg.Omega_m)
+    X_tot = total_DeltaX_in_zbins(np.asarray(cfg.zbins), qzl, qzh, Xcalc)
     logN_lo, logN_hi, N_b, dN_b = build_fine_grid(cfg)
     z_edges_fine = np.round(np.arange(2.0, 3.5 + 1e-9, 0.1), 10)
     M_meta = build_M_b(qzl, qzh, qsn, mm, logN_lo, logN_hi, N_b, dN_b,
@@ -135,6 +165,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cert-2lpt0", action="store_true")
     ap.add_argument("--real", action="store_true")
+    ap.add_argument("--stamp-v12", action="store_true")
     ap.add_argument("--out-dir", default=OUT_DIR)
     a = ap.parse_args()
     os.makedirs(a.out_dir, exist_ok=True)
@@ -162,7 +193,11 @@ def main():
                   if np.isfinite(snr_map.get(int(t), np.nan))}
         cfg = make_cfg(m["catalog_dir"], m["bal_cat_path"], w["molly_tsv"],
                        a.out_dir)
-        dp = build_data_plane(cat, lookup, bal_tids, cfg, mm)
+        # machinery certification runs at collar 3000 (the committed pack's
+        # convention); the ADOPTED real collar 3300 is separately validated
+        # by the predeclared family scan (scanpack_* + scan_*.json)
+        dp = build_data_plane(cat, lookup, bal_tids, cfg, mm,
+                              collar_kms=3000.0)
         ref = np.load(V2P1, allow_pickle=False)
         # counts: the committed mock convention evaluates the lambda window
         # at the MATCHED TRUTH z for TP rows (measured: +877 rows, 99.9%
@@ -246,7 +281,7 @@ def main():
             truth_counts=np.zeros((B, EP.N_K), np.int64),   # SENTINEL
         )
         npz = os.path.join(a.out_dir,
-                           "modelA_pack_REAL_loa50k_bw0p2_pad19p0_molly172.npz")
+                           "modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_molly172.npz")
         np.savez(npz, **pack)
         try:
             commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
@@ -255,6 +290,11 @@ def main():
             commit = "unknown"
         prov = dict(
             schema="modelA_pack_schema v1.1 + REAL-DATA data plane",
+            counting_convention=("observable-only estimator, ADOPTED collar "
+                                 "c=3300 km/s (PI ruling checkpoint 10.8; "
+                                 "predeclaration @8edd3b1; family-scan "
+                                 "validated; boundary guard only — the NHI "
+                                 "reporting cut is unchanged)"),
             real_data=True, truth_counts_sentinel="ZEROS_NO_TRUTH",
             authorization=("PI checkpoint-10.7 ruling: final production = "
                            "existing 50k catalog (option a); guarded final "
@@ -279,7 +319,71 @@ def main():
                                    "fp_w", "n_bal_excluded")}, indent=1))
         print("wrote", npz, f"({time.time()-t0:.0f}s)")
         return
-    raise SystemExit("pass --cert-2lpt0 or --real")
+    if a.stamp_v12:
+        # v1.2 adopted-contract stamps on the REAL pack — mirrors the
+        # committed upgrade_packs_v2 construction exactly; the level
+        # identity is verified with a SYNTHETIC theta (the identity holds
+        # for any theta; no truth is available or needed). Run in gpdla-hbi.
+        from CDDF_analysis.hbi_mcmc.pack import load_pack
+        from CDDF_analysis.hbi_mcmc.count_conserving_fold import (
+            phi_from_surfaces, cc_fold_adopted, cc_fold_cmarginal)
+        ADOPTED = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+                   "track_c/stage0/adopted_response_v1p1.npz")
+        KFE = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+               "track_c/stage0/kernel_fit_ensemble_v1.npz")
+        src = os.path.join(a.out_dir,
+                           "modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_"
+                           "molly172.npz")
+        dst = src[:-4] + "_v2.npz"
+        ad = np.load(ADOPTED, allow_pickle=True)
+        kfe = np.load(KFE, allow_pickle=True)
+        fitcov = np.stack([kfe["mu_coef"][..., 0].std(axis=0, ddof=1) ** 2,
+                           kfe["sig_coef"][..., 0].std(axis=0, ddof=1) ** 2])
+        pk = load_pack(src)
+        phi_ref = phi_from_surfaces(pk)
+        raw = dict(np.load(src, allow_pickle=False))
+        raw["resp_fitcov_diag"] = fitcov
+        raw["tp_convention_id"] = np.array("tp_natpair_tilthost_op/v1")
+        raw["contract_id"] = np.array("ckfp_lown_contract/v1")
+        raw["adopted_resp_version"] = np.array("adopted_response/v1.1")
+        raw["adopted_resp_mu_coef"] = np.asarray(ad["mu_coef"], float)
+        raw["adopted_resp_sig_coef"] = np.asarray(ad["sig_coef"], float)
+        raw["adopted_resp_skew_coef"] = np.asarray(ad["skew_coef"], float)
+        raw["adopted_resp_fit_range"] = np.asarray(ad["fit_rng"], float)
+        raw["adopted_phi_ref"] = phi_ref
+        raw["adopted_carrier_mu"] = np.asarray(ad["carrier_mu"], float)
+        raw["adopted_carrier_sig"] = np.asarray(ad["carrier_sig"], float)
+        raw["adopted_carrier_skew"] = np.asarray(ad["carrier_skew"], float)
+        raw["adopted_carrier_shared3"] = np.asarray(ad["carrier_shared3"],
+                                                    float)
+        np.savez_compressed(dst, **raw)
+        with np.load(src) as z1, np.load(dst) as z2:
+            for k in z1.files:
+                if k == "resp_fitcov_diag":
+                    continue
+                assert np.array_equal(z1[k], z2[k]), k
+        pk2 = load_pack(dst)
+        B = len(np.asarray(pk2.ntrue_edges)) - 1
+        Kf = len(np.asarray(pk2.zf_edges)) - 1
+        theta = np.full((B, Kf), -21.0)      # synthetic (identity is
+        theta += np.linspace(0, -2, B)[:, None]  # theta-independent)
+        lam = np.asarray(pk2.fp_counts, float) / float(pk2.fp_ell_eff)
+        mu_dep, _ = cc_fold_cmarginal(pk2, theta, lam)
+        mu_ad, _ = cc_fold_adopted(pk2, theta, lam)
+        d_level = abs(mu_ad.sum() / mu_dep.sum() - 1.0)
+        assert d_level < 1e-6, f"adopted-CC level identity {d_level:.2e}"
+        prov = json.load(open(src[:-4] + ".provenance.json"))
+        prov.update(schema="modelA_pack_schema v1.2 (adopted-contract stamp) "
+                           "+ REAL-DATA data plane",
+                    upgraded_from=src, src_sha256=_sha(src),
+                    adopted_response=ADOPTED, adopted_sha256=_sha(ADOPTED),
+                    level_identity=f"{d_level:.2e} (synthetic theta)")
+        with open(dst[:-4] + ".provenance.json", "w") as f:
+            json.dump(prov, f, indent=1)
+        print(json.dumps(dict(stamped=dst, level_identity=f"{d_level:.2e}"),
+                         indent=1))
+        return
+    raise SystemExit("pass --cert-2lpt0, --real or --stamp-v12")
 
 
 if __name__ == "__main__":
