@@ -68,6 +68,11 @@ def main():
     ap.add_argument("--chains", type=int, default=2)
     ap.add_argument("--seed", type=int, default=20260818)
     ap.add_argument("--target-accept", type=float, default=0.95)
+    ap.add_argument("--fp-mode", default="joint",
+                    choices=["joint", "informative"])
+    ap.add_argument("--fp-alpha0", type=float, default=None)
+    ap.add_argument("--fp-total-scale", type=float, default=1.0)
+    ap.add_argument("--t-scale", type=float, default=1.0)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
@@ -111,7 +116,8 @@ def main():
                 progress_bar=True)
     # per-chain mixing diagnostics + potential energy (mode weighing)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts,
-             fp_counts=fpc, fp_mode="joint",
+             fp_counts=fpc, fp_mode=a.fp_mode, fp_alpha0=a.fp_alpha0,
+             fp_total_scale=a.fp_total_scale, t_scale=a.t_scale,
              extra_fields=("potential_energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
@@ -161,7 +167,9 @@ def main():
                 if pe is not None else None)
     naive = float(np.asarray(pk.fp_counts, float).sum() / consts.fp_ell_eff)
     diag = dict(
-        divergences=div, target_accept=a.target_accept, fp_mode="joint",
+        divergences=div, target_accept=a.target_accept, fp_mode=a.fp_mode,
+        fp_alpha0=a.fp_alpha0, fp_total_scale=a.fp_total_scale,
+        t_scale=a.t_scale,
         sigma_N_post=[float(x) for x in np.percentile(sam["sigma_N"],
                                                       [16, 50, 84])],
         sigma_z_post=[float(x) for x in np.percentile(sam["sigma_z"],

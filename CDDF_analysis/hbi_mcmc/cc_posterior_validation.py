@@ -71,6 +71,7 @@ def build_cc_tensors(pack: ModelAPack):
 
 def model_cc(consts, Mg, counts=None, fp_counts=None, *,
              fp_mode="joint", fp_eps_rate=1e-6, fp_shape_sd=3.0,
+             fp_alpha0=None, fp_total_scale=1.0, t_scale=1.0,
              sigma_N_scale=0.5, sigma_z_scale=0.5,
              level_scale=4.0, slope_scale=2.0):
     """fp_mode: 'joint' = model_a's joint FP block (baseline);
@@ -138,6 +139,30 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
         A = numpyro.sample("fp_amp", dist.Gamma(n_fp + 0.5, n_fp))
         lam_fp = numpyro.deterministic("lam_fp", A * lam_hat)
         t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma).to_event(1))
+    elif fp_mode == "informative":
+        # PI ruling checkpoint 10.9 (predeclaration @59849c9): the loa-0
+        # calibration as the PRIOR, used once (fp_counts likelihood term
+        # dropped). Total: Gamma(N_FP+1/2, ell_eff) (Jeffreys posterior of
+        # the loa-0 total rate, rel sd 10.6%); shape: Dirichlet(n+alpha0)
+        # (the loa-0 multinomial posterior; alpha0=1/K Perks primary for
+        # the 207-empty-cell sparse multinomial); t: calibrated, unchanged.
+        # Sensitivity knobs (fp_total_scale, fp_alpha0, t_scale) are the
+        # PREDECLARED axes only.
+        fpc_np = np.asarray(fp_counts, float)
+        n_fp = float(fpc_np.sum())
+        K_cells = fpc_np.size
+        a0 = (1.0 / K_cells) if fp_alpha0 is None else float(fp_alpha0)
+        ts = float(fp_total_scale)
+        lam_total = numpyro.sample(
+            "fp_lam_total",
+            dist.Gamma(n_fp * ts + 0.5, float(consts.fp_ell_eff) * ts))
+        conc = jnp.asarray(fpc_np.reshape(-1) + a0)
+        pi = numpyro.sample("fp_shape_pi", dist.Dirichlet(conc))
+        lam_fp = numpyro.deterministic(
+            "lam_fp", (lam_total * pi).reshape(C, S))
+        t = numpyro.sample(
+            "t", dist.Normal(0.0, consts.t_sigma * float(t_scale))
+            .to_event(1))
     else:
         raise ValueError(f"unknown fp_mode {fp_mode!r}")
 
@@ -166,8 +191,12 @@ def main():
     ap.add_argument("--chains", type=int, default=2)
     ap.add_argument("--seed", type=int, default=20260818)
     ap.add_argument("--fp-mode", default="joint",
-                    choices=["joint", "anchored", "anchored_t", "amplitude"])
+                    choices=["joint", "anchored", "anchored_t", "amplitude",
+                             "informative"])
     ap.add_argument("--target-accept", type=float, default=0.9)
+    ap.add_argument("--fp-alpha0", type=float, default=None)
+    ap.add_argument("--fp-total-scale", type=float, default=1.0)
+    ap.add_argument("--t-scale", type=float, default=1.0)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
@@ -183,8 +212,10 @@ def main():
                 num_chains=a.chains, chain_method="sequential",
                 progress_bar=True)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts,
-             fp_counts=fpc, fp_mode=a.fp_mode)
+             fp_counts=fpc, fp_mode=a.fp_mode, fp_alpha0=a.fp_alpha0,
+             fp_total_scale=a.fp_total_scale, t_scale=a.t_scale)
     sam = mcmc.get_samples(group_by_chain=False)
+    sam_g = mcmc.get_samples(group_by_chain=True)
     f_draws = np.asarray(sam["f"])                       # (D, B, Kf)
 
     # --- diagnostics: where does the slack go? ---------------------------
@@ -221,6 +252,28 @@ def main():
             (np.median(sam["fp_amp"]) - 1.0) * np.sqrt(n_fp)), 2)
     diag["fp_mode"] = a.fp_mode
     diag["target_accept"] = a.target_accept
+    diag["fp_alpha0"] = a.fp_alpha0
+    diag["fp_total_scale"] = a.fp_total_scale
+    diag["t_scale"] = a.t_scale
+    # split-Rhat + ESS on the threshold estimands (grouped chains)
+    from CDDF_analysis.hbi_mcmc.model_a import reduce_f_posterior as _red
+    fg = np.asarray(sam_g["f"])
+    mixing = {}
+    for key in ("dndx_dla_20p0_allz", "dndx_dla_20p3_allz"):
+        cs = np.stack([np.asarray(_red(fg[ci], pk)[key])
+                       for ci in range(fg.shape[0])])
+        W = cs.var(axis=1, ddof=1).mean()
+        Bv = cs.mean(axis=1).var(ddof=1) * cs.shape[1]
+        rh = float(np.sqrt(((cs.shape[1] - 1) / cs.shape[1] * W
+                            + Bv / cs.shape[1]) / W)) \
+            if cs.shape[0] > 1 else None
+        from numpyro.diagnostics import effective_sample_size
+        ess = float(effective_sample_size(cs))
+        mixing[key] = dict(split_rhat=(round(rh, 4) if rh else None),
+                           ess=round(ess, 1),
+                           perchain_median=[round(float(np.median(c)), 5)
+                                            for c in cs])
+    diag["estimand_mixing"] = mixing
     # posterior-median predictive vs obs at the reporting grain
     idx_med = int(np.argsort(np.asarray(
         sam["theta_level"]))[len(sam["theta_level"]) // 2])
