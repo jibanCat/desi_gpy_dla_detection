@@ -109,9 +109,12 @@ def main():
     mcmc = MCMC(kern, num_warmup=a.warmup, num_samples=a.samples,
                 num_chains=a.chains, chain_method="sequential",
                 progress_bar=True)
+    # per-chain mixing diagnostics + potential energy (mode weighing)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts,
-             fp_counts=fpc, fp_mode="joint")
+             fp_counts=fpc, fp_mode="joint",
+             extra_fields=("potential_energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
+    sam_g = mcmc.get_samples(group_by_chain=True)
     f_draws = np.asarray(sam["f"])
 
     red = reduce_f_posterior(f_draws, pk)
@@ -135,6 +138,27 @@ def main():
         binrep.append(dict(bin=[round(e0, 1), round(e1, 1)], f_post=q(dr)))
     xf = mcmc.get_extra_fields()
     div = int(np.sum(xf["diverging"])) if "diverging" in xf else None
+    # per-chain estimand medians + split-Rhat on the two thresholds
+    fg = np.asarray(sam_g["f"])                    # (chains, draws, B, Kf)
+    perchain = {}
+    rhat = {}
+    for key in ("dndx_dla_20p0_allz", "dndx_dla_20p3_allz"):
+        cs = []
+        for ci in range(fg.shape[0]):
+            rc = reduce_f_posterior(fg[ci], pk)
+            cs.append(np.asarray(rc[key]))
+        cs = np.stack(cs)                           # (chains, draws)
+        perchain[key] = [round(float(np.median(c)), 5) for c in cs]
+        W = cs.var(axis=1, ddof=1).mean()
+        Bv = cs.mean(axis=1).var(ddof=1) * cs.shape[1]
+        rhat[key] = round(float(np.sqrt(
+            ((cs.shape[1] - 1) / cs.shape[1] * W + Bv / cs.shape[1])
+            / W)), 4) if cs.shape[0] > 1 else None
+    pe = np.asarray(xf["potential_energy"]) if "potential_energy" in xf \
+        else None
+    pe_chain = ([round(float(x), 1) for x in
+                 np.asarray(pe).reshape(fg.shape[0], -1).mean(axis=1)]
+                if pe is not None else None)
     naive = float(np.asarray(pk.fp_counts, float).sum() / consts.fp_ell_eff)
     diag = dict(
         divergences=div, target_accept=a.target_accept, fp_mode="joint",
@@ -152,7 +176,9 @@ def main():
                              / np.asarray(consts.t_sigma))],
         psi_c_mean_in_prior_sd=float(
             (np.asarray(sam["psi_c"]).mean(axis=0)
-             / np.asarray(consts.sigma_hat)).mean()))
+             / np.asarray(consts.sigma_hat)).mean()),
+        perchain_estimand_medians=perchain, split_rhat=rhat,
+        mean_potential_energy_per_chain=pe_chain)
     # G_A REAL-mode (ENFORCED, fail-closed): posterior-median predictive
     # level vs observed counts, within the guard's own tolerance.
     import jax as _jax
