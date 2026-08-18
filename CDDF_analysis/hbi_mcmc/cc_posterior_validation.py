@@ -72,6 +72,7 @@ def build_cc_tensors(pack: ModelAPack):
 def model_cc(consts, Mg, counts=None, fp_counts=None, *,
              fp_mode="joint", fp_eps_rate=1e-6, fp_shape_sd=3.0,
              fp_alpha0=None, fp_total_scale=1.0, t_scale=1.0,
+             fp_s_empty=None,
              sigma_N_scale=0.5, sigma_z_scale=0.5,
              level_scale=4.0, slope_scale=2.0):
     """fp_mode: 'joint' = model_a's joint FP block (baseline);
@@ -163,6 +164,30 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
         t = numpyro.sample(
             "t", dist.Normal(0.0, consts.t_sigma * float(t_scale))
             .to_event(1))
+    elif fp_mode == "informative_ln":
+        # predeclaration ADDENDUM @1d674e4: the SAME loa-0 information as
+        # 'informative' in a boundary-free logistic-normal geometry.
+        fpc_np = np.asarray(fp_counts, float)
+        n_fp = float(fpc_np.sum())
+        K_cells = fpc_np.size
+        a0 = (1.0 / K_cells) if fp_alpha0 is None else float(fp_alpha0)
+        ts = float(fp_total_scale)
+        m_cs = np.log((fpc_np.reshape(-1) + a0) / (n_fp + K_cells * a0))
+        s_emp = 2.0 if fp_s_empty is None else float(fp_s_empty)
+        s_cs = np.where(fpc_np.reshape(-1) > 0,
+                        1.0 / np.sqrt(fpc_np.reshape(-1) + 1.0), s_emp)
+        lam_total = numpyro.sample(
+            "fp_lam_total",
+            dist.Gamma(n_fp * ts + 0.5, float(consts.fp_ell_eff) * ts))
+        v = numpyro.sample(
+            "fp_shape_v",
+            dist.Normal(jnp.asarray(m_cs), jnp.asarray(s_cs)).to_event(1))
+        pi = jax.nn.softmax(v)
+        lam_fp = numpyro.deterministic(
+            "lam_fp", (lam_total * pi).reshape(C, S))
+        t = numpyro.sample(
+            "t", dist.Normal(0.0, consts.t_sigma * float(t_scale))
+            .to_event(1))
     else:
         raise ValueError(f"unknown fp_mode {fp_mode!r}")
 
@@ -192,11 +217,12 @@ def main():
     ap.add_argument("--seed", type=int, default=20260818)
     ap.add_argument("--fp-mode", default="joint",
                     choices=["joint", "anchored", "anchored_t", "amplitude",
-                             "informative"])
+                             "informative", "informative_ln"])
     ap.add_argument("--target-accept", type=float, default=0.9)
     ap.add_argument("--fp-alpha0", type=float, default=None)
     ap.add_argument("--fp-total-scale", type=float, default=1.0)
     ap.add_argument("--t-scale", type=float, default=1.0)
+    ap.add_argument("--fp-s-empty", type=float, default=None)
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
@@ -213,7 +239,8 @@ def main():
                 progress_bar=True)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts,
              fp_counts=fpc, fp_mode=a.fp_mode, fp_alpha0=a.fp_alpha0,
-             fp_total_scale=a.fp_total_scale, t_scale=a.t_scale)
+             fp_total_scale=a.fp_total_scale, t_scale=a.t_scale,
+             fp_s_empty=a.fp_s_empty)
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
     f_draws = np.asarray(sam["f"])                       # (D, B, Kf)

@@ -69,10 +69,11 @@ def main():
     ap.add_argument("--seed", type=int, default=20260818)
     ap.add_argument("--target-accept", type=float, default=0.95)
     ap.add_argument("--fp-mode", default="joint",
-                    choices=["joint", "informative"])
+                    choices=["joint", "informative", "informative_ln"])
     ap.add_argument("--fp-alpha0", type=float, default=None)
     ap.add_argument("--fp-total-scale", type=float, default=1.0)
     ap.add_argument("--t-scale", type=float, default=1.0)
+    ap.add_argument("--fp-s-empty", type=float, default=None)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
@@ -118,6 +119,7 @@ def main():
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts,
              fp_counts=fpc, fp_mode=a.fp_mode, fp_alpha0=a.fp_alpha0,
              fp_total_scale=a.fp_total_scale, t_scale=a.t_scale,
+             fp_s_empty=a.fp_s_empty,
              extra_fields=("potential_energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
