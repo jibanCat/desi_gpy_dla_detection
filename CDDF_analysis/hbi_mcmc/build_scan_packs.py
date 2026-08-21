@@ -15,7 +15,12 @@ can be regenerated from the corrected-g adopted packs through a committed
 routine; ``--regress-against`` proves it IS that recipe by requiring
 byte-identity with the existing scan packs when pointed at the old inputs.
 
-Env: gpdla (jax-free; extract_pack loaded file-directly).
+Env: gpdla (jax-free; extract_pack loaded file-directly). NOTE (2026-08-21):
+byte-identity of ``dX_coarse_committed`` is numpy-version sensitive at the
+1-3 ULP level (total_DeltaX_in_zbins accumulation; gpdla numpy 2.4.4 vs
+gpdla-hbi 2.2.6) — the 2026-08-17 packs reproduce IDENTICALLY under gpdla
+and differ by <= 3 ULP under gpdla-hbi. The field is a provenance carrier
+(pack.py optional), not a model input.
   python CDDF_analysis/hbi_mcmc/build_scan_packs.py --src-dir V2DIR --out-dir OUT
       [--families 2lpt0 london0 saclay0] [--buffers 300]
       [--regress-against DIR]   # assert byte-identity with DIR/scanpack_*.npz
