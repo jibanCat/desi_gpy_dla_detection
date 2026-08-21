@@ -207,6 +207,70 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
         numpyro.sample("counts", dist.Poisson(jnp.clip(mu, 1e-300, None)),
                        obs=counts)
 
+# The locked Paper-1 low-z reporting bins (ABSORBER z; PAPER1_ARCHITECTURE_LOCK,
+# PI ruling 2026-08-15/16). B5 is only partially covered by the [2.0, 3.5)
+# support; coverage is reported, never imputed.
+PAPER1_LOWZ_BINS = (("B1", 2.15, 2.35), ("B2", 2.35, 2.56),
+                    ("B3", 2.56, 2.96), ("B4", 2.96, 3.40), ("B5", 3.40, 3.80))
+
+
+def _overlap_w(zf, dX_k, lo, hi):
+    """path weights w_k = dX_k * |cell_k ∩ [lo,hi)| / |cell_k| (overlap, not
+    centre-in-bin — the project's signature one-sided-support bug class)."""
+    ov = np.clip(np.minimum(zf[1:], hi) - np.maximum(zf[:-1], lo), 0.0, None)
+    return dX_k * ov / np.diff(zf)
+
+
+def perz_recovery(f_draws, ft, pk, thresholds=(20.0, 20.3)):
+    """Posterior-vs-truth recovery of dN/dX(>=thr) per native z cell, per coarse
+    block and per locked reporting bin. Threshold weight = dex of the true-N
+    bin above thr (open-topped, reported support only) — identical to the
+    committed reduce_f_posterior threshold weights on the 0.2-dex basis."""
+    ntrue = np.asarray(pk.ntrue_edges, float)
+    zf = np.asarray(pk.zf_edges, float)
+    dX_k = np.asarray(pk.dX, float).sum(axis=1)
+    reported = 0.5 * (ntrue[:-1] + ntrue[1:]) >= \
+        float(np.asarray(pk.nhat_edges, float)[0]) - 1e-9
+    kz = np.asarray(pk.kz_to_K)
+    zc = np.asarray(pk.zc_edges, float)
+    out = {"z_cells": [[float(a), float(b)] for a, b in zip(zf[:-1], zf[1:])],
+           "dX_k": [float(x) for x in dX_k], "estimand": {}}
+    for thr in thresholds:
+        u = np.where(reported, np.clip(ntrue[1:] - np.maximum(ntrue[:-1], thr),
+                                       0.0, None), 0.0)            # (B,)
+        per_k = np.einsum("dbk,b->dk", f_draws, u)                 # (D, Kf)
+        tr_k = np.einsum("bk,b->k", ft, u)                          # (Kf,)
+
+        def rec(w, lo, hi, name):
+            if w.sum() <= 0:
+                return dict(bin=name, z=[lo, hi], available=False)
+            pd = (per_k * w[None, :]).sum(axis=1) / w.sum()
+            tv = float((tr_k * w).sum() / w.sum())
+            q = np.percentile(pd, [2.5, 16, 50, 84, 97.5])
+            return dict(bin=name, z=[float(lo), float(hi)], available=True,
+                        dX=float(w.sum()), truth=tv,
+                        post_p2p5_16_50_84_97p5=[float(x) for x in q],
+                        median_bias_pct=round(100 * (q[2] / tv - 1), 2)
+                        if tv > 0 else None,
+                        truth_in_68=bool(q[1] <= tv <= q[3]),
+                        truth_in_95=bool(q[0] <= tv <= q[4]))
+        tag = f"ge{thr:.1f}"
+        cells = [rec(np.where(np.arange(len(dX_k)) == k, dX_k, 0.0),
+                     zf[k], zf[k + 1], f"k{k}") for k in range(len(dX_k))]
+        coarse = [rec(np.where(kz == q, dX_k, 0.0), zc[q], zc[q + 1],
+                      f"block{q}") for q in range(len(zc) - 1)]
+        bins = []
+        for name, lo, hi in PAPER1_LOWZ_BINS:
+            w = _overlap_w(zf, dX_k, lo, hi)
+            r = rec(w, lo, hi, name)
+            r["coverage"] = float(np.clip(min(hi, zf[-1]) - max(lo, zf[0]),
+                                          0, None) / (hi - lo))
+            bins.append(r)
+        allz = rec(dX_k, zf[0], zf[-1], "allz")
+        out["estimand"][tag] = dict(native_cells=cells, coarse_blocks=coarse,
+                                    paper1_bins=bins, allz=allz)
+    return out
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -224,6 +288,10 @@ def main():
     ap.add_argument("--t-scale", type=float, default=1.0)
     ap.add_argument("--fp-s-empty", type=float, default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--save-fdraws", action="store_true",
+                    help="also save <out>_fdraws.npz (per-draw latent f + "
+                         "grids + truth_f) — needed for any per-z reduction "
+                         "(the ckpt-10.10 runs did not save it)")
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
 
@@ -359,10 +427,18 @@ def main():
         binrep.append(dict(bin=[round(e0, 1), round(e1, 1)],
                            median_bias_pct=round(100 * (q[1] / tv - 1), 2),
                            truth_in_68=bool(q[0] <= tv <= q[2])))
+    # per-z recovery (2026-08-20, finding N1): the SAME path-weighted
+    # estimand per NATIVE z cell, per coarse FP block and per LOCKED Paper-1
+    # reporting bin (overlap-weighted: w_k = dX_k * |cell_k ∩ B| / |cell_k|),
+    # against the pack's own truth. All-z recovery above is the dX-weighted
+    # mean of these, so this is a DECOMPOSITION of the committed estimand,
+    # not a new one.
+    perz = perz_recovery(f_draws, ft, pk)
     div = int(np.sum(mcmc.get_extra_fields()["diverging"])) \
         if "diverging" in mcmc.get_extra_fields() else None
     out = dict(pack=a.pack, n_draws=int(f_draws.shape[0]),
                divergences=div, thresholds=rep, reporting_bins=binrep,
+               perz_recovery=perz,
                diagnostics=diag,
                role=("MOCK-ONLY posterior validation of the adopted "
                      "count-conserving operator; kernel fixed, carrier "
@@ -370,6 +446,10 @@ def main():
     print(json.dumps(out, indent=1))
     if a.out:
         json.dump(out, open(a.out, "w"), indent=1)
+        if a.save_fdraws:
+            np.savez(a.out[:-5] + "_fdraws.npz", f=f_draws, truth_f=ft,
+                     ntrue_edges=ntrue, zf_edges=np.asarray(pk.zf_edges),
+                     dX_k=dX_k)
 
 
 if __name__ == "__main__":
