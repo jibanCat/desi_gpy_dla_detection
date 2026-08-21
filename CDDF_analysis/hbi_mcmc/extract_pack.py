@@ -806,13 +806,35 @@ def build_dX(bundle):
     return PX.T.copy()                              # (k, s)
 
 
+def g_truth_support(bundle):
+    """The truth table g(N,z) is measured ON: the fold's truth support.
+
+    Finding N1 (2026-08-20; PI ruling 2026-08-21 items 1-2 — source
+    calibration DEFECT, fixed here at source): ``measure_c_nz`` counts every
+    truth row handed to it as g's denominator, while its TP numerator and
+    ``build_truth_counts`` (the fold's truth support) are S2N_RED > snr_min.
+    Truth on SNR <= snr_min sightlines is richer at low z_abs, and g is
+    normalised per N row, so the mismatched denominator became a spurious
+    z-tilt (all-z neutral by construction — invisible to every all-z check).
+    Restricting the denominator to the SAME S2N_RED > snr_min support makes g
+    a consistent measurement operator. Returns (truth_consistent, n_total,
+    n_kept) so the support change is stamped into provenance and certified by
+    a counting identity (certify_g_support.g_support_identity)."""
+    t = bundle["truth_cut"]
+    keep = np.asarray(t["S2N_RED"], float) > bundle["cfg"].snr_min
+    return t[keep], int(len(t)), int(keep.sum())
+
+
 def build_g_block(bundle):
     """Frozen 2LPT-0 g(N,z) + occupancy via the committed builders (build ONCE on
-    the calibration mock; embedded identically in every pack)."""
+    the calibration mock; embedded identically in every pack). The truth table
+    is restricted to the fold's S2N_RED > snr_min support (see
+    ``g_truth_support``); the builders themselves are unchanged."""
     cfg, mm = bundle["cfg"], bundle["mm"]
-    cnz = build_cnz_resolved(cfg, bundle["cat_cut"], bundle["truth_cut"],
+    truth_cons, _, _ = g_truth_support(bundle)
+    cnz = build_cnz_resolved(cfg, bundle["cat_cut"], truth_cons,
                              bundle["good_mask"], mm)
-    meas = measure_c_nz(bundle["cat_cut"], bundle["truth_cut"], cfg, mm,
+    meas = measure_c_nz(bundle["cat_cut"], truth_cons, cfg, mm,
                         _fine_z_grid(cfg), good_mask=bundle["good_mask"])
     g_grid = np.asarray(cnz.g_grid, float)                       # (n_nhi, 15)
     g_occ = np.asarray(meas["n_true"], float)                    # (n_nhi, 15)
@@ -1232,6 +1254,7 @@ def extract_pack(mock: str, out_dir: str, frozen: dict, pad_floor=None,
             routine="CDDF_analysis/hbi_mcmc/extract_pack.py:basis_pad_edges",
         ),
         g_available=bool(frozen["g_available"]),
+        g_support=frozen.get("g_support"),
         checks=dict(
             counts_total_equals_op_in_window=True,
             dx_marginal_max_relgap=dx_gap,
@@ -1286,19 +1309,30 @@ def build_frozen_calibration(out_dir: str, completeness="const_extrap",
     fp_counts, fp_eta_c, _loa0, fp_prov = build_fp_block(window=window)
     bundle0 = load_mock_bundle("2lpt0", out_dir, window=window)
     g_available = True
+    g_support = None
     try:
         g_grid, g_occ = build_g_block(bundle0)
+        _, n_t195, n_k195 = g_truth_support(bundle0)
+        g_support = dict(
+            rule=("g(N,z) truth denominator restricted to S2N_RED > snr_min "
+                  "— the fold's truth support (build_truth_counts) and g's "
+                  "TP numerator; finding N1 2026-08-20, PI ruling 2026-08-21"),
+            snr_min=float(bundle0["cfg"].snr_min),
+            n_truth_cut_195=n_t195, n_truth_kept_195=n_k195)
         if mm_alt is not None:
             bundle_alt = load_mock_bundle("2lpt0", out_dir,
                                           molly_tsv=w["molly_tsv_172"],
                                           window=window)
             g_alt, occ_alt = build_g_block(bundle_alt)
+            _, n_t172, n_k172 = g_truth_support(bundle_alt)
+            g_support.update(n_truth_cut_172=n_t172, n_truth_kept_172=n_k172)
             n_sub = g_alt.shape[0] - g_grid.shape[0]
             if n_sub <= 0:
                 raise RuntimeError("molly172 g splice: alternate grid is not "
                                    "deeper than the canonical one")
             g_grid = np.concatenate([g_alt[:n_sub], g_grid], axis=0)
             g_occ = np.concatenate([occ_alt[:n_sub], g_occ], axis=0)
+            g_support["n_subfloor_rows"] = int(n_sub)
             molly_prov["g_below_floor"] = (
                 f"{n_sub} sub-floor rows from build_cnz_resolved on the "
                 "floor-17.2 molly matrix; >= 19.5 rows bit-identical to the "
@@ -1317,6 +1351,7 @@ def build_frozen_calibration(out_dir: str, completeness="const_extrap",
                 t_sigma_detail=t_detail, molly=molly, molly_prov=molly_prov,
                 fp_counts=fp_counts, fp_eta_c=fp_eta_c, fp_prov=fp_prov,
                 g_grid=g_grid, g_occupancy=g_occ, g_available=g_available,
+                g_support=g_support,
                 completeness_convention=completeness,
                 analysis_window=window, window_spec=w,
                 _bundles={"2lpt0": bundle0})

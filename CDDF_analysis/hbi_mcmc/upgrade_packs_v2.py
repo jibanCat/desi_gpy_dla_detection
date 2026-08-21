@@ -65,7 +65,11 @@ def _sha(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default=DEF_OUT)
+    ap.add_argument("--srcdir", default=SRCDIR,
+                    help="directory of the v1 extractor packs to stamp "
+                         "(2026-08-21: the corrected-g re-extraction)")
     a = ap.parse_args()
+    srcdir = a.srcdir
     os.makedirs(a.outdir, exist_ok=True)
 
     ad = np.load(ADOPTED, allow_pickle=True)
@@ -81,7 +85,7 @@ def main():
         commit = "unknown"
 
     for mock in MOCKS:
-        src = os.path.join(SRCDIR, f"modelA_pack_{mock}_{TAG}.npz")
+        src = os.path.join(srcdir, f"modelA_pack_{mock}_{TAG}.npz")
         dst = os.path.join(a.outdir, f"modelA_pack_{mock}_{TAG}_v2.npz")
         pk = load_pack(src)
         phi_ref = phi_from_surfaces(pk)

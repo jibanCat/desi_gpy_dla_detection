@@ -272,6 +272,17 @@ def perz_recovery(f_draws, ft, pk, thresholds=(20.0, 20.3)):
     return out
 
 
+def sensitivity_stamp(a):
+    """Every predeclared sensitivity knob, stamped into the diagnostics block
+    (2026-08-21: fp_s_empty was plumbed but not stamped; the Battery-4 arm
+    identity had to be recovered from the sbatch/log lines)."""
+    return dict(fp_mode=a.fp_mode, target_accept=a.target_accept,
+                fp_alpha0=a.fp_alpha0, fp_total_scale=a.fp_total_scale,
+                t_scale=a.t_scale, fp_s_empty=a.fp_s_empty,
+                fp_s_empty_effective=(2.0 if a.fp_s_empty is None
+                                      else float(a.fp_s_empty)))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
@@ -345,11 +356,7 @@ def main():
         diag["fp_amp_prior_sd"] = round(float(1.0 / np.sqrt(n_fp)), 5)
         diag["fp_amp_pull_sd"] = round(float(
             (np.median(sam["fp_amp"]) - 1.0) * np.sqrt(n_fp)), 2)
-    diag["fp_mode"] = a.fp_mode
-    diag["target_accept"] = a.target_accept
-    diag["fp_alpha0"] = a.fp_alpha0
-    diag["fp_total_scale"] = a.fp_total_scale
-    diag["t_scale"] = a.t_scale
+    diag.update(sensitivity_stamp(a))
     # split-Rhat + ESS on the threshold estimands (grouped chains)
     from CDDF_analysis.hbi_mcmc.model_a import reduce_f_posterior as _red
     fg = np.asarray(sam_g["f"])

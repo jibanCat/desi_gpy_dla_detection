@@ -167,6 +167,10 @@ def main():
     ap.add_argument("--real", action="store_true")
     ap.add_argument("--stamp-v12", action="store_true")
     ap.add_argument("--out-dir", default=OUT_DIR)
+    ap.add_argument("--ref-pack", default=V2P1,
+                    help="the committed 2LPT-0 reference pack the certification "
+                         "compares against (2026-08-21: the corrected-g v2p2 "
+                         "2LPT-0 pack)")
     a = ap.parse_args()
     os.makedirs(a.out_dir, exist_ok=True)
     t0 = time.time()
@@ -198,7 +202,7 @@ def main():
         # by the predeclared family scan (scanpack_* + scan_*.json)
         dp = build_data_plane(cat, lookup, bal_tids, cfg, mm,
                               collar_kms=3000.0)
-        ref = np.load(V2P1, allow_pickle=False)
+        ref = np.load(a.ref_pack, allow_pickle=False)
         # counts: the committed mock convention evaluates the lambda window
         # at the MATCHED TRUTH z for TP rows (measured: +877 rows, 99.9%
         # within 1.5 match-tolerances of a window edge). Real data has no
@@ -229,6 +233,7 @@ def main():
         with open(os.path.join(a.out_dir, "CERT_2LPT0_OK"), "w") as f:
             json.dump(dict(detz=int(dp["counts"].sum()),
                            truthz=int(ref["counts"].sum()),
+                           ref_pack=a.ref_pack,
                            dX_rtol="1e-12",
                            swap_validation="ccpost_2lpt0_DETZ_joint_ta0.95"),
                       f)
