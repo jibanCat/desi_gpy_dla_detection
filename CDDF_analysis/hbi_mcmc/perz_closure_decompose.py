@@ -50,7 +50,7 @@ def decompose(pk, consts, Mg):
                      ratio_ge20p3=r(P[m203][:, :, s], O[m203][:, :, s]),
                      ratio_all=r(P[:, :, s], O[:, :, s])) for s in range(O.shape[2])]
         by_c = [dict(nhat=[float(ne[c]), float(ne[c + 1])], obs=int(O[c].sum()),
-                     ratio=r(P[c], O[c]), fp_share_pred=float(fp[c][:, ks, :].sum() / max(P[c].sum(), 1e-300)))
+                     ratio=r(P[c], O[c]), fp_share_pred=float(fp[c][ks, :].sum() / max(P[c].sum(), 1e-300)))
                 for c in range(O.shape[0])]
         out["by_zcell"][int(q)] = dict(
             z=[float(rze[q]), float(rze[q + 1])],
