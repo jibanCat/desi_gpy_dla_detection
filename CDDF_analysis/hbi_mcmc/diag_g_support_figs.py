@@ -104,7 +104,7 @@ def fig_recovery(dep, gc, out):
                     mfc="none", label=f"{FAM[fam]} s{seed[-2:]} g consistent")
         ax.axhline(0, color="k", lw=0.8)
         ax.set_xticks(range(5)); ax.set_xticklabels([f"{b}" for b in bins])
-        ax.set_title(f"dN/dX({thr.replace('ge', '≥ ')}) per Paper-1 bin: posterior median bias vs mock truth")
+        ax.set_title(f"dN/dX({thr.replace('ge', '≥ ')}) per Paper-1 bin:\nposterior median bias vs mock truth", fontsize=10)
     axes[0].set_ylabel("median bias [%]  (B5 = [3.40,3.50) coverage 25%)")
     axes[0].legend(fontsize=7, ncol=2)
     fig.tight_layout()
