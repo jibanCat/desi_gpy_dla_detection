@@ -87,6 +87,18 @@ did not transfer to production scale.
   and a denominator/target living on different supports. It has surfaced repeatedly. Check it
   *before* blaming the sampler, the prior, or false-positive subtraction. The decisive check is a
   counting argument.
+  - Sixth instance (2026-08-20, finding N1; PI ruling 2026-08-21): the pack's z-shape surface
+    g(N,z) was built with a truth denominator carrying NO SNR cut while its TP numerator and the
+    fold's truth support were S2N_RED > 2. Because g is normalised per N row, the z-dependent
+    excess became a spurious redshift tilt that every all-z closure check passed by construction
+    (B4/B5 per-bin recovery was −13 % / −25 % while all-z closed to 0.3 %).
+  - **Rule (PI-approved 2026-08-21, D4.1): a per-row-normalised calibration surface must be
+    validated on the axis the normalisation removes.** For any normalised z-dependent surface,
+    certification requires BOTH integrated (all-z) AND per-redshift-bin recovery
+    (`CDDF_analysis/hbi_mcmc/perz_gate.py`), and a counting identity between the surface's
+    denominator and the support the inference actually uses
+    (`CDDF_analysis/hbi_mcmc/certify_g_support.py`). The 2026-08-17 (ckpt 10.10) validation was
+    all-z only, which is why it could not see the tilt (D4.2).
 - Check `.err` as well as `.log`. Trace the executed data path with prints; do not infer behaviour
   from docstrings.
 
