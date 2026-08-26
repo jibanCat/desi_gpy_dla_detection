@@ -1,5 +1,8 @@
 # GP-DLA Production Runbook — NERSC Perlmutter
 
+> **Scope note (2026-08-26):** this is the GP-finder runbook (NERSC/GreatLakes finder runs). The Paper-1 measurement pipeline (packs → guards → NUTS → pooling → BH arm → figures) is documented in `docs/PAPER1_REPRODUCTION.md`.
+
+
 > **Audience**: next-Claude in this repo. You are launching full GP-DLA inference
 > over a dataset (mock or real LOA). This document tells you the exact paths,
 > commands, hyperparameters, expected wall-time, and expected P/C numbers.

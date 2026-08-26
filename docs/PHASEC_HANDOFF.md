@@ -1,4 +1,7 @@
 # PHASE-C RUNNING HANDOFF — live document, updated as work lands
+
+> **HISTORICAL (Phase C, 2026-08-06).** The 'freeze' referred to in the PHASEC_* documents is the Stage-2 executable state (`5ee7202`), NOT the 2026-08-26 Paper-1 posterior freeze; the g-support correction of 2026-08-20/21 (N1) post-dates all PHASEC_* documents. See `docs/PAPER1_REPRODUCTION.md`.
+
 ### Branch `calibration/phaseC-highN-fp-2026-08-06`, root `a56e3c8` (= Phase-B tip, frozen)
 ### Session 2 closed 2026-08-06; PHASE C1 COMPLETE — resume from "CURRENT STATE"
 

@@ -53,3 +53,10 @@ version pairing scipy itself warns about.)
 
 Running the real-data science posterior; promoting any provisional
 science choice; modifying H2/BH; any K freedom chosen from closure.
+
+
+## Addendum 2026-08-26 (Paper-1 code review)
+- Which lock is authoritative for which env: **gpdla-hbi → `env_lock_gpdla-hbi_2026-08-17.txt`** (explicit conda; the pip freeze of that env contains 90 `file:///` entries and is not installable); **gpdla → `env_pip_gpdla_2026-08-17.txt`** on the python of `env_lock_gpdla_2026-08-17.txt` (the explicit lock is a skeleton by construction: the scientific packages are pip-installed). Re-exported 2026-08-26: gpdla-hbi identical.
+- Item 5 ("G-A hard"): on a REAL pack the truth-point partition is undefined (all-zero truth sentinel) and `contract_guards_check` now reports `NOT_APPLICABLE_REAL_PACK`; the guard of record on real data is `G_A_real_mode` evaluated inside `cc_real_posterior` (PASS on every frozen run). The frozen `.contract_guards.json` predates this and records FAIL for that reason.
+- The paper-repo environment is now pinned too: `gp_dla_desi_y3/paper_figures/ENV_LOCK_2026-08-26.txt`.
+- "Provisional" status: the prescription was applied unchanged through the 2026-08-26 freeze; lifting the word is a PI action.

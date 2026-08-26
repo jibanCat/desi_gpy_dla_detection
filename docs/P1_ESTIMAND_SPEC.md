@@ -1,5 +1,8 @@
 # P1 ESTIMAND SPECIFICATION — kernel anchor APPROVED; complete freeze PENDING mechanical gates
 
+> **Status addendum (2026-08-26):** the estimand specified here is what the frozen pack implements; the mechanical gates closed with the CP-1/CP-2 certification (`CERT_G_SUPPORT_CP1_CP2.json`) after the N1 g-support correction, which this document predates. The 'freeze PENDING' in the title is historical.
+
+
 **Status (2026-08-07 PI ruling): the natural-pair kernel anchor
 (C_molly, K_natural-pairs) is APPROVED as the selected P1 design
 direction. The COMPLETE estimand freeze is NOT yet ratified** — final

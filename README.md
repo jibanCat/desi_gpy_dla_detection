@@ -1,5 +1,8 @@
 # GP-DLA finder for DESI quasar spectra, in Python
 
+> **Paper-1 (2026-08-26 freeze) readers:** the DESI Y3 DLA CDDF measurement of record is the hierarchical posterior described in **`docs/PAPER1_REPRODUCTION.md`** — not the feed-forward headline that `CDDF_analysis/hbi/REPRODUCE_HEADLINE.md` reproduces, and not the finder quickstart below.
+
+
 ![rainbow_dlas](https://jibancat.github.io/images/RdBu_dlas.png)
 
 This code repository contains code to completely reproduce the DLA

@@ -1,5 +1,8 @@
 # Development map — repository structure, key entry points, reproduction workflows
 
+> **STALE (2026-05-12, branch production_533).** Predates the HBI estimator and the 2026-08-26 freeze; kept as history. Current map: `docs/PAPER1_REPRODUCTION.md`.
+
+
 > Written 2026-05-12. Intended as the **first doc to read** when starting a new session on this repo. Pairs with `CLAUDE.md` (session handoff state) and `docs/notes/` (investigation logs). Branch: `production_533`.
 
 ## What this repo does

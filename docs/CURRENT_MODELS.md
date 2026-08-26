@@ -1,5 +1,8 @@
 # CURRENT_MODELS.md
 
+> **Addendum (2026-08-26):** the deployed GP behind the Paper-1 figures is `/nfs/turbo/lsa-cavestru/mfho/DESI/GP_trained/DEPLOYED_phase2_2lpt_loa124_nohcd_nobal_wide_m/phase2_result.npz` (registered as `ARTIFACTS['gp_model']` in the paper repo); the table below (2026-05-15) does not list it.
+
+
 > **Read this first** if you're picking a `learned_file` for inference.
 > Updated when new training runs land or supersede.
 > Last touched: 2026-05-15.

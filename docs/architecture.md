@@ -1,5 +1,8 @@
 # GP-DLA Codebase Architecture
 
+> **Addendum (2026-08-26):** a fourth workflow is missing below — the Paper-1 statistics path `extract_pack_real → contract_guards_check → cc_real_posterior (NUTS) → cc_pool_posterior → hbi_reduction (paper repo)`, with the BH arm `track_c_tf_hz → bh_ratify_stamp`. `desi_cddf.py` is the pre-HBI statistics entry point and is superseded for Paper 1. See `docs/PAPER1_REPRODUCTION.md`.
+
+
 This document describes the high-level structure of the DESI GP-DLA detection pipeline,
 its main workflows, and how the modules relate to each other.
 

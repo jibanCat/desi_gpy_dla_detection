@@ -1,5 +1,8 @@
 # Reproducing the real-LOA CDDF headline (code walkthrough)
 
+> **This reproduces the feed-forward (loa0 FF) headline, NOT Paper-1's frozen hierarchical measurement** (which is `docs/PAPER1_REPRODUCTION.md`). Its numpy/scipy pins predate `docs/REALDATA_ENV_PRESCRIPTION.md`; `environment-hbi.yml` now exists at the repo root.
+
+
 **Scope:** re-derive the real-LOA DLA CDDF headline — integrated and per-z dN/dX and Ω_DLA
 at log N_HI ≥ 20.3 (and ≥ 20.0) — from committed code. A **code/ops** doc, not a science
 doc: it does **not** print real-LOA values (DESI-restricted; they live only in the private
