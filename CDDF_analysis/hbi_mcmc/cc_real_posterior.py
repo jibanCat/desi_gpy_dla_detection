@@ -75,6 +75,11 @@ def main():
     ap.add_argument("--t-scale", type=float, default=1.0)
     ap.add_argument("--fp-s-empty", type=float, default=None)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--save-nuisance-draws", default=None,
+                    help="ADDITIVE (2026-08-26, PI B3 item 2): also save the "
+                         "by-chain draws of the fold sites (theta_pop, psi_c, "
+                         "t, lam_fp, f) to this .npz for cc_real_ppc. Default "
+                         "off; sampling and every other output unchanged.")
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
 
@@ -234,6 +239,10 @@ def main():
                      "10.8 explicit authorization; c=3300 observable-only "
                      "convention"))
     json.dump(out, open(a.out, "w"), indent=1)
+    if a.save_nuisance_draws:
+        from CDDF_analysis.hbi_mcmc.cc_real_ppc import nuisance_payload
+        np.savez(a.save_nuisance_draws, seed=a.seed, chains=a.chains,
+                 **nuisance_payload(sam_g))
     np.savez(a.out[:-5] + "_fdraws.npz", f=f_draws, ntrue_edges=ntrue,
              zf_edges=np.asarray(pk.zf_edges))
     print(json.dumps({k: out[k] for k in ("thresholds", "diagnostics")},

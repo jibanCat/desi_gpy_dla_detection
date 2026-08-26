@@ -436,24 +436,41 @@ def _mid_p(rep, obs):
     return (rep > obs).mean(axis=0) + 0.5 * (rep == obs).mean(axis=0)
 
 
-def ppc_block(run, pack, consts, *, n_rep_draws=300, seed=0):
+def ppc_block(run, pack, consts, *, n_rep_draws=300, seed=0, mu_draws=None):
     """Block 2.  Replicate the counts from posterior draws and compare.
 
     THIS is the check that would have caught rung 9 from inside the sampler:
     a forward model that cannot reach the observed counts produces mid-p
     values pinned at 0 or 1 in exactly the cells where mu/obs is off, no
     matter how healthy R-hat is.
+
+    ``mu_draws`` (additive, 2026-08-26): an optional ``(mu, idx)`` pair of
+    precomputed per-draw predictive rates ``(n, C, Kf, S)`` and the draw
+    indices they came from. When given, the fold is NOT recomputed here —
+    the caller's forward operator is used as-is (model_cc's count-conserving
+    fold in cc_real_ppc). Default behaviour (``None``) is unchanged: mu is
+    taken from ``forward.fold_mu`` on ``run["samples_by_chain"]``.
     """
-    if run.get("samples_by_chain") is None:
+    if mu_draws is None and run.get("samples_by_chain") is None:
         return {"incomplete": ["ppc_needs_latent_posterior_draws"],
                 "checks": {"ppc_cells_ok": False, "ppc_omnibus_ok": False},
                 "note": ("a saved reductions-only artifact carries f-draws but "
                          "not the nuisance draws the forward fold needs; the "
                          "PPC cannot be reconstructed from it")}
     rng = np.random.default_rng(seed)
-    flat = {k: np.asarray(v).reshape((-1,) + np.asarray(v).shape[2:])
-            for k, v in run["samples_by_chain"].items()}
-    mu, idx = _mu_draws(flat, consts, n_max=n_rep_draws, rng=rng)   # (n,C,Kf,S)
+    if mu_draws is not None:
+        mu, idx = mu_draws
+        mu = np.asarray(mu, float)
+        idx = np.asarray(idx)
+        if mu.ndim != 4 or mu.shape[0] != idx.shape[0]:
+            raise ValueError("ppc_block: mu_draws must be (mu (n,C,Kf,S), idx (n,))")
+        if n_rep_draws is not None and mu.shape[0] > n_rep_draws:
+            keep = np.sort(rng.choice(mu.shape[0], size=n_rep_draws, replace=False))
+            mu, idx = mu[keep], idx[keep]
+    else:
+        flat = {k: np.asarray(v).reshape((-1,) + np.asarray(v).shape[2:])
+                for k, v in run["samples_by_chain"].items()}
+        mu, idx = _mu_draws(flat, consts, n_max=n_rep_draws, rng=rng)   # (n,C,Kf,S)
     obs = np.asarray(pack.counts, float)
     dxpos = np.asarray(pack.dX, float) > 0                          # (Kf,S)
     mask = np.broadcast_to(dxpos[None, :, :], obs.shape)
