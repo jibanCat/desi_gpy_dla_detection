@@ -2134,7 +2134,9 @@ def test_build_frozen_calibration_molly172_splices_the_SAME_windows_subfloor(
 
     def fake_bundle(mock, out_dir, molly_tsv=None, window=None):
         seen.setdefault("bundle", []).append((mock, molly_tsv, window))
-        return dict(tag=mock, molly172=molly_tsv is not None)
+        # cfg.snr_min is read by the g-support accounting (2026-08-21 contract)
+        return dict(tag=mock, molly172=molly_tsv is not None,
+                    cfg=type("_Cfg", (), {"snr_min": 2.0})())
     monkeypatch.setattr(EP, "load_mock_bundle", fake_bundle)
     monkeypatch.setattr(EP, "build_g_block", fake_g)
 
