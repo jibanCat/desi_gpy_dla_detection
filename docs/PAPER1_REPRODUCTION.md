@@ -37,7 +37,7 @@ Upstream (not re-runnable; frozen, hashed in the manifest): the H2 injection cam
 ## 7. Products 5–7 — reductions, envelopes, figures (mode A)
 In the paper repo `gp_dla_desi_y3`, from ONE commit, in ONE pass:
 ```
-python3 tools/paper1_verify_inputs.py            # (science repo: tools/paper1/frozen_manifest.py --verify)
+(cd <science repo> && python tools/paper1/frozen_manifest.py --verify docs/PAPER1_FROZEN_MANIFEST.json)   # refuses on any changed frozen file
 python3 paper_figures/build_all.py               # 12 figures + emit_comparison_omega (exits non-zero on BLOCKED/BROKEN)
 python3 tools/ledger_rows_from_provenance.py     # appends rows keyed on (checksum, generator commit)
 python3 tools/check_ledger.py                    # must PASS
