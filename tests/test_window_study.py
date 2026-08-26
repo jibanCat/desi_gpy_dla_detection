@@ -2046,10 +2046,19 @@ def _wire_frozen(EP, monkeypatch, n_nhi=3):
         return np.zeros((29, 8)), np.zeros(29), None, {}
     monkeypatch.setattr(EP, "build_fp_block", fake_fp)
 
+    class _Cfg:
+        snr_min = 2.0
+
     def fake_bundle(mock, out_dir, molly_tsv=None, window=None):
         seen.setdefault("bundle", []).append((mock, molly_tsv, window))
-        return dict(tag=mock)
+        return dict(tag=mock, cfg=_Cfg())
     monkeypatch.setattr(EP, "load_mock_bundle", fake_bundle)
+    # The 2026-08-21 g-block rewrite (finding N1) added the truth-support accounting
+    # `g_truth_support(bundle)` beside `build_g_block`; a fixture faking only the
+    # latter lands in the builder's `g_available = False` fallback. Faked here so the
+    # tests keep pinning what they were written for: that the requested window
+    # threads into EVERY ingredient (Paper-1 code review 2026-08-26).
+    monkeypatch.setattr(EP, "g_truth_support", lambda b: (None, 0, 0))
     monkeypatch.setattr(EP, "build_g_block",
                         lambda b: (np.ones((n_nhi, EP.N_K)),
                                    np.zeros((n_nhi, EP.N_K))))
@@ -2058,7 +2067,11 @@ def _wire_frozen(EP, monkeypatch, n_nhi=3):
 
 def test_build_frozen_calibration_THREADS_the_window_into_EVERY_ingredient(
         EP, monkeypatch, tmp_path):
-    """Every window-dependent ingredient must be built at the REQUESTED window.
+    """[window-study scope] Every window-dependent ingredient must be built at the
+    REQUESTED window. The lya_lyb window exercised here is RETIRED for Paper-1
+    production (the adopted contract is lya_only, 1025 A); the invariant it pins --
+    that a window request threads through every ingredient -- protects the
+    production path too, so the test is kept (Paper-1 code review 2026-08-26).
 
     Each assertion below corresponds to a one-keyword mutant (drop
     ``window=window`` from that call, so it falls back to DEF_WINDOW =

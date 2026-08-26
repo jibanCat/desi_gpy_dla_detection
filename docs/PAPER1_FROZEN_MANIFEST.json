@@ -1,6 +1,6 @@
 {
  "role": "Paper-1 frozen manifest (inputs, frozen outputs, ratified artifacts, records); written by tools/paper1/frozen_manifest.py",
- "written_utc": "2026-08-26T17:24:28Z",
+ "written_utc": "2026-08-26T21:00:46Z",
  "entries": [
   {
    "role": "input",
@@ -646,9 +646,9 @@
    "role": "record",
    "description": "artifact manifest cp3",
    "path": "/home/mfho/desi_gpy_dla_notes/figures/2026-08-21_freeze_pathB/ARTIFACT_MANIFEST_cp3.md",
-   "bytes": 4502,
-   "mtime_utc": "2026-08-26T12:03:29Z",
-   "sha256": "6f14307ea61db23ae544f83f9ca84a06dedc33ecb41cb38ea1ac3063628214d3"
+   "bytes": 5383,
+   "mtime_utc": "2026-08-26T17:34:07Z",
+   "sha256": "c8dbcfaa0643e7ce498431ac25fef0ec0af5629a121677371e53ab915d28ed81"
   },
   {
    "role": "input",
@@ -777,6 +777,550 @@
    "bytes": 34560,
    "mtime_utc": "2026-08-14T13:50:10Z",
    "sha256": "3f6f5a904fca1a4996071c61b2a5f75a7e216ffcb508a99f7b1374491098685c"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: CANDIDATE_STATUS.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/CANDIDATE_STATUS.json",
+   "bytes": 1247,
+   "mtime_utc": "2026-08-26T05:35:50Z",
+   "sha256": "276c9f642b4136f4ac3be816e9b37f4415ca37df5a77d9546e30e563e156eae5"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: ENVELOPE_cp3_vs_superseded.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ENVELOPE_cp3_vs_superseded.json",
+   "bytes": 2345,
+   "mtime_utc": "2026-08-21T20:47:30Z",
+   "sha256": "08c8ab2abc3b87abab9ad31f4b0b4a55ac86c149867a3dd9cc96efc69c6d4247"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: POOL_summary.txt",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/POOL_summary.txt",
+   "bytes": 700,
+   "mtime_utc": "2026-08-21T20:45:57Z",
+   "sha256": "8cd3f3d9de853383d2975aaf716358bd4b25196724a9e2efe042049c5557ce3b"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_deep_s20260821.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260821.stdout",
+   "bytes": 782004,
+   "mtime_utc": "2026-08-21T20:43:59Z",
+   "sha256": "732bf78bc6b809fb8ca5f0cec53093eff7a5cb47d11baffe830942b1dd26dbfc"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_deep_s20260823.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260823.stdout",
+   "bytes": 769590,
+   "mtime_utc": "2026-08-21T20:45:24Z",
+   "sha256": "8458e96e294dba1e940fe8feccab0544ac02eb13134c5c55f13a392090aa0546"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_deep_s20260823_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260823_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:45:23Z",
+   "sha256": "8c5aaf3bae088da12c0ecdccbc720e17133c7f39b69011e6e543429c358d1a6b"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_deep_s20260826.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260826.stdout",
+   "bytes": 765375,
+   "mtime_utc": "2026-08-21T20:43:15Z",
+   "sha256": "b2e0590e64029a813df0f658035e4694b32ba246b8151ed738ddcfc0e911973e"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_deep_s20260826_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260826_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:43:14Z",
+   "sha256": "336aea2e99343312bbd801c304e88e3b9a0ccd711c769738f16cb0bfa2cf0930"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_deep_s20260828.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260828.stdout",
+   "bytes": 761954,
+   "mtime_utc": "2026-08-21T20:43:53Z",
+   "sha256": "4cf9fe2dda048897a9ea9ec7c13e9d1e610d985198983d1cd48407dbd9f74ef2"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260821.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260821.json",
+   "bytes": 6236,
+   "mtime_utc": "2026-08-21T20:23:22Z",
+   "sha256": "10a6fbd0c8e584354404b3e48926b7bc2f1a7b8e762cbb17cec1fb26f46f2711"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260821.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260821.stdout",
+   "bytes": 415753,
+   "mtime_utc": "2026-08-21T20:23:23Z",
+   "sha256": "50de46e4699c0d2a863817993623caadc6318cba176dda1887964011bae46c4c"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260821_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260821_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:22Z",
+   "sha256": "deb039fc5b415bb4fa481216cec9aff0c9e891d2c57be228a214ec50eb8ec0ed"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260822.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260822.stdout",
+   "bytes": 422940,
+   "mtime_utc": "2026-08-21T20:23:33Z",
+   "sha256": "faa5e2f02d395d7f21f017ed6d87057d1d5604397f1a13bd5077deccc146d18a"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260823.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260823.json",
+   "bytes": 6239,
+   "mtime_utc": "2026-08-21T20:23:04Z",
+   "sha256": "309392e197548fd04e45cf087847ef578a64b4c7ffe2f9cf986d33487a76ad0c"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260823.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260823.stdout",
+   "bytes": 413590,
+   "mtime_utc": "2026-08-21T20:23:04Z",
+   "sha256": "a5e2a619c2856c640dee4aaf786ef04347132dd2bb52d6a73516efb4bd1fde8d"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260823_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260823_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:04Z",
+   "sha256": "b39a43a9914e6fe0de6059a246ea196ff8955a41888adf0af54eacf108a3a3e8"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260824.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260824.stdout",
+   "bytes": 415739,
+   "mtime_utc": "2026-08-21T20:23:50Z",
+   "sha256": "26fb9fd869691df6c00f5dfeddead02fcc96acd9c47cc38b2b576d0fa1599d26"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260825.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260825.stdout",
+   "bytes": 405597,
+   "mtime_utc": "2026-08-21T20:23:34Z",
+   "sha256": "893f5473d21831e52acc2ee475e126cff638af603d8ea52c748b8bc5c6e1f9e8"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260826.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260826.json",
+   "bytes": 6244,
+   "mtime_utc": "2026-08-21T20:23:09Z",
+   "sha256": "62846087856575dc96aaa5b178a821c6ba65689416ec1ed9407590461391c607"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260826.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260826.stdout",
+   "bytes": 422316,
+   "mtime_utc": "2026-08-21T20:23:09Z",
+   "sha256": "3307df721e342fe20d27bbb376dfa140ccfabf67fda15a94fe51ded201a11e63"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260826_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260826_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:09Z",
+   "sha256": "45635c3108718b0d206c32a6577aa14a4246c1d9a51e35ac625bdc265df9a828"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260827.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260827.stdout",
+   "bytes": 422615,
+   "mtime_utc": "2026-08-21T20:23:39Z",
+   "sha256": "f558c2daed6fdedd595a4de4c42a67abe21e15c534355c449b1d72ed3c1095d5"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260828.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260828.json",
+   "bytes": 6245,
+   "mtime_utc": "2026-08-21T20:22:48Z",
+   "sha256": "8ff5a6dd8e79ced847d8641737653721b8bfd6a2f12ac100941c7387e841f0e2"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: REAL_ln_s20260828.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260828.stdout",
+   "bytes": 404259,
+   "mtime_utc": "2026-08-21T20:22:49Z",
+   "sha256": "f1e8b1a4a3d7433c0ceed69260ca507bd5b2d036a2d4c8376870fc654d17b8cb"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: REAL_ln_s20260828_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260828_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:22:48Z",
+   "sha256": "9d3ede6010dbbfa2995c0f512d8a688cd12268c758de1f25354a3a0b3e01ba9e"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: deep_seeds.txt",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/deep_seeds.txt",
+   "bytes": 0,
+   "mtime_utc": "2026-08-21T20:45:53Z",
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: jobids.txt",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/jobids.txt",
+   "bytes": 18,
+   "mtime_utc": "2026-08-21T20:12:30Z",
+   "sha256": "86f6b923280bbb1ceb50391d0bd8766302a5de033c047b9c8efb08ec50d2605d"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_collect_58441447.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_collect_58441447.log",
+   "bytes": 760,
+   "mtime_utc": "2026-08-21T20:24:21Z",
+   "sha256": "94e5b5ec1c081da26d29d5c5505a8e45c5afe45068f6febe02a5b2f60e9dcab6"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_collect_58442786.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_collect_58442786.log",
+   "bytes": 1655,
+   "mtime_utc": "2026-08-21T20:45:57Z",
+   "sha256": "f780998b90581008d8b1249c715e209606dec8b6909a8b12fc4161726448171e"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_deep_58442785_0.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_deep_58442785_0.log",
+   "bytes": 124,
+   "mtime_utc": "2026-08-21T20:44:00Z",
+   "sha256": "2f022266097e241378b24621e122bd90f24e09feb59b7b5a3546c815294b879e"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_deep_58442785_1.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_deep_58442785_1.log",
+   "bytes": 124,
+   "mtime_utc": "2026-08-21T20:45:25Z",
+   "sha256": "2629d960edd7c31a68d1f2b20e288a24cd3dee416ed7adc407b42697e76f02d8"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_deep_58442785_2.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_deep_58442785_2.log",
+   "bytes": 124,
+   "mtime_utc": "2026-08-21T20:43:15Z",
+   "sha256": "fe3f8536339b1ea28e5c41c0e916fd3e71d94c49f181864ef8d4c573b7b1b486"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_deep_58442785_3.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_deep_58442785_3.log",
+   "bytes": 124,
+   "mtime_utc": "2026-08-21T20:43:53Z",
+   "sha256": "7c260f53fc54f24817cc647ca15af55e80331aa9c02dd402baae7108b095d905"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_0.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_0.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:24Z",
+   "sha256": "cb45b63f79382825c0aae2d0fc57a8c397897fbaa82445ff1038bddf6e7e8ab4"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_1.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_1.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:34Z",
+   "sha256": "254055ea00974ff2d0b67ebe22b73c80f6611f4c991c662b94af51e2b706c4c7"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_2.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_2.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:05Z",
+   "sha256": "bb8384ad25d59ac5966d35a1620a421221a137cb4bb1759925077cca022f94d0"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_3.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_3.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:51Z",
+   "sha256": "f130a8cf1e44736b1fa81c7bde6c021cf57128a85a3e0574de8918d35cf6dc49"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_4.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_4.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:35Z",
+   "sha256": "d07b70a6a292e4f3a8284455de0c53c3f2992cf901dd0449fcbaf646a4f62e60"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_5.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_5.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:10Z",
+   "sha256": "5305410d603d8b8c935c483505b22201928bec197d90a7acba8c65cd31fdfc97"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_6.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_6.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:23:39Z",
+   "sha256": "ee85c7aebd50ac516c48496fec10950ab319e9aadf0166a14d922a2f1ef2cd6b"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: logs/cp3_real_58441446_7.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/logs/cp3_real_58441446_7.log",
+   "bytes": 114,
+   "mtime_utc": "2026-08-21T20:22:50Z",
+   "sha256": "36b276397b655aec82ae09be1ed1f7f3ffbbb60e47d3aa7c36b3e46b2c52b1ed"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: ppc_20260826/PPC_REAL_ln_s20260822.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/PPC_REAL_ln_s20260822.json",
+   "bytes": 19316,
+   "mtime_utc": "2026-08-26T06:32:14Z",
+   "sha256": "c377545f7ea8285f1160a054368ea8dd8c8b8dc41c49c99b39cdadb96ce440a0"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: ppc_20260826/PPC_REAL_ln_s20260822.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/PPC_REAL_ln_s20260822.stdout",
+   "bytes": 536,
+   "mtime_utc": "2026-08-26T06:32:14Z",
+   "sha256": "72b7522952a4a4fe38042226541c036836663f23be3e8f83f426091e9ba71b00"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: ppc_20260826/REAL_ln_s20260822_nuisance.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/REAL_ln_s20260822_nuisance.npz",
+   "bytes": 6489726,
+   "mtime_utc": "2026-08-26T06:32:09Z",
+   "sha256": "cb724c30e4f79e228e592ef2df34f8661d2a088938cb167b28e858a93180c4e2"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: ppc_20260826/REAL_ln_s20260822_ppcrun.json",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/REAL_ln_s20260822_ppcrun.json",
+   "bytes": 6242,
+   "mtime_utc": "2026-08-26T06:32:09Z",
+   "sha256": "5f84bda2e5a8671519affcc0aff17975fd19f5ab745d6f7af250035465f3223e"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: ppc_20260826/REAL_ln_s20260822_ppcrun.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/REAL_ln_s20260822_ppcrun.stdout",
+   "bytes": 424636,
+   "mtime_utc": "2026-08-26T06:32:10Z",
+   "sha256": "de5c0e20eb5bf3bcd09a27e99ed2bf1be5908cc888f9d49d89388b1293e17bbe"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 chain set: ppc_20260826/REAL_ln_s20260822_ppcrun_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/REAL_ln_s20260822_ppcrun_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-26T06:32:09Z",
+   "sha256": "63e0eeb086f95381d9c0474cf0d9798eb20c9234b901aca7f0cda6f62ba7a45a"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: ppc_20260826/logs/ppc_s20260822_58712946.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/logs/ppc_s20260822_58712946.log",
+   "bytes": 146,
+   "mtime_utc": "2026-08-26T06:32:14Z",
+   "sha256": "2bfbe89f247256e9243e0a38b7ceef532bbcb5053bbd3fb1d5b89a04b88aa90a"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: ppc_20260826/run_ppc_s20260822.sbatch",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ppc_20260826/run_ppc_s20260822.sbatch",
+   "bytes": 1671,
+   "mtime_utc": "2026-08-26T06:19:59Z",
+   "sha256": "f900a233a3949c20ee05257dd705dde067b3cabea023630323654f33e3cdbde5"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: run_cp3_collect.sbatch",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/run_cp3_collect.sbatch",
+   "bytes": 3226,
+   "mtime_utc": "2026-08-21T20:12:30Z",
+   "sha256": "545f9d732943a4be70af3c54beb9deeb991419170e7694f3ea19200a211ef0a4"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: run_cp3_deep.sbatch",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/run_cp3_deep.sbatch",
+   "bytes": 1233,
+   "mtime_utc": "2026-08-21T20:12:30Z",
+   "sha256": "e39124d88c84e24bd61cabc7752ea49ad9af1211c842491e5e7cc77f3755b9f0"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 chain set: run_cp3_real_battery.sbatch",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/run_cp3_real_battery.sbatch",
+   "bytes": 1355,
+   "mtime_utc": "2026-08-21T20:12:30Z",
+   "sha256": "85d858e9a274f1e9a079aa3a07ef68adab8d45ff4f987e8e0890b03687e2b3d8"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: BITREPRO_cp2_vs_battery23.txt",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/BITREPRO_cp2_vs_battery23.txt",
+   "bytes": 315,
+   "mtime_utc": "2026-08-21T17:01:54Z",
+   "sha256": "ab6cb1196944a11c9a0f00817e8869545417559f39eed389bfe21017a670871b"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: GATE_cp2_production.txt",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/GATE_cp2_production.txt",
+   "bytes": 351,
+   "mtime_utc": "2026-08-21T17:02:50Z",
+   "sha256": "7fef37546ec744abd3f6089361b1303c1f0e36e7626d1f68e5fd42931282e18b"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_collect_58432279.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_collect_58432279.log",
+   "bytes": 1021,
+   "mtime_utc": "2026-08-21T17:01:55Z",
+   "sha256": "9a52d9476ab702222019149461f5640affb515c5bf5ceae8966482e6e9f2f6d9"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_gate_58432278_0.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_gate_58432278_0.log",
+   "bytes": 124,
+   "mtime_utc": "2026-08-21T17:01:32Z",
+   "sha256": "78b4bf0740e1bc4c941fb401d8b5cfc0374edbbb3f6bb3c5c72949c5723c9c6e"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_gate_58432278_1.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_gate_58432278_1.log",
+   "bytes": 128,
+   "mtime_utc": "2026-08-21T17:01:49Z",
+   "sha256": "75b871b1e34d73adf105f9680a4efa817dd9d7f165397731a8a4bbe28684c03e"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_gate_58432278_2.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_gate_58432278_2.log",
+   "bytes": 128,
+   "mtime_utc": "2026-08-21T17:01:18Z",
+   "sha256": "8f5de69cfdbd45be7eb069c437a34e324d379b2968d3fbb5e047db9aa8146d26"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_ln_w1500_2lpt0_s20260811.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_2lpt0_s20260811.stdout",
+   "bytes": 430342,
+   "mtime_utc": "2026-08-21T17:01:31Z",
+   "sha256": "9b29ab78c71e82055a2c23dfbc11d7f10c130b5d83756fbeb666f1f0b8ec1a8a"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_ln_w1500_2lpt0_s20260811_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_2lpt0_s20260811_fdraws.npz",
+   "bytes": 1923548,
+   "mtime_utc": "2026-08-21T17:01:31Z",
+   "sha256": "6c3455627fa17eb253da1b9ea89154aa2abef87405a7de5888564a72fe037054"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_ln_w1500_london0_s20260811.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_london0_s20260811.stdout",
+   "bytes": 419510,
+   "mtime_utc": "2026-08-21T17:01:48Z",
+   "sha256": "ccb295bd12bc7e0c730e7d5ed2602a97645c631b126bb92249c27bd561f14b54"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_ln_w1500_london0_s20260811_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_london0_s20260811_fdraws.npz",
+   "bytes": 1923548,
+   "mtime_utc": "2026-08-21T17:01:47Z",
+   "sha256": "19b88aa098f25c036edbe1b08cfb2400e07fbe5373b576c5191a4cb98511b42d"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_ln_w1500_saclay0_s20260811.stdout",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_saclay0_s20260811.stdout",
+   "bytes": 417734,
+   "mtime_utc": "2026-08-21T17:01:18Z",
+   "sha256": "b09971f899052a07cfaea7a7be3caed36ff0e26f70ad731756c3b8e5248c75e8"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: cp2_ln_w1500_saclay0_s20260811_fdraws.npz",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_saclay0_s20260811_fdraws.npz",
+   "bytes": 1923548,
+   "mtime_utc": "2026-08-21T17:01:17Z",
+   "sha256": "27f5203a75f8b4fb2222a865c49fab1b160d98ca5d63c8037d6d9ecc6bf98752"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: run_cp2_collect.sbatch",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/run_cp2_collect.sbatch",
+   "bytes": 3925,
+   "mtime_utc": "2026-08-21T16:44:25Z",
+   "sha256": "f6597f3518e0e923f0ef416f12814a25a2c14bb538b1034607dd55c96cbe686e"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 validation: run_cp2_gate.sbatch",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/run_cp2_gate.sbatch",
+   "bytes": 1504,
+   "mtime_utc": "2026-08-21T16:44:25Z",
+   "sha256": "f07eb0f12e887379d981b5b88c04756ec7413c76c332f24d7961c00255fcf40a"
+  },
+  {
+   "role": "record",
+   "description": "CP-1/CP-2 slurm log: cp1_gfix_58432225.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/logs/cp1_gfix_58432225.log",
+   "bytes": 2089,
+   "mtime_utc": "2026-08-21T16:45:10Z",
+   "sha256": "cd7280864833f692127d438d6a53ba7568e03ac6fe3419cf67939d2b811c8b30"
+  },
+  {
+   "role": "record",
+   "description": "CP-1/CP-2 slurm log: cp1_gfix_58432277.log",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/logs/cp1_gfix_58432277.log",
+   "bytes": 10010,
+   "mtime_utc": "2026-08-21T16:50:20Z",
+   "sha256": "d7bf3891b8e38a167f4ae33f13106fae75b449ecd11404f9da21d4ff2adbba38"
   }
  ]
 }

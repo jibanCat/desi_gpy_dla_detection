@@ -86,13 +86,29 @@ ENTRIES = [
     ("record", "CDDF recovery audit product", f"{NOTES}/figures/2026-08-26_sys_viz_preview/cddf_recovery_audit.json"),
     ("record", "artifact manifest cp3", f"{NOTES}/figures/2026-08-21_freeze_pathB/ARTIFACT_MANIFEST_cp3.md"),
 ]
-# the high-z catalogue outputs (16 files) and the low-z catalogue are directories of fits; hash each file
+# Directory expansions (PI requirement 2026-08-26 §8: the CHAINS are first-class frozen
+# artifacts -- every CP-3 run JSON and its draws, deep reruns, the excluded-and-disclosed
+# s23/s26 chains, stdout/logs, selection and pooling records, nuisance/PPC draws; and the
+# CP-2 validation runs with their draws; plus the high-z catalogue files).
 def expand_dirs():
     out = []
     d = pathlib.Path(f"{CAT}/gl_cddf_loa_hz_v1_20260813/outputs")
     if d.is_dir():
         for f in sorted(d.glob("dlacat-*.fits")):
             out.append(("input", f"high-z catalogue {f.name}", str(f)))
+    cp3 = pathlib.Path(f"{NEW}/cp3_real")
+    seen = {e[2] for e in ENTRIES}
+    for f in sorted(cp3.rglob("*")):
+        if f.is_file() and str(f) not in seen:
+            role = "frozen-output" if (f.suffix in (".json", ".npz") and f.name.startswith(("REAL_ln", "POOLED"))) else "record"
+            out.append((role, f"CP-3 chain set: {f.relative_to(cp3)}", str(f)))
+    cp2 = pathlib.Path(f"{NEW}/cp2_validation")
+    for f in sorted(cp2.glob("*")):
+        if f.is_file() and str(f) not in seen:
+            out.append(("record", f"CP-2 validation: {f.name}", str(f)))
+    for f in sorted(pathlib.Path(f"{NEW}/logs").glob("*")):
+        if f.is_file():
+            out.append(("record", f"CP-1/CP-2 slurm log: {f.name}", str(f)))
     return out
 
 
@@ -123,6 +139,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--write"); g.add_argument("--verify")
+    ap.add_argument("--prefix", default="", help="verify the copy under <prefix>/<absolute path> (the Turbo archive layout)")
     a = ap.parse_args(argv)
     if a.write:
         m = build()
@@ -135,10 +152,10 @@ def main(argv=None):
     bad = []
     for r in m["entries"]:
         if r.get("status") == "MISSING": continue
-        p = pathlib.Path(r["path"])
-        if not p.is_file(): bad.append((r["path"], "now missing")); continue
+        p = pathlib.Path(a.prefix.rstrip("/") + r["path"]) if a.prefix else pathlib.Path(r["path"])
+        if not p.is_file(): bad.append((str(p), "now missing")); continue
         if sha256(p) != r["sha256"]: bad.append((r["path"], "sha256 CHANGED"))
-    print(f"verified {len(m['entries'])} entries: {len(bad)} problem(s)")
+    print(f"verified {len(m['entries'])} entries under prefix '{a.prefix or '/'}': {len(bad)} problem(s); manifest sha256 {sha256(pathlib.Path(a.verify))[:16]}")
     for p, why in bad: print("  ", why, p)
     return 1 if bad else 0
 
