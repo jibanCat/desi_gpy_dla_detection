@@ -281,7 +281,11 @@ def main():
             z_extrapolated=[bool(x) for x in np.asarray(res.get("z_extrapolated", []))],
             truth_counts_perz=res.get("truth_counts_perz"),
             max_truth_z=float(res.get("max_truth_z", float("nan"))),
-            wallclock_s=float(wall), code_commit=_git_commit()),
+            wallclock_s=float(wall), code_commit=_git_commit(),
+            # Paper-1 code review 2026-08-26: the invocation is part of the record (the
+            # frozen artifact of record was produced with --n-mc 2000 against a CLI
+            # default of 120, and no launch script existed).
+            argv=list(sys.argv)),
         measurement={
             str(l): dict(
                 dndx=dict(

@@ -1,0 +1,782 @@
+{
+ "role": "Paper-1 frozen manifest (inputs, frozen outputs, ratified artifacts, records); written by tools/paper1/frozen_manifest.py",
+ "written_utc": "2026-08-26T17:24:28Z",
+ "entries": [
+  {
+   "role": "input",
+   "description": "real catalogue (dlacat loa main dark v1)",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/loa_main_dark_v1/dlacat-loa-main-dark-v1.fits",
+   "bytes": 134712000,
+   "mtime_utc": "2026-06-09T19:57:54Z",
+   "sha256": "9a3f94ea50dd56210ae380668b0ac61e687e17af781218282398b6c8e26682d1"
+  },
+  {
+   "role": "input",
+   "description": "QSO catalogue (BI_CIV)",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits",
+   "bytes": 3123607680,
+   "mtime_utc": "2026-04-25T22:52:22Z",
+   "sha256": "08695c086ff73c552eac987a758b682e291baf2eefe32d69e5882095917e6dfd"
+  },
+  {
+   "role": "input",
+   "description": "archive sightline catalogue",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/h2m_ckpt10p5_20260817/analysis/src_archive_catalog.npy",
+   "bytes": 163490240,
+   "mtime_utc": "2026-08-17T14:01:54Z",
+   "sha256": "c2df88670867ec785d25115f91d9c97e7ac9445720bbd6e1b4f0a4d6c989f44b"
+  },
+  {
+   "role": "input",
+   "description": "adopted response operator v1.1",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/adopted_response_v1p1.npz",
+   "bytes": 69847,
+   "mtime_utc": "2026-08-16T21:24:37Z",
+   "sha256": "8fb580b5daa81847e22e461fdfe8f655ce29ffea69157dfaa08a22fa4ce6efa6"
+  },
+  {
+   "role": "input",
+   "description": "forward response 2LPT-0 (BH kernel)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz",
+   "bytes": 67134,
+   "mtime_utc": "2026-06-20T23:20:25Z",
+   "sha256": "def83ac4efe195c431d4fe695bee519227a6daafc64b47f578f436cbb0a44e1b"
+  },
+  {
+   "role": "input",
+   "description": "molly matrix nhi172 (pack completeness source)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi172/molly_matrix.tsv",
+   "bytes": 2713,
+   "mtime_utc": "2026-06-16T20:31:12Z",
+   "sha256": "fa4a1eceb23d9bae27168002bbfb9bd73dfca03da70d4e90f4bf8c46be62a2df"
+  },
+  {
+   "role": "input",
+   "description": "molly matrix nhi195 lya_only (BH)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/gl_prod_2lpt0_v1_20260526/figures_molly_nhi195/lya_only/molly_matrix.tsv",
+   "bytes": 1647,
+   "mtime_utc": "2026-06-15T04:53:16Z",
+   "sha256": "9302b2bba6ca62d6beee6e50156a3ccded31bb0adae5ec202e0afdb143025a00"
+  },
+  {
+   "role": "input",
+   "description": "pc counts nhi172",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/ff_fp_cache/molly_counts_nhi172.npz",
+   "bytes": 6198,
+   "mtime_utc": "2026-07-29T14:18:33Z",
+   "sha256": "585da1e7b50057c376d6c3493aad3970c848904d7ce060dee29ceb1c2e8ba636"
+  },
+  {
+   "role": "frozen-output",
+   "description": "certified corrected-g real pack (v2, PRODUCTION)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_molly172_v2.npz",
+   "bytes": 86433,
+   "mtime_utc": "2026-08-21T16:50:15Z",
+   "sha256": "219c43aaa59aeb7f070e223c3e652190b4cabe55683c45679a88522d88b920bb"
+  },
+  {
+   "role": "frozen-output",
+   "description": "real pack v1.1 (pre-stamp intermediate)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_molly172.npz",
+   "bytes": 48235,
+   "mtime_utc": "2026-08-21T16:49:49Z",
+   "sha256": "d0f673f00ee92ef7af768113ef14f700b403eaf902728935ddc286a325b72ed5"
+  },
+  {
+   "role": "record",
+   "description": "real pack provenance sidecar",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_molly172_v2.provenance.json",
+   "bytes": 1875,
+   "mtime_utc": "2026-08-21T16:50:16Z",
+   "sha256": "391f66f942039d0aa2532b6f3b42fd15bd4d9d11d7b9d8527bd20fef8fd6ec3c"
+  },
+  {
+   "role": "record",
+   "description": "real pack contract guards",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_molly172_v2.contract_guards.json",
+   "bytes": 552,
+   "mtime_utc": "2026-08-21T16:50:19Z",
+   "sha256": "60d2c38186df24062fde82e8fcbd38cf295e09fb0de9dbdcbc802da966cbcdef"
+  },
+  {
+   "role": "record",
+   "description": "selection-contract sidecar v1.2",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_molly172_v2.selection_contract.json",
+   "bytes": 2651,
+   "mtime_utc": "2026-08-26T15:00:20Z",
+   "sha256": "3bee295f6d2f5c6441b8d141739aeab0721abc4806a62b6aa2bf1d00679cb7a9"
+  },
+  {
+   "role": "frozen-output",
+   "description": "scan pack 2lpt0 b300",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/scanpack_2lpt0_b300.npz",
+   "bytes": 89502,
+   "mtime_utc": "2026-08-21T16:48:42Z",
+   "sha256": "6cd07d207b8d4b147924631d1b164c3e8097c0d13c230bba45a4df47e7bd1da0"
+  },
+  {
+   "role": "frozen-output",
+   "description": "scan pack london0 b300",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/scanpack_london0_b300.npz",
+   "bytes": 89621,
+   "mtime_utc": "2026-08-21T16:48:46Z",
+   "sha256": "dd02cf7c815ba0b1ad62812dd5813f4abeb293e29e915cabac05daf5167be11e"
+  },
+  {
+   "role": "frozen-output",
+   "description": "scan pack saclay0 b300",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/scanpack_saclay0_b300.npz",
+   "bytes": 89540,
+   "mtime_utc": "2026-08-21T16:48:50Z",
+   "sha256": "e45b146ee27496e5bdafcbc9416b2753719725122109d2bf59053ce2a0cd0ddd"
+  },
+  {
+   "role": "record",
+   "description": "CERT_G_SUPPORT_CP1_CP2",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/CERT_G_SUPPORT_CP1_CP2.json",
+   "bytes": 11100,
+   "mtime_utc": "2026-08-21T17:01:55Z",
+   "sha256": "d0ebb0b9abecd91917cf56a0a175dbbdbdd273c3f9449ca7cd1b429bda0edc07"
+  },
+  {
+   "role": "record",
+   "description": "CERT_G_SUPPORT_CP1",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/CERT_G_SUPPORT_CP1.json",
+   "bytes": 7813,
+   "mtime_utc": "2026-08-21T16:50:20Z",
+   "sha256": "0cf3e4bf786b8cee22fafdbfbe98a682eba7fdb508330fc2740d60896eeee003"
+  },
+  {
+   "role": "record",
+   "description": "CP-1 regeneration sbatch (as archived)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/run_cp1_regeneration.sbatch",
+   "bytes": 4152,
+   "mtime_utc": "2026-08-21T16:47:54Z",
+   "sha256": "7684acf1d1950e8c7f09959d4b40d6683d56c8f70904eb51c39a654cf3dd6f32"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-2 gate v2 on production packs",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/perz_gate_v2_cp2_production.json",
+   "bytes": 2740,
+   "mtime_utc": "2026-08-21T17:02:50Z",
+   "sha256": "d486ec9cf863cf79be8c856cb456f5c8d55b4fe06ab7bc57f655a4648aa54259"
+  },
+  {
+   "role": "record",
+   "description": "CP-2 bit-reproduction vs Battery 2+3",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/bitrepro_cp2_vs_battery23.json",
+   "bytes": 1198,
+   "mtime_utc": "2026-08-21T17:01:54Z",
+   "sha256": "0523f0eeb6d0d27dfb1dbd9e877110a029b87483db60d6032a47874ea086af7d"
+  },
+  {
+   "role": "reference",
+   "description": "Battery 2+3 per-z gate (DIAGPACK_gcons)",
+   "path": "/home/mfho/desi_gpy_dla_notes/figures/2026-08-20_perz_fold_closure/perz_gate_v2_battery2plus3_gcons.json",
+   "bytes": 10238,
+   "mtime_utc": "2026-08-21T03:05:51Z",
+   "sha256": "31dd5a67c6374a01c05d11e04fda3adac4d27ce327209ec5f8de1b9bce27380f"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-2 validation run 2lpt0",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_2lpt0_s20260811.json",
+   "bytes": 25307,
+   "mtime_utc": "2026-08-21T17:01:31Z",
+   "sha256": "2097022578b5159b76fe262b12cda9314386d3ec8a0e004dc194c08b57d101a8"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-2 validation run london0",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_london0_s20260811.json",
+   "bytes": 25330,
+   "mtime_utc": "2026-08-21T17:01:47Z",
+   "sha256": "2b442a9ee2f3a48e38ada9fd9d1bea68ea2e4a3dbdfb214fe7550c1d829b06d5"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-2 validation run saclay0",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp2_validation/cp2_ln_w1500_saclay0_s20260811.json",
+   "bytes": 25296,
+   "mtime_utc": "2026-08-21T17:01:17Z",
+   "sha256": "31a6c8d908bfa8279b5d44d8efc363bb6d486acc6148a9f6591717bdcaad1c70"
+  },
+  {
+   "role": "reference",
+   "description": "Battery-3 reference record 2lpt0",
+   "path": "/gpfs/accounts/cavestru_root/cavestru0/mfho/h2m_ckpt10p5_20260817/analysis/perz_20260820/perz_gcons_ln_w1500_2lpt0_s20260811.json",
+   "bytes": 25283,
+   "mtime_utc": "2026-08-21T00:35:50Z",
+   "sha256": "2bc9b873610b974bc14f1b613c44cbe311f256c837cf1b73daf53841315668c6"
+  },
+  {
+   "role": "reference",
+   "description": "Battery-3 reference record london0",
+   "path": "/gpfs/accounts/cavestru_root/cavestru0/mfho/h2m_ckpt10p5_20260817/analysis/perz_20260820/perz_gcons_ln_w1500_london0_s20260811.json",
+   "bytes": 25306,
+   "mtime_utc": "2026-08-21T03:05:27Z",
+   "sha256": "1a37b10604d80a7006fb7688d6a18f769ee75a45eb99d4fa5ad6228ecee444c4"
+  },
+  {
+   "role": "reference",
+   "description": "Battery-3 reference record saclay0",
+   "path": "/gpfs/accounts/cavestru_root/cavestru0/mfho/h2m_ckpt10p5_20260817/analysis/perz_20260820/perz_gcons_ln_w1500_saclay0_s20260811.json",
+   "bytes": 25272,
+   "mtime_utc": "2026-08-21T03:03:47Z",
+   "sha256": "8aff339edcea8cbfbc407f4c019d8b56fcc86fdbc90388860464e6746bc0b927"
+  },
+  {
+   "role": "frozen-output",
+   "description": "FROZEN pooled posterior summary",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/POOLED_ln_real_v2_20260821.json",
+   "bytes": 11184,
+   "mtime_utc": "2026-08-21T20:45:57Z",
+   "sha256": "ea881b5f05c0b8127f4f417eab81e7bb74b4795e2b6317ca9c2e99793a9081b7"
+  },
+  {
+   "role": "frozen-output",
+   "description": "FROZEN pooled posterior draws",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/POOLED_ln_real_v2_20260821_fdraws.npz",
+   "bytes": 11521648,
+   "mtime_utc": "2026-08-21T20:45:57Z",
+   "sha256": "e43d91484faf13fdded9bf8e717a192b3eb12f7006296417db59534b433645c4"
+  },
+  {
+   "role": "record",
+   "description": "FROZEN_STATUS sidecar",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/FROZEN_STATUS.json",
+   "bytes": 2405,
+   "mtime_utc": "2026-08-26T05:35:50Z",
+   "sha256": "c3b627e6408bdec9f87e4dcf5601b10c360b9e743259121fac5d78c112104164"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 selection stage 1",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/selection_stage1.txt",
+   "bytes": 583,
+   "mtime_utc": "2026-08-21T20:24:21Z",
+   "sha256": "64c3da115cb11587b1ecda761c53156b3614c24ab93409f91493485dd1f8ec0d"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 selection stage 2",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/selection_stage2.txt",
+   "bytes": 733,
+   "mtime_utc": "2026-08-21T20:45:53Z",
+   "sha256": "95a8a6c1a705568bb65fcc130a620e3566f706b26916420b6c7869097bd5126c"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run REAL_ln_deep_s20260821",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260821.json",
+   "bytes": 6249,
+   "mtime_utc": "2026-08-21T20:43:59Z",
+   "sha256": "5c870bf2e948dda868e872acbd254b59459aa86851065e01d5946ad55b9c3134"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run REAL_ln_s20260822",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260822.json",
+   "bytes": 6242,
+   "mtime_utc": "2026-08-21T20:23:33Z",
+   "sha256": "5f84bda2e5a8671519affcc0aff17975fd19f5ab745d6f7af250035465f3223e"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run REAL_ln_s20260824",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260824.json",
+   "bytes": 6245,
+   "mtime_utc": "2026-08-21T20:23:49Z",
+   "sha256": "60d4e0bcafe121e92323b0219a737846713bbbadeed424cb13cc61c8ead9f0e2"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run REAL_ln_s20260825",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260825.json",
+   "bytes": 6247,
+   "mtime_utc": "2026-08-21T20:23:34Z",
+   "sha256": "631cf6d7d89ad94ee396a77e090d87fd1b4e0811efcd59427a5c91efc433454b"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run REAL_ln_s20260827",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260827.json",
+   "bytes": 6243,
+   "mtime_utc": "2026-08-21T20:23:38Z",
+   "sha256": "5ebd16d904b4c65ff3265f0e279f170ef111fd6d7003087f67c211745332c35d"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run REAL_ln_deep_s20260828",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260828.json",
+   "bytes": 6240,
+   "mtime_utc": "2026-08-21T20:43:52Z",
+   "sha256": "7d7a982ddea32d0264d14aaf9d1169500b0149947d5cea766e2e8bcb6bb3c184"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run draws REAL_ln_deep_s20260821",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260821_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:43:59Z",
+   "sha256": "b107b3541ab20981bafc6423f346c059805b41845adfe127409152e86ca33e76"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run draws REAL_ln_s20260822",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260822_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:33Z",
+   "sha256": "63e0eeb086f95381d9c0474cf0d9798eb20c9234b901aca7f0cda6f62ba7a45a"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run draws REAL_ln_s20260824",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260824_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:49Z",
+   "sha256": "87f62679823fc8aadbd7577114d92ac9948f309ea46dccaac9e4717ab46070f1"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run draws REAL_ln_s20260825",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260825_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:34Z",
+   "sha256": "db0f3cfe80ac38de57645a1677a34324c39ba4cf68cb039d9b478c57a749af90"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run draws REAL_ln_s20260827",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_s20260827_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:23:38Z",
+   "sha256": "f9615487b6eb68895040d06b8198d5a5185836c83618019d77fe928c490a8447"
+  },
+  {
+   "role": "frozen-output",
+   "description": "CP-3 run draws REAL_ln_deep_s20260828",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260828_fdraws.npz",
+   "bytes": 1921022,
+   "mtime_utc": "2026-08-21T20:43:52Z",
+   "sha256": "0ff1d243c7e8bf3d11e1bef797001213f83c9dc7d4f2759941348ef26b07e065"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 excluded-and-disclosed run REAL_ln_deep_s20260823",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260823.json",
+   "bytes": 6241,
+   "mtime_utc": "2026-08-21T20:45:23Z",
+   "sha256": "708641eb27f3d4771115e031dd2b62949ef39d8e8bd7ce3e5b768fae75de6928"
+  },
+  {
+   "role": "record",
+   "description": "CP-3 excluded-and-disclosed run REAL_ln_deep_s20260826",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/REAL_ln_deep_s20260826.json",
+   "bytes": 6247,
+   "mtime_utc": "2026-08-21T20:43:14Z",
+   "sha256": "26cf21dd90b5977fdffd7670e59861d9ead8cd34867a7b1505d02d2e642d95c9"
+  },
+  {
+   "role": "record",
+   "description": "CONFIG_AMBIGUITY s26 mirror vs pooled",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/CONFIG_AMBIGUITY_s26mirror_vs_pooled.json",
+   "bytes": 1431,
+   "mtime_utc": "2026-08-21T23:37:58Z",
+   "sha256": "067a719eadb4282de820ee93d965a4bacbae7d14ffc99327547e7016662abfd5"
+  },
+  {
+   "role": "record",
+   "description": "ZDOMAIN estimands pooled",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v2_20260821/cp3_real/ZDOMAIN_estimands_pooled.json",
+   "bytes": 2784,
+   "mtime_utc": "2026-08-22T03:23:13Z",
+   "sha256": "c1faa2ac5c7e1183bfea30a6b31293de44df855b486aa69bd1eb90827eaaadb8"
+  },
+  {
+   "role": "superseded",
+   "description": "real_pack_v1 pooled candidate (defective g)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v1/cp3_reference/POOLED_ln_real_v1_SUPERSEDED.json",
+   "bytes": 10471,
+   "mtime_utc": "2026-08-21T20:13:01Z",
+   "sha256": "44a8c39df295ff1c5ecc4cdcf211b7a3736685fd1dffdc60f5028c102c424469"
+  },
+  {
+   "role": "ratified",
+   "description": "BH artifact of record (RATIFIED)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/track_c_tf_hz_h2cal_loa0_lya_gapc0.496_RATIFIED_20260826.json",
+   "bytes": 41040,
+   "mtime_utc": "2026-08-26T12:02:04Z",
+   "sha256": "62446b474ad2fe2f1bdf9f01be99bde2b9253f49b77c2c262348a4724466f4fe"
+  },
+  {
+   "role": "frozen-output",
+   "description": "BH source artifact gapc0.496",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/track_c_tf_hz_h2cal_loa0_lya_gapc0.496.json",
+   "bytes": 35781,
+   "mtime_utc": "2026-08-16T03:01:39Z",
+   "sha256": "90264a2264a8c22bd76d008c0c3b8079445b9edfb0f43642a4fdfac940ef6d55"
+  },
+  {
+   "role": "record",
+   "description": "H2 C_gap inference",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/H2_CGAP_INFERENCE.json",
+   "bytes": 2276,
+   "mtime_utc": "2026-08-16T02:56:52Z",
+   "sha256": "38dc7b3024f561d8cb3c7aa70cc4297d0b953c9806ddbbd96d360807a45665cb"
+  },
+  {
+   "role": "record",
+   "description": "architecture lock",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/PAPER1_ARCHITECTURE_LOCK.json",
+   "bytes": 4490,
+   "mtime_utc": "2026-08-26T11:55:09Z",
+   "sha256": "80a1210d87f59142a0ccdcd519b8df8867ea0a0ee27fd0560dbfdacad8418015"
+  },
+  {
+   "role": "superseded",
+   "description": "architecture lock superseded 2026-08-15 (BH 0.0934)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/PAPER1_ARCHITECTURE_LOCK_SUPERSEDED_20260815.json",
+   "bytes": 1792,
+   "mtime_utc": "2026-08-26T11:55:09Z",
+   "sha256": "3b413df4fdb4cb18789468a181c61d43bf4bee5569667fe95086dbccba7f5200"
+  },
+  {
+   "role": "record",
+   "description": "BH anchor [3.5,3.8)",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/diag_20260819/tf_hz_gapc0.496_zext35.json",
+   "bytes": 45893,
+   "mtime_utc": "2026-08-19T15:04:50Z",
+   "sha256": "e863aaf7538a64287e5e3aed05343e7cbdfcd4479f5135b0369bb015b6be63ec"
+  },
+  {
+   "role": "record",
+   "description": "BH transport envelope plus",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/diag_20260819/tf_hz_gapc0.496_envplus.json",
+   "bytes": 35890,
+   "mtime_utc": "2026-08-19T15:04:05Z",
+   "sha256": "0e9d65a490828c1fdc4c12f8b599861d0c71f1d20c59eb45deec5a5df82b6ed6"
+  },
+  {
+   "role": "record",
+   "description": "BH transport envelope minus",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/diag_20260819/tf_hz_gapc0.496_envminus.json",
+   "bytes": 35762,
+   "mtime_utc": "2026-08-19T15:04:22Z",
+   "sha256": "bbde225b6b1bc288f3c40afce8c44da9031e61f8aee34cfb852b1702888989c0"
+  },
+  {
+   "role": "record",
+   "description": "BH z>=5 tail audit",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/tail_ge5_audit.json",
+   "bytes": 740,
+   "mtime_utc": "2026-08-15T21:41:55Z",
+   "sha256": "89ff08bb65ac46dbf662466c70c3b8c0b6d5f9245a081d2c74b353681bd89b27"
+  },
+  {
+   "role": "record",
+   "description": "BH near-QSO strip sensitivity",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/NEARQSO_STRIP_SENSITIVITY.json",
+   "bytes": 920,
+   "mtime_utc": "2026-08-16T02:16:38Z",
+   "sha256": "d46da14d56af7a33667e1868900374e8e53ff54de444f8daea8849bbb7ca1413"
+  },
+  {
+   "role": "record",
+   "description": "collar convention audit",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/tf_hz/COLLAR_CONVENTION_AUDIT.json",
+   "bytes": 2030,
+   "mtime_utc": "2026-08-16T01:07:31Z",
+   "sha256": "89cfd3ed802b11a924bf8013a21afc78a29a52c1986042e04563f8e2ac9654f4"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armA_lya",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armA_lya.json",
+   "bytes": 4391,
+   "mtime_utc": "2026-08-15T21:12:38Z",
+   "sha256": "17e2d6a6ec717c5f5f4b4395e963bbf6fe9842543c96463ce19d8c52daf28f6e"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armA_lya_nobal",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armA_lya_nobal.json",
+   "bytes": 5726,
+   "mtime_utc": "2026-08-15T21:33:33Z",
+   "sha256": "ee38029f97e0be47df29540041cb131681881a76e9c2feb70377d7ccff3c0600"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armA_lyab",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armA_lyab.json",
+   "bytes": 4387,
+   "mtime_utc": "2026-08-15T21:12:40Z",
+   "sha256": "83fe687c304308eb8df0604658d3ebe4eb547e736dcc8c7d4986588359df9cfb"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armA_lyab_nobal",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armA_lyab_nobal.json",
+   "bytes": 5722,
+   "mtime_utc": "2026-08-15T21:33:35Z",
+   "sha256": "709cdce78709cccec5e3e084039901a6751d4da73ef02f3616b21bc0ebdc7a42"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armB_lya",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armB_lya.json",
+   "bytes": 4467,
+   "mtime_utc": "2026-08-15T21:12:49Z",
+   "sha256": "6d2e3b05af88bcfc2ec8fb8fa1ae37037546c50ebf5a356b6a6707db38988167"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armB_lya_nobal",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armB_lya_nobal.json",
+   "bytes": 5818,
+   "mtime_utc": "2026-08-15T21:33:26Z",
+   "sha256": "4b6d4f0ab92ffd88892fd2dc722bce29023dbc56c940b2854be7df0e14e070ab"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armB_lyab",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armB_lyab.json",
+   "bytes": 4465,
+   "mtime_utc": "2026-08-15T21:12:54Z",
+   "sha256": "caf94e4aacd552c25e392106f0b98eca9499b74cb17913b15806d22c2ee6e3f4"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table armB_lyab_nobal",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_armB_lyab_nobal.json",
+   "bytes": 5820,
+   "mtime_utc": "2026-08-15T21:33:31Z",
+   "sha256": "57d63da72201039b24acde68121f73c576646aa4fe89ddb2c9ad2d51e0e4d65c"
+  },
+  {
+   "role": "input",
+   "description": "H2 canonical table ab_transport",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_canonical_ab_transport.json",
+   "bytes": 3316,
+   "mtime_utc": "2026-08-15T21:13:59Z",
+   "sha256": "c4642c92e08d9dfc03f078291a95857569dfbbfe33b5123edc473d9dc1614616"
+  },
+  {
+   "role": "input",
+   "description": "H2 injected archive arm A",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_injected_armA.h5",
+   "bytes": 14653264,
+   "mtime_utc": "2026-08-15T19:18:04Z",
+   "sha256": "a85052c1de6a0193ea8497c856afe87365f407210d51c18ca9d24ef432dbbb14"
+  },
+  {
+   "role": "input",
+   "description": "H2 injected archive arm B",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_injected_armB.h5",
+   "bytes": 29331320,
+   "mtime_utc": "2026-08-14T15:12:22Z",
+   "sha256": "c94bbbde6764235113382a08d8e67ae0fe1e1d731bb9d85a02d7e55833113100"
+  },
+  {
+   "role": "input",
+   "description": "H2 realized plan arm A",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_realized_plan_armA.csv",
+   "bytes": 22221,
+   "mtime_utc": "2026-08-14T15:15:33Z",
+   "sha256": "daca9c994839e6f7edfe255e4909b800addb1d5f290e9c517d29224193195e67"
+  },
+  {
+   "role": "input",
+   "description": "H2 realized plan arm B",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/h2_realized_plan_armB.csv",
+   "bytes": 42228,
+   "mtime_utc": "2026-08-14T15:15:33Z",
+   "sha256": "a33d8eede8475c4e4ab8bbf066e0a62f29a5d49427d07c10dd5dcc63b01a43bb"
+  },
+  {
+   "role": "input",
+   "description": "H2 BAL TID drop list",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec/bal_bi_civ_tids.txt",
+   "bytes": 1021319,
+   "mtime_utc": "2026-08-15T21:19:33Z",
+   "sha256": "ea8884cb31ec454e8dd1e331418d99ebea70b6f3b8cb4b2588c0cb38cbbd081e"
+  },
+  {
+   "role": "input",
+   "description": "loa0 FP companion catalogue file 0-2",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/dlacat-v2.8.5-mockcat-0-2.fits",
+   "bytes": 144000,
+   "mtime_utc": "2026-06-15T23:21:47Z",
+   "sha256": "686dc162b5ba8d649bf75d1ce0ce48a25a703c11e568d122dab97554a3cea0be"
+  },
+  {
+   "role": "input",
+   "description": "loa0 FP companion catalogue file 2-4",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/dlacat-v2.8.5-mockcat-2-4.fits",
+   "bytes": 144000,
+   "mtime_utc": "2026-06-15T23:17:09Z",
+   "sha256": "d1ab230bfd7e59621311e83fb968d2137984a0455b83c1f8ffa58d77c026d587"
+  },
+  {
+   "role": "input",
+   "description": "loa0 FP companion catalogue file 4-6",
+   "path": "/scratch/cavestru_root/cavestru0/mfho/gl_loa0_fp_v1_20260615/outputs/dlacat-v2.8.5-mockcat-4-6.fits",
+   "bytes": 187200,
+   "mtime_utc": "2026-06-15T23:39:19Z",
+   "sha256": "6b0ed7671a6fe6af0694dc148ec38c827e0b1cb513e6845be95d6dfe9273a5b5"
+  },
+  {
+   "role": "record",
+   "description": "systematics ledger v2.3 r5",
+   "path": "/home/mfho/desi_gpy_dla_notes/figures/2026-08-21_freeze_pathB/ledger_v2p3_cp3.json",
+   "bytes": 17010,
+   "mtime_utc": "2026-08-26T11:55:23Z",
+   "sha256": "61b63611d2bf470d2efc0235c0e7c4929e325e9b1f822d5b7dc9c3e8ed1e15f8"
+  },
+  {
+   "role": "record",
+   "description": "CDDF recovery audit product",
+   "path": "/home/mfho/desi_gpy_dla_notes/figures/2026-08-26_sys_viz_preview/cddf_recovery_audit.json",
+   "bytes": 667644,
+   "mtime_utc": "2026-08-26T13:23:10Z",
+   "sha256": "7c40b962101ec78d8e9053fab237f3aec649f80ea06e50ea205d4f47594f94bf"
+  },
+  {
+   "role": "record",
+   "description": "artifact manifest cp3",
+   "path": "/home/mfho/desi_gpy_dla_notes/figures/2026-08-21_freeze_pathB/ARTIFACT_MANIFEST_cp3.md",
+   "bytes": 4502,
+   "mtime_utc": "2026-08-26T12:03:29Z",
+   "sha256": "6f14307ea61db23ae544f83f9ca84a06dedc33ecb41cb38ea1ac3063628214d3"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-0-171.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-0-171.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "7b9764f01fc348f3396b759d5c66894919f9225b47b5d78d75326b24b453af64"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-1026-1197.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-1026-1197.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "4583a3b184008c3b096f4740adbb6c8b6cf33fc007bc32bed28305b3b5137cb8"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-1197-1368.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-1197-1368.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "802044feee72078ac8e257a05c7c48d8dcdb60f9c1ef46ce1f12f630448de73a"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-1368-1539.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-1368-1539.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "dd9e3266c6694e3cd3280d37a1bd47d129671e884333f0af629ade3a24f41c87"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-1539-1710.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-1539-1710.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "1e4b4974628f692c2873f794c9173dd909106373d0eb54e8a3f399f8584e5a68"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-171-342.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-171-342.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "7e984abb630724c3119278a002a02e25ebdc1534af842734e52f286812b79b90"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-1710-1881.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-1710-1881.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "f0ca4a2b758813a8669d1939c61ee60d5a798887daeb0d3f1baedfe142b7c408"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-1881-2052.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-1881-2052.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "15b66a18e0a013acd62d52e1e95d733a461ec6342ca573c6073ec6eab6cf8d6c"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-2052-2223.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-2052-2223.fits",
+   "bytes": 34560,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "0e9c4899da456ad344b24d962deff87233a88a74f5ceaa81a0c1ca4c0ce631b1"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-2223-2394.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-2223-2394.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "7a9a7253df3ef9f5ec208df6f1459d8a5967fe8e92191966d382ec2326e39af9"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-2394-2565.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-2394-2565.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "a25d67e01f143a438414b1057df4ed65269223dd65faa621c7c684e215177d28"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-2565-2735.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-2565-2735.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "73f2b1f4c93e3c86615a313b4a8e0e0343811a7a846de8760d5ae12b96bdf3b6"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-342-513.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-342-513.fits",
+   "bytes": 34560,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "68fde57873eea8cca09b0c27d3284334f74dcd7d15d21aef5b648e423fdd99b7"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-513-684.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-513-684.fits",
+   "bytes": 34560,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "8ba98d504b94b35ba868cd568314a8463da02c3b49f237c8a03e50e098044760"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-684-855.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-684-855.fits",
+   "bytes": 37440,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "0a87695fb2e3342a32a453bbaa92c5a9cbebde08ecfb961354ac0323bddf48c7"
+  },
+  {
+   "role": "input",
+   "description": "high-z catalogue dlacat-loa-main-dark-hpx-855-1026.fits",
+   "path": "/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/gl_cddf_loa_hz_v1_20260813/outputs/dlacat-loa-main-dark-hpx-855-1026.fits",
+   "bytes": 34560,
+   "mtime_utc": "2026-08-14T13:50:10Z",
+   "sha256": "3f6f5a904fca1a4996071c61b2a5f75a7e216ffcb508a99f7b1374491098685c"
+  }
+ ]
+}
