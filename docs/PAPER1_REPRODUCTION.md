@@ -60,3 +60,10 @@ Reductions: `paper_figures/hbi_reduction.py` (path-weighted overlap reduction; `
 - The CP-1 sbatch of record was executed in two jobs at two commits (documentation-only diff); recorded in the committed copy's header.
 - `docs/REALDATA_ENV_PRESCRIPTION.md` item 5 ("G-A hard") predates the real-mode substitute; see its 2026-08-26 addendum.
 - Everything frozen is on scratch; the manifest is the durable record.
+
+## 10. Companion documents of the pre-tag review (2026-08-26)
+- `docs/PAPER1_BRANCH_TOPOLOGY.md` — the authoritative line, every branch/tag with role and disposition, and the finder-isolation verdict per production state (the finder inference code is byte-identical from the real-catalogue commit `84fa654` to HEAD).
+- `docs/PAPER1_PROVENANCE_DAG.md` — the artifact-production DAG from spectra/mocks to figures with producer, commit, configuration, inputs, outputs, seeds, hashes and reproducibility class per edge.
+- `docs/PAPER1_REPRODUCIBILITY_MATRIX.md` — the intermediate reproducibility matrix (BITWISE / NUMERICALLY / ARCHIVED-HASH-PINNED / NOT YET) and the test matrix of record.
+- `docs/HBI_ARCHITECTURE.md` — the future HBI package boundary.
+- Re-derivation of the deterministic intermediates: `sbatch slurm/greatlakes/production/paper1/run_reproduce_intermediates.sbatch` (`tools/paper1/reproduce_intermediates.py`, scratch work dir, never writes into frozen directories). Test profiles on a compute node: `PROFILE=hbi sbatch --export=ALL,PROFILE=hbi …/paper1/run_test_profile.sbatch`.
