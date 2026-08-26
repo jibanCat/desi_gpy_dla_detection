@@ -140,8 +140,12 @@ def main():
                  "--out", f"{W}/POOLED_ln_real_v2_20260821.json"], a.py_hbi, log)
         elif st == "zdomain":
             z = json.load(open(ZDOMAIN))
-            run(["-m", "CDDF_analysis.hbi_mcmc.cc_zdomain_estimand", "--pooled", POOLED, "--pack", PACK_V2,
-                 "--z-los", *[str(v) for v in z["z_los"]], "--out", f"{W}/ZDOMAIN_estimands_pooled.json"], a.py_hbi, log)
+            cmd = ["-m", "CDDF_analysis.hbi_mcmc.cc_zdomain_estimand", "--pooled", POOLED, "--pack", PACK_V2,
+                   "--z-los", *[str(v) for v in z["z_los"]], "--out", f"{W}/ZDOMAIN_estimands_pooled.json"]
+            lev = z.get("config_leverage_pct") or {}
+            if lev.get("config_run"):   # the recorded alternative-configuration run (s26 mirror) and chain
+                cmd += ["--config-run", lev["config_run"], "--chain", str(lev.get("chain", 0))]
+            run(cmd, a.py_hbi, log)
         elif st == "config":
             c = json.load(open(CONFIG))
             run(["-m", "CDDF_analysis.hbi_mcmc.cc_config_ambiguity", "--run", c["run"], "--chain", str(c["chain"]),
