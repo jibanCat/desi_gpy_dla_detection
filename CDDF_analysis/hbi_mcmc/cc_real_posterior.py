@@ -27,6 +27,7 @@ Usage:
 """
 from __future__ import annotations
 import argparse
+from CDDF_analysis.hbi_mcmc.provenance_util import run_config
 import json
 import os
 import subprocess
@@ -235,6 +236,7 @@ def main():
                          "mock-to-real central-value correction applied; "
                          "BH unchanged)"),
                thresholds=rep, reporting_bins=binrep, diagnostics=diag,
+               run_config=run_config(a),
                role=("FINAL guarded real-data HBI posterior — PI checkpoint-"
                      "10.8 explicit authorization; c=3300 observable-only "
                      "convention"))

@@ -33,6 +33,7 @@ Env: gpdla (no jax needed). Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import hashlib
 import json
 import os
@@ -316,7 +317,8 @@ def main():
                                "— identical blocks to the v2p1 mock packs",
             certification="CERT_2LPT0_OK (counts integer-exact + dX 1e-12 vs "
                           "the committed v2p1 2LPT-0 pack)",
-            code_commit=commit, date="2026-08-17")
+            code_commit=commit, date=_dt.date.today().isoformat(),
+            certification_ref_pack=str(getattr(a, "ref_pack", None)))
         with open(npz[:-4] + ".provenance.json", "w") as f:
             json.dump(prov, f, indent=1)
         print(json.dumps({k: v for k, v in prov.items()

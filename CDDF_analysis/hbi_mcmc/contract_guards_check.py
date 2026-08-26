@@ -37,6 +37,24 @@ from CDDF_analysis.hbi_mcmc.count_conserving_fold import (
     cc_fold_cmarginal, phi_from_surfaces, surface_masses)
 
 
+def ga_partition(pk, level, fp_share, level_tol):
+    """G-A verdict. On a REAL pack the truth block is the all-zero sentinel, so the
+    truth-point partition is undefined by construction: the level then measures the
+    FP-only fold (~0.16) and used to be recorded as a spurious FAIL that the CP-1
+    sbatch swallowed with `|| echo` (Paper-1 code review 2026-08-26). The real-data
+    substitute, G_A_real_mode, is evaluated by cc_real_posterior on the predictive
+    level of the fitted model; here the verdict is NOT_APPLICABLE, not FAIL."""
+    truth = np.asarray(getattr(pk, "truth_counts", np.zeros(1)), float)
+    if truth.sum() <= 0:
+        return dict(level_mu_over_obs=round(level, 4), fp_share=round(fp_share, 4), tol=level_tol,
+                    status="NOT_APPLICABLE_REAL_PACK",
+                    note="truth_counts is the all-zero real-data sentinel; the truth-point partition "
+                         "is undefined; G_A_real_mode in cc_real_posterior is the guard of record")
+    ga_ok = abs(level - 1.0) <= level_tol
+    return dict(level_mu_over_obs=round(level, 4), fp_share=round(fp_share, 4), tol=level_tol,
+                status="PASS" if ga_ok else "FAIL")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
@@ -61,11 +79,8 @@ def main():
     mu, parts = cc_fold_cmarginal(pk, theta, lam)
     level = float(mu.sum() / obs)
     fp_share = float(parts["fp"].sum() / mu.sum())
-    ga_ok = abs(level - 1.0) <= a.level_tol
-    report["G_A_partition"] = dict(
-        level_mu_over_obs=round(level, 4), fp_share=round(fp_share, 4),
-        tol=a.level_tol, status="PASS" if ga_ok else "FAIL")
-    fail |= not ga_ok
+    report["G_A_partition"] = ga_partition(pk, level, fp_share, a.level_tol)
+    fail |= report["G_A_partition"]["status"] == "FAIL"
 
     # G-CC count conservation for a candidate representation
     if a.cand_npz:

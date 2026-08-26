@@ -22,6 +22,8 @@ serialized artifact from cc_real_posterior run records:
 """
 from __future__ import annotations
 import argparse
+import glob
+from CDDF_analysis.hbi_mcmc.provenance_util import run_config
 import hashlib
 import json
 import os
@@ -116,8 +118,19 @@ def main(argv=None):
     ap.add_argument("--rhat-max", type=float, default=1.10)
     ap.add_argument("--div-max", type=int, default=10)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--expect-pack-sha256", default=None,
+                    help="refuse unless every run's pack has this sha256 (the frozen-pack guard)")
+    ap.add_argument("--allow-superseded", action="store_true",
+                    help="pool runs from a directory carrying a SUPERSEDED*STATUS*.json sidecar (never for a freeze)")
     a = ap.parse_args(argv)
     rule = dict(rhat_max=a.rhat_max, div_max=a.div_max)
+    # Paper-1 code review 2026-08-26: real_pack_v1/ is a complete same-named shadow of the
+    # frozen battery (defective g); refuse superseded directories unless told otherwise.
+    for p in list(a.runs) + list(a.deep):
+        side = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(p)), "SUPERSEDED*STATUS*.json")))
+        if side and not a.allow_superseded:
+            raise SystemExit(f"refusing to pool {p}: its directory carries a superseded-status sidecar {side[0]} "
+                             f"(pass --allow-superseded only for a diagnostic re-pool)")
     recs = []
     for p in a.runs:
         d = json.load(open(p)); recs.append(dict(seed=_seed_of(p), deep=False, file=p, **{k: d[k] for k in ("diagnostics", "guards")}))
@@ -128,6 +141,8 @@ def main(argv=None):
     if len(packs) != 1:
         raise SystemExit(f"runs span {len(packs)} packs — refusing to pool")
     pack_path = packs.pop()
+    if a.expect_pack_sha256 is not None and _sha(pack_path) != a.expect_pack_sha256:
+        raise SystemExit(f"pack {pack_path} sha256 != --expect-pack-sha256 — refusing to pool against the wrong pack")
     if sel["needs_deep_rerun"]:
         print("DEEP RERUN NEEDED for seeds:", sel["needs_deep_rerun"])
     if not sel["included"]:
@@ -179,7 +194,14 @@ def main(argv=None):
                selection=sel, draw_index=index,
                estimand="POSTERIOR_MEDIAN_CI (committed reduce_f_posterior)",
                thresholds=thresholds, reporting_bins=binrep, perz_paper1=perz,
-               inputs={r["file"]: _sha(r["file"][:-5] + "_fdraws.npz") for r in sel["included"]})
+               # `inputs` is kept for schema continuity with the frozen artifact: its VALUES are the
+               # sha256 of each run's _fdraws.npz, keyed by the run JSON path (an audit trap noted
+               # 2026-08-26); the two explicit blocks below say which file each hash belongs to.
+               inputs={r["file"]: _sha(r["file"][:-5] + "_fdraws.npz") for r in sel["included"]},
+               inputs_note="inputs[<run.json>] = sha256(<run>_fdraws.npz); see inputs_fdraws_sha256 / inputs_json_sha256",
+               inputs_fdraws_sha256={r["file"][:-5] + "_fdraws.npz": _sha(r["file"][:-5] + "_fdraws.npz") for r in sel["included"]},
+               inputs_json_sha256={r["file"]: _sha(r["file"]) for r in sel["included"]},
+               run_config=run_config(a))
     json.dump(out, open(a.out, "w"), indent=1)
     np.savez(a.out[:-5] + "_fdraws.npz", f=f, ntrue_edges=ntrue, zf_edges=zf,
              draw_index_seeds=np.array([i["seed"] for i in index]),

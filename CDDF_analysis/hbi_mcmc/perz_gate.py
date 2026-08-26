@@ -110,6 +110,8 @@ def main():
         print(f"{r['status']:4s} {r['file']:48s} allz {r['allz']['ge20p0']:+.2f}/{r['allz']['ge20p3']:+.2f} "
               f"B3res {r['named_residual_B3_ge20p3']} fails={r['fails']}")
     print("family:", fam_status, "battery:", out["battery_status"])
+    print(f"criteria: {CRIT.get('version')}; bins exempt from the >=20.3 per-bin band: {CRIT.get('bin_20p3_exempt')} "
+          f"(the named B3 residual is carried as ledger line L1, not gated)")
     if a.out:
         json.dump(out, open(a.out, "w"), indent=1)
 

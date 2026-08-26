@@ -24,6 +24,7 @@ Env: gpdla-hbi. Usage:
 """
 from __future__ import annotations
 import argparse
+from CDDF_analysis.hbi_mcmc.provenance_util import run_config
 import json
 
 import numpy as np
@@ -447,6 +448,7 @@ def main():
                divergences=div, thresholds=rep, reporting_bins=binrep,
                perz_recovery=perz,
                diagnostics=diag,
+               run_config=run_config(a),
                role=("MOCK-ONLY posterior validation of the adopted "
                      "count-conserving operator; kernel fixed, carrier "
                      "post-hoc; NOT a claim-grade run"))
