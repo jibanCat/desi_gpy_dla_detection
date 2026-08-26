@@ -60,7 +60,7 @@ _LYA_AA = 1215.6701
 _C_KMS = _C_CGS / 1e5  # speed of light in km/s
 
 # numpy 2.x renamed trapz → trapezoid; older versions only have trapz.
-_trapz = getattr(np, "trapezoid", np.trapz)
+_trapz = getattr(np, "trapezoid", None) or getattr(np, "trapz")   # numpy >= 2.4 removed np.trapz; the eager default evaluated it (2026-08-26)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,2 @@
+tests/test_selection.py
+tests/test_zestimation.py

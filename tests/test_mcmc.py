@@ -2,6 +2,8 @@
 Test the MCMC results
 """
 from .test_model import prepare_dla_model
+import pytest
+pytest.importorskip("corner", reason="optional plotting dependency of the clustering-prior MCMC diagnostics (not part of the finder production path)")
 from examples.plot_mcmc import plot_corner, plot_sample_this_mu
 
 
