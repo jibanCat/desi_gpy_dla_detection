@@ -120,8 +120,26 @@ def test_rebind_reproduces_build_R_emp_byte_for_byte(remp_ingredients):
         assert np.array_equal(ess_rb[tier], ess_ref[tier]), f"ESS tier {tier} differs"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "TRACED ALGORITHMIC CHANGE, not drift (pre-tag review 2026-08-26, item 3b): the "
+        "cached r_emp kappa (2026-06-14 20:40, SLURM 51783365, uncommitted tree committed "
+        "as 62d38cb; truth_nhi_floor 20.3 / host floor 19.0) predates commit 0ecfeea "
+        "(2026-08-16, hierarchical tilt match = the PI-ruled G-B fix of 2026-08-17), which "
+        "is the ONLY change to load_and_cut_catalog since the cache and rewrites exactly "
+        "the NHI_TILT_HOST assignment that compute_R_response trains on.  The training-pair "
+        "set and its (x_hat, x_true) values changed (measured 2026-08-26, SLURM 58769257: "
+        "0.48 % of cells, max|Δ| 3.1e-4, column sums 520688.999471 vs .999381).  The R_emp "
+        "kernel is the retired WALL-1 lane and is NOT a frozen Paper-1 input; the frozen "
+        "response operator adopted_response_v1p1 was rebuilt under the hierarchical match.  "
+        "strict=True: an unexpected PASS would mean the matcher semantics regressed to the "
+        "pre-fix behaviour.  See docs/PAPER1_PROVENANCE_DAG.md §A."),
+)
 def test_rebind_reproduces_cached_npz_byte_for_byte(remp_ingredients):
-    """The re-bind reproduces the on-disk frozen r_emp kappa to bit precision."""
+    """The re-bind reproduces the on-disk frozen r_emp kappa to bit precision.
+
+    Expected to FAIL since 0ecfeea (see the xfail reason); kept as a strict sentinel."""
     if not os.path.exists(CACHED_NPZ):
         pytest.skip(f"cached r_emp npz absent: {CACHED_NPZ}")
     from CDDF_analysis.hbi.run_remp_kernel import (

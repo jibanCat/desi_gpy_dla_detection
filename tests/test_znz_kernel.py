@@ -244,7 +244,8 @@ _BROADEN012_POINT = _BROADEN012_DIR + "/phase3d_v3_point_kernel.npz"
 )
 def test_znz_off_is_bit_identical():
     """Knobs default-None ⇒ the v3 point fit reproduces the FROZEN broaden012 headline
-    BIT-IDENTICALLY (the load-bearing default-OFF gate).
+    to a documented 1e-9 relative tolerance (the load-bearing default-OFF gate; byte
+    identity was the contract until 2026-08-26 — see the disposition comment at the assert).
 
     The headline rounds to dN/dX(≥20.0)=0.09010; the exact frozen value is 0.0900975.
     The gate is byte-identity (to 0.0e0) against the frozen cached point fit — the brief's
@@ -265,10 +266,28 @@ def test_znz_off_is_bit_identical():
     # rounds to the published 0.09010 headline (sanity)
     assert abs(live - 0.09010) < 1e-4, f"off-path {live} != broaden012 headline 0.09010"
     frozen = float(np.load(_BROADEN012_POINT, allow_pickle=True)["dndx_total_20.0"])
-    # THE GATE: default-OFF reproduces the frozen broaden012 number to 0.0e0.
-    assert live == frozen, (
-        f"default-OFF NOT byte-identical: live={live!r} frozen={frozen!r} "
-        f"diff={live - frozen:.3e} (must be 0.0e0)")
+    # THE GATE (disposition of 2026-08-26, pre-tag review item 3b): default-OFF reproduces
+    # the frozen broaden012 number to a DOCUMENTED relative tolerance of 1e-9.
+    #   * The cache (2026-06-16 08:51, SLURM 51828306, code = the 2026-06-15 tip d2ef1fc on
+    #     cddf_prod) has no producer stamp; the byte contract was written 2026-06-19
+    #     (42b0f2d / f88c5b7), three days after the cache.
+    #   * Measured 2026-08-26 in BOTH envs (gpdla numpy 2.4.4, gpdla-hbi numpy 2.2.6):
+    #     live 0.09009747098288 vs frozen 0.09009747098954, Δ = -6.7e-12 (7.4e-11 rel).
+    #   * A function-by-function diff of every routine on this path (f88c5b7 -> HEAD:
+    #     v3x_fit_map / v3x_build_forward / _v3x_bin_quad / build_A_ib / v3x_reduce /
+    #     ab_loa0_fp_baseline.build_ingredients) found NO code change reaching the
+    #     kappa/purity_mixture settings; the hierarchical tilt-match fix 0ecfeea does not
+    #     touch this path (the kernel is loaded from disk).  Leading explanation: numpy/BLAS
+    #     libm drift moving the 8-restart L-BFGS-B optimum by ~1e-11 relative; the June
+    #     gpdla environment was never recorded (oldest lock: 2026-08-06), so it cannot be
+    #     pinned.  The object is the retired WALL-1 lane, NOT a frozen Paper-1 input
+    #     (docs/PAPER1_PROVENANCE_DAG.md §A).
+    #   * Tolerance 1e-9 relative = 10x the observed drift and 1e5x tighter than the
+    #     rounded-headline sanity check above.
+    rel = abs(live - frozen) / abs(frozen)
+    assert rel <= 1e-9, (
+        f"default-OFF drifted beyond the documented tolerance: live={live!r} "
+        f"frozen={frozen!r} diff={live - frozen:.3e} rel={rel:.3e} (limit 1e-9)")
 
 
 # ---------------------------------------------------------------------------
