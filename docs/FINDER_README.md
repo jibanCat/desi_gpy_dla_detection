@@ -1,0 +1,580 @@
+# GP-DLA finder for DESI quasar spectra, in Python
+
+> **Paper-1 (2026-08-26 freeze) readers:** the DESI Y3 DLA CDDF measurement of record is the hierarchical posterior described in **`docs/PAPER1_REPRODUCTION.md`** — not the feed-forward headline that `CDDF_analysis/hbi/REPRODUCE_HEADLINE.md` reproduces, and not the finder quickstart below.
+
+
+![rainbow_dlas](https://jibancat.github.io/images/RdBu_dlas.png)
+
+This code repository contains code to completely reproduce the DLA
+catalog reported in
+
+> R Garnett, S Ho, S Bird, and J Schnedier. Detecting Damped Lyman-α
+> Absorbers with Gaussian Processes. [arXiv:1605.04460
+> [astro-ph.CO]](https://arxiv.org/abs/1605.04460),
+
+and
+
+> M-F Ho, S Bird, and R Garnett. Detecting Multiple DLAs per
+> Spectrum in SDSS DR12 with Gaussian Processes. [arXiv:2003.11036
+> [astro-ph.CO]](https://arxiv.org/abs/2003.11036),
+
+all the intermediate data products including the Gaussian
+process null model could be acquired via running the MATLAB version of the code: https://github.com/rmgarnett/gp_dla_detection/.
+The design of this repo assumes users already had the learned GP model and the users want to apply the trained model on new quasar spectra.
+
+The parameters are tunable in the `gpy_dla_detection.set_parameters.Parameters` as instance attributes. The provided parameters should
+exactly reproduce the catalog in the work of Ho-Bird-Garnett (2020);
+however, you may feel free to modify these choices as you see fit.
+
+## Quickstart — run the finder, get the CDDF
+
+The whole point of this repo in four steps: from a DESI spectra release to the DLA
+column-density distribution f(N_HI), line density dN/dX, and Ω_DLA. (First get the data +
+learned model — next section — and build the C extension.)
+
+**1. Install** (once):
+
+```bash
+pip install -e .            # + build the fast Voigt C extension, see "Compilation" below
+```
+
+**2. Run the DLA finder** on a DESI healpix release → one HDF5 per healpix:
+
+```bash
+python desi-DLAGP.py \
+    --qsocat  /path/to/zcat.fits \
+    --release iron \
+    --outdir  /path/to/output
+```
+
+`--qsocat`, `--release` (the DESI redux, e.g. `iron`), and `--outdir` are required. For a
+mock catalog add `--mocks --mockdir /path/to/mock`. Every other knob defaults to the
+standard multi-DLA run — the full list (and the sub-DLA / LLS run modes) is in the
+"Run GP DLA finder" and "Run modes" sections below.
+
+**3. Combine** the per-healpix outputs into one catalog:
+
+```bash
+python combine_processed_h5.py \
+    --processed_dir /path/to/output \
+    --load_catalog  /path/to/zcat.fits \
+    --catalog       /path/to/zcat.fits \
+    --output_file   combined.h5
+```
+
+`--load_catalog` is the FITS whose `TARGETID`s are kept (the quasar catalog itself works);
+`--catalog` supplies the healpix list. For **mock** runs pass `--mock` instead (healpix are
+read straight from the output folder, no `--catalog` needed).
+
+**4. Get the CDDF** — f(N_HI), dN/dX, Ω_DLA (tables + plots):
+
+```bash
+python desi_cddf.py \
+    --processed_file combined.h5 \
+    --sample_file  data/dr12q/processed/dla_samples_a03.mat \
+    --catalog_file data/dr12q/processed/catalog.mat \
+    --output_prefix cddf_out
+```
+
+`cddf_out*` now holds the dN/dX, Ω_DLA, and f(N_HI) results. That's the plain
+"find DLAs → get the CDDF" path.
+
+> Reproducing the calibrated **DESI-LoA paper headline** (catalog-HBI dN/dX·Ω) is a
+> separate, more involved pipeline — see `CDDF_analysis/hbi/REPRODUCE_HEADLINE.md`.
+
+Full details (data downloads, run modes, all options) are in the sections below.
+
+## Downloading the external DLA catalogues and the learned model
+
+First we download the raw catalog data (requires both `wget` and `gawk`):
+
+    # in shell
+    cd data/scripts
+    ./download_catalogs.sh
+    ./download_gp_files.sh
+
+## Install the Python package
+
+Install in editable mode so the modules import from **any** working directory (no more
+running only from the repo root):
+
+```bash
+pip install -e .
+```
+
+This makes `import gpy_dla_detection ...`, `from CDDF_analysis.hbi import ...`,
+`import run_bayes_select`, etc. resolve everywhere. The fast Voigt C extension
+(`_voigt.so`) is a separate build — see the next section.
+
+## Compilation and Installation Guide for C Helper Functions
+
+> Warning: If you don't compile the C voigt function, you automatically fall back to the slower Python version.
+
+The processing code uses a C helper function `gpy_dla_detection/ctypes_voigt.c` to efficiently compute Voigt profiles. This requires the `libcerf` library to be installed. Below are the steps for compiling `libcerf` from source and setting up the environment.
+
+1. Step 1: Compile `libcerf` from Source
+
+Navigate to your home directory:
+
+```bash
+cd $HOME
+git clone https://jugit.fz-juelich.de/mlz/libcerf.git
+cd libcerf
+mkdir build
+cd build
+cmake ..
+make
+ctest
+make install DESTDIR=~/.local/
+```
+
+2. Step 2: Compile the C Helper Function
+
+Navigate to the directory where the `desi_gpy_dla_detection` repository is located:
+
+```bash
+cd /path/to/desi_gpy_dla_detection/gpy_dla_detection
+```
+
+Compile the C file using the installed `libcerf`:
+
+```bash
+cc -fPIC -shared -o _voigt.so ctypes_voigt.c -I$HOME/.local/usr/local/include -L$HOME/.local/usr/local/lib64 -lcerf
+```
+
+3. Step 3: Set Up the Environment
+
+Update the LD_LIBRARY_PATH to include the path to the compiled libcerf library:
+
+```bash
+echo 'export LD_LIBRARY_PATH=$HOME/.local/usr/local/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+```
+
+- Replace `/path/to/desi_gpy_dla_detection` with the actual path where the code repository is located.
+- Ensure that the cc compiler and other necessary build tools (like `cmake`) are installed on your system.
+
+## Run GP DLA finder for DESI like .fits file
+
+We provide a simple Python script, `desi-DLAGP.py` , to reproduce the DLA catalog used in DESI BAO analysis.
+
+To run this Python script, do:
+
+```bash
+
+# Ensure the environment is loaded
+source /global/cfs/cdirs/desi/software/desi_environment.sh main
+
+# Set default values for variables if they are not provided
+QSOCAT="${QSOCAT:-/path/to/quasar/catalog/zcat.fits}"
+RELEASE="${RELEASE:-v5.9.5}"
+PROGRAM="${PROGRAM:-dark}"
+SURVEY="${SURVEY:-main}"
+MOCKDIR="${MOCKDIR:-path/to/mock}"
+OUTDIR="${OUTDIR:-/path/to/savedir}"
+BALMASK="${BALMASK:-false}"
+
+LEARNED_FILE="${LEARNED_FILE:-data/dr12q/processed/learned_qso_model_lyseries_variance_wmu_boss_dr16q_minus_dr12q_gp_851-1421.mat}"
+CATALOG_NAME="${CATALOG_NAME:-data/dr12q/processed/catalog.mat}"
+LOS_CATALOG="${LOS_CATALOG:-data/dla_catalogs/dr9q_concordance/processed/los_catalog}"
+DLA_CATALOG="${DLA_CATALOG:-data/dla_catalogs/dr9q_concordance/processed/dla_catalog}"
+DLA_SAMPLES_FILE="${DLA_SAMPLES_FILE:-data/dr12q/processed/dla_samples_a03.mat}"
+SUB_DLA_SAMPLES_FILE="${SUB_DLA_SAMPLES_FILE:-data/dr12q/processed/subdla_samples.mat}"
+MIN_Z_SEPARATION="${MIN_Z_SEPARATION:-3000.0}"
+PREV_TAU_0="${PREV_TAU_0:-0.00554}"
+PREV_BETA="${PREV_BETA:-3.182}"
+MAX_DLAS="${MAX_DLAS:-3}"
+PLOT_FIGURES="${PLOT_FIGURES:-1}"
+MAX_WORKERS="${MAX_WORKERS:-32}"               # Reduced for debug
+BATCH_SIZE="${BATCH_SIZE:-313}"               # Smaller batch size for debug
+LOADING_MIN_LAMBDA="${LOADING_MIN_LAMBDA:-800}"
+LOADING_MAX_LAMBDA="${LOADING_MAX_LAMBDA:-1550}"
+NORMALIZATION_MIN_LAMBDA="${NORMALIZATION_MIN_LAMBDA:-1425}"
+NORMALIZATION_MAX_LAMBDA="${NORMALIZATION_MAX_LAMBDA:-1475}"
+MIN_LAMBDA="${MIN_LAMBDA:-850.75}"
+MAX_LAMBDA="${MAX_LAMBDA:-1420.75}"
+DLAMBDA="${DLAMBDA:-0.25}"
+K="${K:-20}"
+MAX_NOISE_VARIANCE="${MAX_NOISE_VARIANCE:-9}"
+LEVEL2_START="${LEVEL2_START:-0}"
+LEVEL2_END="${LEVEL2_END:-1}"                 # Reduced range for quick debug
+
+FIGURE_DIR="${FIGURE_DIR:-figures/}"
+
+# Run the Python script with srun
+python desi-DLAGP.py \
+--qsocat "$QSOCAT" \
+--release "$RELEASE" \
+--program "$PROGRAM" \
+--survey "$SURVEY" \
+--mocks \
+--mockdir "$MOCKDIR" \
+$(if [ "$BALMASK" == "true" ]; then echo "--balmask"; fi) \
+--outdir "$OUTDIR" \
+--learned_file "$LEARNED_FILE" \
+--catalog_name "$CATALOG_NAME" \
+--los_catalog "$LOS_CATALOG" \
+--dla_catalog "$DLA_CATALOG" \
+--dla_samples_file "$DLA_SAMPLES_FILE" \
+--sub_dla_samples_file "$SUB_DLA_SAMPLES_FILE" \
+--min_z_separation "$MIN_Z_SEPARATION" \
+--prev_tau_0 "$PREV_TAU_0" \
+--prev_beta "$PREV_BETA" \
+--max_dlas "$MAX_DLAS" \
+--plot_figures "$PLOT_FIGURES" \
+--max_workers "$MAX_WORKERS" \
+--batch_size "$BATCH_SIZE" \
+--loading_min_lambda "$LOADING_MIN_LAMBDA" \
+--loading_max_lambda "$LOADING_MAX_LAMBDA" \
+--normalization_min_lambda "$NORMALIZATION_MIN_LAMBDA" \
+--normalization_max_lambda "$NORMALIZATION_MAX_LAMBDA" \
+--min_lambda "$MIN_LAMBDA" \
+--max_lambda "$MAX_LAMBDA" \
+--dlambda "$DLAMBDA" \
+--k "$K" \
+--max_noise_variance "$MAX_NOISE_VARIANCE" \
+--level2_start "$LEVEL2_START" \
+--level2_end "$LEVEL2_END" \
+--figure_dir "$FIGURE_DIR"
+```
+
+## Run modes: DLA, Sub-DLA, and LLS
+
+The pipeline supports three absorber run modes selected via the
+`--single_absorber_model` flag and the sample file you provide.
+
+### DLA run (default — multi-DLA, log NHI > 20.3)
+
+The standard run mode.  Models up to `max_dlas` (default 3) DLAs per spectrum.
+Includes a Sub-DLA model as an alternative to the Null model.
+
+```bash
+python desi-DLAGP.py \
+  --dla_samples_file data/dr12q/processed/dla_samples_a03.mat \
+  --sub_dla_samples_file data/dr12q/processed/subdla_samples.mat \
+  --max_dlas 3 \
+  # (do NOT pass --single_absorber_model)
+  ...
+```
+
+`model_posteriors` output layout (shape N × 5 for max_dlas=3):
+```
+col 0 → P(Null | D)       — no absorber
+col 1 → P(SubDLA | D)     — log NHI ∈ [19, 20.3]
+col 2 → P(DLA(1) | D)     — 1 DLA (log NHI > 20.3)
+col 3 → P(DLA(2) | D)     — 2 DLAs
+col 4 → P(DLA(3) | D)     — 3 DLAs
+```
+
+Sample files: `dla_samples_a03.mat` is the Ho+2020 QMC grid (log NHI ∈ [20.3, 23]).
+
+### Sub-DLA run (single-absorber, log NHI ∈ [19, 20.3])
+
+Set `--single_absorber_model` and provide sub-DLA QMC samples generated from
+`gpy_dla_detection/generate_samples.py` (Prochaska+2014 prior).
+
+```bash
+# Generate sub-DLA samples (one-time):
+python -m gpy_dla_detection.generate_samples --mode subdla \
+  --output data/dr12q/processed/subdla_samples_pw14.mat
+
+# Run inference:
+python desi-DLAGP.py \
+  --sub_dla_samples_file data/dr12q/processed/subdla_samples_pw14.mat \
+  --single_absorber_model \
+  --max_dlas 1 \
+  ...
+```
+
+`model_posteriors` output layout (shape N × 2):
+```
+col 0 → P(Null | D)       — no absorber
+col 1 → P(Absorber | D)   — 1 sub-DLA (log NHI ∈ [19, 20.3])
+```
+
+### LLS run (single-absorber, log NHI ∈ [17.2, 19])
+
+Same as sub-DLA run but with LLS samples.
+
+```bash
+# Generate LLS samples (one-time):
+python -m gpy_dla_detection.generate_samples --mode lls \
+  --output data/dr12q/processed/lls_samples_pw14.mat
+
+# Run inference:
+python desi-DLAGP.py \
+  --sub_dla_samples_file data/dr12q/processed/lls_samples_pw14.mat \
+  --single_absorber_model \
+  --max_dlas 1 \
+  ...
+```
+
+### Quick single-spectrum demo
+
+For a self-contained test with the London mock spectra included in the repo:
+
+```bash
+python examples/demo_desi_spectrum.py --num-spectra 3
+```
+
+This requires the London mock FITS and the SDSS DR16Q learned GP model.
+See `examples/demo_desi_spectrum.py` for the full data file list.
+
+### Key differences between run modes
+
+| Setting | DLA run | Sub-DLA run | LLS run |
+|---------|---------|-------------|---------|
+| `--single_absorber_model` | (not set) | set | set |
+| `--max_dlas` | 3 | 1 | 1 |
+| log NHI range | 20.3–23 | 19–20.3 | 17.2–19 |
+| Sample file | `dla_samples_a03.mat` | PW14 subdla | PW14 lls |
+| `model_posteriors` cols | 5 (N+SubDLA+3×DLA) | 2 (N+1×Absorber) | 2 (N+1×Absorber) |
+| `sub_dla` in DLACatalogue | True | False | False |
+
+**IMPORTANT**: When loading results in `DLACatalogue` (`CDDF_analysis/calc_cddf.py`),
+set `sub_dla=True` for DLA runs and `sub_dla=False` for sub-DLA/LLS runs.
+This controls the `model_posteriors` column offset used when computing
+p(DLA) = sum of DLA columns.
+
+## Per-spectrum mean-flux calibration: `--enable_tau_eb` (optional)
+
+Production hardcodes the Lyα mean-flux prior to τ_0 = 0.00246
+(Turner+2024). On Y3 mocks this leaves a +0.13 dex median DLA-regime
+N_HI bias. Passing `--enable_tau_eb 1` to `desi-DLAGP.py` runs a
+per-spectrum empirical-Bayes fit to pick τ_0 from a small grid before
+each inference; on n=5000 random 2LPT spectra this drops the median
+DLA-regime bias to +0.04 dex (-65 %) and the no-DLA false-positive
+rate to 1.5 % (-35 %), with no measurable cost overhead (the τ-EB
+step is ~1 % of the bayes step, and at the higher τ values it picks
+the bayes early-stopping kicks in more often, often yielding ENABLED
+≤ BASELINE wall time).
+
+```
+desi-DLAGP.py --enable_tau_eb 1 ...
+              [--tau_eb_factors 0.5 1.0 1.5 2.0 3.0 4.0 5.0 6.0]
+              [--tau_eb_apply_hcd_mask 0]    # default OFF
+              [--tau_eb_objective null]      # or "dla"
+```
+
+The flag is **default OFF**, so existing pipelines are unaffected
+unless explicitly enabled. Algorithm + figures + per-mock results:
+
+- `docs/tau_eb_hcd_mask.md` — recipe walkthrough + demo figure
+- `docs/stories/tau_eb_story_{2lpt,london,saclay}.md` — per-mock results
+- `docs/notes/2026-04-30_tau_eb_phase_b_5k_2lpt.md` — 5000-spectrum
+  validation
+- `docs/notes/2026-04-29_bayesian_correctness_synthesis.md` — full
+  hypothesis ledger that motivated this fix
+
+The HCD-mask variant of the recipe (`--tau_eb_apply_hcd_mask 1`) was
+the original implementation; at population scale it was found to
+over-correct and is no longer the default. See
+`docs/notes/2026-04-29_tau_eb_n90_unbiasedness.md` for the
+falsification.
+
+## End-to-end cataloguing procedure (inference → final combined catalog)
+
+How a production run becomes a single shareable, flagged catalog FITS. Cluster
+drivers live in `slurm/nersc/production/` (NERSC) and `slurm/greatlakes/production/`
+(GreatLakes); the combine/flag/package/eval tools below are cluster-agnostic.
+
+**1. Run inference** (one `sbatch` per window; each writes per-healpix
+`processed-spectra-16-*.h5` + per-task `dlacat-*.fits` slices into `OUTDIR`):
+```bash
+bash slurm/nersc/production/launch_nersc.sh <flavour>.env --start 0 --end <N_hpx> --window <W> --time 08:00:00
+# always --dry-run first. --window sets files(or hpx)/task -> per-sbatch wall (fit the QOS limit).
+```
+
+**2. Verify completeness** (do NOT rely on combine's slice check alone).
+*Mocks* — per-healpix presence check (`resume_positions.py` is **mock-only**; it walks the `spectra-16/` tree):
+```bash
+python slurm/nersc/production/resume_positions.py --mockdir <MOCKDIR> --procdir <OUTDIR>/figures/processed --summary
+```
+*Real data (LOA/Matterhorn — no `MOCKDIR`)*: the authoritative gate is
+`examples/combine_dlacat.py --expect-positions <N_hpx> --fail-on-gap` (also run by step 3).
+A `not_done` position is a **real** gap only if that healpix has `z>2` QSOs (else it is a
+benign empty healpix — its only QSOs are below the search redshift). Refill a true gap
+(idempotent overwrite): `launch_nersc.sh <flavour>.env --outdir <OUTDIR> --start <idx> --end <idx+1> --window 1`.
+
+**3. Package → the final combined catalog** (combine → flag → stamp → README → optional share):
+```bash
+bash slurm/nersc/production/package_catalog.sh \
+    --rundir <RUNDIR> --release <REL> --bal-cat <bal_cat.fits> --expect-positions <N_hpx> \
+    [--purity P --completeness C] [--share-to <CFS dir>]
+```
+This runs, in order:
+- `examples/combine_dlacat.py` — glob all `dlacat-*.fits` slices → one FITS, gap-checked (`--fail-on-gap`).
+- `tools/postprocess/add_dla_flags.py` — add `LYBETA_FLAG`, `BAL_FLAG`, `NHI_CONSISTENCY_FLAG`,
+  `PDLA_SATURATED_FLAG` (+ `LYBETA_PARENT_*`) and fold the `DLAFLAG` bitmask (`==0` = clean).
+- **clip `P_DLA`/`P_NULL` to [0,1]** (raw inference overshoots 1 by ~1e-13; header `PDLACLIP=T`)
+  and stamp provenance into the FITS header (`CODECMT`, `COMBTOOL`, `FLAGTOOL`, `LYBDZ`, `SRCRUN`, `NROWS`, …).
+  The generated README documents the data conventions (`P_DLA` clip, the `-1` "not-computed" sentinel
+  in `NHI_ERR`/`Z_DLA_ERR`, `DLAFLAG==0` = clean).
+- copy `BASELINE.env` (resolved config) + write `README.md`.
+
+Output bundle: **`dlacat-<release>-mockcat.fits`** + `README.md` + `BASELINE.env`. **Data kind:**
+`package_catalog.sh` takes `--data-kind {mock,real}` (default `mock`). The default `mock` path is
+**byte-identical** to the historical packaging — it emits `dlacat-<release>-mockcat.fits` and a
+"mock validation" README. For a **real** run (LOA, Matterhorn) pass `--data-kind real --survey <s>
+--program <p>` (e.g. `--survey main --program dark`): the bundle is then named
+`dlacat-<release>-<survey>-<program>.fits` (no `-mockcat`, since there is no truth) and the generated
+README carries the **no-truth** caveats — P/C is **not** measured on real data; the recommended cuts
+are the mock-validated operating point inherited from the matching mock catalog.
+Schema (HDU 1, `EXTNAME=DLACAT`, one row per detected absorber): `TARGETID, RA, DEC, Z_QSO,
+SNR_FOREST, SNR_REDSIDE, DLAID, Z_DLA(_ERR), NHI(_ERR), DLAFLAG, P_DLA, P_NULL, LOGP_DLA,
+LOGP_NULL, MODEL_P, LYBETA_FLAG, LYBETA_PARENT_TID/Z, BAL_FLAG, NHI_CONSISTENCY_FLAG, PDLA_SATURATED_FLAG`.
+
+**4. P/C evaluation** (mocks only — real LOA has no truth). **Always report the full
+`λ_rf ∈ [911,1216]` (lyα+lyβ) window as the headline, at BOTH `logNHI > 20` and `> 20.3`:**
+```bash
+ln -sfn <OUTDIR>/figures/processed <OUTDIR>/processed   # molly expects processed/ under catalog-dir
+for NHI in 20.0 20.3; do
+  python examples/molly_faithful_pc_plots.py --catalog-dir <OUTDIR> \
+      --truth <MOCKDIR>/dla_cat.fits   `# London; Saclay/2LPT use hcd_truth_cat.fits` \
+      --bal-cat <MOCKDIR>/bal_cat.fits --no-bal --mockdir <MOCKDIR> \
+      --lam-rf-min 911 --snr-min 2.0 --nhi-min $NHI --truth-nhi-min $NHI \
+      --gp-conf 0.99 --lyb-veto --restrict-truth-to-processed --out <OUTDIR>/pc_nhi${NHI}/
+done
+```
+The molly script always computes both the lyα-only `[1025,1216]` and the full `[911,1216]`
+windows; **lead with the full `[911,1216]`** number. Report a small P/C table (window ×
+{NHI>20, NHI>20.3}). Outputs: purity/completeness matrices + P/C-vs-SNR/P_DLA + `molly_matrix.tsv`.
+
+**Recommended selection from the final catalog** (full window; the headline floor is `NHI>20`,
+tighten to `>20.3` for the conservative DLA set):
+```python
+sel = (cat["DLAFLAG"]==0) & (cat["P_DLA"]>0.99) & (cat["SNR_REDSIDE"]>2) & (cat["NHI"]>20.0)
+# Z_DLA over the full [911,1216] rest-frame window relative to Z_QSO; tighten NHI>20.3 for conservative DLAs.
+```
+
+**Reference shareable bundles** (catalog + README + BASELINE.env [+ diagnostics/example_spectra]):
+`/global/cfs/cdirs/desicollab/users/jibancat/DLA/2lpt/mock-0/2lpt0_loa124_v1/` (2LPT-0),
+`/global/cfs/cdirs/desicollab/users/jibancat/DLA/london/mock-0/london0_jura124_v1/` (London-0).
+
+## For developers
+
+There are some customizable features for this GP-DLA model.
+For customization, go to this tutorial:
+
+- Number of DLA samples
+- Marginalizing over meanflux for purity (Ho 2021 model)
+- Resample the DLA column density prior
+- Per-spectrum τ_eff fit (`gpy_dla_detection.tau_eb.fit_tau_eb`)
+
+### Catalog post-processing (Lyβ veto + LLS cross-reference)
+
+After running `desi-DLAGP.py` and combining outputs, you can run two
+catalog-time helpers from `gpy_dla_detection.postprocess` to flag
+likely-spurious MAP DLAs without re-running inference:
+
+```python
+from astropy.table import Table
+from gpy_dla_detection.postprocess.lyb_veto import flag_lybeta
+from gpy_dla_detection.postprocess.lls_cross_reference import cross_reference_lls
+
+dla_cat = Table.read("dlacat-iron-main-dark.fits")
+lls_cat = Table.read("dlacat-iron-main-dark-lls.fits")
+
+dla_cat = flag_lybeta(dla_cat)                       # adds LYBETA_FLAG, ...
+dla_cat = cross_reference_lls(dla_cat, lls_cat)      # adds LLS_DOWNGRADE_FLAG, ...
+
+clean = dla_cat[~dla_cat["LYBETA_FLAG"] & ~dla_cat["LLS_DOWNGRADE_FLAG"]]
+```
+
+See `gpy_dla_detection/postprocess/README.md` for the mechanism, the
+tunable thresholds, and the per-flag column meanings. Validation on
+the London production catalog is in
+`docs/notes/2026-04-27_london_postprocess_p99_no_bal.md` (loose
+purity 76.0 % → 79.2 % at P_DLA ≥ 0.99 with BAL excluded).
+
+### Alternative Voigt forward model
+
+`gpy_dla_detection/voigt_v2.py` is a pure-Python alternative to the
+production C extension `voigt_fast.py`, with selectable LSF kernel
+and number of Lyman-series lines. It reproduces the production output
+bit-equivalently when configured the same way (`kernel="boss-log-r2000",
+num_lines=31`), and supports DESI-shaped kernels for studies of N_HI
+bias on DESI mocks. Production behaviour is unchanged.
+
+### GreatLakes vs NERSC
+
+Setup recipes and a path-mapping table for the UMich GreatLakes cluster
+are in `docs/greatlakes_setup.md` and `docs/nersc_greatlakes_mapping.md`.
+The smoke-test runners under `examples/` (notably `smoke_one_spectrum.py`,
+`run_smoke_batch.sh`, and `analyze_production_catalog.py`) are designed
+to run on either cluster.
+
+## Additional feature: Marginalizing over metal lines for DLAs
+
+To improve the purity, one can do the metal line detection alongside the DLAs.
+
+Here I provide some routines but this is unpublished so no guarantee for improvement and any biases introduced.
+
+## Additional feature: Marginalizing over quasar redshift for DLAs
+
+Our GP method could also be used to estimate the quasar redshift. Details could be found in [Leah (2020)](https://arxiv.org/abs/2006.07343). Note that the original MATLAB code is in https://github.com/sbird/gp_qso_redshift. Here we only translated part of the codes without the learning functionality. To use the method, we need to download the trained GP model:
+
+- [learned_zqso_only_model_outdata_full_dr9q_minus_concordance_norm_1176-1256.mat](https://drive.google.com/file/d/1SqAU_BXwKUx8Zr38KTaA_nvuvbw-WPQM/view?usp=sharing)
+
+For how to use the redshift estimation method, please find the notebook in `notebooks/`.
+
+- [Quasar Redshift Estimations.ipynb](https://nbviewer.jupyter.org/github/jibanCat/gpy_dla_detection/blob/zqso_notebooks/notebooks/Quasar%20Redshift%20Estimations.ipynb)
+
+## Python requirements
+
+- Python 3.5+: I use typing
+- numpy
+- scipy
+- matplotlib
+- h5py
+- astropy: for reading fits file
+
+To prevent users have troubles setting up the environment,
+here is the exact packages I used to run the tests (below is my `poetry` .toml file):
+
+```
+[tool.poetry]
+name = "gpy_dla_detection"
+version = "0.1.0"
+description = "Detecting damped Lyman alpha absorbers with Gaussian processes, in Python!"
+authors = ["mho026@ucr.edu"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+numpy = "^1.19.1"
+scipy = "^1.5.2"
+matplotlib = "^3.3.0"
+h5py = "^2.10.0"
+astropy = "^4.0.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+black = "^19.10b0"
+pylint = "^2.5.3"
+mypy = "^0.782"
+ipython = "^7.17.0"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+```
+
+The dependency:
+
+```
+astropy 4.0.1.post1 Community-developed python astronomy tools
+h5py 2.10.0 Read and write HDF5 files from Python
+├── numpy >=1.7
+└── six *
+matplotlib 3.3.0 Python plotting package
+├── cycler >=0.10
+│   └── six *
+├── kiwisolver >=1.0.1
+├── numpy >=1.15
+├── pillow >=6.2.0
+├── pyparsing >=2.0.3,<2.0.4 || >2.0.4,<2.1.2 || >2.1.2,<2.1.6 || >2.1.6
+└── python-dateutil >=2.1
+    └── six >=1.5
+numpy 1.19.1 NumPy is the fundamental package for array computing with Python.
+scipy 1.5.2 SciPy: Scientific Library for Python
+└── numpy >=1.14.5
+```
