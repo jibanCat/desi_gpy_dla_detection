@@ -1349,6 +1349,10 @@ def test_committed_artifact_ratified_fields_contain_only_allow_listed_items():
     assert v["gate_tolerances_ratified"] == ["chi2_dof_max"]
 
 
+def recs_declined(v, name):
+    return v["gate_authority"]["records"][name]["contributes_to_pass_fail"]
+
+
 def test_committed_artifact_records_the_z_arms_as_gating_but_not_ratified():
     """Both halves in the file itself: a referee must be able to see, from the
     JSON alone, which numbers refuse work without authority.
@@ -1363,8 +1367,13 @@ def test_committed_artifact_records_the_z_arms_as_gating_but_not_ratified():
     assert set(v["gate_tolerances_unratified"]) == set(_SPAN_ARMS)
     # the name means what it says: EVERY unratified tolerance, all six
     assert set(v["gate_tolerances_not_ratified"]) == set(_Z_ARMS) | set(_SPAN_ARMS)
-    assert set(v["gate_tolerances_unratified_but_gating"]) == (
-        set(_Z_ARMS) | set(_SPAN_ARMS))
+    # Decision 8 DECLINED to ratify the two ratio-span arms, and the regenerated artifact
+    # (1c02089) records them as unratified but NOT gating (contributes_to_pass_fail False);
+    # only the four z-arms are "unratified but gating". The pre-2026-08-16 expectation
+    # (all six) was stale — corrected in the Paper-1 code review, 2026-08-26.
+    assert set(v["gate_tolerances_unratified_but_gating"]) == set(_Z_ARMS)
+    for name in _SPAN_ARMS:
+        assert recs_declined(v, name) is False, name
     recs = v["gate_authority"]["records"]
     for name in _Z_ARMS:
         assert recs[name]["status"] == "RESTATED_NOT_RATIFIED", name
