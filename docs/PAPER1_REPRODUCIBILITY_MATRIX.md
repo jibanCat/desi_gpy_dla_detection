@@ -24,7 +24,8 @@ Classes: **BITWISE** — a clean rerun demonstrated identical bytes (sha256) or 
 | 11c | real pack v2 `…molly172_v2.npz` (`219c43aa…`) | yes — THE frozen pack | **BITWISE (sha256 identical)** | same |
 | 12 | CP-2 validation runs + `perz_gate_v2_cp2_production.json` | yes (certification, envelopes) | BITWISE | `bitrepro_check` vs Battery 2/3 references PASS max|Δ| = 0 |
 | 13a | one frozen v2 chain (s22) | yes | **BITWISE** | SLURM 58776700: draws max|Δ| = 0, thresholds + diagnostics identical |
-| 13b | the other five included members + 4 deep reruns | yes | NOT YET → accepted (seeded, same code path as 13a; archived with logs/diagnostics; runbook §5a states this precisely) | not re-run (≈ 6 × 3 h) |
+| 13b | all 8 base chains (incl. excluded s23/s26) | yes | **BITWISE** (8/8: identical draws sha256, split-R̂, divergences, medians; stage-1 rule reproduces the deep-rerun set 21/23/26/28) | SLURM 58802124 + 58776700, 2026-08-26, `code_review_20260826/cp3_repro_full/` |
+| 13b′ | the 4 deep reruns + the pooled posterior from the clean ensemble | yes | see the receipt (SLURM 58804017; pooled comparison) | |
 | 13c | pooling `POOLED_ln_real_v2_20260821.json` + `_fdraws.npz` | yes — THE frozen posterior | **BITWISE** (draws sha256 identical; summary science-identical, provenance keys added by the hardening) | SLURM 58782794 |
 | 14a | `ZDOMAIN_estimands_pooled.json` | yes (L-lines) | **BITWISE (sha256 identical)** | SLURM 58782794 + login re-derivation with the recorded `--config-run` |
 | 14b | `CONFIG_AMBIGUITY_s26mirror_vs_pooled.json` (L15) | yes | **BITWISE (sha256 identical)** | SLURM 58782794 |
