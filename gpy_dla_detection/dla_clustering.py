@@ -173,7 +173,9 @@ class DLAClusteringPrior:
         d = np.linspace(1.0, L_kms, n)
         pdf = 2.0 * (L_kms - d) / L_kms ** 2
         xi = self.xi_dla(d, np.full_like(d, zbar))
-        trapz = getattr(np, "trapezoid", np.trapz)
+        # numpy >= 2.4 removed np.trapz; the old `getattr(np, "trapezoid", np.trapz)`
+        # evaluated the removed name eagerly (pre-tag review 2026-08-26, PI ruling 7).
+        trapz = getattr(np, "trapezoid", None) or getattr(np, "trapz")
         return float(trapz(xi * pdf, d))
 
     def prior_mean_rho(self, k, z_min, z_max):
