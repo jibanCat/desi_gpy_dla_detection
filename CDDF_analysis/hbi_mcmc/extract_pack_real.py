@@ -168,6 +168,10 @@ def main():
     ap.add_argument("--real", action="store_true")
     ap.add_argument("--stamp-v12", action="store_true")
     ap.add_argument("--out-dir", default=OUT_DIR)
+    ap.add_argument("--adopted", default=None,
+                    help="--stamp-v12 only: adopted response operator (default: adopted_response_v1p1 of record)")
+    ap.add_argument("--kfe", default=None,
+                    help="--stamp-v12 only: kernel-fit ensemble for resp_fitcov_diag (default: kernel_fit_ensemble_v1 of record)")
     ap.add_argument("--ref-pack", default=V2P1,
                     help="the committed 2LPT-0 reference pack the certification "
                          "compares against (2026-08-21: the corrected-g v2p2 "
@@ -334,10 +338,10 @@ def main():
         from CDDF_analysis.hbi_mcmc.pack import load_pack
         from CDDF_analysis.hbi_mcmc.count_conserving_fold import (
             phi_from_surfaces, cc_fold_adopted, cc_fold_cmarginal)
-        ADOPTED = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-                   "track_c/stage0/adopted_response_v1p1.npz")
-        KFE = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-               "track_c/stage0/kernel_fit_ensemble_v1.npz")
+        ADOPTED = a.adopted or ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+                                "track_c/stage0/adopted_response_v1p1.npz")
+        KFE = a.kfe or ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
+                        "track_c/stage0/kernel_fit_ensemble_v1.npz")
         src = os.path.join(a.out_dir,
                            "modelA_pack_REAL_loa50k_c3300_bw0p2_pad19p0_"
                            "molly172.npz")

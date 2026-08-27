@@ -44,6 +44,10 @@ def main():
     ap.add_argument("--n-draws", type=int, default=400)
     ap.add_argument("--out", default=DEF_OUT)
     ap.add_argument("--seed", type=int, default=20260817)
+    ap.add_argument("--frozen-npz", default=FROZEN_NPZ,
+                    help="forward-response point model to resample around (default: the frozen "
+                         "forward_response_2lpt0.npz of record; pre-tag review 2026-08-26 adds the option "
+                         "for current-contract reconciliation runs into a work dir)")
     a = ap.parse_args()
 
     from CDDF_analysis.hbi.znz_kernel import (
@@ -55,7 +59,7 @@ def main():
     from CDDF_analysis.hbi.cddf_catalog_hbi import (
         HBIConfig, load_molly_matrix, load_and_cut_catalog, _build_qso_lookup)
 
-    frm_point = load_forward_response(FROZEN_NPZ)
+    frm_point = load_forward_response(a.frozen_npz)
 
     # the 2LPT-0 calibration bundle, exactly as build_frozen_calibration loads it
     class _A:  # minimal arg shim for _resolve_molly
@@ -141,7 +145,7 @@ def main():
                     "refit_forward_response_from_resample); sightline "
                     "multinomial bootstrap over the unique forward-"
                     "population TIDs; unit-weight gate PASSED"),
-            frozen_npz=FROZEN_NPZ, unit_gate=gate, code_commit=_git()))))
+            frozen_npz=a.frozen_npz, unit_gate=gate, code_commit=_git()))))
     print(f"[kfe] wrote {a.out}  (n_events={len(det_tids)}, n_uniq={n_u})")
 
 
