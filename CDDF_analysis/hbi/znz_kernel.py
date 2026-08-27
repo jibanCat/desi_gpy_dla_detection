@@ -2320,9 +2320,8 @@ def build_cache(argv=None):
                    help="Lyα-only nhi195 molly matrix (auto-resolved if not given)")
     p.add_argument("--kernel", default=DEF_KERNEL)
     p.add_argument("--loa0-product", default=DEF_LOA0_PRODUCT)
-    p.add_argument("--out",
-                   default=("/scratch/cavestru_root/cavestru0/mfho/"
-                            "cddf_o3_realdata/track_c/stage0/znz_2lpt0.npz"))
+    p.add_argument("--out", required=True,
+                   help="output npz (REQUIRED; no frozen-path default — pre-push hardening 2026-08-26)")
     p.add_argument("--mockdir", default=None)
     p.add_argument("--zbins", default="2.0,2.5,3.0,3.5")
     p.add_argument("--report-limits", default="20.0,20.3,20.6")
@@ -2415,8 +2414,8 @@ def build_forward_cache(argv=None):
 
     Usage
     -----
-    python -m CDDF_analysis.znz_kernel build-forward-cache \\
-        --out /scratch/.../track_c/stage0/forward_response_2lpt0.npz
+    python -m CDDF_analysis.hbi.znz_kernel build-forward-cache --lam-rf-min 1025.0 \\
+        --out <explicit output path; the frozen forward_response_2lpt0.npz is read-only>
     """
     _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if _REPO not in sys.path:
@@ -2435,9 +2434,9 @@ def build_forward_cache(argv=None):
     p.add_argument("--molly-tsv", default=None)
     p.add_argument("--kernel", default=DEF_KERNEL)
     p.add_argument("--loa0-product", default=DEF_LOA0_PRODUCT)
-    p.add_argument("--out",
-                   default=("/scratch/cavestru_root/cavestru0/mfho/"
-                            "cddf_o3_realdata/track_c/stage0/forward_response_2lpt0.npz"))
+    p.add_argument("--out", required=True,
+                   help="output npz (REQUIRED; never defaults to the frozen forward_response_2lpt0.npz "
+                        "of record — pre-push hardening 2026-08-26)")
     p.add_argument("--mockdir", default=None)
     p.add_argument("--zbins", default="2.0,2.5,3.0,3.5")
     p.add_argument("--report-limits", default="20.0,20.3,20.6")

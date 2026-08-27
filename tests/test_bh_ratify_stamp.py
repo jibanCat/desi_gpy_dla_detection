@@ -17,9 +17,11 @@ def _src(tmp_path):
                       "status": "CANDIDATE / PI-ADOPTION-PENDING (BH high-z bin)",
                       "z_extrapolated": [True, True, True], "truth_counts_perz": [0, 0, 0],
                       "code_commit": "abc"},
-         "measurement": {"20.3": {"dndx": {"integrated": {"MAP": 0.1086, "q16": 0.104, "q84": 0.1135},
-                                           "perz": [{"MAP": 0.1014}, {"MAP": 0.1225}, {"MAP": 0.1508}]},
-                                  "omega": {"integrated": {"MAP": 1.214e-3}, "perz": []}}},
+         # SYNTHETIC fixture values (public repository): NOT the Paper-1 measurement.
+         # The test only checks that the stamp preserves these bytes unchanged.
+         "measurement": {"20.3": {"dndx": {"integrated": {"MAP": 0.0777, "q16": 0.0700, "q84": 0.0850},
+                                           "perz": [{"MAP": 0.0700}, {"MAP": 0.0800}, {"MAP": 0.0900}]},
+                                  "omega": {"integrated": {"MAP": 1.0e-3}, "perz": []}}},
          "zbins": [3.8, 4.25, 4.5, 5.0], "perz_fN": {"x": [1, 2, 3]}}
     p = tmp_path / "src.json"; p.write_text(json.dumps(d, indent=2)); return p, d
 

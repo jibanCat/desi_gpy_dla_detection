@@ -66,10 +66,11 @@ REAL_QSOCAT = ("/nfs/turbo/lsa-cavestru/mfho/DESI/loa/"
                "QSO_cat_loa_main_dark_healpix_v2-altbal.fits")
 ARCHIVE_CAT_NPY = ("/scratch/cavestru_root/cavestru0/mfho/"
                    "h2m_ckpt10p5_20260817/analysis/src_archive_catalog.npy")
-OUT_DIR = "/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/real_pack_v1"
-V2P1 = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-        "adopted_packs_v2p1_20260817/modelA_pack_2lpt0_bw0p2_pad19p0_"
-        "molly172_v2.npz")
+# Pre-push hardening 2026-08-26: no hidden production defaults. --out-dir is REQUIRED
+# (the old default was the superseded real_pack_v1 directory) and --ref-pack is REQUIRED
+# for --cert-2lpt0 / --real (the old default was the SUPERSEDED v2p1 2LPT-0 pack; the
+# reference of record is the CP-1 corrected v2p2 pack passed explicitly by
+# slurm/greatlakes/production/paper1/run_cp1_regeneration.sbatch).
 LYA = 1215.67
 C_KMS = 299792.458
 # PI ruling (checkpoint 10.8): the ADOPTED observable-only collar. The
@@ -167,16 +168,18 @@ def main():
     ap.add_argument("--cert-2lpt0", action="store_true")
     ap.add_argument("--real", action="store_true")
     ap.add_argument("--stamp-v12", action="store_true")
-    ap.add_argument("--out-dir", default=OUT_DIR)
+    ap.add_argument("--out-dir", required=True,
+                    help="output directory (REQUIRED; no production default)")
     ap.add_argument("--adopted", default=None,
                     help="--stamp-v12 only: adopted response operator (default: adopted_response_v1p1 of record)")
     ap.add_argument("--kfe", default=None,
                     help="--stamp-v12 only: kernel-fit ensemble for resp_fitcov_diag (default: kernel_fit_ensemble_v1 of record)")
-    ap.add_argument("--ref-pack", default=V2P1,
-                    help="the committed 2LPT-0 reference pack the certification "
-                         "compares against (2026-08-21: the corrected-g v2p2 "
-                         "2LPT-0 pack)")
+    ap.add_argument("--ref-pack", default=None,
+                    help="2LPT-0 reference pack (REQUIRED for --cert-2lpt0 / --real; the CP-1 v2p2 pack of record)")
     a = ap.parse_args()
+    if (a.cert_2lpt0 or a.real) and not a.ref_pack:
+        raise SystemExit("--ref-pack is required for --cert-2lpt0 / --real (no hidden default; "
+                         "pass the CP-1 v2p2 2LPT-0 pack of record)")
     os.makedirs(a.out_dir, exist_ok=True)
     t0 = time.time()
     frozen = EP.build_frozen_calibration(a.out_dir, completeness="molly172",

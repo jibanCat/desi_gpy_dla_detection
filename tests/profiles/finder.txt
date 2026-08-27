@@ -44,3 +44,4 @@ tests/test_voigt_lsf_correctness.py
 tests/test_voigt_preflight.py
 tests/test_voigt_sweep_targets.py
 tests/test_voigt_v2_parity.py
+tests/test_dla_clustering_numpy_compat.py

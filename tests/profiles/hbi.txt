@@ -53,3 +53,4 @@ tests/test_track_c_perz_fN.py
 tests/test_validation_sensitivity_stamp.py
 tests/test_window_study.py
 tests/test_znz_kernel.py
+tests/test_paper1_hardening_cli.py

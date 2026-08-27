@@ -35,14 +35,15 @@ if _REPO not in sys.path:
 
 FROZEN_NPZ = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
               "track_c/stage0/forward_response_2lpt0.npz")
-DEF_OUT = ("/scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/"
-           "track_c/stage0/kernel_fit_ensemble_v1.npz")
+# (no default output: an explicit --out is required so that an accidental run can
+#  never overwrite the frozen kernel_fit_ensemble_v1.npz of record — pre-push hardening 2026-08-26)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-draws", type=int, default=400)
-    ap.add_argument("--out", default=DEF_OUT)
+    ap.add_argument("--out", required=True,
+                    help="output npz (REQUIRED; never defaults to the frozen artifact of record)")
     ap.add_argument("--seed", type=int, default=20260817)
     ap.add_argument("--frozen-npz", default=FROZEN_NPZ,
                     help="forward-response point model to resample around (default: the frozen "
