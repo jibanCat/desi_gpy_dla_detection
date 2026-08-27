@@ -65,7 +65,7 @@ ENTRIES = [
     ("frozen-output", "BH source artifact gapc0.496", f"{TFHZ}/track_c_tf_hz_h2cal_loa0_lya_gapc0.496.json"),
     ("record", "H2 C_gap inference", f"{TFHZ}/H2_CGAP_INFERENCE.json"),
     ("record", "architecture lock", f"{TFHZ}/PAPER1_ARCHITECTURE_LOCK.json"),
-    ("superseded", "architecture lock superseded 2026-08-15 (BH 0.0934)", f"{TFHZ}/PAPER1_ARCHITECTURE_LOCK_SUPERSEDED_20260815.json"),
+    ("superseded", "architecture lock superseded 2026-08-15 (candidate value withheld: public repo)", f"{TFHZ}/PAPER1_ARCHITECTURE_LOCK_SUPERSEDED_20260815.json"),
     ("record", "BH anchor [3.5,3.8)", f"{TFHZ}/diag_20260819/tf_hz_gapc0.496_zext35.json"),
     ("record", "BH transport envelope plus", f"{TFHZ}/diag_20260819/tf_hz_gapc0.496_envplus.json"),
     ("record", "BH transport envelope minus", f"{TFHZ}/diag_20260819/tf_hz_gapc0.496_envminus.json"),
