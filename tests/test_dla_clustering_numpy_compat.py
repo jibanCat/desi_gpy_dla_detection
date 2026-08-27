@@ -20,7 +20,7 @@ def test_mean_xi_window_works_without_np_trapz(monkeypatch):
     p = DLAClusteringPrior()
     v = p.mean_xi_window(2.0, 2.5, n=64)
     assert np.isfinite(v) and v >= 0.0
-    assert p.prior_mean_rho(2, 2.0, 2.5) == pytest.approx(1.0 + v)
+    assert p.prior_mean_rho(2, 2.0, 2.5) == pytest.approx(1.0 + p.mean_xi_window(2.0, 2.5))
 
 
 def test_mean_xi_window_matches_trapezoid_reference():
@@ -32,7 +32,7 @@ def test_mean_xi_window_matches_trapezoid_reference():
     zbar = 2.3; L = _C_KMS * 0.2 / (1 + zbar)
     d = np.linspace(1.0, L, 128); pdf = 2.0 * (L - d) / L ** 2
     ref = float(np.trapezoid(p.xi_dla(d, np.full_like(d, zbar)) * pdf, d))
-    assert v == pytest.approx(ref, rel=0, abs=0)
+    assert v == pytest.approx(ref, rel=1e-12, abs=0)   # (2.4-2.2) vs 0.2 differ at 1 ulp
 
 
 def test_pair_prior_is_default_off():
