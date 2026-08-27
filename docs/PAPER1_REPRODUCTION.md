@@ -39,6 +39,20 @@ The archival set keeps every chain, not only the pool: the 8 base runs `REAL_ln_
 ## 6. Product 4 — BH / H2 high-z arm
 Upstream (not re-runnable; frozen, hashed in the manifest): the H2 injection campaign (finder at `14df2ce`, 898 injections into 539 real sightlines; `tools/h2_*.py`; canonical tables `h2_exec/h2_canonical_*.json`) and the loa-0 FP product (`build_loa0_fp_product.py`). C_gap: `python CDDF_analysis/hbi/h2_cgap_inference.py --canonical h2_exec/h2_canonical_armB_lya_nobal.json --record track_c/tf_hz/H2_CGAP_INFERENCE.json` reproduces 0.496 [0.407, 0.593] to MC precision. **The product:** `slurm/greatlakes/production/paper1/run_bh_h2cal_of_record.sh <out.json>` (= `track_c_tf_hz.py --variant h2cal --fp loa0 --window lya --envelope none --gap-treatment frozen --gap-c 0.496 --zbins 3.8,4.25,4.5,5.0 --n-mc 2000`; **`--n-mc` default is 120 — never rely on defaults**); 30 s; reproduces the source artifact `…_gapc0.496.json` (sha `90264a22…`) bit-for-bit in `measurement`, `zbins`, `perz_fN` (verified 2026-08-26). Ratification: `bh_ratify_stamp.py --src <source> --out …_RATIFIED_20260826.json --ruling "PI 2026-08-26 #43/#44/#45/#46" --reported-bin 3.8 5.0 --validation-basis … --named-lines …` (the successor's `ratification` block records every argument). Anchor `diag_20260819/tf_hz_gapc0.496_zext35.json`, envelope `…_env{plus,minus}.json`. Collar of this arm: 3000 km/s constant Δz (the low-z arm uses 3300; state once in the paper).
 
+
+### 6a. Command of record: response-calibration inputs → adopted response → certified HBI pack (PI ruling 4, 2026-08-26)
+```
+# 1. adopted response operator (env gpdla; gb_audit in gpdla-hbi) — the 2026-08-16 chain of record, recovered verbatim
+python CDDF_analysis/hbi/adopted_response/build_adopted_response.py \
+    --work-dir <scratch>/adopted --out <scratch>/adopted/adopted_response_v1p1_rebuild.npz \
+    --compare /scratch/cavestru_root/cavestru0/mfho/cddf_o3_realdata/track_c/stage0/adopted_response_v1p1.npz
+# 2. certified pack stamped with it (env gpdla-hbi; the unstamped real pack v1 + its provenance sidecar in --out-dir)
+python CDDF_analysis/hbi_mcmc/extract_pack_real.py --stamp-v12 --out-dir <scratch>/adopted_pack \
+    --adopted <scratch>/adopted/adopted_response_v1p1_rebuild.npz
+python -m CDDF_analysis.hbi_mcmc.contract_guards_check --pack <scratch>/adopted_pack/modelA_pack_REAL_…_v2.npz --json …
+```
+Inputs: the 2LPT-0 combined catalogue, `hcd_truth_cat.fits`, `bal_cat.fits`, `snr_cat.fits`/`zcat.fits`, `figures_molly_nhi195/lya_only/molly_matrix.tsv`, `track_c/stage0/forward_response_2lpt0.npz` (cells, `N_ref`), and the current `load_and_cut_catalog` (hierarchical tilt match). **Result of record (SLURM 58804619, 2026-08-26, code `056f96b`): every array of the regenerated operator is BIT-IDENTICAL to the frozen `adopted_response_v1p1.npz` (only the provenance string differs); carrier unit-weight gate (1.48e-6, 1.44e-6, 4.42e-6), shared cubic −0.0364 ± 0.0081, LOGO 15/15 and the G-B audit (B1 PASS 56 cells; B2 0 mismatches / 66,481 events) reproduce; the pack stamped with the rebuilt operator is sha256-IDENTICAL to the frozen pack `219c43aa…`.** The response/kernel lineage (historical vs current contract) is in `docs/PAPER1_REPRODUCIBILITY_MATRIX.md` §7.
+
 ## 7. Products 5–7 — reductions, envelopes, figures (mode A)
 In the paper repo `gp_dla_desi_y3`, from ONE commit, in ONE pass:
 ```
