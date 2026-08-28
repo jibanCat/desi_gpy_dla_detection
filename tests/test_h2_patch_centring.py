@@ -53,3 +53,36 @@ def test_neff_from_record_reproduces_the_68pct_width(tmp_path):
     n_eff = HZ._neff_from_cgap_record(str(p))
     m = 0.4962; sd = np.sqrt(m * (1 - m) / (n_eff + 1))
     assert abs(sd - 0.5 * (0.5925 - 0.4067)) < 1e-6
+
+
+def test_patch_mm_with_r041_writes_real_counts_and_flags_unsupported(tmp_path):
+    """R-041A integration: the molly cells (SNR>=2 rows) take the analyzer's real (k, n)
+    per (N cell, stratum); SNR<2 rows stay frozen; cells without support stay frozen and
+    are flagged; the Beta draw is then centred on k/n (A5)."""
+    import json
+    import numpy as np
+    from CDDF_analysis.hbi.track_c_tf_hz import patch_mm_with_r041
+
+    class MM:
+        pass
+    mm = MM()
+    mm.nhi_edges = np.array([19.5, 20.0, 20.3, 20.5, 21.0, 21.5, 22.0, np.inf])
+    mm.snr_edges = np.array([0, 1, 2, 3, 4, 5, 6, 7, np.inf])
+    mm.completeness = np.full((8, 7), 0.5); mm.cmp_nfound = np.full((8, 7), 50.0); mm.cmp_nfid = np.full((8, 7), 100.0)
+    tab = []
+    for j, lo in enumerate([19.5, 20.0, 20.3, 20.5, 21.0, 21.5, 22.0]):
+        for s in range(5):
+            n = 0 if (j == 6) else 40
+            k = int(round(n * (0.2 + 0.15 * s)))
+            tab.append({"key": {"molly_cell": j, "n_lo": lo, "n_hi": "inf" if j == 6 else 0.0, "stratum": s}, "n": n, "k": k, "C": (k / n if n else None)})
+    p = tmp_path / "an.json"; p.write_text(json.dumps({"tables": {"per_molly_cell_x_stratum": tab}}))
+    rec = patch_mm_with_r041(mm, str(p))
+    # SNR rows < 2 untouched
+    assert np.all(mm.cmp_nfid[:2, :] == 100.0) and np.all(mm.completeness[:2, :] == 0.5)
+    # row [3,4) -> stratum 1; row [6,7) -> stratum 3 ([5,7)); row [7,inf) -> stratum 4
+    assert mm.cmp_nfid[3, 0] == 40 and mm.cmp_nfound[3, 0] == round(40 * 0.35) and abs(mm.completeness[3, 0] - 0.35) < 1e-12
+    assert abs(mm.completeness[6, 2] - 0.65) < 1e-12 and abs(mm.completeness[7, 2] - 0.8) < 1e-12
+    # unsupported cell (n = 0) kept frozen and flagged
+    assert np.all(mm.cmp_nfid[2:, 6] == 100.0)
+    assert any(f.get("reason") == "no R-041 support" for f in rec["kept_frozen"])
+    assert len(rec["patched"]) == 6 * 6            # 6 supported N cells x 6 SNR rows >= 2
