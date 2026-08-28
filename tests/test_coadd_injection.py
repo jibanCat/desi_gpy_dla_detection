@@ -939,3 +939,52 @@ def test_write_campaign_truth_manifest_records_blend_flag(tmp_path):
     flag = {int(t): bool(b) for t, b in zip(tman["target_id"], tman["forest_blend"])}
     assert flag[100] is True   # pre-existing blend
     assert flag[101] is False  # clean continuum
+
+
+def test_inject_into_coadd_noise_preserving_keeps_ivar_mask_and_is_T_times_F(tmp_path):
+    """R-041 (2026-08-28): method="variance_preserving" leaves ivar/mask untouched, the
+    deterministic part of the injected flux is exactly T * F, and the mean-flux-only
+    rescaling (R-041C) changes the forest SIGNAL without touching the noise arrays."""
+    desispec_io = _require_desispec()
+    _require_c_voigt()
+    pytest.importorskip("scipy")
+    from injection.coadd_injection import inject_into_coadd
+    from injection.noise_preserving import transmission
+
+    tids = np.array([100, 101], dtype=np.int64)
+    spec = _make_spectra(tids, [10.0, 10.1], [5.0, 5.0], flux_level=3.0)
+    rng = np.random.default_rng(0)
+    for cam in spec.bands:
+        spec.flux[cam] = spec.flux[cam] + rng.standard_normal(spec.flux[cam].shape) * 0.5
+        spec.mask[cam][0, 50:60] = 1
+    in_path = tmp_path / "in.fits"; out_path = tmp_path / "out.fits"; out2 = tmp_path / "out2.fits"
+    desispec_io.write_spectra(str(in_path), spec)
+    z, logN, zq = 2.7, 21.0, 3.2
+    rec = [{"target_id": 100, "logN_true": logN, "z_true": z, "num_lines": 3, "z_qso": zq}]
+    inject_into_coadd(str(in_path), str(out_path), rec, num_lines=3, method="variance_preserving")
+    out = desispec_io.read_spectra(str(out_path)); inp = desispec_io.read_spectra(str(in_path))
+    j = list(np.asarray(out.fibermap["TARGETID"])).index(100)
+    for cam in out.bands:
+        np.testing.assert_array_equal(out.ivar[cam][j], inp.ivar[cam][j])
+        np.testing.assert_array_equal(out.mask[cam][j], inp.mask[cam][j])
+        np.testing.assert_array_equal(out.flux[cam][1], inp.flux[cam][1])          # other fiber untouched
+        w = out.wave[cam]; T = transmission(w, [{"nhi": 10 ** logN, "z_dla": z, "num_lines": 3}])
+        f_in = inp.flux[cam][j].astype(float); f_out = out.flux[cam][j].astype(float)
+        outside = np.abs(T - 1) < 1e-12
+        np.testing.assert_allclose(f_out[outside], f_in[outside], rtol=1e-6, atol=1e-6)
+        core = T < 0.01
+        if core.any():
+            # noiseless-trough check fails for the old operation; the new one keeps ~ivar noise
+            assert np.std(f_out[core] * np.sqrt(inp.ivar[cam][j][core])) > 0.5
+    # mean-flux-only rescale with NO absorber: forest signal darkened, red side and noise arrays untouched
+    inject_into_coadd(str(in_path), str(out2), [{"target_id": 100, "logN_true": None, "z_true": None, "z_qso": zq}],
+                      num_lines=3, method="variance_preserving",
+                      meanflux={"fiducial": "finder_fiducial", "model": "finder_fiducial", "delta_z": 1.0})
+    o2 = desispec_io.read_spectra(str(out2))
+    wb = o2.wave["b"]; fb_in = inp.flux["b"][j].astype(float); fb_out = o2.flux["b"][j].astype(float)
+    forest = wb < 1215.67 * (1 + zq) * 0.97
+    assert np.mean(fb_out[forest]) < 0.9 * np.mean(fb_in[forest])
+    wz = o2.wave["z"]
+    np.testing.assert_allclose(o2.flux["z"][j], inp.flux["z"][j], rtol=1e-6, atol=1e-6)
+    for cam in o2.bands:
+        np.testing.assert_array_equal(o2.ivar[cam][j], inp.ivar[cam][j])

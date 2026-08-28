@@ -120,11 +120,13 @@ def main():
             rows = [r for r in pop if r["stratum"] == s and r["has_cand_ge20"] == 0]
             if not rows:
                 continue
-            p = np.array([r["dX_bin"] for r in rows]); p /= p.sum()
+            w0 = np.array([r["dX_bin"] for r in rows])
+            cap = int(cfg.get("max_uses_per_sightline", 3))
             use = {r["TARGETID"]: 0 for r in rows}
             for cname, (dv_lo, dv_hi) in classes.items():
                 for (n1, n2) in pairs:
                     for k in range(ntr):
+                        p = w0 * np.array([use[r["TARGETID"]] < cap for r in rows], float); p /= p.sum()
                         j = int(rng_master.choice(len(rows), p=p)); r = rows[j]
                         wave = use[r["TARGETID"]]; use[r["TARGETID"]] += 1
                         rng = np.random.default_rng(seed_for(r["TARGETID"], hash((cname, n1, n2, wave)) & 0xFFFF, salt))

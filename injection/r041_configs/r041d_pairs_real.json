@@ -1,0 +1,12 @@
+{
+ "_protocol": "R-041D overlapping / double-DLA stress test on REAL high-z spectra (candidate-free sightlines only): two injected absorbers per sightline with a prescribed velocity separation class; the deployed finder returns at most one candidate (MAX_DLAS = 1), so the outcomes are catalogue-level (zero/one candidate, which absorber wins, merged N-hat bias, migration across 20.3). NEVER folded into the single-absorber completeness denominator.",
+ "mode": "pairs",
+ "seed_salt": "r041d-pairs-real-2026-08-28",
+ "n_strata": 5,
+ "separation_classes_kms": {"wide": [8000, 20000], "partial": [1500, 4000], "blend": [200, 1000]},
+ "logN_pairs": [[20.5, 20.5], [21.0, 20.3], [20.3, 20.3], [21.0, 21.0], [20.6, 20.0]],
+ "trials_per_class_per_pair": 7,
+ "collision_kms": 5000.0,
+ "num_lines": 3,
+ "_compute": "3 classes x 5 pairs x 7 x 5 strata = 525 pairs = 525 spectra -> ~24 CPU-h"
+}
