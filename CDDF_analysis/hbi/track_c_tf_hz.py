@@ -85,6 +85,25 @@ H2_CANON = "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec"
 ENVELOPE = {"19.5-20.0": 0.10, "20.0": 0.0604, "20.3": 0.0761}
 
 
+def finite_snr_guard(lookup, drop=False):
+    """Guard for the NaN-SNR hole in build_pathlength's sightline test (R-039 closure,
+    2026-08-28): quasars whose SNR_REDSIDE is not finite pass `snr <= snr_min` and are
+    counted in n_op_sl / the loa-0 FP volume scale although the row-level detection mask
+    can never accept a candidate on them. Returns (lookup, n_nonfinite); with drop=True the
+    non-finite entries are removed, otherwise the lookup is returned unchanged and a
+    warning is printed. Default behaviour of the run of record is unchanged."""
+    bad = [t for t, v in lookup.items() if not np.isfinite(v[0])]
+    if drop:
+        print(f"  [finite-snr-only] dropping {len(bad)} quasars with non-finite SNR_REDSIDE "
+              f"from the sightline population before ingest")
+        return {t: v for t, v in lookup.items() if np.isfinite(v[0])}, len(bad)
+    if bad:
+        print(f"  [WARN] {len(bad)} quasars with non-finite SNR_REDSIDE are in the sightline "
+              f"population (counted by build_pathlength; carry no candidates); pass "
+              f"--finite-snr-only to drop them")
+    return lookup, len(bad)
+
+
 def _git_commit():
     import subprocess
     try:
@@ -181,6 +200,20 @@ def main():
     ap.add_argument("--n-mc", type=int, default=120)
     ap.add_argument("--out-json", default=None)
     ap.add_argument("--force", action="store_true")
+    # 2026-08-28 (paper1 requests, R-039 closure): build_pathlength's sightline test is
+    # `snr <= snr_min: skip`, which a NON-FINITE SNR_REDSIDE passes, so such quasars are
+    # counted in n_op_sl and in the loa-0 FP volume scale although the row-level detection
+    # mask (SNR > 2) can never accept a candidate on them. Default OFF keeps the artifact of
+    # record bit-for-bit; the default path now only PRINTS how many such quasars it counted.
+    ap.add_argument("--finite-snr-only", action="store_true",
+                    help="drop quasars with non-finite SNR_REDSIDE from the sightline "
+                         "population before ingest (guarded variant; default off)")
+    ap.add_argument("--work-root", default=None,
+                    help="directory for the run's side files (report, out_dir); default = the "
+                         "frozen HZ_ROOT, unchanged for the run of record")
+    ap.add_argument("--dump-npz", default=None,
+                    help="also save the MAP f(N), the MC f(N) samples, the grids and X_tot "
+                         "(diagnostic carrier for the Omega tail study; default off)")
     a = ap.parse_args()
 
     if a.window == "lyab" and a.fp == "loa0":
@@ -190,8 +223,9 @@ def main():
            + (f"_env{a.envelope}" if a.envelope != "none" else "")
            + (f"_gap{a.gap_treatment}" if a.gap_treatment != "frozen" else "")
            + (f"_gapc{a.gap_c:g}" if a.gap_c is not None else ""))
-    out_path = a.out_json or os.path.join(HZ_ROOT, f"track_c_tf_hz_{tag}.json")
-    os.makedirs(HZ_ROOT, exist_ok=True)
+    root = a.work_root or HZ_ROOT
+    out_path = a.out_json or os.path.join(root, f"track_c_tf_hz_{tag}.json")
+    os.makedirs(root, exist_ok=True)
     if os.path.exists(out_path) and not a.force:
         raise SystemExit(f"refusing to overwrite {out_path} (pass --force).")
 
@@ -200,8 +234,8 @@ def main():
     args.loa_mockdir = HZ_MOCKDIR
     args.loa_truth = os.path.join(HZ_MOCKDIR, "dla_cat.fits")
     args.loa_bal = os.path.join(HZ_MOCKDIR, "bal_cat.fits")
-    args.out = HZ_ROOT
-    args.report_out = os.path.join(HZ_ROOT, f"_report_{tag}.md")
+    args.out = root
+    args.report_out = os.path.join(root, f"_report_{tag}.md")
     args.zbins = a.zbins
     args.v2_z_fit_hi = 5.0
     args.n_mc = a.n_mc
@@ -228,10 +262,20 @@ def main():
         return c
 
     TF.HBIConfig = _HZConfig
+    _orig_lookup = TF._build_qso_lookup
+    _nonfinite = {"n": 0}
+
+    def _guarded_lookup(cfg):
+        lk, n_bad = finite_snr_guard(_orig_lookup(cfg), drop=a.finite_snr_only)
+        _nonfinite["n"] = n_bad
+        return lk
+
+    TF._build_qso_lookup = _guarded_lookup
     try:
         ing = TF.build_loa_ingredients(args, frozen)
     finally:
         TF.HBIConfig = _HBIConfig
+        TF._build_qso_lookup = _orig_lookup
     cfg = ing["cfg"]
     assert cfg.z_qso_min == 4.25 and cfg.z_qso_max == 7.0
 
@@ -263,6 +307,16 @@ def main():
 
     res = TF.run_measurement(args, ing, limits, args.seed, frozen=frozen)
     wall = time.time() - t0
+    if a.dump_npz:
+        np.savez(a.dump_npz, map_fb=res["map_fb"], fb_samp=res["fb_samp"],
+                 map_fbk=res["map_fbk"], logN_lo=res["logN_lo"], logN_hi=res["logN_hi"],
+                 N_b=res["N_b"], dN_b=res["dN_b"], K=float(res["K"]),
+                 X_tot=np.asarray(res["X_tot"], float), zbins=np.asarray(res["zbins"], float),
+                 n_op_sl=int(res["n_op_sl"]), n_op_detections=int(res["n_op_detections"]),
+                 band_recenter=bool(cfg.band_recenter), finite_snr_only=bool(a.finite_snr_only),
+                 n_nonfinite_snr_in_population=int(_nonfinite["n"]), seed=int(args.seed),
+                 n_mc=int(args.n_mc), argv=np.array(sys.argv))
+        print(f"  [dump] wrote {a.dump_npz}")
 
     out_json = dict(
         metadata=dict(
@@ -282,6 +336,8 @@ def main():
             truth_counts_perz=res.get("truth_counts_perz"),
             max_truth_z=float(res.get("max_truth_z", float("nan"))),
             wallclock_s=float(wall), code_commit=_git_commit(),
+            **({"finite_snr_only": True,
+                "n_nonfinite_snr_dropped": int(_nonfinite["n"])} if a.finite_snr_only else {}),
             # Paper-1 code review 2026-08-26: the invocation is part of the record (the
             # frozen artifact of record was produced with --n-mc 2000 against a CLI
             # default of 120, and no launch script existed).
