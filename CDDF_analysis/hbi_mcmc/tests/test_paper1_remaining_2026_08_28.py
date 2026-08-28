@@ -21,7 +21,7 @@ def test_fixed_denominators_are_exact_on_a_hand_built_sample():
     truth_nhi = np.array([20.4, 20.35, 20.45, 20.4, 19.8, 19.75]); truth_snr = np.array([4.0] * 6)   # all in response cell 1
     # detections: three TPs of the 20.4 group (one reported below 20.3 -> class miss), one TP of the 19.8 group reported at 19.6
     # (found for 'any', not for 'reported'), one FP at 20.4 without host, one FP at 19.8 with a sub-floor host
-    nhat = np.array([20.45, 20.5, 20.2, 19.6, 20.4, 19.8]); ntrue = np.array([20.4, 20.35, 20.45, 19.8, np.nan, np.nan])
+    nhat = np.array([20.45, 20.48, 20.2, 19.6, 20.4, 19.8]); ntrue = np.array([20.4, 20.35, 20.45, 19.8, np.nan, np.nan])
     snr = np.array([4.0] * 6); is_tp = np.array([1, 1, 1, 1, 0, 0], bool)
     host = np.array([20.4, 20.35, 20.45, 19.8, np.nan, 19.2])
     t = PC.tabulate(nhat, ntrue, snr, is_tp, host, truth_nhi, truth_snr, PC.RESP_SNR_EDGES)
