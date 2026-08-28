@@ -206,9 +206,41 @@ def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen", gap_c=None, g
     return dict(patched=patched, kept_frozen=kept, h2_contract=contract)
 
 
+def patch_mm_with_r041(mm, analysis_json, strata_edges=(2.0, 3.0, 4.0, 5.0, 7.0, np.inf), min_n=5):
+    """R-041A (2026-08-28): in-place override of the molly C cells (SNR>=2 rows) with the
+    corrected real-spectrum single-injection calibration — the analyzer's
+    per_molly_cell_x_stratum (k, n) counts. Every SNR row of the molly grid is mapped to the
+    R-041 SNR_REDSIDE stratum that contains its centre ([2,3),[3,4),[4,5),[5,7),[7,inf));
+    a cell with n < min_n keeps the frozen value and is flagged. The counts ARE the real
+    (k, n), so the MC Beta draw is centred on the measured C with its true width (A5)."""
+    tab = json.load(open(analysis_json))["tables"]["per_molly_cell_x_stratum"]
+    by = {}
+    for c in tab:
+        key = c["key"]
+        lo = float(key["n_lo"]) if "n_lo" in key else float(key["lo"])      # analyzer key: molly_cell, n_lo, n_hi, stratum
+        by[(round(lo, 3), int(key["stratum"]))] = c
+    nhi_edges = np.asarray(mm.nhi_edges, float); snr_edges = np.asarray(mm.snr_edges, float)
+    se = np.asarray(strata_edges, float)
+    patched, kept = [], []
+    for jcell in range(len(nhi_edges) - 1):
+        lo = nhi_edges[jcell]
+        for i in range(len(snr_edges) - 1):
+            if snr_edges[i] < 2.0:
+                kept.append(dict(cell=f"[{lo},...)", snr_row=i, reason="SNR<2 row: outside the calibration population")); continue
+            centre = 0.5 * (snr_edges[i] + (snr_edges[i + 1] if np.isfinite(snr_edges[i + 1]) else snr_edges[i] + 2.0))
+            s = int(np.digitize(centre, se) - 1)
+            c = by.get((round(lo, 3), s))
+            if c is None or c["n"] < min_n or c["C"] is None:
+                kept.append(dict(cell=f"[{lo},...)", snr_row=i, stratum=s, n=(c["n"] if c else 0), reason="no R-041 support")); continue
+            mm.completeness[i, jcell] = float(c["C"]); mm.cmp_nfound[i, jcell] = float(c["k"]); mm.cmp_nfid[i, jcell] = float(c["n"])
+            patched.append(dict(cell=f"[{lo},...)", snr_row=i, stratum=s, C=float(c["C"]), k=int(c["k"]), n=int(c["n"])))
+    return dict(patched=patched, kept_frozen=kept, source=analysis_json, strata_edges=[float(x) if np.isfinite(x) else "inf" for x in se])
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", choices=["frozenC", "h2cal"], default="h2cal")
+    ap.add_argument("--variant", choices=["frozenC", "h2cal", "r041cal"], default="h2cal")
+    ap.add_argument("--r041-analysis", default=None, help="r041_analyze.py JSON (variant r041cal)")
     ap.add_argument("--fp", choices=["loa0", "pm"], default="loa0")
     ap.add_argument("--window", choices=["lya", "lyab"], default="lya")
     ap.add_argument("--envelope", choices=["none", "plus", "minus"], default="none")
@@ -307,6 +339,12 @@ def main():
         env = None if a.envelope == "none" else a.envelope
         cal_meta["gap_treatment"] = a.gap_treatment
         cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env, a.gap_treatment, a.gap_c, a.gap_c_neff)
+        ing["C_interp"] = make_C_interpolator(ing["mm"])
+    elif a.variant == "r041cal":
+        from CDDF_analysis.hbi.cddf_catalog_hbi import make_C_interpolator
+        if not a.r041_analysis:
+            raise SystemExit("--variant r041cal needs --r041-analysis")
+        cal_meta["r041_patch"] = patch_mm_with_r041(ing["mm"], a.r041_analysis)
         ing["C_interp"] = make_C_interpolator(ing["mm"])
 
     if a.fp == "loa0":
