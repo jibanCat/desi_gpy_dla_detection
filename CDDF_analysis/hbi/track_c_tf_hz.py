@@ -138,7 +138,16 @@ def h2_c_table(window, gap_treatment="frozen"):
     return out, j["contract"]
 
 
-def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen", gap_c=None):
+def _neff_from_cgap_record(path=os.path.join(HZ_ROOT, "H2_CGAP_INFERENCE.json")):
+    """Effective Beta trial count reproducing the C_gap inference's 68 % half-width:
+    for Beta(mean m, n_eff) var ~ m(1-m)/(n_eff+1) -> n_eff = m(1-m)/var - 1."""
+    rec = json.load(open(path))
+    p16, p50, p84 = rec["posterior"]["C_gap_p16_50_84"]
+    sd = 0.5 * (p84 - p16)
+    return max(p50 * (1.0 - p50) / sd ** 2 - 1.0, 1.0)
+
+
+def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen", gap_c=None, gap_c_neff=None):
     """In-place ADOPTED-calibration override of the molly C cells (SNR>=2 rows)."""
     tab, contract = h2_c_table(window, gap_treatment)
     if gap_c is not None:
@@ -164,13 +173,23 @@ def patch_mm_with_h2(mm, window, envelope, gap_treatment="frozen", gap_c=None):
         if C is None:
             kept.append(key)
             continue
-        if k_ is None:            # explicit gap_c: value only, keep frozen counts
+        if k_ is None:            # explicit gap_c
+            # A5 fix (2026-08-28, R-041A): the MC band draws C per cell from
+            # Beta(cmp_nfound + 0.5, cmp_nfid - cmp_nfound + 0.5) (joint_mc_errors ->
+            # _draw_beta_cell); leaving the FROZEN counts in place while overriding the
+            # point value made the uncertainty draw centre on the frozen cell's k/n, not on
+            # gap_c. Now the counts are set to (gap_c * n_eff, n_eff) so the draw is
+            # centred on the adopted value with the H2-inference width (n_eff from the
+            # inference record's 68 % interval unless overridden).
+            n_eff = float(gap_c_neff) if gap_c_neff is not None else _neff_from_cgap_record()
             for i in range(len(snr_edges) - 1):
                 if snr_edges[i] < 2.0:
                     continue
                 mm.completeness[i, jcell] = C
-            patched.append(dict(cell=key, C=C, k=None, n=None,
-                                note="explicit gap_c (PI item 2)"))
+                mm.cmp_nfound[i, jcell] = C * n_eff
+                mm.cmp_nfid[i, jcell] = n_eff
+            patched.append(dict(cell=key, C=C, k=C * n_eff, n=n_eff,
+                                note="explicit gap_c (PI item 2); counts set to (gap_c*n_eff, n_eff) so the Beta draw is centred on gap_c (A5 fix 2026-08-28)"))
             continue
         if envelope:
             dom = ("19.5-20.0" if lo < 20.0 - 1e-9 else
@@ -196,6 +215,9 @@ def main():
     ap.add_argument("--gap-treatment", choices=["frozen", "h2coarse"], default="frozen")
     ap.add_argument("--gap-c", type=float, default=None,
                     help="explicit C value for the [20.3,20.5) gap cell (item-2 response mapping)")
+    ap.add_argument("--gap-c-neff", type=float, default=None,
+                    help="effective Beta trial count for the gap cell's MC draw (A5 fix); default = "
+                         "from H2_CGAP_INFERENCE.json's 68 %% interval")
     ap.add_argument("--zbins", default="3.8,4.25,4.5,5.0")
     ap.add_argument("--n-mc", type=int, default=120)
     ap.add_argument("--out-json", default=None)
@@ -284,7 +306,7 @@ def main():
         from CDDF_analysis.hbi.cddf_catalog_hbi import make_C_interpolator
         env = None if a.envelope == "none" else a.envelope
         cal_meta["gap_treatment"] = a.gap_treatment
-        cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env, a.gap_treatment, a.gap_c)
+        cal_meta["h2_patch"] = patch_mm_with_h2(ing["mm"], a.window, env, a.gap_treatment, a.gap_c, a.gap_c_neff)
         ing["C_interp"] = make_C_interpolator(ing["mm"])
 
     if a.fp == "loa0":
