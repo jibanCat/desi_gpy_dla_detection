@@ -157,6 +157,20 @@ def build_clean_table(zcat, hcd_truth, bal_cat, snr_cat):
 # ===========================================================================
 
 
+def _taueff_spec(spec):
+    """A mean-flux model for the R-041C rescaling: a named model from
+    ``injection.noise_preserving.TAUEFF_MODELS`` or a MEASURED table
+    ``{"z": [...], "taueff": [...]}`` (e.g. tools/r041_mock_meanflux.py output),
+    interpolated linearly in z (clamped at the table ends)."""
+    from injection.noise_preserving import taueff
+    if isinstance(spec, str):
+        return taueff(spec)
+    z = np.asarray(spec["z"], dtype=float); t = np.asarray(spec["taueff"], dtype=float)
+    ok = np.isfinite(t)
+    z, t = z[ok], t[ok]
+    return lambda zz: np.interp(np.asarray(zz, dtype=float), z, t)
+
+
 def _normalize_injections(injections: Iterable[Mapping]) -> list:
     """Coerce injection records to a uniform dict list.
 
@@ -362,7 +376,7 @@ def inject_into_coadd(
                 r_mf = None
                 if meanflux is not None and zq is not None:
                     dz = float(meanflux.get("delta_z", 0.0))
-                    fid = taueff(meanflux["fiducial"]); alt = taueff(meanflux["model"])
+                    fid = _taueff_spec(meanflux["fiducial"]); alt = _taueff_spec(meanflux["model"])
                     r_mf = meanflux_ratio(wave, float(zq), lambda z: alt(np.asarray(z) + dz), fid)
                 h = hashlib.sha256(f"{seed_salt}:{rr[0]['target_id']}:{cam}".encode()).digest()
                 seed = int.from_bytes(h[:4], "little")
