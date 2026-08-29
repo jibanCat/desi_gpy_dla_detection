@@ -207,15 +207,32 @@ def main():
     print(f"closure OK: the artifact's Omega is the OPEN-TOPPED integral [20.3, {top_grid:.1f}) (max rel {closure['max_rel_diff']:.1e})")
 
     # ---- calibration status of each fine region (from the artifact's own H2 patch record) ----
-    h2 = bh["metadata"]["calibration"]["h2_patch"]
-    status = [
-        {"region": [20.3, 20.5], "status": "gap cell: C_gap = 0.496 [0.407, 0.593] bracket (no H2 injection point); kernel = 2LPT-0 forward response (transported)"},
-        {"region": [20.5, 21.0], "status": "H2-calibrated completeness (k/n = 77/117); kernel transported"},
-        {"region": [21.0, 21.5], "status": "H2-calibrated completeness (k/n = 35/43); kernel transported"},
-        {"region": [21.5, 22.0], "status": "H2 completeness cell k/n = 22/26 -- ABOVE the nominal injected logN grid top (21.5): response-held / thinly calibrated; kernel transported"},
-        {"region": [22.0, top_grid], "status": "completeness kept FROZEN from the 2LPT-0 mock (no H2 injections): EXTRAPOLATED; [22.1, 22.4) is ceiling-adjacent on the observed grid"},
-        {"h2_patch_record": h2},
-    ]
+    cal = bh["metadata"]["calibration"]
+    if "r041_patch" in cal:
+        # R-041A (2026-08-28) corrected calibration: every SNR >= 2 cell carries real (k, n)
+        # counts; region status is read from the patch record instead of the H2 table.
+        r041 = cal["r041_patch"]
+        def _kn(lo_):
+            ks = [c for c in r041["patched"] if abs(float(c["cell"].split(",")[0][1:]) - lo_) < 1e-9]
+            return (sum(c["k"] for c in ks), sum(c["n"] for c in ks))
+        status = [
+            {"region": [20.3, 20.5], "status": "R-041A DIRECT single-injection completeness (k/n = %d/%d over the SNR>=2 rows); kernel = 2LPT-0 forward response (transported)" % _kn(20.3)},
+            {"region": [20.5, 21.0], "status": "R-041A completeness (k/n = %d/%d); kernel transported" % _kn(20.5)},
+            {"region": [21.0, 21.5], "status": "R-041A completeness (k/n = %d/%d); kernel transported" % _kn(21.0)},
+            {"region": [21.5, 22.0], "status": "R-041A completeness (k/n = %d/%d; injected points 21.5 only): thinly calibrated; kernel transported" % _kn(21.5)},
+            {"region": [22.0, top_grid], "status": "R-041A completeness (k/n = %d/%d; injected point 22.0 only): thinly calibrated; [22.1, 22.4) is ceiling-adjacent on the observed grid" % _kn(22.0)},
+            {"r041_patch_record": r041},
+        ]
+    else:
+      h2 = cal["h2_patch"]
+      status = [
+          {"region": [20.3, 20.5], "status": "gap cell: C_gap = 0.496 [0.407, 0.593] bracket (no H2 injection point); kernel = 2LPT-0 forward response (transported)"},
+          {"region": [20.5, 21.0], "status": "H2-calibrated completeness (k/n = 77/117); kernel transported"},
+          {"region": [21.0, 21.5], "status": "H2-calibrated completeness (k/n = 35/43); kernel transported"},
+          {"region": [21.5, 22.0], "status": "H2 completeness cell k/n = 22/26 -- ABOVE the nominal injected logN grid top (21.5): response-held / thinly calibrated; kernel transported"},
+          {"region": [22.0, top_grid], "status": "completeness kept FROZEN from the 2LPT-0 mock (no H2 injections): EXTRAPOLATED; [22.1, 22.4) is ceiling-adjacent on the observed grid"},
+          {"h2_patch_record": h2},
+      ]
 
     # ---- upper-limit scan ----
     om_ad_map = float(omega_grid(fmap, lo, N_b, dN_b, K, *ADOPTED))
