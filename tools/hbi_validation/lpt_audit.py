@@ -25,10 +25,16 @@ from tools.hbi_validation.viz_common import plt, SLOTS, INK2, SEQ, heatmap      
 REGIONS = {"subdla_19p7_20p3": (19.7, 20.3), "dla_ge20p3": (20.3, 99.0), "all_19p5_22p4": (0.0, 99.0)}
 
 
-def load_family(pooled):
-    P = json.load(open(pooled)); arms, tags = [], []
-    for r in P["selection"]["included"]:
-        p = r["file"][:-5] + "_allsites.npz"; arms.append(np.load(p)); tags.append(f"s{r['seed']}{'d' if r['deep'] else ''}")
+def load_family(spec):
+    """POOLED.json (its selection block names the arms) or a comma-separated list of all-sites npz paths."""
+    arms, tags = [], []
+    if spec.endswith(".json"):
+        P = json.load(open(spec))
+        for r in P["selection"]["included"]:
+            p = r["file"][:-5] + "_allsites.npz"; arms.append(np.load(p)); tags.append(f"s{r['seed']}{'d' if r['deep'] else ''}")
+    else:
+        for p in spec.split(","):
+            arms.append(np.load(p)); tags.append(re.sub(r".*REAL_ln_(deep_|lc_)?s(\d{8})_allsites\.npz", lambda m: f"{(m.group(1) or '').rstrip('_')}s{m.group(2)}", p))
     return arms, tags
 
 
@@ -94,12 +100,12 @@ def main(argv=None):
     nhat = np.asarray(pk.nhat_edges, float); cen = 0.5 * (nhat[:-1] + nhat[1:]); KK = int(np.asarray(consts.t_sigma).size); S = consts.n_s
     fams = {}
     for spec in a.family:
-        lab, p = spec.split("="); arms, tags = load_family(p); st = stack(arms); st["tags"] = tags; st["pooled"] = p; fams[lab] = st
+        lab, p = spec.split("=", 1); arms, tags = load_family(p); st = stack(arms); st["tags"] = tags; st["pooled"] = p; fams[lab] = st
     extras = {}
     for spec in a.extra:
         p, lab, ch = spec.split(":"); z = np.load(p); ch = int(ch)
         extras[lab] = dict(t=np.asarray(z["t"])[ch], lam_fp=np.asarray(z["lam_fp"])[ch], potential_energy=np.asarray(z["potential_energy"])[ch], path=p, chain=ch)
-    res = dict(pack=a.pack, pack_sha256=sha256(a.pack), families={k: dict(pooled=v["pooled"], pooled_sha256=sha256(v["pooled"]), arms=v["tags"], n=int(v["t"].shape[0])) for k, v in fams.items()},
+    res = dict(pack=a.pack, pack_sha256=sha256(a.pack), families={k: dict(source=v["pooled"], source_sha256=(sha256(v["pooled"]) if v["pooled"].endswith(".json") else [sha256(x) for x in v["pooled"].split(",")]), arms=v["tags"], n=int(v["t"].shape[0])) for k, v in fams.items()},
                definition=("mu_FP(R) = Lambda * exp(t_K) * Pi_R ; Pi_R = sum_{c in set,s} pi_cs W^K_cs ; W^K_cs = fp_w*ell_eff*(1-eta_c)*sum_{k in K, dX>0} E_ks ; "
                            "pi = lam_fp / sum(lam_fp) ; log mu = log Lambda + t_K + log Pi_R exactly"), regions={})
     base = list(fams)[0]
