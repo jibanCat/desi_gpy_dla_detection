@@ -29,8 +29,14 @@ def test_variance_preserving_identity_and_invariants():
     good = (ivar > 0) & (mask == 0)
     synth = np.zeros_like(flux); synth[good] = np.sqrt(1 - T[good] ** 2) * eps[good] / np.sqrt(ivar[good])
     assert np.max(np.abs((out - synth) - T * flux)) < 1e-9          # deterministic part is exactly T * F
-    outside = np.abs(T - 1.0) < 1e-12
-    assert np.array_equal(out[outside], flux[outside])                # untouched outside the profile
+    # The former check here — `outside = np.abs(T - 1.0) < 1e-12; assert np.array_equal(out[outside],
+    # flux[outside])` — was VACUOUS on this fixture (PI ruling 2026-09-01 §8): the 3-line Voigt profile of the
+    # frozen primitive never reaches |1 - T| < 1e-12 anywhere on the 3600-6800 A grid (its damping wings decay
+    # as 1/dv^2; min |1 - T| ~ 2e-4 at the blue end), so the selected set was EMPTY and array_equal([], [])
+    # is True. Pinned here so the reason is visible; the outside-profile guarantee is now tested for BOTH
+    # methods, with an asserted non-empty outside set, in
+    # test_flux_outside_the_injected_profile_untouched_both_methods.
+    assert (np.abs(T - 1.0) < 1e-12).sum() == 0
     assert np.array_equal(NP.inject_noise_preserving(wave, flux, ivar, mask, ab, seed=7), out)   # seeded -> reproducible
     assert not np.array_equal(NP.inject_noise_preserving(wave, flux, ivar, mask, ab, seed=8), out)
 
@@ -111,21 +117,51 @@ def test_residual_preserving_carries_the_observed_residual():
     assert np.max(np.abs((out_r - T * r * S) - (flux - S))) < 1e-12
 
 
-def test_residual_preserving_keeps_flux_bitwise_where_T_is_exactly_one(monkeypatch):
-    # a transmission with a genuine outside region (T == 1 exactly): those pixels keep F bit-for-bit,
-    # the inside follows T S + (F - S)
+PROFILE_WINDOW_KMS = 3000.0
+
+
+def _spec_with_outside(monkeypatch, z_dla=4.0, logN=21.0, window_kms=PROFILE_WINDOW_KMS):
+    """Fixture with a NON-EMPTY outside region BY CONSTRUCTION (PI ruling 2026-09-01 §8): the frozen Voigt
+    primitive never returns T == 1.0 exactly on the 3600-6800 A grid (damping wings), so the profile is
+    truncated by an explicit mask — the real Voigt transmission inside |v| < window_kms of the line, exactly
+    1.0 outside. The injector's own `transmission` hook is replaced so both methods run their production
+    arithmetic on this profile. Returns the spectrum, the absorber list, and the inside/outside masks."""
     wave, flux, ivar, mask, S_true, sigma = _spec()
-    T_syn = np.ones(wave.size); win = (wave > 6000.0) & (wave < 6150.0); T_syn[win] = 0.1
-    monkeypatch.setattr(NP, "transmission", lambda w, absorbers, num_lines=3: T_syn.copy())
-    out, parts = NP.inject_noise_preserving(wave, flux, ivar, mask, [{"nhi": 1e21, "z_dla": 4.0}],
-                                            method="residual_preserving", return_parts=True)
-    S = parts["S"]
-    assert (~win).sum() > 50 and np.array_equal(out[~win], flux[~win])
-    assert np.array_equal(out[win], (0.1 * S + (flux - S))[win])
-    # NaN-S spectra (unusable) are returned unchanged by construction
-    bad = np.zeros_like(mask); bad[:] = 1
-    out2 = NP.inject_noise_preserving(wave, flux, ivar, bad, [{"nhi": 1e21, "z_dla": 4.0}], method="residual_preserving")
-    assert np.array_equal(out2, flux)
+    lam0 = NP.LYA_REST * (1.0 + z_dla)
+    inside = np.abs(wave / lam0 - 1.0) * 299792.458 < window_kms
+    real_transmission = NP.voigt_transmission
+
+    def truncated(w, absorbers, num_lines=3):
+        T = np.ones(np.asarray(w).size)
+        for ab in absorbers:
+            T = T * real_transmission(np.asarray(w, float), float(ab["nhi"]), float(ab["z_dla"]), int(ab.get("num_lines", num_lines)))
+        T[~inside] = 1.0
+        return T
+
+    monkeypatch.setattr(NP, "transmission", truncated)
+    return wave, flux, ivar, mask, [{"nhi": 10 ** logN, "z_dla": z_dla}], inside, ~inside
+
+
+@pytest.mark.parametrize("method", ["variance_preserving", "residual_preserving"])
+def test_flux_outside_the_injected_profile_untouched_both_methods(monkeypatch, method):
+    wave, flux, ivar, mask, ab, inside, outside = _spec_with_outside(monkeypatch)
+    # (c) the outside set is non-empty by construction and asserted, so this test can never be vacuous again
+    assert outside.sum() > 100 and inside.sum() > 10
+    out, parts = NP.inject_noise_preserving(wave, flux, ivar, mask, ab, seed=7, method=method, return_parts=True)
+    T = parts["T"]
+    assert np.all(T[outside] == 1.0) and np.all(T[inside] < 1.0)      # the constructed profile is what the injector used
+    # (a) bit-for-bit unchanged outside the injected profile
+    assert np.array_equal(out[outside], flux[outside])
+    # (b) changed inside it (a saturated log N = 21 core: essentially every inside pixel moves)
+    assert not np.array_equal(out[inside], flux[inside])
+    assert np.mean(out[inside] != flux[inside]) > 0.95
+    assert np.max(np.abs(out[inside] - flux[inside])) > 0.1
+    if method == "residual_preserving":
+        S = parts["S"]
+        assert np.max(np.abs((out - T * S) - (flux - S))[inside]) < 1e-12     # the prescription-B identity inside
+        # an unusable spectrum (S undefined everywhere) is returned unchanged
+        bad = np.ones_like(mask)
+        assert np.array_equal(NP.inject_noise_preserving(wave, flux, ivar, bad, ab, method=method), flux)
 
 
 def test_unknown_method_raises():
