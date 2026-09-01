@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 """r041_build_archive.py — build one injected LoaArchive WAVE from a realized R-041 plan,
-with the corrected noise-preserving injection (default) or the old multiplicative one (for the
-old-vs-corrected comparison), optionally with a mean-flux rescaling of the forest signal
-(R-041B), and emit everything the archive-route finder launch needs: the injected archive
+with the corrected noise-preserving injection (default; prescription A), the residual-preserving
+alternative (prescription B of the injection-prescription gate, PI ruling 2026-08-28/29 item 6)
+or the old multiplicative one (for the old-vs-corrected comparison), optionally with a mean-flux
+rescaling of the forest signal (R-041B), and emit everything the archive-route finder launch
+needs: the injected archive
 (schema-identical to the source; only the wave's sightlines), the truth manifest, the
 per-wave QSO catalogue (rows of the production QSO catalogue), the healpix list, the launch
 env file, and a build summary with hashes.
@@ -35,7 +37,39 @@ def _sha(p):
     return h.hexdigest()
 
 
-def main():
+# --method choices -> (injection/noise_preserving.py method, human-readable prescription). The
+# builder's method names are the CAMPAIGN names (kept for the existing plans/truth CSVs);
+# "noise_preserving" is prescription A = the injector's "variance_preserving".
+METHODS = {
+    "noise_preserving": ("variance_preserving",
+                         "A (variance-preserving): F' = T*(F + (r-1)*S) + sqrt(1 - T^2)*eps/sqrt(ivar), eps ~ N(0,1) from "
+                         "numpy default_rng(seed) with seed = 0 for EVERY sightline of the wave (the injector default; the "
+                         "archive route passes no per-sightline seed); S = signal_estimate(F; median_px, sigma_px); "
+                         "ivar / mask unchanged; T = frozen Voigt transmission (num_lines)"),
+    "residual_preserving": ("residual_preserving",
+                            "B (residual-preserving): F' = T*S_r + (F_r - S_r) with F_r = F + (r-1)*S and S_r = r*S, i.e. the "
+                            "observed residual F - S is carried through unchanged; no synthetic noise, no seed; pixels with "
+                            "T == 1 exactly or undefined S keep F_r bit-for-bit; ivar / mask unchanged"),
+    "multiplicative": (None,
+                       "OLD (rejected): F' = T*F — the observed noise is attenuated together with the signal (noiseless "
+                       "saturated troughs); kept only for the old-vs-corrected comparison"),
+}
+
+
+def inject_sightline(method, wave, flux, ivar, mask, absorbers, *, z_qso, alt, fid, num_lines, median_px, sigma_px):
+    """Per-sightline dispatch on the campaign method name (see METHODS). `alt` / `fid` are the
+    tau_eff callables of the mean-flux rescaling (alt None = fiducial, r = 1)."""
+    from injection.noise_preserving import inject_noise_preserving, inject_multiplicative, meanflux_ratio
+    if method not in METHODS:
+        raise ValueError(f"unknown --method {method!r}; choices {sorted(METHODS)}")
+    if method == "multiplicative":
+        return inject_multiplicative(wave, flux, absorbers, num_lines)
+    r_mf = meanflux_ratio(wave, z_qso, alt, fid) if alt is not None else None
+    return inject_noise_preserving(wave, flux, ivar, mask, absorbers, z_qso=z_qso, r=r_mf, num_lines=num_lines,
+                                   median_px=median_px, sigma_px=sigma_px, method=METHODS[method][0])
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--plan", required=True)
     ap.add_argument("--wave", type=int, required=True)
@@ -43,17 +77,18 @@ def main():
     ap.add_argument("--qsocat", required=True, help="production QSO catalogue (rows copied for the wave's TARGETIDs)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--tag", required=True, help="campaign tag, e.g. fid, cmp_old, cmp_new, mf_fg2008")
-    ap.add_argument("--method", choices=["noise_preserving", "multiplicative"], default="noise_preserving")
+    ap.add_argument("--method", choices=list(METHODS), default="noise_preserving",
+                    help="noise_preserving = prescription A (default, variance-preserving); residual_preserving = "
+                         "prescription B; multiplicative = the old F*T operation (comparison only)")
     ap.add_argument("--meanflux-model", default=None, help="TAUEFF_MODELS key for the forest rescaling (R-041B); None = fiducial (r = 1)")
     ap.add_argument("--meanflux-fiducial", default="finder_fiducial")
     ap.add_argument("--sigma-px", type=float, default=None)
     ap.add_argument("--median-px", type=int, default=None)
     ap.add_argument("--num-lines", type=int, default=3)
     ap.add_argument("--base-env", default=os.path.join(REPO, "slurm/greatlakes/production/loa_cddf_hz_gl_v1.env"))
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     import h5py, fitsio
-    from injection.noise_preserving import (inject_noise_preserving, inject_multiplicative, meanflux_ratio, taueff,
-                                            DEFAULT_SIGMA_PX, DEFAULT_MEDIAN_PX)
+    from injection.noise_preserving import taueff, DEFAULT_SIGMA_PX, DEFAULT_MEDIAN_PX
     sigma = DEFAULT_SIGMA_PX if a.sigma_px is None else a.sigma_px
     median = DEFAULT_MEDIAN_PX if a.median_px is None else a.median_px
     os.makedirs(a.out_dir, exist_ok=True)
@@ -64,7 +99,7 @@ def main():
     for r in plan:
         by_tid.setdefault(int(r["TARGETID"]), []).append(r)
     tids = sorted(by_tid)
-    if a.method == "noise_preserving" and any(len(v) > 1 for v in by_tid.values()) and "pair_class" not in plan[0]:
+    if a.method != "multiplicative" and any(len(v) > 1 for v in by_tid.values()) and "pair_class" not in plan[0]:
         raise SystemExit("fiducial waves must carry ONE injection per sightline")
     stem = f"r041_{a.tag}_wave{a.wave}"
     out_h5 = os.path.join(a.out_dir, stem + ".h5")
@@ -89,12 +124,8 @@ def main():
         for j, t in enumerate(tids):
             zq = float(cat[idx[t]]["Z"])
             absorbers = [{"nhi": 10.0 ** float(r["logN"]), "z_dla": float(r["z_inj"]), "num_lines": a.num_lines} for r in by_tid[t]]
-            if a.method == "multiplicative":
-                fl = inject_multiplicative(wave, fl_all[j], absorbers, a.num_lines)
-            else:
-                r_mf = meanflux_ratio(wave, zq, alt, fid) if alt is not None else None
-                fl = inject_noise_preserving(wave, fl_all[j], iv_all[j], mk_all[j], absorbers, z_qso=zq, r=r_mf,
-                                             num_lines=a.num_lines, median_px=median, sigma_px=sigma)
+            fl = inject_sightline(a.method, wave, fl_all[j], iv_all[j], mk_all[j], absorbers, z_qso=zq, alt=alt, fid=fid,
+                                  num_lines=a.num_lines, median_px=median, sigma_px=sigma)
             out_flux[j] = fl.astype(np.float32)
             for r in by_tid[t]:
                 truth_rows.append(dict(TARGETID=t, wave=a.wave, inj_idx=int(r["inj_idx"]), logN=float(r["logN"]), z_inj=float(r["z_inj"]),
@@ -127,7 +158,11 @@ def main():
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip()
     except Exception:
         commit = "unknown"
-    summ = dict(tag=a.tag, wave=a.wave, method=a.method, meanflux_model=a.meanflux_model, sigma_px=sigma, median_px=median, num_lines=a.num_lines,
+    summ = dict(tag=a.tag, wave=a.wave, method=a.method, injection_prescription=METHODS[a.method][1],
+                injector_method=METHODS[a.method][0],
+                noise_seed_policy=("constant seed 0 for every sightline (inject_noise_preserving default; deterministic, NOT per-sightline)"
+                                   if a.method == "noise_preserving" else "no synthetic noise"),
+                meanflux_model=a.meanflux_model, sigma_px=sigma, median_px=median, num_lines=a.num_lines,
                 n_sightlines=len(tids), n_injections=len(truth_rows), n_hpx=len(hpx), source_archive=a.archive, source_archive_sha256=_sha(a.archive),
                 injected_archive=out_h5, injected_archive_sha256=_sha(out_h5), truth=truth, truth_sha256=_sha(truth), qsocat=qso_out, qsocat_sha256=_sha(qso_out),
                 hpx_list=hpx_out, hpx_list_sha256=_sha(hpx_out), env=env_out, plan=a.plan, plan_sha256=_sha(a.plan), code_commit=commit,
