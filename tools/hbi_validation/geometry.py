@@ -356,10 +356,11 @@ def main(argv=None):
     res["likelihood_terms"] = acct
     json.dump(res, open(a.out, "w"), indent=1)
     # ---- compact print
-    print(json.dumps(dict(n=n, t={k: (round(v["median"], 4), round(v["median_over_sigma"], 2), round(v["post_over_prior_width"], 3)) for k, v in res["t"].items()},
-                          logL=(round(res["log_Lambda"]["median"], 4), round(res["log_Lambda"]["sd"], 4)), A={k: (round(v["sd"], 4), round(v["sd_A_over_sd_t"], 3)) for k, v in res["A_K"].items()},
-                          corr_logL_t=[res["ridge_pairs"][f"K{K}"]["corr"] for K in range(KK)], Cbar=[round(x, 4) for x in res["completeness"]["C_bar"]],
-                          dbar=[round(x, 4) for x in res["completeness"]["d_bar"]], corr_t_Cbar=res["completeness"]["corr_t_Cbar"],
+    rnd = lambda v, n=3: (round(v, n) if isinstance(v, (int, float)) and v is not None else v)
+    print(json.dumps(dict(n=n, t={k: (rnd(v["median"], 4), rnd(v["median_over_sigma"], 2), rnd(v["post_over_prior_width"], 3)) for k, v in res["t"].items()},
+                          logL=(rnd(res["log_Lambda"]["median"], 4), rnd(res["log_Lambda"]["sd"], 4)), A={k: (rnd(v["sd"], 4), rnd(v["sd_A_over_sd_t"], 3)) for k, v in res["A_K"].items()},
+                          corr_logL_t=[res["ridge_pairs"][f"K{K}"]["corr"] for K in range(KK)], Cbar=[rnd(x, 4) for x in res["completeness"]["C_bar"]],
+                          dbar=[rnd(x, 4) for x in res["completeness"]["d_bar"]], corr_t_Cbar=res["completeness"]["corr_t_Cbar"],
                           gmm_bic=res["modes"].get("bic"), sci20p3=[round(x, 5) for x in sci["dndx_ge20p3_allz"]], omega=[float(f"{x:.4e}") for x in sci["omega_20p3_21p6_allz_h0p70"]]), indent=0))
     return 0
 
