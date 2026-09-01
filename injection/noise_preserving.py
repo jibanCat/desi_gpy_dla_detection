@@ -43,6 +43,29 @@ in place; the DLA is then injected with the variance-preserving operation. Real 
 have no latent noise-free flux, so S is an estimate; its smoothing scale is a documented
 parameter and the suite reports the residual statistics.
 
+DETERMINISTIC STATE OF PRESCRIPTION A (documented 2026-09-01, PI follow-up; no behaviour change)
+- The noise draw is eps = numpy.random.default_rng(int(seed)).standard_normal(n_pix), one
+  vector per call of inject_noise_preserving, indexed by pixel of the spectrum's own grid.
+  There is no other entropy source: the same (inputs, seed) give the same F' bit-for-bit.
+- `seed` is a plain keyword argument (default 0). Who sets it:
+    * the REAL-SPECTRUM archive route, tools/r041_build_archive.py (R-041A fiducial / cmp,
+      R-041B mean-flux, R-041D pairs), passes NO seed -> seed = 0 for EVERY sightline of every
+      wave. Because all archive spectra share one wavelength grid, every sightline of a wave
+      receives the SAME eps vector (pixel-aligned), scaled by its own 1/sqrt(ivar); two
+      injections at the same observed wavelength on different sightlines therefore carry the
+      same trough-noise pattern. This is deterministic but NOT the "seeded per sightline"
+      wording of the 2026-08-28 progress record — recorded here as a fact, not changed
+      (a per-sightline seed would alter every existing archive's bytes and is a PI decision).
+    * the MOCK coadd route, injection/coadd_injection.py (R-041C/E), seeds per
+      (seed_salt, target_id, camera): seed = first 4 bytes of sha256(f"{salt}:{tid}:{cam}").
+- The injection PLAN (which z, log N per sightline) is realised in tools/r041_plan.py with
+  numpy default_rng(seed_for(TARGETID, k, seed_salt)) — independent of eps.
+- Rebuilding a wave from the same plan + source archive + code reproduces the injected flux
+  arrays bit-for-bit (tests/test_r041_build_archive_methods.py); the HDF5 container bytes
+  may still differ through h5py/HDF5 object timestamps — the build summary therefore records
+  the archive sha256 of the build that was actually run.
+- Prescription B (residual_preserving) draws no noise and ignores `seed`.
+
 ivar, mask, resolution and the wavelength grid are never modified. The Voigt transmission
 is the SAME frozen primitive the finder and the old campaign used (voigt_transmission).
 Limitation: the synthetic noise component is white (diagonal ivar) — the same assumption
