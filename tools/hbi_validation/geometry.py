@@ -33,6 +33,23 @@ def q(x, p=(2.5, 16, 50, 84, 97.5)):
     return [float(v) for v in np.percentile(np.asarray(x), p)]
 
 
+def corr(x, y):
+    """Pearson r, or None when either input is constant (a FIXED site in R1/R3/R4)."""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    if x.std() == 0.0 or y.std() == 0.0:
+        return None
+    return float(np.corrcoef(x, y)[0, 1])
+
+
+def fin(v):
+    """float or None for non-finite (JSON-clean)."""
+    try:
+        v = float(v)
+    except Exception:
+        return None
+    return v if np.isfinite(v) else None
+
+
 def omega_prefactor(H0=H0_KM_S_MPC):
     """H0 m_H / (c rho_crit)  [cm^2] such that Omega = pref * sum 10^N f dN  (N in cm^-2, f per cm^2 per dX)."""
     m_H = 1.6735575e-24        # g
@@ -141,7 +158,7 @@ def main(argv=None):
     res["t"] = {f"K{K}": dict(median=float(np.median(T[:, K])), mean=float(T[:, K].mean()), sd=float(T[:, K].std(ddof=1)), q=q(T[:, K]),
                              median_over_sigma=float(np.median(T[:, K]) / ts[K]), post_over_prior_width=float(T[:, K].std(ddof=1) / ts[K]),
                              exp_t_median=float(np.exp(np.median(T[:, K]))), exp_t_p16_84=q(np.exp(T[:, K]), (16, 84)),
-                             kl_gauss_nats=float(0.5 * ((T[:, K].std(ddof=1) / ts[K])**2 + (T[:, K].mean() / ts[K])**2 - 1 - 2 * np.log(T[:, K].std(ddof=1) / ts[K]))),
+                             kl_gauss_nats=fin(0.5 * ((T[:, K].std(ddof=1) / ts[K])**2 + (T[:, K].mean() / ts[K])**2 - 1 - 2 * np.log(T[:, K].std(ddof=1) / ts[K])) if T[:, K].std() > 0 else None),
                              arm_means=[float(T[arm_id == i, K].mean()) for i in range(len(arms))],
                              arm_sd_of_means=float(np.std([T[arm_id == i, K].mean() for i in range(len(arms))], ddof=1)))
                 for K in range(KK)}
@@ -149,16 +166,18 @@ def main(argv=None):
                              Lambda_over_naive=q(Lam / naive, (16, 50, 84)), naive=naive,
                              prior=dict(conc=float(np.asarray(pk.fp_counts).sum() + 0.5), rate=float(consts.fp_ell_eff),
                                         mean=float((np.asarray(pk.fp_counts).sum() + 0.5) / consts.fp_ell_eff), sd=float(np.sqrt(np.asarray(pk.fp_counts).sum() + 0.5) / consts.fp_ell_eff)))
-    res["A_K"] = {f"K{K}": dict(median=float(np.median(A[:, K])), sd=float(A[:, K].std(ddof=1)), sd_A_over_sd_t=float(A[:, K].std(ddof=1) / T[:, K].std(ddof=1)),
+    res["A_K"] = {f"K{K}": dict(median=float(np.median(A[:, K])), sd=float(A[:, K].std(ddof=1)), sd_A_over_sd_t=fin(A[:, K].std(ddof=1) / T[:, K].std(ddof=1)) if T[:, K].std() > 0 else None,
                                sd_A_over_sd_logL=float(A[:, K].std(ddof=1) / logL.std(ddof=1)), Lambda_exp_t_median=float(np.median(np.exp(A[:, K])))) for K in range(KK)}
     Y7 = np.column_stack([logL, T, A]); n7 = ["logLambda"] + [f"t{K}" for K in range(KK)] + [f"A{K}" for K in range(KK)]
-    res["corr7"] = dict(names=n7, corr=np.corrcoef(Y7.T).round(4).tolist(), cov=np.cov(Y7.T).tolist())
+    with np.errstate(invalid="ignore", divide="ignore"):
+        c7 = np.corrcoef(Y7.T)
+    res["corr7"] = dict(names=n7, corr=[[fin(v) for v in row] for row in c7.round(4)], cov=np.cov(Y7.T).tolist())
     Y4 = np.column_stack([logL, T]); w, v = np.linalg.eigh(np.cov(Y4.T))
     res["eig_logL_t"] = dict(names=n7[:1 + KK], eigvals=w[::-1].tolist(), eigvecs_rows=v[:, ::-1].T.round(4).tolist())
     res["ridge_pairs"] = {}
     for K in range(KK):
         c2 = np.cov(np.column_stack([logL, T[:, K]]).T); w2, v2 = np.linalg.eigh(c2)
-        res["ridge_pairs"][f"K{K}"] = dict(corr=float(np.corrcoef(logL, T[:, K])[0, 1]), eigvals=w2[::-1].tolist(), major_axis=v2[:, -1].round(4).tolist(),
+        res["ridge_pairs"][f"K{K}"] = dict(corr=corr(logL, T[:, K]), eigvals=w2[::-1].tolist(), major_axis=v2[:, -1].round(4).tolist(),
                                           conserved_A_direction_share=float(abs(np.dot(v2[:, -1], np.array([-1, 1]) / np.sqrt(2)))**2))
     # ---- FP shares, t=0 forward counterfactual, mu_TP via model_cc's fold (subsample for the fold)
     nhat = np.asarray(pk.nhat_edges, float); cen = 0.5 * (nhat[:-1] + nhat[1:]); kz = np.asarray(consts.kz_to_K)
@@ -200,8 +219,8 @@ def main(argv=None):
             mfp = np.stack([fp_mu(consts, T[i], LF[i], dXm)[np.ix_(np.where(sm)[0], np.where(bm)[0], np.arange(counts.shape[2]))].sum() for i in range(n)])
             logmu = np.log(mfp); pimass = pi[:, sm, :].sum(axis=(1, 2))
             ident[sn][bn] = dict(sd_log_muFP=float(logmu.std(ddof=1)), sd_A_K=float(A[:, K].std(ddof=1)), sd_logLambda=float(logL.std(ddof=1)), sd_log_pimass=float(np.log(pimass).std(ddof=1)),
-                                 corr_logmu_AK=float(np.corrcoef(logmu, A[:, K])[0, 1]), corr_logmu_logL=float(np.corrcoef(logmu, logL)[0, 1]), corr_logmu_t=float(np.corrcoef(logmu, T[:, K])[0, 1]),
-                                 corr_t_logpimass=float(np.corrcoef(T[:, K], np.log(pimass))[0, 1]), corr_logL_logpimass=float(np.corrcoef(logL, np.log(pimass))[0, 1]),
+                                 corr_logmu_AK=corr(logmu, A[:, K]), corr_logmu_logL=corr(logmu, logL), corr_logmu_t=corr(logmu, T[:, K]),
+                                 corr_t_logpimass=corr(T[:, K], np.log(pimass)), corr_logL_logpimass=corr(logL, np.log(pimass)),
                                  pimass_median=float(np.median(pimass)), pimass_prior_centre=float(np.exp(m_cs).reshape(consts.n_c, consts.n_s)[sm].sum() / np.exp(m_cs).sum()))
     res["identified_coordinate"] = dict(note="log mu_FP(N set, z block) = A_K + log(sum_{c in set,s} pi_cs O_cks) + const: the coordinate the catalogue sees; compare its sd with sd(A_K), sd(log Lambda)", table=ident)
     pop = fpc_np.reshape(-1) > 0
@@ -251,9 +270,9 @@ def main(argv=None):
                                latent_bins=[[float(ntrue[b]), float(ntrue[b + 1])] for b in np.where(mS)[0]], molly_cells_m=cells,
                                molly_cell_edges=[[float(pack["molly_nhi_edges"][m]), float(pack["molly_nhi_edges"][m + 1])] for m in cells],
                                weights_by_stratum=(w_bs.sum(axis=0) / w_bs.sum()).round(4).tolist(),
-                               C_bar_central=C0, C_bar=q(Cb), d_bar=q(dbar), corr_t_Cbar=[float(np.corrcoef(T[:, K], Cb)[0, 1]) for K in range(KK)],
-                               corr_t_dbar=[float(np.corrcoef(T[:, K], dbar)[0, 1]) for K in range(KK)],
-                               corr_logL_Cbar=float(np.corrcoef(logL, Cb)[0, 1]), corr_Cbar_fsub=float(np.corrcoef(Cb, f_sub)[0, 1]))
+                               C_bar_central=C0, C_bar=q(Cb), d_bar=q(dbar), corr_t_Cbar=[corr(T[:, K], Cb) for K in range(KK)],
+                               corr_t_dbar=[corr(T[:, K], dbar) for K in range(KK)],
+                               corr_logL_Cbar=corr(logL, Cb), corr_Cbar_fsub=corr(Cb, f_sub))
     # leverage of psi_c cells on the low-z sub-DLA catalogue prediction: |d mu_cat(19.7-20.3, z0) / d psi_c[s,m]| x sd(psi_c[s,m]) at the posterior mean
     th_m, ps_m, t_m, lf_m = jnp.asarray(TH.mean(axis=0)), jnp.asarray(PS.mean(axis=0)), jnp.asarray(T.mean(axis=0)), jnp.asarray(LF.mean(axis=0))
     smask = jnp.asarray(sets["subdla_19p7_20p3"]); 
@@ -268,16 +287,16 @@ def main(argv=None):
         order = np.argsort(-L.reshape(-1))[:a.n_lev]
         lev[f"z{K}"] = [dict(cell=f"psi_c[s={i // PS.shape[2]},m={i % PS.shape[2]}]", dmu_dpsi=float(gK.reshape(-1)[i]), sd_psi=float(PS.std(axis=0, ddof=1).reshape(-1)[i]),
                              leverage_counts=float(L.reshape(-1)[i]), leverage_frac_of_obs=float(L.reshape(-1)[i] / obsK),
-                             corr_with_t=[float(np.corrcoef(PS.reshape(n, -1)[:, i], T[:, KK2])[0, 1]) for KK2 in range(KK)]) for i in order]
+                             corr_with_t=[corr(PS.reshape(n, -1)[:, i], T[:, KK2]) for KK2 in range(KK)]) for i in order]
     res["leverage_psi_c"] = lev
     # ---- correlations of t with the population and the completeness summaries
     prox = dict(dndx_ge20p0_allz=np.asarray(red["dndx_dla_20p0_allz"]), dndx_ge20p3_allz=np.asarray(red["dndx_dla_20p3_allz"]), omega_20p3_21p6=omega_allz,
                 f_subdla_19p7_20p3_allz=f_sub, f_subdla_19p7_20p3_z0=f_sub_z0, C_bar_subDLA=Cb, d_bar_subDLA=dbar, logLambda=logL)
     for K in range(KK):
         prox[f"dndx_ge20p3_z{K}"] = np.asarray(red["dndx_dla_20p3_coarse"])[:, K]
-    res["corr_t_vs"] = {k: [float(np.corrcoef(T[:, K], v)[0, 1]) for K in range(KK)] for k, v in prox.items()}
+    res["corr_t_vs"] = {k: [corr(T[:, K], v) for K in range(KK)] for k, v in prox.items()}
     # ---- low-dimensional mode diagnostics (A0,A1,A2,logL,Cbar,f_sub): GMM 1 vs 2 by BIC, dip statistic on the leading PC, chain/arm occupancy
-    Z = np.column_stack([A, logL, Cb, f_sub]); Zs = (Z - Z.mean(axis=0)) / Z.std(axis=0)
+    Z = np.column_stack([A, logL, Cb, f_sub]); Zsd = Z.std(axis=0); Zsd[Zsd == 0] = 1.0; Zs = (Z - Z.mean(axis=0)) / Zsd
     modes = dict(coords=["A0", "A1", "A2", "logLambda", "C_bar_subDLA", "f_subDLA"])
     try:
         from sklearn.mixture import GaussianMixture
@@ -339,8 +358,8 @@ def main(argv=None):
     # ---- compact print
     print(json.dumps(dict(n=n, t={k: (round(v["median"], 4), round(v["median_over_sigma"], 2), round(v["post_over_prior_width"], 3)) for k, v in res["t"].items()},
                           logL=(round(res["log_Lambda"]["median"], 4), round(res["log_Lambda"]["sd"], 4)), A={k: (round(v["sd"], 4), round(v["sd_A_over_sd_t"], 3)) for k, v in res["A_K"].items()},
-                          corr_logL_t=[round(res["ridge_pairs"][f"K{K}"]["corr"], 3) for K in range(KK)], Cbar=[round(x, 4) for x in res["completeness"]["C_bar"]],
-                          dbar=[round(x, 4) for x in res["completeness"]["d_bar"]], corr_t_Cbar=[round(x, 3) for x in res["completeness"]["corr_t_Cbar"]],
+                          corr_logL_t=[res["ridge_pairs"][f"K{K}"]["corr"] for K in range(KK)], Cbar=[round(x, 4) for x in res["completeness"]["C_bar"]],
+                          dbar=[round(x, 4) for x in res["completeness"]["d_bar"]], corr_t_Cbar=res["completeness"]["corr_t_Cbar"],
                           gmm_bic=res["modes"].get("bic"), sci20p3=[round(x, 5) for x in sci["dndx_ge20p3_allz"]], omega=[float(f"{x:.4e}") for x in sci["omega_20p3_21p6_allz_h0p70"]]), indent=0))
     return 0
 
