@@ -23,6 +23,19 @@ smoothing scale is ~1.7x the pixel noise and would have survived inside the trou
 (measured by the validation suite, kept as the documented rejected alternative
 `method="signal_estimate"`).
 
+Prescription B (PI ruling 2026-08-28/29 item 6, the injection-prescription gate of the MAX4
+repair cycle), `method="residual_preserving"`:
+
+    F' = T * S_est + (F_obs - S_est),      S_est = signal_estimate(F_obs)
+
+the smooth signal estimate is absorbed by the profile and the observed residual (pixel noise
+PLUS the forest structure below the smoothing scale) is carried through unchanged — no
+synthetic noise, no seed. Outside the profile (T == 1 exactly) and where S_est is undefined
+the observed flux is kept bit-for-bit. Algebraically this is F_obs + (T - 1) S_est, i.e. the
+same operation as the documented `signal_estimate` alternative; it is exposed under its own
+name so the A (variance-preserving) vs B (residual-preserving) gate is explicit and testable.
+The default remains `variance_preserving` (prescription A, the current fiducial).
+
 Mean-flux rescaling (R-041B): the forest SIGNAL is rescaled by r(lambda) =
 exp(-(tau_alt - tau_fid)) using a smooth signal estimate S (running median + Gaussian
 smoothing over unmasked pixels), F_obs -> F_obs + (r - 1) S, which leaves the real noise
@@ -91,6 +104,10 @@ def inject_noise_preserving(wave, flux, ivar, mask, absorbers, *, z_qso=None, r=
                             method="variance_preserving", return_parts=False):
     """Corrected injection. method:
       'variance_preserving' (default): F' = T (F + (r-1) S) + sqrt(1 - T^2) eps / sqrt(ivar)
+      'residual_preserving' (prescription B, gate item 6): F' = T S_r + (F_r - S_r) with
+          F_r = F + (r-1) S the (optionally mean-flux-rescaled) flux and S_r = r S its signal
+          estimate, so the observed residual F - S is untouched; T == 1 pixels and pixels with
+          undefined S keep F_r bit-for-bit; no synthetic noise (seed unused).
       'signal_estimate' (rejected alternative, kept for the record): F' = F + (T r - 1) S
     ivar/mask are returned unchanged. eps is drawn from numpy default_rng(seed) so a wave is
     reproducible from its plan + seed. Pixels with ivar <= 0 or mask != 0 get no synthetic
@@ -108,6 +125,16 @@ def inject_noise_preserving(wave, flux, ivar, mask, absorbers, *, z_qso=None, r=
         ok = np.isfinite(S)
         out[ok] = base[ok] + (T[ok] - 1.0) * S[ok]
         parts = dict(T=T, S=S, eps=None)
+    elif method == "residual_preserving":
+        ok = np.isfinite(S)
+        S_sig = S.copy()
+        if r is not None:
+            S_sig[ok] = np.asarray(r, float)[ok] * S[ok]
+        resid = base - S_sig                             # == F - S wherever S is defined
+        out = base.copy()
+        inside = ok & (T != 1.0)
+        out[inside] = T[inside] * S_sig[inside] + resid[inside]
+        parts = dict(T=T, S=S, eps=None, resid=resid)
     elif method == "variance_preserving":
         rng = np.random.default_rng(int(seed))
         eps = rng.standard_normal(flux.size)
