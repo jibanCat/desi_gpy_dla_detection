@@ -75,7 +75,8 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
              fp_alpha0=None, fp_total_scale=1.0, t_scale=1.0,
              fp_s_empty=None,
              sigma_N_scale=0.5, sigma_z_scale=0.5,
-             level_scale=4.0, slope_scale=2.0):
+             level_scale=4.0, slope_scale=2.0,
+             fix_t=False, fix_psi_c=False):
     """fp_mode: 'joint' = model_a's joint FP block (baseline);
     'anchored' = lam_fp FIXED at the loa-0 forest-only calibration
     (fp_counts/fp_ell_eff) and t FIXED at 0 — the PI-ruled strong
@@ -93,7 +94,20 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
     this mode: the loa-0 information enters ONCE, through the A prior
     (keeping both would double-count the calibration data). The prior
     width is set by the loa-0 counts alone — nothing tuned from closure
-    or mock truth."""
+    or mock truth.
+
+    VALIDATION-ONLY flags (2026-09-02 HBI identifiability campaign; science-lane
+    validation worktree, branch validation/hbi-identifiability-2026-09; default
+    OFF; never merged to a production branch): ``fix_t`` replaces the sampled
+    ``t`` site of the informative_ln branch with a deterministic all-zero site
+    (R1/R4, t_K == 0; lam_fp/pi untouched — NOT the 'anchored' mode);
+    ``fix_psi_c`` replaces the sampled ``psi_c`` site with a deterministic
+    all-zero site (R3/R4: the central calibrated completeness, no sampled
+    offset). With both False the trace is identical to the frozen model
+    (tests/test_validation_flags_2026_09.py; R0 bit-reproduction)."""
+    if fix_t and fp_mode != "informative_ln":
+        raise ValueError("fix_t is defined for the production fp_mode "
+                         "'informative_ln' only (fail closed)")
     B, Kf = consts.n_b, consts.n_k
     C, S = consts.n_c, consts.n_s
     sigma_N = numpyro.sample("sigma_N", dist.HalfNormal(sigma_N_scale))
@@ -112,8 +126,12 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
     theta = numpyro.deterministic("theta_pop", theta)
     numpyro.deterministic("f", jnp.exp(theta))
 
-    psi_c = numpyro.sample(
-        "psi_c", dist.Normal(0.0, consts.sigma_hat).to_event(2))
+    if fix_psi_c:
+        psi_c = numpyro.deterministic(
+            "psi_c", jnp.zeros(jnp.shape(consts.sigma_hat)))
+    else:
+        psi_c = numpyro.sample(
+            "psi_c", dist.Normal(0.0, consts.sigma_hat).to_event(2))
     if fp_mode == "joint":
         t = numpyro.sample("t", dist.Normal(0.0, consts.t_sigma).to_event(1))
         lam_total = numpyro.sample("fp_lam_total",
@@ -186,9 +204,12 @@ def model_cc(consts, Mg, counts=None, fp_counts=None, *,
         pi = jax.nn.softmax(v)
         lam_fp = numpyro.deterministic(
             "lam_fp", (lam_total * pi).reshape(C, S))
-        t = numpyro.sample(
-            "t", dist.Normal(0.0, consts.t_sigma * float(t_scale))
-            .to_event(1))
+        if fix_t:
+            t = numpyro.deterministic("t", jnp.zeros(consts.t_sigma.shape))
+        else:
+            t = numpyro.sample(
+                "t", dist.Normal(0.0, consts.t_sigma * float(t_scale))
+                .to_event(1))
     else:
         raise ValueError(f"unknown fp_mode {fp_mode!r}")
 

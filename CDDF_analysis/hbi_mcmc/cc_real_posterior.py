@@ -61,7 +61,18 @@ def _real_mode_gate(pack_path, pack):
     return prov
 
 
-def main():
+def load_init_values(path):
+    """VALIDATION-ONLY (2026-09-02): initial values for NUTS (init_to_value),
+    from a JSON {site: nested list} or an .npz {site: array}. Sites absent
+    from the file keep numpyro's default initialisation."""
+    if path.endswith(".npz"):
+        z = np.load(path)
+        return {k: jnp.asarray(np.asarray(z[k], float)) for k in z.files}
+    d = json.load(open(path))
+    return {k: jnp.asarray(np.asarray(v, float)) for k, v in d.items()}
+
+
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
     ap.add_argument("--samples", type=int, default=500)
@@ -81,7 +92,28 @@ def main():
                          "by-chain draws of the fold sites (theta_pop, psi_c, "
                          "t, lam_fp, f) to this .npz for cc_real_ppc. Default "
                          "off; sampling and every other output unchanged.")
-    a = ap.parse_args()
+    # ---- VALIDATION-ONLY flags (2026-09-02 HBI identifiability campaign;
+    # validation worktree only, all default OFF, never merged) ----
+    ap.add_argument("--fix-t", action="store_true",
+                    help="VALIDATION-ONLY: t_K == 0 (deterministic site; "
+                         "lam_fp/pi still sampled). R1/R4.")
+    ap.add_argument("--fix-psi-c", action="store_true",
+                    help="VALIDATION-ONLY: psi_c == 0 (central calibrated "
+                         "completeness, no sampled offset). R3/R4.")
+    ap.add_argument("--init-from", default=None,
+                    help="VALIDATION-ONLY: JSON/npz of initial values -> "
+                         "NUTS init_to_value (basin tests). Default: numpyro's "
+                         "init_to_uniform, as production.")
+    ap.add_argument("--save-all-sites", default=None,
+                    help="VALIDATION-ONLY: also save the by-chain draws of "
+                         "EVERY site (sampled + deterministic) plus per-draw "
+                         "potential energy / divergence flags to this .npz "
+                         "(corner atlas). Post-sampling; sampling unchanged.")
+    return ap
+
+
+def main():
+    a = build_parser().parse_args()
     numpyro.set_host_device_count(a.chains)
 
     r = subprocess.run([sys.executable, "-m",
@@ -117,7 +149,11 @@ def main():
     fpc = jnp.asarray(np.asarray(pk.fp_counts, float))
 
     from numpyro.infer import MCMC, NUTS
-    kern = NUTS(model_cc, target_accept_prob=a.target_accept)
+    kern_kw = {}
+    if a.init_from:                       # VALIDATION-ONLY (default: production init)
+        from numpyro.infer import init_to_value
+        kern_kw["init_strategy"] = init_to_value(values=load_init_values(a.init_from))
+    kern = NUTS(model_cc, target_accept_prob=a.target_accept, **kern_kw)
     mcmc = MCMC(kern, num_warmup=a.warmup, num_samples=a.samples,
                 num_chains=a.chains, chain_method="sequential",
                 progress_bar=True)
@@ -126,6 +162,7 @@ def main():
              fp_counts=fpc, fp_mode=a.fp_mode, fp_alpha0=a.fp_alpha0,
              fp_total_scale=a.fp_total_scale, t_scale=a.t_scale,
              fp_s_empty=a.fp_s_empty,
+             fix_t=a.fix_t, fix_psi_c=a.fix_psi_c,
              extra_fields=("potential_energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
@@ -194,7 +231,10 @@ def main():
             (np.asarray(sam["psi_c"]).mean(axis=0)
              / np.asarray(consts.sigma_hat)).mean()),
         perchain_estimand_medians=perchain, split_rhat=rhat,
-        mean_potential_energy_per_chain=pe_chain)
+        mean_potential_energy_per_chain=pe_chain,
+        validation_flags=dict(fix_t=bool(a.fix_t), fix_psi_c=bool(a.fix_psi_c),
+                              init_from=a.init_from,
+                              save_all_sites=a.save_all_sites))
     # G_A REAL-mode (ENFORCED, fail-closed): posterior-median predictive
     # level vs observed counts, within the guard's own tolerance.
     import jax as _jax
@@ -245,6 +285,16 @@ def main():
         from CDDF_analysis.hbi_mcmc.cc_real_ppc import nuisance_payload
         np.savez(a.save_nuisance_draws, seed=a.seed, chains=a.chains,
                  **nuisance_payload(sam_g))
+    if a.save_all_sites:                  # VALIDATION-ONLY (post-sampling)
+        nchain = int(np.asarray(sam_g["f"]).shape[0])
+        np.savez(a.save_all_sites, seed=a.seed, chains=a.chains,
+                 warmup=a.warmup, samples=a.samples,
+                 site_names=np.array(list(sam_g.keys())),
+                 potential_energy=(np.asarray(pe).reshape(nchain, -1)
+                                   if pe is not None else np.zeros(0)),
+                 diverging=(np.asarray(xf["diverging"]).reshape(nchain, -1)
+                            if "diverging" in xf else np.zeros(0)),
+                 **{k: np.asarray(v) for k, v in sam_g.items()})
     np.savez(a.out[:-5] + "_fdraws.npz", f=f_draws, ntrue_edges=ntrue,
              zf_edges=np.asarray(pk.zf_edges))
     print(json.dumps({k: out[k] for k in ("thresholds", "diagnostics")},
