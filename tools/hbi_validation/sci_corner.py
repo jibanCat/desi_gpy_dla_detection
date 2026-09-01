@@ -65,8 +65,12 @@ def main(argv=None):
         i_t = 1 + K; j_L = 0; A_med = float(np.median(Y[:, 1 + KK + K]))
         lines[(i_t, j_L)] = [(-1.0, A_med + d) for d in (-0.3, 0.0, 0.3)]
     extras = []
-    for spec in a.extra_arm:
-        p, lab = spec.split(":"); Ye, _, _ = sci_coords(pk, consts, [np.load(p)], lev_cells); extras.append((lab, Ye, np.load(p)["t"].shape[0]))
+    for spec in a.extra_arm:          # path:label[:chain]  — a single chain of an arm can be selected
+        parts = spec.split(":"); p, lab = parts[0], parts[1]; ch_sel = int(parts[2]) if len(parts) > 2 else None
+        z = dict(np.load(p))
+        if ch_sel is not None:
+            z = {k: (v[ch_sel:ch_sel + 1] if np.ndim(v) >= 2 and v.shape[0] == z["t"].shape[0] else v) for k, v in z.items()}
+        Ye, _, _ = sci_coords(pk, consts, [z], lev_cells); extras.append((lab, Ye, z["t"].shape[0]))
     # main corner: chain colouring, per-arm contours (arms ≤ 6 → slot colours; the legend names them)
     groups = arm if len(tags) <= 6 else None
     fig = corner(Y, names, chain=chain, groups=groups, group_labels=(tags if groups is not None else None),

@@ -183,6 +183,36 @@ def main(argv=None):
                                   fp_share_of_obs_at_t0_FORWARD_COUNTERFACTUAL=q(fp0 / ob, (16, 50, 84)),
                                   displacement_pct_obs_t_to_0_FORWARD_COUNTERFACTUAL=q(100 * (fp - fp0) / ob), mult_change=q(fp / fp0, (16, 50, 84)))
     res["fp_shares"] = shares
+    # ---- the IDENTIFIED coordinate: log of the FP intensity actually leveraged by the catalogue (per N set × z block),
+    # compared with A_K and log Lambda; plus the FP-shape pulls against the loa-0 prior and the pi mass in the leveraged cells
+    fpc_np = np.asarray(pk.fp_counts, float); n_fp = fpc_np.sum(); Kc = fpc_np.size; a0 = 1.0 / Kc
+    m_cs = np.log((fpc_np.reshape(-1) + a0) / (n_fp + Kc * a0)); s_cs = np.where(fpc_np.reshape(-1) > 0, 1.0 / np.sqrt(fpc_np.reshape(-1) + 1.0), 2.0)
+    iv = [names.index(f"fp_shape_v[c={c},s={s_}]") for c in range(consts.n_c) for s_ in range(consts.n_s)]
+    V = X[:, iv]; pull = (V - m_cs[None]) / s_cs[None]
+    pi = LF / LF.sum(axis=(1, 2))[:, None, None]
+    ident = {}
+    for sn, sm in sets.items():
+        ident[sn] = {}
+        for bn, bm in blocks.items():
+            if bn == "allz":
+                continue
+            K = int(np.where(bm)[0][0]) if bm.sum() else 0; K = int(kz[np.where(bm)[0][0]])
+            mfp = np.stack([fp_mu(consts, T[i], LF[i], dXm)[np.ix_(np.where(sm)[0], np.where(bm)[0], np.arange(counts.shape[2]))].sum() for i in range(n)])
+            logmu = np.log(mfp); pimass = pi[:, sm, :].sum(axis=(1, 2))
+            ident[sn][bn] = dict(sd_log_muFP=float(logmu.std(ddof=1)), sd_A_K=float(A[:, K].std(ddof=1)), sd_logLambda=float(logL.std(ddof=1)), sd_log_pimass=float(np.log(pimass).std(ddof=1)),
+                                 corr_logmu_AK=float(np.corrcoef(logmu, A[:, K])[0, 1]), corr_logmu_logL=float(np.corrcoef(logmu, logL)[0, 1]), corr_logmu_t=float(np.corrcoef(logmu, T[:, K])[0, 1]),
+                                 corr_t_logpimass=float(np.corrcoef(T[:, K], np.log(pimass))[0, 1]), corr_logL_logpimass=float(np.corrcoef(logL, np.log(pimass))[0, 1]),
+                                 pimass_median=float(np.median(pimass)), pimass_prior_centre=float(np.exp(m_cs).reshape(consts.n_c, consts.n_s)[sm].sum() / np.exp(m_cs).sum()))
+    res["identified_coordinate"] = dict(note="log mu_FP(N set, z block) = A_K + log(sum_{c in set,s} pi_cs O_cks) + const: the coordinate the catalogue sees; compare its sd with sd(A_K), sd(log Lambda)", table=ident)
+    pop = fpc_np.reshape(-1) > 0
+    res["fp_shape_pulls"] = dict(prior="fp_shape_v ~ Normal(m_cs, s_cs); pull z = (v - m)/s", n_cells=int(Kc), n_populated=int(pop.sum()),
+                                 sum_z2_median=float(np.median((pull**2).sum(axis=1))), sum_z2_expected_prior=float(Kc),
+                                 sum_z2_populated_median=float(np.median((pull[:, pop]**2).sum(axis=1))), sum_z2_empty_median=float(np.median((pull[:, ~pop]**2).sum(axis=1))),
+                                 mean_pull_populated=float(pull[:, pop].mean()), mean_pull_empty=float(pull[:, ~pop].mean()),
+                                 top_cells_by_abs_mean_pull=[dict(cell=names[iv[i]], mean_pull=float(pull[:, i].mean()), sd_pull=float(pull[:, i].std(ddof=1)), n_loa0=int(fpc_np.reshape(-1)[i]))
+                                                             for i in np.argsort(-np.abs(pull.mean(axis=0)))[:12]],
+                                 log_prior_term_median=float(np.median((-0.5 * pull**2 - np.log(s_cs)[None] - 0.5 * np.log(2 * np.pi)).sum(axis=1))),
+                                 log_prior_term_expected=float((-0.5 - np.log(s_cs) - 0.5 * np.log(2 * np.pi)).sum()))
     # ---- science outputs from the run's own draws (reduce_f_posterior + Omega[20.3,21.6])
     red = reduce_f_posterior(F, pk)
     ntrue = np.asarray(pk.ntrue_edges, float); Nc = 0.5 * (ntrue[:-1] + ntrue[1:]); dN = np.diff(ntrue); dXk = np.asarray(pk.dX, float).sum(axis=1)
