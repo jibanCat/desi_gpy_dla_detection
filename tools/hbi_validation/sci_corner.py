@@ -116,10 +116,15 @@ def main(argv=None):
         fig.savefig(os.path.join(a.out_dir, f"pair_{a.run_id}_{safe}.png"), dpi=130); plt.close(fig)
     json.dump(lim_out, open(os.path.join(a.out_dir, f"sci_axes_{a.run_id}.json"), "w"), indent=1)
     # curated correlation matrix + eigenmode audit
-    C = np.corrcoef(Y.T); fig = heatmap(C, names, names, f"{a.run_id}: correlation among the scientific quantities", figsize=(7, 6)); fig.savefig(os.path.join(a.out_dir, f"sci_corr_{a.run_id}.png"), dpi=150); plt.close(fig)
-    Ys = (Y - Y.mean(axis=0)) / Y.std(axis=0, ddof=1); w, v = np.linalg.eigh(np.corrcoef(Ys.T)); order = np.argsort(-w)
-    eig = [dict(rank=r + 1, eigval=float(w[k]), var_share=float(w[k] / w.sum()), loadings={n: round(float(v[i, k]), 3) for i, n in enumerate(names)}) for r, k in enumerate(order[:4])]
-    summ = dict(run_id=a.run_id, names=names, n=int(Y.shape[0]), arms=tags, corr=C.round(4).tolist(), eigenmodes_top4=eig,
+    keep = Y.std(axis=0, ddof=1) > 0                      # fixed sites (R1/R3/R4) give constant columns
+    with np.errstate(invalid="ignore", divide="ignore"):
+        C = np.corrcoef(Y.T)
+    C = np.nan_to_num(C, nan=0.0)
+    fig = heatmap(C, names, names, f"{a.run_id}: correlation among the scientific quantities (constant = fixed site -> 0)", figsize=(7, 6)); fig.savefig(os.path.join(a.out_dir, f"sci_corr_{a.run_id}.png"), dpi=150); plt.close(fig)
+    Yk = Y[:, keep]; nk = [n for n, k in zip(names, keep) if k]
+    Ys = (Yk - Yk.mean(axis=0)) / Yk.std(axis=0, ddof=1); w, v = np.linalg.eigh(np.corrcoef(Ys.T)); order = np.argsort(-w)
+    eig = [dict(rank=r + 1, eigval=float(w[k]), var_share=float(w[k] / w.sum()), loadings={n: round(float(v[i, k]), 3) for i, n in enumerate(nk)}) for r, k in enumerate(order[:4])]
+    summ = dict(run_id=a.run_id, names=names, n=int(Y.shape[0]), arms=tags, corr=C.round(4).tolist(), eigenmodes_top4=eig, constant_columns=[n for n, k in zip(names, keep) if not k],
                 sd={n: float(Y[:, i].std(ddof=1)) for i, n in enumerate(names)}, median={n: float(np.median(Y[:, i])) for i, n in enumerate(names)},
                 extra_arms={lab: dict(median={n: float(np.median(Ye[:, i])) for i, n in enumerate(names)}) for lab, Ye, _ in extras})
     json.dump(summ, open(os.path.join(a.out_dir, f"sci_summary_{a.run_id}.json"), "w"), indent=1)
