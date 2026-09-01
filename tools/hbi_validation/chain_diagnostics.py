@@ -42,12 +42,12 @@ def main(argv=None):
     series["log Λ"] = np.log(Lam)
     for K in range(KK):
         series[f"t{K}"] = np.asarray(z["t"])[:, :, K]
-    series["log Π subDLA z0"] = np.log(np.einsum("cncs,cs->cn", pi, W0))
+    series["log Π subDLA z0"] = np.log(np.einsum("hncs,cs->hn", pi, W0))
     series["A0 = logΛ+t0"] = series["log Λ"] + series["t0"]
     series["log μ_FP subDLA z0"] = series["A0 = logΛ+t0"] + series["log Π subDLA z0"]
     F = np.asarray(z["f"]); PS = np.asarray(z["psi_c"])
     fbar = F.reshape(-1, *F.shape[2:]).mean(axis=0); w_bs = np.einsum("bk,bk,ks->bs", g[mS] * dN[mS][:, None], fbar[mS], dX)
-    Cc = 1 / (1 + np.exp(-(eta[None, None] + PS))); series["C̄ subDLA"] = np.einsum("cnsb,bs->cn", Cc[:, :, :, b2c[mS]], w_bs) / w_bs.sum()
+    Cc = 1 / (1 + np.exp(-(eta[None, None] + PS))); series["C̄ subDLA"] = np.einsum("hnsb,bs->hn", Cc[:, :, :, b2c[mS]], w_bs) / w_bs.sum()
     for c in range(nch):
         red = reduce_f_posterior(F[c], pk)
         series.setdefault("dN/dX ≥20.0", np.zeros((nch, nd)))[c] = np.asarray(red["dndx_dla_20p0_allz"])
