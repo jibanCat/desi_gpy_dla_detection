@@ -84,6 +84,43 @@ H2_CANON = "/scratch/cavestru_root/cavestru0/mfho/loa_hz_production/h2_exec"
 # |dC| + se per truth-NHI domain (h2_canonical_ab_transport regeneration)
 ENVELOPE = {"19.5-20.0": 0.10, "20.0": 0.0604, "20.3": 0.0761}
 
+# MAX4 repair cycle (PI ruling 2026-08-28 item 3; MAX4 CHECKPOINT 0 §D, 2026-09-01): the
+# catalogue directory and the per-QSO snr/z/bal tables are CLI-overridable so a
+# configuration-matched (MAX_DLAS=4) high-z catalogue can feed this track without editing
+# module constants. Defaults = the constants above (run of record byte-identical). The
+# finder configuration of the catalogue actually consumed is stamped into the output
+# metadata from its BASELINE.env so a MAX1 / MAX4 product can never be confused downstream.
+FINDER_CONFIG_KEYS = ("MAX_DLAS", "SINGLE_ABSORBER_MODEL", "FILTER_LOW_LIKELIHOOD",
+                      "NUM_DLA_SAMPLES", "CODE_COMMIT")
+
+
+def read_finder_config(cat_dir, keys=FINDER_CONFIG_KEYS):
+    """Read the finder configuration of a catalogue directory from its `BASELINE.env`
+    (the launcher's resolved `KEY=VALUE` record). Returns a dict with one entry per key
+    (None when the key is absent) plus `baseline_env` (the file read), or the string
+    "unavailable" when the directory has no BASELINE.env."""
+    path = os.path.join(str(cat_dir), "BASELINE.env")
+    if not os.path.isfile(path):
+        return "unavailable"
+    found = {}
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            found[k.strip()] = v.strip()
+    out = {k: found.get(k) for k in keys}
+    out["baseline_env"] = path
+    return out
+
+
+def hz_input_stamp(hz_cat, hz_mockdir):
+    """Metadata block naming the catalogue / per-QSO tables consumed and the catalogue's
+    finder configuration (`read_finder_config`)."""
+    return dict(hz_cat=str(hz_cat), hz_mockdir=str(hz_mockdir),
+                finder_config=read_finder_config(hz_cat))
+
 
 def finite_snr_guard(lookup, drop=False):
     """Guard for the NaN-SNR hole in build_pathlength's sightline test (R-039 closure,
@@ -237,7 +274,7 @@ def patch_mm_with_r041(mm, analysis_json, strata_edges=(2.0, 3.0, 4.0, 5.0, 7.0,
     return dict(patched=patched, kept_frozen=kept, source=analysis_json, strata_edges=[float(x) if np.isfinite(x) else "inf" for x in se])
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", choices=["frozenC", "h2cal", "r041cal"], default="h2cal")
     ap.add_argument("--r041-analysis", default=None, help="r041_analyze.py JSON (variant r041cal)")
@@ -268,7 +305,18 @@ def main():
     ap.add_argument("--dump-npz", default=None,
                     help="also save the MAP f(N), the MC f(N) samples, the grids and X_tot "
                          "(diagnostic carrier for the Omega tail study; default off)")
-    a = ap.parse_args()
+    # MAX4 repair cycle: catalogue / per-QSO-table overrides (defaults = the run of record).
+    ap.add_argument("--hz-cat", default=HZ_CAT,
+                    help="high-z catalogue directory (dlacat-*.fits [+ BASELINE.env]); default = "
+                         "the MAX_DLAS=1 run of record (HZ_CAT)")
+    ap.add_argument("--hz-mockdir", default=HZ_MOCKDIR,
+                    help="directory holding snr_cat/zcat/bal_cat/dla_cat.fits of the high-z "
+                         "sample; default = the run of record (HZ_MOCKDIR)")
+    return ap
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
 
     if a.window == "lyab" and a.fp == "loa0":
         raise SystemExit("loa0 FP product is lya-only-1025; use --fp pm for lyab.")
@@ -284,10 +332,10 @@ def main():
         raise SystemExit(f"refusing to overwrite {out_path} (pass --force).")
 
     args = H.default_args()
-    args.loa_cat = HZ_CAT
-    args.loa_mockdir = HZ_MOCKDIR
-    args.loa_truth = os.path.join(HZ_MOCKDIR, "dla_cat.fits")
-    args.loa_bal = os.path.join(HZ_MOCKDIR, "bal_cat.fits")
+    args.loa_cat = a.hz_cat
+    args.loa_mockdir = a.hz_mockdir
+    args.loa_truth = os.path.join(a.hz_mockdir, "dla_cat.fits")
+    args.loa_bal = os.path.join(a.hz_mockdir, "bal_cat.fits")
     args.out = root
     args.report_out = os.path.join(root, f"_report_{tag}.md")
     args.zbins = a.zbins
@@ -398,6 +446,9 @@ def main():
             wallclock_s=float(wall), code_commit=_git_commit(),
             **({"finite_snr_only": True,
                 "n_nonfinite_snr_dropped": int(_nonfinite["n"])} if a.finite_snr_only else {}),
+            # MAX4 repair cycle: the catalogue / tables consumed and the finder configuration
+            # of that catalogue (from its BASELINE.env; "unavailable" when absent).
+            **hz_input_stamp(a.hz_cat, a.hz_mockdir),
             # Paper-1 code review 2026-08-26: the invocation is part of the record (the
             # frozen artifact of record was produced with --n-mc 2000 against a CLI
             # default of 120, and no launch script existed).
