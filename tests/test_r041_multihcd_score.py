@@ -32,8 +32,8 @@ def make(tmp):
     # blend pair -> one system matched; 4 = wide pair with a split extra row; 5 = single missed; 6 = truth outside window (ignored)
     rows = [dict(TARGETID=1, wave=0, inj_idx=0, logN=20.4, z_inj=3.80, stratum=2, snr=5.0, pair_class="wide", dv_kms=10000, pair_logN="20.4+20.4"),
             dict(TARGETID=1, wave=0, inj_idx=1, logN=20.4, z_inj=3.80 + dv_to_dz(3.80, 10000), stratum=2, snr=5.0, pair_class="wide", dv_kms=10000, pair_logN="20.4+20.4"),
-            dict(TARGETID=2, wave=0, inj_idx=0, logN=20.4, z_inj=3.80, stratum=2, snr=5.0, pair_class="wide", dv_kms=9000, pair_logN="20.4+20.4"),
-            dict(TARGETID=2, wave=0, inj_idx=1, logN=20.4, z_inj=3.80 + dv_to_dz(3.80, 9000), stratum=2, snr=5.0, pair_class="wide", dv_kms=9000, pair_logN="20.4+20.4"),
+            dict(TARGETID=2, wave=0, inj_idx=0, logN=20.4, z_inj=3.80, stratum=2, snr=5.0, pair_class="partial", dv_kms=3500, pair_logN="20.4+20.4"),
+            dict(TARGETID=2, wave=0, inj_idx=1, logN=20.4, z_inj=3.80 + dv_to_dz(3.80, 3500), stratum=2, snr=5.0, pair_class="partial", dv_kms=3500, pair_logN="20.4+20.4"),
             dict(TARGETID=3, wave=0, inj_idx=0, logN=20.4, z_inj=3.90, stratum=2, snr=5.0, pair_class="blend", dv_kms=500, pair_logN="20.4+20.4"),
             dict(TARGETID=3, wave=0, inj_idx=1, logN=20.4, z_inj=3.90 + dv_to_dz(3.90, 500), stratum=2, snr=5.0, pair_class="blend", dv_kms=500, pair_logN="20.4+20.4"),
             dict(TARGETID=4, wave=0, inj_idx=0, logN=20.7, z_inj=3.70, stratum=2, snr=5.0, pair_class="wide", dv_kms=12000, pair_logN="20.7+20.7"),
@@ -45,7 +45,7 @@ def make(tmp):
         w = csv.DictWriter(fh, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
     # accepted rows
     acc = [(1, 3.8005, 20.45), (1, rows[1]["z_inj"] + 0.001, 20.35),                       # both found
-           (2, 3.8 + 0.5 * dv_to_dz(3.80, 9000) - 0.002, 20.5),                            # one row between the two (nearer the second) -> first missed/captured? (tolerance 0.01*(1+z)=0.048 covers both)
+           (2, 3.8 + 0.5 * dv_to_dz(3.80, 3500) + 0.003, 20.5),                            # resolvable (3500 >= 3000 km/s) pair, ONE row between them within tolerance of both (0.028 each), nearer the second -> second matched, first captured
            (3, 3.9 + 0.5 * dv_to_dz(3.9, 500), 20.75),                                      # blend -> one system row with N ~ log10(2*10^20.4)=20.70
            (4, 3.7005, 20.6), (4, rows[7]["z_inj"] - 0.001, 20.8), (4, 3.7 + 0.5 * dv_to_dz(3.7, 12000), 20.1)]   # both found + a split extra row between them
     outdir = os.path.join(tmp, "out"); os.makedirs(outdir)
@@ -65,6 +65,7 @@ def make(tmp):
 
 
 def run(tmp, tol="0.01"):
+    os.makedirs(tmp, exist_ok=True)
     pop, truth, outdir, ref, weights = make(tmp)
     out = os.path.join(tmp, "res.json")
     subprocess.run([sys.executable, TOOL, "--truth", truth, "--outputs", outdir, "--reference", ref, "--population", pop, "--weights", weights,
@@ -85,7 +86,8 @@ def test_scoring_rules(tmp_path):
     assert abs(float(s3[0]["logN"]) - np.log10(2 * 10 ** 20.4)) < 1e-6 and s3[0]["sep_class"] == "close"   # N_sys = log10(N1+N2)
     assert all(u["matched"] == "True" for u in by[4]) and all(int(u["split"]) == 1 for u in by[4])         # both found + one split component
     assert by[5][0]["kind"] == "single" and by[5][0]["matched"] == "False"
-    assert res["merge_split"]["wide"]["n"] == 3 and abs(res["merge_split"]["wide"]["split"] - 1 / 3) < 1e-9 and abs(res["merge_split"]["wide"]["any_captured"] - 1 / 3) < 1e-9
+    assert res["merge_split"]["wide"]["n"] == 2 and abs(res["merge_split"]["wide"]["split"] - 0.5) < 1e-9 and res["merge_split"]["wide"]["any_captured"] == 0.0
+    assert res["merge_split"]["moderate"]["n"] == 1 and res["merge_split"]["moderate"]["any_captured"] == 1.0 and res["merge_split"]["moderate"]["pair_recovery"] == 0.0
     assert res["verdict"]["tier"] in ("PASS", "BOUNDED", "FAIL", "INCONCLUSIVE") and res["primary"]["dC_w_multi"] is not None
     # mutation: a tolerance too small to reach the rows must lose the matches
     res2, units2, _ = run(str(tmp_path / "m"), tol="0.00001")
