@@ -45,6 +45,9 @@ def main(argv=None):
     ap.add_argument("--weights", required=True, help="JSON with g_cell (molly cell index -> weight), s_stratum (list), q_cand (list of candidate-bearing fractions per stratum)")
     ap.add_argument("--n-boot", type=int, default=4000); ap.add_argument("--seed", type=int, default=20260902)
     ap.add_argument("--out", required=True); ap.add_argument("--label", default="stage1")
+    ap.add_argument("--allow-z-mismatch", action="store_true",
+                    help="pair on (TARGETID, wave, inj_idx) with equal logN and stratum but DIFFERENT truth z (the P1 random-vs-clustered arms place "
+                         "the same injection at z_random vs z_clustered by design; MAX4_P1_GATES §A); recorded in the output")
     a = ap.parse_args(argv)
     A = {r["key"]: r for r in load(a.a)}; B = {r["key"]: r for r in load(a.b)}
     keys = sorted(set(A) & set(B)); lostA = sorted(set(B) - set(A)); lostB = sorted(set(A) - set(B))
@@ -52,7 +55,7 @@ def main(argv=None):
     pairs = []
     for k in keys:
         ra, rb = A[k], B[k]
-        assert abs(ra["logN"] - rb["logN"]) < 1e-9 and ra["stratum"] == rb["stratum"] and abs(ra["z"] - rb["z"]) < 1e-9, f"unpaired truth for {k}"
+        assert abs(ra["logN"] - rb["logN"]) < 1e-9 and ra["stratum"] == rb["stratum"] and (a.allow_z_mismatch or abs(ra["z"] - rb["z"]) < 1e-9), f"unpaired truth for {k}"
         pairs.append(dict(TARGETID=k[0], wave=k[1], inj_idx=k[2], injection_id=f"cmp:{k[1]}:{k[0]}:{k[2]}", logN=ra["logN"], cell=mcell(ra["logN"]), stratum=ra["stratum"], cand=ra["cand"], z=ra["z"],
                           yA=ra["det"], yB=rb["det"], d=rb["det"] - ra["det"], nhatA=ra["nhat"], nhatB=rb["nhat"], n_accA=ra["n_acc"], n_accB=rb["n_acc"],
                           w=g.get(mcell(ra["logN"]), 0.0) * s[ra["stratum"]] * (q[ra["stratum"]] if ra["cand"] else 1 - q[ra["stratum"]])))
@@ -99,7 +102,7 @@ def main(argv=None):
         tier = "ACCEPTABLE WITH NAMED BOUND"
     else:
         tier = "INCONCLUSIVE -> ADD INJECTIONS (stage 2)"
-    out = dict(label=a.label, n_pairs=n, n_leveraged=int(lev.sum()), lost_in_A=[list(k) for k in lostA], lost_in_B=[list(k) for k in lostB], weights=W,
+    out = dict(label=a.label, n_pairs=n, n_leveraged=int(lev.sum()), lost_in_A=[list(k) for k in lostA], lost_in_B=[list(k) for k in lostB], weights=W, allow_z_mismatch=bool(a.allow_z_mismatch),
                production_weighted=dict(dC_w=dCw, ci68=ci68, ci95=ci95, n_boot=a.n_boot, seed=a.seed, coherent_structure=bool(coherent), big_2035=big2035, tier=tier,
                                         by_cand={c: weighted(np.where(lev & (cd == c))[0]) for c in (0, 1)}, by_stratum={s_: weighted(np.where(lev & (st == s_))[0]) for s_ in range(5)},
                                         discordance_rate_leveraged=float((d[lev] != 0).mean())),

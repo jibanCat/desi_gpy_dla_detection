@@ -170,7 +170,7 @@ p1)
     python tools/r041_analyze.py --truth $P/mock/truth_r041/${n}_truth.csv --outputs $P/mock/${n}_MAX4_outputs --population $P/mock/truth_r041/${n}_population.csv \
        --out $OUT/analysis_mock_${n}_MAX4.json --label mock_${n}_MAX4 2>&1 | grep -v "UserWarning\|from scipy" | tail -2
   done
-  python tools/r041_prescription_gate.py --a $OUT/analysis_mock_2lpt_random_MAX4_per_injection.csv --b $OUT/analysis_mock_2lpt_clustered_MAX4_per_injection.csv --weights $W --out $OUT/gate_random_vs_clustered.json --label random_vs_clustered
+  python tools/r041_prescription_gate.py --a $OUT/analysis_mock_2lpt_random_MAX4_per_injection.csv --b $OUT/analysis_mock_2lpt_clustered_MAX4_per_injection.csv --weights $W --out $OUT/gate_random_vs_clustered.json --label random_vs_clustered --allow-z-mismatch
   python tools/r041_cell_compare.py --a $OUT/analysis_mock_2lpt_random_MAX4_per_injection.csv --b $OUT/analysis_mock_london_random_MAX4_per_injection.csv --a-label 2lpt_random --b-label london_random --weights $W --bounded-thr 0.10 --out $OUT/cell_london_vs_2lpt.json --label london_transfer 2>&1 | grep -v "UserWarning\|from scipy" | tail -4
   # (4) provenance index rows (archive-route waves have build summaries)
   python tools/r041_injection_provenance_index.py --plan-label pairs \
