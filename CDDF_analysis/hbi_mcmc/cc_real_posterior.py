@@ -121,7 +121,8 @@ def main():
 
     r = subprocess.run([sys.executable, "-m",
                         "CDDF_analysis.hbi_mcmc.contract_guards_check",
-                        "--pack", a.pack], capture_output=True, text=True)
+                        "--pack", a.pack] + (["--allow-nonstandard-grid"] if a.allow_nonstandard_grid else []),
+                       capture_output=True, text=True)
     # Parse the guard report. G_A's truth-point form is UNDEFINED on a
     # truth-less real pack (its docstring: "on any future real pack the
     # check runs against the calibrated level band") — the zeros sentinel

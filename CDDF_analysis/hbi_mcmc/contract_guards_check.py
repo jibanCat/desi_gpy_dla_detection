@@ -57,6 +57,7 @@ def ga_partition(pk, level, fp_share, level_tol):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--allow-nonstandard-grid", action="store_true", help="VALIDATION-ONLY (high-z HBI extension trial)")
     ap.add_argument("--pack", required=True)
     ap.add_argument("--cand-npz", default=None,
                     help="npz with <prefix>__mu/sig/skew/rng candidate "
@@ -67,7 +68,7 @@ def main():
     ap.add_argument("--json", default=None)
     a = ap.parse_args()
 
-    pk = load_pack(a.pack)
+    pk = load_pack(a.pack, allow_nonstandard_grid=a.allow_nonstandard_grid)
     ne = np.asarray(pk.nhat_edges, float)
     theta = np.log(np.clip(np.asarray(truth_f(pk), float), 1e-300, None))
     lam = np.asarray(pk.fp_counts, float) / float(pk.fp_ell_eff)
