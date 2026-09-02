@@ -244,6 +244,132 @@ def build_native_arm(a, fam, cfg):
     print(f"[native] built: {n_files} files, {len(pop)} sightlines -> {arm_root}")
 
 
+def system_arms_geometry(systems, arm, rng, *, min_sep_kms=200.0):
+    """Multi-HCD clustering control (PI ruling 2026-09-02 §3-§5; gate MAX4_MULTIHCD_CLUSTERING_CONTROL_GATE_2026-09-02.md §2).
+    systems: list of dict(TARGETID, zlo_bin, zhi_bin, absorbers=[(z, logN), ...] sorted by z). Returns per system the list of
+    (z_inj, logN) for the arm:
+      syscluster : every absorber at its truth z (density-peak-correlated environment);
+      sysrandom  : the whole system rigidly shifted by ONE offset dz ~ U over the offsets keeping every member inside [zlo_bin, zhi_bin]
+                   (internal separations preserved exactly);
+      sysshuffle : first absorber at its truth z; each companion at a separation drawn from the pooled truth nearest-neighbour
+                   separation distribution (|dv| >= min_sep_kms) with a random sign, kept inside the window (retry, then fall back to the
+                   truth separation) — clustering of the companions broken, m_true and the N multiset preserved.
+    A system whose rigid shift has no valid range (span > window) keeps its truth positions and is flagged (shift_ok False)."""
+    pooled = np.array([C_KMS * (s["absorbers"][i + 1][0] - s["absorbers"][i][0]) / (1.0 + s["absorbers"][i][0])
+                       for s in systems for i in range(len(s["absorbers"]) - 1)])
+    out = []
+    for s in systems:
+        ab = sorted(s["absorbers"]); zs = np.array([a[0] for a in ab]); Ns = [a[1] for a in ab]
+        lo, hi = float(s["zlo_bin"]), float(s["zhi_bin"])
+        rs = np.random.default_rng(seed_for(s["TARGETID"], {"syscluster": 11, "sysrandom": 12, "sysshuffle": 13}[arm], s.get("salt", "sys")))
+        if arm == "syscluster":
+            out.append(dict(TARGETID=s["TARGETID"], z=zs.tolist(), logN=Ns, shift=0.0, shift_ok=True)); continue
+        if arm == "sysrandom":
+            dz_lo, dz_hi = lo - zs.min(), hi - zs.max()
+            if dz_hi <= dz_lo:
+                out.append(dict(TARGETID=s["TARGETID"], z=zs.tolist(), logN=Ns, shift=0.0, shift_ok=False)); continue
+            dz = float(rs.uniform(dz_lo, dz_hi))
+            out.append(dict(TARGETID=s["TARGETID"], z=(zs + dz).tolist(), logN=Ns, shift=dz, shift_ok=True)); continue
+        if arm == "sysshuffle":
+            znew = [float(zs[0])]; ok = True
+            for i in range(1, len(zs)):
+                placed = False
+                for _ in range(50):
+                    dv = float(rs.choice(pooled)) * (1.0 if rs.random() < 0.5 else -1.0)
+                    if abs(dv) < min_sep_kms:
+                        continue
+                    zc = znew[-1] + dv / C_KMS * (1.0 + znew[-1])
+                    if lo <= zc <= hi and all(abs(zc - z0) / (1 + z0) * C_KMS >= min_sep_kms for z0 in znew):
+                        znew.append(zc); placed = True; break
+                if not placed:
+                    znew.append(float(zs[i])); ok = False
+            out.append(dict(TARGETID=s["TARGETID"], z=znew, logN=Ns, shift=float("nan"), shift_ok=ok)); continue
+        raise ValueError(arm)
+    return out
+
+
+def build_system_arms(a, fam):
+    """Build the clustering-control arms on the loa-0 twin: multi-HCD systems of the P1 native population (loa-124 truth) injected with the
+    A_shared prescription; arms syscluster / sysrandom / sysshuffle; identical injection seeds per (salt, TARGETID, camera) across arms."""
+    import csv as _csv
+    nat = NATIVE[a.family]
+    pop = list(_csv.DictReader(open(a.systems_population)))
+    truth = list(_csv.DictReader(open(a.systems_truth)))
+    by = {}
+    for r in truth:
+        by.setdefault(int(r["TARGETID"]), []).append((float(r["z_inj"]), float(r["logN"])))
+    systems = []
+    for r in pop:
+        tid = int(r["TARGETID"])
+        if int(r["m_true"]) < 2 or tid not in by:
+            continue
+        systems.append(dict(TARGETID=tid, zlo_bin=float(r["zlo_bin"]), zhi_bin=float(r["zhi_bin"]), stratum=int(r["stratum"]), snr=float(r["snr"]),
+                            z_qso=float(r["z_qso"]), healpix=int(r["healpix"]), dX_bin=float(r["dX_bin"]), absorbers=sorted(by[tid]), salt=a.seed_salt))
+    os.makedirs(a.out_root, exist_ok=True)
+    zcat = Table(fits.open(os.path.join(fam["mockdir"], "zcat.fits"))[1].data)
+    base = parse_env(a.baseline_env)
+    tau0 = float(base.get("PREV_TAU_0", 0.00246)); beta = float(base.get("PREV_BETA", 3.62))
+    zbar = float(np.average([0.5 * (s["zlo_bin"] + s["zhi_bin"]) for s in systems], weights=[s["dX_bin"] for s in systems]))
+    tau0_matched = tau0 * ((1 + zbar + a.delta_z) / (1 + zbar)) ** beta
+    mf = json.load(open(a.meanflux_json))
+    meanflux = {"fiducial": {"z": mf["z_center"], "taueff": mf["taueff"]}, "model": a.meanflux_model, "delta_z": a.delta_z}
+    summ = dict(family=a.family, control="multi-HCD clustering (PI ruling 2026-09-02 §3-§5)", substrate=fam["mockdir"], systems_truth=a.systems_truth,
+                systems_truth_sha256=_sha(a.systems_truth), systems_population=a.systems_population, n_systems=len(systems),
+                m_true_hist={str(m): sum(1 for s in systems if min(len(s["absorbers"]), 3) == m) for m in (2, 3)}, delta_z=a.delta_z,
+                PREV_TAU_0_matched=tau0_matched, meanflux_model_high=a.meanflux_model, meanflux_low_measured=a.meanflux_json, baseline_env=a.baseline_env,
+                seed_salt=a.seed_salt, generator_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip(), arms={})
+    rng = np.random.default_rng(seed_for(0, 7, a.seed_salt))
+    for arm in a.arms.split(","):
+        geo = system_arms_geometry(systems, arm, rng)
+        arm_root = os.path.join(a.out_root, arm); os.makedirs(arm_root, exist_ok=True)
+        manifest, truth_rows = [], []
+        k = 0
+        for s, g in zip(systems, geo):
+            zs_sorted = sorted(zip(g["z"], g["logN"]))
+            for j, (z, n) in enumerate(zs_sorted):
+                manifest.append(dict(inj_id=k, campaign="S", method="coadd", target_id=s["TARGETID"], healpix=s["healpix"], z_qso=s["z_qso"], snr_bin=s["stratum"],
+                                     native_snr=s["snr"], logN_true=float(n), z_true=float(z), num_lines=3, arm=arm, m_true=len(zs_sorted), inj_idx=j,
+                                     shift=g["shift"], shift_ok=g["shift_ok"], zlo_bin=s["zlo_bin"], zhi_bin=s["zhi_bin"], dX_bin=s["dX_bin"], delta_z=a.delta_z)); k += 1
+                others = [abs(z2 - z) for z2, _ in zs_sorted if z2 != z]
+                dv = C_KMS * min(others) / (1.0 + z) if others else ""
+                truth_rows.append(dict(TARGETID=s["TARGETID"], wave=0, inj_idx=j, logN=round(float(n), 4), z_inj=round(float(z), 6), stratum=s["stratum"], snr=s["snr"],
+                                       z_qso=s["z_qso"], has_cand_ge20=0, pair_class=arm, dv_kms=(round(dv, 1) if dv != "" else ""), pair_logN="", m_true=len(zs_sorted),
+                                       method=arm, meanflux_model="extrapolated", shift=g["shift"], shift_ok=g["shift_ok"]))
+        plan_path = os.path.join(arm_root, "plan.csv")
+        with open(plan_path, "w", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=list(manifest[0].keys())); w.writeheader(); w.writerows(manifest)
+        truth_csv = os.path.join(arm_root, "systems_truth.csv")
+        with open(truth_csv, "w", newline="") as fh:
+            w = _csv.DictWriter(fh, fieldnames=list(truth_rows[0].keys())); w.writeheader(); w.writerows(truth_rows)
+        truth_fits = write_campaign(manifest, None, out_root=arm_root, mockdir=fam["mockdir"], num_lines=3, method="variance_preserving", meanflux=meanflux,
+                                    seed_salt=f"{a.seed_salt}:systems")            # the SAME seed salt for every arm -> identical eps per (TARGETID, camera)
+        tids = np.array(sorted({m["target_id"] for m in manifest}), dtype=np.int64)
+        zc = zcat[np.isin(np.asarray(zcat["TARGETID"], dtype=np.int64), tids)]
+        q = Table({"TARGETID": np.asarray(zc["TARGETID"], dtype=np.int64), "Z": np.asarray(zc["Z"], dtype=float)})
+        ra_col = "RA" if "RA" in zc.colnames else "TARGET_RA"; dec_col = "DEC" if "DEC" in zc.colnames else "TARGET_DEC"
+        q["RA"] = np.asarray(zc[ra_col], dtype=float); q["DEC"] = np.asarray(zc[dec_col], dtype=float); q["TARGET_RA"] = q["RA"]; q["TARGET_DEC"] = q["DEC"]
+        qpath = arm_root + "_qsocat.fits"; q.write(qpath, overwrite=True)
+        n_files = len({m["healpix"] for m in manifest})
+        keep = ["LEARNED_FILE", "CATALOG_NAME", "LOS_CATALOG", "DLA_CATALOG", "DLA_SAMPLES_FILE", "SUB_DLA_SAMPLES_FILE", "NUM_DLA_SAMPLES",
+                "NUM_SUBDLA_SAMPLES", "MAX_DLAS", "SINGLE_ABSORBER_MODEL", "FILTER_LOW_LIKELIHOOD", "MAX_LAMBDA", "MIN_LAMBDA", "DLAMBDA", "K",
+                "NUM_FOREST_LINES", "NUM_LINES", "BALMASK", "PREV_BETA", "MAX_NOISE_VARIANCE", "BATCH_SIZE", "ENABLE_TAU_EB", "TAU_EB_OBJECTIVE", "EARLY_STOP_MODE"]
+        env_path = arm_root + ".env"
+        with open(env_path, "w") as fh:
+            fh.write(f'# P1 multi-HCD clustering control — family {a.family}, arm {arm} on the HCD-free twin {fam["mockdir"]}; finder = MAX4 P0 BASELINE ({a.baseline_env})\n'
+                     f'source "{REPO}/slurm/greatlakes/production/_base_gl.env"\nMODE="mock"\nRUN_DATE="${{RUN_DATE:-$(date +%Y%m%d)}}"\n'
+                     f'RUN_NAME="r041_mock_{a.family}_{arm}_MAX4"\nMOCKDIR="{arm_root}"\nQSOCAT="{qpath}"\nRELEASE="{fam["release"]}"\nOUTDIR="{arm_root}_outputs/"\n')
+            for kk in keep:
+                if kk in base:
+                    fh.write(f'{kk}="{base[kk]}"\n')
+            fh.write(f'PREV_TAU_0="{tau0_matched:.6g}"\nPAIR_PRIOR_MODE="off"\nDLA_BIAS="2.0"\nMAX_WORKERS={a.gl_cpus}\nGL_SLURM_MEM=64G\nGL_SLURM_TIME=08:00:00\n'
+                     f'OUTER_MAX_INDEX={n_files - 1}\nOUTER_STEP={a.outer_window}\nOUTER_WINDOW={a.outer_window}\nTRUTH_CAT="{truth_fits}"\nBAL_CAT="{fam["bal"]}"\nREPO_ROOT="{REPO}"\n')
+        summ["arms"][arm] = dict(root=arm_root, plan=plan_path, plan_sha256=_sha(plan_path), truth_csv=truth_csv, truth_csv_sha256=_sha(truth_csv),
+                                 truth_manifest=truth_fits, truth_manifest_sha256=_sha(truth_fits), qsocat=qpath, env=env_path, n_files=n_files,
+                                 n_injections=len(manifest), n_shift_failed=sum(1 for g in geo if not g["shift_ok"]))
+        print(f"[{arm}] built: {n_files} files, {len(manifest)} injections on {len(systems)} systems -> {arm_root} (shift failures {summ['arms'][arm]['n_shift_failed']})")
+    json.dump(summ, open(os.path.join(a.out_root, "build_summary_systems.json"), "w"), indent=1)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--family", choices=list(FAMILIES), required=True)
@@ -265,12 +391,18 @@ def main():
     ap.add_argument("--outer-window", type=int, default=20)
     ap.add_argument("--native-singles-per-multi", type=float, default=1.0, help="native arm: single-HCD reference sightlines per multi sightline, per stratum")
     ap.add_argument("--native-max-multi", type=int, default=None, help="native arm: cap on multi-HCD sightlines (seeded subsample)")
+    ap.add_argument("--systems-truth", default=None, help="clustering control: native_truth.csv of the P1 native arm (truth systems)")
+    ap.add_argument("--systems-population", default=None, help="clustering control: population_native.csv of the P1 native arm")
     a = ap.parse_args()
     fam = FAMILIES[a.family]
     cfg = json.load(open(a.config))
     arms = a.arms.split(",")
     if arms == ["native"]:
         return build_native_arm(a, fam, cfg)
+    if all(x in ("syscluster", "sysrandom", "sysshuffle") for x in arms):
+        if not (a.systems_truth and a.systems_population):
+            raise SystemExit("system arms need --systems-truth and --systems-population")
+        return build_system_arms(a, fam)
     if "native" in arms:
         raise SystemExit("--arms native must be run on its own (separate product root)")
     if "clustered" in arms and fam["twin_truth"] is None:
