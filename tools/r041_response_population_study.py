@@ -432,7 +432,7 @@ def em_unfold(A, n_obs, n_iter=200):
     return f
 
 
-def stage_unfold(out_dir, seed=20260902):
+def stage_unfold(out_dir, seed=20260902, tag=""):
     evs = {s: load_events(s, out_dir) for s in NATIVE}
     hists = {s: hist_density(evs[s]["logN"]) for s in NATIVE}
     schemes = ["W1_unit", "W5_tilt_minus", "W5_tilt_plus", "W3_other_shape"]
@@ -499,7 +499,7 @@ def stage_unfold(out_dir, seed=20260902):
                 ce, cp = case["empirical"], case["parametric"]
                 print(f"{s} alpha={alpha} beta={beta}: emp ≥20.3 {ce.get('bias_ge20p3_pct')} (1000it {ce.get('bias_ge20p3_pct_1000iter')}) | par ≥20.3 {cp.get('bias_ge20p3_pct')} (1000it {cp.get('bias_ge20p3_pct_1000iter')}) cells {cp.get('n_par_cells_with_support')} | emp ≥20.0 {ce.get('bias_ge20p0_pct')} par {cp.get('bias_ge20p0_pct')}")
         res[s] = out
-    json.dump(res, open(os.path.join(out_dir, "prior_stress_unfold.json"), "w"), indent=1)
+    json.dump(res, open(os.path.join(out_dir, f"prior_stress_unfold{tag}.json"), "w"), indent=1)
     return res
 
 
@@ -540,6 +540,8 @@ def main(argv=None):
     ap.add_argument("stage", choices=["match", "tables", "reweight", "context", "unfold", "summary"])
     ap.add_argument("--out", default=f"{ROOT}/response_study")
     ap.add_argument("--sample", default=None, help="match: N2 or NL (default both)")
+    ap.add_argument("--seed", type=int, default=20260902, help="unfold: split-half seed (extra seeds quantify the metric scatter)")
+    ap.add_argument("--tag", default="", help="unfold: output suffix for extra seeds")
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     if a.stage == "match":
@@ -552,7 +554,7 @@ def main(argv=None):
     elif a.stage == "context":
         stage_context(a.out)
     elif a.stage == "unfold":
-        stage_unfold(a.out)
+        stage_unfold(a.out, seed=a.seed, tag=a.tag)
     else:
         stage_summary(a.out)
 
