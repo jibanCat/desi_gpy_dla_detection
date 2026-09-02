@@ -192,7 +192,9 @@ def fp_block(mock_pi_csv, mock_pop_csv):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["real", "mock"], required=True)
+    ap.add_argument("--mode", choices=["real", "mock", "mock_native"], required=True,
+                    help="mock = operator closure on the injection arm itself (comb truth; diagnostic); mock_native = end-to-end closure: population = the 2LPT "
+                         "native loa-124 arm (smooth mock truth), calibration = the random injection arm on the same substrate (predeclaration Amendment 3)")
     ap.add_argument("--out-dir", required=True); ap.add_argument("--n-boot", type=int, default=96)
     a = ap.parse_args(argv)
     os.makedirs(a.out_dir, exist_ok=True)
@@ -217,6 +219,34 @@ def main(argv=None):
         inputs = dict(population=pop_csv, population_sha256=_sha(pop_csv), catalogue=cat_path, catalogue_sha256=_sha(cat_path), fid_analysis=fid_json, fid_analysis_sha256=_sha(fid_json),
                       fid_per_injection=fid_pi, fid_per_injection_sha256=_sha(fid_pi), cmp_per_injection=cmp_pi, cmp_per_injection_sha256=_sha(cmp_pi),
                       fp_mock_per_injection=mock_pi, fp_mock_per_injection_sha256=_sha(mock_pi), fp_mock_population=mock_pop)
+    elif a.mode == "mock_native":
+        # END-TO-END closure (Amendment 3): population = the P1 native loa-124 arm (1,028 sightlines: 513 multi + 515 single, native truth
+        # 1,594 absorbers, emulated z = z + 1); counts from its MAX4 outputs; calibration (C, g, response) and FP from the RANDOM injection arm on the
+        # same substrate (the injection calibration arm) — the same separation between population and calibration as the real analysis.
+        import glob
+        from astropy.io import fits
+        nat_root = f"{ROOT_MAX4}/p1/mock_native/2lpt"
+        pop = list(csv.DictReader(open(f"{nat_root}/population_native.csv")))
+        for r in pop: r["zlo"] = str(float(r["zlo"]) + 1.0); r["zhi"] = str(float(r["zhi"]) + 1.0)
+        win = {int(r["TARGETID"]): (float(r["zlo"]), float(r["zhi"])) for r in pop}
+        rows = [fits.open(f)[1].data for f in sorted(glob.glob(f"{nat_root}/native_outputs/dlacat-*.fits"))]
+        tid = np.concatenate([np.asarray(r["TARGETID"], np.int64) for r in rows]); z = np.concatenate([np.asarray(r["Z_DLA"], float) for r in rows]) + 1.0
+        N = np.concatenate([np.asarray(r["NHI"], float) for r in rows]); P = np.concatenate([np.asarray(r["P_DLA"], float) for r in rows])
+        fl = np.concatenate([np.asarray(r["DLAFLAG"], int) for r in rows]); snr = np.concatenate([np.asarray(r["SNR_REDSIDE"], float) for r in rows])
+        counts, n_op, n_binned = counts_from_rows(tid, z, N, P, fl, snr, win)
+        dX, xc, n_sl = dX_from_windows(pop, lambda r: float(r["snr"]))
+        n_det, n_tot, medges, g, occ = molly_blocks(mock_json)                     # calibration arm = the random injection arm
+        inj = list(csv.DictReader(open(mock_pi)))
+        for r in inj: r["z_inj"] = str(float(r["z_inj"]) + 1.0)
+        frm, cm, cs, ck, n_tp, n_uniq = response_fit(inj, os.path.join(a.out_dir, "forward_response_hz_mocknative.npz"), a.n_boot)
+        fp, n_sl_mock, n_extra = fp_block(mock_pi, mock_pop)
+        ntrue_edges_tmp = basis_pad_edges_19p0_0p2()
+        truth_counts = np.zeros((len(ntrue_edges_tmp) - 1, len(ZF_EDGES) - 1), np.int64)
+        for r in csv.DictReader(open(f"{nat_root}/native/native_truth.csv")):
+            zt = float(r["z_inj"]) + 1.0; b = _idx(ntrue_edges_tmp, float(r["logN"])); k = _idx(ZF_EDGES, zt)
+            if 0 <= b < truth_counts.shape[0] and 0 <= k < truth_counts.shape[1]: truth_counts[b, k] += 1
+        inputs = dict(native_outputs=f"{nat_root}/native_outputs", native_truth=f"{nat_root}/native/native_truth.csv", native_population=f"{nat_root}/population_native.csv",
+                      calibration_arm_analysis=mock_json, calibration_arm_per_injection=mock_pi, fp_mock_population=mock_pop)
     else:
         # operator closure on the 2LPT random arm: counts from its own MAX4 outputs; truth = its injections (per fine z bin: emulated z = z_inj + 1)
         import glob
@@ -250,7 +280,7 @@ def main(argv=None):
     zmid = 0.5 * (ZF_EDGES[:-1] + ZF_EDGES[1:]); kz_to_K = (np.searchsorted(ZC_EDGES, zmid, side="right") - 1).astype(np.int64)
     col = dX.sum(axis=0); fp_E = np.zeros_like(dX); nz = col > 0; fp_E[:, nz] = dX[:, nz] / col[nz]
     fp_w = n_sl / n_sl_mock; fp_ell = n_sl_mock * (n_sl_mock / n_sl)
-    fwd, fwd_meta = load_forward_response_pack_local(os.path.join(a.out_dir, "forward_response_hz_real_arm.npz" if a.mode == "real" else "forward_response_hz_mockclosure.npz"))
+    fwd, fwd_meta = load_forward_response_pack_local(os.path.join(a.out_dir, {"real": "forward_response_hz_real_arm.npz", "mock": "forward_response_hz_mockclosure.npz", "mock_native": "forward_response_hz_mocknative.npz"}[a.mode]))
     pack = dict(nhat_edges=NHAT_EDGES, ntrue_edges=ntrue_edges, zf_edges=ZF_EDGES, zc_edges=ZC_EDGES, kz_to_K=kz_to_K, snr_edges=SNR_EDGES, nhat_masked_bins=masked,
                 counts=counts, dX=dX, dX_coarse_committed=xc, molly_n_det=n_det, molly_n_tot=n_tot, molly_nhi_edges=medges, molly_snr_edges=SNR_EDGES,
                 g_grid=g, g_occupancy=occ, **fwd, fp_counts=fp, fp_eta_c=np.zeros(len(NHAT_EDGES) - 1), fp_ell_eff=np.float64(fp_ell), fp_w_sightline_ratio=np.float64(fp_w),
@@ -264,7 +294,7 @@ def main(argv=None):
                 adopted_resp_mu_coef=fwd["resp_mu_coef"], adopted_resp_sig_coef=fwd["resp_sig_coef"], adopted_resp_skew_coef=fwd["resp_skew_coef"],
                 adopted_resp_fit_range=fwd["resp_N_fit_range"], adopted_phi_ref=phi, adopted_carrier_mu=cm, adopted_carrier_sig=cs, adopted_carrier_skew=ck,
                 adopted_carrier_shared3=np.zeros((cm.shape[0], 3)))
-    name = "modelA_pack_HZ_MAX4_real_arm.npz" if a.mode == "real" else "modelA_pack_HZ_mockclosure_2lpt_random.npz"
+    name = {"real": "modelA_pack_HZ_MAX4_real_arm.npz", "mock": "modelA_pack_HZ_mockclosure_2lpt_random.npz", "mock_native": "modelA_pack_HZ_mockclosure_2lpt_native.npz"}[a.mode]
     npz = os.path.join(a.out_dir, name); np.savez(npz, **pack)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO).decode().strip()
     prov = dict(real_data=(a.mode == "real"), truth_counts_sentinel=("ZEROS_NO_TRUTH" if a.mode == "real" else None), mode=a.mode, arm="HIGH-z CALIBRATION ARM (MAX4 real-spectrum injections)",
