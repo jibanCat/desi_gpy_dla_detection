@@ -43,8 +43,10 @@ def _sha(p):
 METHODS = {
     "noise_preserving": ("variance_preserving",
                          "A (variance-preserving): F' = T*(F + (r-1)*S) + sqrt(1 - T^2)*eps/sqrt(ivar), eps ~ N(0,1) from "
-                         "numpy default_rng(seed) with seed = 0 for EVERY sightline of the wave (the injector default; the "
-                         "archive route passes no per-sightline seed); S = signal_estimate(F; median_px, sigma_px); "
+                         "numpy default_rng(seed); seed per --noise-seed-policy (shared0 = seed 0 for EVERY sightline of the "
+                         "wave, the historical archive-route default; independent = per-sightline uint64 seed = "
+                         "sha256('|'.join(sorted(injection_ids)))[:8] little-endian, injection_id = plan_label:wave:TARGETID:inj_idx, "
+                         "manifest *.noise_seeds.csv); S = signal_estimate(F; median_px, sigma_px); "
                          "ivar / mask unchanged; T = frozen Voigt transmission (num_lines)"),
     "residual_preserving": ("residual_preserving",
                             "B (residual-preserving): F' = T*S_r + (F_r - S_r) with F_r = F + (r-1)*S and S_r = r*S, i.e. the "
@@ -56,7 +58,26 @@ METHODS = {
 }
 
 
-def inject_sightline(method, wave, flux, ivar, mask, absorbers, *, z_qso, alt, fid, num_lines, median_px, sigma_px):
+# --- noise-seed policy of prescription A (shared-epsilon micro-audit, PI addendum 2026-09-01 §9-§13) ----------------
+# shared0     : the historical construction — seed 0 for every sightline of every wave (one eps vector, pixel-aligned, shared).
+# independent : one deterministic seed per sightline derived ONLY from the stable injection identifiers of that sightline in
+#               the wave (never process order, array index, SLURM task or Python hash): seed_key = "|".join(sorted(injection_ids)),
+#               seed = int.from_bytes(sha256(seed_key)[:8], "little"). The mapping is written to <archive>.noise_seeds.csv.
+SEED_POLICIES = ("shared0", "independent")
+
+
+def injection_id(plan_label, wave, tid, inj_idx):
+    """The provenance-index pairing key (tools/r041_injection_provenance_index.py): plan_label:wave:TARGETID:inj_idx."""
+    return f"{plan_label}:{int(wave)}:{int(tid)}:{int(inj_idx)}"
+
+
+def seed_for_sightline(injection_ids):
+    """Deterministic uint64 seed of one sightline's noise vector under the `independent` policy."""
+    key = "|".join(sorted(str(x) for x in injection_ids))
+    return key, int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "little")
+
+
+def inject_sightline(method, wave, flux, ivar, mask, absorbers, *, z_qso, alt, fid, num_lines, median_px, sigma_px, seed=0):
     """Per-sightline dispatch on the campaign method name (see METHODS). `alt` / `fid` are the
     tau_eff callables of the mean-flux rescaling (alt None = fiducial, r = 1)."""
     from injection.noise_preserving import inject_noise_preserving, inject_multiplicative, meanflux_ratio
@@ -66,7 +87,7 @@ def inject_sightline(method, wave, flux, ivar, mask, absorbers, *, z_qso, alt, f
         return inject_multiplicative(wave, flux, absorbers, num_lines)
     r_mf = meanflux_ratio(wave, z_qso, alt, fid) if alt is not None else None
     return inject_noise_preserving(wave, flux, ivar, mask, absorbers, z_qso=z_qso, r=r_mf, num_lines=num_lines,
-                                   median_px=median_px, sigma_px=sigma_px, method=METHODS[method][0])
+                                   median_px=median_px, sigma_px=sigma_px, method=METHODS[method][0], seed=int(seed))
 
 
 def main(argv=None):
@@ -86,7 +107,13 @@ def main(argv=None):
     ap.add_argument("--median-px", type=int, default=None)
     ap.add_argument("--num-lines", type=int, default=3)
     ap.add_argument("--base-env", default=os.path.join(REPO, "slurm/greatlakes/production/loa_cddf_hz_gl_v1.env"))
+    ap.add_argument("--noise-seed-policy", choices=list(SEED_POLICIES), default="shared0",
+                    help="prescription A only: shared0 = the historical seed-0-everywhere construction (default, bytes unchanged); "
+                         "independent = deterministic per-sightline seed from the stable injection_ids (needs --plan-label)")
+    ap.add_argument("--plan-label", default=None, help="plan label of the provenance index (e.g. cmp, fid); required for --noise-seed-policy independent")
     a = ap.parse_args(argv)
+    if a.noise_seed_policy == "independent" and not a.plan_label:
+        raise SystemExit("--noise-seed-policy independent requires --plan-label (the injection_id prefix must be explicit and recorded)")
     import h5py, fitsio
     from injection.noise_preserving import taueff, DEFAULT_SIGMA_PX, DEFAULT_MEDIAN_PX
     sigma = DEFAULT_SIGMA_PX if a.sigma_px is None else a.sigma_px
@@ -121,11 +148,20 @@ def main(argv=None):
         iv_all = src["ivar"][:][rows]; mk_all = src["mask"][:][rows]
         out_flux = np.empty_like(fl_all, dtype=np.float32)
         fid = taueff(a.meanflux_fiducial); alt = taueff(a.meanflux_model) if a.meanflux_model else None
+        seed_rows = []
         for j, t in enumerate(tids):
             zq = float(cat[idx[t]]["Z"])
             absorbers = [{"nhi": 10.0 ** float(r["logN"]), "z_dla": float(r["z_inj"]), "num_lines": a.num_lines} for r in by_tid[t]]
+            ids = [injection_id(a.plan_label or "", a.wave, t, r["inj_idx"]) for r in by_tid[t]]
+            if a.noise_seed_policy == "independent":
+                seed_key, seed = seed_for_sightline(ids)
+            else:
+                seed_key, seed = "shared0", 0
+            for r, iid in zip(by_tid[t], ids):
+                seed_rows.append(dict(injection_id=iid, TARGETID=t, wave=a.wave, inj_idx=int(r["inj_idx"]), seed_key=seed_key, seed=seed,
+                                      policy=a.noise_seed_policy, uses_eps=(a.method == "noise_preserving")))
             fl = inject_sightline(a.method, wave, fl_all[j], iv_all[j], mk_all[j], absorbers, z_qso=zq, alt=alt, fid=fid,
-                                  num_lines=a.num_lines, median_px=median, sigma_px=sigma)
+                                  num_lines=a.num_lines, median_px=median, sigma_px=sigma, seed=seed)
             out_flux[j] = fl.astype(np.float32)
             for r in by_tid[t]:
                 truth_rows.append(dict(TARGETID=t, wave=a.wave, inj_idx=int(r["inj_idx"]), logN=float(r["logN"]), z_inj=float(r["z_inj"]),
@@ -136,6 +172,9 @@ def main(argv=None):
     truth = out_h5 + ".truth.csv"
     with open(truth, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(truth_rows[0])); w.writeheader(); w.writerows(truth_rows)
+    seeds = out_h5 + ".noise_seeds.csv"                      # the injection_id -> seed mapping (both policies; documents the construction)
+    with open(seeds, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(seed_rows[0])); w.writeheader(); w.writerows(seed_rows)
     # per-wave QSO catalogue + healpix list (archive route: healpix mode, external hpx list)
     q = fitsio.read(a.qsocat, ext=1)
     sel = np.isin(q["TARGETID"].astype(np.int64), np.array(tids, np.int64))
@@ -160,8 +199,12 @@ def main(argv=None):
         commit = "unknown"
     summ = dict(tag=a.tag, wave=a.wave, method=a.method, injection_prescription=METHODS[a.method][1],
                 injector_method=METHODS[a.method][0],
-                noise_seed_policy=("constant seed 0 for every sightline (inject_noise_preserving default; deterministic, NOT per-sightline)"
+                noise_seed_policy=(("constant seed 0 for every sightline (inject_noise_preserving default; deterministic, NOT per-sightline)"
+                                    if a.noise_seed_policy == "shared0" else
+                                    "independent deterministic per-sightline seed: seed = int.from_bytes(sha256('|'.join(sorted(injection_ids))).digest()[:8], 'little'), "
+                                    f"injection_id = '{a.plan_label}:{a.wave}:TARGETID:inj_idx'; manifest {seeds}")
                                    if a.method == "noise_preserving" else "no synthetic noise"),
+                noise_seed_policy_name=a.noise_seed_policy, plan_label=a.plan_label, noise_seed_manifest=seeds, noise_seed_manifest_sha256=_sha(seeds),
                 meanflux_model=a.meanflux_model, sigma_px=sigma, median_px=median, num_lines=a.num_lines,
                 n_sightlines=len(tids), n_injections=len(truth_rows), n_hpx=len(hpx), source_archive=a.archive, source_archive_sha256=_sha(a.archive),
                 injected_archive=out_h5, injected_archive_sha256=_sha(out_h5), truth=truth, truth_sha256=_sha(truth), qsocat=qso_out, qsocat_sha256=_sha(qso_out),

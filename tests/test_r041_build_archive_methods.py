@@ -57,9 +57,9 @@ def make_inputs(root):
     return dict(archive=arch, plan=plan, qsocat=qsocat, wave=wave, flux=flux, ivar=ivar, mask=mask, cat=cat)
 
 
-def build(inputs, out_dir, method, tag="t"):
+def build(inputs, out_dir, method, tag="t", extra=()):
     B.main(["--plan", inputs["plan"], "--wave", "0", "--archive", inputs["archive"], "--qsocat", inputs["qsocat"],
-            "--out-dir", out_dir, "--tag", tag, "--method", method])
+            "--out-dir", out_dir, "--tag", tag, "--method", method, *extra])
     h5 = os.path.join(out_dir, f"r041_{tag}_wave0.h5")
     with h5py.File(h5, "r") as h:
         out = dict(flux=h["flux"][:], ivar=h["ivar"][:], mask=h["mask"][:], tids=h["catalog"][:]["TARGETID"], attrs=dict(h.attrs))
@@ -135,3 +135,56 @@ def test_unknown_method_is_refused(tmp_path):
                 "--out-dir", str(tmp_path / "x"), "--tag", "x", "--method", "no_such_method"])
     with pytest.raises(ValueError):
         B.inject_sightline("no_such_method", None, None, None, None, [], z_qso=4.5, alt=None, fid=None, num_lines=3, median_px=9, sigma_px=2.5)
+
+
+# ---- the `independent` noise-seed policy (shared-epsilon micro-audit, PI addendum 2026-09-01 §10) -------------------------
+def test_independent_policy_uses_the_documented_per_sightline_seeds(tmp_path):
+    import hashlib
+    inputs = make_inputs(str(tmp_path / "in"))
+    shared = build(inputs, str(tmp_path / "shared"), "noise_preserving")
+    ind = build(inputs, str(tmp_path / "ind"), "noise_preserving", extra=("--noise-seed-policy", "independent", "--plan-label", "t"))
+    man = list(csv.DictReader(open(ind["h5"] + ".noise_seeds.csv")))
+    assert [m["injection_id"] for m in man] == [f"t:0:{t}:0" for t in TIDS]     # plan_label:wave:TARGETID:inj_idx, one per injection
+    seeds = [int(m["seed"]) for m in man]
+    assert len(set(seeds)) == 3 and 0 not in seeds                               # distinct, none is the shared seed
+    wave = inputs["wave"]
+    for i, (t, m) in enumerate(zip(TIDS, man)):
+        key = m["injection_id"]                                                  # one injection per sightline -> key == injection_id
+        assert m["seed_key"] == key
+        assert int(m["seed"]) == int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "little")   # the documented derivation
+        r = [p for p in PLAN if p["TARGETID"] == t][0]
+        ab = [{"nhi": 10.0 ** r["logN"], "z_dla": r["z_inj"], "num_lines": 3}]
+        exp = NP.inject_noise_preserving(wave, inputs["flux"][i].astype(np.float64), inputs["ivar"][i], inputs["mask"][i], ab,
+                                         z_qso=float(inputs["cat"][i]["Z"]), seed=int(m["seed"])).astype(np.float32)
+        assert np.array_equal(ind["flux"][i], exp)                               # exactly the primitive with that seed
+        zp = 1.0 + r["z_inj"]
+        lines = [NP.LYA_REST * zp, 1025.72 * zp, 972.54 * zp]                    # num_lines = 3: Lya, Lyb, Lyg cores are all injected
+        far = np.all([np.abs(wave - l) > 300.0 for l in lines], axis=0)
+        core = np.abs(wave - lines[0]) < 5.0                                     # saturated Lya core: pure eps/sqrt(ivar) in both builds
+        assert far.sum() > 100 and core.sum() > 3
+        sig = np.where(inputs["ivar"][i] > 0, 1.0 / np.sqrt(np.where(inputs["ivar"][i] > 0, inputs["ivar"][i], 1.0)), 0.0)
+        diff = np.abs(ind["flux"][i].astype(np.float64) - shared["flux"][i].astype(np.float64))
+        # the frozen Voigt primitive never returns T == 1.0 exactly (Lorentzian wings), so prescription A is full-grid: the two
+        # realisations differ everywhere, but far from the lines only at the sqrt(1 - T^2) * sigma level (a few % of the pixel
+        # noise at > 300 A), while in the saturated core they differ at O(sigma).
+        assert np.median(diff[far]) < 0.1 * np.median(sig[far])
+        assert np.median(diff[core]) > 0.3 * np.median(sig[core])
+    assert ind["summary"]["noise_seed_policy_name"] == "independent" and ind["summary"]["plan_label"] == "t"
+    assert "independent deterministic per-sightline seed" in ind["summary"]["noise_seed_policy"]
+    assert ind["summary"]["noise_seed_manifest"].endswith(".noise_seeds.csv") and len(ind["summary"]["noise_seed_manifest_sha256"]) == 64
+    # the shared build documents its construction in the same manifest format (seed 0, key 'shared0')
+    man0 = list(csv.DictReader(open(shared["h5"] + ".noise_seeds.csv")))
+    assert {m["seed"] for m in man0} == {"0"} and {m["seed_key"] for m in man0} == {"shared0"}
+    assert shared["summary"]["noise_seed_policy_name"] == "shared0"
+
+
+def test_independent_policy_is_bit_reproducible_and_requires_a_plan_label(tmp_path):
+    inputs = make_inputs(str(tmp_path / "in"))
+    one = build(inputs, str(tmp_path / "1"), "noise_preserving", extra=("--noise-seed-policy", "independent", "--plan-label", "t"))
+    two = build(inputs, str(tmp_path / "2"), "noise_preserving", extra=("--noise-seed-policy", "independent", "--plan-label", "t"))
+    assert np.array_equal(one["flux"], two["flux"])
+    assert open(one["h5"] + ".noise_seeds.csv", "rb").read() == open(two["h5"] + ".noise_seeds.csv", "rb").read()
+    other = build(inputs, str(tmp_path / "3"), "noise_preserving", extra=("--noise-seed-policy", "independent", "--plan-label", "u"))
+    assert not np.array_equal(one["flux"], other["flux"])                       # the label is part of the identity, as documented
+    with pytest.raises(SystemExit):
+        build(inputs, str(tmp_path / "4"), "noise_preserving", extra=("--noise-seed-policy", "independent"))
