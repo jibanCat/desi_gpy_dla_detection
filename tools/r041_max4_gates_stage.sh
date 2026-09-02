@@ -180,5 +180,21 @@ p1)
   (cd $OUT && sha256sum *.json *.csv > SHA256SUMS.txt)
   set +e
   ;;
+p1native_launch)
+  # launch the native multi-HCD arms (built by r041_mock_campaign.py --arms native; envs carry the MAX4 config + REPO_ROOT); dry-run first
+  STRIP=$(env | grep -o '^SLURM_[A-Za-z0-9_]*' | sed 's/^/-u /' | tr '\n' ' ')
+  for fam in 2lpt london; do E=$M/p1/mock_native/$fam/native.env; [ -f $E ] || { echo "missing $E"; continue; }
+    env $STRIP bash slurm/greatlakes/production/launch_gl.sh $E --dry-run --no-sleep 2>&1 | grep -o -E "chdir=[^ ]*|MAX_DLAS=[0-9],SINGLE_ABSORBER_MODEL=[0-9],FILTER_LOW_LIKELIHOOD=[0-9]|NUM_DLA_SAMPLES=[0-9]*|submitted [0-9]* sbatch" | sort -u | tr '\n' ' '; echo
+    OUT=$(env $STRIP bash slurm/greatlakes/production/launch_gl.sh $E --no-sleep 2>&1); IDS=$(echo "$OUT" | grep -o "Submitted batch job [0-9]*" | grep -o "[0-9]*$" | tr '\n' ' ')
+    echo "MAX4-P1-native_$fam jobs($(echo $IDS | wc -w)): $IDS $(date -Is)" | tee -a $M/p1/P1_LAUNCH_RECORD.txt | cut -c1-160; done
+  ;;
+p1native_reduce)
+  P=$M/p1; OUT=$P/reductions; mkdir -p $OUT; W=$M/cmpB/gate_weights.json; FIDPI=$M/fid_max4/analysis/analysis_fid_MAX4_per_injection.csv
+  for fam in 2lpt london; do R2=$P/mock_native/$fam; [ -d $R2/native_outputs ] || { echo "no outputs for $fam"; continue; }
+    python tools/r041_multihcd_score.py --truth $R2/native/native_truth.csv --outputs $R2/native_outputs --reference $FIDPI --population $R2/population_native.csv --weights $W \
+       --f-multi 0.155 0.476 --out $OUT/multihcd_native_${fam}.json --label native_${fam} 2>&1 | grep -v "UserWarning\|from scipy"
+    (cd $R2/native_outputs && sha256sum dlacat-*.fits BASELINE.env > SHA256SUMS.txt); done
+  (cd $OUT && sha256sum *.json *.csv > SHA256SUMS.txt)
+  ;;
 esac
 echo "STAGE_DONE $1 $(date -Is)"
