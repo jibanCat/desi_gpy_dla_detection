@@ -391,6 +391,9 @@ def main():
     ap.add_argument("--outer-window", type=int, default=20)
     ap.add_argument("--native-singles-per-multi", type=float, default=1.0, help="native arm: single-HCD reference sightlines per multi sightline, per stratum")
     ap.add_argument("--native-max-multi", type=int, default=None, help="native arm: cap on multi-HCD sightlines (seeded subsample)")
+    ap.add_argument("--require-twin-truth", action="store_true",
+                    help="restrict the population to sightlines with a twin truth HCD in window even when the clustered arm is not built "
+                         "(reproduces the R-041E random+clustered population exactly, so a random-only rebuild pairs by injection)")
     ap.add_argument("--systems-truth", default=None, help="clustering control: native_truth.csv of the P1 native arm (truth systems)")
     ap.add_argument("--systems-population", default=None, help="clustering control: population_native.csv of the P1 native arm")
     a = ap.parse_args()
@@ -445,7 +448,7 @@ def main():
                 continue
             s = int(np.digitize(float(r["SNR_REDSIDE"]), SNR_STRATA) - 1)
             truth_in = [(z, n) for z, n in truth_by_tid.get(int(r["TARGETID"]), []) if lo <= z <= hi and n >= 20.0]
-            if "clustered" in arms and not truth_in:
+            if ("clustered" in arms or a.require_twin_truth) and not truth_in:
                 continue
             count[s] += 1
             pop.append(dict(TARGETID=int(r["TARGETID"]), healpix=int(r["HEALPIX"]), z_qso=zq, snr=float(r["SNR_REDSIDE"]), zlo=zlo, zhi=zhi,
