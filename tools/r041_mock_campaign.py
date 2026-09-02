@@ -52,6 +52,16 @@ LAM_RF = (1025.0, 1216.0)
 ZBIN_REAL = (3.8, 5.0)
 SNR_STRATA = [2.0, 3.0, 4.0, 5.0, 7.0, np.inf]
 OM = 0.279
+# native multi-HCD arm (P1, PI ruling 2026-09-02 §5-§9): the HCD-BEARING mock itself (no injection; only the mean-flux
+# extrapolation), truth = the mock's own absorber catalogue, sightlines selected by their TRUTH multiplicity in the window.
+NATIVE = {
+    "2lpt": dict(mockdir="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124",
+                 truth="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits", zcol="Z", ncol="NHI",
+                 snr="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/snr_cat.fits", release="v2.8.5"),
+    "london": dict(mockdir="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/london/qq_desi_y3/v5.9.5/mock-0/jura-124",
+                   truth="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/london/qq_desi_y3/v5.9.5/mock-0/jura-124/dla_cat.fits", zcol="Z_DLA", ncol="NHI",
+                   snr=None, release="v5.9.5"),
+}
 FAMILIES = {
     "2lpt": dict(mockdir="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-0",
                  twin_truth="/nfs/turbo/lsa-cavestru/mfho/DESI/mocks/lyacolore_2lpt/qq_desi_y3/v2.8.5/mock-0/loa-124/hcd_truth_cat.fits",
@@ -100,6 +110,140 @@ def parse_env(path):
     return out
 
 
+def native_selection(zcat_tids, zcat_z, snr_by_tid, bal_tids, truth_by_tid, *, dz, zqso_min, companion_logN=20.0, primary_logN=20.3,
+                     singles_per_multi=1.0, max_multi=None, rng=None, n_strata=5):
+    """Select native multi-HCD sightlines (truth multiplicity >= 2 inside the high-z-emulation bin window) and a
+    stratum-matched single-HCD reference (exactly one truth absorber >= companion_logN in the window, that absorber
+    >= primary_logN). Returns (population rows, truth rows) in the R-041 schemas. Deterministic given rng."""
+    rng = rng or np.random.default_rng(0)
+    multi, single = [], []
+    for tid, zq in zip(zcat_tids, zcat_z):
+        tid = int(tid); zq = float(zq)
+        if zq < zqso_min or tid in bal_tids:
+            continue
+        snr = snr_by_tid.get(tid)
+        if snr is None or not np.isfinite(snr) or snr <= 2.0:
+            continue
+        zlo, zhi, lo, hi = window(zq, dz)
+        if hi <= lo:
+            continue
+        ab = sorted([(z, n) for z, n in truth_by_tid.get(tid, []) if lo <= z <= hi and n >= companion_logN])
+        if not ab:
+            continue
+        s = int(np.digitize(snr, SNR_STRATA) - 1)
+        rec = dict(TARGETID=tid, z_qso=zq, snr=snr, stratum=s, zlo=lo, zhi=hi, zlo_bin=lo, zhi_bin=hi, dX_bin=_X(hi) - _X(lo), m_true=len(ab), absorbers=ab)
+        if len(ab) >= 2:
+            multi.append(rec)
+        elif ab[0][1] >= primary_logN:
+            single.append(rec)
+    if max_multi is not None and len(multi) > max_multi:
+        idx = rng.choice(len(multi), max_multi, replace=False); multi = [multi[i] for i in sorted(idx)]
+    chosen = list(multi)
+    for s in range(n_strata):
+        need = int(round(singles_per_multi * sum(1 for r in multi if r["stratum"] == s)))
+        cand = [r for r in single if r["stratum"] == s]
+        if need and cand:
+            idx = rng.choice(len(cand), min(need, len(cand)), replace=False); chosen += [cand[i] for i in sorted(idx)]
+    pop_rows, truth_rows = [], []
+    for r in chosen:
+        pop_rows.append(dict(TARGETID=r["TARGETID"], z_qso=r["z_qso"], snr=r["snr"], zlo=r["zlo"], zhi=r["zhi"], zlo_bin=r["zlo_bin"], zhi_bin=r["zhi_bin"],
+                             dX_bin=r["dX_bin"], stratum=r["stratum"], m_true=r["m_true"], has_cand_ge20=0))
+        zs = [z for z, n in r["absorbers"]]
+        for k, (z, n) in enumerate(r["absorbers"]):
+            others = [abs(z2 - z) for z2 in zs if z2 != z]
+            dv = (C_KMS * min(others) / (1.0 + z)) if others else ""
+            truth_rows.append(dict(TARGETID=r["TARGETID"], wave=0, inj_idx=k, logN=round(float(n), 4), z_inj=round(float(z), 6), stratum=r["stratum"], snr=r["snr"],
+                                   z_qso=r["z_qso"], has_cand_ge20=0, pair_class="native", dv_kms=(round(dv, 1) if dv != "" else ""), pair_logN="",
+                                   m_true=r["m_true"], method="native", meanflux_model="extrapolated"))
+    return pop_rows, truth_rows
+
+
+def build_native_arm(a, fam, cfg):
+    """P1 native multi-HCD arm: rescale-only campaign on the HCD-bearing mock; truth = native absorbers in window."""
+    nat = NATIVE[a.family]
+    os.makedirs(a.out_root, exist_ok=True)
+    rng = np.random.default_rng(seed_for(0, 1, a.seed_salt))
+    zcat = Table(fits.open(os.path.join(nat["mockdir"], "zcat.fits"))[1].data)
+    bal = set(np.asarray(Table(fits.open(fam["bal"])[1].data)["TARGETID"], dtype=np.int64).tolist())
+    snr_path = a.snr_cat or nat["snr"] or fam["snr"]
+    snr_t = Table(fits.open(snr_path)[1].data)
+    snr_col = "SNR_REDSIDE" if "SNR_REDSIDE" in snr_t.colnames else [c for c in snr_t.colnames if "SNR" in c.upper()][0]
+    snr_by = {int(t): float(v) for t, v in zip(np.asarray(snr_t["TARGETID"], dtype=np.int64), snr_t[snr_col])}
+    tt = fits.open(nat["truth"])[1].data
+    N = np.asarray(tt[nat["ncol"]], float); N = np.log10(N) if np.nanmax(N) > 100 else N
+    truth_by = {}
+    for t, z, n in zip(np.asarray(tt["TARGETID"], dtype=np.int64), np.asarray(tt[nat["zcol"]], float), N):
+        truth_by.setdefault(int(t), []).append((float(z), float(n)))
+    pop, truth = native_selection(np.asarray(zcat["TARGETID"], dtype=np.int64), np.asarray(zcat["Z"], float), snr_by, bal, truth_by, dz=a.delta_z,
+                                  zqso_min=a.zqso_min, singles_per_multi=a.native_singles_per_multi, max_multi=a.native_max_multi, rng=rng)
+    # healpix from the mock's snr/zcat carrier if present, else from RA/DEC (DESI nside 16 nested) via build_clean_table's convention
+    hp_by = {}
+    if "HEALPIX" in snr_t.colnames:
+        hp_by = {int(t): int(h) for t, h in zip(np.asarray(snr_t["TARGETID"], dtype=np.int64), snr_t["HEALPIX"])}
+    else:
+        import healpy
+        ra_col = "RA" if "RA" in zcat.colnames else "TARGET_RA"; dec_col = "DEC" if "DEC" in zcat.colnames else "TARGET_DEC"
+        for t, ra, dec in zip(np.asarray(zcat["TARGETID"], dtype=np.int64), zcat[ra_col], zcat[dec_col]):
+            hp_by[int(t)] = int(healpy.ang2pix(16, np.radians(90.0 - float(dec)), np.radians(float(ra)), nest=True))
+    for r in pop:
+        r["healpix"] = hp_by[r["TARGETID"]]
+    if a.n_healpix and len({r["healpix"] for r in pop}) > a.n_healpix:      # bound the number of coadds: keep the seeded-first healpix
+        hps = sorted({r["healpix"] for r in pop}); keep = set(rng.permutation(hps)[: a.n_healpix].tolist())
+        pop = [r for r in pop if r["healpix"] in keep]; kept = {r["TARGETID"] for r in pop}; truth = [t for t in truth if t["TARGETID"] in kept]
+    arm_root = os.path.join(a.out_root, "native"); os.makedirs(arm_root, exist_ok=True)
+    with open(os.path.join(a.out_root, "population_native.csv"), "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(pop[0].keys())); w.writeheader(); w.writerows(pop)
+    truth_csv = os.path.join(arm_root, "native_truth.csv")
+    with open(truth_csv, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(truth[0].keys())); w.writeheader(); w.writerows(truth)
+    zbar = float(np.average([0.5 * (r["zlo"] + r["zhi"]) for r in pop], weights=[r["dX_bin"] for r in pop]))
+    base = parse_env(a.baseline_env)
+    tau0 = float(base.get("PREV_TAU_0", 0.00246)); beta = float(base.get("PREV_BETA", 3.62))
+    tau0_matched = tau0 * ((1 + zbar + a.delta_z) / (1 + zbar)) ** beta
+    mf = json.load(open(a.meanflux_json))
+    meanflux = {"fiducial": {"z": mf["z_center"], "taueff": mf["taueff"]}, "model": a.meanflux_model, "delta_z": a.delta_z}
+    manifest = [dict(inj_id=i, campaign="N", method="coadd", target_id=r["TARGETID"], healpix=r["healpix"], z_qso=r["z_qso"], snr_bin=r["stratum"], native_snr=r["snr"],
+                     logN_true=np.nan, z_true=np.nan, num_lines=3, arm="native", rescale_only=True, m_true=r["m_true"], zlo_bin=r["zlo_bin"], zhi_bin=r["zhi_bin"],
+                     dX_bin=r["dX_bin"], delta_z=a.delta_z) for i, r in enumerate(pop)]
+    plan_path = os.path.join(arm_root, "plan.csv")
+    with open(plan_path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(manifest[0].keys())); w.writeheader(); w.writerows(manifest)
+    truth_fits = write_campaign(manifest, None, out_root=arm_root, mockdir=nat["mockdir"], num_lines=3, method="variance_preserving", meanflux=meanflux,
+                                seed_salt=f"{a.seed_salt}:native")
+    tids = np.array([m["target_id"] for m in manifest], dtype=np.int64)
+    zc = zcat[np.isin(np.asarray(zcat["TARGETID"], dtype=np.int64), tids)]
+    q = Table({"TARGETID": np.asarray(zc["TARGETID"], dtype=np.int64), "Z": np.asarray(zc["Z"], dtype=float)})
+    ra_col = "RA" if "RA" in zc.colnames else "TARGET_RA"; dec_col = "DEC" if "DEC" in zc.colnames else "TARGET_DEC"
+    q["RA"] = np.asarray(zc[ra_col], dtype=float); q["DEC"] = np.asarray(zc[dec_col], dtype=float); q["TARGET_RA"] = q["RA"]; q["TARGET_DEC"] = q["DEC"]
+    qpath = arm_root + "_qsocat.fits"; q.write(qpath, overwrite=True)
+    n_files = len({m["healpix"] for m in manifest})
+    env_path = arm_root + ".env"
+    keep = ["LEARNED_FILE", "CATALOG_NAME", "LOS_CATALOG", "DLA_CATALOG", "DLA_SAMPLES_FILE", "SUB_DLA_SAMPLES_FILE", "NUM_DLA_SAMPLES",
+            "NUM_SUBDLA_SAMPLES", "MAX_DLAS", "SINGLE_ABSORBER_MODEL", "FILTER_LOW_LIKELIHOOD", "MAX_LAMBDA", "MIN_LAMBDA", "DLAMBDA", "K",
+            "NUM_FOREST_LINES", "NUM_LINES", "BALMASK", "PREV_BETA", "MAX_NOISE_VARIANCE", "BATCH_SIZE", "ENABLE_TAU_EB", "TAU_EB_OBJECTIVE", "EARLY_STOP_MODE"]
+    with open(env_path, "w") as fh:
+        fh.write(f'# P1 native multi-HCD arm — family {a.family}; HCD-bearing mock {nat["mockdir"]} (no injection; mean-flux extrapolation only);\n'
+                 f'# finder settings = resolved BASELINE.env of the MAX4 P0 real run ({a.baseline_env}); PREV_TAU_0 matched to the extrapolated forest\n'
+                 f'source "{REPO}/slurm/greatlakes/production/_base_gl.env"\nMODE="mock"\nRUN_DATE="${{RUN_DATE:-$(date +%Y%m%d)}}"\n'
+                 f'RUN_NAME="r041_mock_{a.family}_native_MAX4"\nMOCKDIR="{arm_root}"\nQSOCAT="{qpath}"\nRELEASE="{nat["release"]}"\nOUTDIR="{arm_root}_outputs/"\n')
+        for k in keep:
+            if k in base:
+                fh.write(f'{k}="{base[k]}"\n')
+        fh.write(f'PREV_TAU_0="{tau0_matched:.6g}"\nPAIR_PRIOR_MODE="off"\nDLA_BIAS="2.0"\nMAX_WORKERS={a.gl_cpus}\nGL_SLURM_MEM=64G\nGL_SLURM_TIME=08:00:00\n'
+                 f'OUTER_MAX_INDEX={n_files - 1}\nOUTER_STEP={a.outer_window}\nOUTER_WINDOW={a.outer_window}\nTRUTH_CAT="{truth_fits}"\nBAL_CAT="{fam["bal"]}"\nREPO_ROOT="{REPO}"\n')
+    summ = dict(family=a.family, arm="native", native_mockdir=nat["mockdir"], native_truth=nat["truth"], native_truth_sha256=_sha(nat["truth"]), snr_cat=snr_path,
+                n_sightlines=len(pop), n_multi=sum(1 for r in pop if r["m_true"] >= 2), n_single_reference=sum(1 for r in pop if r["m_true"] == 1),
+                m_true_hist={str(m): sum(1 for r in pop if min(r["m_true"], 3) == m) for m in (1, 2, 3)}, n_truth_absorbers=len(truth), n_healpix=n_files,
+                zbar_window=zbar, delta_z=a.delta_z, PREV_TAU_0_matched=tau0_matched, PREV_TAU_0_production=tau0, meanflux_model_high=a.meanflux_model,
+                meanflux_low_measured=a.meanflux_json, baseline_env=a.baseline_env, seed_salt=a.seed_salt, companion_logN=20.0, primary_logN=20.3,
+                singles_per_multi=a.native_singles_per_multi, max_multi=a.native_max_multi, plan=plan_path, plan_sha256=_sha(plan_path), truth_csv=truth_csv,
+                truth_csv_sha256=_sha(truth_csv), truth_manifest=truth_fits, truth_manifest_sha256=_sha(truth_fits), qsocat=qpath, qsocat_sha256=_sha(qpath),
+                env=env_path, generator_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip())
+    json.dump(summ, open(os.path.join(a.out_root, "build_summary_native.json"), "w"), indent=1)
+    print(json.dumps({k: summ[k] for k in ("family", "n_sightlines", "n_multi", "n_single_reference", "m_true_hist", "n_truth_absorbers", "n_healpix", "PREV_TAU_0_matched")}, indent=1))
+    print(f"[native] built: {n_files} files, {len(pop)} sightlines -> {arm_root}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--family", choices=list(FAMILIES), required=True)
@@ -119,10 +263,16 @@ def main():
     ap.add_argument("--plan-only", action="store_true")
     ap.add_argument("--gl-cpus", type=int, default=16)
     ap.add_argument("--outer-window", type=int, default=20)
+    ap.add_argument("--native-singles-per-multi", type=float, default=1.0, help="native arm: single-HCD reference sightlines per multi sightline, per stratum")
+    ap.add_argument("--native-max-multi", type=int, default=None, help="native arm: cap on multi-HCD sightlines (seeded subsample)")
     a = ap.parse_args()
     fam = FAMILIES[a.family]
     cfg = json.load(open(a.config))
     arms = a.arms.split(",")
+    if arms == ["native"]:
+        return build_native_arm(a, fam, cfg)
+    if "native" in arms:
+        raise SystemExit("--arms native must be run on its own (separate product root)")
     if "clustered" in arms and fam["twin_truth"] is None:
         raise SystemExit("clustered arm needs an HCD-free twin with a truth catalogue (2lpt only)")
     os.makedirs(a.out_root, exist_ok=True)
