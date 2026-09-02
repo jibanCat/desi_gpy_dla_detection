@@ -168,3 +168,19 @@ def test_unknown_method_raises():
     wave, flux, ivar, mask, S, sigma = _spec()
     with pytest.raises(ValueError):
         NP.inject_noise_preserving(wave, flux, ivar, mask, [], method="no_such_method")
+
+
+def test_meanflux_control_variants_match_the_predeclared_construction():
+    """P1 mean-flux control (spec MAX4_MEANFLUX_CONTROL_SPEC_2026-09-02.md §2): the +-1 sigma variants are the fiducial scaled by the
+    Turner+2024 nearest-bin relative error (4.2 % at z = 4.15), the envelope rises to 11 % at z = 4.5; the Ding+2024 variant reproduces the
+    published spline points exactly and is +13 % above the fiducial at z = 4.20; the FG08 stress arm stays +20 %."""
+    fid = NP.taueff("finder_fiducial"); p = NP.taueff("turner2024_p1s"); m = NP.taueff("turner2024_m1s"); d = NP.taueff("ding2024_hz")
+    assert abs(fid(4.15) - 0.928) < 0.01                                        # the fiducial IS the Turner fit
+    assert abs(p(4.15) / fid(4.15) - (1 + 0.039 / 0.928)) < 1e-9 and abs(m(4.15) / fid(4.15) - (1 - 0.039 / 0.928)) < 1e-9
+    assert abs(NP.meanflux_envelope_s(4.5) - 0.11) < 1e-12 and abs(NP.meanflux_envelope_s(4.35) - 0.5 * (0.039 / 0.928 + 0.11)) < 1e-9
+    assert abs(NP.meanflux_envelope_s(3.05) - 0.023 / 0.373) < 1e-12
+    for z, t in NP.DING2024_SPLINE:
+        assert abs(d(z) - t) < 1e-9
+    assert abs(d(4.20) / fid(4.20) - 1.09 / (0.00246 * 5.2 ** 3.62)) < 1e-9 and 1.10 < d(4.20) / fid(4.20) < 1.16
+    assert abs(d(4.6) - 1.09 * (5.6 / 5.2) ** 4.85) < 1e-9
+    fg = NP.taueff("fg2008"); assert 1.15 < fg(4.3) / fid(4.3) < 1.25

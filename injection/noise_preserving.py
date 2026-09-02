@@ -189,11 +189,50 @@ TAUEFF_MODELS = {
     "fg2008": {"form": "tau0*(1+z)**beta", "tau0": 0.0018, "beta": 3.92,
                "source": "Faucher-Giguere et al. 2008, ApJ 681, 831 (0.0018 (1+z)^3.92)"},
     "becker2013": {"form": "0.751*((1+z)/4.5)**2.90-0.132", "source": "Becker et al. 2013, MNRAS 430, 2067 (2 < z < 5)"},
+    # --- P1 mean-flux CONTROL variants (PI ruling 2026-09-02 §9-§12; spec MAX4_MEANFLUX_CONTROL_SPEC_2026-09-02.md §2) -------------
+    # Relative envelope s(z) about the finder fiducial (= the Turner et al. 2024 fit): sigma_tot/tau of the nearest Turner bin for
+    # 2.05 <= z <= 4.15 (Table 3 of arXiv:2405.06743), held at the last-bin value (4.2 %) to z = 4.2, rising linearly to 11 % at z = 4.5
+    # (the Ding, Madau & Prochaska 2024 stated 10-12 % precision at z > 4; arXiv:2310.00524) and constant beyond. No (tau0, gamma)
+    # covariance is published, so the power-law parameters are NOT pushed jointly.
+    "turner2024_m1s": {"form": "finder_fiducial*(1-s(z))", "source": "Turner+2024 Table 3 binned sigma_tot/tau (2.05-4.15); Ding+2024 10-12 % beyond 4.2"},
+    "turner2024_p1s": {"form": "finder_fiducial*(1+s(z))", "source": "idem"},
+    # Ding+2024 spline points (metal- and optically-thick-corrected tau_Lya, mean of the posterior; Table 3 of arXiv:2310.00524v2), log-linear
+    # between points, extrapolated above z = 4.20 with the last-segment slope d ln tau / d ln(1+z) = ln(1.09/0.85)/ln(5.20/4.94) = 4.85.
+    "ding2024_hz": {"form": "spline(Ding+2024) ; tau = 1.09*((1+z)/5.20)**4.85 above z = 4.20", "source": "Ding, Madau & Prochaska 2024, MNRAS 532, 2082"},
 }
+
+TURNER2024_BINS = [(2.05, 0.147, 0.012), (2.15, 0.158, 0.012), (2.25, 0.179, 0.015), (2.35, 0.200, 0.016), (2.45, 0.226, 0.016), (2.55, 0.235, 0.018),
+                   (2.65, 0.268, 0.019), (2.75, 0.292, 0.020), (2.85, 0.316, 0.021), (2.95, 0.342, 0.022), (3.05, 0.373, 0.023), (3.15, 0.410, 0.023),
+                   (3.25, 0.455, 0.022), (3.35, 0.498, 0.025), (3.45, 0.527, 0.030), (3.55, 0.579, 0.032), (3.65, 0.638, 0.031), (3.75, 0.694, 0.032),
+                   (3.85, 0.770, 0.033), (3.95, 0.830, 0.034), (4.05, 0.854, 0.036), (4.15, 0.928, 0.039)]
+DING2024_SPLINE = [(2.50, 0.27), (2.64, 0.32), (2.80, 0.38), (3.11, 0.46), (3.27, 0.52), (3.42, 0.58), (3.63, 0.68), (3.94, 0.85), (4.20, 1.09)]
+
+
+def meanflux_envelope_s(z):
+    """Relative 1-sigma envelope s(z) of the fiducial tau_eff (spec §2): nearest-bin sigma_tot/tau from Turner+2024 for z <= 4.2 (constant 8.2 %
+    below the first bin), then linear from 4.2 % at z = 4.2 to 11 % at z = 4.5, constant beyond."""
+    z = np.asarray(z, float)
+    zc = np.array([b[0] for b in TURNER2024_BINS]); rel = np.array([b[2] / b[1] for b in TURNER2024_BINS])
+    s = rel[np.abs(z[..., None] - zc[None, :]).argmin(axis=-1)]
+    s = np.where(z > 4.2, np.interp(z, [4.2, 4.5], [rel[-1], 0.11]), s)
+    return s
+
+
+def taueff_ding2024(z):
+    z = np.asarray(z, float)
+    zs = np.array([p[0] for p in DING2024_SPLINE]); ts = np.log(np.array([p[1] for p in DING2024_SPLINE]))
+    lo = np.exp(np.interp(z, zs, ts))
+    hi = 1.09 * ((1.0 + z) / 5.20) ** 4.85
+    return np.where(z > 4.20, hi, np.where(z < zs[0], np.exp(ts[0] + (ts[1] - ts[0]) / np.log((1 + zs[1]) / (1 + zs[0])) * np.log((1 + z) / (1 + zs[0]))), lo))
 
 
 def taueff(model):
     m = TAUEFF_MODELS[model]
     if model == "becker2013":
         return lambda z: np.maximum(0.751 * ((1.0 + np.asarray(z, float)) / 4.5) ** 2.90 - 0.132, 0.0)
+    if model in ("turner2024_m1s", "turner2024_p1s"):
+        fid = taueff("finder_fiducial"); sign = -1.0 if model.endswith("m1s") else 1.0
+        return lambda z: fid(z) * (1.0 + sign * meanflux_envelope_s(z))
+    if model == "ding2024_hz":
+        return taueff_ding2024
     return lambda z: m["tau0"] * (1.0 + np.asarray(z, float)) ** m["beta"]
