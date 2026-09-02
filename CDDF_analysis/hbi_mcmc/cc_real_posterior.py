@@ -75,6 +75,9 @@ def load_init_values(path):
 def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
+    ap.add_argument("--allow-nonstandard-grid", action="store_true",
+                    help="VALIDATION-ONLY (high-z HBI extension trial, 2026-09-02): admit a schema-consistent pack whose z grid is not the low-z REAL grid "
+                         "(zf 3.8-5.0, zc 3.8/4.25/4.5/5.0); every other loader/guard check runs unchanged; never used in production")
     ap.add_argument("--samples", type=int, default=500)
     ap.add_argument("--warmup", type=int, default=500)
     ap.add_argument("--chains", type=int, default=2)
@@ -139,7 +142,7 @@ def main():
                          f"{r.stdout}")
     ga_truthpoint = greport.get("G_A_partition", {}).get("status")
 
-    pk = load_pack(a.pack)
+    pk = load_pack(a.pack, allow_nonstandard_grid=a.allow_nonstandard_grid)
     prov = _real_mode_gate(a.pack, pk)
     if ga_truthpoint == "FAIL" and not prov.get("real_data"):
         raise SystemExit("G_A failed on a non-real pack — refusing")
