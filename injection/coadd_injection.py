@@ -492,6 +492,15 @@ def write_campaign(
             # → error flag"), it never reaches the dlacat, and b_FP collapses to a
             # FAKE zero (referee finding 2026-06-11).  Skip them so the control fiber
             # stays the clean source flux the GP is supposed to score for false positives.
+            rescale_only = bool(r.get("rescale_only", False))
+            if rescale_only:
+                # P1 native multi-HCD arm (2026-09-02): NO injected absorber — the record only
+                # carries the sightline's z_qso so the noise-preserving branch applies the
+                # mean-flux extrapolation r(lambda) to the native spectrum (logN_true/z_true
+                # None -> inject_noise_preserving with an empty absorber list, T == 1).
+                injections.append({"target_id": int(r["target_id"]), "logN_true": None, "z_true": None,
+                                   "num_lines": None, "z_qso": (float(r["z_qso"]) if r.get("z_qso") is not None else None)})
+                continue
             if bool(r.get("control", False)) or not np.isfinite(r.get("logN_true", np.nan)):
                 continue
             nl = int(r["num_lines"]) if r.get("num_lines") is not None else None
