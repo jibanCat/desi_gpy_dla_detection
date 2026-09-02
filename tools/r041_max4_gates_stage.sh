@@ -192,7 +192,7 @@ p1native_reduce)
   P=$M/p1; OUT=$P/reductions; mkdir -p $OUT; W=$M/cmpB/gate_weights.json; FIDPI=$M/fid_max4/analysis/analysis_fid_MAX4_per_injection.csv
   for fam in 2lpt london; do R2=$P/mock_native/$fam; [ -d $R2/native_outputs ] || { echo "no outputs for $fam"; continue; }
     python tools/r041_multihcd_score.py --truth $R2/native/native_truth.csv --outputs $R2/native_outputs --reference $FIDPI --population $R2/population_native.csv --weights $W \
-       --f-multi 0.155 0.476 --out $OUT/multihcd_native_${fam}.json --label native_${fam} 2>&1 | grep -v "UserWarning\|from scipy"
+       --f-multi 0.155 0.476 --reference-from-singles --out $OUT/multihcd_native_${fam}.json --label native_${fam} 2>&1 | grep -v "UserWarning\|from scipy"
     (cd $R2/native_outputs && sha256sum dlacat-*.fits BASELINE.env > SHA256SUMS.txt); done
   (cd $OUT && sha256sum *.json *.csv > SHA256SUMS.txt)
   ;;

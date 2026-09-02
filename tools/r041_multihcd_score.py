@@ -168,6 +168,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", nargs="+", required=True); ap.add_argument("--outputs", nargs="+", required=True)
     ap.add_argument("--reference", required=True, help="m=1 reference per-injection CSV (P0 fiducial)"); ap.add_argument("--reference-candfree-only", action="store_true", default=True)
+    ap.add_argument("--reference-from-singles", action="store_true",
+                    help="use the m_true = 1 truth units of THIS sample (kind == 'single') as the m = 1 reference instead of --reference (native mock arms: "
+                         "the stratum-matched native single-HCD sightlines of the same substrate); the multi set then excludes the singles")
     ap.add_argument("--population", required=True); ap.add_argument("--weights", required=True)
     ap.add_argument("--f-multi", type=float, nargs="+", default=[0.155, 0.476], help="brackets of the real multi-HCD fraction (mock truth; real MAP upper bound)")
     ap.add_argument("--p-thr", type=float, default=0.99); ap.add_argument("--tol", type=float, default=0.01)
@@ -192,8 +195,12 @@ def main(argv=None):
     acc = load_accepted(a.outputs, a.p_thr, waves)
     units, absorbers = score(truth_by, acc, a.tol)
     # reference (m = 1): P0 fiducial per-injection table, candidate-free rows
-    ref = [r for r in csv.DictReader(open(a.reference)) if (not a.reference_candfree_only) or int(r.get("has_cand_ge20", 0) or 0) == 0]
-    ref_units = [dict(matched=r["detected"] == "True", logN=float(r["logN"]), stratum=int(r["stratum"]), dN=(float(r["nhat"]) - float(r["logN"])) if r["detected"] == "True" and r["nhat"] not in ("", "nan") else np.nan) for r in ref]
+    if a.reference_from_singles:
+        ref_units = [dict(matched=bool(u["matched"]), logN=u["logN"], stratum=u["stratum"], dN=u["dN"]) for u in units if u["kind"] == "single"]
+        units = [u for u in units if u["kind"] != "single"]
+    else:
+        ref = [r for r in csv.DictReader(open(a.reference)) if (not a.reference_candfree_only) or int(r.get("has_cand_ge20", 0) or 0) == 0]
+        ref_units = [dict(matched=r["detected"] == "True", logN=float(r["logN"]), stratum=int(r["stratum"]), dN=(float(r["nhat"]) - float(r["logN"])) if r["detected"] == "True" and r["nhat"] not in ("", "nan") else np.nan) for r in ref]
     W = json.load(open(a.weights))
     g = {str(k): float(v) for k, v in W["g_cell"].items()} if isinstance(W.get("g_cell"), dict) else None
     s_str = W["s_stratum"]
@@ -267,6 +274,7 @@ def main(argv=None):
                             delta_by_f_multi=deltas, delta_conservative=float(dmax) if dmax == dmax else None, delta_conservative_ci68_95=dci, f_multi_used=a.f_multi),
                by_cell=by_cell, by_cell_reference=by_cell_ref, by_class=by_class, by_class_x_cell=cls_cell_s, by_combination=by_combo, by_kind=by_kind, reference_cell_x_stratum=ref_tab_s,
                merge_split=merge, migration_2035=dict(multi=mig_m, reference=mig_r, dmu=dmu), verdict=dict(tier=verdict, classes_gt_015=class_gt015, wide_merged=wide_merge),
+               reference_source=("singles of this sample" if a.reference_from_singles else a.reference), by_m_true=sk(completeness_table(units, lambda u: (min(int(u["m_true"]), 3), cell_of(u["logN"])))),
                rules=dict(p_thr=a.p_thr, tol=a.tol, min_sep_kms=MIN_SEP_KMS, classes=[(n, lo, (hi if np.isfinite(hi) else 'inf')) for n, lo, hi in CLASSES], n_boot=a.n_boot, seed=a.seed))
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     json.dump(res, open(a.out, "w"), indent=1, default=lambda o: o if not isinstance(o, (np.floating, np.integer)) else float(o))
