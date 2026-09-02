@@ -41,16 +41,17 @@ def jeffreys(k, n):
     return [float(beta.ppf(0.16, k + 0.5, n - k + 0.5)), float(beta.ppf(0.84, k + 0.5, n - k + 0.5))]
 
 
-def load_accepted(outdirs, p_thr):
-    """{TARGETID: [(z, logN, P), ...]} from every dlacat in the output dirs."""
+def load_accepted(outdirs, p_thr, waves):
+    """{(wave, TARGETID): [(z, logN, P), ...]} from every dlacat in the output dirs; outputs dir i belongs to wave waves[i]
+    (a sightline re-used in several waves is a DIFFERENT injected spectrum per wave and must never be pooled)."""
     from astropy.io import fits
     acc = {}
-    for d in outdirs:
+    for d, w in zip(outdirs, waves):
         for f in sorted(glob.glob(os.path.join(d, "dlacat-*.fits"))):
             t = fits.open(f)[1].data
             for r in t:
                 if float(r["P_DLA"]) >= p_thr:
-                    acc.setdefault(int(r["TARGETID"]), []).append((float(r["Z_DLA"]), float(r["NHI"]), float(r["P_DLA"])))
+                    acc.setdefault((int(w), int(r["TARGETID"])), []).append((float(r["Z_DLA"]), float(r["NHI"]), float(r["P_DLA"])))
     return acc
 
 
@@ -98,12 +99,13 @@ def match_sightline(truth, rows, tol):
 def score(truth_by_tid, acc, tol):
     """Returns the list of scored UNITS (absorbers for resolvable, systems for unresolvable) + descriptive per-absorber rows."""
     units, absorbers = [], []
-    for tid, tl in truth_by_tid.items():
-        rows = acc.get(tid, [])
+    for key, tl in truth_by_tid.items():
+        wave, tid = key
+        rows = acc.get(key, [])
         tl = sorted(tl, key=lambda t: t["z"])
         if len(tl) == 1:
             m, unused = match_sightline(tl, rows, tol); r = m[0]
-            units.append(dict(TARGETID=tid, kind="single", m_true=1, logN=tl[0]["logN"], z=tl[0]["z"], stratum=tl[0]["stratum"], sep_class="none", dv=np.nan,
+            units.append(dict(TARGETID=tid, wave=wave, kind="single", m_true=1, logN=tl[0]["logN"], z=tl[0]["z"], stratum=tl[0]["stratum"], sep_class="none", dv=np.nan,
                               matched=r["row"] is not None, Nhat=r["Nhat"], dN=(r["Nhat"] - tl[0]["logN"]) if r["Nhat"] is not None else np.nan, n_acc=len(rows), split=0))
             continue
         # pairs / multiples: nearest-neighbour separation per absorber; resolvability per adjacent pair
@@ -118,11 +120,11 @@ def score(truth_by_tid, acc, tol):
             Nhat = hits[0]["Nhat"] if hits else None
             if len(hits) == 2:                                    # two rows within the pair -> take the higher-N one as the system match
                 Nhat = max(h["Nhat"] for h in hits)
-            units.append(dict(TARGETID=tid, kind="system", m_true=2, logN=Nsys, z=zs, stratum=tl[0]["stratum"], sep_class=sep_class(dvs[0]), dv=dvs[0],
+            units.append(dict(TARGETID=tid, wave=wave, kind="system", m_true=2, logN=Nsys, z=zs, stratum=tl[0]["stratum"], sep_class=sep_class(dvs[0]), dv=dvs[0],
                               matched=bool(hits), Nhat=Nhat, dN=(Nhat - Nsys) if Nhat is not None else np.nan, n_acc=len(rows), split=split,
                               members=f"{tl[0]['logN']}+{tl[1]['logN']}", pair_class=tl[0].get("pair_class", "")))
             for i, t in enumerate(tl):
-                absorbers.append(dict(TARGETID=tid, inj_idx=t.get("inj_idx"), logN=t["logN"], z=t["z"], stratum=t["stratum"], m_true=2, resolvable=False, dv_nn=dvs[0],
+                absorbers.append(dict(TARGETID=tid, wave=wave, inj_idx=t.get("inj_idx"), logN=t["logN"], z=t["z"], stratum=t["stratum"], m_true=2, resolvable=False, dv_nn=dvs[0],
                                       sep_class=sep_class(dvs[0]), matched=m[i]["row"] is not None, captured=m[i].get("captured", False), Nhat=m[i]["Nhat"],
                                       dN=(m[i]["Nhat"] - t["logN"]) if m[i]["Nhat"] is not None else np.nan, n_acc=len(rows)))
             continue
@@ -133,15 +135,15 @@ def score(truth_by_tid, acc, tol):
             dv_nn = min([dvs[i - 1]] if i > 0 else [np.inf] + ([dvs[i]] if i < len(dvs) else []))
             dv_nn = min(([dvs[i - 1]] if i > 0 else []) + ([dvs[i]] if i < len(dvs) else []))
             res = dv_nn >= MIN_SEP_KMS
-            rec = dict(TARGETID=tid, inj_idx=t.get("inj_idx"), logN=t["logN"], z=t["z"], stratum=t["stratum"], m_true=len(tl), resolvable=res, dv_nn=dv_nn,
+            rec = dict(TARGETID=tid, wave=wave, inj_idx=t.get("inj_idx"), logN=t["logN"], z=t["z"], stratum=t["stratum"], m_true=len(tl), resolvable=res, dv_nn=dv_nn,
                        sep_class=sep_class(dv_nn), matched=m[i]["row"] is not None, captured=m[i].get("captured", False), Nhat=m[i]["Nhat"],
                        dN=(m[i]["Nhat"] - t["logN"]) if m[i]["Nhat"] is not None else np.nan, n_acc=len(rows), split=len(extra))
             absorbers.append(rec)
             if res:
-                units.append(dict(TARGETID=tid, kind="absorber", m_true=len(tl), logN=t["logN"], z=t["z"], stratum=t["stratum"], sep_class=rec["sep_class"], dv=dv_nn,
+                units.append(dict(TARGETID=tid, wave=wave, kind="absorber", m_true=len(tl), logN=t["logN"], z=t["z"], stratum=t["stratum"], sep_class=rec["sep_class"], dv=dv_nn,
                                   matched=rec["matched"], Nhat=rec["Nhat"], dN=rec["dN"], n_acc=len(rows), split=len(extra), pair_class=t.get("pair_class", "")))
             else:                                                 # unresolvable member of a >2 system: system-level with its nearest neighbour
-                units.append(dict(TARGETID=tid, kind="unresolved_member", m_true=len(tl), logN=t["logN"], z=t["z"], stratum=t["stratum"], sep_class=rec["sep_class"], dv=dv_nn,
+                units.append(dict(TARGETID=tid, wave=wave, kind="unresolved_member", m_true=len(tl), logN=t["logN"], z=t["z"], stratum=t["stratum"], sep_class=rec["sep_class"], dv=dv_nn,
                                   matched=rec["matched"] or rec["captured"], Nhat=rec["Nhat"], dN=rec["dN"], n_acc=len(rows), split=len(extra), pair_class=t.get("pair_class", "")))
     return units, absorbers
 
@@ -175,14 +177,19 @@ def main(argv=None):
     pop = {int(r["TARGETID"]): (float(r["zlo"]), float(r["zhi"])) for r in csv.DictReader(open(a.population))}
     truth_by = {}
     n_outside = 0
+    waves = []
+    assert len(a.truth) == len(a.outputs), "--truth and --outputs must be paired in order (one finder output dir per truth file / wave)"
     for tf in a.truth:
+        wv = None
         for r in csv.DictReader(open(tf)):
-            tid = int(r["TARGETID"]); z = float(r["z_inj"])
+            tid = int(r["TARGETID"]); z = float(r["z_inj"]); w = int(r.get("wave", 0) or 0); wv = w if wv is None else wv
+            assert w == wv, f"{tf}: mixed wave values in one truth file"
             lo, hi = pop.get(tid, (-np.inf, np.inf))
             if not (lo <= z <= hi):
                 n_outside += 1; continue
-            truth_by.setdefault(tid, []).append(dict(z=z, logN=float(r["logN"]), stratum=int(r["stratum"]), inj_idx=int(r.get("inj_idx", 0)), pair_class=r.get("pair_class", ""), dv_plan=r.get("dv_kms", "")))
-    acc = load_accepted(a.outputs, a.p_thr)
+            truth_by.setdefault((w, tid), []).append(dict(z=z, logN=float(r["logN"]), stratum=int(r["stratum"]), inj_idx=int(r.get("inj_idx", 0)), pair_class=r.get("pair_class", ""), dv_plan=r.get("dv_kms", "")))
+        waves.append(0 if wv is None else wv)
+    acc = load_accepted(a.outputs, a.p_thr, waves)
     units, absorbers = score(truth_by, acc, a.tol)
     # reference (m = 1): P0 fiducial per-injection table, candidate-free rows
     ref = [r for r in csv.DictReader(open(a.reference)) if (not a.reference_candfree_only) or int(r.get("has_cand_ge20", 0) or 0) == 0]
@@ -200,9 +207,9 @@ def main(argv=None):
     def primary(us, rng=None):
         """dC_w^multi and delta over leveraged cells; optional bootstrap resample over sightlines."""
         if rng is not None:
-            tids = sorted({u["TARGETID"] for u in us}); pick = rng.choice(len(tids), len(tids), replace=True)
+            tids = sorted({(u["wave"], u["TARGETID"]) for u in us}); pick = rng.choice(len(tids), len(tids), replace=True)
             by = {}
-            for u in us: by.setdefault(u["TARGETID"], []).append(u)
+            for u in us: by.setdefault((u["wave"], u["TARGETID"]), []).append(u)
             us = [u for i in pick for u in by[tids[i]]]
         tab = completeness_table(us, lambda u: (cell_of(u["logN"]), u["stratum"]))
         num = den = 0.0; dnum = 0.0
@@ -227,7 +234,7 @@ def main(argv=None):
     cls_cell = completeness_table(lev_units, lambda u: (u["sep_class"], cell_of(u["logN"])))
     # merged / split / pair recovery
     pairs = {}
-    for ab in absorbers: pairs.setdefault(ab["TARGETID"], []).append(ab)
+    for ab in absorbers: pairs.setdefault((ab["wave"], ab["TARGETID"]), []).append(ab)
     def rates(sel):
         ps = [v for v in pairs.values() if sel(v)]
         if not ps: return dict(n=0)
@@ -255,7 +262,7 @@ def main(argv=None):
     sk = lambda d: {("|".join(str(x) for x in k) if isinstance(k, tuple) else str(k)): v for k, v in d.items()}   # JSON-safe keys
     ref_tab_s, by_kind, cls_cell_s = sk(ref_tab), sk(by_kind), sk(cls_cell)
     class_gt015 = ["|".join(str(x) for x in k) for k in class_gt015]
-    res = dict(label=a.label, n_truth_units=len(units), n_absorbers=len(absorbers), n_truth_outside_window=n_outside, n_sightlines=len(truth_by), n_reference=len(lev_ref),
+    res = dict(label=a.label, n_truth_units=len(units), n_absorbers=len(absorbers), n_truth_outside_window=n_outside, n_sightline_spectra=len(truth_by), n_sightlines=len({k[1] for k in truth_by}), waves=waves, n_reference=len(lev_ref),
                primary=dict(dC_w_multi=float(dCw) if dCw == dCw else None, dC_w_ci68_95=ci(boots[:, 0]), rel_shift=float(rel) if rel == rel else None, rel_ci68_95=ci(boots[:, 1]),
                             delta_by_f_multi=deltas, delta_conservative=float(dmax) if dmax == dmax else None, delta_conservative_ci68_95=dci, f_multi_used=a.f_multi),
                by_cell=by_cell, by_cell_reference=by_cell_ref, by_class=by_class, by_class_x_cell=cls_cell_s, by_combination=by_combo, by_kind=by_kind, reference_cell_x_stratum=ref_tab_s,

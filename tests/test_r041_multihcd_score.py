@@ -40,9 +40,14 @@ def make(tmp):
             dict(TARGETID=4, wave=0, inj_idx=1, logN=20.7, z_inj=3.70 + dv_to_dz(3.70, 12000), stratum=2, snr=5.0, pair_class="wide", dv_kms=12000, pair_logN="20.7+20.7"),
             dict(TARGETID=5, wave=0, inj_idx=0, logN=20.4, z_inj=4.0, stratum=2, snr=5.0, pair_class="", dv_kms="", pair_logN=""),
             dict(TARGETID=6, wave=0, inj_idx=0, logN=20.4, z_inj=3.0, stratum=2, snr=5.0, pair_class="", dv_kms="", pair_logN="")]
+    rows1 = [dict(TARGETID=1, wave=1, inj_idx=0, logN=20.4, z_inj=4.10, stratum=2, snr=5.0, pair_class="blend", dv_kms=500, pair_logN="20.4+20.4"),
+             dict(TARGETID=1, wave=1, inj_idx=1, logN=20.4, z_inj=4.10 + dv_to_dz(4.10, 500), stratum=2, snr=5.0, pair_class="blend", dv_kms=500, pair_logN="20.4+20.4")]
     truth = os.path.join(tmp, "truth.csv")
     with open(truth, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+    truth1 = os.path.join(tmp, "truth_wave1.csv")
+    with open(truth1, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows1[0])); w.writeheader(); w.writerows(rows1)
     # accepted rows
     acc = [(1, 3.8005, 20.45), (1, rows[1]["z_inj"] + 0.001, 20.35),                       # both found
            (2, 3.8 + 0.5 * dv_to_dz(3.80, 3500) + 0.003, 20.5),                            # resolvable (3500 >= 3000 km/s) pair, ONE row between them within tolerance of both (0.028 each), nearer the second -> second matched, first captured
@@ -51,6 +56,9 @@ def make(tmp):
     outdir = os.path.join(tmp, "out"); os.makedirs(outdir)
     t = np.array([(a, z, n, 1.0) for a, z, n in acc], dtype=[("TARGETID", "i8"), ("Z_DLA", "f8"), ("NHI", "f8"), ("P_DLA", "f8")])
     fits.BinTableHDU(t, name="DLACAT").writeto(os.path.join(outdir, "dlacat-x-hpx-0-1.fits"))
+    outdir1 = os.path.join(tmp, "out1"); os.makedirs(outdir1)          # wave 1: the blend on sightline 1 reported as one row (system matched)
+    t1 = np.array([(1, 4.10 + 0.5 * dv_to_dz(4.10, 500), 20.7, 1.0)], dtype=t.dtype)
+    fits.BinTableHDU(t1, name="DLACAT").writeto(os.path.join(outdir1, "dlacat-x-hpx-0-1.fits"))
     # reference (m=1) CSV: 40 candidate-free rows at 20.4 stratum 2, 30 detected
     ref = os.path.join(tmp, "ref.csv")
     with open(ref, "w", newline="") as fh:
@@ -61,14 +69,14 @@ def make(tmp):
             w.writerow(dict(TARGETID=2000 + i, wave=0, inj_idx=0, logN=20.7, z_inj=3.9, stratum=2, has_cand_ge20=0, detected=str(i < 36), nhat=(20.7 if i < 36 else "")))
     weights = os.path.join(tmp, "w.json")
     json.dump(dict(g_cell={"1": 0.00312, "2": 0.00653, "3": 0.0025}, s_stratum=[0.133, 0.144, 0.119, 0.194, 0.41], q_cand=[0.6] * 5), open(weights, "w"))
-    return pop, truth, outdir, ref, weights
+    return pop, truth, outdir, ref, weights, truth1, outdir1
 
 
 def run(tmp, tol="0.01"):
     os.makedirs(tmp, exist_ok=True)
-    pop, truth, outdir, ref, weights = make(tmp)
+    pop, truth, outdir, ref, weights, truth1, outdir1 = make(tmp)
     out = os.path.join(tmp, "res.json")
-    subprocess.run([sys.executable, TOOL, "--truth", truth, "--outputs", outdir, "--reference", ref, "--population", pop, "--weights", weights,
+    subprocess.run([sys.executable, TOOL, "--truth", truth, truth1, "--outputs", outdir, outdir1, "--reference", ref, "--population", pop, "--weights", weights,
                     "--n-boot", "50", "--out", out, "--tol", tol], check=True, capture_output=True)
     units = list(csv.DictReader(open(out[:-5] + "_units.csv"))); absorbers = list(csv.DictReader(open(out[:-5] + "_absorbers.csv")))
     return json.load(open(out)), units, absorbers
@@ -77,7 +85,11 @@ def run(tmp, tol="0.01"):
 def test_scoring_rules(tmp_path):
     res, units, absorbers = run(str(tmp_path))
     by = {}
-    for u in units: by.setdefault(int(u["TARGETID"]), []).append(u)
+    for u in units:
+        if int(u["wave"]) == 0: by.setdefault(int(u["TARGETID"]), []).append(u)
+    w1 = [u for u in units if int(u["wave"]) == 1]
+    assert len(w1) == 1 and w1[0]["kind"] == "system" and w1[0]["matched"] == "True" and int(w1[0]["m_true"]) == 2   # wave 1 scored on its own spectrum, not pooled with wave 0
+    assert res["n_sightline_spectra"] == 6 and res["n_sightlines"] == 5 and res["waves"] == [0, 1]
     assert 6 not in by and res["n_truth_outside_window"] == 1                      # outside the window: ignored
     assert [u["kind"] for u in by[1]] == ["absorber", "absorber"] and all(u["matched"] == "True" for u in by[1])
     a2 = {int(x["inj_idx"]): x for x in absorbers if int(x["TARGETID"]) == 2}
