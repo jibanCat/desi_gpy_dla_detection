@@ -141,7 +141,7 @@ python CDDF_analysis/hbi/track_c_tf_hz.py --variant r041cal --r041-analysis $M/f
    --out-json $M/measurement/track_c_tf_hz_MAX4_r041cal_loa0_lya.json --dump-npz $M/measurement/track_c_tf_hz_MAX4_r041cal_loa0_lya.npz --force
 echo "TF_HZ_DONE \$(date -Is)"
 SB
-  STRIP=\$(env | grep -o '^SLURM_[A-Za-z0-9_]*' | sed 's/^/-u /' | tr '\n' ' ')
+  STRIP=$(env | grep -o '^SLURM_[A-Za-z0-9_]*' | sed 's/^/-u /' | tr '\n' ' ')
   env $STRIP sbatch $M/measurement/run_tf_hz_MAX4.sbatch
   ;;
 esac
