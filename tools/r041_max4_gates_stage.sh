@@ -196,5 +196,31 @@ p1native_reduce)
     (cd $R2/native_outputs && sha256sum dlacat-*.fits BASELINE.env > SHA256SUMS.txt); done
   (cd $OUT && sha256sum *.json *.csv > SHA256SUMS.txt)
   ;;
+p1ctrl_launch)
+  # launch the clustering-control arms and the mean-flux control variants (built by r041_mock_campaign.py; envs carry MAX4 + REPO_ROOT); dry-run first
+  STRIP=$(env | grep -o '^SLURM_[A-Za-z0-9_]*' | sed 's/^/-u /' | tr '\n' ' ')
+  for E in $M/p1/clustering_control/syscluster.env $M/p1/clustering_control/sysrandom.env $M/p1/clustering_control/sysshuffle.env \
+           $M/p1/meanflux_control/turner2024_m1s/random.env $M/p1/meanflux_control/turner2024_p1s/random.env $M/p1/meanflux_control/ding2024_hz/random.env; do
+    [ -f $E ] || { echo "missing $E"; continue; }; N=$(basename $(dirname $E))_$(basename $E .env)
+    env $STRIP bash slurm/greatlakes/production/launch_gl.sh $E --dry-run --no-sleep 2>&1 | grep -o -E "chdir=[^ ]*|MAX_DLAS=[0-9],SINGLE_ABSORBER_MODEL=[0-9],FILTER_LOW_LIKELIHOOD=[0-9]|NUM_DLA_SAMPLES=[0-9]*|submitted [0-9]* sbatch" | sort -u | tr '\n' ' '; echo
+    OUT=$(env $STRIP bash slurm/greatlakes/production/launch_gl.sh $E --no-sleep 2>&1); IDS=$(echo "$OUT" | grep -o "Submitted batch job [0-9]*" | grep -o "[0-9]*$" | tr '\n' ' ')
+    echo "MAX4-P1-ctrl_$N jobs($(echo $IDS | wc -w)): $IDS $(date -Is)" | tee -a $M/p1/P1_LAUNCH_RECORD.txt | cut -c1-160; done
+  ;;
+p1ctrl_reduce)
+  # clustering control: score each arm (own truth; reference = the P0 candidate-free singles, as for the real pairs) then pair arms; mean-flux control: analyzer + paired gate vs the P1 random arm
+  P=$M/p1; OUT=$P/reductions; mkdir -p $OUT; W=$M/cmpB/gate_weights.json; FIDPI=$M/fid_max4/analysis/analysis_fid_MAX4_per_injection.csv
+  for arm in syscluster sysrandom sysshuffle; do R2=$P/clustering_control; [ -d $R2/${arm}_outputs ] || { echo "no outputs for $arm"; continue; }
+    python tools/r041_multihcd_score.py --truth $R2/$arm/systems_truth.csv --outputs $R2/${arm}_outputs --reference $FIDPI --population $M/p1/mock_native/2lpt/population_native.csv --weights $W \
+       --f-multi 0.155 0.476 --out $OUT/multihcd_ctrl_${arm}.json --label ctrl_${arm} 2>&1 | grep -v "UserWarning\|from scipy" | tail -3
+    (cd $R2/${arm}_outputs && sha256sum dlacat-*.fits BASELINE.env > SHA256SUMS.txt); done
+  python tools/r041_multihcd_pair_arms.py --a $OUT/multihcd_ctrl_sysrandom_units.csv --b $OUT/multihcd_ctrl_syscluster_units.csv --a-label sysrandom --b-label syscluster --weights $W --out $OUT/pair_arms_cluster_vs_random.json 2>&1 | grep -v "UserWarning\|from scipy"
+  [ -f $OUT/multihcd_ctrl_sysshuffle_units.csv ] && python tools/r041_multihcd_pair_arms.py --a $OUT/multihcd_ctrl_sysshuffle_units.csv --b $OUT/multihcd_ctrl_syscluster_units.csv --a-label sysshuffle --b-label syscluster --weights $W --out $OUT/pair_arms_cluster_vs_shuffle.json 2>&1 | grep -v "UserWarning\|from scipy" | tail -4
+  for v in turner2024_m1s turner2024_p1s ding2024_hz; do R2=$P/meanflux_control/$v; [ -d $R2/random_outputs ] || { echo "no outputs for $v"; continue; }
+    python tools/r041_mock_truth_to_r041.py --truth-fits $R2/random/injection_truth.fits --out-truth $P/mock/truth_r041/mf_${v}_truth.csv --out-population $P/mock/truth_r041/mf_${v}_population.csv
+    python tools/r041_analyze.py --truth $P/mock/truth_r041/mf_${v}_truth.csv --outputs $R2/random_outputs --population $P/mock/truth_r041/mf_${v}_population.csv --out $OUT/analysis_mfctrl_${v}.json --label mfctrl_${v} 2>&1 | grep -v "UserWarning\|from scipy" | tail -2
+    python tools/r041_prescription_gate.py --a $OUT/analysis_mock_2lpt_random_MAX4_per_injection.csv --b $OUT/analysis_mfctrl_${v}_per_injection.csv --weights $W --out $OUT/gate_mfctrl_${v}_vs_fid.json --label mfctrl_${v} 2>&1 | grep -E "dC_w|tier|lost" | head -4
+    (cd $R2/random_outputs && sha256sum dlacat-*.fits BASELINE.env > SHA256SUMS.txt); done
+  (cd $OUT && sha256sum *.json *.csv > SHA256SUMS.txt)
+  ;;
 esac
 echo "STAGE_DONE $1 $(date -Is)"
