@@ -50,7 +50,7 @@ JB=$(env $STRIP SBATCH_CONSTRAINT= sbatch --parsable --array=0-7 --job-name=hbiv
      $SCRIPTS/run_chain.sbatch)
 JC=$(env $STRIP SBATCH_CONSTRAINT= sbatch --parsable --dependency=afterany:$JB --job-name=hbiv_${RUN_ID}_collect1 \
      --output=$OUT/logs/collect_stage1_%j.log \
-     --export=ALL,RUN_ID=$RUN_ID,OUT=$OUT,SEEDS_FILE=$SEEDS_FILE,EXTRA="$EXTRA",REPO=$REPO,PACK=$PACK,STAGE=1,SCRIPTS=$SCRIPTS \
+     --export=ALL,RUN_ID=$RUN_ID,OUT=$OUT,SEEDS_FILE=$SEEDS_FILE,EXTRA="$EXTRA",REPO=$REPO,PACK=$PACK,STAGE=1,SCRIPTS=$SCRIPTS,EXPECT_PACK_SHA=$PACK_SHA \
      $SCRIPTS/run_collect.sbatch)
 python3 - <<PY
 import json; p="$OUT/manifest_$RUN_ID.json"; m=json.load(open(p)); m["jobs"].update(base_array="$JB", collect_stage1="$JC"); json.dump(m, open(p,"w"), indent=1)

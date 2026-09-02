@@ -61,7 +61,7 @@ echo "pooling (stage $STAGE)"
 BASE=$(ls $OUT/REAL_ln_s2026????.json 2>/dev/null | tr '\n' ' ')
 DEEP=$(ls $OUT/REAL_ln_deep_s2026????.json 2>/dev/null | tr '\n' ' ')
 python -m CDDF_analysis.hbi_mcmc.cc_pool_posterior --runs $BASE ${DEEP:+--deep $DEEP} --rhat-max 1.10 --div-max 10 \
-  --expect-pack-sha256 219c43aaa59aeb7f070e223c3e652190b4cabe55683c45679a88522d88b920bb \
+  --expect-pack-sha256 ${EXPECT_PACK_SHA:-219c43aaa59aeb7f070e223c3e652190b4cabe55683c45679a88522d88b920bb} \
   --out $OUT/POOLED_ln_${RUN_ID}.json | tee $OUT/POOL_summary.txt
 RC=$?
 (cd $OUT && sha256sum *.json *.npz *.txt 2>/dev/null > SHA256SUMS.txt)
