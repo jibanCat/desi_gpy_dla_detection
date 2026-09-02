@@ -144,5 +144,41 @@ SB
   STRIP=$(env | grep -o '^SLURM_[A-Za-z0-9_]*' | sed 's/^/-u /' | tr '\n' ' ')
   env $STRIP sbatch $M/measurement/run_tf_hz_MAX4.sbatch
   ;;
+p1)
+  # P1 reductions (gates predeclared at notes 2ccf8db / 64d817d BEFORE any output was read): pairs (multi-HCD gate), mean-flux (cell-level vs the
+  # P0 fiducial), 2LPT random vs clustered (paired by injection), London vs 2LPT random (cell-level); provenance index rows for the archive-route waves; hashes.
+  set -e
+  P=$M/p1; OUT=$P/reductions; mkdir -p $OUT $P/mock/truth_r041
+  W=$M/cmpB/gate_weights.json; FIDPI=$M/fid_max4/analysis/analysis_fid_MAX4_per_injection.csv
+  # (1) real pairs — per-absorber / per-system scoring under the multi-HCD gate (+ the analyzer's descriptive pair tables)
+  python tools/r041_multihcd_score.py --truth $ROOT/pairs/r041_pairs_wave0.h5.truth.csv $ROOT/pairs/r041_pairs_wave1.h5.truth.csv $ROOT/pairs/r041_pairs_wave2.h5.truth.csv \
+     --outputs $P/pairs/r041_pairs_wave0_MAX4_outputs $P/pairs/r041_pairs_wave1_MAX4_outputs $P/pairs/r041_pairs_wave2_MAX4_outputs \
+     --reference $FIDPI --population $ROOT/population/r041_population.csv --weights $W --f-multi 0.155 0.476 --out $OUT/multihcd_pairs.json --label pairs_real 2>&1 | grep -v "UserWarning\|from scipy"
+  python tools/r041_analyze.py --truth $ROOT/pairs/r041_pairs_wave0.h5.truth.csv $ROOT/pairs/r041_pairs_wave1.h5.truth.csv $ROOT/pairs/r041_pairs_wave2.h5.truth.csv \
+     --outputs $P/pairs/r041_pairs_wave0_MAX4_outputs $P/pairs/r041_pairs_wave1_MAX4_outputs $P/pairs/r041_pairs_wave2_MAX4_outputs --population $ROOT/population/r041_population.csv \
+     --out $OUT/analysis_pairs_MAX4.json --label pairs_MAX4 2>&1 | grep -v "UserWarning\|from scipy" | tail -3
+  # (2) mean-flux arms — analyzer per model, cell-level comparison vs the P0 fiducial
+  for m in fg2008 becker2013; do
+    python tools/r041_analyze.py --truth $ROOT/mf/r041_mf_${m}_wave0.h5.truth.csv $ROOT/mf/r041_mf_${m}_wave1.h5.truth.csv $ROOT/mf/r041_mf_${m}_wave2.h5.truth.csv \
+       --outputs $P/mf/r041_mf_${m}_wave0_MAX4_outputs $P/mf/r041_mf_${m}_wave1_MAX4_outputs $P/mf/r041_mf_${m}_wave2_MAX4_outputs --population $ROOT/population/r041_population.csv \
+       --out $OUT/analysis_mf_${m}_MAX4.json --label mf_${m}_MAX4 2>&1 | grep -v "UserWarning\|from scipy" | tail -2
+    python tools/r041_cell_compare.py --a $FIDPI --b $OUT/analysis_mf_${m}_MAX4_per_injection.csv --a-label fiducial_P0 --b-label mf_${m} --weights $W --out $OUT/cell_mf_${m}_vs_fid.json --label mf_${m} 2>&1 | grep -v "UserWarning\|from scipy" | tail -4
+  done
+  # (3) mock arms — truth conversion, analyzer, paired random-vs-clustered gate, cell-level London vs 2LPT random
+  for arm in 2lpt/random 2lpt/clustered london/random; do n=$(echo $arm | tr '/' '_')
+    python tools/r041_mock_truth_to_r041.py --truth-fits $ROOT/mock/$arm/injection_truth.fits --out-truth $P/mock/truth_r041/${n}_truth.csv --out-population $P/mock/truth_r041/${n}_population.csv
+    python tools/r041_analyze.py --truth $P/mock/truth_r041/${n}_truth.csv --outputs $P/mock/${n}_MAX4_outputs --population $P/mock/truth_r041/${n}_population.csv \
+       --out $OUT/analysis_mock_${n}_MAX4.json --label mock_${n}_MAX4 2>&1 | grep -v "UserWarning\|from scipy" | tail -2
+  done
+  python tools/r041_prescription_gate.py --a $OUT/analysis_mock_2lpt_random_MAX4_per_injection.csv --b $OUT/analysis_mock_2lpt_clustered_MAX4_per_injection.csv --weights $W --out $OUT/gate_random_vs_clustered.json --label random_vs_clustered
+  python tools/r041_cell_compare.py --a $OUT/analysis_mock_2lpt_random_MAX4_per_injection.csv --b $OUT/analysis_mock_london_random_MAX4_per_injection.csv --a-label 2lpt_random --b-label london_random --weights $W --bounded-thr 0.10 --out $OUT/cell_london_vs_2lpt.json --label london_transfer 2>&1 | grep -v "UserWarning\|from scipy" | tail -4
+  # (4) provenance index rows (archive-route waves have build summaries)
+  python tools/r041_injection_provenance_index.py --plan-label pairs \
+     --arm "A_shared:$ROOT/pairs/r041_pairs_wave0.h5.build_summary.json:$P/pairs/r041_pairs_wave0_MAX4_outputs:$OUT/analysis_pairs_MAX4_per_injection.csv:MAX4-P1-pairs_wave0+1+2" --out $OUT/MAX4_INJECTION_PROVENANCE_INDEX_pairs.csv
+  # (5) hashes
+  for d in $P/pairs/*_outputs $P/mf/*_outputs $P/mock/*_outputs; do (cd $d && sha256sum dlacat-*.fits BASELINE.env > SHA256SUMS.txt); done
+  (cd $OUT && sha256sum *.json *.csv > SHA256SUMS.txt)
+  set +e
+  ;;
 esac
 echo "STAGE_DONE $1 $(date -Is)"
