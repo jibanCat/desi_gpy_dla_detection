@@ -52,7 +52,7 @@ def ew_rest_1526(logN_SiII, comps, z=3.0):
     return equivalent_width_A(wave, metal_transmission(wave, z, lines, lsf_fwhm_A=None, fine_dlam_A=0.01, pad_A=12.0)) / (1 + z)
 
 
-def solve_logN_for_W1526(target_W, comps, lo=11.0, hi=17.5):
+def solve_logN_for_W1526(target_W, comps, lo=11.0, hi=16.0):
     """Bisection on the (monotonic) curve of growth: log N(Si II) such that EW_rest(1526) = target_W for the given velocity structure."""
     f_lo = ew_rest_1526(lo, comps) - target_W; f_hi = ew_rest_1526(hi, comps) - target_W
     if f_lo > 0:
@@ -82,7 +82,10 @@ def realize(model, arm, logN_HI, key):
     u = rng.uniform(c.get("u_min", 0.0), c.get("u_max", 1.0)) if c else rng.uniform()
     W1526 = float(np.clip(med * np.exp(w["sigma_ln"] * norm.ppf(u)), w["min"], w["max"]))
     # --- velocity structure: Δv90 lognormal (arm C: upper half), components, per-component b, metal-H I centroid offset
-    d = m["dv90_kms"]; u2 = rng.uniform(c.get("u_min", 0.0), c.get("u_max", 1.0)) if c else rng.uniform()
+    # model Amendment 1: W1526 and Δv90 are drawn COMONOTONICALLY (same quantile u): the two verified relations [X/H] = 1.55 log ΔV − 4.33 (Ledoux+2006)
+    # and [M/H] = 1.46 log W1526 − 0.71 (Jorgenson+2013) imply W1526 ∝ ΔV^1.06, and a saturated line's EW scales with its velocity extent; independent draws
+    # produced unphysical (large W1526, narrow structure) pairs whose solved columns hit the search ceiling.
+    d = m["dv90_kms"]; u2 = u
     dv90 = float(np.clip(d["median"] * np.exp(d["sigma_ln"] * norm.ppf(u2)), d["min"], d["max"]))
     n_comp = int(min(m["n_comp"]["max"], 1 + int(dv90 // m["n_comp"]["kms_per_component"])))
     bp = m["b_comp_kms"]; b = [draw_lognormal(rng, bp["median"], bp["sigma_ln"], bp["min"], bp["max"]) for _ in range(n_comp)]
@@ -91,7 +94,7 @@ def realize(model, arm, logN_HI, key):
     frac = rng.dirichlet(np.ones(n_comp) * m["n_comp"].get("dirichlet_alpha", 2.0))
     comps = [(float(frac[k]), float(b[k]), float(vels[k])) for k in range(n_comp)]
     logN_SiII = solve_logN_for_W1526(W1526, comps)
-    q = m["logN_SiIII_minus_SiII"]; logN_SiIII = float(np.clip(logN_SiII + draw_normal(rng, q["mu"], q["sigma"], -2.0, 2.0), 11.0, 17.5))
+    q = m["logN_SiIII_minus_SiII"]; logN_SiIII = float(np.clip(logN_SiII + draw_normal(rng, q["mu"], q["sigma"], -2.0, 2.0), 11.0, 16.0))
     has_SiII = rng.uniform() < m["occurrence"]["SiII"]; has_SiIII = rng.uniform() < m["occurrence"]["SiIII"]
     lines = []
     for k in range(n_comp):
@@ -100,7 +103,7 @@ def realize(model, arm, logN_HI, key):
                 lines.append(dict(line=ln, logN=round(float(np.log10(10 ** logN_SiII * frac[k])), 4), b_kms=round(b[k], 2), dv_kms=round(float(vels[k]), 2)))
         if has_SiIII:
             lines.append(dict(line="SiIII1206", logN=round(float(np.log10(10 ** logN_SiIII * frac[k])), 4), b_kms=round(b[k], 2), dv_kms=round(float(vels[k]), 2)))
-    summ = dict(W1526_target=round(W1526, 4), logN_SiII=round(logN_SiII, 3), logN_SiIII=round(logN_SiIII, 3), dv90=round(dv90, 1), n_comp=n_comp, dv_offset=round(off, 1),
+    summ = dict(W1526_target=round(W1526, 4), W1526_achieved=round(ew_rest_1526(logN_SiII, comps), 4), logN_SiII=round(logN_SiII, 3), logN_SiIII=round(logN_SiIII, 3), dv90=round(dv90, 1), n_comp=n_comp, dv_offset=round(off, 1),
                 has_SiII=bool(has_SiII), has_SiIII=bool(has_SiIII), seed=seed)
     return lines, summ
 
