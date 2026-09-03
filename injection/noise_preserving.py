@@ -102,11 +102,16 @@ def signal_estimate(flux, ivar, mask, median_px=DEFAULT_MEDIAN_PX, sigma_px=DEFA
 
 
 def transmission(wave, absorbers, num_lines=3):
-    """Product of the frozen Voigt transmissions of every absorber ({'nhi' linear, 'z_dla'})."""
+    """Product of the frozen Voigt transmissions of every absorber ({'nhi' linear, 'z_dla'}); an absorber may carry an optional
+    'metals' list (associated-absorption realization, PI ruling 2026-09-03) applied as an extra multiplicative transmission built by
+    injection.associated_absorption.metal_transmission with the absorber's 'metal_lsf_fwhm_A' (None = no LSF convolution)."""
     T = np.ones(np.asarray(wave).size)
     for ab in absorbers:
         T = T * voigt_transmission(np.asarray(wave, float), float(ab["nhi"]), float(ab["z_dla"]),
                                    int(ab.get("num_lines", num_lines)))
+        if ab.get("metals"):
+            from injection.associated_absorption import metal_transmission
+            T = T * metal_transmission(np.asarray(wave, float), float(ab["z_dla"]), ab["metals"], lsf_fwhm_A=ab.get("metal_lsf_fwhm_A"))
     return T
 
 

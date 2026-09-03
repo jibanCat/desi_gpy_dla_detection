@@ -111,11 +111,14 @@ def main(argv=None):
                     help="prescription A only: shared0 = the historical seed-0-everywhere construction (default, bytes unchanged); "
                          "independent = deterministic per-sightline seed from the stable injection_ids (needs --plan-label)")
     ap.add_argument("--plan-label", default=None, help="plan label of the provenance index (e.g. cmp, fid); required for --noise-seed-policy independent")
+    ap.add_argument("--metal-lsf-fwhm-A", type=float, default=None, dest="metal_lsf_fwhm_A",
+                    help="associated-absorption campaign: Gaussian LSF FWHM [A] applied to the metal-line transmission (plan column metals_json); None = no metals/LSF")
     a = ap.parse_args(argv)
     if a.noise_seed_policy == "independent" and not a.plan_label:
         raise SystemExit("--noise-seed-policy independent requires --plan-label (the injection_id prefix must be explicit and recorded)")
     import h5py, fitsio
     from injection.noise_preserving import taueff, DEFAULT_SIGMA_PX, DEFAULT_MEDIAN_PX
+    from injection.associated_absorption import parse_metals
     sigma = DEFAULT_SIGMA_PX if a.sigma_px is None else a.sigma_px
     median = DEFAULT_MEDIAN_PX if a.median_px is None else a.median_px
     os.makedirs(a.out_dir, exist_ok=True)
@@ -151,7 +154,8 @@ def main(argv=None):
         seed_rows = []
         for j, t in enumerate(tids):
             zq = float(cat[idx[t]]["Z"])
-            absorbers = [{"nhi": 10.0 ** float(r["logN"]), "z_dla": float(r["z_inj"]), "num_lines": a.num_lines} for r in by_tid[t]]
+            absorbers = [{"nhi": 10.0 ** float(r["logN"]), "z_dla": float(r["z_inj"]), "num_lines": a.num_lines,
+                          "metals": parse_metals(r.get("metals_json")), "metal_lsf_fwhm_A": a.metal_lsf_fwhm_A} for r in by_tid[t]]
             ids = [injection_id(a.plan_label or "", a.wave, t, r["inj_idx"]) for r in by_tid[t]]
             if a.noise_seed_policy == "independent":
                 seed_key, seed = seed_for_sightline(ids)
