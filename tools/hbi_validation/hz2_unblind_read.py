@@ -69,6 +69,8 @@ def main(argv=None):
         fp = p.replace(".json", "_fdraws.npz")
         if os.path.exists(fp):
             z = np.load(fp); f = z["f"]; ntrue = z["ntrue_edges"]; dX = z["dX_k"] if "dX_k" in z.files else None
+            if dX is None:   # real per-seed fdraws carry no dX_k: take the fine-z exposure from the pack itself
+                pkz = np.load(j["pack"], allow_pickle=True); dX = np.asarray(pkz["dX"], float).sum(axis=1)
             if dX is not None:
                 dN = np.diff(ntrue); W = dX / dX.sum()
                 for k, lo in (("ge20.3", 20.3), ("ge20.0", 20.0)):
