@@ -63,6 +63,12 @@ def main(argv=None):
     tau_meas = lambda z: np.interp(z, zt[np.isfinite(tt)], tt[np.isfinite(tt)]); tau_model = taueff("finder_fiducial")
     # sightlines and windows
     plan = list(csv.DictReader(open(f"{RANDOM_ARM}/plan.csv")))
+    # 2026-09-03 FIX: the arm files carry the ORIGINAL rows for every sightline not in the plan (the generator rewrites only the plan
+    # sightlines), so the measurement and the exact-equation checks must be restricted to the plan sightlines of each arm — the first
+    # run averaged all rows and understated the rescale by construction (disclosed in the ledger).
+    plan_tids_random = {int(r["target_id"]) for r in plan}
+    plan_tids_native = {int(r["target_id"]) for r in csv.DictReader(open(f"{NATIVE_ARM}/plan.csv"))}
+    n_sl = {"random": 0, "native": 0}
     inj_by = {}
     for r in plan:
         inj_by.setdefault(int(r["target_id"]), []).append(float(r["z_true"]))
@@ -85,8 +91,9 @@ def main(argv=None):
         t0, c0 = read_spectra(f"{MOCK0}/spectra-16/{pix // 100}/{pix}/spectra-16-{pix}.fits"); tr, cr = read_spectra(f"{RANDOM_ARM}/spectra-16/{pix // 100}/{pix}/spectra-16-{pix}.fits")
         i0 = {int(t): i for i, t in enumerate(t0)}
         for i, t in enumerate(tr):
-            if int(t) not in i0 or int(t) not in cont:
+            if int(t) not in i0 or int(t) not in cont or int(t) not in plan_tids_random:
                 continue
+            n_sl["random"] += 1
             zq = zq_by[int(t)]; win = [(z - dv * (1 + z), z + dv * (1 + z)) for z in inj_by.get(int(t), [])]
             for cam in cr:
                 w, fr, ivr, mkr = cr[cam][0], np.asarray(cr[cam][1][i], float), np.asarray(cr[cam][2][i], float), np.asarray(cr[cam][3][i])
@@ -108,8 +115,9 @@ def main(argv=None):
         t0, c0 = read_spectra(f"{MOCK124}/spectra-16/{pix // 100}/{pix}/spectra-16-{pix}.fits"); tn, cn = read_spectra(f"{NATIVE_ARM}/spectra-16/{pix // 100}/{pix}/spectra-16-{pix}.fits")
         i0 = {int(t): i for i, t in enumerate(t0)}
         for i, t in enumerate(tn):
-            if int(t) not in i0 or int(t) not in cont or int(t) in bal:
+            if int(t) not in i0 or int(t) not in cont or int(t) in bal or int(t) not in plan_tids_native:
                 continue
+            n_sl["native"] += 1
             zq = zq_by[int(t)]; win = [(z - dv * (1 + z), z + dv * (1 + z)) for z in hcd_by.get(int(t), [])]
             for cam in cn:
                 w, fn, ivn, mkn = cn[cam][0], np.asarray(cn[cam][1][i], float), np.asarray(cn[cam][2][i], float), np.asarray(cn[cam][3][i])
@@ -130,6 +138,7 @@ def main(argv=None):
     ee = np.array(checks["exact_equation"]); nn = np.array(checks["native_no_injection"])
     out["checks"] = dict(exact_equation_max_dev=float(np.nanmax(ee)) if ee.size else None, exact_equation_n=int(ee.size), ivar_mask_identical_all=bool(all(checks["ivar_mask_identical"])),
                          native_arm_equation_max_dev=float(np.nanmax(nn)) if nn.size else None, native_n=int(nn.size))
+    out["n_sightlines_used"] = n_sl; print("sightlines used (plan rows only):", n_sl)
     print("checks:", out["checks"])
     json.dump(out, open(os.path.join(a.out, "meanflux_rescale_verification.json"), "w"), indent=1)
 
