@@ -16,13 +16,15 @@ import numpy as np
 from scipy.special import wofz
 
 C_KMS = 299792.458
-# Atomic data: rest wavelength [Å], oscillator strength f, damping constant Gamma [s^-1]. FILLED FROM THE VERIFIED TABLE recorded in the frozen
-# model document (MAX4_ASSOCIATED_ABSORPTION_MODEL_2026-09-03.md); the campaign generator asserts that every line used carries verified=True.
+# Atomic data (VERIFIED 2026-09-03 from the NIST Atomic Spectra Database lines query, physics.nist.gov/cgi-bin/ASD/lines1.pl, vacuum wavelengths;
+# Gamma taken as the listed A_ki of the resonance transition, an approximation recorded in the frozen model document):
+#   Si II 1190.4158 A_ki 6.53e8 f 0.277 (acc. C+); Si II 1193.2897 A_ki 2.69e9 f 0.575 (B); Si II 1260.4221 A_ki 2.57e9 f 1.22 (B);
+#   Si III 1206.4995 A_ki 2.55e9 f 1.67 (A).
 LINES = {
-    "SiII1190": dict(lambda0=1190.4158, f=0.2502, gamma=6.53e8, verified=False),
-    "SiII1193": dict(lambda0=1193.2897, f=0.4991, gamma=2.69e9, verified=False),
-    "SiIII1206": dict(lambda0=1206.5000, f=1.63, gamma=2.48e9, verified=False),
-    "SiII1260": dict(lambda0=1260.4221, f=1.18, gamma=2.53e9, verified=False),
+    "SiII1190": dict(lambda0=1190.4158, f=0.277, gamma=6.53e8, verified=True, source="NIST ASD 2026-09-03"),
+    "SiII1193": dict(lambda0=1193.2897, f=0.575, gamma=2.69e9, verified=True, source="NIST ASD 2026-09-03"),
+    "SiIII1206": dict(lambda0=1206.4995, f=1.67, gamma=2.55e9, verified=True, source="NIST ASD 2026-09-03"),
+    "SiII1260": dict(lambda0=1260.4221, f=1.22, gamma=2.57e9, verified=True, source="NIST ASD 2026-09-03"),
 }
 # Voigt prefactor: tau_0 = (pi e^2 / m_e c) f lambda0 N / (sqrt(pi) b) in cgs with lambda0 in cm, b in cm/s
 _PI_E2_MEC = 2.654008854e-2   # pi e^2 / (m_e c)  [cm^2 s^-1]
