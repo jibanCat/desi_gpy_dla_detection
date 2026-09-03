@@ -50,11 +50,16 @@ def main(argv=None):
     for k in ("ge20.3", "ge20.0"):
         o = out[k]; print(f"3./4. {k}: 68 % [{o['p16']:.4f}, {o['p84']:.4f}]  95 % [{o['p2p5']:.4f}, {o['p97p5']:.4f}]  (sigma68/median {100*o['sigma68_rel']:.1f} %)")
     # 5. per-seed consistency (retained pool per the pooled artifact's selection)
-    sel = P.get("selection") or P; inc = sel.get("included", []); exc = sel.get("excluded", [])
+    sel = P.get("selection") or P
+    def norm(e):
+        if isinstance(e, dict):
+            return (int(e.get("seed")), bool(e.get("deep")), str(e.get("reason", "")))
+        return (int(e[0]), bool(e[1]), str(e[2]) if len(e) > 2 else "")
+    inc = [norm(e) for e in sel.get("included", [])]; exc = [norm(e) for e in sel.get("excluded", [])]
     out["selection"] = dict(included=inc, excluded=exc, n_included=len(inc), n_excluded=len(exc))
-    print(f"5. retained seeds {[(s[0], 'deep' if s[1] else 'base') for s in inc]}; excluded {[(s[0], 'deep' if s[1] else 'base', s[2] if len(s) > 2 else '') for s in exc]}")
+    print(f"5. retained seeds {[(s[0], 'deep' if s[1] else 'base') for s in inc]}; excluded {[(s[0], 'deep' if s[1] else 'base', s[2]) for s in exc]}")
     per = {}
-    for seed, deep in [(s[0], s[1]) for s in inc]:
+    for seed, deep, _ in inc:
         p = os.path.join(a.run_dir, f"REAL_ln_{'deep_' if deep else ''}s{seed}.json"); j = json.load(open(p)); d = j["diagnostics"]
         row = dict(deep=bool(deep), divergences=int(d["divergences"]), split_rhat=d.get("split_rhat"), perchain=d.get("perchain_estimand_medians"),
                    G_A_real=(j.get("guards", {}).get("G_A_real_mode") or j.get("G_A_real_mode")))
