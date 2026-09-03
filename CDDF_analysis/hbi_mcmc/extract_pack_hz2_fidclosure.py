@@ -48,7 +48,11 @@ def main(argv=None):
     for i in range(len(ev["logN"])):
         pools.setdefault((int(ev["stratum"][i]), int(zb[i]), int(dp[i])), []).append(i)
     # --- synthetic population: Poisson systems per (b, k, s)
-    shape = Nc ** (-a.beta); shape = shape / (shape * dN).sum()
+    # f_syn(N) dN ∝ N^-beta dN (N linear, cm^-2): the expected number in latent bin b is ∝ ∫_bin N^-beta dN = (N_lo^(1-beta) - N_hi^(1-beta))/(beta-1);
+    # expressed per dex so that shape[b] * dN[b] is that integral (dN in dex). 2026-09-03 FIX: the first build used Nc ** (-beta) with Nc = log10 N,
+    # which is flat in log N (disclosed in the ledger; those packs are superseded).
+    lo, hi = 10.0 ** ntrue[:-1], 10.0 ** ntrue[1:]
+    shape = (lo ** (1.0 - a.beta) - hi ** (1.0 - a.beta)) / (a.beta - 1.0) / dN; shape = shape / (shape * dN).sum()
     # expected TP count per unit amplitude: sum_b,k,s f(b) dN_b dX[k,s] C(b,s)  with C from the injection completeness of the nearest design point / stratum
     def C_of(b, s):
         idx = [i for st in [s] for i in pools.get((st, 0, int(np.argmin(np.abs(DESIGN - Nc[b])))), [])]
