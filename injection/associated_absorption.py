@@ -25,6 +25,9 @@ LINES = {
     "SiII1193": dict(lambda0=1193.2897, f=0.575, gamma=2.69e9, verified=True, source="NIST ASD 2026-09-03"),
     "SiIII1206": dict(lambda0=1206.4995, f=1.67, gamma=2.55e9, verified=True, source="NIST ASD 2026-09-03"),
     "SiII1260": dict(lambda0=1260.4221, f=1.22, gamma=2.57e9, verified=True, source="NIST ASD 2026-09-03"),
+    # calibration-only transition (never injected): its equivalent width is the observable the model is anchored to (Neeleman+2013 per-object W1526);
+    # f from Mas-Ribas+2017 Table 4 (0.133); Gamma NOT VERIFIED (damping wings irrelevant at the columns used) — flagged verified=False on purpose.
+    "SiII1526": dict(lambda0=1526.7070, f=0.133, gamma=1.1e9, verified=False, source="f: Mas-Ribas+2017 Table 4; lambda: standard vacuum value, NOT VERIFIED here"),
 }
 # Voigt prefactor: tau_0 = (pi e^2 / m_e c) f lambda0 N / (sqrt(pi) b) in cgs with lambda0 in cm, b in cm/s
 _PI_E2_MEC = 2.654008854e-2   # pi e^2 / (m_e c)  [cm^2 s^-1]

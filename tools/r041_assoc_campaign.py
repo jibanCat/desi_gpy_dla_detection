@@ -45,39 +45,53 @@ def draw_normal(rng, mu, sigma, lo, hi):
     return float(np.clip(mu + sigma * rng.standard_normal(), lo, hi))
 
 
-def realize(model, arm, logN_HI, key):
-    """One associated-absorption realization for an absorber with log N_HI, deterministic in (model sha, arm, key). Returns (lines, summary).
+def ew_rest_1526(logN_SiII, comps, z=3.0):
+    """Rest EW [Å] of Si II 1526 for a total Si II column split over components comps = [(frac, b_kms, dv_kms), ...] (LSF-free, EW is LSF-invariant)."""
+    lam0 = LINES["SiII1526"]["lambda0"] * (1 + z); wave = np.arange(lam0 - 40.0, lam0 + 40.0, 0.2)
+    lines = [dict(line="SiII1526", logN=float(np.log10(10 ** logN_SiII * f)), b_kms=b, dv_kms=dv) for f, b, dv in comps]
+    return equivalent_width_A(wave, metal_transmission(wave, z, lines, lsf_fwhm_A=None, fine_dlam_A=0.01, pad_A=12.0)) / (1 + z)
 
-    Model (frozen JSON): see MAX4_ASSOCIATED_ABSORPTION_MODEL_2026-09-03.md. Arm C applies the model's 'arm_C' modifications (quantile / shifts)."""
+
+def solve_logN_for_W1526(target_W, comps, lo=11.0, hi=17.5):
+    """Bisection on the (monotonic) curve of growth: log N(Si II) such that EW_rest(1526) = target_W for the given velocity structure."""
+    f_lo = ew_rest_1526(lo, comps) - target_W; f_hi = ew_rest_1526(hi, comps) - target_W
+    if f_lo > 0:
+        return lo
+    if f_hi < 0:
+        return hi
+    for _ in range(40):
+        mid = 0.5 * (lo + hi)
+        if ew_rest_1526(mid, comps) - target_W > 0:
+            hi = mid
+        else:
+            lo = mid
+    return 0.5 * (lo + hi)
+
+
+def realize(model, arm, logN_HI, key):
+    """One associated-absorption realization, deterministic in (model sha, arm, key). Frozen model MAX4_ASSOCIATED_ABSORPTION_MODEL_2026-09-03.md:
+    the observable anchor is the per-object rest EW of Si II 1526 (lognormal; N_HI scaling), the velocity structure is Δv90 (lognormal) split into components
+    with per-component b; the total Si II column is SOLVED from the drawn W1526 and structure (curve of growth); Si III follows Si II with a scatter; the
+    injected lines are Si II 1190/1193/1260 and Si III 1206. Arm C draws W1526 and Δv90 from the upper half of their distributions."""
     seed = int.from_bytes(hashlib.sha256(f"assoc:{arm}:{model['model_sha']}:{key}".encode()).digest()[:8], "little")
     rng = np.random.default_rng(seed)
     m = model; c = m.get("arm_C", {}) if arm == "C" else {}
-    # --- Si II column: log N(SiII) = mu_at_20p3 + slope (logN_HI - 20.3) + scatter ; arm C: + logN_shift_dex, scatter at the upper quantile
-    p = m["logN_SiII"]
-    mu = p["mu_at_20p3"] + p["slope_dlogN_dlogNHI"] * (logN_HI - 20.3) + c.get("logN_SiII_shift_dex", 0.0)
-    if "logN_quantile" in c:
-        from scipy.stats import norm
-        logN_SiII = float(np.clip(mu + p["sigma"] * norm.ppf(c["logN_quantile"]), p["min"], p["max"]))
-    else:
-        logN_SiII = draw_normal(rng, mu, p["sigma"], p["min"], p["max"])
-    q = m["logN_SiIII_minus_SiII"]
-    logN_SiIII = float(np.clip(logN_SiII + draw_normal(rng, q["mu"] + c.get("SiIII_ratio_shift_dex", 0.0), q["sigma"], -2.0, 2.0), 11.0, 17.0))
-    # --- velocity structure
-    d = m["dv90_kms"]
-    if "dv90_quantile" in c:
-        from scipy.stats import norm
-        dv90 = float(np.clip(d["median"] * np.exp(d["sigma_ln"] * norm.ppf(c["dv90_quantile"])), d["min"], d["max"]))
-    else:
-        dv90 = draw_lognormal(rng, d["median"], d["sigma_ln"], d["min"], d["max"])
+    from scipy.stats import norm
+    # --- W1526 target (rest Å): lognormal; median scales with N_HI; arm C: quantile restricted to [u_min, u_max]
+    w = m["W1526_rest_A"]; med = w["median"] * (10 ** (logN_HI - w["logNHI_ref"])) ** w["NHI_exponent"]
+    u = rng.uniform(c.get("u_min", 0.0), c.get("u_max", 1.0)) if c else rng.uniform()
+    W1526 = float(np.clip(med * np.exp(w["sigma_ln"] * norm.ppf(u)), w["min"], w["max"]))
+    # --- velocity structure: Δv90 lognormal (arm C: upper half), components, per-component b, metal-H I centroid offset
+    d = m["dv90_kms"]; u2 = rng.uniform(c.get("u_min", 0.0), c.get("u_max", 1.0)) if c else rng.uniform()
+    dv90 = float(np.clip(d["median"] * np.exp(d["sigma_ln"] * norm.ppf(u2)), d["min"], d["max"]))
     n_comp = int(min(m["n_comp"]["max"], 1 + int(dv90 // m["n_comp"]["kms_per_component"])))
     bp = m["b_comp_kms"]; b = [draw_lognormal(rng, bp["median"], bp["sigma_ln"], bp["min"], bp["max"]) for _ in range(n_comp)]
     off = draw_normal(rng, 0.0, m["dv_offset_kms"]["sigma"], -m["dv_offset_kms"]["max_abs"], m["dv_offset_kms"]["max_abs"])
-    if n_comp == 1:
-        vels = [off]
-    else:
-        vels = list(off + np.linspace(-dv90 / 2.0, dv90 / 2.0, n_comp) + rng.uniform(-0.15, 0.15, n_comp) * dv90 / max(n_comp - 1, 1))
+    vels = [off] if n_comp == 1 else list(off + np.linspace(-dv90 / 2.0, dv90 / 2.0, n_comp) + rng.uniform(-0.15, 0.15, n_comp) * dv90 / max(n_comp - 1, 1))
     frac = rng.dirichlet(np.ones(n_comp) * m["n_comp"].get("dirichlet_alpha", 2.0))
-    # --- occurrence
+    comps = [(float(frac[k]), float(b[k]), float(vels[k])) for k in range(n_comp)]
+    logN_SiII = solve_logN_for_W1526(W1526, comps)
+    q = m["logN_SiIII_minus_SiII"]; logN_SiIII = float(np.clip(logN_SiII + draw_normal(rng, q["mu"], q["sigma"], -2.0, 2.0), 11.0, 17.5))
     has_SiII = rng.uniform() < m["occurrence"]["SiII"]; has_SiIII = rng.uniform() < m["occurrence"]["SiIII"]
     lines = []
     for k in range(n_comp):
@@ -86,7 +100,8 @@ def realize(model, arm, logN_HI, key):
                 lines.append(dict(line=ln, logN=round(float(np.log10(10 ** logN_SiII * frac[k])), 4), b_kms=round(b[k], 2), dv_kms=round(float(vels[k]), 2)))
         if has_SiIII:
             lines.append(dict(line="SiIII1206", logN=round(float(np.log10(10 ** logN_SiIII * frac[k])), 4), b_kms=round(b[k], 2), dv_kms=round(float(vels[k]), 2)))
-    summ = dict(logN_SiII=round(logN_SiII, 3), logN_SiIII=round(logN_SiIII, 3), dv90=round(dv90, 1), n_comp=n_comp, dv_offset=round(off, 1), has_SiII=bool(has_SiII), has_SiIII=bool(has_SiIII), seed=seed)
+    summ = dict(W1526_target=round(W1526, 4), logN_SiII=round(logN_SiII, 3), logN_SiIII=round(logN_SiIII, 3), dv90=round(dv90, 1), n_comp=n_comp, dv_offset=round(off, 1),
+                has_SiII=bool(has_SiII), has_SiIII=bool(has_SiIII), seed=seed)
     return lines, summ
 
 
@@ -98,13 +113,14 @@ def stage_plans(a, model):
         key = f"{r['TARGETID']}:{r['wave']}:{r['inj_idx']}"; z = float(r["z_inj"]); N = float(r["logN"])
         lines, summ = realize(model, a.arm, N, key)
         T = metal_transmission(wave, z, lines, lsf_fwhm_A=None)
+        assert all(LINES[x["line"]]["verified"] for x in lines)
         # rest-frame EW per line (isolated evaluation; 1190/1193 blend is accounted in the joint transmission used for injection)
         ew = {}
         for ln in LINES:
             sub = [x for x in lines if x["line"] == ln]
             ew[ln] = round(equivalent_width_A(wave, metal_transmission(wave, z, sub, lsf_fwhm_A=None)) / (1 + z), 4) if sub else 0.0
             ews[ln].append(ew[ln])
-        rr = dict(r); rr["metals_json"] = json.dumps(lines); rr["assoc_summary"] = json.dumps(summ)
+        rr = dict(r); rr["metals_json"] = json.dumps(lines); rr["assoc_summary"] = json.dumps(summ); rr["metal_lsf_fwhm_A"] = round(1233.0 * (1 + z) / model["lsf_R"], 3)
         for ln in LINES:
             rr[f"ew_rest_{ln}"] = ew[ln]
         rr["ew_rest_total_window"] = round(equivalent_width_A(wave, T) / (1 + z), 4)
@@ -219,7 +235,7 @@ def main(argv=None):
     for ln in model["lines"]:
         assert LINES[ln]["verified"], f"{ln} atomic data not verified"
     if a.lsf_fwhm_A is None:
-        a.lsf_fwhm_A = float(model["lsf_fwhm_A"])
+        a.lsf_fwhm_A = -1.0   # per-row value from the plan column metal_lsf_fwhm_A (lambda_obs / R); the builder reads it when this is negative
     a.out_root = a.out_root or f"{ROOT_MAX4}/assoc/arm{a.arm}"
     {"plans": stage_plans, "build": stage_build, "envs": stage_envs, "launch": stage_launch, "verify": stage_verify}[a.stage](a, model)
 

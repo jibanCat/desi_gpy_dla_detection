@@ -155,7 +155,8 @@ def main(argv=None):
         for j, t in enumerate(tids):
             zq = float(cat[idx[t]]["Z"])
             absorbers = [{"nhi": 10.0 ** float(r["logN"]), "z_dla": float(r["z_inj"]), "num_lines": a.num_lines,
-                          "metals": parse_metals(r.get("metals_json")), "metal_lsf_fwhm_A": a.metal_lsf_fwhm_A} for r in by_tid[t]]
+                          "metals": parse_metals(r.get("metals_json")),
+                          "metal_lsf_fwhm_A": (float(r["metal_lsf_fwhm_A"]) if (a.metal_lsf_fwhm_A is not None and a.metal_lsf_fwhm_A < 0 and r.get("metal_lsf_fwhm_A")) else a.metal_lsf_fwhm_A)} for r in by_tid[t]]
             ids = [injection_id(a.plan_label or "", a.wave, t, r["inj_idx"]) for r in by_tid[t]]
             if a.noise_seed_policy == "independent":
                 seed_key, seed = seed_for_sightline(ids)
