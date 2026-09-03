@@ -57,11 +57,13 @@ def main(argv=None):
                 fp_c = fp_c.sum(axis=(1, 2))                                       # (C,)
                 tot_pred.append(tp_cb.sum() + fp_c.sum()); tot_fp.append(fp_c.sum())
                 for T in T_list:
-                    cm = ne[:-1] >= T - 1e-9; bm = nt[:-1] >= T - 1e-9
-                    stay = tp_cb[np.ix_(cm, bm)].sum(); up = tp_cb[np.ix_(cm, ~bm)].sum(); down = tp_cb[np.ix_(~cm, bm)].sum(); fpT = fp_c[cm].sum()
-                    inc_T = (f[bm] * dN[bm, None] * Xk[None, :]).sum() / Xtot
+                    cm = ne[:-1] >= T - 1e-9                                         # observed 0.1-dex bins have an edge at T
+                    # latent side: dex-overlap weight of basis bin b with [T, inf) (the committed reduce_f_posterior convention)
+                    wb = np.clip(nt[1:] - np.maximum(nt[:-1], T), 0.0, None) / dN; wb = np.clip(wb, 0.0, 1.0)
+                    stay = (tp_cb[cm] * wb[None, :]).sum(); up = (tp_cb[cm] * (1.0 - wb)[None, :]).sum(); down = (tp_cb[~cm] * wb[None, :]).sum(); fpT = fp_c[cm].sum()
+                    inc_T = (f * (dN * wb)[:, None] * Xk[None, :]).sum() / Xtot
                     # posterior's own completeness of latent ≥T systems: detected-in-grid rows from b≥T (stay+down) / latent ≥T systems on the path
-                    n_lat = (f[bm] * dN[bm, None] * Xk[None, :]).sum(); Ceff = (stay + down) / max(n_lat, 1e-12)
+                    n_lat = (f * (dN * wb)[:, None] * Xk[None, :]).sum(); Ceff = (stay + down) / max(n_lat, 1e-12)
                     naive = (acc[T]["obs"] - fpT) / max(Ceff, 1e-12) / Xtot
                     A = acc[T]; A["stay"].append(stay); A["up"].append(up); A["down"].append(down); A["fp"].append(fpT); A["pred"].append(stay + up + fpT); A["inc"].append(inc_T); A["naive"].append(naive); A["Ceff"].append(Ceff)
     def q(x): x = np.asarray(x); return dict(median=float(np.median(x)), p16=float(np.percentile(x, 16)), p84=float(np.percentile(x, 84)), mean=float(x.mean()))
