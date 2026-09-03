@@ -113,7 +113,11 @@ _ADOPTED_KEYS = ("tp_convention_id", "contract_id", "adopted_resp_version",
                  "adopted_resp_skew_coef", "adopted_resp_fit_range",
                  "adopted_phi_ref", "adopted_carrier_mu",
                  "adopted_carrier_sig", "adopted_carrier_skew",
-                 "adopted_carrier_shared3")
+                 "adopted_carrier_shared3",
+                 # 2026-09-02 (response-estimator rebuild, default-off): an EMPIRICAL bin-to-bin kernel (SR, ZR, C, B) that, when present,
+                 # REPLACES the adopted skew-normal surfaces in build_cc_tensors; adopted_phi_ref must equal its column sums (G-CC analogue).
+                 # Absent from every production pack; the low-z real pack never carries it.
+                 "adopted_masses_override")
 _OPTIONAL_KEYS = _OPTIONAL_KEYS + _ADOPTED_KEYS
 
 
@@ -184,6 +188,7 @@ class ModelAPack:
     adopted_carrier_sig: Optional[np.ndarray] = None     # (Nd, SR, ZR, DA)
     adopted_carrier_skew: Optional[np.ndarray] = None    # (Nd, SR, ZR, DA)
     adopted_carrier_shared3: Optional[np.ndarray] = None  # (Nd, 3)
+    adopted_masses_override: Optional[np.ndarray] = None  # (SR, ZR, C, B) empirical kernel masses; default-off
     # non-schema carriers (never validated, never saved except provenance)
     provenance: Optional[dict] = None
     truth: Optional[dict] = None  # synthetic ground truth (in-memory only)
@@ -562,6 +567,11 @@ def validate_pack(pack: ModelAPack, allow_nonstandard_grid: bool = False) -> Non
         if np.any(rr[..., 0] >= rr[..., 1]):
             _fail("adopted_resp_fit_range: lo must be < hi in every cell")
         _check_shape("adopted_phi_ref", pack.adopted_phi_ref, (SR, ZR, B))
+        if pack.adopted_masses_override is not None:
+            _check_shape("adopted_masses_override", pack.adopted_masses_override, (SR, ZR, len(pack.nhat_edges) - 1, B))
+            d_over = float(np.max(np.abs(np.asarray(pack.adopted_masses_override, float).sum(axis=2) - np.asarray(pack.adopted_phi_ref, float))))
+            if d_over > 1e-9:
+                raise ValueError(f"adopted_masses_override column sums deviate from adopted_phi_ref by {d_over:.2e} (G-CC analogue)")
         pr = np.asarray(pack.adopted_phi_ref, float)
         if np.any(~np.isfinite(pr)) or np.any(pr < 0) or np.any(pr > 1 + 1e-9):
             _fail("adopted_phi_ref: must be finite fractions in [0, 1]")
@@ -715,6 +725,7 @@ def load_pack(npz_path, *, allow_nonstandard_grid: bool = False) -> ModelAPack:
         adopted_carrier_sig=data.get("adopted_carrier_sig"),
         adopted_carrier_skew=data.get("adopted_carrier_skew"),
         adopted_carrier_shared3=data.get("adopted_carrier_shared3"),
+        adopted_masses_override=data.get("adopted_masses_override"),
         provenance=provenance,
     )
     validate_pack(pack, allow_nonstandard_grid=allow_nonstandard_grid)

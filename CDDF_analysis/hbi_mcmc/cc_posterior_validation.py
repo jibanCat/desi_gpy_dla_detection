@@ -52,16 +52,25 @@ def build_cc_tensors(pack: ModelAPack):
                          "posterior is authorized).")
     consts = build_consts(pack, resp_clamp="both")
     ne = np.asarray(pack.nhat_edges, float)
-    masses, phi = surface_masses(
-        pack, pack.adopted_resp_mu_coef, pack.adopted_resp_sig_coef,
-        pack.adopted_resp_skew_coef,
-        np.asarray(pack.adopted_resp_fit_range, float), ne)
-    phi_ref = np.asarray(pack.adopted_phi_ref, float)
-    d = float(np.max(np.abs(phi_ref - phi_from_surfaces(pack))))
-    if d > 1e-9:
-        raise ValueError(f"stored phi_ref deviates by {d:.2e} (G-CC)")
-    masses = masses / np.maximum(phi, 1e-12)[:, :, None, :] \
-        * phi_ref[:, :, None, :]
+    if getattr(pack, "adopted_masses_override", None) is not None:
+        # 2026-09-02 response-estimator rebuild (default-off): the EMPIRICAL bin-to-bin kernel replaces the adopted surfaces; its column sums
+        # are the in-grid fractions (phi) and must equal adopted_phi_ref (checked at load); no renormalisation to a surface phi is applied.
+        masses = np.asarray(pack.adopted_masses_override, float)
+        phi_ref = np.asarray(pack.adopted_phi_ref, float)
+        d = float(np.max(np.abs(phi_ref - masses.sum(axis=2))))
+        if d > 1e-9:
+            raise ValueError(f"adopted_masses_override column sums deviate from phi_ref by {d:.2e} (G-CC analogue)")
+    else:
+        masses, phi = surface_masses(
+            pack, pack.adopted_resp_mu_coef, pack.adopted_resp_sig_coef,
+            pack.adopted_resp_skew_coef,
+            np.asarray(pack.adopted_resp_fit_range, float), ne)
+        phi_ref = np.asarray(pack.adopted_phi_ref, float)
+        d = float(np.max(np.abs(phi_ref - phi_from_surfaces(pack))))
+        if d > 1e-9:
+            raise ValueError(f"stored phi_ref deviates by {d:.2e} (G-CC)")
+        masses = masses / np.maximum(phi, 1e-12)[:, :, None, :] \
+            * phi_ref[:, :, None, :]
     s2sr = np.asarray(consts.s_to_sresp)
     kz2K = np.asarray(consts.kz_to_K)
     K2zr = np.asarray(consts.K_to_zresp)
