@@ -304,7 +304,7 @@ def build_system_arms(a, fam):
         if int(r["m_true"]) < 2 or tid not in by:
             continue
         systems.append(dict(TARGETID=tid, zlo_bin=float(r["zlo_bin"]), zhi_bin=float(r["zhi_bin"]), stratum=int(r["stratum"]), snr=float(r["snr"]),
-                            z_qso=float(r["z_qso"]), healpix=int(r["healpix"]), dX_bin=float(r["dX_bin"]), absorbers=sorted(by[tid]), salt=a.seed_salt))
+                            z_qso=float(r["z_qso"]), healpix=int(r["healpix"]), dX_bin=float(r["dX_bin"]), absorbers=sorted(by[tid]), salt=(a.offset_seed_salt or a.seed_salt)))   # geometry salt (replicate-able); noise salt stays seed_salt
     os.makedirs(a.out_root, exist_ok=True)
     zcat = Table(fits.open(os.path.join(fam["mockdir"], "zcat.fits"))[1].data)
     base = parse_env(a.baseline_env)
