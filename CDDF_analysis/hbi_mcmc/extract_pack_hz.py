@@ -196,6 +196,8 @@ def main(argv=None):
                     help="mock = operator closure on the injection arm itself (comb truth; diagnostic); mock_native = end-to-end closure: population = the 2LPT "
                          "native loa-124 arm (smooth mock truth), calibration = the random injection arm on the same substrate (predeclaration Amendment 3)")
     ap.add_argument("--out-dir", required=True); ap.add_argument("--n-boot", type=int, default=96)
+    ap.add_argument("--kernel", choices=["surfaces", "E"], default="surfaces",
+                    help="HZ2 (gate MAX4_HZ2_HBI_CLOSURE_GATE_2026-09-03.md): 'E' = Candidate-E empirical kernel built on the calibration arm's injections, delivered as adopted_masses_override (default-off)")
     a = ap.parse_args(argv)
     os.makedirs(a.out_dir, exist_ok=True)
     fid_json = f"{ROOT_MAX4}/fid_max4/analysis/analysis_fid_MAX4.json"; fid_pi = f"{ROOT_MAX4}/fid_max4/analysis/analysis_fid_MAX4_per_injection.csv"
@@ -294,7 +296,23 @@ def main(argv=None):
                 adopted_resp_mu_coef=fwd["resp_mu_coef"], adopted_resp_sig_coef=fwd["resp_sig_coef"], adopted_resp_skew_coef=fwd["resp_skew_coef"],
                 adopted_resp_fit_range=fwd["resp_N_fit_range"], adopted_phi_ref=phi, adopted_carrier_mu=cm, adopted_carrier_sig=cs, adopted_carrier_skew=ck,
                 adopted_carrier_shared3=np.zeros((cm.shape[0], 3)))
-    name = {"real": "modelA_pack_HZ_MAX4_real_arm.npz", "mock": "modelA_pack_HZ_mockclosure_2lpt_random.npz", "mock_native": "modelA_pack_HZ_mockclosure_2lpt_native.npz"}[a.mode]
+    if a.kernel == "E":
+        # Candidate E on the real-spectrum A_shared DLA-only injections (fid_max4), emulated-z blocks = ZC_EDGES; phi_ref = column sums (build_cc_tensors honours the override)
+        import sys as _sys
+        _sys.path.insert(0, os.path.join(os.environ.get("REPAIR_REPO", "/home/mfho/wt_highz_repair"), "tools"))
+        from r041_response_population_study import load_events as _load_events
+        from r041_response_estimator import build_E as _build_E, TB as _TB
+        ev_ir = _load_events("IR", f"{ROOT_MAX4}/response_study")
+        E = _build_E(ev_ir)
+        M = np.asarray(E["M"], float); assert M.shape == (3, 3, len(NHAT_EDGES) - 1, len(ntrue_edges) - 1), M.shape
+        assert np.allclose(ntrue_edges, _TB)
+        pack.update(adopted_masses_override=M, adopted_phi_ref=M.sum(axis=2), adopted_resp_version="candidate_E_realspectrum_v1",
+                    contract_id="hz2-2026-09-03", tp_convention_id="hz_injection_nearest_dz_0.01")
+        E_meta = dict(kernel="Candidate E (empirical bin-to-bin)", calibration_arm="real-spectrum A_shared DLA-only injections (fid_max4, 2,900)",
+                      n_events_detected=int(np.sum(ev_ir["matched"])), fallback_cells=len(E["fallback"]))
+    else:
+        E_meta = None
+    name = {"real": ("modelA_pack_HZ2_MAX4_real_arm_E.npz" if a.kernel == "E" else "modelA_pack_HZ_MAX4_real_arm.npz"), "mock": "modelA_pack_HZ_mockclosure_2lpt_random.npz", "mock_native": "modelA_pack_HZ_mockclosure_2lpt_native.npz"}[a.mode]
     npz = os.path.join(a.out_dir, name); np.savez(npz, **pack)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO).decode().strip()
     prov = dict(real_data=(a.mode == "real"), truth_counts_sentinel=("ZEROS_NO_TRUTH" if a.mode == "real" else None), mode=a.mode, arm="HIGH-z CALIBRATION ARM (MAX4 real-spectrum injections)",
@@ -307,7 +325,11 @@ def main(argv=None):
                                  response="fit_forward_response deg_N 2, SNR cells (2,3.5,6.5,inf), z cells = coarse blocks on z_dla ('zdla'); adopted := direct fit; phi_ref from the same surfaces; 96 bootstrap carriers; shared3 = zeros (n/a)",
                                  fp="2LPT loa-0 random arm under MAX4 (HCD-free, emulated high z): extra accepted rows in window; eta_c = 0", t_sigma=f"{T_SIGMA_FLOOR} floor in every block (P1 recipe test |ln 1.024| below the floor)",
                                  path_length="population windows (collar 3000 km/s), Omega_m 0.279"),
-                inputs=inputs, forward_meta={k: (v if isinstance(v, (str, int, float, bool, type(None))) else str(v)) for k, v in fwd_meta.items()}, distinct_from_low_z="no low-z injection product read; the low-z pack is untouched")
+                inputs=inputs, forward_meta={k: (v if isinstance(v, (str, int, float, bool, type(None))) else str(v)) for k, v in fwd_meta.items()},
+                hz2_observation_model=(None if E_meta is None else dict(response_representation="Candidate E", response_calibration_arm=E_meta["calibration_arm"],
+                                                                        response_events_detected=E_meta["n_events_detected"], response_fallback_cells=E_meta["fallback_cells"],
+                                                                        associated_absorption_validation="AA (<= ~1.5 % integrated sensitivity)", meanflux_response_validation="bounded",
+                                                                        native_response="stress only", completeness="real-spectrum A_shared injection calibration (molly block)", gate="MAX4_HZ2_HBI_CLOSURE_GATE_2026-09-03.md")), distinct_from_low_z="no low-z injection product read; the low-z pack is untouched")
     json.dump(prov, open(npz[:-4] + ".provenance.json", "w"), indent=1)
     pk = load_pack(npz, allow_nonstandard_grid=True)
     from CDDF_analysis.hbi_mcmc.cc_posterior_validation import build_cc_tensors
