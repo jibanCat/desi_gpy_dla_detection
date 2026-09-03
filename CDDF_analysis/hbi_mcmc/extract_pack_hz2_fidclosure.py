@@ -37,6 +37,10 @@ def main(argv=None):
                     help="events: outcomes resampled from real-spectrum injection events (nearest design point; frozen gate §2 as written); "
                          "model: outcomes drawn from the deployed observation model itself (count_conserving_fold.outcome_probabilities; gate Amendment 1)")
     ap.add_argument("--tag", default="", help="output-name tag, e.g. 'model' -> modelA_pack_HZ2_fidclosure_model_s<seed>.npz")
+    ap.add_argument("--shape", choices=["powerlaw", "A", "B"], default="powerlaw",
+                    help="truth shape (replacement gate MAX4_HZ2_HBI_REPLACEMENT_CLOSURE_GATE_2026-09-03.md §1): 'A' = frozen Paper-1 low-z pooled "
+                         "posterior-median f(N) shape on the identical latent basis (pad bins continued flat); 'B' = single power law N^-beta "
+                         "(identical to 'powerlaw', kept as an explicit name)")
     a = ap.parse_args(argv); os.makedirs(a.out_dir, exist_ok=True); rng = np.random.default_rng(a.seed)
     pop_csv = f"{ROOT_R041}/population/r041_population.csv"; pop = list(csv.DictReader(open(pop_csv)))
     dX, xc, n_sl = dX_from_windows(pop, lambda r: float(r["snr"]))                                   # (Kf, S)
@@ -57,6 +61,14 @@ def main(argv=None):
     # which is flat in log N (disclosed in the ledger; those packs are superseded).
     lo, hi = 10.0 ** ntrue[:-1], 10.0 ** ntrue[1:]
     shape = (lo ** (1.0 - a.beta) - hi ** (1.0 - a.beta)) / (a.beta - 1.0) / dN; shape = shape / (shape * dN).sum()
+    if a.shape == "A":
+        # SHAPE A: per-dex density of the frozen low-z pooled posterior median (hbi_validation_2026-09-02/R0/POOLED_ln_R0_fdraws.npz,
+        # sha e43d9148…; dX-weighted z-average per draw, median over 6,000 draws), normalized at [20.3,20.5) = 1, on the basis
+        # 19.0,19.2,19.5,19.7,...,22.1,22.4. Pad bins [19.0,19.2) and [19.2,19.5) (uncalibrated latent nuisance at low z) are continued
+        # flat at the [19.5,19.7) value per the frozen replacement gate §1.
+        SHAPE_A = np.array([1.345, 1.345, 1.345, 1.027, 1.341, 0.966, 1.000, 0.984, 0.848, 0.524, 0.368, 0.172, 0.102, 0.030, 0.0125, 0.0029])
+        assert SHAPE_A.size == len(Nc)
+        shape = SHAPE_A / (SHAPE_A * dN).sum()
     # expected TP count per unit amplitude: sum_b,k,s f(b) dN_b dX[k,s] C(b,s)  with C from the injection completeness of the nearest design point / stratum
     def C_of(b, s):
         idx = [i for st in [s] for i in pools.get((st, 0, int(np.argmin(np.abs(DESIGN - Nc[b])))), [])]
@@ -145,7 +157,8 @@ def main(argv=None):
         pack["counts"] = counts; np.savez(npz, **pack)
         print(f"model generator: fold identity max rel dev {dev:.1e}; TP rows {n_tp}; expected TP at truth {float(parts_ref['tp'].sum()):.1f}")
     prov = dict(real_data=False, mode="hz2_fidclosure", seed=a.seed, gate="MAX4_HZ2_HBI_CLOSURE_GATE_2026-09-03.md §2" + (" + Amendment 1 (model generator)" if a.generator == "model" else ""),
-                generator=a.generator, beta=a.beta, n_tp_target=a.n_tp_target, amplitude=A,
+                generator=a.generator, truth_shape=a.shape, beta=a.beta, n_tp_target=a.n_tp_target, amplitude=A,
+                truth_shape_per_dex_normalized=(shape / shape[int(np.argmin(np.abs(Nc - 20.4)))]).round(5).tolist(),
                 n_systems=int(n_sys), n_tp_rows=int(n_tp), n_fp_rows=int(n_fp), n_pool_miss=int(n_pool_miss), counts_total=int(counts.sum()), truth_total=int(truth_counts.sum()),
                 code_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO).decode().strip(), repair_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPAIR).decode().strip(),
                 built=_dt.datetime.now().astimezone().isoformat(),
