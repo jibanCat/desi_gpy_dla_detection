@@ -33,6 +33,10 @@ DESIGN = np.array([19.5, 19.75, 20.0, 20.15, 20.3, 20.4, 20.5, 20.65, 20.8, 21.0
 def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("--seed", type=int, required=True); ap.add_argument("--out-dir", required=True)
     ap.add_argument("--beta", type=float, default=1.7); ap.add_argument("--n-tp-target", type=float, default=1500.0)
+    ap.add_argument("--generator", choices=["events", "model"], default="events",
+                    help="events: outcomes resampled from real-spectrum injection events (nearest design point; frozen gate §2 as written); "
+                         "model: outcomes drawn from the deployed observation model itself (count_conserving_fold.outcome_probabilities; gate Amendment 1)")
+    ap.add_argument("--tag", default="", help="output-name tag, e.g. 'model' -> modelA_pack_HZ2_fidclosure_model_s<seed>.npz")
     a = ap.parse_args(argv); os.makedirs(a.out_dir, exist_ok=True); rng = np.random.default_rng(a.seed)
     pop_csv = f"{ROOT_R041}/population/r041_population.csv"; pop = list(csv.DictReader(open(pop_csv)))
     dX, xc, n_sl = dX_from_windows(pop, lambda r: float(r["snr"]))                                   # (Kf, S)
@@ -61,6 +65,7 @@ def main(argv=None):
     A = a.n_tp_target / max(exp_unit, 1e-12)
     truth_counts = np.zeros((len(Nc), len(ZF_EDGES) - 1), np.int64); counts = np.zeros((len(NHAT_EDGES) - 1, len(ZF_EDGES) - 1, len(SNR_EDGES) - 1), np.int64)
     n_sys = 0; n_tp = 0; n_pool_miss = 0
+    nsys = np.zeros((len(Nc), len(ZF_EDGES) - 1, len(SNR_EDGES) - 1), np.int64)   # per-(b,k,s) truth draws (needed by the model generator)
     zmid = 0.5 * (ZF_EDGES[:-1] + ZF_EDGES[1:])
     for b in range(len(Nc)):
         for k in range(len(ZF_EDGES) - 1):
@@ -68,8 +73,8 @@ def main(argv=None):
                 mu = A * shape[b] * dN[b] * dX[k, s]
                 if mu <= 0:
                     continue
-                n = rng.poisson(mu); truth_counts[b, k] += n; n_sys += n
-                if n == 0:
+                n = rng.poisson(mu); truth_counts[b, k] += n; n_sys += n; nsys[b, k, s] += n
+                if n == 0 or a.generator == "model":
                     continue
                 st = min(4, max(0, stratum_of_row(s))); zblk = int(np.searchsorted(ZC_EDGES, zmid[k], side="right") - 1); dpt = int(np.argmin(np.abs(DESIGN - Nc[b])))
                 if abs(DESIGN[dpt] - Nc[b]) > 0.15 and Nc[b] > 19.5:
@@ -111,8 +116,36 @@ def main(argv=None):
                 tp_convention_id="hz_injection_nearest_dz_0.01", contract_id="hz2-2026-09-03", adopted_resp_version="candidate_E_realspectrum_v1",
                 adopted_resp_mu_coef=fwd["resp_mu_coef"], adopted_resp_sig_coef=fwd["resp_sig_coef"], adopted_resp_skew_coef=fwd["resp_skew_coef"], adopted_resp_fit_range=fwd["resp_N_fit_range"],
                 adopted_phi_ref=M.sum(axis=2), adopted_masses_override=M, adopted_carrier_mu=cm, adopted_carrier_sig=cs, adopted_carrier_skew=ck, adopted_carrier_shared3=np.zeros((cm.shape[0], 3)))
-    npz = os.path.join(a.out_dir, f"modelA_pack_HZ2_fidclosure_s{a.seed}.npz"); np.savez(npz, **pack)
-    prov = dict(real_data=False, mode="hz2_fidclosure", seed=a.seed, gate="MAX4_HZ2_HBI_CLOSURE_GATE_2026-09-03.md §2", beta=a.beta, n_tp_target=a.n_tp_target, amplitude=A,
+    tag = f"_{a.tag}" if a.tag else ""
+    npz = os.path.join(a.out_dir, f"modelA_pack_HZ2_fidclosure{tag}_s{a.seed}.npz"); np.savez(npz, **pack)
+    if a.generator == "model":
+        # gate Amendment 1 (2026-09-03): outcomes drawn from the deployed observation model itself. Reload the pack exactly as the sampler
+        # will, take P[c,b,k,s] from the fold's own index maps, verify the fold identity, then draw the TP counts multinomially per (b,k,s)
+        # from the SAME truth draws; FP rows stay as drawn above.
+        from CDDF_analysis.hbi_mcmc.pack import load_pack as _lp
+        from CDDF_analysis.hbi_mcmc.count_conserving_fold import outcome_probabilities, cc_fold_adopted
+        pk0 = _lp(npz, allow_nonstandard_grid=True); P = outcome_probabilities(pk0)
+        f_true = nsys.sum(axis=2) / np.maximum(dN[:, None] * dX.sum(axis=1)[None, :], 1e-12)   # (B, Kf) density implied by the draws
+        # identity: tp[c] = Σ_{b,k,s} dX[k,s] f[b,k] dN[b] P[c,b,k,s] must equal cc_fold_adopted at theta = log f
+        lamz = np.asarray(fp, float) / float(fp_ell)
+        mu_ref, parts_ref = cc_fold_adopted(pk0, np.log(np.clip(f_true, 1e-300, None)), lamz)
+        tp_P = np.einsum("ks,bk,b,cbks->c", dX, f_true, dN, P)
+        dev = float(np.max(np.abs(tp_P - parts_ref["tp"]) / np.maximum(np.abs(parts_ref["tp"]), 1e-9)))
+        assert dev < 1e-8, f"outcome_probabilities does not reproduce the fold (max rel dev {dev:.2e})"
+        n_tp = 0
+        for b in range(P.shape[1]):
+            for k in range(P.shape[2]):
+                for s in range(P.shape[3]):
+                    n = int(nsys[b, k, s])
+                    if n == 0:
+                        continue
+                    pv = P[:, b, k, s]; pv = np.append(pv, max(0.0, 1.0 - pv.sum()))
+                    draw = rng.multinomial(n, pv / pv.sum())[:-1]
+                    counts[:, k, s] += draw; n_tp += int(draw.sum())
+        pack["counts"] = counts; np.savez(npz, **pack)
+        print(f"model generator: fold identity max rel dev {dev:.1e}; TP rows {n_tp}; expected TP at truth {float(parts_ref['tp'].sum()):.1f}")
+    prov = dict(real_data=False, mode="hz2_fidclosure", seed=a.seed, gate="MAX4_HZ2_HBI_CLOSURE_GATE_2026-09-03.md §2" + (" + Amendment 1 (model generator)" if a.generator == "model" else ""),
+                generator=a.generator, beta=a.beta, n_tp_target=a.n_tp_target, amplitude=A,
                 n_systems=int(n_sys), n_tp_rows=int(n_tp), n_fp_rows=int(n_fp), n_pool_miss=int(n_pool_miss), counts_total=int(counts.sum()), truth_total=int(truth_counts.sum()),
                 code_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO).decode().strip(), repair_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPAIR).decode().strip(),
                 built=_dt.datetime.now().astimezone().isoformat(),

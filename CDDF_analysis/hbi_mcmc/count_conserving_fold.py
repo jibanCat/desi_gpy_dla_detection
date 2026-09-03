@@ -37,7 +37,7 @@ import numpy as np
 from scipy.special import ndtr, owens_t, expit
 
 __all__ = ["surface_masses", "cc_fold_cmarginal", "phi_from_surfaces",
-           "cc_fold_adopted"]
+           "cc_fold_adopted", "outcome_probabilities"]
 
 _SKEW_MAX = 0.5 * (4.0 - np.pi) * (np.sqrt(2.0 / np.pi) ** 3) / \
     (1.0 - 2.0 / np.pi) ** 1.5
@@ -202,6 +202,43 @@ def cc_fold_cmarginal(pack, theta_pop, lam_fp, *, mu_coef=None, sig_coef=None,
     if return_contrib:
         parts["contrib_cb"] = contrib
     return tp + fp, parts
+
+
+def outcome_probabilities(pack):
+    """Per-system outcome probabilities of the DEPLOYED adopted observation model, P[c, b, k, s] = P(detected AND x̂ in observed bin c |
+    truth in latent bin b, fine z bin k, S/N row s) = masses[sr(s), zr(k), c, b] · C_cells[s, cell(b)] · g[cell(b), k], using the same
+    index maps as the fold, so that  tp[c] = Σ_{b,k,s} dX[k,s] f[b,k] dN[b] P[c,b,k,s]  reproduces cc_fold_adopted exactly (checked
+    by the caller). Used by the HZ2 fiducial GENERATIVE closure to simulate catalogues from the model itself (gate Amendment 1,
+    2026-09-03). Requires the adopted stamp group; uses adopted_masses_override when present, else the adopted surfaces renormalized
+    to the stored phi_ref (identical to cc_fold_adopted)."""
+    nhat = np.asarray(pack.nhat_edges, float); ntrue = np.asarray(pack.ntrue_edges, float)
+    zf = np.asarray(pack.zf_edges, float); zc = np.asarray(pack.zc_edges, float); snr = np.asarray(pack.snr_edges, float)
+    Nc = 0.5 * (ntrue[:-1] + ntrue[1:])
+    override = getattr(pack, "adopted_masses_override", None)
+    if override is not None:
+        masses = np.asarray(override, float)
+    else:
+        masses, phi = surface_masses(pack, pack.adopted_resp_mu_coef, pack.adopted_resp_sig_coef, pack.adopted_resp_skew_coef,
+                                     np.asarray(pack.adopted_resp_fit_range, float), nhat)
+        masses = masses / np.maximum(phi, 1e-12)[:, :, None, :] * np.asarray(pack.adopted_phi_ref, float)[:, :, None, :]
+    zf_centers = 0.5 * (zf[:-1] + zf[1:])
+    kz2K = np.minimum(np.searchsorted(zc, zf_centers, side="right") - 1, len(zc) - 2)
+    rse = np.asarray(pack.resp_snr_edges, float)
+    s2sr = np.clip(np.searchsorted(rse, snr[:-1] + 1e-9, side="right") - 1, 0, masses.shape[0] - 1)
+    rze = np.asarray(pack.resp_z_edges, float); zc_centers = 0.5 * (zc[:-1] + zc[1:])
+    K2zr = np.searchsorted(rze, zc_centers, side="right") - 1
+    me = np.asarray(pack.molly_nhi_edges, float)
+    b2cell = np.clip(np.searchsorted(me, Nc, side="right") - 1, 0, len(me) - 2)
+    nd = np.asarray(pack.molly_n_det, float); nt = np.asarray(pack.molly_n_tot, float)
+    C_cells = expit(np.log(nd + 0.5) - np.log(nt - nd + 0.5)); g = np.asarray(pack.g_grid, float)
+    C_n, B_n, K_n, S_n = len(nhat) - 1, len(Nc), len(zf) - 1, len(snr) - 1
+    P = np.zeros((C_n, B_n, K_n, S_n))
+    for s in range(S_n):
+        Cb = C_cells[s, b2cell]
+        for k in range(K_n):
+            zr = int(K2zr[int(kz2K[k])])
+            P[:, :, k, s] = masses[int(s2sr[s]), zr] * (Cb * g[b2cell, k])[None, :]
+    return P
 
 
 def cc_fold_adopted(pack, theta_pop, lam_fp, *, n_lat_floor=None,
