@@ -76,8 +76,14 @@ def main():
     report = {"pack": a.pack}
     fail = False
 
-    # G-A partition at the truth point
-    mu, parts = cc_fold_cmarginal(pk, theta, lam)
+    # G-A partition at the truth point. For an adopted_masses_override pack (2026-09-03 HZ2, default-off) the DEPLOYED
+    # kernel is the override, not the legacy resp_* surfaces the extractor still carries, so the partition is evaluated with
+    # the fail-closed adopted fold.
+    if getattr(pk, "adopted_masses_override", None) is not None:
+        from CDDF_analysis.hbi_mcmc.count_conserving_fold import cc_fold_adopted as _cfa
+        mu, parts = _cfa(pk, theta, lam)
+    else:
+        mu, parts = cc_fold_cmarginal(pk, theta, lam)
     level = float(mu.sum() / obs)
     fp_share = float(parts["fp"].sum() / mu.sum())
     report["G_A_partition"] = ga_partition(pk, level, fp_share, a.level_tol)
@@ -133,13 +139,19 @@ def main():
         from CDDF_analysis.hbi_mcmc.count_conserving_fold import \
             cc_fold_adopted
         phi_stored = np.asarray(pk.adopted_phi_ref, float)
-        dphi_ref = float(np.max(np.abs(phi_stored - phi_from_surfaces(pk))))
+        override = getattr(pk, "adopted_masses_override", None)
+        # 2026-09-03 HZ2 (default-off extension): for an adopted_masses_override pack the deployed kernel IS the
+        # override, whose column sums are the in-grid fractions (see count_conserving_fold.cc_fold_adopted).
+        phi_deployed = (np.asarray(override, float).sum(axis=2) if override is not None
+                        else phi_from_surfaces(pk))
+        dphi_ref = float(np.max(np.abs(phi_stored - phi_deployed)))
         gc_ok = dphi_ref <= 1e-9
         mu_a, parts_a = cc_fold_adopted(pk, theta, lam)
         lvl_a = float(mu_a.sum() / obs)
         report["G_C_atomic_tp_id"] = dict(
             value=tp_id, contract=pk.contract_id,
             adopted_version=pk.adopted_resp_version,
+            adopted_representation=("masses_override" if override is not None else "surfaces"),
             carrier_draws=int(np.asarray(pk.adopted_carrier_mu).shape[0]),
             stored_phi_ref_max_dev=dphi_ref,
             adopted_cc_level=round(lvl_a, 4),
@@ -147,6 +159,11 @@ def main():
                                     else "FAIL"),
             status="PASS" if (gc_ok and abs(lvl_a - level) <= 1e-6)
                    else "FAIL")
+        if override is not None:
+            # the legacy surfaces are NOT the deployed kernel here; the level identity against them is undefined, and
+            # `level` above is already the adopted fold (so the identity is trivially exact) — say so explicitly.
+            report["G_C_atomic_tp_id"]["adopted_level_identity"] = "NOT_APPLICABLE_OVERRIDE (deployed kernel = masses override; G_A_partition uses it)"
+            report["G_C_atomic_tp_id"]["status"] = "PASS" if gc_ok else "FAIL"
         fail |= report["G_C_atomic_tp_id"]["status"] == "FAIL"
 
     print(json.dumps(report, indent=1))

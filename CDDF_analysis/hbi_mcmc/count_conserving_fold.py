@@ -226,6 +226,23 @@ def cc_fold_adopted(pack, theta_pop, lam_fp, *, n_lat_floor=None,
                 f"group (missing {f}) — refuse to fold; rebuild the pack "
                 "with upgrade_packs_v2 (PI ruling 2026-08-17).")
     phi_stored = np.asarray(pack.adopted_phi_ref, float)
+    override = getattr(pack, "adopted_masses_override", None)
+    if override is not None:
+        # 2026-09-03 HZ2 (default-off extension): the adopted representation is the EMPIRICAL bin-to-bin kernel
+        # (Candidate E); its column sums ARE the deployed in-grid fractions, so the G-CC stored-reference identity is
+        # checked against them and the fold uses the masses directly (no surface renormalisation). Mirrors
+        # cc_posterior_validation.build_cc_tensors.
+        if mu_coef is not None or sig_coef is not None or skew_coef is not None:
+            raise ValueError("cc_fold_adopted: coefficient overrides are undefined for an adopted_masses_override pack")
+        masses = np.asarray(override, float)
+        d = float(np.max(np.abs(phi_stored - masses.sum(axis=2))))
+        if d > phi_ref_tol:
+            raise ValueError(
+                f"cc_fold_adopted: stored adopted_phi_ref differs from the "
+                f"override kernel's column sums by {d:.3e} > {phi_ref_tol} "
+                "— the count-conservation reference is corrupt (G-CC).")
+        return cc_fold_cmarginal(pack, theta_pop, lam_fp, masses_override=masses,
+                                 renormalize=False, n_lat_floor=n_lat_floor)
     phi_fresh = phi_from_surfaces(pack)
     d = float(np.max(np.abs(phi_stored - phi_fresh)))
     if d > phi_ref_tol:
