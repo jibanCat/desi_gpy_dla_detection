@@ -120,6 +120,8 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--expect-pack-sha256", default=None,
                     help="refuse unless every run's pack has this sha256 (the frozen-pack guard)")
+    ap.add_argument("--allow-nonstandard-grid", action="store_true",
+                    help="VALIDATION-ONLY (high-z HBI extension): load the pack with allow_nonstandard_grid=True (HZ2 grid); default off")
     ap.add_argument("--allow-superseded", action="store_true",
                     help="pool runs from a directory carrying a SUPERSEDED*STATUS*.json sidecar (never for a freeze)")
     a = ap.parse_args(argv)
@@ -152,7 +154,7 @@ def main(argv=None):
     from CDDF_analysis.hbi_mcmc.model_a import reduce_f_posterior
     from CDDF_analysis.hbi_mcmc.cc_posterior_validation import (
         PAPER1_LOWZ_BINS, _overlap_w)
-    pk = load_pack(pack_path)
+    pk = load_pack(pack_path, allow_nonstandard_grid=a.allow_nonstandard_grid)
     arrays = []
     for r in sel["included"]:
         z = np.load(r["file"][:-5] + "_fdraws.npz", allow_pickle=False)
