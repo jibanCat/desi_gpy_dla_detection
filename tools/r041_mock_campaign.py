@@ -317,8 +317,10 @@ def build_system_arms(a, fam):
                 systems_truth_sha256=_sha(a.systems_truth), systems_population=a.systems_population, n_systems=len(systems),
                 m_true_hist={str(m): sum(1 for s in systems if min(len(s["absorbers"]), 3) == m) for m in (2, 3)}, delta_z=a.delta_z,
                 PREV_TAU_0_matched=tau0_matched, meanflux_model_high=a.meanflux_model, meanflux_low_measured=a.meanflux_json, baseline_env=a.baseline_env,
-                seed_salt=a.seed_salt, generator_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip(), arms={})
-    rng = np.random.default_rng(seed_for(0, 7, a.seed_salt))
+                seed_salt=a.seed_salt, offset_seed_salt=(a.offset_seed_salt or a.seed_salt), generator_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO).decode().strip(), arms={})
+    # replicate support (PI amendment 2026-09-02 §15): the geometry rng may take its own salt so an independent randomized-offset realisation can be
+    # built while the injection noise eps (seed_salt:systems) stays IDENTICAL to the original arms (paired comparison against the existing syscluster).
+    rng = np.random.default_rng(seed_for(0, 7, a.offset_seed_salt or a.seed_salt))
     for arm in a.arms.split(","):
         geo = system_arms_geometry(systems, arm, rng)
         arm_root = os.path.join(a.out_root, arm); os.makedirs(arm_root, exist_ok=True)
@@ -385,6 +387,7 @@ def main():
     ap.add_argument("--baseline-env", required=True, help="resolved BASELINE.env of the real high-z run (A4)")
     ap.add_argument("--out-root", required=True)
     ap.add_argument("--seed-salt", required=True)
+    ap.add_argument("--offset-seed-salt", default=None, help="clustering control replicate: separate salt for the system-offset/shuffle rng (noise salt unchanged)")
     ap.add_argument("--snr-cat", default=None, help="override SNR catalog (London: built from the previous production run)")
     ap.add_argument("--plan-only", action="store_true")
     ap.add_argument("--gl-cpus", type=int, default=16)
