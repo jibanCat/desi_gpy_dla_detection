@@ -73,11 +73,13 @@ def main(argv=None):
         out = np.zeros((S, len(Ncent))); ph = np.zeros((S, len(Ncent)))
         for s in range(S):
             for b, N in enumerate(Ncent):
-                d = frm.density(xg, np.full(xg.size, N), np.full(xg.size, snr_c[s]), np.full(xg.size, 4.5)); tot = d.sum() * 0.01
+                dens = frm.response_density_empirical if hasattr(frm, "emp") and getattr(frm, "emp", None) is not None else frm.response_density
+                d = np.asarray(dens(xg, np.full(xg.size, N), np.full(xg.size, snr_c[s]), np.full(xg.size, 4.5)), float); tot = d.sum() * 0.01
                 out[s, b] = (d[cm & ing].sum() * 0.01); ph[s, b] = d[ing].sum() * 0.01
                 if tot > 0: out[s, b] /= 1.0; ph[s, b] /= 1.0
         return out, ph
-    res = {}
+    res = {"p0_kernel_family": ("empirical (T-BC smoothed-empirical density)" if getattr(frm, "emp", None) is not None else "parametric skew-normal")}
+    print("P0 kernel family used here:", res["p0_kernel_family"])
     for T in (20.3, 20.0):
         wb = np.clip(nt[1:] - np.maximum(nt[:-1], T), 0.0, None) / dN; wb = np.clip(wb, 0, 1)
         Ecr, Eph = E_cross(T); Pcr, Pph = P0_cross(T, Nc)
