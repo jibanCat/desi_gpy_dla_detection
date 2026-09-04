@@ -39,6 +39,7 @@ assumption about which camera the trough lands in.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 from typing import Iterable, Mapping, Optional, Sequence
@@ -156,6 +157,20 @@ def build_clean_table(zcat, hcd_truth, bal_cat, snr_cat):
 # ===========================================================================
 
 
+def _taueff_spec(spec):
+    """A mean-flux model for the R-041C rescaling: a named model from
+    ``injection.noise_preserving.TAUEFF_MODELS`` or a MEASURED table
+    ``{"z": [...], "taueff": [...]}`` (e.g. tools/r041_mock_meanflux.py output),
+    interpolated linearly in z (clamped at the table ends)."""
+    from injection.noise_preserving import taueff
+    if isinstance(spec, str):
+        return taueff(spec)
+    z = np.asarray(spec["z"], dtype=float); t = np.asarray(spec["taueff"], dtype=float)
+    ok = np.isfinite(t)
+    z, t = z[ok], t[ok]
+    return lambda zz: np.interp(np.asarray(zz, dtype=float), z, t)
+
+
 def _normalize_injections(injections: Iterable[Mapping]) -> list:
     """Coerce injection records to a uniform dict list.
 
@@ -167,8 +182,9 @@ def _normalize_injections(injections: Iterable[Mapping]) -> list:
         norm.append(
             {
                 "target_id": int(rec["target_id"]),
-                "logN_true": float(rec["logN_true"]),
-                "z_true": float(rec["z_true"]),
+                "logN_true": (None if rec.get("logN_true") is None else float(rec["logN_true"])),
+                "z_true": (None if rec.get("z_true") is None else float(rec["z_true"])),
+                "z_qso": (None if rec.get("z_qso") is None else float(rec["z_qso"])),
                 "num_lines": (
                     int(rec["num_lines"]) if rec.get("num_lines") is not None else None
                 ),
@@ -218,6 +234,9 @@ def inject_into_coadd(
     *,
     num_lines: int,
     blend_report: Optional[list] = None,
+    method: str = "multiplicative",
+    meanflux: Optional[Mapping] = None,
+    seed_salt: str = "r041",
 ):
     """Inject Voigt absorbers into selected fibers of a desispec coadd.
 
@@ -287,6 +306,11 @@ def inject_into_coadd(
             # a defensive guard, not the normal path).
             continue
         nlines = rec["num_lines"] if rec["num_lines"] is not None else int(num_lines)
+        if rec["logN_true"] is None or rec["z_true"] is None:
+            # R-041C mean-flux-only record (no absorber): handled by the noise-preserving
+            # branch below; nothing to blend-check or multiply here.
+            injected.append(tid)
+            continue
         nhi_linear = 10.0 ** rec["logN_true"]
 
         # Forest-blend guard: measure the PRE-injection forest flux fraction at
@@ -313,13 +337,53 @@ def inject_into_coadd(
                 }
             )
 
-        for cam in spec.bands:
-            wave = np.asarray(spec.wave[cam], dtype=np.float64)
-            flux_row = np.asarray(spec.flux[cam][row], dtype=np.float64)
-            spec.flux[cam][row] = inject_voigt(
-                wave, flux_row, nhi_linear, rec["z_true"], num_lines=nlines
-            )
+        if method == "multiplicative":
+            for cam in spec.bands:
+                wave = np.asarray(spec.wave[cam], dtype=np.float64)
+                flux_row = np.asarray(spec.flux[cam][row], dtype=np.float64)
+                spec.flux[cam][row] = inject_voigt(
+                    wave, flux_row, nhi_linear, rec["z_true"], num_lines=nlines
+                )
         injected.append(tid)
+
+    if method != "multiplicative":
+        # R-041 (2026-08-28): noise-preserving injection (injection/noise_preserving.py),
+        # applied per camera with that camera's own ivar/mask so the noise variance,
+        # masks and grids are untouched; an optional mean-flux-only rescaling of the
+        # forest SIGNAL (R-041C high-z extrapolation, ``meanflux`` = {"fiducial", "model",
+        # "delta_z"}) is applied in the same operation. All injections on one fiber are
+        # applied together (one transmission product; one seeded noise draw per camera).
+        from injection.noise_preserving import inject_noise_preserving, meanflux_ratio, taueff
+
+        by_row = {}
+        for rec in recs:
+            row = tid_to_row.get(rec["target_id"])
+            if row is not None:
+                by_row.setdefault(row, []).append(rec)
+        for row, rr in by_row.items():
+            absorbers = [
+                {"nhi": 10.0 ** r["logN_true"], "z_dla": r["z_true"],
+                 "num_lines": (r["num_lines"] if r["num_lines"] is not None else int(num_lines))}
+                for r in rr if r["logN_true"] is not None
+            ]
+            zq = rr[0].get("z_qso")
+            for cam in spec.bands:
+                wave = np.asarray(spec.wave[cam], dtype=np.float64)
+                flux_row = np.asarray(spec.flux[cam][row], dtype=np.float64)
+                ivar_row = np.asarray(spec.ivar[cam][row], dtype=np.float64)
+                mask_row = (np.asarray(spec.mask[cam][row]) if spec.mask is not None
+                            else np.zeros(flux_row.size, dtype=np.uint32))
+                r_mf = None
+                if meanflux is not None and zq is not None:
+                    dz = float(meanflux.get("delta_z", 0.0))
+                    fid = _taueff_spec(meanflux["fiducial"]); alt = _taueff_spec(meanflux["model"])
+                    r_mf = meanflux_ratio(wave, float(zq), lambda z: alt(np.asarray(z) + dz), fid)
+                h = hashlib.sha256(f"{seed_salt}:{rr[0]['target_id']}:{cam}".encode()).digest()
+                seed = int.from_bytes(h[:4], "little")
+                spec.flux[cam][row] = inject_noise_preserving(
+                    wave, flux_row, ivar_row, mask_row, absorbers,
+                    z_qso=zq, r=r_mf, seed=seed, method=method,
+                )
 
     os.makedirs(os.path.dirname(os.path.abspath(coadd_out_path)), exist_ok=True)
     desispec.io.write_spectra(coadd_out_path, spec)
@@ -355,6 +419,9 @@ def write_campaign(
     mockdir: str,
     num_lines: int,
     truth_manifest_name: str = "injection_truth.fits",
+    method: str = "multiplicative",
+    meanflux: Optional[Mapping] = None,
+    seed_salt: str = "r041",
 ):
     """Orchestrate the injectable-tree build for a manifest of injections.
 
@@ -425,6 +492,15 @@ def write_campaign(
             # → error flag"), it never reaches the dlacat, and b_FP collapses to a
             # FAKE zero (referee finding 2026-06-11).  Skip them so the control fiber
             # stays the clean source flux the GP is supposed to score for false positives.
+            rescale_only = bool(r.get("rescale_only", False))
+            if rescale_only:
+                # P1 native multi-HCD arm (2026-09-02): NO injected absorber — the record only
+                # carries the sightline's z_qso so the noise-preserving branch applies the
+                # mean-flux extrapolation r(lambda) to the native spectrum (logN_true/z_true
+                # None -> inject_noise_preserving with an empty absorber list, T == 1).
+                injections.append({"target_id": int(r["target_id"]), "logN_true": None, "z_true": None,
+                                   "num_lines": None, "z_qso": (float(r["z_qso"]) if r.get("z_qso") is not None else None)})
+                continue
             if bool(r.get("control", False)) or not np.isfinite(r.get("logN_true", np.nan)):
                 continue
             nl = int(r["num_lines"]) if r.get("num_lines") is not None else None
@@ -434,6 +510,7 @@ def write_campaign(
                     "logN_true": float(r["logN_true"]),
                     "z_true": float(r["z_true"]),
                     "num_lines": nl,
+                    "z_qso": (float(r["z_qso"]) if r.get("z_qso") is not None else None),
                 }
             )
             # Campaign-B close pair: the SECOND absorber rides the SAME sightline.
@@ -451,12 +528,14 @@ def write_campaign(
                         "logN_true": float(lN2),
                         "z_true": float(z2),
                         "num_lines": nl,
+                        "z_qso": (float(r["z_qso"]) if r.get("z_qso") is not None else None),
                     }
                 )
         blend_report: list = []
         inject_into_coadd(
             src_coadd, dst_coadd, injections, num_lines=num_lines,
-            blend_report=blend_report,
+            blend_report=blend_report, method=method, meanflux=meanflux,
+            seed_salt=seed_salt,
         )
         for rep in blend_report:
             key = (healpix, int(rep["target_id"]))

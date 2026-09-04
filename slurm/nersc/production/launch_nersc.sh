@@ -111,6 +111,13 @@ if [ "$DRY_RUN" -ne 1 ]; then
                    MAX_WORKERS BATCH_SIZE ENABLE_TAU_EB TAU_EB_OBJECTIVE EARLY_STOP_MODE PAIR_PRIOR_MODE; do
             echo "$var=${!var:-(unset)}"
         done
+        # MAX4 repair cycle (2026-09-01): the archive-route / input-window variables are
+        # EXPORTED by the flavour env (not listed above) and were missing from the record —
+        # a run's BASELINE.env did not name its spectra archive, its healpix list or its
+        # z_QSO window. Additive: empty when unset.
+        for var in GPDLA_SPECTRA_ARCHIVE EXTERNAL_HPX_LIST GPDLA_ZMIN_QSO GPDLA_ZMAX_QSO; do
+            echo "$var=${!var:-}"
+        done
     } > "${OUTDIR}/BASELINE.env"
 fi
 
