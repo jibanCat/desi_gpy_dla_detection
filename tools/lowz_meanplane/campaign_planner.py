@@ -11,6 +11,17 @@ H2-M design semantics EXACTLY (validated against the recorded realized plan):
     deliberately replicated (part of the protocol under test);
   - a sightline whose slot cannot place after MAX_ATTEMPTS draws is dropped
     and replaced from the remaining cell pool (drops recorded).
+
+MEAN-S/N REPAIR (2026-09-11, contract C1) -- ADDITIVE, DEFAULT-OFF.
+The S/N field this planner strata on used to be hard-wired to the parent
+array's ``RED_SNR``, which is the archive catalogue's **median**
+flux*sqrt(ivar) while every mock calibration block is indexed on the finder's
+**mean** ``SNR_REDSIDE`` (0 / 926,128 bit-equal; r = 0.9914).  The field name is
+now a parameter, ``snr_field``, defaulting to ``'RED_SNR'`` so the frozen plan
+stays bit-reproducible; the builders pass ``snr_field='SNR_MEAN'`` under
+``--snr-source finder-mean``.  Only the FIELD READ changes -- the edges
+(2.0, 3.5, 6.5, inf), the z edges, the grid, the weights, the design, the
+collision/collar rules, the cap and MAX_ATTEMPTS are untouched.
 """
 from __future__ import annotations
 
@@ -55,12 +66,18 @@ def collides(z, cand_z):
 
 def plan_campaign(parent, cand_z_by_tid, seed, *,
                   sl_per_cell=None, dbl_per_cell=None,
-                  logn_grid=None, logn_w=None):
+                  logn_grid=None, logn_w=None, snr_field='RED_SNR'):
     """Overrides (L8 extension, PI checkpoint 10.7): sl_per_cell,
     dbl_per_cell=0 => singles-only (the ruled threshold-focused design;
     everything else identical to the validated H2-M semantics)."""
     """parent: structured array w/ TARGETID(int64), Z_QSO, RED_SNR, HPXPIXEL.
     cand_z_by_tid: dict tid -> list of candidate z (ANY P) for collisions.
+    snr_field: parent field carrying the ANALYSIS S/N variable.  'RED_SNR'
+    (default) = the frozen archive median; 'SNR_MEAN' = the canonical finder
+    mean (C1).  The recorded per-sightline S/N is written to the 'RED_SNR' key
+    of each returned sightline dict either way, because the FROZEN reducers
+    (analyze_campaign.py, weight_target.py) read that key -- the value is
+    always the S/N the stratification actually used.
     Returns (sightlines, plan_rows, dropped): lists of dicts."""
     global SL_PER_CELL, DBL_PER_CELL
     _sl = SL_PER_CELL if sl_per_cell is None else sl_per_cell
@@ -72,7 +89,7 @@ def plan_campaign(parent, cand_z_by_tid, seed, *,
     tids = parent["TARGETID"].astype(np.int64)
     assert tids.dtype == np.int64
     cells = np.array([cell_name(s, z) for s, z in
-                      zip(parent["RED_SNR"], parent["Z_QSO"])])
+                      zip(parent[snr_field], parent["Z_QSO"])])
     sightlines, plan_rows, dropped = [], [], []
     for si in range(3):
         for zi in range(3):
@@ -124,7 +141,7 @@ def plan_campaign(parent, cand_z_by_tid, seed, *,
                     continue
                 plan_rows.extend(injs)
                 sightlines.append(dict(TARGETID=tid, Z_QSO=zq,
-                                       RED_SNR=float(row["RED_SNR"]),
+                                       RED_SNR=float(row[snr_field]),
                                        HPXPIXEL=int(row["HPXPIXEL"]),
                                        cell=cname, n_inj=n_inj))
                 picked += 1

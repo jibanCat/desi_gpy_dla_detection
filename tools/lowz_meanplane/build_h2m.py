@@ -1,13 +1,26 @@
-"""WS2A-ii: build the CLEAN-substrate real injection campaign (checkpoint
-10.5 ruling item 2A) — same design/injection/analysis contract as H2-M, on
-real Paper-1 sightlines with NO pre-existing accepted detection (tier A1:
-zero P_DLA>0.99 rows at any NHI in loa_main_dark_v1) and not in the H2-M
-540. Substrate-only change; everything else replicates H2-M exactly.
+"""RECONSTRUCTED H2-M main-range real-spectrum injection builder.
 
-Outputs under /scratch/.../h2m_ckpt10p5_20260817/cleanreal/:
-  h2mc_realized_plan.csv, h2mc_sightlines.csv, h2mc_injected.h5 (+truth csv,
-  build summary), qsocat_h2mc.fits, h2mc_hpx_list.txt, h2mc_summary.json
-Real TARGETIDs stay on scratch (never in git).
+*** THIS IS A RECONSTRUCTION, NOT THE EXECUTED PRODUCER. ***
+The original 540-sightline H2-M builder ran from an ephemeral agent scratchpad
+in 2026-08-16 and is UNRECOVERED (stated on the record at
+paper_figures/reductions/h2m_reduce.py:1-25).  Its numeric seed was never
+preserved -- h2m_summary.json records only the salt string "h2m1" -- and a
+read-only search over 13 candidate seeds on the exactly-reconstructed
+median-plane parent pool (362,532 rows, matching the frozen record) reproduced
+at most 3 / 540 of the frozen sightlines.  The frozen H2-M draw therefore
+CANNOT be reproduced, and there is no byte-for-byte gate for this arm.
+
+What IS verified: the substrate selection reconstructed here reproduces the
+frozen H2-M parent pool exactly under --snr-source archive-median, and every
+one of the frozen 540 sightlines satisfies it (BAL-excluded, RED_SNR > 2,
+z_QSO in [2.1, 3.79), ZWARN == 0, NO A1 / P>0.99 restriction -- 372 of the
+frozen 540 carry a pre-existing P>0.99 row, which is why this builder is a
+sibling of build_cleanreal.py and not build_cleanreal.py itself).
+
+Design/injection/analysis contract identical to build_cleanreal.py.
+Outputs under <run-dir>: h2m_realized_plan.csv, h2m_sightlines.csv,
+h2m_injected.h5 (+ truth csv), qsocat_h2m.fits, h2m_hpx_list.txt,
+h2m_summary.json.  Real TARGETIDs stay on scratch (never in git).
 
 MEAN-S/N REPAIR (2026-09-11, contract C1) -- ADDITIVE, DEFAULT-OFF.
 ``--snr-source archive-median`` (DEFAULT) is the frozen behaviour, bit for bit.
@@ -40,14 +53,17 @@ import campaign_planner as cp
 import snr_source as ss
 from gpy_dla_detection.inject_absorber import voigt_transmission
 
-H2M = '/scratch/cavestru_root/cavestru0/mfho/h2m_20260817'
-RUN = '/scratch/cavestru_root/cavestru0/mfho/h2m_ckpt10p5_20260817/cleanreal'
+RUN = '/scratch/cavestru_root/cavestru0/mfho/h2m_meanplane_20260911/h2m'
 ANA = '/scratch/cavestru_root/cavestru0/mfho/h2m_ckpt10p5_20260817/analysis'
 SRC = '/scratch/cavestru_root/cavestru0/mfho/nersc/loa_archives/loa_full_z2_noR_v2.h5'
 QSOCAT = '/nfs/turbo/lsa-cavestru/mfho/DESI/loa/QSO_cat_loa_main_dark_healpix_v2-altbal.fits'
 REALCAT = ('/nfs/turbo/lsa-cavestru/mfho/DESI/gpdla_catalogs/loa_main_dark_v1/'
            'dlacat-loa-main-dark-v1.fits')
-SEED = 20260817
+# DECLARED seed (R2_PREDECLARATION.md section 4): the campaign's own
+# date-of-build convention (clean arm 2026-08-17 -> 20260817; mock closure
+# 2026-08-19 -> 20260819; H2-M was built 2026-08-16).  NOT the frozen seed,
+# which is unrecovered.  Fixed before any draw; never re-tuned.
+SEED = 20260816
 NUM_LINES = 3
 
 ap = argparse.ArgumentParser()
@@ -78,11 +94,9 @@ print('BAL-excluded TIDs', len(bal_bad))
 
 rc = fitsio.read(REALCAT, ext=1, columns=['TARGETID', 'P_DLA', 'Z_DLA'])
 rtid = rc['TARGETID'].astype(np.int64)
-p99_tids = np.unique(rtid[rc['P_DLA'] > 0.99])
-print('TIDs with >=1 P>0.99 row', len(p99_tids))
-
-h2m_tids = fitsio.read(H2M + '/qsocat_h2m.fits', ext=1,
-                       columns=['TARGETID'])['TARGETID'].astype(np.int64)
+# H2-M does NOT apply the clean arm's A1 tier: pre-existing accepted detections
+# stay in the substrate (372 / 540 frozen sightlines carry one).  The catalogue
+# is read only for the ANY-P collision candidates below.
 
 # S/N variable: archive median (frozen default) or the canonical finder mean
 snr_used, eligible, snr_meta = ss.resolve_snr(
@@ -90,8 +104,7 @@ snr_used, eligible, snr_meta = ss.resolve_snr(
 print('snr_source', json.dumps(snr_meta))
 
 sel = ((cat['Z'] >= 2.1) & (cat['Z'] < 3.79) & eligible & (snr_used > 2.0)
-       & ~np.isin(tid_arch, bal_bad) & ~np.isin(tid_arch, p99_tids)
-       & ~np.isin(tid_arch, h2m_tids) & (cat['ZWARN'] == 0))
+       & ~np.isin(tid_arch, bal_bad) & (cat['ZWARN'] == 0))
 parent_raw = cat[sel]
 parent = np.zeros(len(parent_raw), dtype=[('TARGETID', np.int64),
                                           ('Z_QSO', float), ('RED_SNR', float),
@@ -102,7 +115,8 @@ parent['Z_QSO'] = parent_raw['Z'].astype(float)
 parent['RED_SNR'] = parent_raw['RED_SNR'].astype(float)
 parent['SNR_MEAN'] = snr_used[sel]
 parent['HPXPIXEL'] = parent_raw['HEALPIX'].astype(np.int64)
-print('clean parent pool', len(parent), time.time() - t0)
+print('H2-M parent pool', len(parent), time.time() - t0,
+      '(frozen median-plane record: 362532)')
 
 # collision candidates: ANY catalog row at ANY P on clean-pool TIDs
 sel_rc = np.isin(rtid, parent['TARGETID'])
@@ -132,11 +146,11 @@ else:
     sl_rows = [dict(r, SNR_STAT='finder_mean',
                     RED_SNR_ARCHIVE_MEDIAN=med_by_tid[int(r['TARGETID'])])
                for r in sightlines]
-with open(RUN + '/h2mc_sightlines.csv', 'w', newline='') as f:
+with open(RUN + '/h2m_sightlines.csv', 'w', newline='') as f:
     w = csv.DictWriter(f, sl_fields)
     w.writeheader()
     [w.writerow(s) for s in sl_rows]
-with open(RUN + '/h2mc_realized_plan.csv', 'w', newline='') as f:
+with open(RUN + '/h2m_realized_plan.csv', 'w', newline='') as f:
     w = csv.DictWriter(f, ['TARGETID', 'inj_idx', 'cell', 'Z_QSO', 'HPXPIXEL',
                            'z_inj', 'logN', 'z_segment', 'attempts'])
     w.writeheader()
@@ -157,7 +171,7 @@ for r in plan_rows:
     inj_by_tid[int(r['TARGETID'])].append((float(r['z_inj']),
                                            float(r['logN'])))
 
-with h5py.File(SRC, 'r') as hs, h5py.File(RUN + '/h2mc_injected.h5', 'w') as ho:
+with h5py.File(SRC, 'r') as hs, h5py.File(RUN + '/h2m_injected.h5', 'w') as ho:
     wave = hs['wavelength'][:]
     n = len(rows_sorted)
     ho.create_dataset('wavelength', data=wave)
@@ -181,10 +195,10 @@ with h5py.File(SRC, 'r') as hs, h5py.File(RUN + '/h2mc_injected.h5', 'w') as ho:
         ho.attrs[a] = v
     ho.attrs['h2_injected'] = 1
     ho.attrs['h2_source_archive'] = SRC
-    ho.attrs['ckpt10p5_campaign'] = 'cleanreal_A1_noP99'
+    ho.attrs['ckpt10p5_campaign'] = 'h2m_main_reconstructed'
 
 # truth manifest
-with open(RUN + '/h2mc_injected.h5.truth.csv', 'w', newline='') as f:
+with open(RUN + '/h2m_injected.h5.truth.csv', 'w', newline='') as f:
     w = csv.writer(f)
     w.writerow(['TARGETID', 'inj_idx', 'cell', 'z_true', 'logN_true',
                 'num_lines'])
@@ -197,10 +211,10 @@ with open(RUN + '/h2mc_injected.h5.truth.csv', 'w', newline='') as f:
 qt = fitsio.read(QSOCAT, ext=1, columns=['TARGETID'])['TARGETID'].astype(np.int64)
 ridx = np.where(np.isin(qt, tids_sel))[0]
 sub = fitsio.read(QSOCAT, ext=1, rows=ridx)
-fitsio.write(RUN + '/qsocat_h2mc.fits', sub, clobber=True)
+fitsio.write(RUN + '/qsocat_h2m.fits', sub, clobber=True)
 del qt, sub
 hpx = sorted({s['HPXPIXEL'] for s in sightlines})
-with open(RUN + '/h2mc_hpx_list.txt', 'w') as f:
+with open(RUN + '/h2m_hpx_list.txt', 'w') as f:
     f.write('\n'.join(str(h) for h in hpx) + '\n')
 
 def sha(p):
@@ -211,23 +225,23 @@ def sha(p):
     return h.hexdigest()
 
 summary = dict(
-    campaign='ckpt10p5 cleanreal (A1: zero P>0.99 rows, not in H2-M 540)',
+    campaign='H2-M main-range real injection (RECONSTRUCTED builder; frozen producer unrecovered)',
     snr_source=args.snr_source, snr_field=SNR_FIELD, snr_meta=snr_meta,
     seed=SEED, n_sightlines=len(sightlines), n_injections=len(plan_rows),
     n_dropped=len(dropped), dropped=dropped, n_hpx=len(hpx),
     parent_pool=int(len(parent)),
-    config=dict(salt='h2mc1', logN_grid=list(cp.LOGN_GRID),
+    config=dict(salt='h2m1', logN_grid=list(cp.LOGN_GRID),
                 logN_weights=list(cp.LOGN_W), sl_per_cell=cp.SL_PER_CELL,
                 dbl_per_cell=cp.DBL_PER_CELL, z_inj_cap=list(cp.Z_CAP),
                 collision_kms=cp.COLLISION_KMS, collar_kms=cp.COLLAR_KMS,
                 window='lya_only 1025-1216', num_lines=NUM_LINES,
                 sibling_avoidance=False),
     source_archive=SRC, source_archive_note='sha inherited from attrs',
-    injected_archive_sha256=sha(RUN + '/h2mc_injected.h5'),
-    plan_sha256=sha(RUN + '/h2mc_realized_plan.csv'),
-    truth_sha256=sha(RUN + '/h2mc_injected.h5.truth.csv'),
+    injected_archive_sha256=sha(RUN + '/h2m_injected.h5'),
+    plan_sha256=sha(RUN + '/h2m_realized_plan.csv'),
+    truth_sha256=sha(RUN + '/h2m_injected.h5.truth.csv'),
 )
-json.dump(summary, open(RUN + '/h2mc_summary.json', 'w'), indent=1)
+json.dump(summary, open(RUN + '/h2m_summary.json', 'w'), indent=1)
 print(json.dumps({k: v for k, v in summary.items()
                   if k not in ('dropped',)}, indent=1))
 print('DONE', time.time() - t0)
