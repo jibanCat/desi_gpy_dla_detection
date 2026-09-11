@@ -56,9 +56,14 @@ ap.add_argument('--snr-source', default=ss.ARCHIVE_MEDIAN,
                 help='S/N variable for the >2 cut AND the cell stratification. '
                      'Default reproduces the frozen (defective) plan exactly.')
 ap.add_argument('--run-dir', default=RUN)
+ap.add_argument('--h2m-dir', default=H2M,
+                help='campaign dir holding qsocat_h2m.fits, whose sightlines '
+                     'are excluded from the clean substrate. Must be the H2-M '
+                     'campaign built on the SAME S/N plane.')
 ap.add_argument('--plan-only', action='store_true')
 args = ap.parse_args()
 RUN = args.run_dir
+H2M = args.h2m_dir
 SNR_FIELD = 'RED_SNR' if args.snr_source == ss.ARCHIVE_MEDIAN else 'SNR_MEAN'
 
 os.makedirs(RUN, exist_ok=True)
