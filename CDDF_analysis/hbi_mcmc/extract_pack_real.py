@@ -43,6 +43,7 @@ import time
 
 import numpy as np
 import fitsio
+import glob as _glob
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
@@ -66,6 +67,18 @@ REAL_QSOCAT = ("/nfs/turbo/lsa-cavestru/mfho/DESI/loa/"
                "QSO_cat_loa_main_dark_healpix_v2-altbal.fits")
 ARCHIVE_CAT_NPY = ("/scratch/cavestru_root/cavestru0/mfho/"
                    "h2m_ckpt10p5_20260817/analysis/src_archive_catalog.npy")
+# CONTRACT C1 path-leg source. ``src_archive_catalog.npy::RED_SNR`` is a
+# verbatim copy of QSO_cat_...v3-altbal::SNR_REDSIDE, which is the MEDIAN of
+# flux*sqrt(ivar) over the red window -- a DIFFERENT STATISTIC from the
+# catalogue/mock-calibration column of the same name, which is the MEAN
+# (dlasearch.py:670-676, constants.py:40-41). The archive builder also applied
+# --spectype QSO, so afterburner-rescued GALAXY/STAR-SPECTYPE quasars the finder
+# did search are absent from it. The finder's own MEAN is recorded per sightline
+# for the whole searched population in the per-healpix processed store, and is
+# bit-identical to the DLA-catalogue column on all 358,835 catalogue sightlines.
+PROCESSED_DIR = os.path.join(REAL_CAT_DIR, "processed")
+PROCESSED_GLOB = "processed-main-dark-*.h5"
+PATH_SOURCES = ("archive-npy", "processed-h5")
 # Pre-push hardening 2026-08-26: no hidden production defaults. --out-dir is REQUIRED
 # (the old default was the superseded real_pack_v1 directory) and --ref-pack is REQUIRED
 # for --cert-2lpt0 / --real (the old default was the SUPERSEDED v2p1 2LPT-0 pack; the
@@ -84,6 +97,86 @@ def _sha(path):
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _load_path_lookup(source, searched_table=None):
+    """TARGETID -> (SNR_REDSIDE, z_QSO) for the PATH (sightline / denominator)
+    leg, plus a provenance dict.
+
+    ORDER IS PART OF THE CONTRACT. ``build_data_plane`` iterates this mapping
+    (``qso_lookup.items()``) and ``build_M_b`` accumulates dX with
+    ``np.add.at``; float addition is not associative, so the last bits of dX
+    depend on the insertion order. Both branches therefore pin it: the archive
+    branch keeps the archive row order (the frozen behaviour, unchanged), the
+    processed branch uses sorted-glob healpix order, then within-file row order.
+
+      "archive-npy"  : FROZEN behaviour -- ``src_archive_catalog.npy``
+                       ``RED_SNR`` (the v3-altbal MEDIAN statistic) and ``Z``.
+      "processed-h5" : contract C1 -- the finder's own ``snrs`` (MEAN) and
+                       ``z_qsos`` over the searched population, read from
+                       ``processed-main-dark-<HPX>.h5`` (or from a
+                       pre-assembled ``--searched-table`` npz carrying
+                       TARGETID / snr_redside / z_qso).
+    """
+    if source not in PATH_SOURCES:
+        raise SystemExit("--path-source must be one of %r" % (PATH_SOURCES,))
+    if source == "archive-npy":
+        arch = np.load(ARCHIVE_CAT_NPY)
+        lookup = {int(t): (float(s), float(z))
+                  for t, s, z in zip(arch["TARGETID"].astype(np.int64),
+                                     arch["RED_SNR"].astype(float),
+                                     arch["Z"].astype(float))
+                  if np.isfinite(s)}
+        prov = dict(path_source="archive-npy", source=ARCHIVE_CAT_NPY,
+                    snr_column="RED_SNR",
+                    snr_statistic=("MEDIAN(flux*sqrt(ivar)) over rest-frame "
+                                   "[1420,1480] A -- a verbatim copy of "
+                                   "QSO_cat_...v3-altbal::SNR_REDSIDE"),
+                    z_column="Z", n_sightlines_source=int(len(arch)),
+                    sha256=_sha(ARCHIVE_CAT_NPY))
+        return lookup, prov
+
+    import h5py
+    if searched_table:
+        d = np.load(searched_table)
+        tid = d["TARGETID"].astype(np.int64)
+        snr = d["snr_redside"].astype(np.float64)
+        zq = d["z_qso"].astype(np.float64)
+        src = searched_table
+        src_sha = _sha(searched_table)
+        n_files = None
+    else:
+        files = sorted(_glob.glob(os.path.join(PROCESSED_DIR, PROCESSED_GLOB)))
+        if not files:
+            raise SystemExit("no %s under %s" % (PROCESSED_GLOB, PROCESSED_DIR))
+        T, S, Z = [], [], []
+        for f in files:
+            with h5py.File(f, "r") as h:
+                T.append(h["target_ids"][:].astype(np.int64))
+                S.append(h["snrs"][:].astype(np.float64))
+                Z.append(h["z_qsos"][:].astype(np.float64))
+        tid = np.concatenate(T)
+        snr = np.concatenate(S)
+        zq = np.concatenate(Z)
+        src = PROCESSED_DIR
+        src_sha = None
+        n_files = len(files)
+    keep = (tid != -1) & np.isfinite(snr) & np.isfinite(zq)  # -1 = never evaluated
+    lookup = {int(t): (float(s), float(z))
+              for t, s, z in zip(tid[keep], snr[keep], zq[keep])}
+    if len(lookup) != int(keep.sum()):
+        raise SystemExit("duplicate TARGETIDs in the searched population")
+    prov = dict(path_source="processed-h5", source=src, sha256=src_sha,
+                n_files=n_files, snr_column="snrs",
+                snr_statistic=("MEAN(flux*sqrt(ivar)) over ivar!=0 pixels with "
+                               "rest-frame lambda in [1420,1480] A "
+                               "(dlasearch.py:670-676) -- the SAME statistic as "
+                               "the DLA catalogue's SNR_REDSIDE and as every "
+                               "mock calibration block"),
+                z_column="z_qsos", n_rows_raw=int(len(tid)),
+                n_dropped_sentinel_or_nonfinite=int((~keep).sum()),
+                n_sightlines_source=int(keep.sum()))
+    return lookup, prov
 
 
 def contract_row_mask(zq, zdla, tid, bal_tids, cfg, collar_kms=None):
@@ -170,6 +263,18 @@ def main():
     ap.add_argument("--stamp-v12", action="store_true")
     ap.add_argument("--out-dir", required=True,
                     help="output directory (REQUIRED; no production default)")
+    ap.add_argument("--path-source", choices=PATH_SOURCES,
+                    default="archive-npy",
+                    help="--real only: source of the PATH-leg (sightline) S/N "
+                         "and z_QSO. 'archive-npy' (DEFAULT) = the frozen "
+                         "behaviour, src_archive_catalog.npy::RED_SNR (the "
+                         "v3-altbal MEDIAN statistic). 'processed-h5' = "
+                         "contract C1, the finder's own MEAN SNR_REDSIDE over "
+                         "the searched population.")
+    ap.add_argument("--searched-table", default=None,
+                    help="--path-source processed-h5 only: a pre-assembled "
+                         "searched_population.npz (TARGETID/snr_redside/z_qso). "
+                         "If omitted the table is assembled from PROCESSED_DIR.")
     ap.add_argument("--adopted", default=None,
                     help="--stamp-v12 only: adopted response operator (default: adopted_response_v1p1 of record)")
     ap.add_argument("--kfe", default=None,
@@ -261,12 +366,8 @@ def main():
         bal_fits = os.path.join(a.out_dir, "real_bal_bi_civ.fits")
         fitsio.write(bal_fits, np.array(bal_tids, dtype=[("TARGETID", ">i8")]),
                      clobber=True)
-        arch = np.load(ARCHIVE_CAT_NPY)
-        lookup = {int(t): (float(s), float(z))
-                  for t, s, z in zip(arch["TARGETID"].astype(np.int64),
-                                     arch["RED_SNR"].astype(float),
-                                     arch["Z"].astype(float))
-                  if np.isfinite(s)}
+        lookup, path_prov = _load_path_lookup(
+            a.path_source, searched_table=a.searched_table)
         cfg = make_cfg(REAL_CAT_DIR, bal_fits, w["molly_tsv"], a.out_dir)
         dp = build_data_plane(cat, lookup, bal_tids, cfg, mm)
         ns0 = float(frozen["fp_prov"]["n_sl_loa0"])
@@ -315,7 +416,8 @@ def main():
             catalog=os.path.join(REAL_CAT_DIR, "dlacat-loa-main-dark-v1.fits"),
             catalog_sha256=_sha(os.path.join(
                 REAL_CAT_DIR, "dlacat-loa-main-dark-v1.fits")),
-            qso_population_source=ARCHIVE_CAT_NPY,
+            qso_population_source=path_prov["source"],
+            path_leg=path_prov,
             bal_policy="BI_CIV>0 (canonical contract v1.1 real-data policy)",
             n_bal_excluded=int(len(bal_tids)),
             n_op_rows=dp["n_op"], counts_in_window=dp["n_in_window"],
