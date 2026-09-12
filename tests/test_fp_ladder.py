@@ -124,3 +124,27 @@ def test_prior_moments_count(setup):
     for lad in ("M0", "M1", "M2", "M3", "M4", "M5"):
         names, m, s = fp_prior_moments(consts, pk.fp_counts, lad)
         assert len(names) == NOMINAL_FP_DOF[lad], (lad, len(names))
+
+
+def test_oracle_pins_mu_fp_exactly(setup):
+    """ORACLE: mu = tp + mu_fp_fixed with no FP parameters, no calibration site."""
+    from CDDF_analysis.hbi_mcmc.fp_ladder import model_cc_ladder
+    pk, consts, Mg, counts, fpc = setup
+    rng = np.random.default_rng(0)
+    mu_fixed = rng.poisson(2.0, size=np.asarray(pk.counts).shape).astype(float)
+    mu_fixed[:, :, :2] = 0.0
+    tr = _trace(model_cc_ladder, 11, consts, Mg, counts=counts, fp_counts=fpc, ladder="ORACLE", mu_fp_fixed=mu_fixed)
+    sampled = [k for k, v in tr.items() if v["type"] == "sample" and not v.get("is_observed")]
+    assert not any(k.startswith("fp_") for k in sampled) and "t" not in sampled
+    assert "fp_counts" not in tr
+    fn = tr["counts"]["fn"]; mu = np.asarray(getattr(fn, "base_dist", fn).rate)
+    # tp alone from a second trace with mu_fp_fixed = 0 at the same seed
+    tr0 = _trace(model_cc_ladder, 11, consts, Mg, counts=counts, fp_counts=fpc, ladder="ORACLE", mu_fp_fixed=np.zeros_like(mu_fixed))
+    fn0 = tr0["counts"]["fn"]; tp = np.asarray(getattr(fn0, "base_dist", fn0).rate)
+    # same seed => identical population draws; mu must equal tp + mu_fixed to float32 precision
+    # (prior draws of f can be astronomically large, so compare relatively, and absolutely
+    # only where the TP term is small enough for the FP term to be resolvable)
+    assert np.allclose(mu, tp + mu_fixed, rtol=1e-6, atol=1e-6)
+    small = tp < 1e3
+    assert small.sum() > 100
+    assert np.allclose((mu - tp)[small], mu_fixed[small], rtol=1e-4, atol=1e-3)

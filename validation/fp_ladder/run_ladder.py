@@ -33,7 +33,8 @@ NHAT_GROUPS = (("19.5_20.0", 19.5, 20.0), ("20.0_20.3", 20.0, 20.3), ("20.3_22.4
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pack", required=True)
-    ap.add_argument("--ladder", required=True, choices=list(FP_SITES))
+    ap.add_argument("--ladder", required=True, choices=list(FP_SITES),
+                    help="M0..M5 = sealed ladder; ORACLE = DIAGNOSTIC (mu_FP pinned to the mock FP-truth census; needs --census)")
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--chains", type=int, default=4)
     ap.add_argument("--warmup", type=int, default=1500)
@@ -56,12 +57,21 @@ def main():
     counts = jnp.asarray(np.asarray(pk.counts, float))
     fpc = jnp.asarray(np.asarray(pk.fp_counts, float))
 
+    mu_fixed = None
+    if a.ladder == "ORACLE":
+        if not (a.census and os.path.exists(a.census)):
+            raise SystemExit("ORACLE diagnostic requires --census")
+        cz = np.load(a.census, allow_pickle=True)
+        mu_fixed = np.asarray(cz["hostless"], float)            # (C, Kf, S) realised mock FP truth
+        if mu_fixed.shape != tuple(np.asarray(pk.counts).shape):
+            raise SystemExit(f"census shape {mu_fixed.shape} != counts {np.asarray(pk.counts).shape}")
     from numpyro.infer import MCMC, NUTS
     kern = NUTS(model_cc_ladder, target_accept_prob=a.target_accept)
     mcmc = MCMC(kern, num_warmup=a.warmup, num_samples=a.samples, num_chains=a.chains,
                 chain_method="sequential", progress_bar=False)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts, fp_counts=fpc,
              ladder=a.ladder, t_sd=a.t_sd, tau_scale=a.tau_scale, calib_weight=a.calib_weight,
+             mu_fp_fixed=mu_fixed,
              extra_fields=("potential_energy", "energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
@@ -117,7 +127,7 @@ def main():
                            split_rhat_numpyro=round(float(split_gelman_rubin(cs)), 4),
                            ess=round(float(effective_sample_size(cs)), 1),
                            perchain_median=[round(float(np.median(c)), 5) for c in cs])
-    lam_draws = np.asarray(sam["lam_fp"])                       # (D, C, S)
+    lam_draws = np.asarray(sam["lam_fp"])                       # (D, C, S)  (zeros under ORACLE)
     naive = float(np.asarray(pk.fp_counts, float).sum() / consts.fp_ell_eff)
     t_draws = np.asarray(sam["t"]) if "t" in sam else np.zeros((lam_draws.shape[0], consts.n_kk))
     # per-draw mu_FP summed over k within coarse blocks: mu_FP[c,K,s] = w ell (1-eta) e^{t_K} lam E_{K,s}
@@ -160,13 +170,14 @@ def main():
             term = np.where(n > 0, n * np.log(n / mu), 0.0)
         return 2.0 * np.sum(term - (n - mu), axis=(-2, -1))
     D_obs = dev(obs[None], mu_cal); rep_n = rng.poisson(mu_cal); D_rep = dev(rep_n, mu_cal)
-    p_dev = float(((D_rep > D_obs).mean() + 0.5 * (D_rep == D_obs).mean()))
+    p_dev = float(((D_rep > D_obs).mean() + 0.5 * (D_rep == D_obs).mean())) if a.ladder != "ORACLE" else float("nan")
     hi = cc >= 20.2 - 1e-9
     lam_hi = mu_cal[:, hi, :].sum(axis=(1, 2))                    # expected loa-0 events at Nhat>=20.2 per draw
     p0_hi = float(np.mean(np.exp(-lam_hi)))                       # posterior predictive P(0)
     calib = dict(n_draws=int(len(sub)), deviance_obs_p16_50_84=[float(x) for x in np.percentile(D_obs, [16, 50, 84])],
                  deviance_pvalue=p_dev, expected_loa0_events_ge20p2_p16_50_84=[float(x) for x in np.percentile(lam_hi, [16, 50, 84])],
-                 prob_zero_ge20p2=p0_hi, flag=bool(p_dev < 0.01 or p_dev > 0.99 or p0_hi < 0.05),
+                 prob_zero_ge20p2=p0_hi, flag=(bool(p_dev < 0.01 or p_dev > 0.99 or p0_hi < 0.05) if a.ladder != "ORACLE" else None),
+                 note=("ORACLE: no FP parameters; calibration check not applicable" if a.ladder == "ORACLE" else ""),
                  per_row_expected_median=[float(x) for x in np.median(mu_cal.sum(axis=2), axis=0)], per_row_obs=[float(x) for x in obs.sum(axis=1)])
     # posterior-median predictive vs obs (VERBATIM logic)
     idx_med = int(np.argsort(np.asarray(sam["theta_level"]))[len(sam["theta_level"]) // 2])
@@ -175,7 +186,8 @@ def main():
     Cc = jax.nn.sigmoid(consts.eta_hat + pc_med)[:, consts.b_to_cell]
     w = consts.g_bk * jnp.exp(th_med) * consts.dN_b[:, None]
     tpx = jnp.einsum("skcb,sb,bk->cks", Mg, Cc, w) * consts.dX[None, :, :]
-    fpx = (consts.fp_w * consts.fp_ell_eff * (1.0 - consts.fp_eta_c)[:, None, None]
+    fpx = (jnp.asarray(mu_fixed) if a.ladder == "ORACLE" else
+           consts.fp_w * consts.fp_ell_eff * (1.0 - consts.fp_eta_c)[:, None, None]
            * jnp.exp(t_med[consts.kz_to_K])[None, :, None] * lf_med[:, None, :] * consts.fp_E[None, :, :])
     tot_obs = float(np.asarray(pk.counts, float).sum())
     diag = dict(
@@ -197,7 +209,9 @@ def main():
     out = dict(pack=a.pack, ladder=a.ladder, stage=a.stage, n_draws=int(f_draws.shape[0]), chains=a.chains,
                warmup=a.warmup, samples=a.samples, divergences=int(div_g.sum()), thresholds=rep,
                reporting_bins=binrep, perz_recovery=perz, diagnostics=diag, run_config=run_config(a),
-               role="MOCK-ONLY FP-model ladder candidate run (sealed predeclaration 3112022a); NOT a science product")
+               role=("DIAGNOSTIC ORACLE run: mu_FP pinned to the mock FP-truth census; OUTSIDE the sealed ladder, never a candidate"
+                     if a.ladder == "ORACLE" else
+                     "MOCK-ONLY FP-model ladder candidate run (sealed predeclaration 3112022a); NOT a science product"))
     json.dump(out, open(a.out, "w"), indent=1)
     base = a.out[:-5]
     np.savez(base + "_fdraws.npz", f=f_draws, truth_f=ft, ntrue_edges=ntrue, zf_edges=np.asarray(pk.zf_edges), dX_k=dX_k)

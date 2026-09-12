@@ -48,7 +48,7 @@ import numpyro.distributions as dist
 LADDER_MODELS = ("M0", "M1", "M2", "M3", "M4", "M5")
 
 # nominal FP degrees of freedom per model (predeclaration §4)
-NOMINAL_FP_DOF = {"M0": 1, "M1": 4, "M2": 10, "M3": 11, "M4": 40, "M5": 215}
+NOMINAL_FP_DOF = {"M0": 1, "M1": 4, "M2": 10, "M3": 11, "M4": 40, "M5": 215, "ORACLE": 0}
 
 
 def live_mask(consts):
@@ -136,6 +136,7 @@ def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight):
 
 def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
                     t_sd=1.0, tau_scale=0.5, calib_weight=1.0,
+                    mu_fp_fixed=None,
                     sigma_N_scale=0.5, sigma_z_scale=0.5,
                     level_scale=4.0, slope_scale=2.0):
     """model_cc with the FP block replaced by ladder member ``ladder``.
@@ -143,8 +144,10 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
     Population prior, completeness offsets, fold and likelihood are copied
     verbatim from cc_posterior_validation.model_cc (tests/test_fp_ladder.py
     asserts fold identity at equal (lam_fp, t) to 1e-12)."""
-    if ladder not in LADDER_MODELS:
+    if ladder not in LADDER_MODELS and ladder != "ORACLE":
         raise ValueError(f"unknown ladder member {ladder!r}")
+    if ladder == "ORACLE" and mu_fp_fixed is None:
+        raise ValueError("ORACLE diagnostic needs mu_fp_fixed (C,Kf,S) = the mock FP truth census")
     B, Kf = consts.n_b, consts.n_k
     # ---- population prior (VERBATIM model_cc) ------------------------------
     sigma_N = numpyro.sample("sigma_N", dist.HalfNormal(sigma_N_scale))
@@ -167,18 +170,30 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
         "psi_c", dist.Normal(0.0, consts.sigma_hat).to_event(2))
 
     # ---- the FP block (the ONLY change) ------------------------------------
-    lam_fp, t = _fp_block(consts, fp_counts, ladder, t_sd=t_sd,
-                          tau_scale=tau_scale, calib_weight=calib_weight)
+    if ladder == "ORACLE":
+        # DIAGNOSTIC ONLY (outside the sealed ladder; uses the mock's own FP truth):
+        # mu_FP pinned per (c,k,s) to the hostless@17.2 census; no FP parameter,
+        # no calibration term. Answers "does a TRUE FP field close the gate?"
+        C, S, KK = consts.n_c, consts.n_s, consts.n_kk
+        lam_fp = numpyro.deterministic("lam_fp", jnp.zeros((C, S)))
+        numpyro.deterministic("fp_lam_total", jnp.asarray(0.0))
+        t = numpyro.deterministic("t", jnp.zeros(KK))
+    else:
+        lam_fp, t = _fp_block(consts, fp_counts, ladder, t_sd=t_sd,
+                              tau_scale=tau_scale, calib_weight=calib_weight)
 
     # ---- fold + likelihood (VERBATIM model_cc) -----------------------------
     Cc = jax.nn.sigmoid(consts.eta_hat + psi_c)[:, consts.b_to_cell]  # (S,B)
     f = jnp.exp(theta)                                                # (B,Kf)
     w = consts.g_bk * f * consts.dN_b[:, None]                        # (B,Kf)
     tp = jnp.einsum("skcb,sb,bk->cks", Mg, Cc, w) * consts.dX[None, :, :]
-    fp = (consts.fp_w * consts.fp_ell_eff
-          * (1.0 - consts.fp_eta_c)[:, None, None]
-          * jnp.exp(t[consts.kz_to_K])[None, :, None]
-          * lam_fp[:, None, :] * consts.fp_E[None, :, :])
+    if ladder == "ORACLE":
+        fp = jnp.asarray(np.asarray(mu_fp_fixed, float))
+    else:
+        fp = (consts.fp_w * consts.fp_ell_eff
+              * (1.0 - consts.fp_eta_c)[:, None, None]
+              * jnp.exp(t[consts.kz_to_K])[None, :, None]
+              * lam_fp[:, None, :] * consts.fp_E[None, :, :])
     mu = tp + fp
     obs_mask = jnp.broadcast_to(jnp.asarray(consts.dX > 0)[None, :, :],
                                 mu.shape)
@@ -189,6 +204,7 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
 
 # sampled FP-block site names per model (for by-chain retention + whitening)
 FP_SITES = {
+    "ORACLE": (),
     "M0": ("fp_l0",),
     "M1": ("fp_l0", "t"),
     "M2": ("fp_l0", "fp_b1", "fp_h", "t"),
