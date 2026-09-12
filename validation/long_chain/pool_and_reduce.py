@@ -165,12 +165,13 @@ def main():
     eb = [round(C.ebfmi(e), 4) for e in Eall]
     allq = list(qd.values()) + list(nd.values())
     names = list(qd) + list(nd)
-    wr = max(allq, key=lambda x: x["rhat_true"])
-    wb = min(allq, key=lambda x: x["ess_bulk"])
-    wt = min(allq, key=lambda x: x["ess_tail"])
-    crit = dict(max_rhat_true=wr["rhat_true"], max_rhat_true_quantity=names[allq.index(wr)],
-                min_ess_bulk=wb["ess_bulk"], min_ess_bulk_quantity=names[allq.index(wb)],
-                min_ess_tail=wt["ess_tail"], min_ess_tail_quantity=names[allq.index(wt)],
+    ir = max(range(len(allq)), key=lambda i: allq[i]["rhat_true"])
+    ib = min(range(len(allq)), key=lambda i: allq[i]["ess_bulk"])
+    it = min(range(len(allq)), key=lambda i: allq[i]["ess_tail"])
+    wr, wb, wt = allq[ir], allq[ib], allq[it]
+    crit = dict(max_rhat_true=wr["rhat_true"], max_rhat_true_quantity=names[ir],
+                min_ess_bulk=wb["ess_bulk"], min_ess_bulk_quantity=names[ib],
+                min_ess_tail=wt["ess_tail"], min_ess_tail_quantity=names[it],
                 divergences=int(Dall.sum()), ebfmi_min=float(np.min(eb)),
                 n_chains=nch_tot, n_quantities=len(allq),
                 pass_rhat=bool(wr["rhat_true"] <= RHAT_MAX),

@@ -84,17 +84,18 @@ def evaluate_run(run_json, pack):
                t_per_chain_medians={f"t[{k}]": nd[f"t[{k}]"]["chain_medians"]
                                     for k in range(3)})
     allq = list(qd.values()) + list(nd.values())
-    worst_r = max(allq, key=lambda x: x["rhat_true"])
-    worst_b = min(allq, key=lambda x: x["ess_bulk"])
-    worst_t = min(allq, key=lambda x: x["ess_tail"])
     names = list(qd) + list(nd)
+    ir = max(range(len(allq)), key=lambda i: allq[i]["rhat_true"])
+    ib = min(range(len(allq)), key=lambda i: allq[i]["ess_bulk"])
+    it = min(range(len(allq)), key=lambda i: allq[i]["ess_tail"])
+    worst_r, worst_b, worst_t = allq[ir], allq[ib], allq[it]
     rec["criteria"] = dict(
         max_rhat_true=worst_r["rhat_true"],
-        max_rhat_true_quantity=names[allq.index(worst_r)],
+        max_rhat_true_quantity=names[ir],
         min_ess_bulk=worst_b["ess_bulk"],
-        min_ess_bulk_quantity=names[allq.index(worst_b)],
+        min_ess_bulk_quantity=names[ib],
         min_ess_tail=worst_t["ess_tail"],
-        min_ess_tail_quantity=names[allq.index(worst_t)],
+        min_ess_tail_quantity=names[it],
         n_quantities=len(allq),
         pass_rhat=bool(worst_r["rhat_true"] <= RHAT_MAX),
         pass_ess_bulk=bool(worst_b["ess_bulk"] >= ESS_BULK_MIN),
