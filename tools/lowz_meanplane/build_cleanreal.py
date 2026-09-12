@@ -60,8 +60,15 @@ ap.add_argument('--h2m-dir', default=H2M,
                 help='campaign dir holding qsocat_h2m.fits, whose sightlines '
                      'are excluded from the clean substrate. Must be the H2-M '
                      'campaign built on the SAME S/N plane.')
+ap.add_argument('--seed', type=int, default=SEED,
+                help='planner RNG seed.  DEFAULT = the declared/frozen seed, '
+                     'so the single-realisation behaviour is unchanged.  The '
+                     '8-realisation L2 campaign (2026-09-12) passes one of the '
+                     'seven predeclared seeds 20260901..20260907; nothing else '
+                     'about the protocol varies.')
 ap.add_argument('--plan-only', action='store_true')
 args = ap.parse_args()
+SEED = args.seed
 RUN = args.run_dir
 H2M = args.h2m_dir
 SNR_FIELD = 'RED_SNR' if args.snr_source == ss.ARCHIVE_MEDIAN else 'SNR_MEAN'

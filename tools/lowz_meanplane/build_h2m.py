@@ -72,8 +72,15 @@ ap.add_argument('--snr-source', default=ss.ARCHIVE_MEDIAN,
                 help='S/N variable for the >2 cut AND the cell stratification. '
                      'Default reproduces the frozen (defective) plan exactly.')
 ap.add_argument('--run-dir', default=RUN)
+ap.add_argument('--seed', type=int, default=SEED,
+                help='planner RNG seed.  DEFAULT = the declared/frozen seed, '
+                     'so the single-realisation behaviour is unchanged.  The '
+                     '8-realisation L2 campaign (2026-09-12) passes one of the '
+                     'seven predeclared seeds 20260901..20260907; nothing else '
+                     'about the protocol varies.')
 ap.add_argument('--plan-only', action='store_true')
 args = ap.parse_args()
+SEED = args.seed
 RUN = args.run_dir
 SNR_FIELD = 'RED_SNR' if args.snr_source == ss.ARCHIVE_MEDIAN else 'SNR_MEAN'
 
