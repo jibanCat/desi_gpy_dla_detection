@@ -7,6 +7,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=04:00:00
+#SBATCH --array=0-5
 #SBATCH --output=/home/mfho/lowz_clean_work_2026-09-12/fp_ladder/logs/%x_%A_%a.log
 # FP-model ladder, MOCK-ONLY (sealed predeclaration 3112022a...). Env: LADDER (M0..M5), WAVE (dir name).
 # array index -> (family, seed): 0-5 = 2lpt0/london0/saclay0 x seeds 20260811/20260812
