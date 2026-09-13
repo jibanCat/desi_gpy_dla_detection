@@ -52,7 +52,7 @@ def fig1_headline(runs, variants, seed, out):
         ax.axhline(0, color="k", lw=0.8)
         ax.set_xticks(x); ax.set_xticklabels(variants, rotation=35, ha="right")
         ax.set_ylabel(f"dN/dX({key.replace('ge', '≥')}) median bias [%]")
-        ax.set_title(f"{key.replace('ge', 'N ≥ ')}: recovered vs mock truth (seed {seed}); bars = 68 % half-width")
+        ax.set_title(f"{key.replace('ge', 'N ≥ ')} (seed {seed}; bars = 68 % half-width)", fontsize=9)
     axes[0].legend(ncol=4, fontsize=7.5)
     fig.tight_layout(); fig.savefig(out); plt.close(fig)
 
