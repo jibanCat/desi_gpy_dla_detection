@@ -148,3 +148,28 @@ def test_oracle_pins_mu_fp_exactly(setup):
     small = tp < 1e3
     assert small.sum() > 100
     assert np.allclose((mu - tp)[small], mu_fixed[small], rtol=1e-4, atol=1e-3)
+
+
+def test_fixed_component_hooks(setup):
+    """Diagnostic hooks: P adds a fixed term; C 2D/3D, M and E paths run and change tp as expected."""
+    import jax.numpy as jnp
+    from CDDF_analysis.hbi_mcmc.fp_ladder import model_cc_ladder
+    pk, consts, Mg, counts, fpc = setup
+    C, Kf, S, B = consts.n_c, consts.n_k, consts.n_s, consts.n_b
+    z3 = np.zeros((C, Kf, S))
+    def rate(**kw):
+        tr = _trace(model_cc_ladder, 21, consts, Mg, counts=counts, fp_counts=fpc, ladder="ORACLE", mu_fp_fixed=z3, **kw)
+        fn = tr["counts"]["fn"]; return np.asarray(getattr(fn, "base_dist", fn).rate)
+    base = rate()
+    extra = np.full((C, Kf, S), 3.0); extra[:, :, :2] = 0
+    assert np.allclose(rate(mu_extra_fixed=extra) - base, extra, rtol=1e-5, atol=1e-3)
+    # E = 0 kills the TP term entirely
+    assert np.allclose(rate(E_fixed=np.zeros((C, Kf, S, B))), 0.0, atol=1e-9)
+    # Mg_fixed identical to Mg reproduces base; scaled by 2 doubles tp
+    assert np.allclose(rate(Mg_fixed=np.asarray(Mg)), base, rtol=1e-6)
+    assert np.allclose(rate(Mg_fixed=2 * np.asarray(Mg)), 2 * base, rtol=1e-6)
+    # C_fixed 2D equal to the calibrated C at psi_c=0 gives a finite fold; 3D ones broadcast
+    C2 = np.asarray(1 / (1 + np.exp(-np.asarray(consts.eta_hat))))[:, np.asarray(consts.b_to_cell)]
+    r2 = rate(C_fixed=C2); assert np.all(np.isfinite(r2)) and r2.shape == base.shape
+    C3 = np.broadcast_to(C2.T[:, None, :], (B, Kf, S)).copy()
+    r3 = rate(C_fixed=C3); assert np.all(np.isfinite(r3)) and r3.shape == base.shape

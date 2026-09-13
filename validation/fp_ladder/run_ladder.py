@@ -45,6 +45,9 @@ def main():
     ap.add_argument("--calib-weight", type=float, default=1.0)
     ap.add_argument("--census", default=None, help="fp_census_<fam>.npz (hostless@17.2) for the FP-truth soft flag")
     ap.add_argument("--stage", default="")
+    ap.add_argument("--ops", default=None, help="DIAGNOSTIC: empirical_ops_<fam>.npz (matched-truth operators)")
+    ap.add_argument("--fix", default="", help="DIAGNOSTIC: comma list of fixed components from --ops/--census: "
+                    "P (P6b sub-floor-host term), C (C_true[b,K,s]), Cz (C_true[b,s], z-free), M (M_true[s,K,c,b]), E (E_true[c,K,s,b] full transfer)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
@@ -65,13 +68,38 @@ def main():
         mu_fixed = np.asarray(cz["hostless"], float)            # (C, Kf, S) realised mock FP truth
         if mu_fixed.shape != tuple(np.asarray(pk.counts).shape):
             raise SystemExit(f"census shape {mu_fixed.shape} != counts {np.asarray(pk.counts).shape}")
+    fix = [x for x in a.fix.split(",") if x]
+    mu_extra = C_fixed = Mg_fixed = E_fixed = None
+    kz_np = np.asarray(consts.kz_to_K); KK = consts.n_kk
+    if fix:
+        if a.ladder != "ORACLE":
+            raise SystemExit("--fix is a DIAGNOSTIC and requires --ladder ORACLE (FP pinned to truth)")
+        if "P" in fix:
+            cz = np.load(a.census, allow_pickle=True)
+            mu_extra = np.asarray(cz["host_17p2_19p0"], float)      # (C,Kf,S) realised sub-floor-host detections
+        need_ops = [x for x in fix if x != "P"]
+        if need_ops:
+            if not (a.ops and os.path.exists(a.ops)):
+                raise SystemExit("--fix C/Cz/M/E requires --ops empirical_ops_<fam>.npz")
+            op = np.load(a.ops, allow_pickle=True)
+            if "C" in fix:
+                Cbk = np.asarray(op["C_true_bKs"], float)              # (B,KK,S)
+                C_fixed = Cbk[:, kz_np, :]                             # (B,Kf,S) expanded per fine z
+            if "Cz" in fix:
+                C_fixed = np.asarray(op["C_true_bs"], float).T         # (S,B) from (B,S)
+            if "M" in fix:
+                Msk = np.asarray(op["M_true_sKcb"], float)             # (S,KK,C,B)
+                Mg_fixed = Msk[:, kz_np, :, :]                         # (S,Kf,C,B)
+            if "E" in fix:
+                EK = np.asarray(op["E_true_cKsb"], float)              # (C,KK,S,B)
+                E_fixed = EK[:, kz_np, :, :]                           # (C,Kf,S,B)
     from numpyro.infer import MCMC, NUTS
     kern = NUTS(model_cc_ladder, target_accept_prob=a.target_accept)
     mcmc = MCMC(kern, num_warmup=a.warmup, num_samples=a.samples, num_chains=a.chains,
                 chain_method="sequential", progress_bar=False)
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts, fp_counts=fpc,
              ladder=a.ladder, t_sd=a.t_sd, tau_scale=a.tau_scale, calib_weight=a.calib_weight,
-             mu_fp_fixed=mu_fixed,
+             mu_fp_fixed=mu_fixed, mu_extra_fixed=mu_extra, C_fixed=C_fixed, Mg_fixed=Mg_fixed, E_fixed=E_fixed,
              extra_fields=("potential_energy", "energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
@@ -183,13 +211,31 @@ def main():
     idx_med = int(np.argsort(np.asarray(sam["theta_level"]))[len(sam["theta_level"]) // 2])
     th_med = jnp.asarray(np.asarray(sam["theta_pop"])[idx_med]); pc_med = jnp.asarray(np.asarray(sam["psi_c"])[idx_med])
     t_med = jnp.asarray(t_draws[idx_med]); lf_med = jnp.asarray(lam_draws[idx_med])
-    Cc = jax.nn.sigmoid(consts.eta_hat + pc_med)[:, consts.b_to_cell]
-    w = consts.g_bk * jnp.exp(th_med) * consts.dN_b[:, None]
-    tpx = jnp.einsum("skcb,sb,bk->cks", Mg, Cc, w) * consts.dX[None, :, :]
+    f_med = jnp.exp(th_med)
+    if E_fixed is not None:
+        tpx = jnp.einsum("cksb,bk->cks", jnp.asarray(E_fixed), f_med * consts.dN_b[:, None]) * consts.dX[None, :, :]
+    else:
+        Mg_use = Mg if Mg_fixed is None else jnp.asarray(Mg_fixed)
+        if C_fixed is None:
+            Cc = jax.nn.sigmoid(consts.eta_hat + pc_med)[:, consts.b_to_cell]
+            tpx = jnp.einsum("skcb,sb,bk->cks", Mg_use, Cc, consts.g_bk * f_med * consts.dN_b[:, None]) * consts.dX[None, :, :]
+        elif np.asarray(C_fixed).ndim == 2:
+            tpx = jnp.einsum("skcb,sb,bk->cks", Mg_use, jnp.asarray(C_fixed), consts.g_bk * f_med * consts.dN_b[:, None]) * consts.dX[None, :, :]
+        else:
+            tpx = jnp.einsum("skcb,bks,bk->cks", Mg_use, jnp.asarray(C_fixed), f_med * consts.dN_b[:, None]) * consts.dX[None, :, :]
     fpx = (jnp.asarray(mu_fixed) if a.ladder == "ORACLE" else
            consts.fp_w * consts.fp_ell_eff * (1.0 - consts.fp_eta_c)[:, None, None]
            * jnp.exp(t_med[consts.kz_to_K])[None, :, None] * lf_med[:, None, :] * consts.fp_E[None, :, :])
+    if mu_extra is not None:
+        fpx = fpx + jnp.asarray(mu_extra)
     tot_obs = float(np.asarray(pk.counts, float).sum())
+    obs3 = np.asarray(pk.counts, float); mu3 = np.asarray(tpx) + np.asarray(fpx); live3 = np.asarray(consts.dX) > 0
+    def _marg(ax):
+        o = obs3.sum(axis=ax); m = mu3.sum(axis=ax); return [float(x) for x in (m / np.maximum(o, 1.0))]
+    pred_marg = dict(mu_over_obs_by_nhat=_marg((1, 2)), mu_over_obs_by_z=_marg((0, 2)), mu_over_obs_by_snr=_marg((0, 1)),
+                     mu_over_obs_by_nhat_K=[[float(x) for x in (mu3[:, kz_np == K, :].sum((1, 2)) / np.maximum(obs3[:, kz_np == K, :].sum((1, 2)), 1.0))] for K in range(KK)],
+                     tp_over_obs_by_nhat=[float(x) for x in (np.asarray(tpx).sum((1, 2)) / np.maximum(obs3.sum((1, 2)), 1.0))],
+                     note="posterior-median draw (by theta_level); all fixed components included")
     diag = dict(
         ladder=a.ladder, nominal_fp_dof=NOMINAL_FP_DOF[a.ladder], t_sd=a.t_sd, tau_scale=a.tau_scale, calib_weight=a.calib_weight,
         target_accept=a.target_accept, divergences=int(div_g.sum()), divergences_per_chain=[int(x) for x in div_g.sum(axis=1)],
@@ -205,7 +251,8 @@ def main():
         estimand_mixing=mixing,
         predictive_total_ratio=round(float((np.asarray(tpx) + np.asarray(fpx)).sum() / tot_obs), 4),
         predictive_fp_share=round(float(np.asarray(fpx).sum() / (np.asarray(tpx).sum() + np.asarray(fpx).sum())), 4),
-        calibration_predictive=calib, fp_by_block=fp_by_block, fp_truth=fp_truth)
+        calibration_predictive=calib, fp_by_block=fp_by_block, fp_truth=fp_truth,
+        diag_fix=fix, diag_ops=a.ops, predictive_marginals=pred_marg)
     out = dict(pack=a.pack, ladder=a.ladder, stage=a.stage, n_draws=int(f_draws.shape[0]), chains=a.chains,
                warmup=a.warmup, samples=a.samples, divergences=int(div_g.sum()), thresholds=rep,
                reporting_bins=binrep, perz_recovery=perz, diagnostics=diag, run_config=run_config(a),

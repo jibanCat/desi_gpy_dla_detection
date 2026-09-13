@@ -136,7 +136,7 @@ def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight):
 
 def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
                     t_sd=1.0, tau_scale=0.5, calib_weight=1.0,
-                    mu_fp_fixed=None,
+                    mu_fp_fixed=None, mu_extra_fixed=None, C_fixed=None, Mg_fixed=None, E_fixed=None,
                     sigma_N_scale=0.5, sigma_z_scale=0.5,
                     level_scale=4.0, slope_scale=2.0):
     """model_cc with the FP block replaced by ladder member ``ladder``.
@@ -182,11 +182,27 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
         lam_fp, t = _fp_block(consts, fp_counts, ladder, t_sd=t_sd,
                               tau_scale=tau_scale, calib_weight=calib_weight)
 
-    # ---- fold + likelihood (VERBATIM model_cc) -----------------------------
-    Cc = jax.nn.sigmoid(consts.eta_hat + psi_c)[:, consts.b_to_cell]  # (S,B)
+    # ---- fold + likelihood (VERBATIM model_cc unless a DIAGNOSTIC fixed component is given) ----
     f = jnp.exp(theta)                                                # (B,Kf)
-    w = consts.g_bk * f * consts.dN_b[:, None]                        # (B,Kf)
-    tp = jnp.einsum("skcb,sb,bk->cks", Mg, Cc, w) * consts.dX[None, :, :]
+    if E_fixed is not None:
+        # DIAGNOSTIC O-E: the whole absorber-side transfer replaced by the mock's empirical
+        # E[c,k,s,b] = N_match / truth_bks; tp = sum_b E f dN dX. psi_c is sampled but INERT.
+        w = f * consts.dN_b[:, None]                                  # (B,Kf)
+        tp = jnp.einsum("cksb,bk->cks", jnp.asarray(np.asarray(E_fixed, float)), w) * consts.dX[None, :, :]
+    else:
+        Mg_use = Mg if Mg_fixed is None else jnp.asarray(np.asarray(Mg_fixed, float))
+        w = consts.g_bk * f * consts.dN_b[:, None]                    # (B,Kf)
+        if C_fixed is None:
+            Cc = jax.nn.sigmoid(consts.eta_hat + psi_c)[:, consts.b_to_cell]  # (S,B)
+            tp = jnp.einsum("skcb,sb,bk->cks", Mg_use, Cc, w) * consts.dX[None, :, :]
+        else:
+            Cf = np.asarray(C_fixed, float)
+            if Cf.ndim == 2:                                          # (S,B): z-free truth completeness
+                tp = jnp.einsum("skcb,sb,bk->cks", Mg_use, jnp.asarray(Cf), w) * consts.dX[None, :, :]
+            else:                                                     # (B,Kf,S): z-resolved truth completeness
+                # DIAGNOSTIC O-C: g carries the model's z-trend; a z-resolved C_true replaces C AND g
+                w0 = f * consts.dN_b[:, None]
+                tp = jnp.einsum("skcb,bks,bk->cks", Mg_use, jnp.asarray(Cf), w0) * consts.dX[None, :, :]
     if ladder == "ORACLE":
         fp = jnp.asarray(np.asarray(mu_fp_fixed, float))
     else:
@@ -194,6 +210,8 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
               * (1.0 - consts.fp_eta_c)[:, None, None]
               * jnp.exp(t[consts.kz_to_K])[None, :, None]
               * lam_fp[:, None, :] * consts.fp_E[None, :, :])
+    if mu_extra_fixed is not None:
+        fp = fp + jnp.asarray(np.asarray(mu_extra_fixed, float))     # DIAGNOSTIC O-P: fixed sub-floor-host term
     mu = tp + fp
     obs_mask = jnp.broadcast_to(jnp.asarray(consts.dX > 0)[None, :, :],
                                 mu.shape)
