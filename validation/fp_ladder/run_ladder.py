@@ -50,6 +50,9 @@ def main():
     ap.add_argument("--extra-fixed-file", default=None, help="LADDER: npz with mu_extra (C,Kf,S) = the FIXED sub-floor-host term (A0)")
     ap.add_argument("--lam-imputations", type=int, default=1, help="M1CUT: number J of stratified imputations of Lambda from p(Lambda|D_loa0)")
     ap.add_argument("--lam-imputation", type=int, default=0, help="M1CUT: which imputation j (0..J-1) this run uses")
+    ap.add_argument("--require-support", action="store_true",
+                    help="LADDER (PI ruling 2026-09-13b §3): fail closed unless pack / census / ops carry stamped, "
+                         "identical supports at the 'row' level (truth_host_floor reported alongside)")
     ap.add_argument("--ops", default=None, help="DIAGNOSTIC: empirical_ops_<fam>.npz (matched-truth operators)")
     ap.add_argument("--fix", default="", help="DIAGNOSTIC: comma list of fixed components from --ops/--census: "
                     "P (P6b sub-floor-host term), C (C_true[b,K,s]), Cz (C_true[b,s], z-free), M (M_true[s,K,c,b]), E (E_true[c,K,s,b] full transfer)")
@@ -57,6 +60,13 @@ def main():
     a = ap.parse_args()
     numpyro.set_host_device_count(a.chains)
 
+    support_record = None
+    if a.require_support:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "absorber_ladder", "support"))
+        import support_contract as SC
+        row_fields = tuple(f for f in SC.SUPPORT_FIELDS if f != "truth_host_floor")
+        support_record = SC.check_support_consistency(a.pack, a.census, a.ops, fields=row_fields)   # raises on mismatch
+        print("SUPPORT GATE PASS (row level):", support_record["support_id_short"], "host floors:", support_record["truth_host_floor"])
     pk = load_pack(a.pack)
     tc = np.asarray(pk.truth_counts)
     if tc.size == 0 or tc.sum() <= 0:
@@ -276,6 +286,7 @@ def main():
     out = dict(pack=a.pack, ladder=a.ladder, stage=a.stage, n_draws=int(f_draws.shape[0]), chains=a.chains,
                warmup=a.warmup, samples=a.samples, divergences=int(div_g.sum()), thresholds=rep,
                reporting_bins=binrep, perz_recovery=perz, diagnostics=diag, run_config=run_config(a),
+               support_gate=support_record,
                role=("DIAGNOSTIC ORACLE run: mu_FP pinned to the mock FP-truth census; OUTSIDE the sealed ladder, never a candidate"
                      if a.ladder == "ORACLE" else
                      "MOCK-ONLY FP-model ladder candidate run (sealed predeclaration 3112022a); NOT a science product"))

@@ -214,8 +214,12 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
             Cf = np.asarray(C_fixed, float)
             if Cf.ndim == 2:                                          # (S,B): z-free truth completeness
                 tp = jnp.einsum("skcb,sb,bk->cks", Mg_use, jnp.asarray(Cf), w) * consts.dX[None, :, :]
-            else:                                                     # (B,Kf,S): z-resolved truth completeness
-                # DIAGNOSTIC O-C: g carries the model's z-trend; a z-resolved C_true replaces C AND g
+            else:                                                     # (B,Kf,S): z-resolved completeness
+                # BY DESIGN a z-resolved fixed completeness C[b,k,s] REPLACES the product C·g: the frozen
+                # g[b,k] is the z-shape of completeness relative to its z-marginal, so supplying C with its
+                # own z dependence and multiplying by g again would double-count the z shape. A z-pooled
+                # (S,B) object keeps g (2-D branch above). Callers wanting a like-for-like z-pooled
+                # comparison with g must pass the 2-D array.
                 w0 = f * consts.dN_b[:, None]
                 tp = jnp.einsum("skcb,bks,bk->cks", Mg_use, jnp.asarray(Cf), w0) * consts.dX[None, :, :]
     if ladder == "ORACLE":
