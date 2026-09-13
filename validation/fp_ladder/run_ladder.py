@@ -96,7 +96,9 @@ def main():
         cf = np.load(a.c_fixed_file, allow_pickle=True)
         C_fixed = np.asarray(cf["C_fixed_bks"], float) if "C_fixed_bks" in cf.files else np.asarray(cf["C_fixed"], float)
     if a.extra_fixed_file:
-        mu_extra = np.asarray(np.load(a.extra_fixed_file, allow_pickle=True)["mu_extra"], float)
+        ef = np.load(a.extra_fixed_file, allow_pickle=True)
+        key = "mu_extra" if "mu_extra" in ef.files else "mu_P6b_cks"
+        mu_extra = (mu_extra if mu_extra is not None else 0.0) + np.asarray(ef[key], float)   # P6b-cal (transported rate)
     kz_np = np.asarray(consts.kz_to_K); KK = consts.n_kk
     if fix:
         if a.ladder != "ORACLE":
