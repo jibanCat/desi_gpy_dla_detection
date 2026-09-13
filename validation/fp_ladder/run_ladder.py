@@ -101,8 +101,10 @@ def main():
         mu_extra = (mu_extra if mu_extra is not None else 0.0) + np.asarray(ef[key], float)   # P6b-cal (transported rate)
     kz_np = np.asarray(consts.kz_to_K); KK = consts.n_kk
     if fix:
-        if a.ladder != "ORACLE":
-            raise SystemExit("--fix is a DIAGNOSTIC and requires --ladder ORACLE (FP pinned to truth)")
+        # 'P' (the fixed sub-floor-host term from the census, A0) is allowed under any FP member;
+        # the truth-pinned absorber-side replacements C/Cz/M/E are DIAGNOSTICS and need ORACLE.
+        if a.ladder != "ORACLE" and any(x != "P" for x in fix):
+            raise SystemExit("--fix C/Cz/M/E are DIAGNOSTICS and require --ladder ORACLE (FP pinned to truth)")
         if "P" in fix:
             cz = np.load(a.census, allow_pickle=True)
             mu_extra = np.asarray(cz["host_17p2_19p0"], float)      # (C,Kf,S) realised sub-floor-host detections
