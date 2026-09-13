@@ -45,6 +45,11 @@ def main():
     ap.add_argument("--calib-weight", type=float, default=1.0)
     ap.add_argument("--census", default=None, help="fp_census_<fam>.npz (hostless@17.2) for the FP-truth soft flag")
     ap.add_argument("--stage", default="")
+    ap.add_argument("--mg-fixed-file", default=None, help="LADDER: npz with Mg (S,Kf,C,B) = a FIXED response calibration variant")
+    ap.add_argument("--c-fixed-file", default=None, help="LADDER: npz with C_fixed (S,B) or C_fixed_bks (B,Kf,S) = a FIXED completeness variant")
+    ap.add_argument("--extra-fixed-file", default=None, help="LADDER: npz with mu_extra (C,Kf,S) = the FIXED sub-floor-host term (A0)")
+    ap.add_argument("--lam-imputations", type=int, default=1, help="M1CUT: number J of stratified imputations of Lambda from p(Lambda|D_loa0)")
+    ap.add_argument("--lam-imputation", type=int, default=0, help="M1CUT: which imputation j (0..J-1) this run uses")
     ap.add_argument("--ops", default=None, help="DIAGNOSTIC: empirical_ops_<fam>.npz (matched-truth operators)")
     ap.add_argument("--fix", default="", help="DIAGNOSTIC: comma list of fixed components from --ops/--census: "
                     "P (P6b sub-floor-host term), C (C_true[b,K,s]), Cz (C_true[b,s], z-free), M (M_true[s,K,c,b]), E (E_true[c,K,s,b] full transfer)")
@@ -70,6 +75,18 @@ def main():
             raise SystemExit(f"census shape {mu_fixed.shape} != counts {np.asarray(pk.counts).shape}")
     fix = [x for x in a.fix.split(",") if x]
     mu_extra = C_fixed = Mg_fixed = E_fixed = None
+    lam_fixed = None
+    if a.ladder == "M1CUT":
+        from CDDF_analysis.hbi_mcmc.fp_ladder import lambda_calibration_posterior_quantiles
+        qs = lambda_calibration_posterior_quantiles(pk.fp_counts, consts.fp_ell_eff, a.lam_imputations)
+        lam_fixed = float(qs[a.lam_imputation])
+    if a.mg_fixed_file:
+        Mg_fixed = np.asarray(np.load(a.mg_fixed_file, allow_pickle=True)["Mg"], float)
+    if a.c_fixed_file:
+        cf = np.load(a.c_fixed_file, allow_pickle=True)
+        C_fixed = np.asarray(cf["C_fixed_bks"], float) if "C_fixed_bks" in cf.files else np.asarray(cf["C_fixed"], float)
+    if a.extra_fixed_file:
+        mu_extra = np.asarray(np.load(a.extra_fixed_file, allow_pickle=True)["mu_extra"], float)
     kz_np = np.asarray(consts.kz_to_K); KK = consts.n_kk
     if fix:
         if a.ladder != "ORACLE":
@@ -100,6 +117,7 @@ def main():
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts, fp_counts=fpc,
              ladder=a.ladder, t_sd=a.t_sd, tau_scale=a.tau_scale, calib_weight=a.calib_weight,
              mu_fp_fixed=mu_fixed, mu_extra_fixed=mu_extra, C_fixed=C_fixed, Mg_fixed=Mg_fixed, E_fixed=E_fixed,
+             lam_fixed=lam_fixed,
              extra_fields=("potential_energy", "energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
@@ -252,7 +270,9 @@ def main():
         predictive_total_ratio=round(float((np.asarray(tpx) + np.asarray(fpx)).sum() / tot_obs), 4),
         predictive_fp_share=round(float(np.asarray(fpx).sum() / (np.asarray(tpx).sum() + np.asarray(fpx).sum())), 4),
         calibration_predictive=calib, fp_by_block=fp_by_block, fp_truth=fp_truth,
-        diag_fix=fix, diag_ops=a.ops, predictive_marginals=pred_marg)
+        diag_fix=fix, diag_ops=a.ops, predictive_marginals=pred_marg,
+        fixed_files=dict(mg=a.mg_fixed_file, c=a.c_fixed_file, extra=a.extra_fixed_file),
+        lam_cut=(dict(J=a.lam_imputations, j=a.lam_imputation, lam_fixed=lam_fixed) if a.ladder == "M1CUT" else None))
     out = dict(pack=a.pack, ladder=a.ladder, stage=a.stage, n_draws=int(f_draws.shape[0]), chains=a.chains,
                warmup=a.warmup, samples=a.samples, divergences=int(div_g.sum()), thresholds=rep,
                reporting_bins=binrep, perz_recovery=perz, diagnostics=diag, run_config=run_config(a),

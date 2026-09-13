@@ -45,10 +45,10 @@ import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 
-LADDER_MODELS = ("M0", "M1", "M2", "M3", "M4", "M5")
+LADDER_MODELS = ("M0", "M1", "M2", "M3", "M4", "M5", "M1CUT")
 
 # nominal FP degrees of freedom per model (predeclaration §4)
-NOMINAL_FP_DOF = {"M0": 1, "M1": 4, "M2": 10, "M3": 11, "M4": 40, "M5": 215, "ORACLE": 0}
+NOMINAL_FP_DOF = {"M0": 1, "M1": 4, "M2": 10, "M3": 11, "M4": 40, "M5": 215, "ORACLE": 0, "M1CUT": 3}
 
 
 def live_mask(consts):
@@ -71,7 +71,7 @@ def perks_log_share(fp_counts, live, a0=None):
     return m
 
 
-def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight):
+def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight, lam_fixed=None):
     """Sample the FP block; return (lam_fp (C,S) with zeros off-live, t (KK,))."""
     C, S, KK = consts.n_c, consts.n_s, consts.n_kk
     live = live_mask(consts)                              # (S,)
@@ -82,6 +82,20 @@ def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight):
     nhat = np.asarray(consts.nhat_edges, float)
     x_c = jnp.asarray(0.5 * (nhat[:-1] + nhat[1:]) - 20.0)  # (C,)
 
+    if ladder == "M1CUT":
+        # PI ruling 2026-09-13 §12 (cut feedback / modular): the FP total Lambda is NOT a
+        # sampled site. It is FIXED at one draw (imputation) from the loa-0 calibration
+        # posterior p(Lambda | D_loa0) = Gamma(N_FP + 1/2, ell_eff), supplied by the runner; the
+        # science posterior is the equal-weight pool over imputations. The Nhat x S/N shape is
+        # the FIXED loa-0 Perks template; only the coarse-z transfer t_K is survey-fitted. No
+        # fp_counts likelihood term (the calibration enters ONLY through p(Lambda | D_loa0)).
+        if lam_fixed is None:
+            raise ValueError("M1CUT needs lam_fixed (a draw from the loa-0 calibration posterior)")
+        m = jnp.asarray(perks_log_share(fpc, live))       # log-shares, sum(exp) over live = 1
+        lam_fp = numpyro.deterministic("lam_fp", float(lam_fixed) * jnp.exp(m) * live_j[None, :])
+        numpyro.deterministic("fp_lam_total", lam_fp.sum())
+        t = numpyro.sample("t", dist.Normal(0.0, float(t_sd)).expand([KK]).to_event(1))
+        return lam_fp, t
     l0_centre = float(np.log(max(fpc[:, live].sum(), 1.0) / (ell * C * n_live_s)))
     l0 = numpyro.sample("fp_l0", dist.Normal(l0_centre, 3.0))
 
@@ -137,6 +151,7 @@ def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight):
 def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
                     t_sd=1.0, tau_scale=0.5, calib_weight=1.0,
                     mu_fp_fixed=None, mu_extra_fixed=None, C_fixed=None, Mg_fixed=None, E_fixed=None,
+                    lam_fixed=None,
                     sigma_N_scale=0.5, sigma_z_scale=0.5,
                     level_scale=4.0, slope_scale=2.0):
     """model_cc with the FP block replaced by ladder member ``ladder``.
@@ -180,7 +195,7 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
         t = numpyro.deterministic("t", jnp.zeros(KK))
     else:
         lam_fp, t = _fp_block(consts, fp_counts, ladder, t_sd=t_sd,
-                              tau_scale=tau_scale, calib_weight=calib_weight)
+                              tau_scale=tau_scale, calib_weight=calib_weight, lam_fixed=lam_fixed)
 
     # ---- fold + likelihood (VERBATIM model_cc unless a DIAGNOSTIC fixed component is given) ----
     f = jnp.exp(theta)                                                # (B,Kf)
@@ -223,6 +238,7 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
 # sampled FP-block site names per model (for by-chain retention + whitening)
 FP_SITES = {
     "ORACLE": (),
+    "M1CUT": ("t",),
     "M0": ("fp_l0",),
     "M1": ("fp_l0", "t"),
     "M2": ("fp_l0", "fp_b1", "fp_h", "t"),
@@ -252,6 +268,8 @@ def fp_prior_moments(consts, fp_counts, ladder, *, t_sd=1.0, tau_scale=0.5):
     add("fp_l0", l0c, 3.0)
     if ladder != "M0":
         pass
+    if ladder == "M1CUT":
+        names, mean, sd = [], [], []   # Lambda is not a site; only t below
     if ladder in ("M2", "M3", "M4", "M5"):
         add("fp_b1", 0.0, 5.0)
         for j in range(n_live_s - 1):
@@ -271,3 +289,12 @@ def fp_prior_moments(consts, fp_counts, ladder, *, t_sd=1.0, tau_scale=0.5):
         for k in range(consts.n_kk):
             add(f"t[{k}]", 0.0, float(t_sd))
     return names, np.asarray(mean), np.asarray(sd)
+
+
+def lambda_calibration_posterior_quantiles(fp_counts, fp_ell_eff, n_imputations):
+    """Stratified imputations of Lambda from p(Lambda | D_loa0) = Gamma(N_FP + 1/2, ell_eff):
+    the quantiles at (j + 1/2)/J, j = 0..J-1 (deterministic, seed-free). J = 1 returns the median."""
+    from scipy.stats import gamma
+    n_fp = float(np.asarray(fp_counts, float).sum())
+    qs = (np.arange(int(n_imputations)) + 0.5) / float(n_imputations)
+    return gamma(a=n_fp + 0.5, scale=1.0 / float(fp_ell_eff)).ppf(qs)

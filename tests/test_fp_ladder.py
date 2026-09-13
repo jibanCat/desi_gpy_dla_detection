@@ -173,3 +173,18 @@ def test_fixed_component_hooks(setup):
     r2 = rate(C_fixed=C2); assert np.all(np.isfinite(r2)) and r2.shape == base.shape
     C3 = np.broadcast_to(C2.T[:, None, :], (B, Kf, S)).copy()
     r3 = rate(C_fixed=C3); assert np.all(np.isfinite(r3)) and r3.shape == base.shape
+
+
+def test_m1cut_lambda_not_a_site_and_imputations(setup):
+    from CDDF_analysis.hbi_mcmc.fp_ladder import model_cc_ladder, lambda_calibration_posterior_quantiles, live_mask
+    pk, consts, Mg, counts, fpc = setup
+    qs = lambda_calibration_posterior_quantiles(pk.fp_counts, consts.fp_ell_eff, 8)
+    naive = float(np.asarray(pk.fp_counts).sum() / consts.fp_ell_eff)
+    assert qs.shape == (8,) and np.all(np.diff(qs) > 0) and 0.7 * naive < qs[3] < 1.3 * naive
+    med = lambda_calibration_posterior_quantiles(pk.fp_counts, consts.fp_ell_eff, 1)[0]
+    tr = _trace(model_cc_ladder, 31, consts, Mg, counts=counts, fp_counts=fpc, ladder="M1CUT", lam_fixed=med)
+    sampled = [k for k, v in tr.items() if v["type"] == "sample" and not v.get("is_observed")]
+    assert "fp_lam_total" not in sampled and "fp_l0" not in sampled and "t" in sampled
+    assert "fp_counts" not in tr                       # no calibration likelihood term (cut)
+    lam = np.asarray(tr["lam_fp"]["value"]); live = live_mask(consts)
+    assert np.isclose(lam.sum(), med, rtol=1e-5) and np.all(lam[:, ~live] == 0)
