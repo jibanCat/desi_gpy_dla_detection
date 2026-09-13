@@ -182,6 +182,21 @@ def main(argv=None):
     flat = dict(theta_pop=theta, psi_c=_flat("psi_c"), t=t, lam_fp=_flat("lam_fp"))
 
     mu, idx = CRP.mu_draws_cc(consts, Mg, flat, n_max=a.n_rep_draws, seed=a.ppc_seed)
+    # ORACLE diagnostic: lam_fp is identically zero in the saved draws because mu_FP was
+    # PINNED to the mock FP-truth census inside the model; add that fixed term back so the
+    # PPC sees the same mu the likelihood saw (otherwise the ratios are TP-only / obs).
+    oracle_note = None
+    if run.get("ladder") == "ORACLE":
+        argv_run = list((run.get("run_config") or {}).get("argv") or [])
+        cpath = None
+        for i_, tok in enumerate(argv_run):
+            if tok == "--census" and i_ + 1 < len(argv_run):
+                cpath = argv_run[i_ + 1]
+        if cpath is None or not os.path.exists(cpath):
+            raise SystemExit("ORACLE PPC: census path not recoverable from run_config.argv")
+        host = np.asarray(np.load(cpath, allow_pickle=True)["hostless"], float)
+        mu = mu + host[None, ...]
+        oracle_note = f"ORACLE: fixed mu_FP = hostless census added from {cpath}"
     blk = EV.ppc_block({"samples_by_chain": None}, pk, consts,
                        n_rep_draws=a.n_rep_draws, seed=a.ppc_seed, mu_draws=(mu, idx))
     grain = CRP.report_grain_ppc(mu, np.asarray(pk.counts, float),
@@ -211,7 +226,7 @@ def main(argv=None):
         run=os.path.abspath(a.run), run_sha256=_sha(a.run),
         draws=os.path.abspath(byc), draws_sha256=_sha(byc),
         pack=os.path.abspath(packp), pack_sha256=_sha(packp),
-        ladder=run.get("ladder"), run_config=run.get("run_config"),
+        ladder=run.get("ladder"), run_config=run.get("run_config"), oracle_note=oracle_note,
         run_thresholds=run.get("thresholds"), run_diagnostics=run.get("diagnostics"),
         n_draws_total=int(nch * ndr), n_rep_draws=int(len(idx)), ppc_seed=a.ppc_seed,
         theta_reconstruction=dict(source=theta_src, max_abs_dev=dev,
