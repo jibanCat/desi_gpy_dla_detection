@@ -470,7 +470,8 @@ class ManifestBuilder:
             self.link(rid, bid, "reduced_to")
 
         # paper-number candidates
-        for name, blob in (R.get("thresholds") or {}).items():
+        _thr = R.get("thresholds") or ((R.get("estimands") or {}).get("thresholds_allz")) or {}   # mock runner | real-mode runner
+        for name, blob in _thr.items():
             if not isinstance(blob, dict):
                 continue
             nid = "paper_number:%s:%s" % (tag, name)
