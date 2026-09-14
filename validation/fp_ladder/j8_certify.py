@@ -108,7 +108,7 @@ def main():
     if not rows:
         raise SystemExit("j8_certify: no RUN_*_j*.json found — certification cannot be evaluated (fail closed)")
     verdicts = {}; md = ["# J = 8 production M1CUT — certification table (sealed rule 6acf7508)", ""]
-    md += ["| family | j | Λ_j | ≥20.0 bias % (hw68 %) | ≥20.3 bias % (hw68 %) | Ω bias % | t_K | FP/census | div | E-BFMI per chain | per-chain medians ≥20.0 | z bins ≥20.3 |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    md += ["| family | j | Λ_j | ≥20.0 bias % (hw68 %) | ≥20.3 bias % (hw68 %) | Ω_subDLA[19.5,20.3] bias % (`thresholds.omega_allz`; NOT Ω[20.3,21.6]) | t_K | FP/census | div | E-BFMI per chain | per-chain medians ≥20.0 | z bins ≥20.3 |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     allpass = True
     for fam in FAMS:
         R = sorted(runs.get(fam, []), key=lambda x: x[0]["j"])

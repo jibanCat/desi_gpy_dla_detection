@@ -67,10 +67,11 @@ def main():
                             ge20p0=h["ge20.0"], ge20p3=h["ge20.3"],
                             divergences=int(j.get("divergences", sh.get("divergences", -1))),
                             ebfmi=sh.get("ebfmi_per_chain") or d.get("ebfmi_per_chain"),
-                            rank_rhat=sh.get("rank_rhat") or sh.get("headline_rank_rhat"),
-                            ess=sh.get("ess") or sh.get("headline_ess"),
+                            rank_rhat={k: v.get("rank_split_rhat", v.get("split_rhat")) for k, v in (sh.get("estimand_mixing") or {}).items()} or None,
+                            ess={k: v.get("ess_bulk", v.get("ess")) for k, v in (sh.get("estimand_mixing") or {}).items()} or None,
+                            t_mixing=sh.get("t_mixing_per_K"),
                             t_K=(j.get("t_posterior") or {}).get("mean") or d.get("t_post_mean"),
-                            fp_total=(j.get("fp_totals") or {}).get("total_p16_50_84") or ((d.get("fp_by_block") or {}).get("mu_fp_total_p16_50_84"))))
+                            fp_total=(j.get("fp_totals") or {}).get("mu_fp_total_p16_50_84") or ((d.get("fp_by_block") or {}).get("mu_fp_total_p16_50_84"))))
     pools = {"all": pool(R, pk)}
     for s in seeds:
         pools[f"seed{s}"] = pool([r for r in R if r["seed"] == s], pk)
