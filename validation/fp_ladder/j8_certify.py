@@ -68,7 +68,7 @@ def analyse(run_json):
         key = "dndx_dla_20p0_allz" if thr == "ge20.0" else "dndx_dla_20p3_allz"
         if key in em:
             out[thr]["perchain_median"] = em[key].get("perchain_median"); out[thr]["split_rhat_runner"] = em[key].get("split_rhat")
-    om = j["perz_recovery"]["estimand"].get("omega_allz")
+    om = j["thresholds"].get("omega_allz")
     out["omega"] = dict(bias_pct=om["median_bias_pct"]) if isinstance(om, dict) else None
     out["paper1_bins"] = {thr: [round(b["median_bias_pct"], 2) for b in j["perz_recovery"]["estimand"][thr]["paper1_bins"] if b.get("available")] for thr in THR}
     return out, j
@@ -81,9 +81,12 @@ def pooled_headlines(fdraw_files, truths):
         allv = []
         for f in fdraw_files:
             d = np.load(f); fdr = d["f"]; e = d["ntrue_edges"]; dX = d["dX_k"]
-            sel = e[:-1] >= nmin - 1e-9
-            dN = np.diff(e)[sel]
-            v = (fdr[:, sel, :] * dN[None, :, None]).sum(1)              # (draws, k)
+            # partial-bin convention of the runner: a latent bin straddling the threshold contributes the fraction of
+            # its width above the threshold (the 19.9-20.1 bin contributes half to >=20.0)
+            lo, hi = e[:-1], e[1:]
+            wN = np.clip(hi - np.maximum(lo, nmin), 0.0, None)           # (B,) effective dN above threshold
+            sel = wN > 0
+            v = (fdr[:, sel, :] * wN[sel][None, :, None]).sum(1)         # (draws, k)
             allv.append((v * dX[None, :]).sum(1) / dX.sum())             # path-weighted all-z
         pool = np.concatenate(allv)
         p16, p50, p84 = np.percentile(pool, [16, 50, 84])
@@ -129,7 +132,7 @@ def main():
                 if sr is not None and sr > 1.05: rhat_ok = False
             v["checks"][f"{thr}_no_distinct_modes"] = modes_ok; v["checks"][f"{thr}_split_rhat_le_1p05"] = rhat_ok
             if a.j1_dir:
-                j1 = sorted(glob.glob(os.path.join(a.j1_dir, f"RUN_*_{fam}_s20260811_j0.json")))
+                j1 = sorted(glob.glob(os.path.join(a.j1_dir, f"RUN_*_{fam}_s20260811.json")) + glob.glob(os.path.join(a.j1_dir, f"RUN_*_{fam}_s20260811_j0.json")))
                 if j1 and pool:
                     j1m = json.load(open(j1[0]))["thresholds"][thr]["post_p16_50_84"][1]
                     v["checks"][f"{thr}_pool_vs_J1_over_hw68"] = abs(pool[thr]["median"] - j1m) / hw
