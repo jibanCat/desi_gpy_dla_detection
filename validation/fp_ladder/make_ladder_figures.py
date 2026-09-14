@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 FAMS = ("2lpt0", "london0", "saclay0")
 ANCHORS = ("A0", "A0+C1nsadd", "A0+R1c", "A0+R1c+C1nsadd")
+_ANCHORS_DEFAULT = ANCHORS
 
 
 def style():
@@ -69,7 +70,7 @@ def fig2_zigzag(runs, seed, out):
             ax.plot(c, [r["median_bias_pct"] for r in rb], marker="o", ms=3, lw=1, label=v)
         ax.axhline(0, color="k", lw=0.8); ax.set_title(fam); ax.set_xlabel("log N_HI (0.2-dex reporting bin centre)")
     axes[0].set_ylabel("per-bin median bias [%]"); axes[0].legend(fontsize=7.5)
-    fig.suptitle("Reporting-bin recovery: the alternating (zigzag) residual survives every parametric R1 refit and worsens under R1c", y=1.02, fontsize=9)
+    fig.suptitle("Reporting-bin recovery (0.2-dex bins)", y=1.02, fontsize=9)
     fig.tight_layout(); fig.savefig(out, bbox_inches="tight"); plt.close(fig)
 
 
@@ -88,7 +89,7 @@ def fig3_latent(runs, seed, out):
                         marker="o", ms=3, lw=1, capsize=2, label=v)
         ax.axhline(1, color="k", lw=0.8); ax.set_yscale("log"); ax.set_title(fam); ax.set_xlabel("latent log N_HI bin centre")
     axes[0].set_ylabel("recovered / truth (z-integrated, dX-weighted)"); axes[0].legend(fontsize=7.5)
-    fig.suptitle("Latent 0.2-dex bins: R1c inflates the top bins (the parametric skew-normal family mis-allocates high-N migration)", y=1.02, fontsize=9)
+    fig.suptitle("Latent 0.2-dex bins: recovered / truth", y=1.02, fontsize=9)
     fig.tight_layout(); fig.savefig(out, bbox_inches="tight"); plt.close(fig)
 
 
@@ -104,7 +105,7 @@ def fig4_snr(runs, seed, out):
             ax.plot(idx, r[idx], marker="o", ms=3, lw=1, label=v)
         ax.axhline(1, color="k", lw=0.8); ax.set_title(fam); ax.set_xlabel("S/N stratum index (live strata)")
     axes[0].set_ylabel("posterior-median μ / observed counts"); axes[0].legend(fontsize=7.5)
-    fig.suptitle("Predictive S/N marginal: the lowest live stratum stays 3–6 % under-predicted in every variant (truth-pinned completeness removed it in the forensics)", y=1.02, fontsize=9)
+    fig.suptitle("Predictive S/N marginal (posterior-median μ / observed)", y=1.02, fontsize=9)
     fig.tight_layout(); fig.savefig(out, bbox_inches="tight"); plt.close(fig)
 
 
@@ -112,12 +113,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=20260811)
+    ap.add_argument("--anchors", nargs="+", default=None, help="variants for figs 2-4 (default: first-ladder anchors)")
+    ap.add_argument("--prefix", default="ladder")
     ap.add_argument("--variants", nargs="+", default=["A0", "A0-P6bcal", "A0+R1a", "A0+R1b", "A0+R1c", "A0+C1g", "A0+C1n", "A0+C1ns", "A0+C1nsadd", "A0+R1c+C1nsadd"])
     a = ap.parse_args(); os.makedirs(a.out, exist_ok=True); style()
-    fig1_headline(a.runs, a.variants, a.seed, os.path.join(a.out, "ladder_fig1_headline_bias_by_variant.png"))
-    fig2_zigzag(a.runs, a.seed, os.path.join(a.out, "ladder_fig2_reporting_bin_zigzag.png"))
-    fig3_latent(a.runs, a.seed, os.path.join(a.out, "ladder_fig3_latent_ratio.png"))
-    fig4_snr(a.runs, a.seed, os.path.join(a.out, "ladder_fig4_snr_marginal.png"))
+    global ANCHORS
+    if a.anchors: ANCHORS = tuple(a.anchors)
+    fig1_headline(a.runs, a.variants, a.seed, os.path.join(a.out, f"{a.prefix}_fig1_headline_bias_by_variant.png"))
+    fig2_zigzag(a.runs, a.seed, os.path.join(a.out, f"{a.prefix}_fig2_reporting_bin_zigzag.png"))
+    fig3_latent(a.runs, a.seed, os.path.join(a.out, f"{a.prefix}_fig3_latent_ratio.png"))
+    fig4_snr(a.runs, a.seed, os.path.join(a.out, f"{a.prefix}_fig4_snr_marginal.png"))
     print("wrote 4 figures to", a.out)
 
 
