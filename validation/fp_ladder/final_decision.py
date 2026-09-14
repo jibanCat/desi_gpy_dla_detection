@@ -16,7 +16,7 @@ THR = ("ge20.0", "ge20.3")
 
 def load_runs(runs_dir, tag):
     out = {}
-    for p in sorted(glob.glob(os.path.join(runs_dir, tag, f"RUN_{tag}_*_s*.json"))):
+    for p in sorted(glob.glob(os.path.join(runs_dir, tag, "RUN_*_s*.json"))):   # any RUN in the tag dir (REF dirs keep their own names)
         j = json.load(open(p)); fam = next(f for f in FAMS if f"_{f}_" in os.path.basename(p))
         out.setdefault(fam, []).append(j)
     return out
@@ -134,7 +134,7 @@ def main():
     def load(tag):
         R = load_runs(a.runs, tag)
         for fam, js in R.items():
-            for j, p in zip(js, sorted(glob.glob(os.path.join(a.runs, tag, f"RUN_{tag}_{fam}_s*.json")))):
+            for j, p in zip(js, sorted(glob.glob(os.path.join(a.runs, tag, f"RUN_*_{fam}_s*.json")))):
                 j["_file"] = os.path.basename(p)
         return R
     RE, RB, RR = load(a.tag_e), load(a.tag_b), load(a.tag_ref)
