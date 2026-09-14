@@ -46,6 +46,7 @@ def main():
     ap.add_argument("--census", default=None, help="fp_census_<fam>.npz (hostless@17.2) for the FP-truth soft flag")
     ap.add_argument("--stage", default="")
     ap.add_argument("--mg-fixed-file", default=None, help="LADDER: npz with Mg (S,Kf,C,B) = a FIXED response calibration variant")
+    ap.add_argument("--mg-fixed-key", default="Mg", help="key inside --mg-fixed-file: Mg (record: Q x 2LPT-measured phi), Mg_phi_smooth (phi sensitivity), Mg_phi_family (ORACLE DIAGNOSTIC: Q x the family's own measured phi)")
     ap.add_argument("--c-fixed-file", default=None, help="LADDER: npz with C_fixed (S,B) or C_fixed_bks (B,Kf,S) = a FIXED completeness variant")
     ap.add_argument("--extra-fixed-file", default=None, help="LADDER: npz with mu_extra (C,Kf,S) = the FIXED sub-floor-host term (A0)")
     ap.add_argument("--lam-imputations", type=int, default=1, help="M1CUT: number J of stratified imputations of Lambda from p(Lambda|D_loa0)")
@@ -92,7 +93,18 @@ def main():
         qs = lambda_calibration_posterior_quantiles(pk.fp_counts, consts.fp_ell_eff, a.lam_imputations)
         lam_fixed = float(qs[a.lam_imputation])
     if a.mg_fixed_file:
-        Mg_fixed = np.asarray(np.load(a.mg_fixed_file, allow_pickle=True)["Mg"], float)
+        _mgf = np.load(a.mg_fixed_file, allow_pickle=True)
+        if a.mg_fixed_key == "Mg_phi_family":
+            # ORACLE DIAGNOSTIC ONLY (PI 2026-09-13d §9): Q x the FAMILY's own measured phi, built from the
+            # stored unit rows; never the formal closure result.
+            import json as _json
+            _kz = np.asarray(_json.loads(str(_mgf["provenance"]))["kz_to_K"], int)
+            _ru = np.asarray(_mgf["rows_unit"], float)                    # (B,S,K,C)
+            _ph = np.asarray(_mgf["phi_bsK_family_measured"], float)      # (B,S,K)
+            _M = np.einsum("bsKc,bsK->sKcb", _ru, _ph)                     # (S,K,C,B)
+            Mg_fixed = _M[:, _kz, :, :]
+        else:
+            Mg_fixed = np.asarray(_mgf[a.mg_fixed_key], float)
     if a.c_fixed_file:
         cf = np.load(a.c_fixed_file, allow_pickle=True)
         C_fixed = np.asarray(cf["C_fixed_bks"], float) if "C_fixed_bks" in cf.files else np.asarray(cf["C_fixed"], float)

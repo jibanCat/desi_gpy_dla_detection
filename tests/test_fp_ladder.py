@@ -206,3 +206,14 @@ def test_perks_a0_battery_shares(setup):
     for a0 in (0.25 / K, 1.0 / K, 4.0 / K, 0.5):
         sh = np.exp(perks_log_share(fpc, live, a0=a0)[:, live]); assert np.isclose(sh.sum(), 1.0, rtol=0, atol=1e-12)
         mass_empty = sh[empty].sum(); assert mass_empty > prev; prev = mass_empty
+
+
+def test_mg_phi_family_reconstruction_matches_rows_times_phi():
+    """The runner's Mg_phi_family diagnostic path: rows_unit x phi_family reproduces the stored Mg when phi_family == phi_bsK."""
+    import json, glob
+    f = "/scratch/cavestru_root/cavestru0/mfho/absorber_ladder_2026-09-13/response_review/candidates/Mg_E_2lpt0.npz"
+    if not os.path.exists(f):
+        pytest.skip("candidate products not present")
+    d = np.load(f, allow_pickle=True); kz = np.asarray(json.loads(str(d["provenance"]))["kz_to_K"], int)
+    M = np.einsum("bsKc,bsK->sKcb", np.asarray(d["rows_unit"], float), np.asarray(d["phi_bsK_family_measured"], float))[:, kz]
+    assert np.allclose(M, np.asarray(d["Mg"], float), rtol=0, atol=1e-12)   # 2LPT-0: family phi == 2LPT phi
