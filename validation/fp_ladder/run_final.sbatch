@@ -24,7 +24,7 @@ case "$PHI" in
   family) MGARG="--mg-fixed-file $MG --mg-fixed-key Mg_phi_family";;
 esac
 A0ARG=""; [ -n "${A0:-}" ] && A0ARG="--fp-a0 $A0"
-LAMARG=""; [ "$LADDER" = "M1CUT" ] && LAMARG="--lam-imputations 1 --lam-imputation 0"
+LAMARG=""; [ "$LADDER" = "M1CUT" ] && LAMARG="--lam-imputations ${LAMJ:-1} --lam-imputation ${LAMj:-0}"
 OUT=$L/final/runs/$TAG; mkdir -p $OUT
 python validation/fp_ladder/run_ladder.py --pack $V3/scanpack_${FAM}_b300_v3.npz --ladder $LADDER --seed $SEED --chains 4 --warmup 1500 --samples 1000 --target-accept 0.95 \
   --census $V3/fp_census_${FAM}_v3.npz --ops $V3/empirical_ops_${FAM}_v3.npz --require-support --stage FINAL_$TAG \
