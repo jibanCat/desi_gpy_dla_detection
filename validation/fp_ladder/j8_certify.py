@@ -98,7 +98,7 @@ def main():
     ap.add_argument("--out-json", required=True); ap.add_argument("--out-md", required=True)
     a = ap.parse_args()
     rows = []; runs = {}
-    for p in sorted(glob.glob(os.path.join(a.runs_dir, "RUN_*_j*.json"))):
+    for p in sorted(glob.glob(os.path.join(a.runs_dir, "RUN_*j[0-9].json"))):
         r, j = analyse(p); rows.append(r); runs.setdefault(r["family"], []).append((r, p))
     # rank-Rhat / ESS from bychain when available: reconstruct headline per chain from bychain? bychain stores sites, not the estimand;
     # use the runner's per-chain medians + split-Rhat where present, and compute rank-Rhat/ESS on the f-draw-derived headline if chain order is recoverable.
