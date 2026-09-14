@@ -188,3 +188,21 @@ def test_m1cut_lambda_not_a_site_and_imputations(setup):
     assert "fp_counts" not in tr                       # no calibration likelihood term (cut)
     lam = np.asarray(tr["lam_fp"]["value"]); live = live_mask(consts)
     assert np.isclose(lam.sum(), med, rtol=1e-5) and np.all(lam[:, ~live] == 0)
+
+
+def test_perks_a0_battery_shares(setup):
+    """PI 2026-09-13d §12: a0 = None reproduces the record template (1/K); a0 = 0 gives zero share to
+    empty cells and renormalises; larger a0 moves mass into empty cells monotonically; shares sum to 1."""
+    from CDDF_analysis.hbi_mcmc.fp_ladder import perks_log_share, live_mask
+    pk, consts, Mg, counts, fpc = setup
+    live = live_mask(consts); K = int(live.sum()) * fpc.shape[0]
+    m_rec = perks_log_share(fpc, live); m_K = perks_log_share(fpc, live, a0=1.0 / K)
+    assert np.allclose(m_rec[:, live], m_K[:, live], rtol=0, atol=1e-12)
+    m0 = perks_log_share(fpc, live, a0=0.0)
+    sh0 = np.exp(m0[:, live]); assert np.isclose(sh0.sum(), 1.0, rtol=0, atol=1e-12)
+    empty = np.asarray(fpc, float)[:, live] == 0
+    assert empty.any() and np.all(sh0[empty] == 0.0)
+    prev = 0.0
+    for a0 in (0.25 / K, 1.0 / K, 4.0 / K, 0.5):
+        sh = np.exp(perks_log_share(fpc, live, a0=a0)[:, live]); assert np.isclose(sh.sum(), 1.0, rtol=0, atol=1e-12)
+        mass_empty = sh[empty].sum(); assert mass_empty > prev; prev = mass_empty

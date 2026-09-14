@@ -67,11 +67,12 @@ def perks_log_share(fp_counts, live, a0=None):
     a0 = (1.0 / K) if a0 is None else float(a0)
     n_fp = float(fpc[:, live].sum())
     m = np.zeros((C, S), float)
-    m[:, live] = np.log((fpc[:, live] + a0) / (n_fp + K * a0))
+    with np.errstate(divide="ignore"):
+        m[:, live] = np.log((fpc[:, live] + a0) / (n_fp + K * a0))   # a0 = 0: empty cells -> -inf -> share 0
     return m
 
 
-def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight, lam_fixed=None):
+def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight, lam_fixed=None, fp_a0=None):
     """Sample the FP block; return (lam_fp (C,S) with zeros off-live, t (KK,))."""
     C, S, KK = consts.n_c, consts.n_s, consts.n_kk
     live = live_mask(consts)                              # (S,)
@@ -91,7 +92,10 @@ def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight, lam_f
         # fp_counts likelihood term (the calibration enters ONLY through p(Lambda | D_loa0)).
         if lam_fixed is None:
             raise ValueError("M1CUT needs lam_fixed (a draw from the loa-0 calibration posterior)")
-        m = jnp.asarray(perks_log_share(fpc, live))       # log-shares, sum(exp) over live = 1
+        # fp_a0: the Perks pseudo-count of the template (None = the record value 1/K). PI ruling
+        # 2026-09-13d §12: a bounded a0 SENSITIVITY battery on the carried model; a0 = 0 means no
+        # smoothing (cells with n = 0 get zero share; the ratio is renormalised over live cells).
+        m = jnp.asarray(perks_log_share(fpc, live, a0=fp_a0))  # log-shares, sum(exp) over live = 1
         lam_fp = numpyro.deterministic("lam_fp", float(lam_fixed) * jnp.exp(m) * live_j[None, :])
         numpyro.deterministic("fp_lam_total", lam_fp.sum())
         t = numpyro.sample("t", dist.Normal(0.0, float(t_sd)).expand([KK]).to_event(1))
@@ -151,7 +155,7 @@ def _fp_block(consts, fp_counts, ladder, *, t_sd, tau_scale, calib_weight, lam_f
 def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
                     t_sd=1.0, tau_scale=0.5, calib_weight=1.0,
                     mu_fp_fixed=None, mu_extra_fixed=None, C_fixed=None, Mg_fixed=None, E_fixed=None,
-                    lam_fixed=None,
+                    lam_fixed=None, fp_a0=None,
                     sigma_N_scale=0.5, sigma_z_scale=0.5,
                     level_scale=4.0, slope_scale=2.0):
     """model_cc with the FP block replaced by ladder member ``ladder``.
@@ -195,7 +199,7 @@ def model_cc_ladder(consts, Mg, counts=None, fp_counts=None, *, ladder="M2",
         t = numpyro.deterministic("t", jnp.zeros(KK))
     else:
         lam_fp, t = _fp_block(consts, fp_counts, ladder, t_sd=t_sd,
-                              tau_scale=tau_scale, calib_weight=calib_weight, lam_fixed=lam_fixed)
+                              tau_scale=tau_scale, calib_weight=calib_weight, lam_fixed=lam_fixed, fp_a0=fp_a0)
 
     # ---- fold + likelihood (VERBATIM model_cc unless a DIAGNOSTIC fixed component is given) ----
     f = jnp.exp(theta)                                                # (B,Kf)

@@ -49,6 +49,7 @@ def main():
     ap.add_argument("--c-fixed-file", default=None, help="LADDER: npz with C_fixed (S,B) or C_fixed_bks (B,Kf,S) = a FIXED completeness variant")
     ap.add_argument("--extra-fixed-file", default=None, help="LADDER: npz with mu_extra (C,Kf,S) = the FIXED sub-floor-host term (A0)")
     ap.add_argument("--lam-imputations", type=int, default=1, help="M1CUT: number J of stratified imputations of Lambda from p(Lambda|D_loa0)")
+    ap.add_argument("--fp-a0", type=float, default=None, help="M1CUT: Perks pseudo-count a0 of the loa-0 template (default = record 1/K); PI 2026-09-13d §12 sensitivity battery")
     ap.add_argument("--lam-imputation", type=int, default=0, help="M1CUT: which imputation j (0..J-1) this run uses")
     ap.add_argument("--require-support", action="store_true",
                     help="LADDER (PI ruling 2026-09-13b §3): fail closed unless pack / census / ops carry stamped, "
@@ -131,7 +132,7 @@ def main():
     mcmc.run(jax.random.PRNGKey(a.seed), consts, Mg, counts=counts, fp_counts=fpc,
              ladder=a.ladder, t_sd=a.t_sd, tau_scale=a.tau_scale, calib_weight=a.calib_weight,
              mu_fp_fixed=mu_fixed, mu_extra_fixed=mu_extra, C_fixed=C_fixed, Mg_fixed=Mg_fixed, E_fixed=E_fixed,
-             lam_fixed=lam_fixed,
+             lam_fixed=lam_fixed, fp_a0=a.fp_a0,
              extra_fields=("potential_energy", "energy", "diverging"))
     sam = mcmc.get_samples(group_by_chain=False)
     sam_g = mcmc.get_samples(group_by_chain=True)
@@ -286,7 +287,7 @@ def main():
         calibration_predictive=calib, fp_by_block=fp_by_block, fp_truth=fp_truth,
         diag_fix=fix, diag_ops=a.ops, predictive_marginals=pred_marg,
         fixed_files=dict(mg=a.mg_fixed_file, c=a.c_fixed_file, extra=a.extra_fixed_file),
-        lam_cut=(dict(J=a.lam_imputations, j=a.lam_imputation, lam_fixed=lam_fixed) if a.ladder == "M1CUT" else None))
+        lam_cut=(dict(J=a.lam_imputations, j=a.lam_imputation, lam_fixed=lam_fixed, fp_a0=a.fp_a0) if a.ladder == "M1CUT" else None))
     out = dict(pack=a.pack, ladder=a.ladder, stage=a.stage, n_draws=int(f_draws.shape[0]), chains=a.chains,
                warmup=a.warmup, samples=a.samples, divergences=int(div_g.sum()), thresholds=rep,
                reporting_bins=binrep, perz_recovery=perz, diagnostics=diag, run_config=run_config(a),
