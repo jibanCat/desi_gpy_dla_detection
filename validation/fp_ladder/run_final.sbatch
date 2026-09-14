@@ -29,5 +29,5 @@ OUT=$L/final/runs/$TAG; mkdir -p $OUT
 python validation/fp_ladder/run_ladder.py --pack $V3/scanpack_${FAM}_b300_v3.npz --ladder $LADDER --seed $SEED --chains 4 --warmup 1500 --samples 1000 --target-accept 0.95 \
   --census $V3/fp_census_${FAM}_v3.npz --ops $V3/empirical_ops_${FAM}_v3.npz --require-support --stage FINAL_$TAG \
   $MGARG --c-fixed-file $L/completeness/C_C1nsadd_${FAM}.npz --fix P $LAMARG $A0ARG \
-  --out $OUT/RUN_${TAG}_${FAM}_s${SEED}${A0:+_a0$A0}.json
+  --out $OUT/RUN_${TAG}_${FAM}_s${SEED}${A0:+_a0$A0}${LAMJ:+_J${LAMJ}j${LAMj}}.json
 echo "DONE $TAG $FAM $SEED rc=$?"
