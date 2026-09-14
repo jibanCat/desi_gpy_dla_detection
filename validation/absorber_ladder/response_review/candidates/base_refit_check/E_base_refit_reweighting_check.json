@@ -1,0 +1,165 @@
+{
+ "provenance": {
+  "events": "/scratch/cavestru_root/cavestru0/mfho/absorber_ladder_2026-09-13/response/calib_events_2lpt0.npz",
+  "products": "/scratch/cavestru_root/cavestru0/mfho/absorber_ladder_2026-09-13/response_review/candidates",
+  "git": {
+   "commit": "b7d88977bbab32d7d02b9d38be01cbadab462764",
+   "branch": "absorber-diag-2026-09",
+   "dirty": true
+  },
+  "base_spec": {
+   "name": "R1c",
+   "edges": "adaptive",
+   "lo": 19.0,
+   "hi": 22.4,
+   "step": 0.1,
+   "min_n": 50,
+   "hard_min_n": 25,
+   "max_width": 0.3,
+   "estimator": "sample",
+   "deg_cell": 2,
+   "deg_shared": 3,
+   "fit_rng": "full",
+   "ramp": null,
+   "marginalise": {
+    "n_quad": 17,
+    "deg": 4,
+    "weight": "flat"
+   },
+   "defect": "kernel rows 8-25%% too narrow at high S/N (forensics 9.1): surface_masses evaluates the response at the SINGLE point N=centre(b), so the row misses Var_{N in b}[N+mu(N)] (midpoint-quadrature error), and the ML sub-bin estimator is a further ~2-3%% narrow vs the second moment"
+  },
+  "note": "base spec is build_variants.specs() with the MODULE DEFAULTS marg_deg=4, r1c_estimator='sample' -- the object of record as delivered; deliberately NOT changed."
+ },
+ "n_rows_ge200": 120,
+ "sampling_kl_median_E": 0.0031021776820009217,
+ "sampling_kl_median_base": 0.001146526357918456,
+ "E_fixed_base": {
+  "steep": {
+   "kl_median": 0.002922626581816239,
+   "kl_p95": 0.007150286372270692,
+   "kl_count_weighted_mean": 0.002866784060154788,
+   "ratio_median": 0.8184738265126593,
+   "ratio_count_weighted_mean": 1.075411161902382,
+   "n_rows_over_3x": 6,
+   "frac_rows_over_3x": 0.05,
+   "verdict": "invariant within sampling noise"
+  },
+  "flat": {
+   "kl_median": 0.003324073653489844,
+   "kl_p95": 0.008424652292456567,
+   "kl_count_weighted_mean": 0.0036424289659347654,
+   "ratio_median": 1.0788967382648078,
+   "ratio_count_weighted_mean": 1.2627513090600797,
+   "n_rows_over_3x": 6,
+   "frac_rows_over_3x": 0.05,
+   "verdict": "invariant within sampling noise"
+  },
+  "equalised": {
+   "kl_median": 0.001622496874603568,
+   "kl_p95": 0.012695645171320796,
+   "kl_count_weighted_mean": 0.0029364738871116665,
+   "ratio_median": 0.6334386935775504,
+   "ratio_count_weighted_mean": 0.9892695589090935,
+   "n_rows_over_3x": 11,
+   "frac_rows_over_3x": 0.09166666666666666,
+   "verdict": "invariant within sampling noise"
+  }
+ },
+ "E_base_refit": {
+  "steep": {
+   "kl_median": 0.004341713127661497,
+   "kl_p95": 0.012195661490980688,
+   "kl_count_weighted_mean": 0.004465141726490678,
+   "ratio_median": 1.127283387501126,
+   "ratio_count_weighted_mean": 1.7678283256309915,
+   "n_rows_over_3x": 20,
+   "frac_rows_over_3x": 0.16666666666666666,
+   "verdict": "invariant within sampling noise",
+   "decomposition": {
+    "kl_total_median": 0.004341713127661497,
+    "kl_correction_only_median": 0.002922626581816239,
+    "kl_base_displacement_median": 0.001141378540131047,
+    "ratio_base_displacement": 0.35917851320596506,
+    "total_over_correction": 1.4855517823160906
+   }
+  },
+  "flat": {
+   "kl_median": 0.005381786711375092,
+   "kl_p95": 0.021991463413847678,
+   "kl_count_weighted_mean": 0.00829397152187261,
+   "ratio_median": 1.8473920108885604,
+   "ratio_count_weighted_mean": 2.650170423906868,
+   "n_rows_over_3x": 38,
+   "frac_rows_over_3x": 0.31666666666666665,
+   "verdict": "OCCUPANCY-IMPRINTED",
+   "decomposition": {
+    "kl_total_median": 0.005381786711375092,
+    "kl_correction_only_median": 0.003324073653489844,
+    "kl_base_displacement_median": 0.0023009254750747605,
+    "ratio_base_displacement": 1.0176042822177092,
+    "total_over_correction": 1.6190335330641417
+   }
+  },
+  "equalised": {
+   "kl_median": 0.007400285633264589,
+   "kl_p95": 0.02475215152888068,
+   "kl_count_weighted_mean": 0.010513184563143995,
+   "ratio_median": 1.8743072829006115,
+   "ratio_count_weighted_mean": 4.331668027739914,
+   "n_rows_over_3x": 42,
+   "frac_rows_over_3x": 0.35,
+   "verdict": "OCCUPANCY-IMPRINTED",
+   "decomposition": {
+    "kl_total_median": 0.007400285633264589,
+    "kl_correction_only_median": 0.001622496874603568,
+    "kl_base_displacement_median": 0.004889373611380661,
+    "ratio_base_displacement": 1.3948227058844769,
+    "total_over_correction": 4.561047696977989
+   }
+  }
+ },
+ "base_only": {
+  "steep": {
+   "kl_median": 0.00921821655848971,
+   "kl_p95": 0.021914772104465942,
+   "kl_count_weighted_mean": 0.010213481876340955,
+   "ratio_median": 5.804597545300276,
+   "ratio_count_weighted_mean": 16.091652268795826,
+   "n_rows_over_3x": 82,
+   "frac_rows_over_3x": 0.6833333333333333,
+   "verdict": "OCCUPANCY-IMPRINTED"
+  },
+  "flat": {
+   "kl_median": 0.005053444357364144,
+   "kl_p95": 0.05325057662603401,
+   "kl_count_weighted_mean": 0.01417189446946541,
+   "ratio_median": 3.4009449231594906,
+   "ratio_count_weighted_mean": 7.481816121997932,
+   "n_rows_over_3x": 62,
+   "frac_rows_over_3x": 0.5166666666666667,
+   "verdict": "OCCUPANCY-IMPRINTED"
+  },
+  "equalised": {
+   "kl_median": 0.022931178556514827,
+   "kl_p95": 0.08086569549389595,
+   "kl_count_weighted_mean": 0.03606208819664037,
+   "ratio_median": 13.575163437739164,
+   "ratio_count_weighted_mean": 69.31101852122998,
+   "n_rows_over_3x": 90,
+   "frac_rows_over_3x": 0.75,
+   "verdict": "OCCUPANCY-IMPRINTED"
+  }
+ },
+ "B_equalised_control": {
+  "kl_median": 0.003258389482190688,
+  "kl_p95": 0.009463123925877129,
+  "kl_count_weighted_mean": 0.00334591870900616,
+  "ratio_median": 1.5287967122646293,
+  "ratio_count_weighted_mean": 2.4722924780248037,
+  "n_rows_over_3x": 40,
+  "frac_rows_over_3x": 0.3333333333333333,
+  "verdict": "OCCUPANCY-IMPRINTED",
+  "sampling_kl_median": 0.0016364950395716016
+ },
+ "wall_s": 3059.7448081970215
+}
