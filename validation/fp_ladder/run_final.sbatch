@@ -9,10 +9,11 @@
 #SBATCH --output=/home/mfho/lowz_clean_work_2026-09-12/final_campaign/logs/%x_%A_%a.log
 # Final HBI ladder (PI 2026-09-13d §13; sealed FINAL_LADDER_PREDECLARATION). One task = one (variant, family, seed[, a0]).
 # Env: VARIANT (E|B), PHI (2lpt|smooth|family), FAM, SEED, LADDER (ORACLE|M1CUT), A0 (optional), TAG
-set -euo pipefail
+set -eo pipefail
 for v in $(env | grep -o '^SLURM_[A-Z_]*' | grep -vE 'SLURM_ARRAY_TASK_ID|SLURM_JOB_ID'); do unset $v; done
 export SBATCH_CONSTRAINT=""
 source ~/.bashrc; conda activate gpdla-hbi
+set -u
 W=/home/mfho/wt_abs_diag_2026-09; cd $W; export PYTHONPATH=$W HDF5_USE_FILE_LOCKING=FALSE JAX_PLATFORMS=cpu OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 L=/scratch/cavestru_root/cavestru0/mfho/absorber_ladder_2026-09-13; V3=$L/support_v3; CAND=$L/response_review/candidates
 FAMS=(2lpt0 london0 saclay0); FAM=${FAMS[$SLURM_ARRAY_TASK_ID]}

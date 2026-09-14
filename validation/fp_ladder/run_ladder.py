@@ -97,8 +97,7 @@ def main():
         if a.mg_fixed_key == "Mg_phi_family":
             # ORACLE DIAGNOSTIC ONLY (PI 2026-09-13d §9): Q x the FAMILY's own measured phi, built from the
             # stored unit rows; never the formal closure result.
-            import json as _json
-            _kz = np.asarray(_json.loads(str(_mgf["provenance"]))["kz_to_K"], int)
+            _kz = np.asarray(consts.kz_to_K, int)                          # the pack's fine-z -> coarse-K map
             _ru = np.asarray(_mgf["rows_unit"], float)                    # (B,S,K,C)
             _ph = np.asarray(_mgf["phi_bsK_family_measured"], float)      # (B,S,K)
             _M = np.einsum("bsKc,bsK->sKcb", _ru, _ph)                     # (S,K,C,B)

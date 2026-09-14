@@ -214,6 +214,7 @@ def test_mg_phi_family_reconstruction_matches_rows_times_phi():
     f = "/scratch/cavestru_root/cavestru0/mfho/absorber_ladder_2026-09-13/response_review/candidates/Mg_E_2lpt0.npz"
     if not os.path.exists(f):
         pytest.skip("candidate products not present")
-    d = np.load(f, allow_pickle=True); kz = np.asarray(json.loads(str(d["provenance"]))["kz_to_K"], int)
+    d = np.load(f, allow_pickle=True)
+    kz = np.asarray(np.load("/scratch/cavestru_root/cavestru0/mfho/absorber_ladder_2026-09-13/support/empirical_ops_2lpt0_A0.npz", allow_pickle=True)["kz_to_K"], int)
     M = np.einsum("bsKc,bsK->sKcb", np.asarray(d["rows_unit"], float), np.asarray(d["phi_bsK_family_measured"], float))[:, kz]
     assert np.allclose(M, np.asarray(d["Mg"], float), rtol=0, atol=1e-12)   # 2LPT-0: family phi == 2LPT phi
