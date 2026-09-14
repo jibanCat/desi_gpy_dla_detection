@@ -454,3 +454,265 @@ def test_delivered_candidate_files_were_not_modified():
                  "Mg_B_2lpt0.npz"):
         path = os.path.join(PRODUCTS, "response_review", "candidates", name)
         assert HU.sha256_file(path) == sums[name], name
+
+
+# ==========================================================================
+# 21-28: the FROZEN configuration (PI ruling 2026-09-14)
+#
+# The model freeze turns three more objects into release products: the eight
+# named systematics, the model-of-record configuration and the loa-0 FP
+# template.  These tests (a) reproduce the published campaign numbers from the
+# run JSONs, so the table can never drift from the record, (b) MUTATE the
+# inputs to show the fail-closed gates are armed, and (c) check the shipped
+# README is an inventory of what is actually there.
+# ==========================================================================
+import model_of_record as MOR                                  # noqa: E402
+import systematics_table as ST                                 # noqa: E402
+import fp_release as FPR                                       # noqa: E402
+import release_readme as RRM                                   # noqa: E402
+
+# the published record.  FINAL_CAMPAIGN_RETURN_2026-09-14.md section 3:
+# baseline B and alternate E (ORACLE FP), seed-mean median bias %.
+PUBLISHED_S3 = {
+    ("2lpt0", "ge20.0"): (+0.07, +0.14, +0.07),
+    ("london0", "ge20.0"): (+0.46, +0.46, 0.00),
+    ("saclay0", "ge20.0"): (+0.55, +0.69, +0.13),
+    ("2lpt0", "ge20.3"): (-0.15, +0.89, +1.04),
+    ("london0", "ge20.3"): (-0.61, -0.04, +0.57),
+    ("saclay0", "ge20.3"): (-0.14, +0.93, +1.07),
+}
+# section 4 / A0_BATTERY_TABLE.md: (>=20.0, >=20.3) median bias % per a0
+PUBLISHED_S4 = {
+    ("2lpt0", 0.0): (-0.31, -0.23), ("london0", 0.0): (+0.15, -0.70),
+    ("saclay0", 0.0): (-0.06, -0.20),
+    ("2lpt0", 0.0014368): (-0.35, -0.27),
+    ("london0", 0.0014368): (+0.14, -0.72),
+    ("saclay0", 0.0014368): (-0.09, -0.23),
+    ("2lpt0", 0.0229885): (-0.54, -0.53),
+    ("london0", 0.0229885): (+0.01, -0.86),
+    ("saclay0", 0.0229885): (-0.23, -0.45),
+    ("2lpt0", 0.5): (-1.18, -1.16), ("london0", 0.5): (-0.61, -1.57),
+    ("saclay0", 0.5): (-0.90, -1.15),
+}
+# section 5 / caveat (B): the ORACLE -> M1CUT estimand shift, and caveat (E):
+# the transported sub-floor term.
+PUBLISHED_FP_SHIFT = {"ge20.0": (-0.66, -0.35), "ge20.3": (-0.18, -0.11)}
+PUBLISHED_SUBFLOOR_MAX_PP = 0.06
+
+# one published section-3 entry is the difference of two SEPARATELY rounded
+# 2-dp numbers, so it can sit exactly on the 0.01 pp bound; the epsilon is
+# float slack, not tolerance slack.
+TOL_PP = 0.01 + 1e-9
+
+
+@pytest.fixture(scope="module")
+def systematics():
+    if not os.path.isdir(PRODUCTS):
+        pytest.skip("frozen mock products not mounted")
+    import tempfile
+    out = tempfile.mkdtemp(prefix="systematics-")
+    _out, doc = ST.build(PRODUCTS, out)
+    return doc
+
+
+def _sysid(doc, sid):
+    for s in doc["systematics"]:
+        if s["id"] == sid:
+            return s
+    raise AssertionError("no systematic %r in the table" % sid)
+
+
+@_have
+def test_systematics_table_has_the_eight_named_effects_and_no_quadrature(
+        systematics):
+    """PI 2026-09-14 sec.18: eight DISTINCT named effects, no blind quadrature."""
+    ids = [s["id"] for s in systematics["systematics"]]
+    assert ids == ["S%d" % i for i in range(1, 9)]
+    assert systematics["n_systematics"] == 8
+    assert "NO blind quadrature" in systematics["combination_rule"]
+    # S1 must stay a per-bin table, never one scalar (PI sec.5)
+    s1 = _sysid(systematics, "S1")
+    assert "do not collapse to one scalar" in s1["presentation"]
+    assert len({r["bin"] for r in s1["rows"]}) == 5
+    # S2 must never be halved into a 1 sigma (PI sec.13)
+    assert "never |B - E| / 2" in _sysid(systematics, "S2")["treatment"] \
+        or "|B - E| / 2 is NOT a 1 sigma" in _sysid(systematics, "S2")["treatment"]
+    # S6 has no estimand-level number yet and must say so, not invent one
+    s6 = _sysid(systematics, "S6")
+    assert s6["summary"]["estimand_level_size_pp"] is None
+    assert s6["summary"]["estimand_level_status"].startswith("PENDING")
+
+
+@_have
+def test_systematics_reproduces_published_response_form_sensitivity(
+        systematics):
+    """Section 3 of FINAL_CAMPAIGN_RETURN_2026-09-14.md, to 0.01 pp."""
+    rows = {(r["family"], r["threshold"]): r
+            for r in _sysid(systematics, "S2")["rows"]
+            if r["fp_configuration"] == "ORACLE"}
+    assert set(rows) == set(PUBLISHED_S3)
+    for key, (pub_b, pub_e, pub_d) in PUBLISHED_S3.items():
+        r = rows[key]
+        assert abs(r["baseline_B_bias_pct"] - pub_b) <= TOL_PP, key
+        assert abs(r["alternate_E_bias_pct"] - pub_e) <= TOL_PP, key
+        assert abs(r["signed_E_minus_B_pp"] - pub_d) <= TOL_PP, key
+    # and the envelope is one-sided (E >= B everywhere under ORACLE)
+    assert all(r["signed_E_minus_B_pp"] >= -TOL_PP for r in rows.values())
+
+
+@_have
+def test_systematics_reproduces_published_a0_battery_and_bracket(systematics):
+    """Section 4 / A0_BATTERY_TABLE.md, to 0.01 pp, plus the bracket rule."""
+    s4 = _sysid(systematics, "S4")
+    rows = {(r["family"], round(r["a0"], 7)): r for r in s4["rows"]}
+    for (fam, a0), (pub0, pub3) in PUBLISHED_S4.items():
+        r = rows[(fam, round(a0, 7))]
+        assert abs(r["bias_ge20.0_pct"] - pub0) <= TOL_PP, (fam, a0)
+        assert abs(r["bias_ge20.3_pct"] - pub3) <= TOL_PP, (fam, a0)
+    assert abs(s4["summary"]["bracket_max_abs_delta_ge20.0_pp"] - 0.16) <= TOL_PP
+    assert abs(s4["summary"]["bracket_max_abs_delta_ge20.3_pp"] - 0.20) <= TOL_PP
+    # Jeffreys is an OUTER envelope, never inside the bracket
+    assert all(not r["in_factor4_bracket"] for k, r in rows.items()
+               if k[1] == 0.5)
+    assert abs(s4["summary"]["a0_record"] - 1.0 / 174) < 1e-12
+
+
+@_have
+def test_systematics_reproduces_published_fp_shift_and_subfloor(systematics):
+    """Section 5 caveat (B) (ORACLE -> M1CUT) and caveat (E) (sub-floor)."""
+    s3 = [r for r in _sysid(systematics, "S3")["rows"]
+          if "shift_M1CUT_minus_ORACLE_pp" in r]
+    for thr, (lo, hi) in PUBLISHED_FP_SHIFT.items():
+        vals = [r["shift_M1CUT_minus_ORACLE_pp"] for r in s3
+                if r["threshold"] == thr]
+        assert abs(min(vals) - lo) <= TOL_PP, thr
+        assert abs(max(vals) - hi) <= TOL_PP, thr
+        assert all(v < 0 for v in vals), "the FP-rule shift is signed negative"
+    s7 = _sysid(systematics, "S7")
+    assert s7["summary"]["max_abs_shift_pp"] <= PUBLISHED_SUBFLOOR_MAX_PP + TOL_PP
+    # the phi sensitivity is a real, signed shift -- not a rounding artefact
+    s5 = _sysid(systematics, "S5")
+    smooth = [r["shift_pp"] for r in s5["rows"]
+              if r["variant"] == "phi_smooth_6coef"]
+    assert max(smooth) < 0.0 and min(smooth) > -0.5
+
+
+@_have
+def test_model_of_record_fails_closed_on_a_missing_object(tmp_path):
+    """MUTATION: hide ONE frozen object and the builder must refuse."""
+    farm = tmp_path / "products"
+    farm.mkdir()
+    for name in os.listdir(PRODUCTS):
+        os.symlink(os.path.join(PRODUCTS, name), str(farm / name))
+    out, doc = MOR.build(str(farm), str(tmp_path / "ok"))
+    assert doc["n_objects"] > 20 and doc["status"].startswith("ADOPTED")
+
+    # now rebuild with the completeness directory shadowed, one file short
+    farm2 = tmp_path / "products2"
+    farm2.mkdir()
+    for name in os.listdir(PRODUCTS):
+        if name != "completeness":
+            os.symlink(os.path.join(PRODUCTS, name), str(farm2 / name))
+    comp = farm2 / "completeness"
+    comp.mkdir()
+    src = os.path.join(PRODUCTS, "completeness")
+    for name in os.listdir(src):
+        if name == "C_C1nsadd_saclay0.npz":
+            continue                                   # <-- the mutation
+        os.symlink(os.path.join(src, name), str(comp / name))
+    with pytest.raises(HU.ManifestIntegrityError) as err:
+        MOR.build(str(farm2), str(tmp_path / "bad"))
+    assert "FAIL CLOSED" in str(err.value)
+    assert "C_C1nsadd_saclay0.npz" in str(err.value)
+
+
+@_have
+def test_model_of_record_fails_closed_on_a_broken_predeclaration_seal(
+        tmp_path, monkeypatch):
+    """MUTATION: a sealed predeclaration whose sidecar no longer matches."""
+    gov = tmp_path / "gov"
+    for directory, stem in MOR.PREDECLARATIONS.values():
+        d = gov / directory
+        d.mkdir(parents=True, exist_ok=True)
+        for ext in (".md", ".sha256", ".timestamp"):
+            src = os.path.join(MOR.GOV, directory, stem + ext)
+            if os.path.isfile(src):
+                shutil.copy(src, str(d / (stem + ext)))
+    monkeypatch.setattr(MOR, "GOV", str(gov))
+    # clean copy: the seal verifies
+    MOR._predeclaration(*MOR.PREDECLARATIONS["final_ladder"])
+    directory, stem = MOR.PREDECLARATIONS["final_ladder"]
+    doc = gov / directory / (stem + ".md")
+    with open(str(doc), "a") as fh:
+        fh.write("\nthis line was never sealed\n")
+    with pytest.raises(HU.ManifestIntegrityError) as err:
+        MOR._predeclaration(directory, stem)
+    assert "BROKEN SEAL" in str(err.value)
+
+
+@_have
+def test_fp_template_csv_round_trips(tmp_path):
+    """The long-format CSV must rebuild the 29 x 8 block exactly."""
+    out, spec = FPR.build(PRODUCTS, str(tmp_path))
+    z = np.load(os.path.join(out, "fp_template.npz"), allow_pickle=True)
+    counts = np.asarray(z["fp_counts"], np.int64)
+    live = np.asarray(z["live_stratum"], bool)
+    share = np.asarray(z["perks_share"], float)
+    assert counts.shape == (29, 8)
+    assert int(counts.sum()) == spec["template"]["n_events"] == 89
+    assert int(z["K_live_cells"]) == 29 * int(live.sum())
+    assert abs(float(z["a0"]) - 1.0 / int(z["K_live_cells"])) < 1e-15
+    # the shares are a probability distribution over the LIVE cells only
+    assert abs(share[:, live].sum() - 1.0) < 1e-12
+    assert share[:, ~live].sum() == 0.0
+
+    import csv as _csv
+    with open(os.path.join(out, "fp_counts.csv")) as fh:
+        rows = list(_csv.DictReader(fh))
+    assert len(rows) == 29 * 8
+    back = np.zeros_like(counts)
+    back_share = np.zeros_like(share)
+    edges = np.asarray(z["nhat_edges"], float)
+    for r in rows:
+        c = int(np.argmin(np.abs(edges[:-1] - float(r["nhat_lo"]))))
+        s = int(round(float(r["snr_lo"])))
+        back[c, s] = int(r["fp_counts"])
+        back_share[c, s] = float(r["perks_share"])
+    assert np.array_equal(back, counts)
+    assert np.max(np.abs(back_share - share)) < 1e-12
+    # the 8 production imputations are the deterministic Gamma quantiles
+    lam = spec["lambda_posterior"]["per_family"]["2lpt0"]
+    imps = lam["lambda_imputations_J8"]
+    assert len(imps) == 8 and imps == sorted(imps)
+    assert abs(lam["lambda_gamma_shape"] - 89.5) < 1e-12
+
+
+@_have
+def test_release_readme_lists_every_file_present(tmp_path):
+    """The README inventory is the release tree, not a hand-kept list."""
+    root = str(tmp_path / "release")
+    os.makedirs(root)
+    CR.build(PRODUCTS, root)
+    FPR.build(PRODUCTS, root)
+    ST.build(PRODUCTS, root)
+    MOR.build(PRODUCTS, root)
+    HU.write_sha256sums(root)
+    path, inv = RRM.build(root)
+    text = open(path).read()
+
+    present = set()
+    for base, _dirs, files in os.walk(root):
+        for name in files:
+            if name in ("SHA256SUMS", "README.md") and base == root:
+                continue
+            if name == "SHA256SUMS":
+                continue
+            present.add(os.path.relpath(os.path.join(base, name), root))
+    listed = {rel for rel, _size in inv}
+    assert listed == present, present ^ listed
+    for rel in sorted(present):
+        assert "`%s`" % rel in text, rel
+    # and the binding wording constraints travel with the package
+    assert "all mock closure tests passed" in text and "NOT \"all mock" in text
+    assert "not a 1 sigma" in text
+    assert "1 - C` is not contamination" in text

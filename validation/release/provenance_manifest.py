@@ -535,6 +535,18 @@ class ManifestBuilder:
                     if sub == "response" and (":E:2lpt0" in src
                                               or ":B:2lpt0" in src):
                         self.link(src, nid, "reduced_to")
+        # the frozen-configuration products (PI ruling 2026-09-14)
+        for rel, nid, note in (
+                ("model_of_record/MODEL_OF_RECORD.json", "release:model_of_record",
+                 "the frozen configuration of record"),
+                ("systematics/SYSTEMATICS_TABLE.json", "release:systematics",
+                 "the eight named systematics"),
+                ("fp/lambda_spec.json", "release:fp_template",
+                 "the loa-0 FP template and Lambda specification")):
+            path = os.path.join(release_root, rel)
+            if not os.path.isfile(path):
+                continue
+            self.add(nid, "release_product", path, hash_it=False, note=note)
 
     # ---- environment ------------------------------------------------------
     def environment_lock(self):
