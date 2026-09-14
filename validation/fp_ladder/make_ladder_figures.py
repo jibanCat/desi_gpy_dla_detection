@@ -27,7 +27,7 @@ def style():
 def load_run(runs, variant, fam, seed):
     p = os.path.join(runs, variant, f"RUN_{variant}_{fam}_s{seed}.json")
     if not os.path.exists(p):
-        cands = sorted(glob.glob(os.path.join(runs, variant, f"RUN_{variant}_{fam}_s{seed}*.json")))
+        cands = sorted(glob.glob(os.path.join(runs, variant, f"RUN_*_{fam}_s{seed}*.json")))   # linked REF dirs keep their own names
         if not cands:
             return None, None
         p = cands[0]
