@@ -102,6 +102,8 @@ def main():
         r, j = analyse(p); rows.append(r); runs.setdefault(r["family"], []).append((r, p))
     # rank-Rhat / ESS from bychain when available: reconstruct headline per chain from bychain? bychain stores sites, not the estimand;
     # use the runner's per-chain medians + split-Rhat where present, and compute rank-Rhat/ESS on the f-draw-derived headline if chain order is recoverable.
+    if not rows:
+        raise SystemExit("j8_certify: no RUN_*_j*.json found — certification cannot be evaluated (fail closed)")
     verdicts = {}; md = ["# J = 8 production M1CUT — certification table (sealed rule 6acf7508)", ""]
     md += ["| family | j | Λ_j | ≥20.0 bias % (hw68 %) | ≥20.3 bias % (hw68 %) | Ω bias % | t_K | FP/census | div | E-BFMI per chain | per-chain medians ≥20.0 | z bins ≥20.3 |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     allpass = True
@@ -132,12 +134,14 @@ def main():
                     j1m = json.load(open(j1[0]))["thresholds"][thr]["post_p16_50_84"][1]
                     v["checks"][f"{thr}_pool_vs_J1_over_hw68"] = abs(pool[thr]["median"] - j1m) / hw
                     v["checks"][f"{thr}_pool_vs_J1_lt_0p25hw"] = bool(abs(pool[thr]["median"] - j1m) < 0.25 * hw)
-        fam_pass = all(val for k, val in v["checks"].items() if isinstance(val, bool))
+        fam_pass = all(val for k, val in v["checks"].items() if isinstance(val, bool)) and len(R) == 8   # all 8 imputations present
+        v["checks"]["all_8_imputations_present"] = (len(R) == 8)
         v["PASS"] = fam_pass; allpass &= fam_pass; verdicts[fam] = v
     md += ["", "## Pooled (equal-weight over j) production posterior and sealed checks", "", "| family | pooled ≥20.0 bias % (hw68 %) | pooled ≥20.3 bias % (hw68 %) | spread/hw68 (≥20.0, ≥20.3) | pool vs J=1 (hw68) | modes/R̂ ok | PASS |", "|---|---|---|---|---|---|---|"]
     for fam, v in verdicts.items():
         po = v["pool"]; c = v["checks"]
         md.append(f"| {fam} | {po['ge20.0']['bias_pct']:+.2f} ({100*po['ge20.0']['hw68']/(po['ge20.0']['median']/(1+po['ge20.0']['bias_pct']/100)):.2f}) | {po['ge20.3']['bias_pct']:+.2f} ({100*po['ge20.3']['hw68']/(po['ge20.3']['median']/(1+po['ge20.3']['bias_pct']/100)):.2f}) | {c['ge20.0_spread_over_pooled_hw68']:.2f}, {c['ge20.3_spread_over_pooled_hw68']:.2f} | {c.get('ge20.0_pool_vs_J1_over_hw68', float('nan')):.2f}, {c.get('ge20.3_pool_vs_J1_over_hw68', float('nan')):.2f} | {c['ge20.0_no_distinct_modes'] and c['ge20.3_no_distinct_modes']} / {c['ge20.0_split_rhat_le_1p05'] and c['ge20.3_split_rhat_le_1p05']} | **{'PASS' if v['PASS'] else 'FAIL'}** |")
+    allpass = allpass and len(verdicts) == 3
     md += ["", f"**Certification: {'PASS' if allpass else 'STOP — return to PI'}** (sealed rule: per-imputation median spread < 0.5 pooled hw68 on both headlines and every family; no distinct science modes; pool within 0.25 hw68 of the J = 1 median run). Divergences and E-BFMI are disclosed, not gating."]
     json.dump(dict(rows=rows, verdicts=verdicts, PASS=allpass), open(a.out_json, "w"), indent=1, default=float)
     open(a.out_md, "w").write("\n".join(md) + "\n"); print("\n".join(md[-12:]))

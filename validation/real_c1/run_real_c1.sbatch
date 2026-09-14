@@ -18,13 +18,17 @@
 # This file is PREPARED, NOT SUBMITTED. Two preconditions must be signed off
 # before anyone runs `sbatch` on it:
 #   (1) the J = 8 mock sampler-health certification has PASSED (ruling §15);
-#   (2) `validation/real_c1/run_real_c1.py` EXISTS. It does not yet. The
-#       frozen runner `validation/fp_ladder/run_ladder.py` is MOCK-ONLY: it
-#       refuses any pack whose `truth_counts` is the all-zero real sentinel
-#       (its "MOCK GATE"), and its read-out is built entirely from
-#       `forward_selftest.truth_f` / `perz_recovery`, which do not exist on
-#       real data. See governance/final_campaign_2026-09-13/
-#       REAL_C1_READINESS.md §6 for the required delta.
+#   (2) a PI GO for the blind real C1 itself (ruling §17).
+#
+# BLOCKER B1 IS CLOSED: the science driver `validation/real_c1/run_real_c1.py`
+# now EXISTS. It is `validation/fp_ladder/run_ladder.py` minus the mock-only
+# machinery — same model call, same fixed-object loading, same Lambda
+# imputation, same NUTS construction — with run_ladder's MOCK GATE INVERTED
+# (it requires the all-zero ZEROS_NO_TRUTH sentinel and refuses a mock pack),
+# `--fix` / `--ops` / `--census` / `--ladder ORACLE` refused outright, and every
+# truth-comparison read-out deleted. Bit-identity against the frozen mock runner
+# is proved by `validation/real_c1/identity_test.py` (np.array_equal on the f
+# draws) and by `tests/test_run_real_c1.py`.
 # ===========================================================================
 #
 # Layout: 16 tasks = 8 Lambda imputations x 2 seeds. One task = one
@@ -47,6 +51,9 @@ mkdir -p $OUT/logs
 
 RUNNER=$W/validation/real_c1/run_real_c1.py
 [ -f "$RUNNER" ] || { echo "BLOCKED: $RUNNER does not exist (see REAL_C1_READINESS.md §6). Refusing."; exit 3; }
+# fail closed if the identity test has not been run and recorded PASS
+IDENT=$L/real_c1/identity/IDENTITY_VERDICT.json
+[ -f "$IDENT" ] && grep -q '"PASS": true' "$IDENT" || { echo "BLOCKED: $IDENT missing or not PASS (run validation/real_c1/identity_test.py first). Refusing."; exit 6; }
 
 # --- the pack of record, staged read-only beside its support sidecar -------
 PACK=$I/C1_pack.npz
@@ -71,6 +78,7 @@ echo "seed=$SEED imputation=$j/$J code=$(git -C $W rev-parse HEAD) host=$(hostna
   --c-fixed-file  $I/C_C1nsadd_real.npz \
   --extra-fixed-file $I/mu_extra_P6bcal_real.npz \
   --lam-imputations $J --lam-imputation $j \
+  --quiet-values \
   --stage REAL_C1_BLIND \
   --out $OUT/RUN_REALC1_s${SEED}_j${j}.json
 
