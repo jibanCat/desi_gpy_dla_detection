@@ -537,10 +537,21 @@ def test_systematics_table_has_the_eight_named_effects_and_no_quadrature(
     # S2 must never be halved into a 1 sigma (PI sec.13)
     assert "never |B - E| / 2" in _sysid(systematics, "S2")["treatment"] \
         or "|B - E| / 2 is NOT a 1 sigma" in _sysid(systematics, "S2")["treatment"]
-    # S6 has no estimand-level number yet and must say so, not invent one
+    # S6 must never invent a number.  Before the propagation exists it says
+    # PENDING; after it exists the result is PRIVATE (it is evaluated against
+    # the real pooled posterior), so the RELEASE product records only that the
+    # propagation exists and its digest -- still no number of its own unless
+    # the result file declares an explicit release-safe block.
     s6 = _sysid(systematics, "S6")
-    assert s6["summary"]["estimand_level_size_pp"] is None
-    assert s6["summary"]["estimand_level_status"].startswith("PENDING")
+    st = s6["summary"]["estimand_level_status"]
+    assert st.startswith("PENDING") or st.startswith("PROPAGATED")
+    if st.startswith("PENDING"):
+        assert s6["summary"]["estimand_level_size_pp"] is None
+        assert s6["summary"]["result_file_found"] is None
+    else:
+        assert s6["summary"]["result_file_sha256"]
+        if not s6["summary"].get("release_safe_block_present"):
+            assert s6["summary"]["estimand_level_size_pp"] is None
 
 
 @_have
@@ -549,7 +560,8 @@ def test_systematics_reproduces_published_response_form_sensitivity(
     """Section 3 of FINAL_CAMPAIGN_RETURN_2026-09-14.md, to 0.01 pp."""
     rows = {(r["family"], r["threshold"]): r
             for r in _sysid(systematics, "S2")["rows"]
-            if r["fp_configuration"] == "ORACLE"}
+            if r["fp_configuration"] == "ORACLE"
+            and r["threshold"] in ST.THRESHOLDS}
     assert set(rows) == set(PUBLISHED_S3)
     for key, (pub_b, pub_e, pub_d) in PUBLISHED_S3.items():
         r = rows[key]
@@ -716,3 +728,263 @@ def test_release_readme_lists_every_file_present(tmp_path):
     assert "all mock closure tests passed" in text and "NOT \"all mock" in text
     assert "not a 1 sigma" in text
     assert "1 - C` is not contamination" in text
+
+
+# ==========================================================================
+# 29-36: the 2026-09-15 documentation / read-out cleanup
+# (PI ruling 2026-09-14b sec.6, sec.10, sec.11, sec.17)
+#
+# These tests pin the four things the cleanup fixed and would silently
+# regress: the S1 arm of record (J = 8 production, not the J = 1 arm that was
+# mislabelled "model_of_record_M1CUT"), the Omega window (the run JSONs'
+# thresholds.omega_allz is the SUB-DLA window and is NOT Paper-1 Omega), the
+# S8 disclosure being built from the production runs, and the real half-widths
+# never reaching the release tree.  Two are MUTATION tests.
+# ==========================================================================
+@_have
+def test_S1_arm_of_record_is_the_J8_production_arm_and_J1_is_preserved(
+        systematics):
+    """PI 2026-09-14b sec.6: the production J = 8 read-out, not the J = 1 table.
+
+    The J = 1 rows are HISTORY and must still be there under their own label:
+    the correction is a relabelling plus a new arm, never a deletion.
+    """
+    s1 = _sysid(systematics, "S1")
+    arms = {r["arm"] for r in s1["rows"]}
+    assert s1["arm_of_record"] == "model_of_record_M1CUT_J8_production"
+    assert "model_of_record_M1CUT_J8_production" in arms
+    assert "M1CUT_J1_HISTORY" in arms, "the J = 1 rows were deleted, not preserved"
+    assert "ORACLE_FP_diagnostic_F1" in arms
+    # the old, ambiguous label must be gone so nothing can quote it by mistake
+    assert "model_of_record_M1CUT" not in arms
+    # history is documented in the product itself, not only in a commit message
+    assert "J = 1" in s1["history_note"] and "PRESERVED" in s1["history_note"]
+    # the production arm really is eight imputations at ONE seed
+    rec = [r for r in s1["rows"]
+           if r["arm"] == "model_of_record_M1CUT_J8_production"]
+    assert {r["n_imputations"] for r in rec} == {8}
+    assert s1["summary"]["arm_of_record_seeds"] == [ST.J8_SEED]
+    assert len(rec) == 3 * len(ST.THRESHOLDS) * 5          # fam x thr x bin
+
+
+@_have
+def test_S1_J8_rows_equal_an_independent_read_of_the_production_runs():
+    """The S1 arm of record is exactly the equal-weight imputation mean.
+
+    Recomputed here straight from the run JSONs by a different code path, so a
+    change in the roll-up (e.g. silently averaging seeds and imputations
+    together, or dropping an imputation) cannot pass.
+    """
+    if not os.path.isdir(PRODUCTS):
+        pytest.skip("frozen mock products not mounted")
+    j8 = ST._load_j8(PRODUCTS)
+    for fam, recs in j8.items():
+        assert len(recs) == 8
+        assert sorted(j for _s, j, _r, _p in recs) == list(range(8))
+        for t in ST.THRESHOLDS:
+            want = {}
+            for _s, _j, run, _p in recs:
+                for c in run["perz_recovery"]["estimand"][t]["paper1_bins"]:
+                    if c.get("available", True):
+                        want.setdefault(c["bin"], []).append(
+                            float(c["median_bias_pct"]))
+            for b, vals in want.items():
+                assert len(vals) == 8
+                mean = sum(vals) / 8.0
+                rows = ST._sys1_zbin(j8, {}, {})["rows"]
+                got = [r for r in rows if r["family"] == fam
+                       and r["threshold"] == t and r["bin"] == b]
+                assert len(got) == 1
+                assert abs(got[0]["bias_pct"] - mean) < 1e-12, (fam, t, b)
+                assert abs(got[0]["imputation_spread_pp"]
+                           - (max(vals) - min(vals))) < 1e-12
+            break                                   # one threshold is enough
+        break                                       # one family is enough
+
+
+@_have
+def test_omega_column_is_the_paper_window_not_the_subdla_window(systematics):
+    """PI 2026-09-14b sec.10.
+
+    ``thresholds.omega_allz`` in every run JSON is
+    ``omega_subdla_195_203_allz``.  The table's Omega must be the PAPER's
+    [20.3, 21.6] window instead, and it must differ from the sub-DLA number --
+    on two of three families it differs in SIGN, which is what made the
+    mislabel dangerous.
+    """
+    j8 = ST._load_j8(PRODUCTS)
+    mismatched_sign = 0
+    for fam, recs in j8.items():
+        subs, papers = [], []
+        for _s, _j, run, pth in recs:
+            sub = run["thresholds"]["omega_allz"]
+            assert sub["key"] == "omega_subdla_195_203_allz"
+            subs.append(float(sub["median_bias_pct"]))
+            papers.append(ST.omega_bias_pct(pth))
+        sub_m = sum(subs) / len(subs)
+        paper_m = sum(papers) / len(papers)
+        if paper_m * sub_m < 0:
+            mismatched_sign += 1
+    # the sign disagrees on two of the three families: quoting the sub-DLA
+    # number as "Omega" would have reported the wrong sign for the Paper-1
+    # quantity, which is exactly why the column had to be relabelled.
+    assert mismatched_sign >= 2, "the two windows should disagree in sign"
+    # every applicable systematic now carries an Omega read-out
+    for sid, key in (("S2", "signed_E_minus_B_pp"),
+                     ("S3", "shift_M1CUT_minus_ORACLE_pp"),
+                     ("S5", "shift_pp"), ("S7", "shift_pp")):
+        rows = [r for r in _sysid(systematics, sid)["rows"]
+                if r.get("threshold") == "omega_20p3_21p6"]
+        assert rows, "no Omega row in " + sid
+        assert all(key in r and r[key] is not None for r in rows), sid
+    s4 = [r for r in _sysid(systematics, "S4")["rows"]]
+    assert all("delta_vs_record_omega_20p3_21p6_pp" in r for r in s4)
+    s1hi = [r for r in _sysid(systematics, "S1")["rows"]
+            if r["arm"] == "model_of_record_M1CUT_J8_production"
+            and r["threshold"] == "ge20.3"]
+    assert all("omega_20p3_21p6_bias_pct" in r for r in s1hi)
+
+
+@_have
+def test_B5_coverage_and_seed_spread_are_stated_not_asserted_away(systematics):
+    """PI 2026-09-14b sec.6, sec.18: B5's 25 % coverage and its real seed noise.
+
+    The superseded caption claimed "seed noise <= 0.05 pp".  That holds for the
+    all-z headlines and FAILS in B5 by more than an order of magnitude; the
+    table must carry the measured B5 seed spread instead of the old claim.
+    """
+    s1 = _sysid(systematics, "S1")
+    b5 = [r for r in s1["rows"] if r["bin"] == "B5"]
+    assert b5 and all(abs(r["nominal_coverage"] - 0.25) < 1e-9 for r in b5)
+    others = [r for r in s1["rows"] if r["bin"] != "B5"]
+    assert all(abs(r["nominal_coverage"] - 1.0) < 1e-9 for r in others)
+    spread = s1["summary"]["B5_seed_spread_pp_J1_two_seed_arm"]
+    assert len(spread) == 6                        # 3 families x 2 thresholds
+    assert max(spread.values()) > 0.5, \
+        "the B5 two-seed spread is being reported as if it were <= 0.05 pp"
+    assert s1["summary"]["max_imputation_spread_pp"] is not None
+
+
+@_have
+def test_S8_is_built_from_the_production_runs_and_carries_rank_rhat(
+        systematics):
+    """PI 2026-09-14b sec.11, sec.17: the S8 disclosure must be CURRENT.
+
+    The superseded block came from the J = 1 arm and understated both tails
+    (E-BFMI min 0.0812, divergences max 10).
+    """
+    s8 = _sysid(systematics, "S8")
+    assert s8["summary"]["arm_of_record"] == "M1CUT_J8_production"
+    prod = [r for r in s8["rows"] if r.get("arm") == "M1CUT_J8_production"]
+    assert len(prod) == 24
+    assert s8["summary"]["ebfmi_min_over_production_runs"] < 0.0812
+    assert s8["summary"]["divergences_max_production"] > 10
+    assert "M1CUT_J1_HISTORY" in {r.get("arm") for r in s8["rows"]}
+    assert s8["summary"]["history_J1_ebfmi_min"] == pytest.approx(0.0812,
+                                                                 abs=1e-9)
+    # the sealed rule's statistic is now read out, not only the runner's
+    assert all(r["rank_rhat_ge20.3"] is not None for r in prod)
+    assert s8["summary"]["headline_rank_rhat_max_production"] < 1.05
+    # the t_K nuisance sites are NOT converged and the table must say so
+    assert s8["summary"]["t_K_rank_rhat_max_production"] > 1.2
+    assert s8["summary"]["t_K_ess_bulk_min_production"] < 20
+    assert "never be quoted as a measured FP transfer" in s8["treatment"]
+
+
+@_have
+def test_release_table_carries_no_real_halfwidths(systematics, tmp_path):
+    """Real-data privacy: the release product is in MOCK half-width units.
+
+    The real pooled half-widths may only be written to the PRIVATE companion,
+    and the CLI must refuse to put that companion inside the release tree.
+    """
+    assert "MOCK" in systematics["units"]["hw68_reference"]
+    blob = json.dumps(systematics)
+    # real pooled half-widths, and the real result of record, stay out
+    assert "real_pooled_hw68" not in blob
+    assert "size_in_real_hw68" not in blob
+    # the S6 result is PRIVATE: only its basename and digest may appear
+    s6sum = _sysid(systematics, "S6")["summary"]
+    if s6sum.get("result_file_found"):
+        assert os.sep not in s6sum["result_file_found"]
+        assert "record_median" not in blob and "quoted_S6" not in blob
+    # ... and the S8 real block, when present, is diagnostics only
+    s8 = _sysid(systematics, "S8")
+    for r in s8["rows"]:
+        assert "median" not in r and "bias_pct" not in r
+    rel = tmp_path / "release"
+    rel.mkdir()
+    with pytest.raises(SystemExit):
+        ST.main(["--products", PRODUCTS, "--out", str(rel), "--no-sums",
+                 "--real-pooled", os.path.join(PRODUCTS, "real_c1",
+                                               "REAL_C1_POOLED.json"),
+                 "--private-out", str(rel / "systematics" / "private")])
+    with pytest.raises(SystemExit):       # the two flags must travel together
+        ST.main(["--products", PRODUCTS, "--out", str(rel), "--no-sums",
+                 "--private-out", str(tmp_path / "priv")])
+
+
+@_have
+def test_b5_presentation_refuses_to_write_into_the_release_tree(tmp_path):
+    """MUTATION test: the B5 table carries REAL values and is notes-only."""
+    import b5_presentation as B5
+    rel = str(tmp_path / "release")
+    os.makedirs(os.path.join(rel, "inside"), exist_ok=True)
+    with pytest.raises(HU.ManifestIntegrityError):
+        B5.build(PRODUCTS,
+                 os.path.join(PRODUCTS, "release", "systematics",
+                              "SYSTEMATICS_TABLE.json"),
+                 os.path.join(PRODUCTS, "real_c1", "REAL_C1_POOLED.json"),
+                 os.path.join(rel, "inside"), release_root=rel)
+
+
+def test_manifest_git_stamp_names_the_uncommitted_files(tmp_path):
+    """A dirty stamp must be actionable, not a bare boolean (SEC 12 B-10)."""
+    b = PM.ManifestBuilder(str(tmp_path), str(tmp_path), strict=False)
+    g = b.git_stamp()
+    assert set(g) >= {"commit", "branch", "dirty",
+                      "generated_with_uncommitted_edits",
+                      "n_uncommitted_edits"}
+    assert isinstance(g["generated_with_uncommitted_edits"], list)
+    assert g["n_uncommitted_edits"] == len(
+        g["generated_with_uncommitted_edits"])
+    if g["dirty"]:
+        assert g["generated_with_uncommitted_edits"], \
+            "dirty tree but no file named"
+
+
+@_have
+def test_S6_placeholder_fills_itself_when_the_result_lands(tmp_path):
+    """PI 2026-09-14b sec.9: S6 stays length-less until the propagation exists.
+
+    POWER CHECK: the loader is shown to actually fill the fields when the
+    result file is present, so 'still PENDING' cannot be a dead code path.
+    """
+    s6 = ST._sys6_completeness(PRODUCTS, None, search_defaults=False)
+    assert s6["summary"]["estimand_level_size_pp"] is None
+    assert s6["summary"]["result_file_found"] is None
+    assert s6["summary"]["result_file_expected"] == ST.S6_RESULT_BASENAME
+    # (a) a result that declares itself release-safe fills the release fields
+    safe = tmp_path / ST.S6_RESULT_BASENAME
+    safe.write_text(json.dumps({
+        "classification": "release-safe summary",
+        "release_safe": {"estimand_level_size_pp": 0.42,
+                         "estimand_level_size_omega_20p3_21p6_pp": 0.37,
+                         "estimand_level_status": "PROPAGATED (linearised)"}}))
+    s6b = ST._sys6_completeness(PRODUCTS, str(safe), search_defaults=False)
+    assert s6b["summary"]["estimand_level_size_pp"] == 0.42
+    assert s6b["summary"]["estimand_level_size_omega_20p3_21p6_pp"] == 0.37
+    assert s6b["summary"]["estimand_level_status"].startswith("PROPAGATED")
+    assert s6b["summary"]["result_file_found"] == ST.S6_RESULT_BASENAME
+    assert s6b["summary"]["result_file_sha256"]
+    # (b) MUTATION: a PRIVATE result must be recorded but never transcribed
+    priv = tmp_path / "priv" / ST.S6_RESULT_BASENAME
+    priv.parent.mkdir()
+    priv.write_text(json.dumps({
+        "classification": "PRIVATE: contains real-data estimand values",
+        "estimands": {"dndx_ge20p3_allz": {"record_median": 0.0643012345678}}}))
+    s6c = ST._sys6_completeness(PRODUCTS, str(priv), search_defaults=False)
+    assert s6c["summary"]["result_is_private"] is True
+    assert s6c["summary"]["estimand_level_size_pp"] is None
+    assert "0.0643012345678" not in json.dumps(s6c)
+    assert "record_median" not in json.dumps(s6c)

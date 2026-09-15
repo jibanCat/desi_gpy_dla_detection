@@ -97,9 +97,20 @@ def main():
         s = spreads[thr]
         md.append(f"| dN/dX({thr}) all-z | {p5[0]:.5f} | {pp[0]:.5f} | **{pp[1]:.5f}** | {pp[2]:.5f} | {p5[1]:.5f} | {s['pooled_hw68']:.5f} | {s['imputation_spread_over_hw']:.3f} | {s['seed_spread_over_hw'] if s['seed_spread_over_hw'] is None else round(s['seed_spread_over_hw'],3)} |")
     om = pools["all"]["omega_20p3_21p6_allz"]; md.append(f"| Ω[20.3,21.6] all-z | | {om.get('p16_50_84', om.get('post_p16_50_84', [None]*3))[0]} | **{om.get('p16_50_84', om.get('post_p16_50_84', [None]*3))[1]}** | {om.get('p16_50_84', om.get('post_p16_50_84', [None]*3))[2]} | | | | |")
-    md += ["", "## Per-run table", "", "| file | seed | j | Λ_j | ≥20.0 median (hw) | ≥20.3 median (hw) | div | E-BFMI | t_K |", "|---|---|---|---|---|---|---|---|---|"]
+    md += ["", "## Per-run table", "",
+           "Mixing columns: headline = rank-normalised split-R̂ / bulk ESS of dN/dX(≥20.0) and (≥20.3); "
+           "t_K mixing = rank-R̂ and bulk ESS of the three coarse-z FP nuisance sites (PI 2026-09-14b §11: the t_K "
+           "location is reported WITH its non-convergence and is never a measured FP transfer).", "",
+           "| file | seed | j | Λ_j | ≥20.0 median (hw) | ≥20.3 median (hw) | div | E-BFMI | t_K | headline rank-R̂ | headline ESS_bulk | t_K rank-R̂ | t_K ESS_bulk |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for x in per_run:
-        md.append(f"| {x['file']} | {x['seed']} | {x['j']} | {x['lam']:.3f} | {x['ge20p0']['median']:.5f} ({x['ge20p0']['hw68']:.5f}) | {x['ge20p3']['median']:.5f} ({x['ge20p3']['hw68']:.5f}) | {x['divergences']} | {[round(e,2) for e in x['ebfmi']] if x['ebfmi'] else None} | {[round(t,2) for t in x['t_K']] if x['t_K'] else None} |")
+        rr = x.get("rank_rhat") or {}; es = x.get("ess") or {}; tm = x.get("t_mixing") or []
+        _o = ("dndx_dla_20p0_allz", "dndx_dla_20p3_allz")
+        hr = [round(rr[k], 4) for k in _o if rr.get(k) is not None] or None
+        he = [round(float(es[k]), 0) for k in _o if es.get(k) is not None] or None
+        tr = [round(d.get("rank_split_rhat"), 3) for d in tm if d.get("rank_split_rhat") is not None] or None
+        te = [round(d.get("ess_bulk"), 0) for d in tm if d.get("ess_bulk") is not None] or None
+        md.append(f"| {x['file']} | {x['seed']} | {x['j']} | {x['lam']:.3f} | {x['ge20p0']['median']:.5f} ({x['ge20p0']['hw68']:.5f}) | {x['ge20p3']['median']:.5f} ({x['ge20p3']['hw68']:.5f}) | {x['divergences']} | {[round(e,2) for e in x['ebfmi']] if x['ebfmi'] else None} | {[round(t,2) for t in x['t_K']] if x['t_K'] else None} | {hr} | {he} | {tr} | {te} |")
     open(a.out_md, "w").write("\n".join(md) + "\n")
     print(json.dumps(dict(health=health, spreads=spreads), indent=1, default=float))
     if a.print_values:

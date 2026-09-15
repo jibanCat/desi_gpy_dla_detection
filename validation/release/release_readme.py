@@ -194,6 +194,9 @@ def build(out_root):
     A("")
     A("## 6. Licence")
     A("")
+    A("**PENDING PI — the release licence has not yet been chosen.** The line "
+      "below is a PLACEHOLDER, not a decision, and must not be read as one.")
+    A("")
     A("<PLACEHOLDER — CC-BY-4.0 proposed for data and text, BSD-3-Clause "
       "proposed for the evaluation code; PI to confirm before submission.>")
     A("")

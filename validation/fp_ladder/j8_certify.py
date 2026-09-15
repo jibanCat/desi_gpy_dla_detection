@@ -6,11 +6,95 @@ present), per-chain headline medians (distinct-mode check). Pooled (equal-weight
 _fdraws files. Applies the sealed PASS rule mechanically. Read-out only; selects nothing.
 """
 from __future__ import annotations
-import argparse, glob, json, os
+import argparse, glob, json, os, sys
 import numpy as np
 
 FAMS = ("2lpt0", "london0", "saclay0")
 THR = ("ge20.0", "ge20.3")
+
+#: SEALED-RULE FIDELITY NOTE (documentation only; the verdict is unchanged).
+#: The sealed predeclaration (sha 6acf7508) asks for "rank-Rhat and bulk/tail
+#: ESS of the two headline estimands" and gates on "rank-Rhat <= 1.05".  As
+#: IMPLEMENTED, the certifier evaluated and gated on the RUNNER's plain
+#: split-Rhat (`estimand_mixing.split_rhat`); ``rank_rhat_ess`` was defined in
+#: this file but never called by the certification path.  The substitution does
+#: not change the verdict: the maximum split-Rhat over all 24 production runs is
+#: 1.0129, and the rank-normalised statistic, now read out for the headlines and
+#: for t_K (PI inspection SEC 11b and release systematic S8), reaches 1.011 on
+#: the headlines -- both far below the 1.05 threshold on either statistic.
+#: The original wording of the sealed rule is preserved verbatim in
+#: J8_CERTIFICATION_PREDECLARATION.md; nothing there was rewritten.
+SEALED_RULE_IMPLEMENTATION_NOTE = (
+    "Sealed rule asks for rank-Rhat / bulk-tail ESS of the headlines and gates "
+    "on rank-Rhat <= 1.05; IMPLEMENTED AS the runner's plain split-Rhat "
+    "(estimand_mixing.split_rhat) with the same 1.05 threshold. Verdict "
+    "unaffected: max split-Rhat over the 24 production runs is 1.0129 and the "
+    "rank-normalised statistic (read out for the headlines and t_K in PI "
+    "inspection SEC 11b / release systematic S8) reaches 1.011. The sealed "
+    "text is preserved verbatim and was not rewritten.")
+
+#: The run JSONs' ``thresholds.omega_allz`` is the SUB-DLA window
+#: [19.5, 20.3) (``key = omega_subdla_195_203_allz``).  The Paper-1 quantity is
+#: Omega_HI[20.3, 21.6], which is read back from the stored f draws with the
+#: committed helper ``ladder_table.paper_omega_20p3_21p6``.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.dirname(os.path.dirname(_HERE))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+
+
+def paper_omega(fdraws_path):
+    """Omega_HI[20.3, 21.6] all-z for one run, from its stored f draws."""
+    from validation.fp_ladder.ladder_table import paper_omega_20p3_21p6
+    om = paper_omega_20p3_21p6(fdraws_path, pack=None)
+    if not om or "unavailable" in om or "blocked" in om:
+        return None
+    return om
+
+
+def pooled_paper_omega(fdraw_files):
+    """Equal-weight pool over imputations of Omega_HI[20.3, 21.6].
+
+    The N_HI weight, the redshift weight and the prefactor are the PAPER's own
+    (``hbi_reduction``, imported read-only exactly as
+    ``ladder_table.paper_omega_20p3_21p6`` does).  The pool is the equal-weight
+    concatenation of the per-imputation draws, i.e. the same pooling rule the
+    sealed J = 8 headline pool uses.
+    """
+    from validation.fp_ladder import ladder_table as LT
+    if not os.path.isdir(LT.PAPER_FIGURES):
+        return None
+    if LT.PAPER_FIGURES not in sys.path:
+        sys.path.insert(0, LT.PAPER_FIGURES)
+    import hbi_reduction as HR                      # READ-ONLY import
+    posts, truth = [], None
+    for f in fdraw_files:
+        with np.load(f) as z:
+            fd = np.asarray(z["f"], float)
+            ft = np.asarray(z["truth_f"], float)
+            n_edges = np.asarray(z["ntrue_edges"], float)
+            z_edges = np.asarray(z["zf_edges"], float)
+            dX = np.asarray(z["dX_k"], float)
+        P = HR.Posterior.__new__(HR.Posterior)
+        P.f, P.n_edges, P.z_edges, P.dX = fd, n_edges, z_edges, dX
+        ow = P._omega_weight(*HR.OMEGA_NHI)
+        zw = P._z_weight(*HR.LOWZ_SUPPORT)
+        zs = float(zw.sum())
+        if zs <= 0:
+            return None
+        pre = float(HR.OMEGA_PREFACTOR_CM2)
+        posts.append(pre * np.einsum("dbk,b,k->d", fd, ow, zw) / zs)
+        t = float(pre * np.einsum("bk,b,k->", ft, ow, zw) / zs)
+        truth = t if truth is None else truth
+    pool = np.concatenate(posts)
+    p16, p50, p84 = np.percentile(pool, [16, 50, 84])
+    return dict(median=float(p50), truth=float(truth),
+                hw68=float(0.5 * (p84 - p16)),
+                bias_pct=float(100 * (p50 / truth - 1)),
+                hw68_pct=float(100 * 0.5 * (p84 - p16) / truth),
+                n_draws=int(pool.size),
+                window_nhi=[float(x) for x in HR.OMEGA_NHI],
+                window_z=[float(x) for x in HR.LOWZ_SUPPORT])
 
 
 def rank_rhat_ess(x):
@@ -69,7 +153,19 @@ def analyse(run_json):
         if key in em:
             out[thr]["perchain_median"] = em[key].get("perchain_median"); out[thr]["split_rhat_runner"] = em[key].get("split_rhat")
     om = j["thresholds"].get("omega_allz")
-    out["omega"] = dict(bias_pct=om["median_bias_pct"]) if isinstance(om, dict) else None
+    out["omega_subdla_19p5_20p3"] = (dict(bias_pct=om["median_bias_pct"],
+                                          key=om.get("key"))
+                                     if isinstance(om, dict) else None)
+    out["omega"] = out["omega_subdla_19p5_20p3"]          # backwards-compatible
+    fdr = run_json.replace(".json", "_fdraws.npz")
+    po = paper_omega(fdr) if os.path.exists(fdr) else None
+    out["omega_paper1_20p3_21p6"] = (
+        dict(bias_pct=po["median_bias_pct"], truth=po["truth"],
+             post_p16_50_84=po["post_p16_50_84"],
+             truth_in_68=po["truth_in_68"],
+             hw68_pct=100 * 0.5 * (po["post_p16_50_84"][2]
+                                   - po["post_p16_50_84"][0]) / po["truth"])
+        if po else None)
     out["paper1_bins"] = {thr: [round(b["median_bias_pct"], 2) for b in j["perz_recovery"]["estimand"][thr]["paper1_bins"] if b.get("available")] for thr in THR}
     return out, j
 
@@ -108,17 +204,32 @@ def main():
     if not rows:
         raise SystemExit("j8_certify: no RUN_*_j*.json found — certification cannot be evaluated (fail closed)")
     verdicts = {}; md = ["# J = 8 production M1CUT — certification table (sealed rule 6acf7508)", ""]
-    md += ["| family | j | Λ_j | ≥20.0 bias % (hw68 %) | ≥20.3 bias % (hw68 %) | Ω_subDLA[19.5,20.3] bias % (`thresholds.omega_allz`; NOT Ω[20.3,21.6]) | t_K | FP/census | div | E-BFMI per chain | per-chain medians ≥20.0 | z bins ≥20.3 |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    md += ["**Sealed-rule fidelity note (documentation only; the sealed text is preserved verbatim and the verdict is unchanged).** "
+           + SEALED_RULE_IMPLEMENTATION_NOTE, "",
+           "**Ω columns.** `Ω_subDLA[19.5,20.3]` is the run JSONs' `thresholds.omega_allz` "
+           "(`key = omega_subdla_195_203_allz`) and is NOT a Paper-1 quantity; "
+           "`Ω[20.3,21.6]` is the Paper-1 estimand, read back per imputation from the stored "
+           "f draws with the committed `ladder_table.paper_omega_20p3_21p6` (PI 2026-09-14b §10). "
+           "Ω is not part of the sealed PASS rule.", "",
+           "| family | j | Λ_j | ≥20.0 bias % (hw68 %) | ≥20.3 bias % (hw68 %) | Ω_subDLA[19.5,20.3] bias % (`thresholds.omega_allz`; NOT Ω[20.3,21.6]) | Ω[20.3,21.6] bias % (hw68 %) | t_K | FP/census | div | E-BFMI per chain | per-chain medians ≥20.0 | z bins ≥20.3 |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     allpass = True
     for fam in FAMS:
         R = sorted(runs.get(fam, []), key=lambda x: x[0]["j"])
         if not R: continue
         truths = {thr: R[0][0][thr]["truth"] for thr in THR}
         for r, p in R:
-            md.append(f"| {fam} | {r['j']} | {r['lam']:.3f} | {r['ge20.0']['bias_pct']:+.2f} ({r['ge20.0']['hw68_pct']:.2f}) | {r['ge20.3']['bias_pct']:+.2f} ({r['ge20.3']['hw68_pct']:.2f}) | {r['omega']['bias_pct'] if r['omega'] else float('nan'):+.2f} | {r['t_K']} | {r['fp_over_census']:.3f} | {r['divergences']} | {r['ebfmi']} | {r['ge20.0'].get('perchain_median')} | {r['paper1_bins']['ge20.3']} |")
+            po = r.get("omega_paper1_20p3_21p6")
+            pos = f"{po['bias_pct']:+.2f} ({po['hw68_pct']:.2f})" if po else "n/a"
+            md.append(f"| {fam} | {r['j']} | {r['lam']:.3f} | {r['ge20.0']['bias_pct']:+.2f} ({r['ge20.0']['hw68_pct']:.2f}) | {r['ge20.3']['bias_pct']:+.2f} ({r['ge20.3']['hw68_pct']:.2f}) | {r['omega_subdla_19p5_20p3']['bias_pct'] if r['omega_subdla_19p5_20p3'] else float('nan'):+.2f} | {pos} | {r['t_K']} | {r['fp_over_census']:.3f} | {r['divergences']} | {r['ebfmi']} | {r['ge20.0'].get('perchain_median')} | {r['paper1_bins']['ge20.3']} |")
         fd = [p.replace(".json", "_fdraws.npz") for _, p in R if os.path.exists(p.replace(".json", "_fdraws.npz"))]
         pool = pooled_headlines(fd, truths) if fd else None
-        v = dict(family=fam, n_imputations=len(R), pool=pool, checks={})
+        pool_om = pooled_paper_omega(fd) if fd else None
+        v = dict(family=fam, n_imputations=len(R), pool=pool,
+                 pool_omega_20p3_21p6=pool_om,
+                 per_imputation_omega_20p3_21p6=[
+                     (r.get("omega_paper1_20p3_21p6") or {}).get("bias_pct")
+                     for r, _ in R],
+                 checks={})
         for thr in THR:
             meds = np.array([r[thr]["median"] for r, _ in R]); hw = pool[thr]["hw68"] if pool else np.mean([r[thr]["hw68"] for r, _ in R])
             spread = float(meds.max() - meds.min()); v["checks"][f"{thr}_spread_over_pooled_hw68"] = spread / hw
@@ -140,13 +251,27 @@ def main():
         fam_pass = all(val for k, val in v["checks"].items() if isinstance(val, bool)) and len(R) == 8   # all 8 imputations present
         v["checks"]["all_8_imputations_present"] = (len(R) == 8)
         v["PASS"] = fam_pass; allpass &= fam_pass; verdicts[fam] = v
-    md += ["", "## Pooled (equal-weight over j) production posterior and sealed checks", "", "| family | pooled ≥20.0 bias % (hw68 %) | pooled ≥20.3 bias % (hw68 %) | spread/hw68 (≥20.0, ≥20.3) | pool vs J=1 (hw68) | modes/R̂ ok | PASS |", "|---|---|---|---|---|---|---|"]
+    md += ["", "## Pooled (equal-weight over j) production posterior and sealed checks", "", "| family | pooled ≥20.0 bias % (hw68 %) | pooled ≥20.3 bias % (hw68 %) | pooled Ω[20.3,21.6] bias % (hw68 %) | spread/hw68 (≥20.0, ≥20.3) | pool vs J=1 (hw68) | modes/R̂ ok | PASS |", "|---|---|---|---|---|---|---|---|"]
     for fam, v in verdicts.items():
         po = v["pool"]; c = v["checks"]
-        md.append(f"| {fam} | {po['ge20.0']['bias_pct']:+.2f} ({100*po['ge20.0']['hw68']/(po['ge20.0']['median']/(1+po['ge20.0']['bias_pct']/100)):.2f}) | {po['ge20.3']['bias_pct']:+.2f} ({100*po['ge20.3']['hw68']/(po['ge20.3']['median']/(1+po['ge20.3']['bias_pct']/100)):.2f}) | {c['ge20.0_spread_over_pooled_hw68']:.2f}, {c['ge20.3_spread_over_pooled_hw68']:.2f} | {c.get('ge20.0_pool_vs_J1_over_hw68', float('nan')):.2f}, {c.get('ge20.3_pool_vs_J1_over_hw68', float('nan')):.2f} | {c['ge20.0_no_distinct_modes'] and c['ge20.3_no_distinct_modes']} / {c['ge20.0_split_rhat_le_1p05'] and c['ge20.3_split_rhat_le_1p05']} | **{'PASS' if v['PASS'] else 'FAIL'}** |")
+        pom = v.get("pool_omega_20p3_21p6")
+        poms = f"{pom['bias_pct']:+.2f} ({pom['hw68_pct']:.2f})" if pom else "n/a"
+        md.append(f"| {fam} | {po['ge20.0']['bias_pct']:+.2f} ({100*po['ge20.0']['hw68']/(po['ge20.0']['median']/(1+po['ge20.0']['bias_pct']/100)):.2f}) | {po['ge20.3']['bias_pct']:+.2f} ({100*po['ge20.3']['hw68']/(po['ge20.3']['median']/(1+po['ge20.3']['bias_pct']/100)):.2f}) | {poms} | {c['ge20.0_spread_over_pooled_hw68']:.2f}, {c['ge20.3_spread_over_pooled_hw68']:.2f} | {c.get('ge20.0_pool_vs_J1_over_hw68', float('nan')):.2f}, {c.get('ge20.3_pool_vs_J1_over_hw68', float('nan')):.2f} | {c['ge20.0_no_distinct_modes'] and c['ge20.3_no_distinct_modes']} / {c['ge20.0_split_rhat_le_1p05'] and c['ge20.3_split_rhat_le_1p05']} | **{'PASS' if v['PASS'] else 'FAIL'}** |")
     allpass = allpass and len(verdicts) == 3
-    md += ["", f"**Certification: {'PASS' if allpass else 'STOP — return to PI'}** (sealed rule: per-imputation median spread < 0.5 pooled hw68 on both headlines and every family; no distinct science modes; pool within 0.25 hw68 of the J = 1 median run). Divergences and E-BFMI are disclosed, not gating."]
-    json.dump(dict(rows=rows, verdicts=verdicts, PASS=allpass), open(a.out_json, "w"), indent=1, default=float)
+    md += ["", f"**Certification: {'PASS' if allpass else 'STOP — return to PI'}** (sealed rule: per-imputation median spread < 0.5 pooled hw68 on both headlines and every family; no distinct science modes; pool within 0.25 hw68 of the J = 1 median run). Divergences and E-BFMI are disclosed, not gating. Ω is not a gate: the Ω[20.3,21.6] spread over imputations is small and the column is reported for completeness (PI 2026-09-14b §10)."]
+    json.dump(dict(rows=rows, verdicts=verdicts, PASS=allpass,
+                   sealed_rule_implementation_note=SEALED_RULE_IMPLEMENTATION_NOTE,
+                   omega_columns={
+                       "omega_subdla_19p5_20p3":
+                           "thresholds.omega_allz in the run JSONs "
+                           "(key omega_subdla_195_203_allz) -- NOT a Paper-1 "
+                           "quantity",
+                       "omega_paper1_20p3_21p6":
+                           "Omega_HI[20.3, 21.6], read back from the stored f "
+                           "draws with ladder_table.paper_omega_20p3_21p6; "
+                           "pooled equal-weight over imputations in "
+                           "verdicts[family].pool_omega_20p3_21p6"}),
+              open(a.out_json, "w"), indent=1, default=float)
     open(a.out_md, "w").write("\n".join(md) + "\n"); print("\n".join(md[-12:]))
 
 

@@ -76,7 +76,10 @@ MANIFEST_SCHEMA = {
                 "required": ["commit", "branch", "dirty"],
                 "properties": {"commit": {"type": ["string", "null"]},
                                "branch": {"type": ["string", "null"]},
-                               "dirty": {"type": ["boolean", "null"]}}},
+                               "dirty": {"type": ["boolean", "null"]},
+                               "generated_with_uncommitted_edits":
+                                   {"type": "array"},
+                               "n_uncommitted_edits": {"type": "integer"}}},
         "environment": {"type": "object",
                         "required": ["conda_env", "lock_file", "lock_sha256",
                                      "python", "numpy"]},
@@ -583,9 +586,16 @@ class ManifestBuilder:
             except Exception:                                # pragma: no cover
                 return None
         dirty = _run(["git", "status", "--porcelain"])
+        # A dirty stamp is not reproducible, so the manifest must SAY WHICH
+        # files were uncommitted when it was built rather than just flagging a
+        # boolean: a reader can then decide whether the difference matters.
+        edits = ([ln.strip() for ln in dirty.splitlines() if ln.strip()]
+                 if dirty else [])
         return {"commit": _run(["git", "rev-parse", "HEAD"]),
                 "branch": _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
-                "dirty": bool(dirty) if dirty is not None else None}
+                "dirty": bool(dirty) if dirty is not None else None,
+                "generated_with_uncommitted_edits": edits,
+                "n_uncommitted_edits": len(edits)}
 
     # ---- assemble ---------------------------------------------------------
     def build(self, runs_dir=None, release_root=None):
