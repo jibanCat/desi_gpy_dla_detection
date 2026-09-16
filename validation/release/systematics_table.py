@@ -839,8 +839,11 @@ def _sys6_completeness(products, s6_path=None, search_defaults=True):
         "ruling": "PI 2026-09-14 sec.10, sec.11, sec.18(6)",
         "treatment": "category-3 calibration uncertainty. The coefficient "
                      "covariance (Fisher + 200-draw bootstrap + half-split) is "
-                     "preserved and released for propagation; it was NOT "
-                     "propagated through the final mock ladder",
+                     "preserved and released for propagation; it was not "
+                     "propagated through the final mock ladder and was propagated "
+                     "afterwards to the estimands under PI ruling 2026-09-14b sec.9 "
+                     "(see the PROPAGATED status below; release-safe sizes in "
+                     "S6_RELEASE_SAFE_SUMMARY.md)",
         "summary": dict({
             "covariance_source": os.path.basename(path),
             "covariance_keys": ["cov_fisher", "cov_bootstrap",
