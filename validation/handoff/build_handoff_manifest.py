@@ -34,11 +34,13 @@ import os
 import subprocess
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import registry as reg                                            # noqa: E402
+try:                       # normal: python -m validation.handoff.build_...
+    from . import registry as reg
+except ImportError:        # pragma: no cover -- direct script execution
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+    if _HERE not in sys.path:
+        sys.path.insert(0, _HERE)
+    import registry as reg                                        # noqa: E402
 
 MANIFEST = "HANDOFF_MANIFEST.json"
 SUMS = "HANDOFF_SHA256SUMS"
@@ -125,7 +127,10 @@ def classify_handoff_file(rel):
             (t[0], t[1], t[2], t[3]) for t in reg.TABLES]:
         if hrel == rel:
             return cls
-    # The maps and registries name private product PATHS but carry no real
+    override = getattr(reg, "DOC_CLASSIFICATION", {}).get(rel)
+    if override:
+        return override
+    # Remaining handoff documents name private product PATHS but carry no real
     # values; the handoff root as a whole lives in the private notes repo.
     return "PRIVATE_REPO_NO_VALUES"
 
@@ -284,6 +289,12 @@ def build(root):
         },
         "verify_command": ("python -m validation.handoff.build_handoff_manifest "
                            "--root %s --verify" % root),
+        "rebuild_note": (
+            "This manifest describes the handoff root COMPLETELY: --verify "
+            "fails on a missing file, a changed sha256, AND on any file that "
+            "appears in the root but is not listed. If another agent adds a "
+            "file to the handoff, rebuild (drop --verify) rather than editing "
+            "the manifest; nothing outside the handoff root is ever written."),
     }
     return doc
 

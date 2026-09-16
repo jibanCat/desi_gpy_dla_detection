@@ -40,9 +40,13 @@ EXPECTED_FROM_OTHER_AGENTS = [
     ("SCIENCE_LANE_BOUNDARY.md", "commander"),
     ("CLAIM_LEDGER.md", "claim-ledger agent"),
     ("CLAIM_LEDGER.json", "claim-ledger agent"),
+    ("CLAIM_LEDGER.csv", "claim-ledger agent"),
     ("LITERATURE_COMPARISON_DEFINITIONS.md", "claim-ledger agent"),
     ("ESTIMAND_NOTATION_CONTRACT.md", "claim-ledger agent"),
     ("OPEN_ITEMS_REGISTRY.md", "claim-ledger agent"),
+    ("REPRODUCIBILITY_README.md", "reproducibility agent"),
+    ("FRESH_CLONE_SMOKE_TEST_2026-09-16.md", "reproducibility agent"),
+    ("SCIENCE_LANE_GIT_INVENTORY_PRE_CLEANUP.md", "commander"),
 ]
 
 # ------------------------------------------------------- curated figures in H
@@ -296,6 +300,21 @@ ARCHIVES = [
     ("turbo_forensic_archive", T, T + "/SHA256SUMS", "durable (Turbo)"),
     ("scratch_working_root", R, R + "/release/SHA256SUMS", "purgeable (scratch)"),
 ]
+
+
+# Explicit classification for handoff-root documents that are not a curated
+# figure or table.  A document is PRIVATE if it quotes a real-survey value
+# (including a diagnostic location or a real-normalised ratio) rather than only
+# naming a private product's path.
+DOC_CLASSIFICATION = {
+    # quotes real t_K locations, real predictive ratios, real FP shares and
+    # real per-bin/percentage diagnostics inside the binding caption caveats
+    "PAPER_FIGURE_TABLE_SOURCE_MAP.md": PRIVATE,
+    # names private products and quotes the record's FP-excess factors
+    "CANONICAL_SOURCE_MAP.md": PRIVATE,
+    # paths, sizes and digests only
+    "STORAGE_INVENTORY.md": "PRIVATE_REPO_NO_VALUES",
+}
 
 
 def exists(path):
